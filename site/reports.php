@@ -41,16 +41,31 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
             throw new RuntimeException('تاريخ غير صحيح.');
         }
 
-        $cond = $accId > 0
+        $accCond = $accId > 0
             ? 'COALESCE(ja.id, ec.id, 0) = ?'
             : 'COALESCE(ja.id, ec.id, 0) = 0';
+
+        $branchCond = '';
+        $branchArg  = null;
+        if (isset($_GET['branch']) && $_GET['branch'] !== '') {
+            $bVal = (int) $_GET['branch'];
+            if ($bVal > 0) {
+                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = ?';
+                $branchArg  = $bVal;
+            } else {
+                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = 0';
+            }
+        }
+
         $args = [$dFrom, $dTo];
         if ($accId > 0) $args[] = $accId;
+        if ($branchArg !== null) $args[] = $branchArg;
 
         $st = $pdo->prepare(
             "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
                     je.running_balance, je.notes, je.ref_type,
-                    t.name AS treasury, u.full_name AS by_name
+                    t.name AS treasury, u.full_name AS by_name,
+                    cb.name AS branch_name
                FROM journal_entries je
                JOIN treasuries t ON t.id = je.treasury_id
                LEFT JOIN users u ON u.id = je.created_by
@@ -58,7 +73,14 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                       ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
                LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                LEFT JOIN accounts ja ON ja.id = je.account_id
-              WHERE je.entry_date BETWEEN ? AND ? AND $cond
+               LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
+               LEFT JOIN branch_custody bc ON bc.id = je.ref_id
+                    AND je.ref_type IN ('custody_return','custody_settlement','custody_surplus','custody_deficit')
+               LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
+               LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
+               LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
+               LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+              WHERE je.entry_date BETWEEN ? AND ? AND $accCond $branchCond
               ORDER BY je.entry_date, je.id
               LIMIT 500"
         );
@@ -74,6 +96,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                 'desc'     => (string) $r['description'],
                 'kind'     => $kinds[$r['ref_type']] ?? '—',
                 'treasury' => (string) $r['treasury'],
+                'branch'   => (string) ($r['branch_name'] ?? '—'),
                 'debit'    => (float) $r['debit'],
                 'credit'   => (float) $r['credit'],
                 'balance'  => (float) $r['running_balance'],
@@ -198,16 +221,23 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 {
     switch ($type) {
         case 'sales':
-            $st = $pdo->prepare(
+            // فلتر اختياري بالفرع (أزرار الفروع فوق الجدول)
+            $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+            $sqlSales =
                 "SELECT s.business_date, b.name AS branch, u.full_name AS cashier,
                         s.cash_total, s.visa_total, s.instapay_total, s.system_total,
                         (s.cash_total+s.visa_total+s.instapay_total) AS paid_sum,
                         s.difference, s.status
                  FROM shifts s JOIN branches b ON b.id=s.branch_id JOIN users u ON u.id=s.user_id
-                 WHERE s.business_date BETWEEN ? AND ?
-                 ORDER BY s.business_date DESC, s.id DESC"
-            );
-            $st->execute([$from, $to]);
+                 WHERE s.business_date BETWEEN ? AND ?";
+            $paramsSales = [$from, $to];
+            if ($branchFilter !== null) {
+                $sqlSales .= " AND s.branch_id = ?";
+                $paramsSales[] = $branchFilter;
+            }
+            $sqlSales .= " ORDER BY s.business_date DESC, s.id DESC";
+            $st = $pdo->prepare($sqlSales);
+            $st->execute($paramsSales);
             $rows = []; $tCollected = 0; $tDiff = 0;
             $stMap = ['submitted'=>'مستلمة','approved'=>'معتمدة','rejected'=>'مرفوضة','resubmitted'=>'معاد إرسال'];
             foreach ($st as $r) {
@@ -398,7 +428,12 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // المصاريف = كل صرف نقدي من الخزائن في الفترة.
             // (`treasury_movements.movement_type='disbursement'`)
             // التجميع في الداتابيز، صف لكل حركة + كروت فوق.
-            $st = $pdo->prepare(
+            $branchFilter   = isset($_GET['cost_branch']) && $_GET['cost_branch'] !== '' ? (int)$_GET['cost_branch'] : (isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null);
+            $treasuryFilter = isset($_GET['treasury']) && $_GET['treasury'] !== '' ? (int)$_GET['treasury'] : (isset($_GET['treasury_id']) && $_GET['treasury_id'] !== '' ? (int)$_GET['treasury_id'] : null);
+            $entryFilter    = isset($_GET['entry_code']) && $_GET['entry_code'] !== '' ? (int)$_GET['entry_code'] : null;
+            $userFilter     = isset($_GET['user']) && $_GET['user'] !== '' ? (int)$_GET['user'] : (isset($_GET['created_by']) && $_GET['created_by'] !== '' ? (int)$_GET['created_by'] : null);
+
+            $sqlExp =
                 "SELECT tm.movement_date, t.name AS treasury, tm.amount,
                         COALESCE(a.name, '— بدون قيد —') AS entry_name,
                         cb.name AS cost_branch, u.full_name AS by_name,
@@ -409,10 +444,27 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                    LEFT JOIN branches cb ON cb.id = tm.branch_id
                    LEFT JOIN users u     ON u.id = tm.created_by
                   WHERE tm.movement_type = 'disbursement'
-                    AND tm.movement_date BETWEEN ? AND ?
-                  ORDER BY tm.movement_date DESC, tm.id DESC"
-            );
-            $st->execute([$from, $to]);
+                    AND tm.movement_date BETWEEN ? AND ?";
+            $paramsExp = [$from, $to];
+            if ($branchFilter !== null) {
+                $sqlExp .= " AND tm.branch_id = ?";
+                $paramsExp[] = $branchFilter;
+            }
+            if ($treasuryFilter !== null) {
+                $sqlExp .= " AND tm.treasury_id = ?";
+                $paramsExp[] = $treasuryFilter;
+            }
+            if ($entryFilter !== null) {
+                $sqlExp .= " AND tm.entry_code_id = ?";
+                $paramsExp[] = $entryFilter;
+            }
+            if ($userFilter !== null) {
+                $sqlExp .= " AND tm.created_by = ?";
+                $paramsExp[] = $userFilter;
+            }
+            $sqlExp .= " ORDER BY tm.movement_date DESC, tm.id DESC";
+            $st = $pdo->prepare($sqlExp);
+            $st->execute($paramsExp);
 
             $rows = []; $tExp = 0.0;
             foreach ($st as $r) {
@@ -433,12 +485,14 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'totals'=>['','','','','إجمالي:', number_format($tExp,2),'','']];
 
         case 'jtotals':
-            // إجماليات القيود — مجمّعة على مستوى الحساب (القيد).
-            // التجميع في الداتابيز مش في الـPHP: صف واحد لكل قيد بدل
-            // ما نجيب آلاف الحركات ونجمعها في الذاكرة.
+            // إجماليات القيود — مجمّعة على مستوى الحساب (القيد) + الفرع.
+            // التجميع في الداتابيز مش في الـPHP: صف واحد لكل (قيد + فرع).
+            // الفرع بيتجاب بـ COALESCE على مصادر الحركة الممكنة (نفس منطق تقرير الخزينة).
             $st = $pdo->prepare(
                 "SELECT COALESCE(ja.id, ec.id, 0) AS acc_id,
                         COALESCE(ja.name, ec.name, '— بدون قيد —') AS entry_name,
+                        COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) AS branch_id,
+                        cb.name AS branch_name,
                         COUNT(*)          AS cnt,
                         SUM(je.debit)     AS dr,
                         SUM(je.credit)    AS cr
@@ -448,8 +502,15 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                          AND je.ref_type IN ('receipt','disbursement')
                    LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                    LEFT JOIN accounts ja ON ja.id = je.account_id
+                   LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
+                   LEFT JOIN branch_custody bc ON bc.id = je.ref_id
+                        AND je.ref_type IN ('custody_return','custody_settlement','custody_surplus','custody_deficit')
+                   LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
+                   LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
+                   LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
+                   LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
                   WHERE je.entry_date BETWEEN ? AND ?
-                  GROUP BY acc_id, entry_name
+                  GROUP BY acc_id, entry_name, branch_id, branch_name
                   ORDER BY (SUM(je.debit) + SUM(je.credit)) DESC"
             );
             $st->execute([$from, $to]);
@@ -461,22 +522,22 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // عمود «إجمالي الحركة» (مدين+دائن) اتشال — ماكانش بيقول
                 // حاجة مفيدة، ومجموع المدين والدائن مع بعض رقم بلا معنى
                 // محاسبي. الصافي = مدين − دائن (اتصلّح، كان العكس).
-                $rows[]   = [$r['entry_name'], (int)$r['cnt'],
+                $rows[]   = [$r['entry_name'], $r['branch_name'] ?? '—', (int)$r['cnt'],
                     number_format($dr,2), number_format($cr,2),
                     number_format($dr - $cr, 2)];
-                // الـid الحقيقي للأكورديون — مش الاسم
-                $rowIds[] = (int)$r['acc_id'];
+                // الـid الحقيقي للحساب والفرع للأكورديون
+                $rowIds[] = ['acc' => (int)$r['acc_id'], 'branch' => (int)$r['branch_id']];
             }
             return ['title'=>'إجماليات القيود',
-                'headers'=>['القيد','عدد القيود','مدين','دائن','الصافي'],
+                'headers'=>['القيد','الفرع','عدد القيود','مدين','دائن','الصافي'],
                 'rows'=>$rows, 'row_ids'=>$rowIds, 'accordion'=>'je_details',
                 'sum_cards'=>[
-                    ['label'=>'إجمالي مدين', 'col'=>2],
-                    ['label'=>'إجمالي دائن', 'col'=>3],
-                    ['label'=>'الصافي',      'col'=>4, 'signed'=>true],
-                    ['label'=>'عدد القيود',  'col'=>1, 'int'=>true],
+                    ['label'=>'إجمالي مدين', 'col'=>3],
+                    ['label'=>'إجمالي دائن', 'col'=>4],
+                    ['label'=>'الصافي',      'col'=>5, 'signed'=>true],
+                    ['label'=>'عدد القيود',  'col'=>2, 'int'=>true],
                 ],
-                'totals'=>['إجمالي:', $tCnt, number_format($tDr,2), number_format($tCr,2),
+                'totals'=>['إجمالي:', '', $tCnt, number_format($tDr,2), number_format($tCr,2),
                            number_format($tDr-$tCr,2)]];
 
         case 'suppliers':
@@ -746,7 +807,6 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:10px 12px; text-align:right; font-size:13px; border-bottom:1px solid var(--line); white-space:nowrap; }
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
-    tr.totals td { font-weight:700; color:var(--ink-900); background:var(--line-soft); border-top:2px solid var(--line); }
     .empty { text-align:center; color:#bbb; padding:40px; font-size:15px; }
 </style>
 
@@ -760,7 +820,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if ($type !== 'stocktake' && $type !== 'noprice'): ?>
 <form method="get" class="filter-bar">
     <input type="hidden" name="type" value="<?= e($type) ?>">
-    <?php if ($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== ''): ?>
+    <?php if (($type === 'custody' || $type === 'sales') && isset($_GET['branch']) && $_GET['branch'] !== ''): ?>
         <?php /* الفرع فلتر مستقل عن التاريخ: لازم يفضل معانا لما نغيّر
                  الفترة، وإلا التقرير كان هيرجع لكل الفروع كل مرة. */ ?>
         <input type="hidden" name="branch" value="<?= (int)$_GET['branch'] ?>">
@@ -786,11 +846,70 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'expenses'):
+        $repCostBranches = cost_branches_list();
+        $selCostBranch   = $_GET['cost_branch'] ?? '';
+        $repTreasuries   = $pdo->query("SELECT id, name FROM treasuries WHERE is_active = 1 ORDER BY name")->fetchAll();
+        $selTreasury     = $_GET['treasury'] ?? '';
+        $repEntryCodes   = entry_codes_list();
+        $selEntry        = $_GET['entry_code'] ?? '';
+        $repUsers        = $pdo->query("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name")->fetchAll();
+        $selUser         = $_GET['user'] ?? '';
+    ?>
+        <label>الفرع</label>
+        <select name="cost_branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($repCostBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>الخزينة</label>
+        <select name="treasury" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الخزائن</option>
+            <?php foreach ($repTreasuries as $tr): ?>
+                <option value="<?= (int)$tr['id'] ?>" <?= (string)$selTreasury===(string)$tr['id']?'selected':'' ?>><?= e($tr['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>القيد</label>
+        <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل القيود</option>
+            <?php foreach ($repEntryCodes as $ec): ?>
+                <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>بواسطة</label>
+        <select name="user" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">الكل</option>
+            <?php foreach ($repUsers as $u): ?>
+                <option value="<?= (int)$u['id'] ?>" <?= (string)$selUser===(string)$u['id']?'selected':'' ?>><?= e($u['full_name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير CSV
     </a>
 </form>
+
+<?php if ($type === 'sales'):
+    // أزرار الفروع لتقرير المبيعات من واقع الورديات (مش أسامي ثابتة)
+    $salesBranches = $pdo->query(
+        "SELECT DISTINCT b.id, b.name
+           FROM shifts s
+           JOIN branches b ON b.id = s.branch_id
+          ORDER BY b.name"
+    )->fetchAll();
+    $selBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+    $qs = 'type=sales&from=' . urlencode($from) . '&to=' . urlencode($to);
+?>
+<div class="br-tabs">
+    <a href="?<?= $qs ?>" class="br-tab <?= $selBranch===null?'active':'' ?>">كل المبيعات</a>
+    <?php foreach ($salesBranches as $sb): ?>
+        <a href="?<?= $qs ?>&branch=<?= (int)$sb['id'] ?>"
+           class="br-tab <?= $selBranch===(int)$sb['id']?'active':'' ?>"><?= e($sb['name']) ?></a>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <?php if ($type === 'custody'):
     // أزرار الفروع. الفرع فلتر والتاريخ فلتر مستقل — الزرار بيشيل نفس
@@ -1449,10 +1568,12 @@ require_once __DIR__ . '/includes/header.php';
             <?php foreach ($report['rows'] as $ri => $row): ?>
                 <?php
                 // صف قابل للفتح؟ (تقرير إجماليات القيود بس دلوقتي)
-                $accId = isset($report['row_ids'][$ri]) ? (int)$report['row_ids'][$ri] : null;
-                $isAcc = !empty($report['accordion']) && $accId !== null;
+                $rowMeta = $report['row_ids'][$ri] ?? null;
+                $isAcc   = !empty($report['accordion']) && $rowMeta !== null;
+                $accId   = is_array($rowMeta) ? (int)$rowMeta['acc'] : (int)$rowMeta;
+                $brId    = is_array($rowMeta) ? (int)($rowMeta['branch'] ?? 0) : 0;
                 ?>
-                <tr<?= $isAcc ? ' class="acc-row" data-acc="'.$accId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $isAcc ? ' class="acc-row" data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
@@ -1471,9 +1592,6 @@ require_once __DIR__ . '/includes/header.php';
                     </tr>
                 <?php endif; ?>
             <?php endforeach; ?>
-            <?php if (!empty($report['totals'])): ?>
-                <tr class="totals" data-xt-ignore><?php foreach ($report['totals'] as $cell): ?><td><?= e((string)$cell) ?></td><?php endforeach; ?></tr>
-            <?php endif; ?>
         </tbody>
     </table>
     <?php endif; ?>
@@ -1636,9 +1754,11 @@ function jeToggle(tr) {
     cell.innerHTML = '<div class="acc-msg">جارِ التحميل…</div>';
 
     var p = new URLSearchParams(location.search);
+    var branchId = tr.dataset.branch !== undefined ? tr.dataset.branch : '';
     var url = 'reports.php?ajax=je_details&acc=' + encodeURIComponent(tr.dataset.acc) +
-              '&from=' + encodeURIComponent(p.get('from') || '') +
-              '&to='   + encodeURIComponent(p.get('to')   || '');
+              '&branch=' + encodeURIComponent(branchId) +
+              '&from='   + encodeURIComponent(p.get('from') || '') +
+              '&to='     + encodeURIComponent(p.get('to')   || '');
 
     fetch(url).then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) throw new Error(d.error || 'حصل خطأ.');
@@ -1648,7 +1768,7 @@ function jeToggle(tr) {
             return;
         }
         var h = '<div class="acc-inner"><table><thead><tr>' +
-                '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th>' +
+                '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                 '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                 '</tr></thead><tbody>';
         var esc = function (x) {
@@ -1662,6 +1782,7 @@ function jeToggle(tr) {
         d.rows.forEach(function (r) {
             h += '<tr><td>' + esc(r.date) + '</td><td>' + esc(r.desc) + '</td>' +
                  '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
+                 '<td>' + esc(r.branch || '—') + '</td>' +
                  '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +
                  '<td>' + f(r.balance) + '</td><td>' + esc(r.by) + '</td>' +
                  '<td>' + (r.notes ? esc(r.notes) : '—') + '</td></tr>';
