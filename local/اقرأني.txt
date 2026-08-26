@@ -1,0 +1,29 @@
+ملفات مكانها جهازك — مش الدومين
+=====================================
+
+الملفات دي اتشالت من الهوستنج عن قصد. متتحطش عليه تاني.
+
+الوكلاء (جهاز الإدارة وجهاز اشراقة):
+  agent_hq.ps1          الوكيل الجديد: قفل + بصمة + ختم دفعة (كل دقيقتين)
+  agent_ashraqa.ps1     زي ما هو — لسه كل نص ساعة
+  export_schema.ps1
+
+ملفات SQL (شغلها في phpMyAdmin وامسحها بعدين):
+  upgrade_sync_batch.sql     عمود batch — لازم قبل agent_hq الجديد
+  upgrade_group_notes.sql    عمود ملاحظات المجموعة
+  upgrade_perf.sql           فهارس الأداء (اتشغّل خلاص)
+  upgrade_perf_rest.sql      تنضيف اللوجات
+  upgrade_fix_invoice_keys.sql · upgrade_invoice_groups.sql
+  upgrade_shortage.sql · upgrade_tasks.sql
+  delete_bad_invoice.sql
+
+أدوات تشخيص (ارفعها مؤقتا لو احتجتها وامسحها بعد الاستخدام):
+  schema_export.php · diag_lines.php · diag_shifts.php
+  diag_stock.php · pos_dryrun.php
+
+خطر — متترفعش نهائيا:
+  setup.php                  مفيهوش اي حماية، بيرجع باسورد الاونر لـ admin123
+  data/project_users.json    49 مستخدم بهاشات الباسوردات
+
+التوثيق:
+  CONTEXT.md                 كل تفاصيل المشروع — اقراه قبل اي شغل جديد

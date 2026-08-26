@@ -1,0 +1,126 @@
+# خريطة ترابط نظام الفجالة ستور
+# (مرجع سريع: لو هتعدّل ملف، شوف مين مرتبط بيه عشان تطلبهم كلهم مع بعض)
+
+═══════════════════════════════════════════════════════════════
+  الملفات الأساسية (يعتمد عليها الكل) — أي تعديل فيها يأثر على المشروع كله
+═══════════════════════════════════════════════════════════════
+
+config.php
+  • اتصال MySQL (db) + إعدادات (setting) + اتصال SQL Server (sqlsrv_db)
+  • يعتمد عليه: كل الملفات
+  • لو عدّلته: مفيش ملفات تانية لازمة غالباً
+
+auth.php
+  • الحماية والصلاحيات + قائمة المديولات (الـ Sidebar)
+  • يحتاج: config.php
+  • يعتمد عليه: كل الصفحات
+  • لو ضفت/شلت مديول: لازم تعدّل معاه → setup.php (صلاحيات الأونر)
+
+finance.php  ★ قلب النظام ★
+  • كل الدوال المالية (post_journal وكل اللي بيلمس الخزينة)
+  • يحتاج: config.php
+  • يعتمد عليه: treasury, custody, cashier, review, suppliers, hr,
+    attendance, reconcile, dashboard, invoices(غير مباشر)
+  • لو عدّلت دالة فيه: اطلب الصفحة اللي بتستخدمها (تحت)
+
+includes/header.php + includes/footer.php + assets/app.js
+  • التصميم المشترك + سلايدر الجداول + التنقل بالأسهم
+  • يعتمد عليه: كل الصفحات المرئية
+  • لو عدّلتهم: بيأثروا على شكل كل الصفحات
+
+═══════════════════════════════════════════════════════════════
+  مجموعات الموديولات المترابطة (لو عدّلت واحد، غالباً تحتاج المجموعة)
+═══════════════════════════════════════════════════════════════
+
+【 التقفيل والمراجعة 】
+  cashier.php + shift_data.php + review.php
+  + finance.php (save_shift_review)
+  • الكاشير يقفّل → المحاسب يراجع → الفلوس تدخل الخزينة
+  • لو عدّلت منطق التقفيل: اطلب الأربعة + treasury.php (الخزائن)
+
+【 العهدة 】
+  custody.php + finance.php (issue_disbursement_order, add_custody_expense,
+    close_custody, receive_custody) + dashboard.php + treasury.php
+  • صرف/استلام العهدة بيتم من شاشة الخزينة (مودال صرف/استلام ← نوع عهدة)
+  • آخر المدة = أول المدة − المصروفات (يُحسب لحظياً)
+  • لو عدّلت منطق العهدة: اطلب custody + finance + treasury + dashboard
+
+【 الاستلامات والتوزيع 】
+  invoices.php + receiving_lib.php + branch_export.php
+  + suppliers.php (الفواتير بتظهر فيه عبر invoice_distribution)
+  • receiving_lib بيقرا من SQL Server (STO_TRANS_HEADER/LINES)
+  • لو عدّلت التوزيع: اطلب invoices + receiving_lib + branch_export
+  • لو عدّلت أسماء جداول SQL Server: receiving_lib.php بس
+
+【 الموردين 】
+  suppliers.php + finance.php (add_supplier_invoice, pay_supplier_invoice)
+  + receiving_lib.php (ensure_distribution_record بينشئ الموردين)
+  • لو عدّلت الموردين: اطلب suppliers + finance
+
+【 الموارد البشرية والحضور 】
+  hr.php + attendance.php + finance.php (disburse_advance, recover_advance,
+    compute_salary, pay_salary, clock_attendance, approve_attendance_request)
+  + users.php (إنشاء الموظف = إنشاء يوزر، كله من مكان واحد)
+  + treasury.php (السلفة/ردها من مودال الصرف/الاستلام)
+  • الموظف = يوزر (employees.user_id يربطهم). الإنشاء الأساسي من users.php
+  • الحضور بيشتغل بـ user_id، فلازم الموظف يكون له حساب
+  • لو عدّلت الرواتب/الحضور: اطلب hr + attendance + finance + users
+
+【 استعلام الأسعار 】
+  price_inquiry.php + price_lib.php
+  • price_lib بيقرا من SQL Server (ITEM_CODES, COM_ITEM_PRICE)
+  • مستقل تقريباً — لو عدّلته اطلب الاتنين بس
+
+【 الجرد 】
+  stocktake.php + stocktake_lib.php + stocktake_export.php
+  + upgrade_stocktake.sql (4 جداول)
+  • stocktake_lib بيقرا من SQL Server (ITEM_CODES) للأصناف والوحدات
+    والربط بين الأكواد (نفس ITEM_ID = نفس الصنف، IC_CODE_TYPE=0 أساسي)
+  • رصيد السيستم من ملف الرصيد المرفوع (stocktake_balances)
+  • 3 مراحل: الجرد (تجميع الأكواد المربوطة) → المراجعة (مقارنة بالألوان)
+    → التقارير (TEXT لكل محضر أو مجمّع)
+  • لو عدّلت الجرد: اطلب الثلاثة + upgrade_stocktake.sql
+  • لو عدّلت منطق الوحدة/التجميع: stocktake_lib.php بس
+
+【 الخزينة 】
+  treasury.php + finance.php (post_journal, treasury_movement, transfer)
+  • كل الموديولات بتغذّي الخزينة، فهي مرتبطة بالكل غير مباشر
+  • لو عدّلت كشف الحساب: treasury.php بس
+
+【 التسويات 】
+  reconcile.php + finance.php (reconcile_treasury)
+  • لو عدّلتها: اطلب الاتنين
+
+【 التعريفات 】
+  definitions.php (فروع، موظفين، خزائن، تصنيفات)
+  + finance.php (فتح خزينة عهدة عند إضافة فرع)
+  • إضافة فرع بتنشئ خزينة عهدة تلقائياً
+
+【 الإدارة 】
+  users.php (إدارة المستخدمين - للأونر)
+  settings.php (إعدادات النظام)
+  • مستقلين تقريباً
+
+【 الداشبورد 】
+  dashboard.php
+  • بيقرا من: الخزائن، العهد، الورديات، الموردين
+  • للعرض فقط (مش بيكتب) — تعديله آمن، مايأثرش على غيره
+
+═══════════════════════════════════════════════════════════════
+  قاعدة البيانات
+═══════════════════════════════════════════════════════════════
+  database.sql            ← الأساس (34 جدول)
+  treasuries_seed.sql     ← الخزائن المركزية الخمسة
+  upgrade_hr.sql          ← مواعيد الموظفين + طلبات تصحيح الحضور
+  upgrade_reconcile.sql   ← جدول التسويات
+
+  الترتيب: database → treasuries_seed → upgrade_hr → upgrade_reconcile → setup.php
+
+═══════════════════════════════════════════════════════════════
+  قاعدة ذهبية للتعديلات
+═══════════════════════════════════════════════════════════════
+  • أي حركة فلوس لازم تمر من post_journal في finance.php — متلمسش
+    أرصدة الخزائن من أي مكان تاني.
+  • لو التعديل بيلمس فلوس: اطلب الصفحة + finance.php مع بعض.
+  • لو التعديل في الشكل/التصميم العام: اطلب header.php + الصفحة.
+  • لو ضفت مديول جديد: auth.php + setup.php + الملف الجديد.

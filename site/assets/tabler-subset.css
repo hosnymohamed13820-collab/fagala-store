@@ -1,0 +1,116 @@
+/* =====================================================================
+ *  tabler-subset.css - ايقونات نظام الفجالة ستور
+ *
+ *  Tabler Icons 3.0.0 - MIT License
+ *  https://github.com/tabler/tabler-icons/blob/master/LICENSE
+ *
+ *  ده subset فيه الـ77 ايقونة المستخدمة في النظام بس، بدل الخط الكامل
+ *  (4595 ايقونة / 716KB) اللي كان بيتحمّل من jsdelivr مع كل صفحة.
+ *
+ *  ---------------------------------------------------------------
+ *  لو ضفت ايقونة جديدة في اي صفحة:
+ *    الايقونة مش هتظهر (هتبان مربع فاضي) لان الخط مافيهوش الشكل بتاعها.
+ *    الحل: قولي على اسمها واعملك الخط من تاني، او ارجع مؤقتا لسطر
+ *    الـCDN القديم في header.php.
+ *  الايقونات المتاحة دلوقتي مكتوبة تحت بالترتيب.
+ *  ---------------------------------------------------------------
+ * ===================================================================== */
+
+@font-face {
+    font-family: "tabler-icons";
+    font-style: normal;
+    font-weight: 400;
+    /* swap: النص بيظهر فورا والايقونات بتلحق - مافيش شاشة فاضية */
+    font-display: swap;
+    src: url("tabler-subset.woff2?v=1") format("woff2");
+}
+
+.ti {
+    font-family: "tabler-icons" !important;
+    speak: none;
+    font-style: normal;
+    font-weight: normal;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.ti-adjustments:before { content: "\ea03"; }
+.ti-alert-triangle:before { content: "\ea06"; }
+.ti-arrow-back-up:before { content: "\eb77"; }
+.ti-arrow-down-left:before { content: "\ea13"; }
+.ti-arrow-right:before { content: "\ea1f"; }
+.ti-arrow-up-right:before { content: "\ea24"; }
+.ti-bell:before { content: "\ea35"; }
+.ti-building-bank:before { content: "\ebe2"; }
+.ti-building-store:before { content: "\ea4e"; }
+.ti-calculator:before { content: "\eb80"; }
+.ti-calendar:before { content: "\ea53"; }
+.ti-camera:before { content: "\ea54"; }
+.ti-cash:before { content: "\ea55"; }
+.ti-cash-banknote:before { content: "\ee25"; }
+.ti-chart-bar:before { content: "\ea59"; }
+.ti-check:before { content: "\ea5e"; }
+.ti-checklist:before { content: "\f074"; }
+.ti-chevron-down:before { content: "\ea5f"; }
+.ti-chevron-left:before { content: "\ea60"; }
+.ti-circle-check:before { content: "\ea67"; }
+.ti-clock:before { content: "\ea70"; }
+.ti-clock-hour-4:before { content: "\f319"; }
+.ti-credit-card:before { content: "\ea84"; }
+.ti-current-location:before { content: "\ecef"; }
+.ti-database-export:before { content: "\ee6e"; }
+.ti-device-floppy:before { content: "\eb62"; }
+.ti-device-mobile:before { content: "\ea8a"; }
+.ti-discount:before { content: "\ebbd"; }
+.ti-download:before { content: "\ea96"; }
+.ti-edit:before { content: "\ea98"; }
+.ti-external-link:before { content: "\ea99"; }
+.ti-eye:before { content: "\ea9a"; }
+.ti-file-invoice:before { content: "\eb67"; }
+.ti-file-spreadsheet:before { content: "\f03e"; }
+.ti-file-type-pdf:before { content: "\fb10"; }
+.ti-filter:before { content: "\eaa5"; }
+.ti-inbox:before { content: "\eac4"; }
+.ti-layout-dashboard:before { content: "\f02c"; }
+.ti-layout-grid:before { content: "\edba"; }
+.ti-link:before { content: "\eade"; }
+.ti-list:before { content: "\eb6b"; }
+.ti-list-check:before { content: "\eb6a"; }
+.ti-list-details:before { content: "\ef40"; }
+.ti-loader:before { content: "\eca3"; }
+.ti-lock:before { content: "\eae2"; }
+.ti-lock-dollar:before { content: "\f929"; }
+.ti-login:before { content: "\eba7"; }
+.ti-logout:before { content: "\eba8"; }
+.ti-menu-2:before { content: "\ec42"; }
+.ti-note:before { content: "\eb6d"; }
+.ti-package:before { content: "\eaff"; }
+.ti-package-export:before { content: "\f07a"; }
+.ti-package-import:before { content: "\f07b"; }
+.ti-packages:before { content: "\f2c9"; }
+.ti-pencil:before { content: "\eb04"; }
+.ti-percentage:before { content: "\ecf4"; }
+.ti-photo:before { content: "\eb0a"; }
+.ti-player-play:before { content: "\ed46"; }
+.ti-player-stop:before { content: "\ed4a"; }
+.ti-plus:before { content: "\eb0b"; }
+.ti-refresh:before { content: "\eb13"; }
+.ti-rotate:before { content: "\eb16"; }
+.ti-scan:before { content: "\ebc8"; }
+.ti-search:before { content: "\eb1c"; }
+.ti-send:before { content: "\eb1e"; }
+.ti-settings:before { content: "\eb20"; }
+.ti-shopping-cart:before { content: "\eb25"; }
+.ti-stack-2:before { content: "\eef7"; }
+.ti-transfer:before { content: "\fc1f"; }
+.ti-trash:before { content: "\eb41"; }
+.ti-truck:before { content: "\ebc4"; }
+.ti-upload:before { content: "\eb47"; }
+.ti-user-check:before { content: "\eb49"; }
+.ti-user-cog:before { content: "\f9d4"; }
+.ti-user-plus:before { content: "\eb4b"; }
+.ti-users:before { content: "\ebf2"; }
+.ti-wallet:before { content: "\eb75"; }

@@ -1,0 +1,33 @@
+# ===== الفجالة ستور =====
+# أسرار — عمرها ما تتحط في git
+config.php
+*_secret*
+project_users.json
+.env
+
+# ملفات الوكلاء المحلية
+*.state.json
+*.lock
+*.log
+
+# رفع المستخدمين
+uploads/
+site/uploads/
+
+# مؤقتات
+*.tmp
+*.bak
+~$*
+.DS_Store
+Thumbs.db
+
+# بايثون بتاع الاختبارات
+__pycache__/
+*.pyc
+node_modules/
+
+# نواتج الاختبارات المؤقتة
+/tmp/
+
+# نسخة المستودع المكسور — محلية بس
+.git.broken/

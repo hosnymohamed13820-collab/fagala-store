@@ -1,0 +1,128 @@
+<?php
+/**
+ * stocktake_places.php — إدارة أقسام/أرفف الجرد (للأونر فقط).
+ * الأماكن دي بتظهر كقائمة في محضر الجرد بدل الكتابة الحرة.
+ */
+declare(strict_types=1);
+require_once __DIR__ . '/auth.php';
+require_login();
+if (!is_owner()) { http_response_code(403); exit('للأونر فقط.'); }
+
+$pdo = db();
+$flash = ''; $flashType = '';
+
+// إنشاء الجدول تلقائياً لو مش موجود (بدل ما تشغّل SQL يدوي)
+$pdo->exec("CREATE TABLE IF NOT EXISTS `stocktake_places` (
+  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`       VARCHAR(255) NOT NULL,
+  `sort_order` INT NOT NULL DEFAULT 0,
+  `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        $flash = 'انتهت صلاحية الجلسة.'; $flashType = 'error';
+    } else {
+        $action = $_POST['action'] ?? '';
+        try {
+            if ($action === 'add') {
+                // إضافة أماكن (سطر لكل مكان)
+                $lines = preg_split('/\r\n|\r|\n/', trim($_POST['places'] ?? ''));
+                $n = 0;
+                $max = (int)$pdo->query('SELECT COALESCE(MAX(sort_order),0) FROM stocktake_places')->fetchColumn();
+                $ins = $pdo->prepare('INSERT INTO stocktake_places (name, sort_order) VALUES (?, ?)');
+                foreach ($lines as $ln) {
+                    $ln = trim($ln);
+                    if ($ln === '') continue;
+                    $ins->execute([$ln, ++$max]);
+                    $n++;
+                }
+                $flash = "تمت إضافة $n مكان."; $flashType = 'success';
+            } elseif ($action === 'delete') {
+                $pdo->prepare('DELETE FROM stocktake_places WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+                $flash = 'تم الحذف.'; $flashType = 'success';
+            } elseif ($action === 'delete_all') {
+                $pdo->exec('DELETE FROM stocktake_places');
+                $flash = 'تم مسح جميع الأقسام والأرفف.'; $flashType = 'success';
+            } elseif ($action === 'toggle') {
+                $pdo->prepare('UPDATE stocktake_places SET is_active=1-is_active WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+                $flash = 'تم التحديث.'; $flashType = 'success';
+            }
+        } catch (Throwable $ex) {
+            $flash = 'خطأ: ' . $ex->getMessage(); $flashType = 'error';
+        }
+    }
+}
+
+$places = $pdo->query('SELECT * FROM stocktake_places ORDER BY sort_order, id')->fetchAll();
+
+$page_title = 'أقسام وأرفف الجرد';
+$active_module = 'stocktake';
+require_once __DIR__ . '/includes/header.php';
+?>
+<div class="page-head"><h1>أقسام وأرفف الجرد</h1></div>
+
+<?php if ($flash): ?>
+    <div class="flash <?= $flashType ?>"><?= e($flash) ?></div>
+<?php endif; ?>
+
+<div class="card">
+    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:8px;">إضافة أقسام/أرفف</h3>
+    <p style="color:#555;font-size:14px;line-height:1.8;">
+        اكتب كل قسم/رف في سطر. مثلاً:<br>
+        <span style="color:var(--ink-500);">الأقلام - الرف الأول<br>الأقلام - الرف الثاني<br>الكشاكيل - الرف الأول</span>
+    </p>
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="action" value="add">
+        <textarea name="places" rows="6" required placeholder="اكتب كل مكان في سطر..."
+                  style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);"></textarea>
+        <button type="submit" class="btn" style="margin-top:10px;"><i class="ti ti-plus"></i> إضافة</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:8px;">الأماكن الحالية (<?= count($places) ?>)</h3>
+    <?php if (empty($places)): ?>
+        <div class="empty">لا توجد أماكن بعد. أضف أقسام وأرفف فوق.</div>
+    <?php else: ?>
+    <form method="post" onsubmit="return confirm('مسح جميع الأقسام والأرفف (<?= count($places) ?>) دفعة واحدة؟ مش هينفع ترجعهم.')" style="margin-bottom:14px;">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="action" value="delete_all">
+        <button type="submit" class="btn" style="background:var(--neg);"><i class="ti ti-trash"></i> مسح جميع الأقسام والأرفف</button>
+    </form>
+    <table>
+        <thead><tr><th>الترتيب</th><th>الاسم</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+        <tbody>
+        <?php foreach ($places as $p): ?>
+            <tr style="<?= $p['is_active']?'':'opacity:0.5;' ?>">
+                <td><?= (int)$p['sort_order'] ?></td>
+                <td style="font-weight:500;"><?= e($p['name']) ?></td>
+                <td><?= $p['is_active'] ? '<span style="color:var(--pos);">مفعّل</span>' : '<span style="color:#999;">مخفي</span>' ?></td>
+                <td>
+                    <div style="display:flex;gap:6px;">
+                        <form method="post" style="display:inline;">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="toggle">
+                            <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                            <button class="btn btn-sm btn-ghost"><?= $p['is_active']?'إخفاء':'تفعيل' ?></button>
+                        </form>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('حذف المكان ده؟')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                            <button style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:6px 11px;cursor:pointer;font-family:inherit;font-size:13px;">حذف</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php endif; ?>
+</div>
+
+<?php require_once __DIR__ . '/includes/footer.php'; ?>
