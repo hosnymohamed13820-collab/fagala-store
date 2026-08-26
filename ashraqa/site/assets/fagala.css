@@ -1,0 +1,615 @@
+/* =====================================================================
+ *  fagala.css - ستايل نظام الفجالة ستور (كان جوه includes/header.php)
+ *
+ *  ليه اتنقل لملف لوحده؟
+ *    وهو جوه الـHTML المتصفح مابيقدرش يكاشه، فكان بيتنزّل مع كل صفحة
+ *    (~30KB في كل مرة). دلوقتي بيتنزّل مرة واحدة ويتكاش.
+ *
+ *  مهم: لو غيّرت حاجة هنا، زوّد رقم ?v= في header.php
+ *        وزوّد VERSION في sw.js عشان الكاش يتحدّث.
+ * ===================================================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            /* ===== الكحلي: لون الأنظمة المالية الرسمية ===== */
+            --ink-900: #16233d;   /* الشريط الجانبي — كحلي عميق مش أسود */
+            --ink-800: #22334f;
+            --ink-700: #3b4e6d;
+            --ink-600: #4d6180;
+            --ink-500: #6d7f9a;   /* نص ثانوي */
+            --ink-400: #94a3b8;   /* نص خافت */
+            --ink-300: #c3ccd8;
+            --ink-200: #e2e7ee;
+
+            /* ===== التفاعل: أزرق فولاذي هادي ===== */
+            --accent:       #2f5d8a;
+            --accent-hover: #254a6f;
+            --accent-soft:  #eaf1f8;
+            --accent-ring:  rgba(47,93,138,.16);
+
+            /* ===== الأسطح ===== */
+            --bg:        #f5f6f8;   /* رمادي فاتح محايد */
+            --surface:   #ffffff;
+            --line:      #e3e7ed;
+            --line-soft: #eff2f6;
+
+            /* ===== دلالات الأرقام — مهدّاة مش فاقعة ===== */
+            --pos:       #2c6e52;
+            --pos-soft:  #e8f1ec;
+            --neg:       #9d3b38;
+            --neg-soft:  #f7eceb;
+            --warn:      #8a6524;
+            --warn-soft: #f7f0e2;
+
+            /* ===== الخطوط ===== */
+            --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
+
+            /* ===== الإيقاع ===== */
+            --r-sm: 8px;  --r: 10px;  --r-lg: 14px;
+            --shadow-sm: 0 1px 2px rgba(22,35,61,.05);
+            --shadow:    0 2px 10px rgba(22,35,61,.07);
+            --shadow-lg: 0 16px 40px rgba(22,35,61,.15);
+
+            /* توافق مع الكود القديم */
+            --purple: var(--accent);
+            --purple-dark: var(--accent-hover);
+            --sidebar: var(--ink-900);
+            --sidebar-hover: var(--ink-800);
+            --text: var(--ink-800);
+            --muted: var(--ink-500);
+        }
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--ink-800);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            font-feature-settings: 'tnum' 1;   /* أرقام بعرض ثابت: الأعمدة تتصفّ */
+        }
+
+        /* ===== الأرقام: بطل الواجهة =====
+           كل رقم في جدول أو خانة إدخال بياخد الخط الجدولي عشان الخانات
+           تتصفّ تحت بعض بالظبط — ده اللي بيريّح العين وانت بتقارن. */
+        table td, table th,
+        input[type="number"], .num, .money {
+            font-variant-numeric: tabular-nums;
+            font-feature-settings: 'tnum' 1;
+        }
+                .num-pos { color: var(--pos); }
+        .num-neg { color: var(--neg); }
+        .num-zero { color: var(--ink-300); }
+
+        /* تركيز واضح للكيبورد (إتاحة) */
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+        }
+        /* ===== التخطيط ===== */
+        .layout { display: flex; min-height: 100vh; }
+        /* ===== Sidebar ===== */
+        .sidebar {
+            width: 250px;
+            background: var(--sidebar);
+            color: var(--ink-300);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0; right: 0; bottom: 0;
+            z-index: 100;
+            transition: transform 0.25s;
+        }
+        .sidebar-brand {
+            padding: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            letter-spacing: -.01em;
+        }
+        .sidebar-brand .dot img { display:block; width:100%; height:100%; object-fit:cover; }
+        .sidebar-brand .dot {
+            width: 36px; height: 36px;
+            background: transparent;
+            border-radius: 10px;
+            overflow: hidden;
+            flex: 0 0 auto;
+            box-shadow: 0 6px 18px rgba(60,120,190,.42);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+            box-shadow: 0 3px 10px rgba(101,88,230,.35);
+        }
+        .sidebar-nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+        .nav-item {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 20px;
+            color: var(--ink-300);
+            text-decoration: none;
+            font-size: 14.5px;
+            transition: color .18s, background .18s;
+            border-right: 3px solid transparent;
+        }
+
+        /* ===== الأيقونة داخل مربّع صغير — بتاخد الوهج الملوّن ===== */
+        .nav-item i {
+            font-size: 18px;
+            width: 32px; height: 32px;
+            flex: 0 0 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            background: rgba(255,255,255,.05);
+            color: var(--ink-300);
+            transition: background .18s, color .18s, box-shadow .22s;
+        }
+
+        /* ===== المرور: وهج خفيف ===== */
+        .nav-item:hover { color: #fff; background: rgba(255,255,255,.035); }
+        .nav-item:hover i {
+            background: rgba(93,150,208,.20);
+            color: #cfe3f7;
+            box-shadow: 0 4px 14px rgba(60,120,190,.30);
+        }
+
+        /* ===== النشط: الوهج الكامل (نفس إحساس اللوجو) ===== */
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(93,150,208,.16) 0%, rgba(93,150,208,.03) 65%, transparent 100%);
+            color: #fff;
+            font-weight: 600;
+            border-right-color: #5d96d0;
+        }
+        .nav-item.active i {
+            background: linear-gradient(160deg, #4a80b8 0%, #2f5d8a 100%);
+            color: #fff;
+            box-shadow: 0 6px 18px rgba(60,120,190,.45), 0 0 0 1px rgba(255,255,255,.10) inset;
+        }
+
+        /* =================================================================
+           أنيميشن الأيقونات — كل موديول بحركة تناسب معناه.
+           بتشتغل عند المرور (hover) وعلى العنصر النشط.
+           ================================================================= */
+
+        /* الرئيسية: البلاطات بتتنفّس */
+        @keyframes ic-pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.28);} }
+        /* استعلام الأسعار: خط المسح بيعدّي */
+        @keyframes ic-scan  { 0%{transform:translateY(-5px);opacity:.35;} 50%{transform:translateY(5px);opacity:1;} 100%{transform:translateY(-5px);opacity:.35;} }
+        /* تقفيل الكاشير: القفل بيتقفل */
+        @keyframes ic-lock  { 0%,100%{transform:rotate(0) scale(1);} 30%{transform:rotate(-22deg) scale(1.15);} 65%{transform:rotate(14deg) scale(1.15);} }
+        /* العهدة/الخزينة: الفلوس بتترص */
+        @keyframes ic-stack { 0%,100%{transform:translateY(0) scale(1);} 40%{transform:translateY(-6px) scale(1.12);} }
+        /* المراجعة: علامة الصح بتتأكد */
+        @keyframes ic-check { 0%{transform:scale(1) rotate(0);} 40%{transform:scale(1.4) rotate(-12deg);} 100%{transform:scale(1) rotate(0);} }
+        /* الموارد البشرية: الناس بتتلوّح */
+        @keyframes ic-wave  { 0%,100%{transform:rotate(0);} 20%{transform:rotate(-16deg);} 60%{transform:rotate(16deg);} }
+        /* الحضور: عقرب الساعة بيلف */
+        @keyframes ic-tick  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
+        /* الوارد: الجواب بينزل في الصندوق */
+        @keyframes ic-drop  { 0%{transform:translateY(-8px) scale(.85);opacity:.3;} 60%{transform:translateY(3px) scale(1.1);opacity:1;} 100%{transform:translateY(0) scale(1);} }
+        /* الإرسال: الطيارة بتطير */
+        @keyframes ic-fly   { 0%{transform:translate(0,0) rotate(0);} 40%{transform:translate(-9px,-8px) rotate(-18deg);} 55%{transform:translate(9px,7px) rotate(-18deg);opacity:0;} 60%{transform:translate(0,0) rotate(0);opacity:0;} 100%{transform:translate(0,0);opacity:1;} }
+        /* الموردون: المحل بيتهزّ */
+        @keyframes ic-shop  { 0%,100%{transform:translateY(0) scale(1);} 30%{transform:translateY(-5px) scale(1.14);} 60%{transform:translateY(0) scale(1.05);} }
+        /* الاستلامات: الكرتونة داخلة */
+        @keyframes ic-in    { 0%{transform:translateY(-9px) scale(.85);opacity:.3;} 60%{transform:translateY(3px) scale(1.12);opacity:1;} 100%{transform:translateY(0) scale(1);} }
+        /* الجرد: الصناديق بتتعدّ */
+        @keyframes ic-count { 0%,100%{transform:rotate(0) scale(1);} 25%{transform:rotate(-15deg) scale(1.16);} 65%{transform:rotate(12deg) scale(1.16);} }
+        /* التقارير: الأعمدة بتطلع */
+        @keyframes ic-bars  { 0%,100%{transform:scaleY(1);} 45%{transform:scaleY(1.5);} }
+        /* التعريفات: المفاتيح بتتظبط */
+        @keyframes ic-tune  { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 60%{transform:translateX(5px);} }
+        /* الإعدادات: الترس بيلف */
+        @keyframes ic-gear  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
+
+        .nav-item i::before { display: inline-block !important; transform-origin: center; will-change: transform; }
+
+        .nav-item:hover i.ti-layout-dashboard::before { animation: ic-pulse .8s ease infinite; }
+        .nav-item:hover i.ti-scan::before             { animation: ic-scan 1s ease-in-out infinite; }
+        .nav-item:hover i.ti-lock-dollar::before      { animation: ic-lock .8s ease infinite; }
+        .nav-item:hover i.ti-cash::before,
+        .nav-item:hover i.ti-building-bank::before    { animation: ic-stack .8s ease infinite; }
+        .nav-item:hover i.ti-user-check::before       { animation: ic-check .7s ease infinite; }
+        .nav-item:hover i.ti-users::before            { animation: ic-wave .9s ease infinite; }
+        .nav-item:hover i.ti-clock-hour-4::before     { animation: ic-tick 1.5s linear infinite; }
+        .nav-item:hover i.ti-inbox::before            { animation: ic-drop .9s ease infinite; }
+        .nav-item:hover i.ti-send::before             { animation: ic-fly 1.1s ease infinite; }
+        .nav-item:hover i.ti-building-store::before   { animation: ic-shop .8s ease infinite; }
+        .nav-item:hover i.ti-package-import::before   { animation: ic-in .9s ease infinite; }
+        .nav-item:hover i.ti-packages::before         { animation: ic-count .9s ease infinite; }
+        .nav-item:hover i.ti-chart-bar::before        { animation: ic-bars .8s ease infinite; }
+        .nav-item:hover i.ti-adjustments::before      { animation: ic-tune .9s ease infinite; }
+        .nav-item:hover i.ti-settings::before         { animation: ic-gear 1.4s linear infinite; }
+
+        /* ===== حركات دورية للعنصر النشط =====
+           الحركة بتحصل في أول ربع الدورة والباقي سكون — يعني نبضة
+           كل 3 ثواني بدل حركة مستمرة مزعجة. */
+        @keyframes icp-pulse { 0%,25%,100%{transform:scale(1);} 12%{transform:scale(1.28);} }
+        @keyframes icp-scan  { 0%,30%,100%{transform:translateY(0);opacity:1;} 8%{transform:translateY(-5px);opacity:.4;} 20%{transform:translateY(5px);opacity:1;} }
+        @keyframes icp-lock  { 0%,25%,100%{transform:rotate(0) scale(1);} 8%{transform:rotate(-22deg) scale(1.15);} 17%{transform:rotate(14deg) scale(1.15);} }
+        @keyframes icp-stack { 0%,25%,100%{transform:translateY(0) scale(1);} 11%{transform:translateY(-6px) scale(1.12);} }
+        @keyframes icp-check { 0%,25%,100%{transform:scale(1) rotate(0);} 10%{transform:scale(1.4) rotate(-12deg);} }
+        @keyframes icp-wave  { 0%,25%,100%{transform:rotate(0);} 6%{transform:rotate(-16deg);} 16%{transform:rotate(16deg);} }
+        @keyframes icp-tick  { 0%{transform:rotate(0);} 40%,100%{transform:rotate(360deg);} }
+        @keyframes icp-drop  { 0%,28%,100%{transform:translateY(0) scale(1);opacity:1;} 5%{transform:translateY(-8px) scale(.85);opacity:.3;} 18%{transform:translateY(3px) scale(1.1);opacity:1;} }
+        @keyframes icp-fly   { 0%,32%,100%{transform:translate(0,0) rotate(0);opacity:1;} 12%{transform:translate(-9px,-8px) rotate(-18deg);} 18%{transform:translate(9px,7px) rotate(-18deg);opacity:0;} 22%{opacity:0;} }
+        @keyframes icp-shop  { 0%,25%,100%{transform:translateY(0) scale(1);} 8%{transform:translateY(-5px) scale(1.14);} 17%{transform:translateY(0) scale(1.05);} }
+        @keyframes icp-in    { 0%,28%,100%{transform:translateY(0) scale(1);opacity:1;} 5%{transform:translateY(-9px) scale(.85);opacity:.3;} 18%{transform:translateY(3px) scale(1.12);opacity:1;} }
+        @keyframes icp-count { 0%,25%,100%{transform:rotate(0) scale(1);} 7%{transform:rotate(-15deg) scale(1.16);} 17%{transform:rotate(12deg) scale(1.16);} }
+        @keyframes icp-bars  { 0%,25%,100%{transform:scaleY(1);} 12%{transform:scaleY(1.5);} }
+        @keyframes icp-tune  { 0%,25%,100%{transform:translateX(0);} 7%{transform:translateX(-5px);} 16%{transform:translateX(5px);} }
+        @keyframes icp-gear  { 0%{transform:rotate(0);} 45%,100%{transform:rotate(360deg);} }
+
+        .nav-item.active i.ti-layout-dashboard::before { animation: icp-pulse 3s ease infinite; }
+        .nav-item.active i.ti-scan::before             { animation: icp-scan  3s ease-in-out infinite; }
+        .nav-item.active i.ti-lock-dollar::before      { animation: icp-lock  3s ease infinite; }
+        .nav-item.active i.ti-cash::before,
+        .nav-item.active i.ti-building-bank::before    { animation: icp-stack 3s ease infinite; }
+        .nav-item.active i.ti-user-check::before       { animation: icp-check 3s ease infinite; }
+        .nav-item.active i.ti-users::before            { animation: icp-wave  3s ease infinite; }
+        .nav-item.active i.ti-clock-hour-4::before     { animation: icp-tick  3s ease-in-out infinite; }
+        .nav-item.active i.ti-inbox::before            { animation: icp-drop  3s ease infinite; }
+        .nav-item.active i.ti-send::before             { animation: icp-fly   3s ease infinite; }
+        .nav-item.active i.ti-building-store::before   { animation: icp-shop  3s ease infinite; }
+        .nav-item.active i.ti-package-import::before   { animation: icp-in    3s ease infinite; }
+        .nav-item.active i.ti-packages::before         { animation: icp-count 3s ease infinite; }
+        .nav-item.active i.ti-chart-bar::before        { animation: icp-bars  3s ease infinite; }
+        .nav-item.active i.ti-adjustments::before      { animation: icp-tune  3s ease infinite; }
+        .nav-item.active i.ti-settings::before         { animation: icp-gear  3s ease-in-out infinite; }
+
+        /* احترام تفضيل تقليل الحركة */
+        @media (prefers-reduced-motion: reduce) {
+            .nav-item i::before { animation: none !important; }
+        }
+
+        /* نقطة ذهبية صغيرة على العنصر النشط */
+        .nav-item.active::after {
+            content: '';
+            position: absolute;
+            left: 18px; top: 50%;
+            width: 5px; height: 5px;
+            margin-top: -2.5px;
+            border-radius: 50%;
+            background: #d6af6a;
+            box-shadow: 0 0 8px rgba(214,175,106,.75);
+        }
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .user-box { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .user-avatar {
+            width: 36px; height: 36px;
+            background: var(--purple);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-weight: 600; font-size: 15px;
+        }
+        .user-info { font-size: 13px; line-height: 1.3; }
+        .user-info .name { color: #fff; font-weight: 500; }
+        .user-info .role { color: var(--ink-500); font-size: 12px; }
+        .btn-logout {
+            display: flex; align-items: center; justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 9px;
+            background: rgba(255,255,255,0.06);
+            color: var(--ink-300);
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: background 0.15s;
+        }
+        .btn-logout:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        .btn-logout i { display:inline-block; transform-origin:center; }
+        @keyframes ic-out { 0%,100%{transform:translateX(0);} 45%{transform:translateX(-5px);} }
+        .btn-logout:hover i { animation: ic-out .55s ease; }
+        /* ===== المحتوى الرئيسي ===== */
+        .main { flex: 1; margin-right: 250px; min-width: 0; }
+        .topbar {
+            background: var(--surface);
+            padding: 15px 26px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--line);
+            position: sticky; top: 0; z-index: 50;
+        }
+        .topbar h2 {
+            font-size: 18px;
+            color: var(--ink-900);
+            font-weight: 600;
+            letter-spacing: -.015em;
+        }
+        /* الجرس والإشعارات */
+        .notif-wrap { position: relative; }
+        .notif-bell { position: relative; background: var(--accent-soft); border: none; width: 42px; height: 42px; border-radius: 12px; cursor: pointer; color: var(--accent); font-size: 20px; display: flex; align-items: center; justify-content: center; }
+        .notif-bell:hover { background: var(--line); }
+        .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .notif-panel { display: none; position: absolute; top: 52px; left: 0; width: 340px; max-width: 90vw; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(30,27,75,0.18); border: 1px solid var(--line); z-index: 100; overflow: hidden; }
+        .notif-panel.open { display: block; }
+        .notif-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-900); }
+        .notif-mark { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 400; }
+        .notif-list { max-height: 400px; overflow-y: auto; }
+        .notif-item { display: block; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); text-decoration: none; color: inherit; }
+        .notif-item:hover { background: var(--line-soft); }
+        .notif-item.unread { background: var(--accent-soft); }
+        .notif-item.unread .ni-title { font-weight: 700; }
+        .ni-title { font-size: 14px; color: var(--ink-900); }
+        .ni-body { font-size: 13px; color: var(--ink-500); margin-top: 3px; }
+        .ni-time { font-size: 11px; color: var(--ink-300); margin-top: 4px; }
+        .notif-empty { text-align: center; color: var(--ink-400); padding: 30px; font-size: 14px; }
+        .topbar .menu-toggle {
+            display: none;
+            background: none; border: none;
+            font-size: 24px; color: var(--purple);
+            cursor: pointer;
+        }
+        .content { padding: 24px; }
+        /* ===== بطاقات عامة ===== */
+        .card {
+            background: var(--surface);
+            border-radius: var(--r-lg);
+            padding: 22px;
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow-sm);
+        }
+        /* ===== سلايدر الجداول (أفقي + رأسي، مشترك لكل الصفحات) ===== */
+        .table-scroll {
+            width: 100%;
+            max-height: 72vh;               /* يتمدّد مع الشاشة بدل ارتفاع ثابت بيقصّ */
+            overflow: auto;                 /* أفقي + رأسي معاً */
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            scrollbar-color: var(--ink-300) transparent;
+            border-radius: 8px;
+        }
+        .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .table-scroll::-webkit-scrollbar-track { background: var(--line-soft); border-radius: 8px; }
+        .table-scroll::-webkit-scrollbar-thumb { background: var(--ink-300); border-radius: 8px; }
+        .table-scroll::-webkit-scrollbar-thumb:hover { background: var(--ink-400); }
+        .table-scroll table { min-width: max-content; }
+        /* الرأس يفضل ثابت فوق أثناء التمرير الرأسي */
+        .table-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: #fff;
+            box-shadow: 0 1px 0 var(--line);
+        }
+        /* =================================================================
+           طبقة الهرمية البصرية — بتمسك الكروت والأرقام في كل الشاشات.
+           الفكرة: الرقم الكبير هو اللي بيتقري الأول، واللابل يفضل هادي.
+           ================================================================= */
+
+        /* كروت الأرقام (الداشبورد: الخزائن والملخّص) */
+        .tre-box, .sum-box, .bars-card, .shifts-card {
+            background: var(--surface) !important;
+            border: 1px solid var(--line);
+            border-radius: var(--r-lg) !important;
+            box-shadow: var(--shadow-sm) !important;
+            transition: box-shadow .18s, transform .18s;
+        }
+        .tre-box:hover, .sum-box:hover { box-shadow: var(--shadow); }
+
+        /* اللابل: صغير وهادي وحروفه متباعدة شوية */
+        .tre-box .tre-top, .sum-box .l {
+            font-size: 12px !important;
+            color: var(--ink-500) !important;
+            letter-spacing: .02em;
+            font-weight: 500;
+        }
+
+        /* الرقم: هو البطل — أكبر وأتقل وحروفه متقاربة */
+        .tre-box .tre-val, .sum-box .v {
+            font-weight: 700 !important;
+            letter-spacing: -.03em;
+            line-height: 1.05;
+            font-variant-numeric: tabular-nums;
+        }
+        .tre-box .tre-val { font-size: 27px !important; }
+        .sum-box .v       { font-size: 29px !important; }
+
+        /* الكارت الرئيسي: أغمق وأوضح — ده أهم رقم في الشاشة */
+        .tre-box.main {
+            background: var(--ink-900) !important;
+            border: none !important;
+            color: #fff;
+        }
+        .tre-box.main .tre-top { color: rgba(255,255,255,.62) !important; }
+        .tre-box.main .tre-val { color: #fff !important; font-size: 34px !important; }
+        .tre-box.main .tre-cur { color: rgba(255,255,255,.5) !important; }
+
+        /* أشرطة النسب: أنحف وأنضف */
+        .bar-track {
+            height: 7px !important;
+            background: var(--line-soft) !important;
+            border: none !important;
+            border-radius: 99px !important;
+        }
+        .bar-fill { border-radius: 99px !important; }
+
+        /* عناوين الأقسام: خط علوي رفيع بدل الغمق الزيادة */
+        .section-title, .sec-label {
+            letter-spacing: -.01em;
+        }
+
+        /* الأزرار والفلاتر */
+        .period-btn {
+            background: var(--surface) !important;
+            border: 1px solid var(--line) !important;
+            color: var(--ink-700) !important;
+            border-radius: var(--r) !important;
+            transition: border-color .15s, color .15s;
+        }
+        .period-btn:hover { border-color: var(--ink-300) !important; }
+        .period-btn.active {
+            background: var(--ink-900) !important;
+            border-color: var(--ink-900) !important;
+            color: #fff !important;
+        }
+
+        /* الشارات: خفيفة ومقروءة */
+        .badge, .st-badge {
+            font-weight: 600 !important;
+            letter-spacing: .01em;
+            border-radius: 6px !important;
+        }
+
+        /* =================================================================
+           إيقاف الأصفر بتاع autofill في كروم.
+           من غير ده الخانات بتطلع صفرا فاقع وتكسر الشكل تمامًا.
+           ================================================================= */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        textarea:-webkit-autofill,
+        select:-webkit-autofill {
+            -webkit-text-fill-color: var(--ink-800) !important;
+            -webkit-box-shadow: 0 0 0 1000px var(--surface) inset !important;
+            box-shadow: 0 0 0 1000px var(--surface) inset !important;
+            caret-color: var(--ink-800);
+            transition: background-color 9999s ease-out 0s;
+        }
+
+        /* ===== خانات الإدخال: شكل موحّد ===== */
+        input[type="text"], input[type="number"], input[type="password"],
+        input[type="date"], input[type="time"], input[type="month"],
+        input[type="search"], input[type="tel"], select, textarea {
+            font-family: inherit;
+            font-size: 14px;
+            color: var(--ink-800);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--r-sm);
+            transition: border-color .15s, box-shadow .15s;
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-ring);
+            outline: none;
+        }
+        input::placeholder, textarea::placeholder { color: var(--ink-400); }
+
+        /* =================================================================
+           تهدئة التابات: التاب النشط كان مصمت بلون فاقع في كل شاشة.
+           البديل: خط سفلي واضح + نص غامق — أهدى وأدق.
+           ================================================================= */
+        .tab, .tab-btn {
+            background: transparent !important;
+            border: none !important;
+            border-bottom: 2px solid transparent !important;
+            border-radius: 0 !important;
+            color: var(--ink-500) !important;
+            font-weight: 500;
+            padding: 10px 16px !important;
+            transition: color .15s, border-color .15s;
+        }
+        .tab:hover, .tab-btn:hover { color: var(--ink-800) !important; }
+        .tab.active, .tab-btn.active {
+            background: transparent !important;
+            color: var(--ink-900) !important;
+            font-weight: 600;
+            border-bottom-color: var(--accent) !important;
+        }
+
+        /* ===== الجداول: هرمية أوضح =====
+           الصف بيتلوّن عند المرور، والأرقام بتاخد وزن أعلى من النص. */
+        tbody tr { transition: background .12s; }
+        tbody tr:hover { background: var(--line-soft); }
+        thead th {
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            color: var(--ink-500) !important;
+            letter-spacing: .02em;
+        }
+
+        /* ===== الأزرار ===== */
+        .btn, button.btn, a.btn {
+            border-radius: var(--r-sm);
+            font-family: inherit;
+            font-weight: 500;
+            transition: background .15s, border-color .15s, opacity .15s;
+        }
+        .btn:hover { opacity: .92; }
+
+        /* ===== الشارات: هادية ===== */
+        .badge, .st-badge, .status-badge {
+            font-weight: 600 !important;
+            font-size: 11.5px !important;
+            border-radius: 5px !important;
+            padding: 3px 9px !important;
+            letter-spacing: .01em;
+        }
+
+        /* =================================================================
+           حماية من التجاوز الأفقي على الموبايل.
+           من غيرها أي عنصر عريض (جدول/صف flex) بيدفع الصفحة كلها
+           وتظهر مزاحة زي ما حصل في استعلام الأسعار.
+           ================================================================= */
+        html, body { max-width: 100%; overflow-x: hidden; }
+        .content { max-width: 100%; }
+        .content img, .content video, .content canvas { max-width: 100%; height: auto; }
+
+        /* الجداول العريضة: تتمرّر لوحدها بدل ما تكسر الصفحة */
+        @media (max-width: 768px) {
+            .card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .card table { min-width: max-content; }
+        }
+
+        /* ===== زر الرجوع =====
+           كان خلفيته نفس لون الصفحة فكان شبه مختفي.
+           دلوقتي: أبيض بحدود، وعند المرور بيتملي بلون الموقع. */
+        .btn-back {
+            background: var(--surface) !important;
+            color: var(--ink-700) !important;
+            border: 1px solid var(--line) !important;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 16px;
+            transition: background .16s, color .16s, border-color .16s, box-shadow .16s;
+        }
+        .btn-back:hover {
+            background: var(--accent) !important;
+            color: #fff !important;
+            border-color: var(--accent) !important;
+            box-shadow: 0 4px 14px var(--accent-ring);
+            opacity: 1 !important;
+        }
+        .btn-back i { transition: transform .18s; }
+        .btn-back:hover i { transform: translateX(4px); }
+
+        /* ===== موبايل ===== */
+        .overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 99;
+        }
+        @media (max-width: 1024px) {
+            .sidebar { transform: translateX(100%); box-shadow: -4px 0 20px rgba(0,0,0,0.15); }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-right: 0 !important; width: 100%; }
+            .topbar .menu-toggle { display: block; }
+            .overlay.show { display: block; }
+            .content { padding: 16px; }
+        }
+        @media (max-width: 560px) {
+            .content { padding: 12px; }
+            .card { padding: 16px; }
+            .topbar { padding: 14px 16px; }
+        }
+        /* ===== رسالة الفلاش الموحدة (متاحة لكل الصفحات) =====
+           الصيغة المعتمدة: <div class="flash success|error">
+           بعض الصفحات بتكرر التعريف محليًا — مفيش مشكلة، نفس القيم. */
+        .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
+        .flash.success { background:var(--pos-soft); color:var(--pos); }
+        .flash.error   { background:var(--neg-soft); color:var(--neg); }
