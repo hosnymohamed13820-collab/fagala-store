@@ -62,6 +62,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 approve_attendance_request((int)($_POST['request_id'] ?? 0), $uid);
                 $flash = 'تم اعتماد الطلب وتطبيقه على الحضور.'; $tab='requests';
             }
+            elseif ($action === 'update_request_time') {
+                if (!can_edit_attendance_time()) {
+                    throw new RuntimeException('غير مصرّح لك بتعديل أوقات طلبات التصحيح.');
+                }
+                $rid = (int)($_POST['request_id'] ?? 0);
+                $in  = trim($_POST['requested_in'] ?? '');
+                $out = trim($_POST['requested_out'] ?? '');
+                if ($in === '' && $out === '') {
+                    throw new RuntimeException('أدخل وقت الدخول أو الخروج.');
+                }
+                $chk = $pdo->prepare('SELECT id FROM attendance_requests WHERE id = ? AND status = "pending"');
+                $chk->execute([$rid]);
+                if (!$chk->fetch()) {
+                    throw new RuntimeException('الطلب غير متاح للتعديل.');
+                }
+                $pdo->prepare('UPDATE attendance_requests SET requested_in = ?, requested_out = ? WHERE id = ? AND status = "pending"')
+                    ->execute([$in !== '' ? $in : null, $out !== '' ? $out : null, $rid]);
+                $flash = 'تم تعديل أوقات الطلب بنجاح.'; $tab='requests';
+            }
             elseif ($action === 'reject_request') {
                 $rid = (int)($_POST['request_id'] ?? 0);
                 $pdo->prepare('UPDATE attendance_requests SET status="rejected", reviewed_by=?, reviewed_at=NOW() WHERE id=? AND status="pending"')
@@ -162,6 +181,7 @@ $statusBadge = function($st) {
     .btn-sm { padding:6px 12px; font-size:13px; }
     .btn-approve { background:var(--pos); } .btn-reject { background:var(--neg); }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-cancel { background:var(--line-soft); color:#666; }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -348,6 +368,15 @@ $statusBadge = function($st) {
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td>
                         <?php if ($r['status']==='pending'): ?>
+                            <?php if (can_edit_attendance_time()): ?>
+                                <button type="button" class="btn btn-sm btn-ghost btn-edit-req"
+                                        data-id="<?= (int)$r['id'] ?>"
+                                        data-in="<?= e($r['requested_in'] ? substr($r['requested_in'],0,5) : '') ?>"
+                                        data-out="<?= e($r['requested_out'] ? substr($r['requested_out'],0,5) : '') ?>"
+                                        data-name="<?= e($r['full_name']) ?>"
+                                        data-date="<?= e($r['req_date']) ?>"
+                                        title="تعديل الأوقات"><i class="ti ti-edit"></i> تعديل</button>
+                            <?php endif; ?>
                             <form method="post" style="display:inline;">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="approve_request">
@@ -505,9 +534,49 @@ $statusBadge = function($st) {
     </div>
 </div>
 
+<?php if (can_edit_attendance_time()): ?>
+<div class="modal-bg" id="editRequestModal">
+    <div class="modal">
+        <h3>تعديل وقت طلب التصحيح</h3>
+        <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
+            الموظف: <strong id="editReqEmpName" style="color:var(--ink-900);"></strong> · التاريخ: <strong id="editReqDate" style="color:var(--ink-900);"></strong>
+        </p>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="update_request_time">
+            <input type="hidden" name="request_id" id="editReqId" value="">
+            <div class="form-row">
+                <label>وقت الحضور المطلوب</label>
+                <input type="time" name="requested_in" id="editReqIn">
+            </div>
+            <div class="form-row">
+                <label>وقت الانصراف المطلوب</label>
+                <input type="time" name="requested_out" id="editReqOut">
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn">حفظ التعديل</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('editRequestModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+    });
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-edit-req');
+        if (!btn) return;
+        var modal = document.getElementById('editRequestModal');
+        if (!modal) return;
+        document.getElementById('editReqId').value = btn.dataset.id;
+        document.getElementById('editReqIn').value = btn.dataset.in || '';
+        document.getElementById('editReqOut').value = btn.dataset.out || '';
+        document.getElementById('editReqEmpName').textContent = btn.dataset.name;
+        document.getElementById('editReqDate').textContent = btn.dataset.date;
+        modal.classList.add('open');
     });
 </script>
 

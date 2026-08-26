@@ -21,6 +21,8 @@ $editable = [
     'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
     'currency'                  => ['العملة', 'text'],
     'shortage_supervisor_id'    => ['مسؤول متابعة طلبات النواقص (بيوصله إشعار مع الأونر)', 'user'],
+    'sales_revenue_account_id'  => ['حساب إيراد المبيعات لتقفيل الورديات (رقم الحساب)', 'number'],
+    'attendance_edit_user_id'   => ['موظف مسموحله يعدّل ساعات طلبات التصحيح (مع الأونر)', 'user'],
 ];
 
 // قائمة المستخدمين لحقول نوع user
@@ -46,8 +48,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($key === 'custody_deficit_tolerance') {
                     $val = (string) max(0, (float) $val);
                 }
-                // مسؤول النواقص: رقم مستخدم (٠ = مفيش)
-                if ($key === 'shortage_supervisor_id') {
+                // مسؤول النواقص وموظف تعديل الحضور: رقم مستخدم (٠ = مفيش)
+                if ($key === 'shortage_supervisor_id' || $key === 'attendance_edit_user_id') {
+                    $val = (string) max(0, (int) $val);
+                }
+                // رقم حساب إيراد المبيعات: رقم موجب (٠ = بدون)
+                if ($key === 'sales_revenue_account_id') {
                     $val = (string) max(0, (int) $val);
                 }
                 $upd->execute([$key, $val]);

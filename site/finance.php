@@ -166,6 +166,59 @@ function cost_branches_list(): array
 }
 
 // =====================================================================
+//  الإعدادات العامة (Settings)
+// =====================================================================
+
+/**
+ * قراءة إعداد من جدول settings مع كاش محلي في الذاكرة (استعلام واحد لكل الطلب).
+ * بترجّع القيمة الافتراضية بأمان لو الجدول أو المفتاح مش موجود.
+ */
+function app_setting(string $key, ?string $default = null): ?string
+{
+    static $settings = null;
+    if ($settings === null) {
+        $settings = [];
+        try {
+            $rows = db()->query('SELECT setting_key, setting_value FROM settings')->fetchAll();
+            foreach ($rows as $r) {
+                $settings[$r['setting_key']] = $r['setting_value'];
+            }
+        } catch (Throwable $ex) {
+            return $default;
+        }
+    }
+    return array_key_exists($key, $settings) ? $settings[$key] : $default;
+}
+
+/**
+ * معرّف مسؤول متابعة طلبات النواقص (المستخدم اللي بيوصله إشعار مع الأونر).
+ * بيرجّع 0 لو مش متعيّن.
+ */
+function shortage_supervisor_id(): int
+{
+    return (int) (app_setting('shortage_supervisor_id') ?? 0);
+}
+
+/**
+ * هل المستخدم الحالي مسموحله يعدّل أوقات طلبات تصحيح الحضور؟
+ * الأونر مسموحله دايماً، أو الموظف المحدد في الإعداد attendance_edit_user_id.
+ */
+function can_edit_attendance_time(): bool
+{
+    if (function_exists('is_owner') && is_owner()) {
+        return true;
+    }
+    $allowedUserId = (int) (app_setting('attendance_edit_user_id') ?? 0);
+    if ($allowedUserId > 0 && function_exists('current_user')) {
+        $u = current_user();
+        if ($u && (int) ($u['id'] ?? 0) === $allowedUserId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// =====================================================================
 //  شجرة الحسابات (Chart of Accounts)
 //  accounts فيه parent_id — الأب NULL يعني حساب رئيسي.
 //  dynamic_src: الأبناء بيتجابوا لحظيًا من employees/suppliers.
@@ -1020,6 +1073,9 @@ function save_shift_review(
         $prev->execute([$shiftId]);
         $prevReview = $prev->fetch();
 
+        $salesSetting = app_setting('sales_revenue_account_id');
+        $salesAccountId = ($salesSetting !== null && (int)$salesSetting > 0) ? (int)$salesSetting : null;
+
         // حرّك الفرق لكل وسيلة دفع
         foreach ($methods as $m) {
             $newAmt = (float) ($accountantAmounts[$m] ?? 0);
@@ -1035,10 +1091,10 @@ function save_shift_review(
             $label = 'تقفيل وردية #' . $shiftId . ' (' . treasury_type_label($m) . ')';
             if ($delta > 0) {
                 // زيادة → دائن (دخول)
-                post_journal($treasuryId, 0, $delta, $label, $date, 'shift', $shiftId, $userId, $pdo);
+                post_journal($treasuryId, 0, $delta, $label, $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
             } else {
                 // نقص (تصحيح بعد رفض) → مدين (خروج)
-                post_journal($treasuryId, abs($delta), 0, $label . ' - تصحيح', $date, 'shift', $shiftId, $userId, $pdo);
+                post_journal($treasuryId, abs($delta), 0, $label . ' - تصحيح', $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
             }
         }
 

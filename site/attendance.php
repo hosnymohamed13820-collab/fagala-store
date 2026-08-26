@@ -363,6 +363,13 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 </script>
 
 <?php if ($employee): ?>
+<?php
+    $monthTotalHours = 0.0;
+    foreach ($myMonthAtt as $a) {
+        $monthTotalHours += (float) ($a['work_hours'] ?? 0);
+    }
+    $monthTotalDays = (int) floor($monthTotalHours / 6);
+?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل حضوري</div>
     <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
@@ -370,6 +377,18 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <input type="month" name="month" value="<?= e($myMonth) ?>" onchange="this.form.submit()"
                style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
     </form>
+
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($monthTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
+        </div>
+        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي أيام العمل</div>
+            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $monthTotalDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
+    </div>
+
     <?php if (empty($myMonthAtt)): ?>
         <div style="text-align:center;color:#bbb;padding:24px;">لا يوجد سجل لهذا الشهر.</div>
     <?php else: ?>
