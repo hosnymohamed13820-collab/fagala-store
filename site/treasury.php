@@ -196,6 +196,12 @@ if ($isAllStatement) {
     $st = $pdo->query(
         "SELECT je.*, t.name AS treasury_name, u.full_name AS by_name,
                 COALESCE(ja.name, ec.name) AS entry_code_name,
+                CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
+                CASE
+                    WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
+                    WHEN ec.id IS NOT NULL THEN (CASE WHEN ec.src_table = 'suppliers' THEN ec.name ELSE NULL END)
+                    ELSE NULL
+                END AS supplier_name,
                 eu.full_name AS edited_by_name,
                 cb.name AS cost_branch_name
          FROM journal_entries je
@@ -204,7 +210,9 @@ if ($isAllStatement) {
          LEFT JOIN users eu ON eu.id = je.edited_by
          LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
          LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
+         LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
          LEFT JOIN accounts ja ON ja.id = je.account_id
+         LEFT JOIN accounts ja_p ON ja_p.id = ja.parent_id
          LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
          LEFT JOIN branch_custody bc ON bc.id = je.ref_id
               AND je.ref_type IN ('custody_return','custody_settlement','custody_surplus','custody_deficit')
@@ -225,6 +233,12 @@ if ($isAllStatement) {
             $st = $pdo->prepare(
                 "SELECT je.*, u.full_name AS by_name,
                         COALESCE(ja.name, ec.name) AS entry_code_name,
+                        CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
+                        CASE
+                            WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
+                            WHEN ec.id IS NOT NULL THEN (CASE WHEN ec.src_table = 'suppliers' THEN ec.name ELSE NULL END)
+                            ELSE NULL
+                        END AS supplier_name,
                         eu.full_name AS edited_by_name,
                         cb.name AS cost_branch_name
                  FROM journal_entries je
@@ -232,7 +246,9 @@ if ($isAllStatement) {
                  LEFT JOIN users eu ON eu.id = je.edited_by
                  LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
+                 LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
+                 LEFT JOIN accounts ja_p ON ja_p.id = ja.parent_id
                  LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
                  LEFT JOIN branch_custody bc ON bc.id = je.ref_id
                       AND je.ref_type IN ('custody_return','custody_settlement','custody_surplus','custody_deficit')
@@ -421,7 +437,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         <?php else: ?>
         <table>
             <thead><tr>
-                <th>التاريخ</th><th>الخزينة</th><th>البيان</th><th>القيد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                <th>التاريخ</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
@@ -429,7 +445,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td><?= e($row['entry_date']) ?></td>
                         <td style="font-weight:500;"><?= e($row['treasury_name']) ?></td>
                         <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
+                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
@@ -455,7 +473,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         <table>
             <thead>
                 <tr>
-                    <th>التاريخ</th><th>البيان</th><th>القيد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                    <th>التاريخ</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
                 </tr>
             </thead>
             <tbody>
@@ -463,7 +481,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
                         <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
+                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
@@ -498,6 +518,12 @@ $opts = treasury_options($treasuries);
 // قائمة التحويل: الخزائن المركزية فقط (بدون عهد الفروع — العهد بتتم بإذن صرف/استلام)
 $centralForTransfer = array_filter($treasuries, fn($t) => $t['type'] !== 'branch_custody');
 $transferOpts = treasury_options($centralForTransfer);
+// قوائم الاستلام والصرف: الخزائن المركزية المفعّل ظهورها في الإيصالات فقط
+$receiptTreasuries = array_values(array_filter(
+    $centralForTransfer,
+    fn(array $t): bool => (int)($t['show_in_receipts'] ?? 1) === 1
+));
+$receiptOpts = treasury_options($receiptTreasuries);
 $today = date('Y-m-d');
 ?>
 
@@ -507,7 +533,7 @@ $today = date('Y-m-d');
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
-            <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $transferOpts ?></select></div>
+            <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
             <div class="form-row">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id') ?>
@@ -576,7 +602,7 @@ $today = date('Y-m-d');
 <div class="modal-bg" id="disburseModal">
     <div class="modal">
         <h3>صرف نقدية</h3>
-        <form method="post">
+        <form method="post" id="disburseForm" onsubmit="return handleDisburseSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="disbursement">
             <?php
@@ -587,90 +613,104 @@ $today = date('Y-m-d');
                الافتراضي = الرئيسية، لأنها اللي بيطلع منها معظم الصرف. */
             $disbTreasuries = array_values(array_filter(
                 $centralForTransfer,
-                static fn(array $t): bool => $t['type'] !== 'cash'
+                static fn(array $t): bool => $t['type'] !== 'cash' && (int)($t['show_in_receipts'] ?? 1) === 1
             ));
             $defaultDisb = null;
             foreach ($disbTreasuries as $t) {
                 if ($t['type'] === 'main') { $defaultDisb = (int) $t['id']; break; }
             }
             ?>
-            <div class="form-row">
-                <label>الخزينة</label>
-                <select name="treasury_id" required>
-                    <?php foreach ($disbTreasuries as $t): ?>
-                        <option value="<?= (int)$t['id'] ?>"
-                                <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
-                            <?= e($t['name']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-row">
-                <label>القيد</label>
-                <?= acctree_field('entry_code_id') ?>
-            </div>
-            <div class="form-row cost-branch-row" id="disburseCostBranchRow">
-                <label>اسم الفرع</label>
-                <select name="cost_branch_id">
-                    <option value="">— بدون تحديد —</option>
-                    <?php foreach ($costBranches as $cb): ?>
-                        <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
-            <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الصرف" aria-label="البيان"></div>
-            <div class="form-row" id="disburseNotesRow">
-                <label>ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
-            </div>
-
-            <!-- نوع الصرف: عادي / سلفة موظف / عهدة فرع -->
-            <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
-                <label>نوع الصرف</label>
-                <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
-                    <option value="normal">صرف عادي</option>
-                    <option value="advance">سلفة لموظف</option>
-                    <option value="custody">عهدة لفرع</option>
-                </select>
-
-                <!-- سلفة موظف -->
-                <div id="advanceBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="empSearch" placeholder="ابحث باسم الموظف..."
-                           oninput="filterEmps()" autocomplete="off"
-                           style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم الموظف...">
-                    <div id="empList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
-                        <?php foreach ($employees as $emp): ?>
-                            <div class="emp-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
-                                 onclick="pickEmp(this)"
-                                 style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
-                                <?= e($emp['full_name']) ?>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <input type="hidden" name="employee_id" id="empId" value="">
-                    <div id="empChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
-                </div>
-
-                <!-- عهدة فرع -->
-                <div id="custodyBox" style="display:none;margin-top:12px;">
-                    <label>الفرع</label>
-                    <select name="branch_id" id="custodyBranch">
-                        <option value="">— اختر الفرع —</option>
-                        <?php foreach ($branchesForCustody as $b): ?>
-                            <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
+            <div id="disbFormBody">
+                <div class="form-row">
+                    <label>الخزينة</label>
+                    <select name="treasury_id" required>
+                        <?php foreach ($disbTreasuries as $t): ?>
+                            <option value="<?= (int)$t['id'] ?>"
+                                    <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
+                                <?= e($t['name']) ?>
+                            </option>
                         <?php endforeach; ?>
                     </select>
-                    <p style="font-size:12px;color:var(--ink-500);margin-top:6px;">
-                        الخزينة هتنقص وعهدة الفرع هتزيد بنفس المبلغ.
-                    </p>
+                </div>
+                <div class="form-row">
+                    <label>القيد</label>
+                    <?= acctree_field('entry_code_id') ?>
+                </div>
+                <div class="form-row cost-branch-row" id="disburseCostBranchRow">
+                    <label>اسم الفرع</label>
+                    <select name="cost_branch_id">
+                        <option value="">— بدون تحديد —</option>
+                        <?php foreach ($costBranches as $cb): ?>
+                            <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+                <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
+                <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الصرف" aria-label="البيان"></div>
+                <div class="form-row" id="disburseNotesRow">
+                    <label>ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                    <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                </div>
+
+                <!-- نوع الصرف: عادي / سلفة موظف / عهدة فرع -->
+                <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
+                    <label>نوع الصرف</label>
+                    <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
+                        <option value="normal">صرف عادي</option>
+                        <option value="advance">سلفة لموظف</option>
+                        <option value="custody">عهدة لفرع</option>
+                    </select>
+
+                    <!-- سلفة موظف -->
+                    <div id="advanceBox" style="display:none;margin-top:12px;">
+                        <input type="text" id="empSearch" placeholder="ابحث باسم الموظف..."
+                               oninput="filterEmps()" autocomplete="off"
+                               style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم الموظف...">
+                        <div id="empList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                            <?php foreach ($employees as $emp): ?>
+                                <div class="emp-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
+                                     onclick="pickEmp(this)"
+                                     style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                    <?= e($emp['full_name']) ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="employee_id" id="empId" value="">
+                        <div id="empChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                    </div>
+
+                    <!-- عهدة فرع -->
+                    <div id="custodyBox" style="display:none;margin-top:12px;">
+                        <label>الفرع</label>
+                        <select name="branch_id" id="custodyBranch">
+                            <option value="">— اختر الفرع —</option>
+                            <?php foreach ($branchesForCustody as $b): ?>
+                                <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p style="font-size:12px;color:var(--ink-500);margin-top:6px;">
+                            الخزينة هتنقص وعهدة الفرع هتزيد بنفس المبلغ.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="submit" class="btn">تسجيل الصرف</button>
+                    <button type="button" class="btn btn-cancel" onclick="closeModal('disburseModal')">إلغاء</button>
                 </div>
             </div>
 
-            <div class="modal-actions">
-                <button type="submit" class="btn">تسجيل الصرف</button>
-                <button type="button" class="btn btn-cancel" onclick="closeModal('disburseModal')">إلغاء</button>
+            <!-- خطوة التأكيد قبل تسجيل الصرف -->
+            <div id="disbConfirmBox" style="display:none;">
+                <div style="background:var(--line-soft);padding:16px;border-radius:12px;border:1.5px solid var(--line);margin-bottom:18px;line-height:1.7;font-size:14px;color:var(--ink-800);">
+                    انت على وشك تسجيل مصروف بقيمة <b id="disbConfirmAmount"></b> جنيه من خزينة «<span id="disbConfirmTreasury"></span>».<br>
+                    متأكد إن المبلغ ده هيتخصم من الخزينة دي؟
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn" onclick="confirmDisburse()">تأكيد الصرف</button>
+                    <button type="button" class="btn btn-cancel" onclick="cancelDisburseConfirm()">إلغاء</button>
+                </div>
             </div>
         </form>
     </div>
@@ -737,11 +777,66 @@ $today = date('Y-m-d');
 <?= acctree_data() ?>
 <script src="assets/acctree.js?v=2"></script>
 <script>
-    function openModal(id){ document.getElementById(id).classList.add('open'); }
-    function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+    function openModal(id){
+        if (id === 'disburseModal') resetDisburseModal();
+        document.getElementById(id).classList.add('open');
+    }
+    function closeModal(id){
+        if (id === 'disburseModal') resetDisburseModal();
+        document.getElementById(id).classList.remove('open');
+    }
     document.querySelectorAll('.modal-bg').forEach(m => {
-        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+        m.addEventListener('click', e => {
+            if (e.target === m) {
+                if (m.id === 'disburseModal') resetDisburseModal();
+                m.classList.remove('open');
+            }
+        });
     });
+
+    // تأكيد صرف النقدية قبل الإرسال
+    let disbConfirmed = false;
+    function handleDisburseSubmit(e){
+        if (!disbConfirmed) {
+            e.preventDefault();
+            const form = document.getElementById('disburseForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return false;
+            }
+            const amtInput = form.querySelector('input[name="amount"]');
+            const amtVal = parseFloat(amtInput.value) || 0;
+            const formattedAmt = amtVal.toLocaleString('en-US', {
+                minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
+                maximumFractionDigits: 2
+            });
+            const treSelect = form.querySelector('select[name="treasury_id"]');
+            const treName = treSelect && treSelect.selectedIndex >= 0
+                ? treSelect.options[treSelect.selectedIndex].text.trim()
+                : '';
+            document.getElementById('disbConfirmAmount').textContent = formattedAmt;
+            document.getElementById('disbConfirmTreasury').textContent = treName;
+            document.getElementById('disbFormBody').style.display = 'none';
+            document.getElementById('disbConfirmBox').style.display = 'block';
+            return false;
+        }
+    }
+    function confirmDisburse(){
+        disbConfirmed = true;
+        document.getElementById('disburseForm').submit();
+    }
+    function cancelDisburseConfirm(){
+        disbConfirmed = false;
+        document.getElementById('disbConfirmBox').style.display = 'none';
+        document.getElementById('disbFormBody').style.display = 'block';
+    }
+    function resetDisburseModal(){
+        disbConfirmed = false;
+        const confirmBox = document.getElementById('disbConfirmBox');
+        const formBody = document.getElementById('disbFormBody');
+        if (confirmBox) confirmBox.style.display = 'none';
+        if (formBody) formBody.style.display = 'block';
+    }
 
     // نوع الصرف: إظهار/إخفاء الأقسام
     function toggleDisburseType(){

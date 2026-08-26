@@ -274,6 +274,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $tab = 'treasuries';
         }
+        elseif ($action === 'toggle_treasury_receipts') {
+            $id = (int) ($_POST['id'] ?? 0);
+            if ($id > 0) {
+                $chk = $pdo->prepare("SELECT type FROM treasuries WHERE id=?");
+                $chk->execute([$id]);
+                if ($chk->fetchColumn() === 'branch_custody') {
+                    $flash = 'خزائن عهد الفروع تُدار مع الفرع نفسه.'; $flashType = 'error';
+                } else {
+                    $pdo->prepare('UPDATE treasuries SET show_in_receipts = 1 - COALESCE(show_in_receipts, 1) WHERE id = ?')->execute([$id]);
+                    $flash = 'تم تحديث ظهور الخزينة في الإيصالات.';
+                }
+            }
+            $tab = 'treasuries';
+        }
     }
     // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار)
     $_SESSION['flash'] = $flash;
@@ -623,7 +637,7 @@ require_once __DIR__ . '/includes/header.php';
         $custodyTreasuryId = main_cash_treasury_id();          // إذون عهدة الفروع
         ?>
         <table>
-            <thead><tr><th>الاسم</th><th>النوع</th><th>الرصيد</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>الاسم</th><th>النوع</th><th>الرصيد</th><th>الحالة</th><th>الإيصالات</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($treasuries as $t): ?>
                 <?php
@@ -657,6 +671,13 @@ require_once __DIR__ . '/includes/header.php';
                     <td><span class="badge <?= $t['is_active']?'active':'inactive' ?>"><?= $t['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <?php if ($isCustody): ?>
+                            <span style="color:#bbb;font-size:13px;">—</span>
+                        <?php else: ?>
+                            <span class="badge <?= ($t['show_in_receipts'] ?? 1)?'active':'inactive' ?>"><?= ($t['show_in_receipts'] ?? 1)?'يظهر في الإيصالات':'مخفي من الإيصالات' ?></span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if ($isCustody): ?>
                             <span style="color:#bbb;font-size:13px;">تُدار مع الفرع</span>
                         <?php else: ?>
                             <button class="btn btn-sm btn-ghost"
@@ -680,6 +701,12 @@ require_once __DIR__ . '/includes/header.php';
                                 <input type="hidden" name="action" value="toggle_treasury">
                                 <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
                                 <button class="btn btn-sm btn-ghost"><?= $t['is_active']?'إيقاف':'تفعيل' ?></button>
+                            </form>
+                            <form method="post" style="display:inline;">
+                                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                <input type="hidden" name="action" value="toggle_treasury_receipts">
+                                <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+                                <button class="btn btn-sm btn-ghost"><?= ($t['show_in_receipts'] ?? 1)?'إخفاء من الإيصالات':'إظهار في الإيصالات' ?></button>
                             </form>
                         <?php endif; ?>
                     </td>
