@@ -613,3 +613,60 @@
         .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
         .flash.success { background:var(--pos-soft); color:var(--pos); }
         .flash.error   { background:var(--neg-soft); color:var(--neg); }
+
+/* =====================================================================
+   منتقي القيود الشجري (acctree.js) — 2026-08-22
+   بديل الـ<select> المسطّح اللي كان بيعرض المسار كنص طويل.
+   متحطّة هنا مش جوه الصفحات عشان الخمس شاشات تشاركها ويتكاش مرة واحدة.
+   ===================================================================== */
+.act { position:relative; }
+.act-btn {
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
+    background:var(--line-soft); font-size:14px; font-family:inherit;
+    cursor:pointer; text-align:right; color:var(--ink-800);
+}
+.act-btn:hover { border-color:var(--accent); }
+.act-label { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.act-label.act-empty { color:var(--ink-400); }
+.act-caret { color:var(--ink-400); font-size:11px; flex-shrink:0; }
+
+.act-pop {
+    position:absolute; z-index:60; top:calc(100% + 4px); right:0; left:0;
+    background:#fff; border:1.5px solid var(--line); border-radius:11px;
+    box-shadow:var(--shadow-lg); overflow:hidden;
+}
+.act-head { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line); }
+.act-search {
+    flex:1; padding:7px 10px; border:1.5px solid var(--line); border-radius:8px;
+    font-size:13px; font-family:inherit; background:var(--line-soft);
+}
+.act-search:focus { outline:none; border-color:var(--accent); background:#fff; }
+.act-clear {
+    padding:7px 11px; border:none; border-radius:8px; cursor:pointer;
+    background:var(--line-soft); color:var(--ink-600); font-size:12px; font-family:inherit;
+}
+.act-clear:hover { background:var(--neg-soft); color:var(--neg); }
+
+.act-body, .act-results { max-height:260px; overflow-y:auto; padding:4px 0; }
+.act-row {
+    display:flex; align-items:center; gap:7px; padding:7px 8px;
+    cursor:pointer; font-size:13px; color:var(--ink-800);
+}
+.act-row:hover { background:var(--bg); }
+.act-arrow { width:13px; flex-shrink:0; color:var(--accent); font-size:10px; }
+.act-dot   { width:13px; flex-shrink:0; }
+.act-dot::before {
+    content:''; display:block; width:4px; height:4px; border-radius:50%;
+    background:var(--ink-300); margin:0 4px;
+}
+.act-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.act-row.has-kids > .act-name { font-weight:600; color:var(--ink-900); }
+.act-pick {
+    opacity:0; border:none; background:var(--accent-soft); color:var(--accent-hover);
+    font-size:11px; font-family:inherit; padding:2px 9px; border-radius:20px;
+    cursor:pointer; flex-shrink:0;
+}
+.act-row:hover .act-pick { opacity:1; }
+.act-pick:hover { background:var(--accent); color:#fff; }
+.act-none { padding:18px; text-align:center; color:var(--ink-400); font-size:13px; }

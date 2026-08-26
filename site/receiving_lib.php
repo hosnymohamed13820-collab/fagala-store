@@ -16,6 +16,7 @@
  * مثلاً: 'YourDB.dbo.' أو 'dbo.' (سيبها '' لو الجداول في نفس القاعدة الافتراضية).
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/agent_lib.php';   // bal_table() — مصدر الأرصدة
 // SQLSRV_PREFIX بتتعرّف في config.php (اسم قاعدة الفرع + .dbo.)
 // الجداول ممكن تكون شهرية (مثلاً STO_TRANS_HEADER_26_06). النظام بيكتشفها كلها
 // تلقائياً ويجمّعها، فمايقعش لو شهر مش موجود، وبيشمل أي شهر جديد لوحده.
@@ -311,7 +312,7 @@ function hq_balances_ready(): bool
     static $ready = null;
     if ($ready !== null) return $ready;
     try {
-        $ready = (bool) db()->query('SELECT 1 FROM hq_balances LIMIT 1')->fetchColumn();
+        $ready = (bool) db()->query('SELECT 1 FROM ' . bal_table() . ' LIMIT 1')->fetchColumn();
     } catch (Throwable $ex) {
         $ready = false;
     }
@@ -1551,7 +1552,7 @@ function sqlsrv_fetch_item_balances(array $itemIds): array
         foreach (array_chunk($ids, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             $st = db()->prepare(
-                "SELECT item_id, balance FROM hq_balances
+                "SELECT item_id, balance FROM " . bal_table() . "
                  WHERE sto_id = " . ADMIN_STO_ID . " AND item_id IN ($ph)"
             );
             $st->execute($chunk);
@@ -1641,7 +1642,7 @@ function sqlsrv_fetch_item_balances_all(array $itemIds): array
         foreach (array_chunk($ids, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             $st = db()->prepare(
-                "SELECT item_id, sto_id, balance FROM hq_balances
+                "SELECT item_id, sto_id, balance FROM " . bal_table() . "
                  WHERE item_id IN ($ph) ORDER BY item_id, sto_id"
             );
             $st->execute($chunk);

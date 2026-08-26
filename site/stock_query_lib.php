@@ -19,6 +19,7 @@
  * =====================================================================
  */
 require_once __DIR__ . '/receiving_lib.php';
+require_once __DIR__ . '/agent_lib.php';   // bal_table() — مصدر الأرصدة
 require_once __DIR__ . '/stocktake_lib.php';   // البحث بالاسم الاحتياطي (stk_search_by_name)
 
 /**
@@ -97,7 +98,7 @@ function stock_extra_stores(array $known): array
         try {
             $rows = db()->query(
                 'SELECT b.sto_id, s.name
-                 FROM hq_balances b
+                 FROM " . bal_table() . " b
                  LEFT JOIN hq_stores s ON s.sto_id = b.sto_id
                  GROUP BY b.sto_id, s.name
                  HAVING SUM(b.balance) > 0.0001
@@ -367,7 +368,7 @@ function stock_filter_items(string $mode, int $stoId = 0, float $threshold = 0, 
                     "SELECT c.item_id
                      FROM (SELECT DISTINCT item_id FROM hq_codes WHERE item_id > 0) c
                      LEFT JOIN (SELECT item_id, SUM(balance) AS t
-                                FROM hq_balances GROUP BY item_id) b
+                                FROM " . bal_table() . " GROUP BY item_id) b
                             ON b.item_id = c.item_id
                      WHERE COALESCE(b.t, 0) $cmp
                      ORDER BY c.item_id
@@ -416,7 +417,7 @@ function stock_filter_items(string $mode, int $stoId = 0, float $threshold = 0, 
 
         try {
             $st = db()->prepare(
-                "SELECT item_id FROM hq_balances
+                "SELECT item_id FROM " . bal_table() . "
                  GROUP BY item_id
                  HAVING $having
                  ORDER BY item_id

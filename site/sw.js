@@ -27,7 +27,7 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v13'; // v13: xtable.js — فلتر وترتيب لكل جداول النظام
+const VERSION = 'v17'; // v16: acctree.js نسخة الليستين — كسر كاش ?v=2 في treasury.php و custody.php
 const CACHE = 'fagala-' + VERSION;
 
 const ASSETS = [
@@ -39,6 +39,7 @@ const ASSETS = [
   './favicon-32.png',
   './assets/app.js',
   './assets/xtable.js',
+  './assets/acctree.js',
   './assets/fagala.css',
   './assets/barcode_scanner.js',
   './assets/tabler-subset.css',

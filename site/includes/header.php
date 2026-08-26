@@ -153,6 +153,29 @@ try {
     }
 } catch (Throwable $e) { /* الجداول لسه مش موجودة */ }
 ?>
+<?php
+// ===== بانر حالة وكلاء المزامنة (للأونر والمراقب المحدد) =====
+// بيظهر مخفي ويتملّى من nag_check.php كل دورة — نفس آلية بانر النواقص.
+$agtShow = false;
+try {
+    require_once __DIR__ . '/../agent_lib.php';
+    $agtUser = current_user();
+    $agtShow = $agtUser && agent_is_watcher($agtUser);
+} catch (Throwable $e) { /* الجداول لسه مش موجودة */ }
+?>
+<?php if ($agtShow): ?>
+<div id="agtNag" style="display:none;margin-bottom:16px;">
+    <a href="settings.php#agents" id="agtNagBox" style="display:flex;align-items:center;gap:12px;
+        padding:14px 18px;border-radius:12px;text-decoration:none;font-size:14px;font-weight:600;
+        border:1.5px solid var(--warn,#d97706);background:var(--warn-soft,#fff7e6);color:var(--warn,#d97706);">
+        <i class="ti ti-alert-triangle" id="agtNagIcon"
+           style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
+        <span style="flex:1;" id="agtNagText"></span>
+        <i class="ti ti-chevron-left"></i>
+    </a>
+</div>
+<?php endif; ?>
+
 <div id="shrNag" style="<?= $shortagePending > 0 ? '' : 'display:none;' ?>margin-bottom:16px;">
     <a href="tasks.php" style="display:flex;align-items:center;gap:12px;padding:14px 18px;
         background:var(--warn-soft,#fff7e6);border:1.5px solid var(--warn,#d97706);border-radius:12px;
@@ -178,6 +201,30 @@ try {
                 var cnt = document.getElementById('shrNagCount');
                 if (cnt) cnt.textContent = n;
                 if (nag) nag.style.display = n > 0 ? '' : 'none';
+
+                // ---- حالة وكلاء المزامنة ----
+                var ag = document.getElementById('agtNag');
+                if (ag) {
+                    var lvl = j.agent_level || 'ok';
+                    if (lvl === 'ok' || !j.agent_text) {
+                        ag.style.display = 'none';
+                    } else {
+                        var red = (lvl === 'alert');
+                        var box = document.getElementById('agtNagBox');
+                        var ico = document.getElementById('agtNagIcon');
+                        var col = red ? 'var(--neg,#9d3b38)' : 'var(--warn,#d97706)';
+                        var bg  = red ? 'var(--neg-soft,#fbeceb)' : 'var(--warn-soft,#fff7e6)';
+                        if (box) {
+                            box.style.borderColor = col;
+                            box.style.background  = bg;
+                            box.style.color       = col;
+                        }
+                        if (ico) ico.style.animation = red
+                            ? 'shrPulse 0.9s ease-in-out infinite' : 'shrPulse 1.6s ease-in-out infinite';
+                        document.getElementById('agtNagText').textContent = j.agent_text;
+                        ag.style.display = '';
+                    }
+                }
                 if (n > 0) {
                     // زنّة: اهتزاز على الموبايل + نبض الجرس
                     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
