@@ -58,6 +58,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 pay_salary($empId, $month, $treasuryId, $date, $uid);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
+            elseif ($action === 'pay_salary_batch') {
+                $empIds = $_POST['employee_ids'] ?? [];
+                if (!is_array($empIds) || empty($empIds)) {
+                    throw new RuntimeException('اختر موظفاً واحداً على الأقل.');
+                }
+                $month = trim((string)($_POST['salary_month'] ?? ''));
+                if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+                    throw new RuntimeException('اختر شهراً صحيحاً.');
+                }
+                $treasuryId = (int)($_POST['treasury_id'] ?? 0);
+                if ($treasuryId <= 0) {
+                    throw new RuntimeException('اختر خزينة الصرف.');
+                }
+                $date = trim((string)($_POST['date'] ?? ''));
+                if (!strtotime($date)) {
+                    $date = date('Y-m-d');
+                }
+
+                $empNamesStmt = $pdo->query('SELECT id, full_name FROM employees');
+                $empNames = $empNamesStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+                $paidCount = 0;
+                $fails = [];
+                foreach ($empIds as $rawId) {
+                    $empId = (int) $rawId;
+                    if ($empId <= 0) continue;
+                    $name = $empNames[$empId] ?? ('موظف #' . $empId);
+                    try {
+                        pay_salary($empId, $month, $treasuryId, $date, $uid);
+                        $paidCount++;
+                    } catch (Throwable $ex) {
+                        $fails[] = $name . ' (' . $ex->getMessage() . ')';
+                    }
+                }
+
+                if ($paidCount > 0 && empty($fails)) {
+                    $flash = "تم صرف مرتبات $paidCount موظف بنجاح لشهر $month.";
+                    $flashType = 'success';
+                } elseif ($paidCount > 0 && !empty($fails)) {
+                    $flash = "تم صرف $paidCount مرتب بنجاح. وتعذر صرف " . count($fails) . " مرتب: " . implode(' · ', $fails);
+                    $flashType = 'error';
+                } else {
+                    $flash = "لم يتم صرف أي مرتب. تعذر الصرف لـ: " . implode(' · ', $fails);
+                    $flashType = 'error';
+                }
+                $tab = 'salaries';
+            }
             elseif ($action === 'approve_request') {
                 approve_attendance_request((int)($_POST['request_id'] ?? 0), $uid);
                 $flash = 'تم اعتماد الطلب وتطبيقه على الحضور.'; $tab='requests';
@@ -323,7 +370,10 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'salaries'): ?>
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($salaries) ?> مرتب</span>
-        <button class="btn" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف مرتب</button>
+        <div style="display:flex;gap:8px;">
+            <button class="btn" onclick="document.getElementById('batchSalaryModal').classList.add('open')"><i class="ti ti-users"></i> صرف لمجموعة</button>
+            <button class="btn btn-ghost" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف فردي</button>
+        </div>
     </div>
     <div class="card">
         <?php if (empty($salaries)): ?>
@@ -534,6 +584,61 @@ $statusBadge = function($st) {
     </div>
 </div>
 
+<div class="modal-bg" id="batchSalaryModal">
+    <div class="modal" style="max-width:500px;">
+        <h3>صرف رواتب مجموعة</h3>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="pay_salary_batch">
+            <div class="form-row">
+                <label>الشهر</label>
+                <input type="month" name="salary_month" value="<?= date('Y-m') ?>" required>
+            </div>
+            <div class="form-row">
+                <label>خزينة الصرف</label>
+                <select name="treasury_id" required>
+                    <option value="">— اختر الخزينة —</option>
+                    <?php foreach ($payTreasuries as $t): ?>
+                        <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>تاريخ الصرف</label>
+                <input type="date" name="date" value="<?= date('Y-m-d') ?>" required>
+            </div>
+            <div class="form-row">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <label style="margin:0;font-weight:600;">الموظفون (<?= count($empList) ?>)</label>
+                    <div style="display:flex;gap:6px;">
+                        <button type="button" class="btn btn-sm btn-ghost" id="btnBatchSelectAll" style="padding:2px 8px;font-size:12px;">تحديد الكل</button>
+                        <button type="button" class="btn btn-sm btn-ghost" id="btnBatchDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء تحديد الكل</button>
+                    </div>
+                </div>
+                <div style="max-height:200px;overflow-y:auto;border:1.5px solid var(--line);border-radius:9px;padding:8px 12px;background:var(--line-soft);">
+                    <?php foreach ($empList as $emp): ?>
+                        <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;">
+                            <input type="checkbox" name="employee_ids[]" class="batch-emp-cb" value="<?= (int)$emp['id'] ?>" style="width:auto;margin:0;">
+                            <span>
+                                <b><?= e($emp['full_name']) ?></b>
+                                <?php if (!empty($emp['branch_name'])): ?>
+                                    <span style="color:var(--ink-500);font-size:12px;"> (<?= e($emp['branch_name']) ?>)</span>
+                                <?php endif; ?>
+                                <span style="color:var(--ink-500);font-size:12px;"> — راتب <?= number_format((float)$emp['base_salary'], 2) ?></span>
+                            </span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <p style="font-size:12px;color:var(--ink-500);">سيتم صرف المرتبات للموظفين المحددين وخصم السلف والجزاءات وعجز العهدة تلقائياً لكل موظف.</p>
+            <div class="modal-actions">
+                <button type="submit" class="btn"><i class="ti ti-check"></i> صرف الرواتب المحددة</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('batchSalaryModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php if (can_edit_attendance_time()): ?>
 <div class="modal-bg" id="editRequestModal">
     <div class="modal">
@@ -578,6 +683,18 @@ $statusBadge = function($st) {
         document.getElementById('editReqDate').textContent = btn.dataset.date;
         modal.classList.add('open');
     });
+    var btnBatchAll = document.getElementById('btnBatchSelectAll');
+    var btnBatchNone = document.getElementById('btnBatchDeselectAll');
+    if (btnBatchAll) {
+        btnBatchAll.addEventListener('click', function() {
+            document.querySelectorAll('.batch-emp-cb').forEach(function(cb) { cb.checked = true; });
+        });
+    }
+    if (btnBatchNone) {
+        btnBatchNone.addEventListener('click', function() {
+            document.querySelectorAll('.batch-emp-cb').forEach(function(cb) { cb.checked = false; });
+        });
+    }
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

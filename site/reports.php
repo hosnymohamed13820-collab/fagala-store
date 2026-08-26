@@ -540,6 +540,89 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'totals'=>['إجمالي:', '', $tCnt, number_format($tDr,2), number_format($tCr,2),
                            number_format($tDr-$tCr,2)]];
 
+        case 'deficits':
+            // تقرير العجوزات — يجمع عجز الورديات وعجز العهد
+            // عجز الوردية: difference < 0 (المحصل أقل من السيستم) والقيمة ABS(difference)
+            // عجز العهدة: مسجل في custody_deficits والقيمة موجبة بالفعل
+            // تماسك الصف: اسم الكاشير من users (shifts.user_id) واسم الموظف من employees (custody_deficits.employee_id)
+            $st = $pdo->prepare(
+                "SELECT s.business_date AS deficit_date,
+                        b.name AS branch_name,
+                        u.full_name AS person_name,
+                        'عجز وردية' AS deficit_type,
+                        s.id AS shift_id,
+                        s.system_total AS system_total,
+                        (s.cash_total + s.visa_total + s.instapay_total) AS collected_total,
+                        ABS(s.difference) AS deficit_amount,
+                        s.status AS status,
+                        s.id AS sort_id
+                   FROM shifts s
+                   LEFT JOIN branches b ON b.id = s.branch_id
+                   LEFT JOIN users u ON u.id = s.user_id
+                  WHERE s.difference < 0
+                    AND s.business_date BETWEEN ? AND ?
+
+                  UNION ALL
+
+                 SELECT DATE(cd.created_at) AS deficit_date,
+                        b.name AS branch_name,
+                        e.full_name AS person_name,
+                        'عجز عهدة' AS deficit_type,
+                        NULL AS shift_id,
+                        NULL AS system_total,
+                        NULL AS collected_total,
+                        cd.amount AS deficit_amount,
+                        cd.status AS status,
+                        cd.id AS sort_id
+                   FROM custody_deficits cd
+                   LEFT JOIN branches b ON b.id = cd.branch_id
+                   LEFT JOIN employees e ON e.id = cd.employee_id
+                  WHERE DATE(cd.created_at) BETWEEN ? AND ?
+
+                  ORDER BY deficit_date DESC, sort_id DESC"
+            );
+            $st->execute([$from, $to, $from, $to]);
+
+            $rows = [];
+            $tDeficits = 0.0;
+            $stMap = [
+                'submitted'   => 'مستلمة',
+                'approved'    => 'معتمدة',
+                'rejected'    => 'مرفوضة',
+                'resubmitted' => 'معاد إرسال',
+                'pending'     => 'معلق',
+                'recovered'   => 'مسترد',
+                'waived'      => 'معفى',
+            ];
+            foreach ($st as $r) {
+                $amount = (float) $r['deficit_amount'];
+                $tDeficits += $amount;
+                $shiftNo = $r['shift_id'] !== null ? '#' . $r['shift_id'] : '—';
+                $sysTotal = $r['system_total'] !== null ? number_format((float)$r['system_total'], 2) : '—';
+                $collected = $r['collected_total'] !== null ? number_format((float)$r['collected_total'], 2) : '—';
+                $rows[] = [
+                    (string) $r['deficit_date'],
+                    $r['branch_name'] ?? '—',
+                    $r['person_name'] ?? '—',
+                    (string) $r['deficit_type'],
+                    $shiftNo,
+                    $sysTotal,
+                    $collected,
+                    number_format($amount, 2),
+                    $stMap[$r['status']] ?? $r['status'],
+                ];
+            }
+            return [
+                'title'     => 'تقرير العجوزات',
+                'headers'   => ['التاريخ', 'الفرع', 'الموظف', 'النوع', 'رقم الوردية', 'إجمالي السيستم', 'المحصّل', 'العجز', 'الحالة'],
+                'rows'      => $rows,
+                'sum_cards' => [
+                    ['label' => 'إجمالي العجز', 'col' => 7],
+                    ['label' => 'عدد الحالات',  'col' => 7, 'count' => true],
+                ],
+                'totals'    => ['', '', '', '', '', '', 'إجمالي:', number_format($tDeficits, 2), ''],
+            ];
+
         case 'suppliers':
             $st = $pdo->prepare(
                 "SELECT si.invoice_date, s.name AS supplier, si.invoice_no, si.total_amount,
@@ -623,6 +706,7 @@ if ($export && $type !== 'stocktake') {
 
 $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
+    'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','attendance'=>'الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع',
 ];
