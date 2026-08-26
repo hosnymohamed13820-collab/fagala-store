@@ -52,10 +52,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             elseif ($action === 'pay_salary') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
-                $month = $_POST['salary_month'] ?? date('Y-m');
+                $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
+                $from  = trim((string)($_POST['period_from'] ?? '')) ?: null;
+                $to    = trim((string)($_POST['period_to'] ?? '')) ?: null;
                 $treasuryId = (int)($_POST['treasury_id'] ?? 0);
-                $date = $_POST['date'] ?? date('Y-m-d');
-                pay_salary($empId, $month, $treasuryId, $date, $uid);
+                $date = trim((string)($_POST['date'] ?? date('Y-m-d')));
+                if (!strtotime($date)) {
+                    $date = date('Y-m-d');
+                }
+                $dueDaysOverride = null;
+                if (isset($_POST['due_days']) && $_POST['due_days'] !== '') {
+                    if (!is_owner()) {
+                        throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                    }
+                    $dueDaysOverride = (int) $_POST['due_days'];
+                }
+                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $dueDaysOverride);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
             elseif ($action === 'pay_salary_batch') {
@@ -67,6 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
                     throw new RuntimeException('اختر شهراً صحيحاً.');
                 }
+                $from  = trim((string)($_POST['period_from'] ?? '')) ?: null;
+                $to    = trim((string)($_POST['period_to'] ?? '')) ?: null;
                 $treasuryId = (int)($_POST['treasury_id'] ?? 0);
                 if ($treasuryId <= 0) {
                     throw new RuntimeException('اختر خزينة الصرف.');
@@ -76,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $date = date('Y-m-d');
                 }
 
+                $dueDaysArr = $_POST['due_days'] ?? [];
                 $empNamesStmt = $pdo->query('SELECT id, full_name FROM employees');
                 $empNames = $empNamesStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
@@ -85,8 +100,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $empId = (int) $rawId;
                     if ($empId <= 0) continue;
                     $name = $empNames[$empId] ?? ('موظف #' . $empId);
+                    $override = null;
+                    if (isset($dueDaysArr[$empId]) && $dueDaysArr[$empId] !== '') {
+                        if (!is_owner()) {
+                            throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                        }
+                        $override = (int) $dueDaysArr[$empId];
+                    }
                     try {
-                        pay_salary($empId, $month, $treasuryId, $date, $uid);
+                        pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $override);
                         $paidCount++;
                     } catch (Throwable $ex) {
                         $fails[] = $name . ' (' . $ex->getMessage() . ')';
@@ -193,6 +215,91 @@ if ($tab === 'attendance') {
     );
     $st->execute([$attMonth]);
     $attRows = $st->fetchAll();
+}
+
+// بيانات الرواتب وحساب المستحقات للفترة (تبويب الرواتب)
+$salFrom = $_GET['from'] ?? date('Y-m-01');
+$salTo   = $_GET['to']   ?? date('Y-m-t');
+if (!strtotime($salFrom)) $salFrom = date('Y-m-01');
+if (!strtotime($salTo))   $salTo   = date('Y-m-t');
+$salMonth = $_GET['month'] ?? date('Y-m', strtotime($salTo));
+if (!preg_match('/^\d{4}-\d{2}$/', $salMonth)) $salMonth = date('Y-m');
+
+$payrollData = [];
+if ($tab === 'salaries') {
+    // 1) ساعات العمل المجمّعة لكل موظف في الفترة المحددة (استعلام واحد)
+    $stAtt = $pdo->prepare(
+        "SELECT employee_id, COALESCE(SUM(work_hours), 0) AS total_hours
+         FROM attendance
+         WHERE att_date BETWEEN ? AND ?
+         GROUP BY employee_id"
+    );
+    $stAtt->execute([$salFrom, $salTo]);
+    $empHours = $stAtt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // 2) السلف المعلّقة مجمّعة لكل موظف (استعلام واحد)
+    $advMap = $pdo->query(
+        "SELECT employee_id, COALESCE(SUM(amount), 0)
+         FROM employee_advances WHERE status='pending'
+         GROUP BY employee_id"
+    )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // 3) الجزاءات المعلّقة مجمّعة لكل موظف (استعلام واحد)
+    $penMap = $pdo->query(
+        "SELECT employee_id, COALESCE(SUM(amount), 0)
+         FROM employee_penalties WHERE status='pending'
+         GROUP BY employee_id"
+    )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // 4) عجز العهدة المعلّق مجمّع لكل موظف (استعلام واحد)
+    $defMap = $pdo->query(
+        "SELECT employee_id, COALESCE(SUM(amount), 0)
+         FROM custody_deficits WHERE status='pending'
+         GROUP BY employee_id"
+    )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // 5) المرتبات المصروفة للشهر المختار (استعلام واحد لمعرفة حالة الصرف)
+    $stPaid = $pdo->prepare("SELECT employee_id, id FROM salaries WHERE salary_month = ?");
+    $stPaid->execute([$salMonth]);
+    $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // الحسابات في PHP بدون أي استعلام داخل الحلقة
+    foreach ($empList as $e) {
+        $empId       = (int) $e['id'];
+        $base        = (float) $e['base_salary'];
+        $hours       = (float) ($empHours[$empId] ?? 0);
+        $workDays    = (int) floor($hours / 6.0);
+        if ($workDays < 0) $workDays = 0;
+        $leaveDays   = 4;
+        $dueDaysCalc = $workDays + $leaveDays;
+        $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
+        $gross       = $dayRate * $dueDaysCalc;
+        $adv         = (float) ($advMap[$empId] ?? 0);
+        $pen         = (float) ($penMap[$empId] ?? 0);
+        $def         = (float) ($defMap[$empId] ?? 0);
+        $totalDeductions = $adv + $pen + $def;
+        $net         = $gross - $totalDeductions;
+        $isPaid      = isset($paidMonthMap[$empId]);
+
+        $payrollData[] = [
+            'id'               => $empId,
+            'full_name'        => $e['full_name'],
+            'branch_name'      => $e['branch_name'] ?? '',
+            'base_salary'      => $base,
+            'work_hours'       => $hours,
+            'work_days'        => $workDays,
+            'leave_days'       => $leaveDays,
+            'due_days_calc'    => $dueDaysCalc,
+            'day_rate'         => $dayRate,
+            'gross_salary'     => $gross,
+            'advances'         => $adv,
+            'penalties'        => $pen,
+            'deficits'         => $def,
+            'total_deductions' => $totalDeductions,
+            'net_salary'       => $net,
+            'is_paid'          => $isPaid,
+        ];
+    }
 }
 
 $page_title    = 'الموارد البشرية';
@@ -368,24 +475,191 @@ $statusBadge = function($st) {
     </div>
 
 <?php elseif ($tab === 'salaries'): ?>
-    <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($salaries) ?> مرتب</span>
-        <div style="display:flex;gap:8px;">
-            <button class="btn" onclick="document.getElementById('batchSalaryModal').classList.add('open')"><i class="ti ti-users"></i> صرف لمجموعة</button>
-            <button class="btn btn-ghost" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف فردي</button>
+    <!-- فلترة فترة الحضور -->
+    <div class="card" style="margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+            <div class="section-title" style="margin-bottom:0;">حساب واستحقاق الرواتب للفترة</div>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف فردي</button>
+            </div>
         </div>
+
+        <form method="get" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="salaries">
+            <div style="display:flex;align-items:center;gap:6px;">
+                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من تاريخ:</label>
+                <input type="date" name="from" value="<?= e($salFrom) ?>" onchange="this.form.submit()"
+                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى تاريخ:</label>
+                <input type="date" name="to" value="<?= e($salTo) ?>" onchange="this.form.submit()"
+                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">شهر المرتب:</label>
+                <input type="month" name="month" value="<?= e($salMonth) ?>" onchange="this.form.submit()"
+                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            </div>
+            <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
+        </form>
     </div>
+
+    <!-- جدول حساب المستحقات للموظفين للفترة المحددة -->
     <div class="card">
+        <form method="post" id="batchPayrollForm">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="pay_salary_batch">
+            <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
+            <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
+            <input type="hidden" name="salary_month" value="<?= e($salMonth) ?>">
+
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-weight:600;color:var(--ink-900);">المستحق للموظفين (<?= count($payrollData) ?>)</span>
+                    <button type="button" class="btn btn-sm btn-ghost" id="btnSalSelectAll" style="padding:2px 8px;font-size:12px;">تحديد الكل</button>
+                    <button type="button" class="btn btn-sm btn-ghost" id="btnSalDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء التحديد</button>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <select name="treasury_id" required style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+                        <option value="">— اختر خزينة الصرف —</option>
+                        <?php foreach ($payTreasuries as $t): ?>
+                            <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="date" name="date" value="<?= date('Y-m-d') ?>" required
+                           style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+                    <button type="submit" class="btn btn-sm" onclick="return confirm('تأكيد صرف الرواتب للموظفين المحددين؟')">
+                        <i class="ti ti-check"></i> صرف المحددين
+                    </button>
+                </div>
+            </div>
+
+            <?php if (empty($payrollData)): ?>
+                <div class="empty">لا يوجد موظفون نشطون.</div>
+            <?php else: ?>
+            <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
+                        <th>الموظف</th>
+                        <th>ساعات العمل</th>
+                        <th>أيام العمل</th>
+                        <th>أيام الإجازة</th>
+                        <th>أيام الاستحقاق</th>
+                        <th>الأساسي</th>
+                        <th>قيمة اليوم</th>
+                        <th>الاستحقاق قبل الخصم</th>
+                        <th>الخصومات</th>
+                        <th>الصافي</th>
+                        <th>إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($payrollData as $p): ?>
+                    <tr data-emp-id="<?= $p['id'] ?>" data-emp-name="<?= e($p['full_name']) ?>" data-day-rate="<?= $p['day_rate'] ?>" data-deductions="<?= $p['total_deductions'] ?>">
+                        <td>
+                            <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= $p['is_paid'] ? 'disabled' : '' ?>>
+                        </td>
+                        <td style="font-weight:500;">
+                            <?= e($p['full_name']) ?>
+                            <?php if ($p['branch_name']): ?>
+                                <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= number_format($p['work_hours'], 2) ?></td>
+                        <td><?= $p['work_days'] ?></td>
+                        <td><?= $p['leave_days'] ?></td>
+                        <td>
+                            <?php if (is_owner() && !$p['is_paid']): ?>
+                                <input type="number" min="0" max="60" name="due_days[<?= $p['id'] ?>]"
+                                       value="<?= $p['due_days_calc'] ?>"
+                                       class="due-days-input"
+                                       data-calc="<?= $p['due_days_calc'] ?>"
+                                       style="width:65px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;font-weight:600;">
+                            <?php else: ?>
+                                <span style="font-weight:600;"><?= $p['due_days_calc'] ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= number_format($p['base_salary'], 2) ?></td>
+                        <td><?= number_format($p['day_rate'], 2) ?></td>
+                        <td class="cell-gross"><?= number_format($p['gross_salary'], 2) ?></td>
+                        <td>
+                            <?php if ($p['total_deductions'] > 0): ?>
+                                <span style="color:var(--neg);font-weight:600;" title="سلف: <?= number_format($p['advances'],2) ?> | جزاءات: <?= number_format($p['penalties'],2) ?> | عجز: <?= number_format($p['deficits'],2) ?>">
+                                    <?= number_format($p['total_deductions'], 2) ?>
+                                </span>
+                            <?php else: ?>
+                                <span style="color:var(--ink-500);">0.00</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="cell-net" style="font-weight:700;<?= $p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);' ?>">
+                            <?= number_format($p['net_salary'], 2) ?>
+                        </td>
+                        <td>
+                            <?php if ($p['is_paid']): ?>
+                                <span class="badge" style="color:var(--pos);background:var(--pos-soft);">تم الصرف</span>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-sm btn-ghost btn-single-pay"
+                                        data-emp-id="<?= $p['id'] ?>"
+                                        data-emp-name="<?= e($p['full_name']) ?>"
+                                        title="صرف لهذا الموظف">صرف</button>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php endif; ?>
+        </form>
+    </div>
+
+    <!-- سجل الرواتب المصروفة سابقاً -->
+    <div class="card">
+        <div class="section-title">سجل الرواتب المصروفة (<?= count($salaries) ?>)</div>
         <?php if (empty($salaries)): ?>
             <div class="empty">لا توجد رواتب مصروفة.</div>
         <?php else: ?>
+        <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>الشهر</th><th>الموظف</th><th>الأساسي</th><th>سلف</th><th>جزاءات</th><th>عجز عهدة</th><th>الصافي</th><th>الحالة</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>الشهر</th>
+                    <th>الموظف</th>
+                    <th>فترة الحضور</th>
+                    <th>ساعات/أيام العمل</th>
+                    <th>أيام الاستحقاق</th>
+                    <th>الأساسي</th>
+                    <th>سلف</th>
+                    <th>جزاءات</th>
+                    <th>عجز عهدة</th>
+                    <th>الصافي</th>
+                    <th>الحالة</th>
+                </tr>
+            </thead>
             <tbody>
             <?php foreach ($salaries as $s): $b=$statusBadge($s['status']); ?>
                 <tr>
                     <td><?= e($s['salary_month']) ?></td>
                     <td style="font-weight:500;"><?= e($s['full_name']) ?></td>
+                    <td style="font-size:12px;color:var(--ink-500);">
+                        <?= !empty($s['period_from']) ? (e($s['period_from']) . ' ← ' . e($s['period_to'])) : '—' ?>
+                    </td>
+                    <td style="font-size:13px;">
+                        <?= $s['work_hours'] !== null ? (number_format((float)$s['work_hours'], 1) . ' س (' . (int)$s['work_days'] . ' ي)') : '—' ?>
+                    </td>
+                    <td>
+                        <?php if ($s['due_days'] !== null): ?>
+                            <b><?= (int)$s['due_days'] ?></b>
+                            <?php if ($s['due_days_calc'] !== null && (int)$s['due_days'] !== (int)$s['due_days_calc']): ?>
+                                <span style="font-size:11px;color:var(--warn);" title="المحسوب: <?= (int)$s['due_days_calc'] ?>">(معدّل)</span>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            —
+                        <?php endif; ?>
+                    </td>
                     <td><?= number_format((float)$s['base_salary'],2) ?></td>
                     <td style="color:var(--neg);"><?= number_format((float)$s['total_advances'],2) ?></td>
                     <td style="color:var(--neg);"><?= number_format((float)$s['total_penalties'],2) ?></td>
@@ -396,6 +670,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -562,19 +837,28 @@ $statusBadge = function($st) {
 
 <div class="modal-bg" id="salaryModal">
     <div class="modal">
-        <h3>صرف مرتب</h3>
+        <h3>صرف مرتب فردي</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="pay_salary">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+            <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
+            <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
+            <div class="form-row"><label>الموظف</label><select name="employee_id" id="singleSalaryEmpId" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>الشهر</label><input type="month" name="salary_month" value="<?= date('Y-m') ?>" required></div>
+            <div class="form-row"><label>شهر المرتب</label><input type="month" name="salary_month" value="<?= e($salMonth) ?>" required></div>
             <div class="form-row"><label>خزينة الصرف</label><select name="treasury_id" required>
+                <option value="">— اختر الخزينة —</option>
                 <?php foreach ($payTreasuries as $t): ?><option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option><?php endforeach; ?>
             </select></div>
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
+            <?php if (is_owner()): ?>
+                <div class="form-row">
+                    <label>أيام الاستحقاق (تعديل الأونر — اختياري)</label>
+                    <input type="number" min="0" max="60" name="due_days" id="singleSalaryDueDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
+                </div>
+            <?php endif; ?>
             <p style="font-size:12px;color:var(--ink-500);">سيتم خصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
             <div class="modal-actions">
                 <button type="submit" class="btn">صرف المرتب</button>
@@ -590,9 +874,11 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="pay_salary_batch">
+            <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
+            <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
             <div class="form-row">
                 <label>الشهر</label>
-                <input type="month" name="salary_month" value="<?= date('Y-m') ?>" required>
+                <input type="month" name="salary_month" value="<?= e($salMonth) ?>" required>
             </div>
             <div class="form-row">
                 <label>خزينة الصرف</label>
@@ -683,6 +969,75 @@ $statusBadge = function($st) {
         document.getElementById('editReqDate').textContent = btn.dataset.date;
         modal.classList.add('open');
     });
+
+    // تفويض زر الصرف الفردي من صف الجدول
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-single-pay');
+        if (!btn) return;
+        var tr = btn.closest('tr');
+        var empId = btn.dataset.empId;
+        var modal = document.getElementById('salaryModal');
+        if (!modal) return;
+        var empSelect = document.getElementById('singleSalaryEmpId');
+        if (empSelect) empSelect.value = empId;
+        var dueInput = tr ? tr.querySelector('.due-days-input') : null;
+        var modalDueInput = document.getElementById('singleSalaryDueDays');
+        if (modalDueInput && dueInput) {
+            modalDueInput.value = dueInput.value;
+        } else if (modalDueInput) {
+            modalDueInput.value = '';
+        }
+        modal.classList.add('open');
+    });
+
+    // تحديث أرقام الاستحقاق والصافي لحظياً عند تعديل أيام الاستحقاق من الأونر
+    document.querySelectorAll('.due-days-input').forEach(function(inp) {
+        inp.addEventListener('input', function() {
+            var tr = inp.closest('tr');
+            if (!tr) return;
+            var dayRate = parseFloat(tr.dataset.dayRate) || 0;
+            var deductions = parseFloat(tr.dataset.deductions) || 0;
+            var dueDays = parseFloat(inp.value) || 0;
+            var gross = dayRate * dueDays;
+            var net = gross - deductions;
+            var grossCell = tr.querySelector('.cell-gross');
+            var netCell = tr.querySelector('.cell-net');
+            if (grossCell) grossCell.textContent = gross.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+            if (netCell) {
+                netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+                netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
+            }
+        });
+    });
+
+    var salMasterCb = document.getElementById('salMasterCb');
+    if (salMasterCb) {
+        salMasterCb.addEventListener('change', function() {
+            var checked = this.checked;
+            document.querySelectorAll('.sal-emp-cb:not(:disabled)').forEach(function(cb) {
+                cb.checked = checked;
+            });
+        });
+    }
+    var btnSalAll = document.getElementById('btnSalSelectAll');
+    if (btnSalAll) {
+        btnSalAll.addEventListener('click', function() {
+            document.querySelectorAll('.sal-emp-cb:not(:disabled)').forEach(function(cb) {
+                cb.checked = true;
+            });
+            if (salMasterCb) salMasterCb.checked = true;
+        });
+    }
+    var btnSalNone = document.getElementById('btnSalDeselectAll');
+    if (btnSalNone) {
+        btnSalNone.addEventListener('click', function() {
+            document.querySelectorAll('.sal-emp-cb').forEach(function(cb) {
+                cb.checked = false;
+            });
+            if (salMasterCb) salMasterCb.checked = false;
+        });
+    }
+
     var btnBatchAll = document.getElementById('btnBatchSelectAll');
     var btnBatchNone = document.getElementById('btnBatchDeselectAll');
     if (btnBatchAll) {
