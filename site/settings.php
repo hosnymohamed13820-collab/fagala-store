@@ -230,11 +230,22 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                     <span style="font-size:11px;color:var(--ink-400);">v<?= e($a['agent_version']) ?></span>
                 <?php endif; ?>
 
-                <?php if (!empty($a['last_error'])): ?>
-                    <div style="flex:1 1 100%;font-size:11.5px;color:var(--neg);
-                         padding-top:4px;border-top:1px dashed rgba(0,0,0,.08);margin-top:2px;">
-                        آخر خطأ (<?= e((string) $a['last_error_at']) ?>): <?= e($a['last_error']) ?>
-                    </div>
+                <?php if (!empty($a['last_error'])):
+                    $errTs  = !empty($a['last_error_at']) ? strtotime((string) $a['last_error_at']) : false;
+                    $dataTs = !empty($a['last_data_at'])  ? strtotime((string) $a['last_data_at'])  : false;
+                    $isHist = ($errTs !== false && $dataTs !== false && $dataTs > $errTs);
+                ?>
+                    <?php if ($isHist): ?>
+                        <div style="flex:1 1 100%;font-size:11.5px;color:var(--ink-500);
+                             padding-top:4px;border-top:1px dashed rgba(0,0,0,.08);margin-top:2px;">
+                            آخر خطأ (عدّى) — <?= e((string) $a['last_error_at']) ?>: <?= e($a['last_error']) ?>
+                        </div>
+                    <?php else: ?>
+                        <div style="flex:1 1 100%;font-size:11.5px;color:var(--neg);
+                             padding-top:4px;border-top:1px dashed rgba(0,0,0,.08);margin-top:2px;">
+                            آخر خطأ<?= !empty($a['last_error_at']) ? ' (' . e((string) $a['last_error_at']) . ')' : '' ?>: <?= e($a['last_error']) ?>
+                        </div>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>
