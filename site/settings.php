@@ -21,7 +21,12 @@ $editable = [
     'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
     'currency'                  => ['العملة', 'text'],
     'shortage_supervisor_id'    => ['مسؤول متابعة طلبات النواقص (بيوصله إشعار مع الأونر)', 'user'],
-    'sales_revenue_account_id'  => ['حساب إيراد المبيعات لتقفيل الورديات (رقم الحساب)', 'number'],
+    'agent_watcher_id'          => ['مسؤول متابعة وكلاء المزامنة (بيوصله تنبيه مع الأونر)', 'user'],
+    'agent_warn_min'            => ['تنبيه أصفر لو وكيل سكت (بالدقايق)', 'number'],
+    'agent_alert_min'           => ['تنبيه أحمر لو وكيل سكت (بالدقايق)', 'number'],
+    'agent_watch_from'          => ['مراقبة الوكلاء تبدأ الساعة', 'time'],
+    'agent_watch_to'            => ['مراقبة الوكلاء تنتهي الساعة', 'time'],
+    'sales_revenue_account_id'  => ['حساب «إيراد مبيعات» اللي الورديات بتترحّل عليه (رقم الحساب)', 'number'],
     'attendance_edit_user_id'   => ['موظف مسموحله يعدّل ساعات طلبات التصحيح (مع الأونر)', 'user'],
 ];
 
@@ -48,13 +53,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($key === 'custody_deficit_tolerance') {
                     $val = (string) max(0, (float) $val);
                 }
-                // مسؤول النواقص وموظف تعديل الحضور: رقم مستخدم (٠ = مفيش)
-                if ($key === 'shortage_supervisor_id' || $key === 'attendance_edit_user_id') {
+                // مسؤول النواقص وموظف تعديل الحضور ومسؤول الوكلاء:
+                // رقم مستخدم (٠ = مفيش)
+                if ($key === 'shortage_supervisor_id' || $key === 'agent_watcher_id'
+                    || $key === 'attendance_edit_user_id') {
                     $val = (string) max(0, (int) $val);
                 }
-                // رقم حساب إيراد المبيعات: رقم موجب (٠ = بدون)
+                // حساب إيراد المبيعات: رقم حساب موجب (٠ = بدون، والورديات
+                // تترحّل من غير حساب زي الأول بالظبط)
                 if ($key === 'sales_revenue_account_id') {
                     $val = (string) max(0, (int) $val);
+                }
+                // عتبات الوكلاء: دقيقة على الأقل، والأحمر مايبقاش أقل من الأصفر
+                // (لو الأحمر أقل، التنبيه الأصفر عمره ما هيظهر)
+                if ($key === 'agent_warn_min') {
+                    $val = (string) max(1, (int) $val);
+                }
+                if ($key === 'agent_alert_min') {
+                    $warn = max(1, (int) ($_POST['agent_warn_min'] ?? 20));
+                    $val  = (string) max($warn, (int) $val);
                 }
                 $upd->execute([$key, $val]);
             }
@@ -145,25 +162,116 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 </div>
 
-<!-- فحص اتصال قاعدة بيانات الأصناف (ODBC) -->
-<?php $conn = sqlsrv_check(); ?>
-<div class="card">
-    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:12px;">اتصال قاعدة بيانات الأصناف (ODBC)</h3>
-    <div style="display:flex;align-items:center;gap:12px;padding:14px;border-radius:10px;
-         background:<?= $conn['ok'] ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;">
-        <span style="font-size:24px;"><?= $conn['ok'] ? '✅' : '❌' ?></span>
-        <div>
-            <div style="font-weight:700;color:<?= $conn['ok'] ? 'var(--pos)' : 'var(--neg)' ?>;">
-                <?= $conn['ok'] ? 'الاتصال شغّال' : 'الاتصال غير شغّال' ?>
-            </div>
-            <div style="font-size:13px;color:#666;margin-top:4px;"><?= e($conn['message']) ?></div>
-        </div>
-    </div>
-    <p style="font-size:13px;color:var(--ink-500);margin-top:12px;">
-        الإعداد: DSN = <strong><?= e(ODBC_DSN) ?></strong> · المستخدم = <strong><?= e(ODBC_USER) ?></strong>.
-        لتغييرها عدّل config.php. (يُستخدم في: استعلام الأسعار، الاستلامات، الجرد).
+<!-- =====================================================================
+     حالة وكلاء المزامنة — بديل فحص الجسر
+     الجسر اتشال: النظام بقى بيقرا من نسخة محلية بيغذّيها الوكلاء،
+     فالسؤال المهم بقى "الوكلاء شغالين؟" مش "الجسر رادّ؟".
+     ===================================================================== -->
+<?php
+require_once __DIR__ . '/agent_lib.php';
+$agents   = agent_list();
+$inWindow = agent_in_window();
+$wMin     = agent_cfg_int('agent_warn_min', 20);
+$aMin     = agent_cfg_int('agent_alert_min', 60);
+?>
+<div class="card" id="agents">
+    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:4px;">وكلاء المزامنة</h3>
+    <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;">
+        كل وكيل بيبعت نبضة كل دقيقتين حتى لو مفيش بيع جديد — فالسكوت معناه
+        إن الجهاز أو الوكيل واقف، مش إن الشغل هادي.
+        <?php if (!$inWindow): ?>
+            <br><b style="color:var(--ink-600);">دلوقتي برّه وقت المراقبة
+            (<?= e(setting('agent_watch_from', '10:00')) ?> –
+             <?= e(setting('agent_watch_to', '00:30')) ?>) — مفيش تنبيهات.</b>
+        <?php else: ?>
+            <br>أصفر بعد <?= $wMin ?> دقيقة · أحمر بعد <?= $aMin ?> دقيقة.
+        <?php endif; ?>
     </p>
-    <a href="settings.php" class="btn" style="margin-top:12px;display:inline-block;text-decoration:none;">إعادة الفحص</a>
+
+    <?php if (!$agents): ?>
+        <div style="padding:16px;background:var(--warn-soft);border-radius:10px;font-size:13px;">
+            جدول الوكلاء لسه ما اتعملش. شغّل <code>upgrade_agents.sql</code> الأول.
+        </div>
+    <?php else: ?>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+        <?php foreach ($agents as $a):
+            $st = $a['status'];
+            $col = $st === AGENT_ALERT ? 'var(--neg,#9d3b38)'
+                 : ($st === AGENT_WARN ? 'var(--warn,#8a6524)'
+                 : ($st === AGENT_OFF  ? 'var(--ink-400,#94a3b8)' : 'var(--pos,#2f6b4f)'));
+            $bg  = $st === AGENT_ALERT ? 'var(--neg-soft,#fbeceb)'
+                 : ($st === AGENT_WARN ? 'var(--warn-soft,#f7f0e2)'
+                 : ($st === AGENT_OFF  ? 'var(--line-soft,#eff2f6)' : 'var(--pos-soft,#e8f3ec)'));
+            $dot = $st === AGENT_ALERT ? '⛔' : ($st === AGENT_WARN ? '⚠️' : ($st === AGENT_OFF ? '🌙' : '✅'));
+        ?>
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;
+                 border-radius:10px;background:<?= $bg ?>;flex-wrap:wrap;">
+                <span style="font-size:17px;"><?= $dot ?></span>
+                <b style="min-width:70px;color:<?= $col ?>;"><?= e($a['label']) ?></b>
+
+                <span style="font-size:12.5px;color:var(--ink-600);flex:1;min-width:170px;">
+                    <?php if ($a['last_beat_at'] === null): ?>
+                        <b style="color:<?= $col ?>;">عمره ما بعت</b> — لسه ما اتركّبش
+                    <?php else: ?>
+                        آخر نبضة: <b style="color:<?= $col ?>;"><?= e(agent_ago($a['quiet_min'])) ?></b>
+                        <?php if ($a['data_min'] !== null): ?>
+                            · آخر داتا: <?= e(agent_ago($a['data_min'])) ?>
+                            (<?= (int) $a['last_rows'] ?> صف)
+                        <?php else: ?>
+                            · <span style="color:var(--ink-400);">لسه ما بعتش داتا</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </span>
+
+                <?php if (!empty($a['host_name'])): ?>
+                    <code style="font-size:11px;color:var(--ink-400);"><?= e($a['host_name']) ?></code>
+                <?php endif; ?>
+                <?php if (!empty($a['agent_version'])): ?>
+                    <span style="font-size:11px;color:var(--ink-400);">v<?= e($a['agent_version']) ?></span>
+                <?php endif; ?>
+
+                <?php if (!empty($a['last_error'])): ?>
+                    <div style="flex:1 1 100%;font-size:11.5px;color:var(--neg);
+                         padding-top:4px;border-top:1px dashed rgba(0,0,0,.08);margin-top:2px;">
+                        آخر خطأ (<?= e((string) $a['last_error_at']) ?>): <?= e($a['last_error']) ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php
+    $balSrc  = setting('balance_source', 'hq');
+    $balNow  = bal_table();
+    $onBr    = ($balNow !== 'hq_balances');
+    ?>
+    <div style="margin-top:14px;padding:12px 14px;border-radius:10px;
+         background:<?= $onBr ? 'var(--pos-soft,#e8f3ec)' : 'var(--line-soft,#eff2f6)' ?>;
+         font-size:13px;">
+        <b>مصدر الأرصدة:</b>
+        <?php if ($onBr): ?>
+            <span style="color:var(--pos);font-weight:700;">الفروع مباشرة</span> —
+            الرصيد بيوصل لحظة البيع من غير ما يستنى الترحيل.
+        <?php else: ?>
+            <span style="color:var(--ink-600);font-weight:700;">الإدارة</span> —
+            الرصيد بيستنى الترحيل، فممكن يكون متأخر.
+            <?php if ($balSrc === 'branch'): ?>
+                <br><b style="color:var(--warn);">الإعداد على «الفروع» بس الجدول لسه فاضي —
+                رجعنا للإدارة تلقائياً لحد ما أول وكيل فرع يبعت.</b>
+            <?php endif; ?>
+        <?php endif; ?>
+        <br>
+        <span style="font-size:12px;color:var(--ink-500);">
+            للتبديل: غيّر <code>balance_source</code> في جدول <code>settings</code>
+            لـ <code>branch</code> أو <code>hq</code>. الرجوع فوري ومفيش داتا بتضيع.
+        </span>
+    </div>
+
+    <a href="settings.php#agents" class="btn"
+       style="margin-top:14px;display:inline-block;text-decoration:none;">
+        <i class="ti ti-refresh"></i> تحديث
+    </a>
 </div>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

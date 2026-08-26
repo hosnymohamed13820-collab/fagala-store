@@ -165,51 +165,23 @@ function cost_branches_list(): array
     }
 }
 
-// =====================================================================
-//  الإعدادات العامة (Settings)
-// =====================================================================
-
-/**
- * قراءة إعداد من جدول settings مع كاش محلي في الذاكرة (استعلام واحد لكل الطلب).
- * بترجّع القيمة الافتراضية بأمان لو الجدول أو المفتاح مش موجود.
- */
-function app_setting(string $key, ?string $default = null): ?string
-{
-    static $settings = null;
-    if ($settings === null) {
-        $settings = [];
-        try {
-            $rows = db()->query('SELECT setting_key, setting_value FROM settings')->fetchAll();
-            foreach ($rows as $r) {
-                $settings[$r['setting_key']] = $r['setting_value'];
-            }
-        } catch (Throwable $ex) {
-            return $default;
-        }
-    }
-    return array_key_exists($key, $settings) ? $settings[$key] : $default;
-}
-
-/**
- * معرّف مسؤول متابعة طلبات النواقص (المستخدم اللي بيوصله إشعار مع الأونر).
- * بيرجّع 0 لو مش متعيّن.
- */
-function shortage_supervisor_id(): int
-{
-    return (int) (app_setting('shortage_supervisor_id') ?? 0);
-}
-
 /**
  * هل المستخدم الحالي مسموحله يعدّل أوقات طلبات تصحيح الحضور؟
  * الأونر مسموحله دايماً، أو الموظف المحدد في الإعداد attendance_edit_user_id.
+ *
+ * ⚠️ بتقرا بـ setting() من config.php — مش دالة جديدة.
+ *    config.php مش في المستودع (أسرار) بس **فيه دوال شغّالة** كمان،
+ *    وأهمها setting() و shortage_supervisor_id() في shortage_lib.php.
+ *    أي «دالة ناقصة» مش لاقيها في المستودع: دوّر في config.php على
+ *    السيرفر الأول قبل ما تكتب واحدة جديدة — تعريف مكرر = Fatal error.
  */
 function can_edit_attendance_time(): bool
 {
-    if (function_exists('is_owner') && is_owner()) {
+    if (is_owner()) {
         return true;
     }
-    $allowedUserId = (int) (app_setting('attendance_edit_user_id') ?? 0);
-    if ($allowedUserId > 0 && function_exists('current_user')) {
+    $allowedUserId = (int) setting('attendance_edit_user_id', 0);
+    if ($allowedUserId > 0) {
         $u = current_user();
         if ($u && (int) ($u['id'] ?? 0) === $allowedUserId) {
             return true;
@@ -1073,8 +1045,10 @@ function save_shift_review(
         $prev->execute([$shiftId]);
         $prevReview = $prev->fetch();
 
-        $salesSetting = app_setting('sales_revenue_account_id');
-        $salesAccountId = ($salesSetting !== null && (int)$salesSetting > 0) ? (int)$salesSetting : null;
+        // حساب «إيراد مبيعات» من الإعدادات — مش رقم مكتوب في الكود، عشان
+        // لو شجرة الحسابات اتغيّرت مايبوظش الترحيل في صمت. فاضي = null =
+        // السلوك القديم بالظبط.
+        $salesAccountId = ((int) setting('sales_revenue_account_id', 0)) ?: null;
 
         // حرّك الفرق لكل وسيلة دفع
         foreach ($methods as $m) {
