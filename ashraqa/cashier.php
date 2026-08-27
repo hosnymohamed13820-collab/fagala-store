@@ -465,13 +465,15 @@ require_once __DIR__ . '/includes/header.php';
         .denom-line input { width:70px; }
     }
     /* بطاقات ملخص اليوم */
-    .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
-    @media (max-width:900px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
+    .stat-cards { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:18px; }
+    @media (max-width:1100px){ .stat-cards { grid-template-columns:repeat(4,1fr); } }
+    @media (max-width:760px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
     @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
     .stat-card { background:#fff; border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
     .stat-card .value { font-size:17px; font-weight:700; color:var(--accent); }
     .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
+    .stat-card .value.exp-val { color:var(--neg); }
     .stat-card .sub { font-size:11px; color:#bbb; margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
@@ -561,7 +563,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · الفرق.
+<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · المصروفات · الفرق.
          كارت «الفيزا + الإنستا» = الوسائل غير النقدية، الكاش مش داخل فيه. */ ?>
 <div class="stat-cards">
     <div class="stat-card">
@@ -587,6 +589,11 @@ require_once __DIR__ . '/includes/header.php';
     <div class="stat-card">
         <div class="label">الفيزا + الإنستا</div>
         <div class="value"><?= number_format($sumVI,2) ?></div>
+        <div class="sub">ج.م</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">إجمالي المصروفات</div>
+        <div class="value exp-val"><?= number_format($sumExp,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="stat-card">
@@ -715,15 +722,11 @@ require_once __DIR__ . '/includes/header.php';
         <div class="ct-pane" id="pane_expenses">
             <div class="pay-with-summary">
                 <div class="pay-method">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                        <h4 style="margin:0;">مصروفات من الدرج</h4>
-                        <button type="button" class="btn btn-sm btn-ghost" onclick="addExpRow()" style="padding:4px 10px;font-size:12px;">
-                            <i class="ti ti-plus"></i> إضافة سطر
-                        </button>
-                    </div>
-                    <table class="pay-table" style="width:100%;border-collapse:collapse;">
+                    <h4>مصروفات من الدرج</h4>
+                    <table class="repeatable pay-table" style="width:100%;border-collapse:collapse;">
                         <thead>
                             <tr>
+                                <th style="width:34px;text-align:center;">#</th>
                                 <th style="width:170px;">تصنيف المصروف</th>
                                 <th style="width:110px;">المبلغ</th>
                                 <th>ملاحظة / بيان</th>
@@ -731,7 +734,28 @@ require_once __DIR__ . '/includes/header.php';
                             </tr>
                         </thead>
                         <tbody id="expRowsTbody">
-                            <!-- Dynamic rows -->
+                            <?php for ($i = 1; $i <= $rowsPerMethod; $i++): ?>
+                                <tr>
+                                    <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
+                                    <td style="padding:4px;">
+                                        <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
+                                    </td>
+                                    <td style="padding:4px;">
+                                        <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
+                                               placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
+                                    </td>
+                                    <td style="padding:4px;">
+                                        <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
+                                               style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;">
+                                    </td>
+                                    <td style="padding:4px;text-align:center;">
+                                        <button type="button" onclick="removeExpRow(this)" title="حذف المصروف"
+                                                style="background:none;border:none;cursor:pointer;color:var(--neg);font-size:16px;padding:4px 6px;border-radius:6px;line-height:1;">
+                                            <i class="ti ti-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endfor; ?>
                         </tbody>
                     </table>
                     <div style="margin-top:10px;">
@@ -801,12 +825,13 @@ require_once __DIR__ . '/includes/header.php';
 <!-- قالب سطر المصروف الديناميكي -->
 <template id="expRowTpl">
     <tr>
+        <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"></td>
         <td style="padding:4px;">
             <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
         </td>
         <td style="padding:4px;">
-            <input type="number" step="0.01" min="0.01" name="exp_amount[]" class="amt exp-amt"
-                   placeholder="0.00" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
+            <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
+                   placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
         </td>
         <td style="padding:4px;">
             <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
@@ -1021,6 +1046,9 @@ require_once __DIR__ . '/includes/header.php';
         const tbody = document.getElementById('expRowsTbody');
         const clone = tpl.content.cloneNode(true);
         const tr = clone.querySelector('tr');
+        const num = tbody.querySelectorAll('tr').length + 1;
+        const numCell = tr.querySelector('.exp-row-num');
+        if (numCell) numCell.textContent = num;
 
         if (amount) {
             tr.querySelector('.exp-amt').value = amount;
@@ -1045,7 +1073,14 @@ require_once __DIR__ . '/includes/header.php';
     function removeExpRow(btn) {
         const tr = btn.closest('tr');
         if (tr) {
+            const tbody = tr.closest('tbody');
             tr.remove();
+            if (tbody) {
+                tbody.querySelectorAll('tr').forEach((row, idx) => {
+                    const cell = row.querySelector('.exp-row-num');
+                    if (cell) cell.textContent = idx + 1;
+                });
+            }
             calc();
         }
     }
@@ -1173,10 +1208,12 @@ require_once __DIR__ . '/includes/header.php';
                 const tbody = document.getElementById('expRowsTbody');
                 tbody.innerHTML = '';
                 const exps = rejectedExpenses[id] || [];
-                if (exps.length > 0) {
-                    exps.forEach(ex => {
-                        addExpRow(ex.account_id, ex.amount, ex.note);
-                    });
+                exps.forEach(ex => {
+                    addExpRow(ex.account_id, ex.amount, ex.note);
+                });
+                const currentCount = tbody.querySelectorAll('tr').length;
+                for (let i = currentCount + 1; i <= 10; i++) {
+                    addExpRow();
                 }
 
                 document.getElementById('cancelEdit').style.display = 'inline-flex';
@@ -1194,6 +1231,9 @@ require_once __DIR__ . '/includes/header.php';
         const tbody = document.getElementById('expRowsTbody');
         if (tbody) {
             tbody.innerHTML = '';
+            for (let i = 1; i <= 10; i++) {
+                addExpRow();
+            }
         }
         calc();
         closeShiftModal();
