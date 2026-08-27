@@ -81,8 +81,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
               WHERE je.entry_date BETWEEN ? AND ? AND $accCond $branchCond
-              ORDER BY je.entry_date, je.id
-              LIMIT 500"
+              ORDER BY je.entry_date, je.id"
         );
         $st->execute($args);
 
@@ -1851,7 +1850,16 @@ function jeToggle(tr) {
             tr.dataset.loaded = '1';
             return;
         }
-        var h = '<div class="acc-inner"><table><thead><tr>' +
+        var exportUrl = 'journal_account_export.php?acc=' + encodeURIComponent(tr.dataset.acc) +
+                        '&branch=' + encodeURIComponent(branchId) +
+                        '&from='   + encodeURIComponent(p.get('from') || '') +
+                        '&to='     + encodeURIComponent(p.get('to')   || '');
+        var h = '<div class="acc-inner">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">' +
+                '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
+                '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
+                '</div>' +
+                '<div style="overflow-x:auto;"><table><thead><tr>' +
                 '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                 '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                 '</tr></thead><tbody>';
@@ -1871,7 +1879,8 @@ function jeToggle(tr) {
                  '<td>' + f(r.balance) + '</td><td>' + esc(r.by) + '</td>' +
                  '<td>' + (r.notes ? esc(r.notes) : '—') + '</td></tr>';
         });
-        cell.innerHTML = h + '</tbody></table></div>';
+        h += '</tbody></table></div></div>';
+        cell.innerHTML = h;
         tr.dataset.loaded = '1';
     }).catch(function (ex) {
         cell.innerHTML = '<div class="acc-msg">' + (ex.message || 'الاتصال فشل') + '</div>';

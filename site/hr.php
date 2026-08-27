@@ -251,7 +251,50 @@ $bonuses = $pdo->query(
     "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
 )->fetchAll();
 $penalties = $pdo->query(
-    "SELECT p.*, e.full_name FROM employee_penalties p JOIN employees e ON e.id=p.employee_id ORDER BY p.id DESC LIMIT 100"
+    "SELECT p.penalty_date AS deduction_date,
+            e.full_name,
+            'جزاء' AS deduction_type,
+            b.name AS branch_name,
+            p.amount,
+            p.reason,
+            p.status,
+            p.id AS sort_id
+       FROM employee_penalties p
+       JOIN employees e ON e.id = p.employee_id
+       LEFT JOIN branches b ON b.id = e.branch_id
+
+      UNION ALL
+
+     SELECT DATE(cd.created_at) AS deduction_date,
+            e.full_name,
+            'عجز عهدة' AS deduction_type,
+            b.name AS branch_name,
+            cd.amount,
+            COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
+            cd.status,
+            cd.id AS sort_id
+       FROM custody_deficits cd
+       LEFT JOIN employees e ON e.id = cd.employee_id
+       LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
+
+      UNION ALL
+
+     SELECT s.business_date AS deduction_date,
+            COALESCE(e.full_name, u.full_name, '—') AS full_name,
+            'عجز وردية' AS deduction_type,
+            b.name AS branch_name,
+            ABS(s.difference) AS amount,
+            COALESCE(s.shift_name, 'عجز تقفيل وردية') AS reason,
+            s.status,
+            s.id AS sort_id
+       FROM shifts s
+       LEFT JOIN branches b ON b.id = s.branch_id
+       LEFT JOIN users u ON u.id = s.user_id
+       LEFT JOIN employees e ON e.user_id = u.id
+      WHERE s.difference < 0
+
+      ORDER BY deduction_date DESC, sort_id DESC
+      LIMIT 100"
 )->fetchAll();
 $leaves = $pdo->query(
     "SELECT l.*, e.full_name FROM employee_leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.id DESC LIMIT 100"
@@ -414,8 +457,10 @@ $statusBadge = function($st) {
     $m = ['pending'=>['معلّق','var(--warn)','var(--warn-soft)'],'deducted'=>['مخصوم','var(--pos)','var(--pos-soft)'],
           'approved'=>['معتمد','var(--pos)','var(--pos-soft)'],'rejected'=>['مرفوض','var(--neg)','var(--neg-soft)'],
           'paid'=>['مدفوع','var(--pos)','var(--pos-soft)'],'draft'=>['مسودة','#666','#eee'],
-          'recovered'=>['مسترد','var(--pos)','var(--pos-soft)']];
-    return $m[$st] ?? [$st,'#666','#eee'];
+          'recovered'=>['مسترد','var(--pos)','var(--pos-soft)'],
+          'submitted'=>['مستلم','var(--accent)','var(--accent-soft)'],
+          'resubmitted'=>['معاد إرسال','var(--warn)','var(--warn-soft)']];
+    return $m[$st] ?? [$st ?: '—','#666','#eee'];
 };
 ?>
 
@@ -592,20 +637,23 @@ $statusBadge = function($st) {
 
 <?php elseif ($tab === 'penalties'): ?>
     <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($penalties) ?> جزاء</span>
+        <span style="color:var(--ink-500);font-size:14px;"><?= count($penalties) ?> استقطاع/جزاء</span>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
     </div>
     <div class="card">
         <?php if (empty($penalties)): ?>
-            <div class="empty">لا توجد جزاءات.</div>
+            <div class="empty">لا توجد استقطاعات أو جزاءات.</div>
         <?php else: ?>
+        <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
             <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
                 <tr>
-                    <td><?= e($p['penalty_date']) ?></td>
+                    <td><?= e($p['deduction_date']) ?></td>
                     <td style="font-weight:500;"><?= e($p['full_name']) ?></td>
+                    <td><span class="badge" style="background:var(--line-soft);color:var(--ink-800);"><?= e($p['deduction_type']) ?></span></td>
+                    <td><?= e($p['branch_name'] ?? '—') ?></td>
                     <td><?= number_format((float)$p['amount'],2) ?></td>
                     <td><?= e($p['reason'] ?? '—') ?></td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
@@ -613,6 +661,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 

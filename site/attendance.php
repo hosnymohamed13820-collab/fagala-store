@@ -106,8 +106,21 @@ if (isset($_SESSION['flash'])) {
 // سجل اليوم
 $today = date('Y-m-d');
 $todayAtt = null;
-$myMonthAtt = [];
-$myMonth = $_GET['month'] ?? date('Y-m');
+$myPeriodAtt = [];
+
+// فترة سجل الحضور للموظف (افتراضياً الشهر الحالي)
+$attFrom = $_GET['from'] ?? null;
+$attTo   = $_GET['to']   ?? null;
+if ($attFrom !== null && $attTo !== null) {
+    if (!strtotime($attFrom)) $attFrom = date('Y-m-01');
+    if (!strtotime($attTo))   $attTo   = date('Y-m-t');
+} elseif (isset($_GET['month']) && preg_match('/^\d{4}-\d{2}$/', (string)$_GET['month'])) {
+    $attFrom = $_GET['month'] . '-01';
+    $attTo   = date('Y-m-t', strtotime($attFrom));
+} else {
+    $attFrom = date('Y-m-01');
+    $attTo   = date('Y-m-t');
+}
 
 // ---------------------------------------------------------------------------
 //  الورديات اللي بتعدّي منتصف الليل
@@ -147,10 +160,10 @@ if ($employee) {
     $a = $pdo->prepare('SELECT * FROM attendance WHERE employee_id=? AND att_date=?');
     $a->execute([(int)$employee['id'], $attDate]);
     $todayAtt = $a->fetch();
-    // سجل الشهر
-    $m = $pdo->prepare("SELECT * FROM attendance WHERE employee_id=? AND DATE_FORMAT(att_date,'%Y-%m')=? ORDER BY att_date DESC");
-    $m->execute([(int)$employee['id'], $myMonth]);
-    $myMonthAtt = $m->fetchAll();
+    // سجل الفترة
+    $m = $pdo->prepare("SELECT * FROM attendance WHERE employee_id=? AND att_date BETWEEN ? AND ? ORDER BY att_date DESC");
+    $m->execute([(int)$employee['id'], $attFrom, $attTo]);
+    $myPeriodAtt = $m->fetchAll();
 }
 
 $page_title    = 'تسجيل الحضور';
@@ -364,34 +377,59 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 
 <?php if ($employee): ?>
 <?php
-    $monthTotalHours = 0.0;
-    foreach ($myMonthAtt as $a) {
-        $monthTotalHours += (float) ($a['work_hours'] ?? 0);
+    $periodTotalHours = 0.0;
+    foreach ($myPeriodAtt as $a) {
+        $periodTotalHours += (float) ($a['work_hours'] ?? 0);
     }
-    $monthTotalDays = (int) floor($monthTotalHours / 6);
+    // أيام العمل = Floor(work_hours / 6)
+    $workDays = (int) floor($periodTotalHours / 6.0);
+    if ($workDays < 0) {
+        $workDays = 0;
+    }
+    // أيام الإجازة = يوم واحد عن كل ٦ أيام عمل، بحد أقصى ٤ أيام في الشهر.
+    // ٦ أيام عمل → يوم · ١٢ → يومين · ١٨ → ٣ · ٢٤ → ٤ · وأقل من ٦ → صفر.
+    $leaveDays = (int) floor($workDays / 6);
+    if ($leaveDays > 4) {
+        $leaveDays = 4;
+    }
+    // أيام الاستحقاق = أيام العمل + أيام الإجازة
+    $dueDays = $workDays + $leaveDays;
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
-    <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل حضوري</div>
-    <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
-        <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>
-        <input type="month" name="month" value="<?= e($myMonth) ?>" onchange="this.form.submit()"
-               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+    <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
+    <form method="get" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من:</label>
+        <input type="date" name="from" value="<?= e($attFrom) ?>" onchange="this.form.submit()"
+               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى:</label>
+        <input type="date" name="to" value="<?= e($attTo) ?>" onchange="this.form.submit()"
+               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+        <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
-    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($monthTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
         </div>
-        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي أيام العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $monthTotalDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام العمل</div>
+            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $workDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الإجازة</div>
+            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $leaveDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الاستحقاق</div>
+            <div style="font-size:18px;font-weight:700;color:var(--ink-900);"><?= $dueDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
         </div>
     </div>
 
-    <?php if (empty($myMonthAtt)): ?>
-        <div style="text-align:center;color:#bbb;padding:24px;">لا يوجد سجل لهذا الشهر.</div>
+    <?php if (empty($myPeriodAtt)): ?>
+        <div style="text-align:center;color:#bbb;padding:24px;">لا يوجد سجل لهذه الفترة.</div>
     <?php else: ?>
+    <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
             <?php foreach (['التاريخ','الحضور','الانصراف','ساعات العمل','الحالة'] as $h): ?>
@@ -402,7 +440,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <?php
             $sm = ['present'=>['حاضر','var(--pos)','var(--pos-soft)'],'absent'=>['غائب','var(--neg)','var(--neg-soft)'],
                    'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','#666','#eee']];
-            foreach ($myMonthAtt as $a): $sb = $sm[$a['status']] ?? ['—','#666','#eee'];
+            foreach ($myPeriodAtt as $a): $sb = $sm[$a['status']] ?? ['—','#666','#eee'];
         ?>
             <?php
                 $inOutside  = !empty($a['check_in_outside']);
@@ -426,6 +464,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
     <?php endif; ?>
 </div>
 <?php endif; ?>
