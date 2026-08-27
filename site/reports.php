@@ -245,26 +245,29 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // «الفرق» بالظبط — فلو الكارت سيستم والعمود مجموع وسايل،
                 // الكارت مش هيطابق عموده. خلّينا الاتنين سيستم.
                 $tCollected += (float)$r['system_total']; $tDiff += (float)$r['difference'];
+                $visaInsta = (float)$r['visa_total'] + (float)$r['instapay_total'];
                 $rows[] = [$r['business_date'], $r['branch'], $r['cashier'],
                     number_format((float)$r['cash_total'],2), number_format((float)$r['visa_total'],2),
                     number_format((float)$r['instapay_total'],2),
+                    number_format($visaInsta,2),
                     number_format((float)$r['system_total'],2), number_format((float)$r['difference'],2),
                     $stMap[$r['status']] ?? $r['status']];
             }
-            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','الفرع','الكاشير','كاش','فيزا','إنستا','المحصّل','الفرق','الحالة'],
+            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','الفرع','الكاشير','كاش','فيزا','إنستا','فيزا + إنستا','المحصّل','الفرق','الحالة'],
                 'rows'=>$rows,
                 // الترتيب مقصود: المحصل · الكاش · الفيزا · الإنستا ·
                 // الفيزا+الإنستا · الفرق — نفس ترتيب شاشة تقفيل الكاشير.
-                // كارت الفيزا+الإنستا بيجمع عمودين (cols) مش عمود واحد.
+                // كارت الفيزا+الإنستا كان بيجمع عمودين (cols)؛ بقى عمود
+                // حقيقي في الجدول فبيشاور عليه بـcol زي باقي الكروت.
                 'sum_cards'=>[
-                    ['label'=>'المحصل',        'col'=>6],
+                    ['label'=>'المحصل',        'col'=>7],
                     ['label'=>'الكاش',         'col'=>3],
                     ['label'=>'الفيزا',        'col'=>4],
                     ['label'=>'الإنستا',       'col'=>5],
-                    ['label'=>'الفيزا + الإنستا','cols'=>[4,5]],
-                    ['label'=>'الفرق',         'col'=>7, 'signed'=>true],
+                    ['label'=>'الفيزا + الإنستا','col'=>6],
+                    ['label'=>'الفرق',         'col'=>8, 'signed'=>true],
                 ],
-                'totals'=>['','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
+                'totals'=>['','','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
 
         case 'treasury':
             // فلتر اختياري بالقيد
