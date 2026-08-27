@@ -79,6 +79,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$monthlyDeduction, $advId]);
                 $flash = 'تم تحديث القسط الشهري للسلفة بنجاح.'; $tab='advances';
             }
+            elseif ($action === 'add_advance') {
+                $empId = (int)($_POST['employee_id'] ?? 0);
+                $amount = (float)($_POST['amount'] ?? 0);
+                $date = trim((string)($_POST['advance_date'] ?? date('Y-m-d')));
+                if (!strtotime($date)) {
+                    $date = date('Y-m-d');
+                }
+                $advType = trim((string)($_POST['adv_type'] ?? 'standing'));
+                if (!in_array($advType, ['monthly', 'standing'], true)) {
+                    $advType = 'standing';
+                }
+                $monthlyDeduction = (float)($_POST['monthly_deduction'] ?? 0);
+                if ($monthlyDeduction < 0) {
+                    $monthlyDeduction = 0;
+                }
+                $notes = trim((string)($_POST['notes'] ?? ''));
+                if ($empId <= 0 || $amount <= 0) {
+                    throw new RuntimeException('بيانات غير مكتملة.');
+                }
+                $chkEmp = $pdo->prepare('SELECT full_name FROM employees WHERE id = ?');
+                $chkEmp->execute([$empId]);
+                if (!$chkEmp->fetchColumn()) {
+                    throw new RuntimeException('الموظف غير موجود.');
+                }
+                $pdo->prepare(
+                    'INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type)
+                     VALUES (?, ?, ?, "pending", ?, ?, ?, ?)'
+                )->execute([$empId, $amount, $date, $notes ?: null, $monthlyDeduction, $amount, $advType]);
+                $flash = 'تم تسجيل السلفة بنجاح.'; $tab='advances';
+            }
             elseif ($action === 'pay_salary') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
@@ -308,6 +338,23 @@ if ($tab === 'salaries') {
     $stPaid->execute([$salMonth]);
     $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
 
+    // 7) أرصدة السلف المعلّقة مقسمة حسب نوع السلفة (سلف الشهر وسلف مستديمة) — استعلام واحد مجمّع
+    $advBucketsStmt = $pdo->query(
+        "SELECT employee_id,
+                COALESCE(SUM(CASE WHEN adv_type = 'monthly' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS monthly_adv,
+                COALESCE(SUM(CASE WHEN adv_type = 'standing' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS standing_adv
+         FROM employee_advances
+         WHERE status = 'pending'
+         GROUP BY employee_id"
+    );
+    $advBucketsMap = [];
+    foreach ($advBucketsStmt->fetchAll(PDO::FETCH_ASSOC) as $bRow) {
+        $advBucketsMap[(int)$bRow['employee_id']] = [
+            'monthly'  => (float) $bRow['monthly_adv'],
+            'standing' => (float) $bRow['standing_adv'],
+        ];
+    }
+
     // الحسابات في PHP بدون أي استعلام داخل الحلقة
     foreach ($empList as $e) {
         $empId       = (int) $e['id'];
@@ -325,6 +372,8 @@ if ($tab === 'salaries') {
         $gross       = $dayRate * $dueDaysCalc;
         $bon         = (float) ($bonusMap[$empId] ?? 0);
         $adv         = (float) ($advMap[$empId] ?? 0);
+        $monthlyAdvOwed  = (float) ($advBucketsMap[$empId]['monthly'] ?? 0);
+        $standingAdvOwed = (float) ($advBucketsMap[$empId]['standing'] ?? 0);
         $pen         = (float) ($penMap[$empId] ?? 0);
         $def         = (float) ($defMap[$empId] ?? 0);
         $totalDeductions = $adv + $pen + $def;
@@ -332,24 +381,26 @@ if ($tab === 'salaries') {
         $isPaid      = isset($paidMonthMap[$empId]);
 
         $payrollData[] = [
-            'id'               => $empId,
-            'full_name'        => $e['full_name'],
-            'branch_name'      => $e['branch_name'] ?? '',
-            'base_salary'      => $base,
-            'work_hours'       => $hours,
-            'work_days'        => $workDays,
-            'leave_days'       => $leaveDays,
-            'due_days_calc'    => $dueDaysCalc,
-            'day_rate'         => $dayRate,
-            'gross_salary'     => $gross,
-            'bonuses'          => $bon,
-            'total_bonuses'    => $bon,
-            'advances'         => $adv,
-            'penalties'        => $pen,
-            'deficits'         => $def,
-            'total_deductions' => $totalDeductions,
-            'net_salary'       => $net,
-            'is_paid'          => $isPaid,
+            'id'                => $empId,
+            'full_name'         => $e['full_name'],
+            'branch_name'       => $e['branch_name'] ?? '',
+            'base_salary'       => $base,
+            'work_hours'        => $hours,
+            'work_days'         => $workDays,
+            'leave_days'        => $leaveDays,
+            'due_days_calc'     => $dueDaysCalc,
+            'day_rate'          => $dayRate,
+            'gross_salary'      => $gross,
+            'bonuses'           => $bon,
+            'total_bonuses'     => $bon,
+            'advances'          => $adv,
+            'monthly_adv_owed'  => $monthlyAdvOwed,
+            'standing_adv_owed' => $standingAdvOwed,
+            'penalties'         => $pen,
+            'deficits'          => $def,
+            'total_deductions'  => $totalDeductions,
+            'net_salary'        => $net,
+            'is_paid'           => $isPaid,
         ];
     }
 }
@@ -452,15 +503,19 @@ $statusBadge = function($st) {
     </div>
 
 <?php elseif ($tab === 'advances'): ?>
+    <div class="toolbar">
+        <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة</span>
+        <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
+    </div>
     <div class="card">
-        <div class="section-title">السلف (تُصرف من الخزينة)</div>
-        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">السلفة تُصرف من موديول الخزينة (زر صرف ← سلفة لموظف) ويمكن تحديد قسط شهري لخصمها تدريجياً من الراتب.</p>
+        <div class="section-title">السلف</div>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">سلف الشهر الحالي تُصرف من موديول الخزينة، ويمكن تسجيل السلف المستديمة أو السلف السابقة من هنا وتحديد قسط شهري لخصمها تدريجياً.</p>
         <?php if (empty($advances)): ?>
             <div class="empty">لا توجد سلف.</div>
         <?php else: ?>
         <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($advances as $a):
                 $b = $statusBadge($a['status']);
@@ -468,10 +523,15 @@ $statusBadge = function($st) {
                 $remAmount  = $a['remaining'] !== null ? (float)$a['remaining'] : $origAmount;
                 $monthlyDed = (float)($a['monthly_deduction'] ?? 0);
                 $isPending  = ($a['status'] === 'pending');
+                $advType    = $a['adv_type'] ?? 'monthly';
+                $tb         = ($advType === 'standing')
+                    ? ['مستديمة', 'var(--accent)', 'var(--accent-soft)']
+                    : ['سلفة الشهر', 'var(--ink-700)', 'var(--line-soft)'];
             ?>
                 <tr>
                     <td><?= e($a['advance_date']) ?></td>
                     <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
+                    <td><span class="badge" style="color:<?=$tb[1]?>;background:<?=$tb[2]?>;"><?=e($tb[0])?></span></td>
                     <td><?= number_format($origAmount, 2) ?></td>
                     <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
                     <td>
@@ -660,6 +720,8 @@ $statusBadge = function($st) {
                         <th>قيمة اليوم</th>
                         <th>الاستحقاق قبل الخصم</th>
                         <th>المكافآت</th>
+                        <th>سلف الشهر</th>
+                        <th>سلف مستديمة</th>
                         <th>الخصومات</th>
                         <th>الصافي</th>
                         <th>إجراء</th>
@@ -697,8 +759,22 @@ $statusBadge = function($st) {
                         <td>
                             <?php if ($p['total_bonuses'] > 0): ?>
                                 <span style="color:var(--pos);font-weight:600;">
-                                    +<?= number_format($p['total_bonuses'], 2) ?>
+                                     +<?= number_format($p['total_bonuses'], 2) ?>
                                 </span>
+                            <?php else: ?>
+                                <span style="color:var(--ink-500);">0.00</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($p['monthly_adv_owed'] > 0): ?>
+                                <span style="color:var(--neg);font-weight:500;"><?= number_format($p['monthly_adv_owed'], 2) ?></span>
+                            <?php else: ?>
+                                <span style="color:var(--ink-500);">0.00</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($p['standing_adv_owed'] > 0): ?>
+                                <span style="color:var(--neg);font-weight:500;"><?= number_format($p['standing_adv_owed'], 2) ?></span>
                             <?php else: ?>
                                 <span style="color:var(--ink-500);">0.00</span>
                             <?php endif; ?>
@@ -910,6 +986,32 @@ $statusBadge = function($st) {
 <?php endif; ?>
 
 <!-- Modals -->
+<div class="modal-bg" id="advanceModal">
+    <div class="modal">
+        <h3>تسجيل سلفة قديمة / مستديمة</h3>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="add_advance">
+            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+                <option value="">— اختر —</option>
+                <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
+            </select></div>
+            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>نوع السلفة</label><select name="adv_type">
+                <option value="standing" selected>مستديمة (رصيد قديم)</option>
+                <option value="monthly">سلفة الشهر</option>
+            </select></div>
+            <div class="form-row"><label>القسط الشهري (0 = خصم بالكامل مع الراتب)</label><input type="number" step="0.01" min="0" name="monthly_deduction" value="0" aria-label="القسط الشهري"></div>
+            <div class="form-row"><label>التاريخ</label><input type="date" name="advance_date" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="مثال: رصيد سلفة قديم قبل النظام" aria-label="ملاحظات"></div>
+            <div class="modal-actions">
+                <button type="submit" class="btn">حفظ</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('advanceModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-bg" id="bonusModal">
     <div class="modal">
         <h3>إضافة مكافأة</h3>

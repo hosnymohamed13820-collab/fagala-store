@@ -1631,7 +1631,7 @@ function pay_salary(
         // تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة)
         // ⚠️ المعادلة مكررة بين هنا و compute_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
         $advStmt = $pdo->prepare(
-            'SELECT id, amount, monthly_deduction, remaining
+            'SELECT id, amount, monthly_deduction, remaining, adv_type
              FROM employee_advances
              WHERE employee_id = ? AND status = "pending"
              ORDER BY id ASC FOR UPDATE'
@@ -1641,7 +1641,7 @@ function pay_salary(
 
         $updAdvStmt = $pdo->prepare(
             'UPDATE employee_advances
-             SET remaining = ?, status = ?
+             SET remaining = ?, status = ?, adv_type = ?
              WHERE id = ?'
         );
 
@@ -1649,15 +1649,17 @@ function pay_salary(
             $advId = (int) $advRow['id'];
             $origAmount = (float) $advRow['amount'];
             $monthlyDed = (float) $advRow['monthly_deduction'];
+            $advType = $advRow['adv_type'] ?? 'monthly';
             $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
 
             $take = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
             $newRemaining = $outstanding - $take;
 
             if ($newRemaining <= 0.00001) {
-                $updAdvStmt->execute([0.00, 'deducted', $advId]);
+                $updAdvStmt->execute([0.00, 'deducted', $advType, $advId]);
             } else {
-                $updAdvStmt->execute([$newRemaining, 'pending', $advId]);
+                $newType = ($advType === 'monthly') ? 'standing' : $advType;
+                $updAdvStmt->execute([$newRemaining, 'pending', $newType, $advId]);
             }
         }
 
