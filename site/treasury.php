@@ -34,7 +34,7 @@ $canEditNotes = true;
 //  جسم JSON فيه csrf، والرد JSON.
 //
 //  🔴 المبالغ مش موجودة هنا خالص — لا في المدخلات ولا في الاستعلام.
-//     التعديل = القيد · البيان · الملاحظات وبس.
+//     التعديل = القيد · البيان · الملاحظات · والتاريخ بقيد عكسي.
 // =====================================================================
 if (($_GET['ajax'] ?? '') === 'je_edit') {
     header('Content-Type: application/json; charset=utf-8');
@@ -52,8 +52,8 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
         if ($jid <= 0) throw new RuntimeException('قيد غير صحيح.');
 
         // الصف الحالي — عشان اللي مالوش صلاحية يعدّل الملاحظة بس
-        // من غير ما يقدر يغيّر البيان أو القيد بتزوير الطلب.
-        $cur = $pdo->prepare('SELECT account_id, description FROM journal_entries WHERE id = ?');
+        // من غير ما يقدر يغيّر البيان أو القيد أو التاريخ بتزوير الطلب.
+        $cur = $pdo->prepare('SELECT account_id, description, entry_date, ref_type FROM journal_entries WHERE id = ?');
         $cur->execute([$jid]);
         $curRow = $cur->fetch();
         if (!$curRow) throw new RuntimeException('القيد ده مش موجود.');
@@ -61,19 +61,34 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
         if ($canEditEntry) {
             $accountId = ($body['account_id'] ?? '') !== '' && $body['account_id'] !== null
                 ? (int) $body['account_id'] : null;
-            $desc = (string) ($body['description'] ?? '');
+            $desc    = (string) ($body['description'] ?? '');
+            $reqDate = isset($body['date']) ? trim((string) $body['date']) : (string) $curRow['entry_date'];
         } else {
             // مالوش صلاحية → القيم القديمة زي ما هي، مهما بعت في الطلب
             $accountId = $curRow['account_id'] !== null ? (int) $curRow['account_id'] : null;
             $desc      = (string) $curRow['description'];
+            $reqDate   = (string) $curRow['entry_date'];
         }
 
+        // الترتيب مهم: update_journal_entry الأول عشان البيان والحساب
+        // والملاحظة يبقوا نهائيين على القيد الأصلي، وبعدين change_movement_date
+        // عشان القيد الجديد ياخد القيم المحدّثة.
         $res = update_journal_entry(
             $jid, $accountId, $desc,
             (string) ($body['notes'] ?? ''),
             $uid
         );
-        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
+
+        $dateChanged = false;
+        if ($canEditEntry && $reqDate !== '' && $reqDate !== (string) $curRow['entry_date']) {
+            $dateRes = change_movement_date($jid, $reqDate, $uid);
+            if (!empty($dateRes['changed'])) {
+                $dateChanged = true;
+                $res['date_res'] = $dateRes;
+            }
+        }
+
+        echo json_encode(['ok' => true, 'date_changed' => $dateChanged] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -208,7 +223,7 @@ if ($isAllStatement) {
          JOIN treasuries t ON t.id = je.treasury_id
          LEFT JOIN users u ON u.id = je.created_by
          LEFT JOIN users eu ON eu.id = je.edited_by
-         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
          LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
          LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
          LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -244,7 +259,7 @@ if ($isAllStatement) {
                  FROM journal_entries je
                  LEFT JOIN users u ON u.id = je.created_by
                  LEFT JOIN users eu ON eu.id = je.edited_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -304,10 +319,12 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
 
     if ($canEditEntry || $canEditNotes) {
         $out .= '<button type="button" class="je-edit" title="تعديل القيد والبيان والملاحظات"'
-              . ' data-id="'   . (int) $row['id'] . '"'
-              . ' data-acc="'  . ($row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
-              . ' data-desc="' . e((string) $row['description']) . '"'
-              . ' data-notes="' . e($notes) . '"'
+              . ' data-id="'      . (int) $row['id'] . '"'
+              . ' data-acc="'     . ($row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
+              . ' data-desc="'    . e((string) $row['description']) . '"'
+              . ' data-notes="'   . e($notes) . '"'
+              . ' data-date="'    . e((string) $row['entry_date']) . '"'
+              . ' data-reftype="' . e((string) ($row['ref_type'] ?? '')) . '"'
               . ' onclick="jeOpen(this)"><i class="ti ti-pencil"></i></button>';
     }
     if (!empty($row['edited_at'])) {
@@ -743,12 +760,19 @@ $today = date('Y-m-d');
         <h3>تعديل القيد</h3>
 
         <div class="je-locked">
-            <b>المبلغ والتاريخ والخزينة مايتعدلوش من هنا.</b><br>
-            تصحيح مبلغ بيتعمل بقيد عكسي عشان الرصيد التراكمي في الكشف يفضل مظبوط.
+            <b>المبلغ والخزينة مايتعدلوش من هنا.</b><br>
+            تعديل التاريخ بيتم بقيد عكسي تلقائياً عشان الرصيد التراكمي في الكشف يفضل مظبوط.
         </div>
 
         <?php if ($canEditEntry): ?>
         <div class="form-row" style="margin-top:14px;">
+            <label>التاريخ</label>
+            <input type="date" id="jeDate" aria-label="التاريخ">
+            <div id="jeDateHint" style="display:none;font-size:12px;color:var(--ink-500);margin-top:4px;">
+                تاريخ القيد ده جاي من الموديول بتاعه (وردية / عهدة / راتب / تحويل / فاتورة مورد) ويتعدّل من هناك.
+            </div>
+        </div>
+        <div class="form-row">
             <label>القيد</label>
             <?= acctree_field('je_account', null, '— بدون قيد —', 'all', 'jeAccount') ?>
         </div>
@@ -917,16 +941,31 @@ $today = date('Y-m-d');
     const JE_CSRF   = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     const JE_CAN_ED = <?= $canEditEntry ? 'true' : 'false' ?>;
     let jeCurrentId = 0;
+    let jeCurrentDate = '';
+    let jeCurrentRefType = '';
 
     function jeOpen(btn){
         jeCurrentId = parseInt(btn.dataset.id, 10) || 0;
         if (!jeCurrentId) return;
+
+        jeCurrentDate = btn.dataset.date || '';
+        jeCurrentRefType = btn.dataset.reftype || '';
 
         const err = document.getElementById('jeError');
         err.style.display = 'none';
         err.textContent = '';
 
         if (JE_CAN_ED) {
+            const dateInput = document.getElementById('jeDate');
+            const dateHint  = document.getElementById('jeDateHint');
+            if (dateInput) {
+                dateInput.value = jeCurrentDate;
+                const canChangeDate = (jeCurrentRefType === 'receipt' || jeCurrentRefType === 'disbursement');
+                dateInput.disabled = !canChangeDate;
+                if (dateHint) {
+                    dateHint.style.display = canChangeDate ? 'none' : 'block';
+                }
+            }
             // acctreeSet بتضبط القيمة والاسم الظاهر مع بعض
             acctreeSet(document.getElementById('jeAccount'), btn.dataset.acc || '');
             document.getElementById('jeDesc').value = btn.dataset.desc || '';
@@ -957,6 +996,26 @@ $today = date('Y-m-d');
                 err.style.display = 'block';
                 return;
             }
+
+            const dateInput = document.getElementById('jeDate');
+            if (dateInput && !dateInput.disabled) {
+                const newDate = dateInput.value.trim();
+                if (!newDate) {
+                    err.textContent = 'التاريخ مايصحّش يكون فاضي.';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (newDate !== jeCurrentDate) {
+                    const msg = 'تغيير التاريخ هيعمل قيد عكسي بالتاريخ القديم (' + jeCurrentDate + ') '
+                              + 'وقيد جديد بالتاريخ الجديد (' + newDate + ').\n'
+                              + 'الصف القديم هيفضل ظاهر في الكشف مع علامة «معدّل».\n\n'
+                              + 'متأكد إنك عايز تغيّر التاريخ؟';
+                    if (!confirm(msg)) {
+                        return;
+                    }
+                }
+                payload.date = newDate;
+            }
         }
 
         btn.disabled = true;
@@ -970,6 +1029,11 @@ $today = date('Y-m-d');
             });
             const data = await res.json();
             if (!data.ok) throw new Error(data.error || 'حصل خطأ.');
+
+            if (data.date_changed) {
+                location.reload();
+                return;
+            }
 
             jeApplyRow(data);
             closeModal('jeModal');

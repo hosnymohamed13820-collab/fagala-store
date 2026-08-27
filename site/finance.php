@@ -568,6 +568,173 @@ function update_journal_entry(
 }
 
 /**
+ * تعديل تاريخ حركة صرف أو استلام — قيد عكسي في اليومية + تحديث تاريخ الحركة.
+ * =====================================================================
+ *
+ * 🔴 الأساس المحاسبي للتصميم:
+ *    ١) اليومية (journal_entries): التعديل بيتعمل بقيد عكسي وقيد جديد
+ *       مش بـ UPDATE، لأن running_balance رصيد تراكمي متخزّن وقت التسجيل
+ *       في كل صف، وكشف الحساب بيترتب بـ je.id DESC مش بالتاريخ.
+ *       الـ UPDATE على entry_date بيبوّظ تسلسل الأرصدة التراكمية.
+ *    ٢) سجل الحركة (treasury_movements): بيتحدّث تاريخه مباشرةً بـ UPDATE
+ *       بدل ما يتعكس، لأنه جدول مسطّح مالوش رصيد تراكمي، وتقرير المصاريف
+ *       بيفلتر بـ tm.movement_type = 'disbursement' فقط. لو عملنا حركة
+ *       استلام عكسية مش هتبان في تقرير المصاريف والتقرير هيحسب المصروف
+ *       مرتين (عد مزدوج). الـ UPDATE هنا هو الصح والآمن.
+ *
+ * المنطق جوّه transaction واحدة ذرّياً:
+ *   ١) قفل صف journal_entries بـ FOR UPDATE والتأكد إنه receipt أو disbursement.
+ *   ٢) قراءة صف treasury_movements المرتبط بـ FOR UPDATE.
+ *   ٣) حارس: التأكد إن entry_date في القيد مطابق لـ movement_date في الحركة
+ *      (منع تعديل صف قديم اتعكس قبل كده).
+ *   ٤) تحديث movement_date في صف treasury_movements الأصلي للتاريخ الجديد.
+ *   ٥) قيد عكسي في اليومية بالتاريخ القديم (المدين والدائن متبادلين، ref_type='date_fix_rev'، ref_id=$refId).
+ *   ٦) قيد جديد في اليومية بالتاريخ الجديد (نفس المدين والدائن الأصليين، ref_type الأصلي، ref_id=$refId).
+ *   ٧) تسجيل الأثر على القيد الأصلي (edited_at / edited_by) مع بقائه مكانه.
+ *
+ * @param int      $entryId  معرّف القيد الأصلي في journal_entries
+ * @param string   $newDate  التاريخ الجديد (Y-m-d)
+ * @param int|null $userId   المستخدم اللي بيعدّل
+ *
+ * @return array ['changed' => bool, 'new_entry_id' => int, 'rev_entry_id' => int, 'old_date' => string, 'new_date' => string]
+ * @throws RuntimeException|InvalidArgumentException لو القيد مش موجود أو مش صرف/استلام أو التاريخ غير صالح أو القيد قديم
+ */
+function change_movement_date(
+    int $entryId,
+    string $newDate,
+    ?int $userId = null
+): array {
+    $newDate = trim($newDate);
+    if ($entryId <= 0) {
+        throw new RuntimeException('قيد غير صحيح.');
+    }
+    if ($newDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $newDate)) {
+        throw new InvalidArgumentException('التاريخ غير صالح.');
+    }
+    [$y, $m, $d] = explode('-', $newDate);
+    if (!checkdate((int) $m, (int) $d, (int) $y)) {
+        throw new InvalidArgumentException('التاريخ غير صالح.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // 1. اقرا القيد بـ FOR UPDATE
+        $jeStmt = $pdo->prepare('SELECT * FROM journal_entries WHERE id = ? FOR UPDATE');
+        $jeStmt->execute([$entryId]);
+        $je = $jeStmt->fetch();
+        if (!$je) {
+            throw new RuntimeException('القيد ده مش موجود.');
+        }
+
+        $refType = (string) ($je['ref_type'] ?? '');
+        if (!in_array($refType, ['receipt', 'disbursement'], true)) {
+            throw new RuntimeException(
+                'تاريخ القيد ده جاي من الموديول بتاعه (وردية / عهدة / راتب / تحويل / فاتورة مورد) ويتعدّل من هناك.'
+            );
+        }
+
+        $refId = (int) ($je['ref_id'] ?? 0);
+        if ($refId <= 0) {
+            throw new RuntimeException('حركة الخزينة المرتبطة بالقيد غير موجودة.');
+        }
+
+        // substr(0,10): لو العمود اتغيّر يوم من الأيام لـDATETIME، المقارنة
+        // النصية كانت هتفشل دايماً والفيتشر يقع. بناخد الجزء التاريخي وبس.
+        $oldDate = substr((string) $je['entry_date'], 0, 10);
+        if ($newDate === $oldDate) {
+            $pdo->commit();
+            return [
+                'changed'  => false,
+                'old_date' => $oldDate,
+                'new_date' => $newDate,
+            ];
+        }
+
+        // 2. اقرا صف treasury_movements المرتبط
+        $tmStmt = $pdo->prepare('SELECT * FROM treasury_movements WHERE id = ? FOR UPDATE');
+        $tmStmt->execute([$refId]);
+        $tm = $tmStmt->fetch();
+        if (!$tm) {
+            throw new RuntimeException('صف حركة الخزينة المرتبط مش موجود.');
+        }
+
+        // 3. حارس: التأكد إن القيد ده هو الصف الحي مش صف قديم اتعكس قبل كده
+        if ($oldDate !== substr((string) $tm['movement_date'], 0, 10)) {
+            throw new RuntimeException('القيد ده اتعدّل تاريخه قبل كده وبقى صف قديم، التعديل بيتعمل من الصف الجديد.');
+        }
+
+        $treasuryId = (int) $je['treasury_id'];
+        $accountId  = $je['account_id'] !== null ? (int) $je['account_id'] : null;
+        $desc       = (string) ($je['description'] ?? '');
+        $notes      = ($je['notes'] !== null && trim($je['notes']) !== '') ? trim($je['notes']) : null;
+        $debit      = (float) $je['debit'];
+        $credit     = (float) $je['credit'];
+
+        // 4. تحديث تاريخ صف treasury_movements الأصلي بالتاريخ الجديد (مفيش INSERT)
+        $pdo->prepare('UPDATE treasury_movements SET movement_date = ? WHERE id = ?')
+            ->execute([$newDate, $refId]);
+
+        $revDesc = 'إلغاء (تصحيح تاريخ): ' . $desc;
+        if (mb_strlen($revDesc) > 255) {
+            $revDesc = mb_substr($revDesc, 0, 255);
+        }
+
+        // 5. قيد عكسي في اليومية بالتاريخ القديم (المدين والدائن متبادلين)
+        $revEntryId = post_journal(
+            $treasuryId,
+            $credit, // المدين الجديد = الدائن الأصلي
+            $debit,  // الدائن الجديد = المدين الأصلي
+            $revDesc,
+            $oldDate,
+            'date_fix_rev',
+            $refId,
+            $userId,
+            $pdo,
+            $accountId,
+            $notes
+        );
+
+        // 6. قيد جديد في اليومية بالتاريخ الجديد (نفس المدين والدائن الأصليين)
+        $newEntryId = post_journal(
+            $treasuryId,
+            $debit,
+            $credit,
+            $desc,
+            $newDate,
+            $refType, // 'receipt' أو 'disbursement'
+            $refId,
+            $userId,
+            $pdo,
+            $accountId,
+            $notes
+        );
+
+        // 7. سجل الأثر على القيد الأصلي (يفضل مكانه بتاريخه ومبلغه)
+        $pdo->prepare(
+            'UPDATE journal_entries
+                SET edited_at = NOW(), edited_by = ?
+              WHERE id = ?'
+        )->execute([$userId, $entryId]);
+
+        $pdo->commit();
+
+        return [
+            'changed'      => true,
+            'new_entry_id' => $newEntryId,
+            'rev_entry_id' => $revEntryId,
+            'old_date'     => $oldDate,
+            'new_date'     => $newDate,
+        ];
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $ex;
+    }
+}
+
+/**
  * رصيد خزينة حالي.
  */
 function treasury_balance(int $treasuryId): float

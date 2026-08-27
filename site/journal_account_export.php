@@ -67,7 +67,7 @@ $st = $pdo->prepare(
        JOIN treasuries t ON t.id = je.treasury_id
        LEFT JOIN users u ON u.id = je.created_by
        LEFT JOIN treasury_movements tm
-              ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+              ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
        LEFT JOIN accounts ja ON ja.id = je.account_id
        LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'

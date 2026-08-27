@@ -70,7 +70,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                JOIN treasuries t ON t.id = je.treasury_id
                LEFT JOIN users u ON u.id = je.created_by
                LEFT JOIN treasury_movements tm
-                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                LEFT JOIN accounts ja ON ja.id = je.account_id
                LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -282,7 +282,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         cb.name AS cost_branch_name
                  FROM journal_entries je JOIN treasuries t ON t.id=je.treasury_id
                  LEFT JOIN users u ON u.id=je.created_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
                  LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -370,7 +370,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                        LEFT JOIN users u ON u.id = je.created_by
                        LEFT JOIN treasury_movements tm
                               ON tm.id = je.ref_id
-                             AND je.ref_type IN ('receipt','disbursement')
+                             AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                        LEFT JOIN accounts ja ON ja.id = je.account_id
                       WHERE je.treasury_id = ?
@@ -501,7 +501,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                    FROM journal_entries je
                    LEFT JOIN treasury_movements tm
                           ON tm.id = je.ref_id
-                         AND je.ref_type IN ('receipt','disbursement')
+                         AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                    LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                    LEFT JOIN accounts ja ON ja.id = je.account_id
                    LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
