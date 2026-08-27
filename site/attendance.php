@@ -381,19 +381,11 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     foreach ($myPeriodAtt as $a) {
         $periodTotalHours += (float) ($a['work_hours'] ?? 0);
     }
-    // أيام العمل = Floor(work_hours / 6)
-    $workDays = (int) floor($periodTotalHours / 6.0);
-    if ($workDays < 0) {
-        $workDays = 0;
-    }
-    // أيام الإجازة = يوم واحد عن كل ٦ أيام عمل، بحد أقصى ٤ أيام في الشهر.
-    // ٦ أيام عمل → يوم · ١٢ → يومين · ١٨ → ٣ · ٢٤ → ٤ · وأقل من ٦ → صفر.
-    $leaveDays = (int) floor($workDays / 6);
-    if ($leaveDays > 4) {
-        $leaveDays = 4;
-    }
-    // أيام الاستحقاق = أيام العمل + أيام الإجازة
-    $dueDays = $workDays + $leaveDays;
+    // حساب أيام العمل والإجازة والاستحقاق من الدالة الموحدة
+    $salDays   = salary_days_from_hours($periodTotalHours);
+    $workDays  = $salDays['work_days'];
+    $leaveDays = $salDays['leave_days'];
+    $dueDays   = $salDays['due_days'];
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>

@@ -1223,7 +1223,7 @@ require_once __DIR__ . '/includes/header.php';
     <input type="number" id="npPct" step="0.5" style="width:90px;" placeholder="%">
     <button class="btn" id="npApply"><i class="ti ti-percentage"></i> تطبيق النسبة</button>
 
-    <button class="btn btn-ghost" id="npZeroBtn"><i class="ti ti-list-search"></i> أصناف أسعار بيعها 0</button>
+    <button class="btn btn-ghost" id="npZeroBtn"><i class="ti ti-filter"></i> أصناف أسعار بيعها 0</button>
 </div>
 
 <!-- ===================== الجدول ===================== -->

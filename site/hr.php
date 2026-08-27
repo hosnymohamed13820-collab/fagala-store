@@ -323,10 +323,13 @@ if ($tab === 'attendance') {
 }
 
 // بيانات الرواتب وحساب المستحقات للفترة (تبويب الرواتب)
-$salFrom = $_GET['from'] ?? date('Y-m-01');
-$salTo   = $_GET['to']   ?? date('Y-m-t');
-if (!strtotime($salFrom)) $salFrom = date('Y-m-01');
-if (!strtotime($salTo))   $salTo   = date('Y-m-t');
+// الفترة الافتراضية: من ٢٦ الشهر السابق إلى ٢٥ الشهر الحالي
+$defaultSalFrom = date('Y-m-26', strtotime('first day of last month'));
+$defaultSalTo   = date('Y-m-25');
+$salFrom = $_GET['from'] ?? $defaultSalFrom;
+$salTo   = $_GET['to']   ?? $defaultSalTo;
+if (!strtotime($salFrom)) $salFrom = $defaultSalFrom;
+if (!strtotime($salTo))   $salTo   = $defaultSalTo;
 $salMonth = $_GET['month'] ?? date('Y-m', strtotime($salTo));
 if (!preg_match('/^\d{4}-\d{2}$/', $salMonth)) $salMonth = date('Y-m');
 
@@ -403,14 +406,10 @@ if ($tab === 'salaries') {
         $empId       = (int) $e['id'];
         $base        = (float) $e['base_salary'];
         $hours       = (float) ($empHours[$empId] ?? 0);
-        $workDays    = (int) floor($hours / 6.0);
-        if ($workDays < 0) $workDays = 0;
-        // نفس قاعدة compute_salary في finance.php: يوم إجازة عن كل ٦ أيام عمل بحد أقصى ٤.
-        // الصافي = الاستحقاق قبل الخصم + المكافآت − (السلف + الجزاءات + عجز العهدة)
-        // ⚠️ المعادلة مكررة بين هنا و finance.php — لو غيّرت هنا، غيّر هناك عشان الشاشة والصرف يقولوا نفس الرقم.
-        $leaveDays   = (int) floor($workDays / 6);
-        if ($leaveDays > 4) $leaveDays = 4;
-        $dueDaysCalc = $workDays + $leaveDays;
+        $salDays     = salary_days_from_hours($hours);
+        $workDays    = $salDays['work_days'];
+        $leaveDays   = $salDays['leave_days'];
+        $dueDaysCalc = $salDays['due_days'];
         $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
         $gross       = $dayRate * $dueDaysCalc;
         $bon         = (float) ($bonusMap[$empId] ?? 0);
@@ -468,6 +467,7 @@ $statusBadge = function($st) {
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
+    .flash.warning { background:var(--warn-soft); color:var(--warn); }
     .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
@@ -724,6 +724,12 @@ $statusBadge = function($st) {
 
     <!-- جدول حساب المستحقات للموظفين للفترة المحددة -->
     <div class="card">
+        <?php if (date('d', strtotime($salFrom)) !== '26' || date('d', strtotime($salTo)) !== '25'): ?>
+            <div class="flash warning" style="margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+                <i class="ti ti-alert-triangle"></i>
+                <span>تنبيه: الفترة المحددة تختلف عن الفترة المعتادة (من ٢٦ الشهر اللي فات لـ٢٥ الشهر ده).</span>
+            </div>
+        <?php endif; ?>
         <form method="post" id="batchPayrollForm">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="pay_salary_batch">

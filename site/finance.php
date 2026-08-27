@@ -1432,19 +1432,44 @@ function receive_custody(
 }
 
 /**
+ * حساب أيام العمل والإجازة والاستحقاق من ساعات العمل وفقاً لقواعد الأونر (المصدر الموحد):
+ * - أيام العمل      = Floor(ساعات العمل ÷ 6) ولا تقل عن صفر
+ * - أيام الإجازة    = Floor(أيام العمل ÷ 6) بحد أقصى 4 أيام في الشهر (MIN(4, Floor(أيام العمل ÷ 6)))
+ *                     ٦ أيام عمل → يوم · ١٢ → يومين · ١٨ → ٣ · ٢٤ → ٤ · وأقل من ٦ → صفر
+ * - أيام الاستحقاق  = أيام العمل + أيام الإجازة
+ *
+ * ⚠️ دي المعادلة الوحيدة المعتمدة للأونر وممنوع تكرارها — أي تعديل يتم هنا فقط وتُنادى من باقي الشاشات.
+ *
+ * @param float $workHours إجمالي ساعات العمل
+ * @return array{work_days: int, leave_days: int, due_days: int}
+ */
+function salary_days_from_hours(float $workHours): array
+{
+    $workDays = (int) floor($workHours / 6.0);
+    if ($workDays < 0) {
+        $workDays = 0;
+    }
+    $leaveDays = (int) floor($workDays / 6);
+    if ($leaveDays > 4) {
+        $leaveDays = 4;
+    }
+    $dueDays = $workDays + $leaveDays;
+
+    return [
+        'work_days'  => $workDays,
+        'leave_days' => $leaveDays,
+        'due_days'   => $dueDays,
+    ];
+}
+
+/**
  * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع المكافآت والخصومات).
  *
  * القواعد المعتمدة من المالك:
- * - أيام العمل      = Floor(إجمالي ساعات العمل ÷ 6)
- * - أيام الإجازة    = Floor(أيام العمل ÷ 6) بحد أقصى 4
- *                     ٦ أيام عمل = يوم إجازة · ١٢ = يومين · ١٨ = ٣ · ٢٤ = ٤
- *                     واللي مااشتغلش ولا يوم، ماياخدش إجازة خالص
- * - أيام الاستحقاق  = أيام العمل + أيام الإجازة
- * - قيمة اليوم      = الراتب الأساسي ÷ 30 (ثابتة دائماً)
+ * - حساب أيام العمل والإجازة والاستحقاق من salary_days_from_hours()
+ * - قيمة اليوم       = الراتب الأساسي ÷ 30 (ثابتة دائماً)
  * - الراتب قبل الخصم = قيمة اليوم × أيام الاستحقاق
  * - الصافي          = الراتب قبل الخصم + المكافآت − السلف − الجزاءات − عجز العهدة
- *
- * ⚠️ المعادلة مكررة في site/hr.php (عرض مسير الرواتب) — أي تغيير هنا لازم يتغيّر هناك بالظبط.
  *
  * @param int $employeeId معرّف الموظف
  * @param string $month شهر الراتب (YYYY-MM)
@@ -1473,23 +1498,12 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $att->execute([$employeeId, $from, $to]);
     $workHours = (float) $att->fetchColumn();
 
-    // أيام العمل = Floor(work_hours / 6)
-    $workDays = (int) floor($workHours / 6.0);
-    if ($workDays < 0) {
-        $workDays = 0;
-    }
-
-    // أيام الإجازة = يوم واحد عن كل ٦ أيام عمل، بحد أقصى ٤ أيام في الشهر.
-    // ٦ أيام عمل → يوم · ١٢ → يومين · ١٨ → ٣ · ٢٤ → ٤ · وأقل من ٦ → صفر.
-    // اللي مااشتغلش ولا ساعة ماياخدش إجازة، فبيطلع صفر أيام استحقاق.
-    $leaveDays = (int) floor($workDays / 6);
-    if ($leaveDays > 4) {
-        $leaveDays = 4;
-    }
-
-    // أيام الاستحقاق المحسوبة
-    $dueDaysCalc = $workDays + $leaveDays;
-    $dueDays = $dueDaysCalc;
+    // حساب أيام العمل والإجازة والاستحقاق من الدالة الموحدة
+    $salDays     = salary_days_from_hours($workHours);
+    $workDays    = $salDays['work_days'];
+    $leaveDays   = $salDays['leave_days'];
+    $dueDaysCalc = $salDays['due_days'];
+    $dueDays     = $dueDaysCalc;
 
     // قيمة اليوم = الأساسي ÷ 30
     $dayRate = $base > 0 ? ($base / 30.0) : 0.0;
