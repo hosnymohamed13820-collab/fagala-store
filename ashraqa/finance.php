@@ -1026,7 +1026,6 @@ function save_shift_review(
         throw new InvalidArgumentException('سبب الرفض مطلوب.');
     }
 
-    $methods = ['cash', 'visa', 'instapay'];
     $pdo = db();
     $pdo->beginTransaction();
     try {
@@ -1050,8 +1049,95 @@ function save_shift_review(
         // السلوك القديم بالظبط.
         $salesAccountId = ((int) setting('sales_revenue_account_id', 0)) ?: null;
 
-        // حرّك الفرق لكل وسيلة دفع
-        foreach ($methods as $m) {
+        // -----------------------------------------------------------------
+        //  (١) ترحيل الكاش والمصروفات:
+        //  - الاستلام = كاش المحاسب + إجمالي المصروفات (كامل ما تم بيعه).
+        //  - الصرف = كل بند مصروف على حدة من نفس الخزينة النقدية بحسابه الخاص.
+        // -----------------------------------------------------------------
+        $cashTreasuryId = central_treasury_by_type('cash');
+        if ($cashTreasuryId === null) {
+            throw new RuntimeException('لا توجد خزينة مركزية من نوع: cash');
+        }
+
+        // جلب مصروفات الوردية
+        $stExp = $pdo->prepare('SELECT id, account_id, amount, note FROM shift_expenses WHERE shift_id=? ORDER BY id ASC');
+        $stExp->execute([$shiftId]);
+        $shiftExpenses = $stExp->fetchAll();
+        $totalExpenses = 0.0;
+        foreach ($shiftExpenses as $se) {
+            $totalExpenses += (float) $se['amount'];
+        }
+
+        // إجمالي الكاش المبيوع (كاش المحاسب + المصروفات)
+        $accCash      = (float) ($accountantAmounts['cash'] ?? 0);
+        $newGrossCash = $accCash + $totalExpenses;
+
+        // ما تم تسجيله كاستلام كاش سابقاً لهذه الوردية في قيود اليومية
+        $stPrevReceipt = $pdo->prepare(
+            "SELECT COALESCE(SUM(credit) - SUM(debit), 0)
+             FROM journal_entries
+             WHERE treasury_id = ? AND ref_type = 'shift' AND ref_id = ?"
+        );
+        $stPrevReceipt->execute([$cashTreasuryId, $shiftId]);
+        $prevGrossReceipt = (float) $stPrevReceipt->fetchColumn();
+
+        $grossCashDelta = $newGrossCash - $prevGrossReceipt;
+        $cashLabel = 'تقفيل وردية #' . $shiftId . ' (' . treasury_type_label('cash') . ')';
+
+        if ($grossCashDelta > 0.001) {
+            // استلام كامل / زيادة → دائن (دخول)
+            post_journal($cashTreasuryId, 0, $grossCashDelta, $cashLabel, $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
+        } elseif ($grossCashDelta < -0.001) {
+            // نقص (تصحيح بعد رفض) → مدين (خروج)
+            post_journal($cashTreasuryId, abs($grossCashDelta), 0, $cashLabel . ' - تصحيح', $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
+        }
+
+        // صرف المصروفات من الخزينة النقدية (مرة واحدة فقط للوردية)
+        $stPrevExp = $pdo->prepare(
+            "SELECT COALESCE(SUM(debit) - SUM(credit), 0)
+             FROM journal_entries
+             WHERE treasury_id = ? AND ref_type = 'shift_expense' AND ref_id = ?"
+        );
+        $stPrevExp->execute([$cashTreasuryId, $shiftId]);
+        $prevExpDisbursed = (float) $stPrevExp->fetchColumn();
+
+        if ($prevExpDisbursed < 0.001) {
+            // أول مرة يتم فيها اعتماد/مراجعة المصروفات: ترحيل كل سطر على حدة
+            foreach ($shiftExpenses as $se) {
+                $amt = (float) $se['amount'];
+                if ($amt <= 0) continue;
+                $accId = !empty($se['account_id']) ? (int) $se['account_id'] : null;
+                $note  = trim((string) ($se['note'] ?? ''));
+                $expLabel = 'مصروف وردية #' . $shiftId . ($note !== '' ? ' — ' . $note : '');
+                post_journal(
+                    $cashTreasuryId,
+                    $amt,                // مدين (صرف)
+                    0,                   // دائن
+                    $expLabel,
+                    $date,
+                    'shift_expense',
+                    $shiftId,
+                    $userId,
+                    $pdo,
+                    $accId,
+                    $note !== '' ? $note : null
+                );
+            }
+        } elseif (abs($totalExpenses - $prevExpDisbursed) >= 0.001) {
+            // إعادة مراجعة مع تغير إجمالي المصروفات: تحريك الفرق فقط
+            $expDelta = $totalExpenses - $prevExpDisbursed;
+            if ($expDelta > 0.001) {
+                post_journal($cashTreasuryId, $expDelta, 0, 'مصروف وردية #' . $shiftId . ' — تسوية فرق مصروفات', $date, 'shift_expense', $shiftId, $userId, $pdo, null, 'تسوية فرق مصروفات');
+            } elseif ($expDelta < -0.001) {
+                post_journal($cashTreasuryId, 0, abs($expDelta), 'مصروف وردية #' . $shiftId . ' — استرداد فرق مصروفات', $date, 'shift_expense', $shiftId, $userId, $pdo, null, 'استرداد فرق مصروفات');
+            }
+        }
+
+        // -----------------------------------------------------------------
+        //  (٢) ترحيل الفيزا والإنستا باي (بدون أي تغيير)
+        // -----------------------------------------------------------------
+        $nonCashMethods = ['visa', 'instapay'];
+        foreach ($nonCashMethods as $m) {
             $newAmt = (float) ($accountantAmounts[$m] ?? 0);
             $oldAmt = $prevReview ? (float) $prevReview['accountant_' . $m] : 0.0;
             $delta  = $newAmt - $oldAmt;
@@ -1075,8 +1161,9 @@ function save_shift_review(
         // حساب الفرق بين الكاشير والمحاسب (إجمالي)
         $cashierTotal = (float)$shift['cash_total'] + (float)$shift['visa_total']
                       + (float)$shift['instapay_total'];
-        $accTotal = 0.0;
-        foreach ($methods as $m) $accTotal += (float) ($accountantAmounts[$m] ?? 0);
+        $accTotal = (float)($accountantAmounts['cash'] ?? 0)
+                  + (float)($accountantAmounts['visa'] ?? 0)
+                  + (float)($accountantAmounts['instapay'] ?? 0);
         $variance = $accTotal - $cashierTotal;
 
         // تسجيل المراجعة
@@ -1681,6 +1768,59 @@ function entry_code_name(?int $id): ?string
         return $n !== false ? $n : null;
     } catch (Throwable $ex) {
         return null;
+    }
+}
+
+/**
+ * قائمة مصروفات وردية محددة.
+ * ترجع مصفوفة فارغة بأمان لو الجدول غير موجود بعد.
+ */
+function shift_expenses_list(int $shiftId, ?PDO $pdo = null): array
+{
+    $pdo = $pdo ?? db();
+    try {
+        $st = $pdo->prepare(
+            'SELECT se.*, a.name AS account_name
+             FROM shift_expenses se
+             LEFT JOIN accounts a ON a.id = se.account_id
+             WHERE se.shift_id = ?
+             ORDER BY se.id ASC'
+        );
+        $st->execute([$shiftId]);
+        return $st->fetchAll();
+    } catch (Throwable $ex) {
+        return [];
+    }
+}
+
+/**
+ * جلب مصروفات مجموعة ورديات في استعلام واحد مجمّع (منع أي استعلام في حلقة).
+ */
+function shift_expenses_for_shifts(array $shiftIds, ?PDO $pdo = null): array
+{
+    if (empty($shiftIds)) return [];
+    $pdo = $pdo ?? db();
+    try {
+        $ph = implode(',', array_fill(0, count($shiftIds), '?'));
+        $st = $pdo->prepare(
+            "SELECT se.*, a.name AS account_name
+             FROM shift_expenses se
+             LEFT JOIN accounts a ON a.id = se.account_id
+             WHERE se.shift_id IN ($ph)
+             ORDER BY se.shift_id ASC, se.id ASC"
+        );
+        $st->execute(array_values($shiftIds));
+        $rows = $st->fetchAll();
+        $out = [];
+        foreach ($shiftIds as $sid) {
+            $out[(int)$sid] = [];
+        }
+        foreach ($rows as $r) {
+            $out[(int)$r['shift_id']][] = $r;
+        }
+        return $out;
+    } catch (Throwable $ex) {
+        return [];
     }
 }
 
