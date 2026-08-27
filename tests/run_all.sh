@@ -13,8 +13,48 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 FAIL=0
 
+# 🔴 مطب ويندوز: الترمينال بترميز cp1256، وبايثون بيقع بـUnicodeEncodeError أول ما
+#    يطبع ✅ أو عربي. الفحص نفسه بيبقى عدّى، الطباعة هي اللي بتفشّله وانت فاكر
+#    إن الكود غلط. لازم يبقى على مستوى السكربت كله مش على أمر واحد.
+export PYTHONIOENCODING=utf-8
+
+# php مش دايماً في الـPATH على ويندوز. الترتيب: PHP_BIN من البيئة ← اللي في
+# الـPATH ← الأماكن المعروفة. اختبارات التحليل بتشغّل php تاني من جوّه،
+# وبتستعمل PHP_BINARY يعني نفس النسخة دي بالظبط.
+find_php() {
+    [ -n "${PHP_BIN:-}" ] && [ -x "$PHP_BIN" ] && { echo "$PHP_BIN"; return; }
+    command -v php > /dev/null 2>&1 && { echo php; return; }
+    for d in /c/php /c/tools/php /c/xampp/php /c/laragon/bin/php/*              "$HOME"/Downloads/php-*/ /c/Users/*/Downloads/php-*/; do
+        [ -x "$d/php.exe" ] && { echo "$d/php.exe"; return; }
+    done
+}
+PHP_BIN="$(find_php)"
+
 echo "== بنية PHP =="
-python3 tests/check_php.py site/*.php site/includes/*.php || FAIL=1
+# فيه نسختين من نفس الفاحص: check_php.py الأصلية، و check_php.mjs مطابقة ليها بـNode.
+#
+# 🔴 ساعات python3 اللي في الـPATH بيبقى stub من مايكروسوفت ستور بيرجع فاضي من
+#    غير ما يفشل، عشان كده بنجرّبه بأمر حقيقي الأول.
+#
+# الفحص ده مسك ٣ بقات كانت هتوصل السيرفر يوم 2026-08-27 — قوسين ناقصين وقّعوا
+# صفحة كاملة، وعمود مش موجود في جدول. فمينفعش يتخطى في صمت.
+if command -v python3 > /dev/null 2>&1 && python3 -c "" > /dev/null 2>&1; then
+    python3 tests/check_php.py site/*.php site/includes/*.php || FAIL=1
+elif command -v node > /dev/null 2>&1; then
+    echo "  (python3 مش شغال — بنستخدم نسخة Node)"
+    node tests/check_php.mjs site/*.php site/includes/*.php || FAIL=1
+else
+    echo "  ❌ لا python3 ولا node — بنية PHP ما اتفحصتش. ما ترفعش."
+    FAIL=1
+fi
+
+echo
+echo "== بنية PHP — إشراقة =="
+if command -v node > /dev/null 2>&1; then
+    node tests/check_php.mjs ashraqa/*.php ashraqa/includes/*.php || FAIL=1
+else
+    echo "  (node مش متاح — اتخطى)"
+fi
 
 echo
 echo "== بنية PowerShell =="
@@ -55,13 +95,14 @@ done
 
 echo
 echo "== منطق تحليل الموسم =="
-if command -v php > /dev/null; then
-    php tests/analysis/test_analysis.php > /tmp/an1.log 2>&1 \
-        && tail -1 /tmp/an1.log || { cat /tmp/an1.log; FAIL=1; }
-    php tests/analysis/test_render.php > /tmp/an2.log 2>&1 \
-        && tail -1 /tmp/an2.log || { cat /tmp/an2.log; FAIL=1; }
+if [ -n "$PHP_BIN" ]; then
+    LOG="${TMPDIR:-/tmp}"
+    "$PHP_BIN" tests/analysis/test_analysis.php > "$LOG/an1.log" 2>&1         && tail -1 "$LOG/an1.log" || { cat "$LOG/an1.log"; FAIL=1; }
+    "$PHP_BIN" tests/analysis/test_render.php > "$LOG/an2.log" 2>&1         && tail -1 "$LOG/an2.log" || { cat "$LOG/an2.log"; FAIL=1; }
 else
-    echo "  (php مش متاح — اتخطى. التنصيب: apt install php-cli php-mbstring php-sqlite3 php-xml)"
+    echo "  ❌ php مش ملقي — منطق التحليل ما اتفحصش."
+    echo "     حط المسار الكامل في PHP_BIN، أو ضيف فولدر php.exe للـPATH."
+    FAIL=1
 fi
 
 echo

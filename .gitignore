@@ -34,3 +34,9 @@ node_modules/
 
 # نسخة السيرفر المنزّلة — مرجع للمقارنة، مش شغل
 public_html/
+
+# مجلدات أدوات — مش شغل المشروع
+.gemini/
+.specify/
+.claude/skills/speckit-*/
+tests/__pycache__/

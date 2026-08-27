@@ -98,16 +98,18 @@ function seed(): int
 function render(array $get): string
 {
     global $root;
-    $cmd = 'cd ' . escapeshellarg($root) . ' && php -d error_reporting=E_ALL -d display_errors=1 -r '
-         . escapeshellarg(
-             '$_GET = json_decode(getenv("AN_GET"), true); $_SERVER["REQUEST_METHOD"]="GET"; '
-             . 'session_start(); require "auth.php"; require "analysis_lib.php"; '
-             . '$__seed = require "seed.php"; $__seed(); '
-             . 'include "analysis.php";'
-         ) . ' 2>&1';
+    // 🔴 مطب ويندوز: escapeshellarg بتحوّل علامات التنصيص اللي جوه النص لمسافات،
+    //    فالكود اللي كان بيتبعت بـ-r كان بيوصل مكسور: getenv("AN_GET") بقت
+    //    getenv( AN_GET ) يعني ثابت مش موجود، والصفحة ما بترندرش خالص.
+    //    الحل: البوت سترابر في ملف (_run.php) بدل ما يتبعت في سطر الأوامر.
+    // ومطب تاني: 'cd C:\...' من درايف D مابيغيّرش الدرايف. proc_open نفسها
+    //    بتاخد مسار التشغيل في البارامتر الرابع — أنضف وبيشتغل على الاتنين.
+    $php = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+    $cmd = escapeshellarg($php) . ' -d error_reporting=E_ALL -d display_errors=1 '
+         . escapeshellarg($root . '/_run.php') . ' 2>&1';
     $env = ['AN_GET' => json_encode($get)];
     $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $p = proc_open($cmd, $desc, $pipes, null, array_merge($_ENV, $env));
+    $p = proc_open($cmd, $desc, $pipes, $root, array_merge($_ENV, $env));
     $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]); fclose($pipes[2]); proc_close($p);
     return $out;
@@ -121,6 +123,18 @@ $seedSrc = "<?php\nreturn function () {\n" .
         strpos(file_get_contents(__FILE__), "    return 1;\n}") - strpos(file_get_contents(__FILE__), "    \$p = db();")
     ) . "\n};\n";
 file_put_contents($root . '/seed.php', $seedSrc);
+
+file_put_contents($root . '/_run.php', <<<'RUN'
+<?php
+$_GET = json_decode(getenv('AN_GET'), true) ?: [];
+$_SERVER['REQUEST_METHOD'] = 'GET';
+session_start();
+require __DIR__ . '/auth.php';
+require __DIR__ . '/analysis_lib.php';
+$__seed = require __DIR__ . '/seed.php';
+$__seed();
+include __DIR__ . '/analysis.php';
+RUN);
 
 $pass = 0; $fail = 0; $msgs = [];
 function chk(string $n, bool $c, string $extra = ''): void
