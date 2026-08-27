@@ -48,7 +48,8 @@ function all_modules(): array
         'review'        => ['label' => 'مراجعة المحاسب',    'icon' => 'ti-user-check',        'url' => 'review.php'],
         'treasury'      => ['label' => 'الخزينة وكشف الحساب','icon' => 'ti-building-bank',    'url' => 'treasury.php'],
         'hr'            => ['label' => 'الموارد البشرية',   'icon' => 'ti-users',            'url' => 'hr.php'],
-        'attendance'    => ['label' => 'تسجيل الحضور',      'icon' => 'ti-clock-hour-4',     'url' => 'attendance.php'],
+        'attendance'        => ['label' => 'تسجيل الحضور',      'icon' => 'ti-clock-hour-4',     'url' => 'attendance.php'],
+        'attendance_import' => ['label' => 'استيراد الحضور',      'icon' => 'ti-file-spreadsheet', 'url' => 'attendance_import.php'],
         'tasks'         => ['label' => 'المهام',            'icon' => 'ti-inbox',         'url' => 'tasks.php'],
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
@@ -214,6 +215,8 @@ function can(string $moduleKey): bool
 {
     // سكانر الكمبيوتر بيتبع صلاحية استعلام الأسعار (نفس الجمهور — أي موظف)
     if ($moduleKey === 'remote_scan') $moduleKey = 'price_inquiry';
+    // استيراد الحضور بيتبع صلاحية الموارد البشرية (hr)
+    if ($moduleKey === 'attendance_import') $moduleKey = 'hr';
 
     if (!is_logged_in()) {
         return false;
