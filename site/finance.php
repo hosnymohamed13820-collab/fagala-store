@@ -1432,7 +1432,7 @@ function receive_custody(
 }
 
 /**
- * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع الخصومات).
+ * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع المكافآت والخصومات).
  *
  * القواعد المعتمدة من المالك:
  * - أيام العمل      = Floor(إجمالي ساعات العمل ÷ 6)
@@ -1442,7 +1442,9 @@ function receive_custody(
  * - أيام الاستحقاق  = أيام العمل + أيام الإجازة
  * - قيمة اليوم      = الراتب الأساسي ÷ 30 (ثابتة دائماً)
  * - الراتب قبل الخصم = قيمة اليوم × أيام الاستحقاق
- * - الصافي          = الراتب قبل الخصم − السلف − الجزاءات − عجز العهدة
+ * - الصافي          = الراتب قبل الخصم + المكافآت − السلف − الجزاءات − عجز العهدة
+ *
+ * ⚠️ المعادلة مكررة في site/hr.php (عرض مسير الرواتب) — أي تغيير هنا لازم يتغيّر هناك بالظبط.
  *
  * @param int $employeeId معرّف الموظف
  * @param string $month شهر الراتب (YYYY-MM)
@@ -1493,6 +1495,11 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $dayRate = $base > 0 ? ($base / 30.0) : 0.0;
     $grossSalary = $dayRate * $dueDays;
 
+    // المكافآت المعلّقة
+    $bon = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_bonuses WHERE employee_id=? AND status="pending"');
+    $bon->execute([$employeeId]);
+    $bonuses = (float) $bon->fetchColumn();
+
     // السلف المعلّقة
     $adv = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_advances WHERE employee_id=? AND status="pending"');
     $adv->execute([$employeeId]);
@@ -1508,10 +1515,11 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $def->execute([$employeeId]);
     $deficits = (float) $def->fetchColumn();
 
-    $net = $grossSalary - $advances - $penalties - $deficits;
+    $net = $grossSalary + $bonuses - $advances - $penalties - $deficits;
 
     return [
         'base_salary'     => $base,
+        'total_bonuses'   => $bonuses,
         'total_advances'  => $advances,
         'total_penalties' => $penalties,
         'total_deficits'  => $deficits,
@@ -1532,7 +1540,7 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
  * اعتماد وصرف مرتب موظف لشهر.
  * - بيحسب المرتب وفترة الحضور، يسجّله، يصرفه من الخزينة (مدين بالصافي).
  * - يتيح للأونر تعديل أيام الاستحقاق مع حفظ القيمة المحسوبة والمعدلة ومن قام بالتعديل.
- * - بيقفل السلف والجزاءات وعجز العهدة المعلّقة (deducted/recovered).
+ * - بيقفل المكافآت والسلف والجزاءات وعجز العهدة المعلّقة (paid/deducted/recovered).
  *
  * @return int معرّف المرتب
  */
@@ -1577,7 +1585,7 @@ function pay_salary(
 
         // إعادة حساب الإجمالي والصافي بناءً على الأيام الفعلية المعتمدة
         $grossSalary = $calc['day_rate'] * $dueDays;
-        $netSalary = $grossSalary - $calc['total_advances'] - $calc['total_penalties'] - $calc['total_deficits'];
+        $netSalary = $grossSalary + $calc['total_bonuses'] - $calc['total_advances'] - $calc['total_penalties'] - $calc['total_deficits'];
 
         $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
         $empName->execute([$employeeId]);
@@ -1586,13 +1594,13 @@ function pay_salary(
         // تسجيل المرتب في جدول salaries
         $pdo->prepare(
             'INSERT INTO salaries
-                (employee_id, salary_month, base_salary, total_advances, total_penalties,
+                (employee_id, salary_month, base_salary, total_bonuses, total_advances, total_penalties,
                  total_deficits, net_salary, status, paid_at,
                  period_from, period_to, work_hours, work_days, leave_days,
                  due_days_calc, due_days, due_days_edited_by, due_days_edited_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
-            $employeeId, $month, $calc['base_salary'], $calc['total_advances'],
+            $employeeId, $month, $calc['base_salary'], $calc['total_bonuses'], $calc['total_advances'],
             $calc['total_penalties'], $calc['total_deficits'], $netSalary,
             $calc['period_from'], $calc['period_to'], $calc['work_hours'], $calc['work_days'],
             $calc['leave_days'], $dueDaysCalc, $dueDays, $editedBy, $editedAt,
@@ -1606,7 +1614,9 @@ function pay_salary(
                 'salary', $salaryId, $userId, $pdo);
         }
 
-        // إقفال الخصومات المعلّقة
+        // إقفال المستحقات والخصومات المعلّقة
+        $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
+            ->execute([$employeeId]);
         $pdo->prepare('UPDATE employee_advances SET status="deducted" WHERE employee_id=? AND status="pending"')
             ->execute([$employeeId]);
         $pdo->prepare('UPDATE employee_penalties SET status="deducted" WHERE employee_id=? AND status="pending"')
