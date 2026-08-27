@@ -60,6 +60,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$empId,$start,$end,$type,$days]);
                 $flash = 'تم تسجيل الإجازة.'; $tab='leaves';
             }
+            elseif ($action === 'update_advance_deduction') {
+                $advId = (int)($_POST['advance_id'] ?? 0);
+                $monthlyDeduction = (float)($_POST['monthly_deduction'] ?? 0);
+                if ($advId <= 0 || $monthlyDeduction < 0) {
+                    throw new RuntimeException('بيانات غير صحيحة.');
+                }
+                $chk = $pdo->prepare('SELECT id, status FROM employee_advances WHERE id = ?');
+                $chk->execute([$advId]);
+                $advRow = $chk->fetch();
+                if (!$advRow) {
+                    throw new RuntimeException('السلفة غير موجودة.');
+                }
+                if ($advRow['status'] !== 'pending') {
+                    throw new RuntimeException('لا يمكن تعديل قسط سلفة غير معلّقة.');
+                }
+                $pdo->prepare('UPDATE employee_advances SET monthly_deduction = ? WHERE id = ?')
+                    ->execute([$monthlyDeduction, $advId]);
+                $flash = 'تم تحديث القسط الشهري للسلفة بنجاح.'; $tab='advances';
+            }
             elseif ($action === 'pay_salary') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
@@ -191,7 +210,7 @@ if (isset($_SESSION['flash'])) {
 // بيانات التبويبات
 $empList = $pdo->query(
     "SELECT e.*, b.name AS branch_name,
-            COALESCE((SELECT SUM(amount) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
+            COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
      FROM employees e
      LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
 )->fetchAll();
@@ -257,9 +276,15 @@ if ($tab === 'salaries') {
          GROUP BY employee_id"
     )->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // 3) السلف المعلّقة مجمّعة لكل موظف (استعلام واحد)
+    // 3) السلف المعلّقة مجمّعة لكل موظف بالأقساط الشهرية (استعلام واحد)
+    // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
     $advMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
+        "SELECT employee_id, COALESCE(SUM(
+            CASE
+                WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
+                ELSE COALESCE(remaining, amount)
+            END
+        ), 0)
          FROM employee_advances WHERE status='pending'
          GROUP BY employee_id"
     )->fetchAll(PDO::FETCH_KEY_PAIR);
@@ -429,24 +454,53 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'advances'): ?>
     <div class="card">
         <div class="section-title">السلف (تُصرف من الخزينة)</div>
-        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">السلفة تُصرف من موديول الخزينة (زر صرف ← سلفة لموظف).</p>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">السلفة تُصرف من موديول الخزينة (زر صرف ← سلفة لموظف) ويمكن تحديد قسط شهري لخصمها تدريجياً من الراتب.</p>
         <?php if (empty($advances)): ?>
             <div class="empty">لا توجد سلف.</div>
         <?php else: ?>
+        <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>المبلغ</th><th>الحالة</th><th>ملاحظات</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
-            <?php foreach ($advances as $a): $b=$statusBadge($a['status']); ?>
+            <?php foreach ($advances as $a):
+                $b = $statusBadge($a['status']);
+                $origAmount = (float)$a['amount'];
+                $remAmount  = $a['remaining'] !== null ? (float)$a['remaining'] : $origAmount;
+                $monthlyDed = (float)($a['monthly_deduction'] ?? 0);
+                $isPending  = ($a['status'] === 'pending');
+            ?>
                 <tr>
                     <td><?= e($a['advance_date']) ?></td>
                     <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
-                    <td><?= number_format((float)$a['amount'],2) ?></td>
+                    <td><?= number_format($origAmount, 2) ?></td>
+                    <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
+                    <td>
+                        <?php if ($monthlyDed > 0): ?>
+                            <span style="font-weight:600;color:var(--accent-hover);"><?= number_format($monthlyDed, 2) ?></span>
+                        <?php else: ?>
+                            <span style="color:var(--ink-500);">بالكامل</span>
+                        <?php endif; ?>
+                    </td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td style="font-size:13px;color:var(--ink-500);"><?= e($a['notes'] ?? '—') ?></td>
+                    <td>
+                        <?php if ($isPending): ?>
+                            <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
+                                    data-id="<?= (int)$a['id'] ?>"
+                                    data-name="<?= e($a['full_name']) ?>"
+                                    data-amount="<?= number_format($origAmount, 2) ?>"
+                                    data-remaining="<?= number_format($remAmount, 2) ?>"
+                                    data-deduction="<?= $monthlyDed > 0 ? $monthlyDed : 0 ?>"
+                                    title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
+                        <?php else: ?>
+                            <span style="color:#ccc;">—</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -1040,6 +1094,29 @@ $statusBadge = function($st) {
 </div>
 <?php endif; ?>
 
+<div class="modal-bg" id="editAdvanceModal">
+    <div class="modal">
+        <h3>تعديل القسط الشهري للسلفة</h3>
+        <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
+            الموظف: <strong id="editAdvEmpName" style="color:var(--ink-900);"></strong> · أصل السلفة: <strong id="editAdvAmount" style="color:var(--ink-900);"></strong> · المتبقي: <strong id="editAdvRemaining" style="color:var(--ink-900);"></strong>
+        </p>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="update_advance_deduction">
+            <input type="hidden" name="advance_id" id="editAdvId" value="">
+            <div class="form-row">
+                <label>القسط الشهري (0 = خصم المتبقي بالكامل مع أول راتب)</label>
+                <input type="number" step="0.01" min="0" name="monthly_deduction" id="editAdvDeduction" required>
+            </div>
+            <p style="font-size:12px;color:var(--ink-500);">إذا حُدد القسط بـ 0 فسيتم خصم كامل المبلغ المتبقي مع الراتب القادم.</p>
+            <div class="modal-actions">
+                <button type="submit" class="btn">حفظ التعديل</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('editAdvanceModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
@@ -1054,6 +1131,19 @@ $statusBadge = function($st) {
         document.getElementById('editReqOut').value = btn.dataset.out || '';
         document.getElementById('editReqEmpName').textContent = btn.dataset.name;
         document.getElementById('editReqDate').textContent = btn.dataset.date;
+        modal.classList.add('open');
+    });
+
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.btn-edit-adv');
+        if (!btn) return;
+        var modal = document.getElementById('editAdvanceModal');
+        if (!modal) return;
+        document.getElementById('editAdvId').value = btn.dataset.id;
+        document.getElementById('editAdvEmpName').textContent = btn.dataset.name;
+        document.getElementById('editAdvAmount').textContent = btn.dataset.amount;
+        document.getElementById('editAdvRemaining').textContent = btn.dataset.remaining;
+        document.getElementById('editAdvDeduction').value = btn.dataset.deduction || '0';
         modal.classList.add('open');
     });
 

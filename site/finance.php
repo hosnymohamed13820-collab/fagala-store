@@ -1500,8 +1500,18 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $bon->execute([$employeeId]);
     $bonuses = (float) $bon->fetchColumn();
 
-    // السلف المعلّقة
-    $adv = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_advances WHERE employee_id=? AND status="pending"');
+    // السلف المعلّقة (حساب الأقساط الشهرية أو كامل المبلغ المتبقي لو القسط 0)
+    // ⚠️ المعادلة مكررة بين هنا و pay_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
+    $adv = $pdo->prepare(
+        'SELECT COALESCE(SUM(
+            CASE
+                WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
+                ELSE COALESCE(remaining, amount)
+            END
+        ), 0)
+        FROM employee_advances
+        WHERE employee_id = ? AND status = "pending"'
+    );
     $adv->execute([$employeeId]);
     $advances = (float) $adv->fetchColumn();
 
@@ -1617,8 +1627,40 @@ function pay_salary(
         // إقفال المستحقات والخصومات المعلّقة
         $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
             ->execute([$employeeId]);
-        $pdo->prepare('UPDATE employee_advances SET status="deducted" WHERE employee_id=? AND status="pending"')
-            ->execute([$employeeId]);
+
+        // تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة)
+        // ⚠️ المعادلة مكررة بين هنا و compute_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
+        $advStmt = $pdo->prepare(
+            'SELECT id, amount, monthly_deduction, remaining
+             FROM employee_advances
+             WHERE employee_id = ? AND status = "pending"
+             ORDER BY id ASC FOR UPDATE'
+        );
+        $advStmt->execute([$employeeId]);
+        $pendingAdvances = $advStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $updAdvStmt = $pdo->prepare(
+            'UPDATE employee_advances
+             SET remaining = ?, status = ?
+             WHERE id = ?'
+        );
+
+        foreach ($pendingAdvances as $advRow) {
+            $advId = (int) $advRow['id'];
+            $origAmount = (float) $advRow['amount'];
+            $monthlyDed = (float) $advRow['monthly_deduction'];
+            $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
+
+            $take = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
+            $newRemaining = $outstanding - $take;
+
+            if ($newRemaining <= 0.00001) {
+                $updAdvStmt->execute([0.00, 'deducted', $advId]);
+            } else {
+                $updAdvStmt->execute([$newRemaining, 'pending', $advId]);
+            }
+        }
+
         $pdo->prepare('UPDATE employee_penalties SET status="deducted" WHERE employee_id=? AND status="pending"')
             ->execute([$employeeId]);
         $pdo->prepare('UPDATE custody_deficits SET status="recovered", recovered_in_salary_id=? WHERE employee_id=? AND status="pending"')
