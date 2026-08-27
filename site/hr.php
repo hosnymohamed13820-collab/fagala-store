@@ -270,7 +270,10 @@ if ($tab === 'salaries') {
         $hours       = (float) ($empHours[$empId] ?? 0);
         $workDays    = (int) floor($hours / 6.0);
         if ($workDays < 0) $workDays = 0;
-        $leaveDays   = 4;
+        // نفس قاعدة compute_salary في finance.php: يوم إجازة عن كل ٦ أيام عمل بحد أقصى ٤.
+        // لو غيّرت هنا، غيّر هناك — الشاشة والصرف لازم يقولوا نفس الرقم.
+        $leaveDays   = (int) floor($workDays / 6);
+        if ($leaveDays > 4) $leaveDays = 4;
         $dueDaysCalc = $workDays + $leaveDays;
         $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
         $gross       = $dayRate * $dueDaysCalc;
