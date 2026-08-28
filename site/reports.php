@@ -596,38 +596,49 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                            number_format($tDr-$tCr,2)]];
 
         case 'deficits':
-            // تقرير العجوزات — يجمع عجز الورديات وعجز العهد
-            // عجز الوردية: difference < 0 (المحصل أقل من السيستم) والقيمة ABS(difference)
-            // عجز العهدة: مسجل في custody_deficits والقيمة موجبة بالفعل
+            // تقرير العجوزات — يجمع فروق الورديات (عجز وزيادة) وعجز العهد بعتبة التسامح
+            // فروق الورديات: s.difference <> 0 (عجز لو سالب، زيادة لو موجب)
+            // عجز العهدة: مسجل في custody_deficits (معمولة أصلاً بعد تطبيق العتبة عند الإقفال في close_custody)
             // تماسك الصف: اسم الكاشير من users (shifts.user_id) واسم الموظف من employees (custody_deficits.employee_id)
+            $statusFilter = $_GET['status'] ?? ''; // 'within' أو 'exceeded' أو فارغ (الكل)
+            $tolerance = (float) setting('custody_deficit_tolerance', '0');
+
+            $stMap = [
+                'submitted'   => 'مستلمة',
+                'approved'    => 'معتمدة',
+                'rejected'    => 'مرفوضة',
+                'resubmitted' => 'معاد إرسال',
+                'pending'     => 'معلق',
+                'recovered'   => 'مسترد',
+                'waived'      => 'معفى',
+            ];
+
             $st = $pdo->prepare(
                 "SELECT s.business_date AS deficit_date,
                         b.name AS branch_name,
                         u.full_name AS person_name,
-                        'عجز وردية' AS deficit_type,
+                        'shift' AS source_type,
                         s.id AS shift_id,
-                        s.system_total AS system_total,
-                        (s.cash_total + s.visa_total + s.instapay_total) AS collected_total,
-                        ABS(s.difference) AS deficit_amount,
-                        s.status AS status,
+                        s.shift_name AS shift_name,
+                        s.difference AS diff_amount,
+                        s.status AS record_status,
                         s.id AS sort_id
                    FROM shifts s
                    LEFT JOIN branches b ON b.id = s.branch_id
                    LEFT JOIN users u ON u.id = s.user_id
-                  WHERE s.difference < 0
+                  WHERE s.difference <> 0
                     AND s.business_date BETWEEN ? AND ?
 
-                  UNION ALL
+                   UNION ALL
 
                  SELECT DATE(cd.created_at) AS deficit_date,
                         b.name AS branch_name,
                         e.full_name AS person_name,
-                        'عجز عهدة' AS deficit_type,
+                        'custody_deficit' AS source_type,
                         NULL AS shift_id,
-                        NULL AS system_total,
-                        NULL AS collected_total,
-                        cd.amount AS deficit_amount,
-                        cd.status AS status,
+                        NULL AS shift_name,
+                        cd.amount AS diff_amount,
+                        cd.status AS record_status,
                         cd.id AS sort_id
                    FROM custody_deficits cd
                    LEFT JOIN branches b ON b.id = cd.branch_id
@@ -639,43 +650,89 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $st->execute([$from, $to, $from, $to]);
 
             $rows = [];
-            $tDeficits = 0.0;
-            $stMap = [
-                'submitted'   => 'مستلمة',
-                'approved'    => 'معتمدة',
-                'rejected'    => 'مرفوضة',
-                'resubmitted' => 'معاد إرسال',
-                'pending'     => 'معلق',
-                'recovered'   => 'مسترد',
-                'waived'      => 'معفى',
-            ];
+            $tShortage = 0.0;
+            $tOver     = 0.0;
+            $tExceeded = 0.0;
+
             foreach ($st as $r) {
-                $amount = (float) $r['deficit_amount'];
-                $tDeficits += $amount;
-                $shiftNo = $r['shift_id'] !== null ? '#' . $r['shift_id'] : '—';
-                $sysTotal = $r['system_total'] !== null ? number_format((float)$r['system_total'], 2) : '—';
-                $collected = $r['collected_total'] !== null ? number_format((float)$r['collected_total'], 2) : '—';
+                $collectionStatus = $stMap[$r['record_status']] ?? ($r['record_status'] ?: '—');
+
+                if ($r['source_type'] === 'custody_deficit') {
+                    // صفوف العهدة: معمولة بعد تطبيق العتبة في close_custody()
+                    // فحالتها دايماً «تجاوز العتبة» والمتجاوز = المبلغ نفسه.
+                    // متطبّقش العتبة عليها تاني هنا.
+                    // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
+                    // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
+                    $amount = (float) $r['diff_amount'];
+                    $statusLabel = 'تجاوز العتبة';
+
+                    if ($statusFilter === 'within') {
+                        continue;
+                    }
+
+                    $movementType = 'عجز عهدة';
+                    $shiftNo      = '—';
+                    $shortageVal  = number_format($amount, 2);
+                    $overVal      = '—';
+                    $tolVal       = '—';
+                    $exceededVal  = number_format($amount, 2);
+
+                    $tShortage += $amount;
+                    $tExceeded += $amount;
+                } else {
+                    // صفوف الوردية: نطبق دالة العتبة الموحدة shift_variance_status()
+                    $diff = (float) $r['diff_amount'];
+                    $vs = shift_variance_status($diff, $tolerance);
+
+                    if ($statusFilter === 'within' && $vs['over_limit']) {
+                        continue;
+                    }
+                    if ($statusFilter === 'exceeded' && !$vs['over_limit']) {
+                        continue;
+                    }
+
+                    $movementType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
+                    $shiftNo      = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? (string) $r['shift_name'] : '#' . $r['shift_id'];
+                    $shortageVal  = $vs['kind'] === 'shortage' ? number_format($vs['amount'], 2) : '—';
+                    $overVal      = $vs['kind'] === 'over' ? number_format($vs['amount'], 2) : '—';
+                    $tolVal       = number_format($vs['tolerance'], 2);
+                    $exceededVal  = number_format($vs['exceeded'], 2);
+                    $statusLabel  = $vs['status_label'];
+
+                    if ($vs['kind'] === 'shortage') {
+                        $tShortage += $vs['amount'];
+                    } elseif ($vs['kind'] === 'over') {
+                        $tOver += $vs['amount'];
+                    }
+                    $tExceeded += $vs['exceeded'];
+                }
+
                 $rows[] = [
                     (string) $r['deficit_date'],
                     $r['branch_name'] ?? '—',
                     $r['person_name'] ?? '—',
-                    (string) $r['deficit_type'],
+                    $movementType,
                     $shiftNo,
-                    $sysTotal,
-                    $collected,
-                    number_format($amount, 2),
-                    $stMap[$r['status']] ?? $r['status'],
+                    $shortageVal,
+                    $overVal,
+                    $tolVal,
+                    $exceededVal,
+                    $statusLabel,
+                    $collectionStatus,
                 ];
             }
+
             return [
                 'title'     => 'تقرير العجوزات',
-                'headers'   => ['التاريخ', 'الفرع', 'الموظف', 'النوع', 'رقم الوردية', 'إجمالي السيستم', 'المحصّل', 'العجز', 'الحالة'],
+                'headers'   => ['التاريخ', 'الفرع', 'الموظف', 'نوع الحركة', 'رقم الوردية', 'العجز', 'الزيادة', 'العتبة', 'المتجاوز', 'الحالة', 'حالة التحصيل'],
                 'rows'      => $rows,
                 'sum_cards' => [
-                    ['label' => 'إجمالي العجز', 'col' => 7],
-                    ['label' => 'عدد الحالات',  'col' => 7, 'count' => true],
+                    ['label' => 'إجمالي العجز',    'col' => 5],
+                    ['label' => 'إجمالي الزيادة',   'col' => 6],
+                    ['label' => 'إجمالي المتجاوز', 'col' => 8],
+                    ['label' => 'عدد الحالات',     'col' => 8, 'count' => true],
                 ],
-                'totals'    => ['', '', '', '', '', '', 'إجمالي:', number_format($tDeficits, 2), ''],
+                'totals'    => ['', '', '', '', 'إجمالي:', number_format($tShortage, 2), number_format($tOver, 2), '', number_format($tExceeded, 2), '', ''],
             ];
 
         case 'suppliers':
@@ -1024,8 +1081,16 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'deficits'): $selDefStatus = $_GET['status'] ?? ''; ?>
+        <label>الحالة</label>
+        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">الكل</option>
+            <option value="within" <?= $selDefStatus==='within'?'selected':'' ?>>داخل العتبة</option>
+            <option value="exceeded" <?= $selDefStatus==='exceeded'?'selected':'' ?>>تجاوز العتبة</option>
+        </select>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير CSV
     </a>
 </form>
@@ -1717,6 +1782,18 @@ require_once __DIR__ . '/includes/header.php';
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
                         <td><span class="acc-caret">&#9656;</span> <?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 5 && $cell !== '—'): ?>
+                        <td style="color:var(--neg);font-weight:600;"><?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 6 && $cell !== '—'): ?>
+                        <td style="color:var(--pos);font-weight:600;"><?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 9): ?>
+                        <td>
+                            <?php if ($cell === 'تجاوز العتبة'): ?>
+                                <span class="badge" style="background:var(--neg-soft);color:var(--neg);padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600;"><?= e((string)$cell) ?></span>
+                            <?php else: ?>
+                                <span class="badge" style="background:var(--line-soft);color:var(--ink-600);padding:3px 8px;border-radius:6px;font-size:12px;"><?= e((string)$cell) ?></span>
+                            <?php endif; ?>
+                        </td>
                     <?php else: ?>
                         <td><?= e((string)$cell) ?></td>
                     <?php endif; ?>

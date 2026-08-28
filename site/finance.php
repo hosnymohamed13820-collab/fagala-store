@@ -1652,6 +1652,54 @@ function salary_days_from_hours(float $workHours): array
 }
 
 /**
+ * حساب حالة فرق الوردية (عجز أو زيادة) وعتبة التسامح:
+ * - kind: 'shortage' (عجز لو difference < 0) · 'over' (زيادة لو difference > 0) · 'none' (لو 0)
+ * - amount: القيمة المطلقة للفرق (abs($difference))
+ * - tolerance: عتبة التسامح المستعملة
+ * - exceeded: الجزء المتجاوز للعتبة = max(0, amount - tolerance)
+ * - over_limit: هل تجاوز العتبة؟ (exceeded > 0)
+ * - status_label: 'داخل العتبة' أو 'تجاوز العتبة'
+ *
+ * ⚠️ المصدر الموحد للحقيقة لمنطق العتبة في تقرير العجوزات وتاب الجزاءات.
+ *
+ * @param float $difference فرق الوردية (سالب=عجز، موجب=زيادة)
+ * @param float|null $tolerance العتبة (افتراضي من إعداد custody_deficit_tolerance)
+ * @return array{kind: string, amount: float, tolerance: float, exceeded: float, over_limit: bool, status_label: string}
+ */
+function shift_variance_status(float $difference, ?float $tolerance = null): array
+{
+    if ($tolerance === null) {
+        $tolerance = (float) setting('custody_deficit_tolerance', '0');
+    }
+    if ($tolerance < 0) {
+        $tolerance = 0.0;
+    }
+
+    $amount = abs($difference);
+    if ($difference < -0.0001) {
+        $kind = 'shortage';
+    } elseif ($difference > 0.0001) {
+        $kind = 'over';
+    } else {
+        $kind = 'none';
+    }
+
+    // المتجاوز = max(0, amount - tolerance) وفقاً لقرار الأونر
+    $exceeded = max(0.0, round($amount - $tolerance, 2));
+    $overLimit = $exceeded > 0.0001;
+    $statusLabel = $overLimit ? 'تجاوز العتبة' : 'داخل العتبة';
+
+    return [
+        'kind'         => $kind,
+        'amount'       => round($amount, 2),
+        'tolerance'    => round($tolerance, 2),
+        'exceeded'     => $exceeded,
+        'over_limit'   => $overLimit,
+        'status_label' => $statusLabel,
+    ];
+}
+
+/**
  * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع المكافآت والخصومات).
  *
  * القواعد المعتمدة من المالك:

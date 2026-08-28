@@ -250,14 +250,24 @@ $advances = $pdo->query(
 $bonuses = $pdo->query(
     "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
 )->fetchAll();
-$penalties = $pdo->query(
+// قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
+$tolerance = (float) setting('custody_deficit_tolerance', '0');
+
+// فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
+// ABS(s.difference) - ? > 0.0001
+// ⚠️ shift_variance_status() تفضل هي مصدر الحقيقة للقاعدة، والشرط ده فلتر مسبق مطابق ليها رياضياً.
+// أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
+$penStmt = $pdo->prepare(
     "SELECT p.penalty_date AS deduction_date,
             e.full_name,
-            'جزاء' AS deduction_type,
+            'penalty' AS source_type,
             b.name AS branch_name,
             p.amount,
+            0.0 AS difference,
             p.reason,
             p.status,
+            NULL AS shift_name,
+            NULL AS shift_id,
             p.id AS sort_id
        FROM employee_penalties p
        JOIN employees e ON e.id = p.employee_id
@@ -267,11 +277,14 @@ $penalties = $pdo->query(
 
      SELECT DATE(cd.created_at) AS deduction_date,
             e.full_name,
-            'عجز عهدة' AS deduction_type,
+            'custody_deficit' AS source_type,
             b.name AS branch_name,
             cd.amount,
+            0.0 AS difference,
             COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
             cd.status,
+            NULL AS shift_name,
+            NULL AS shift_id,
             cd.id AS sort_id
        FROM custody_deficits cd
        LEFT JOIN employees e ON e.id = cd.employee_id
@@ -281,21 +294,86 @@ $penalties = $pdo->query(
 
      SELECT s.business_date AS deduction_date,
             COALESCE(e.full_name, u.full_name, '—') AS full_name,
-            'عجز وردية' AS deduction_type,
+            'shift' AS source_type,
             b.name AS branch_name,
             ABS(s.difference) AS amount,
-            COALESCE(s.shift_name, 'عجز تقفيل وردية') AS reason,
+            s.difference AS difference,
+            NULL AS reason,
             s.status,
+            s.shift_name,
+            s.id AS shift_id,
             s.id AS sort_id
        FROM shifts s
        LEFT JOIN branches b ON b.id = s.branch_id
        LEFT JOIN users u ON u.id = s.user_id
        LEFT JOIN employees e ON e.user_id = u.id
-      WHERE s.difference < 0
+      WHERE s.difference <> 0
+        AND ABS(s.difference) - ? > 0.0001
 
       ORDER BY deduction_date DESC, sort_id DESC
       LIMIT 100"
-)->fetchAll();
+);
+$penStmt->execute([$tolerance]);
+$penaltiesRaw = $penStmt->fetchAll();
+
+$penalties = [];
+
+foreach ($penaltiesRaw as $r) {
+    if ($r['source_type'] === 'penalty') {
+        $penalties[] = [
+            'deduction_date' => (string) $r['deduction_date'],
+            'full_name'      => (string) $r['full_name'],
+            'deduction_type' => 'جزاء',
+            'branch_name'    => $r['branch_name'] ?? '—',
+            'amount'         => (float) $r['amount'],
+            'tolerance'      => '—',
+            'exceeded'       => '—',
+            'reason'         => $r['reason'] ?? '—',
+            'status'         => (string) $r['status'],
+        ];
+    } elseif ($r['source_type'] === 'custody_deficit') {
+        // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
+        // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
+        $amount = (float) $r['amount'];
+        $penalties[] = [
+            'deduction_date' => (string) $r['deduction_date'],
+            'full_name'      => (string) $r['full_name'],
+            'deduction_type' => 'عجز عهدة',
+            'branch_name'    => $r['branch_name'] ?? '—',
+            'amount'         => $amount,
+            'tolerance'      => '—',
+            'exceeded'       => number_format($amount, 2),
+            'reason'         => $r['reason'] ?? 'عجز تسوية عهدة',
+            'status'         => (string) $r['status'],
+        ];
+    } elseif ($r['source_type'] === 'shift') {
+        // فحص فرق الوردية بالعتبة الموحدة
+        $diff = (float) $r['difference'];
+        $vs = shift_variance_status($diff, $tolerance);
+
+        // اللي داخل العتبة مايظهرش في تاب الجزاءات خالص
+        if (!$vs['over_limit']) {
+            continue;
+        }
+
+        $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
+        $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
+        $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
+        $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
+
+        $penalties[] = [
+            'deduction_date' => (string) $r['deduction_date'],
+            'full_name'      => (string) $r['full_name'],
+            'deduction_type' => $dedType,
+            'branch_name'    => $r['branch_name'] ?? '—',
+            'amount'         => $vs['exceeded'], // المبلغ المعروض لصفوف الورديات = المتجاوز
+            'tolerance'      => number_format($vs['tolerance'], 2),
+            'exceeded'       => number_format($vs['exceeded'], 2),
+            'reason'         => $reason,
+            'status'         => (string) $r['status'],
+        ];
+    }
+}
 $leaves = $pdo->query(
     "SELECT l.*, e.full_name FROM employee_leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.id DESC LIMIT 100"
 )->fetchAll();
@@ -646,15 +724,28 @@ $statusBadge = function($st) {
         <?php else: ?>
         <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>المتجاوز</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
             <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
+                <?php
+                $typeColor = 'var(--ink-800)';
+                $typeBg    = 'var(--line-soft)';
+                if ($p['deduction_type'] === 'عجز وردية' || $p['deduction_type'] === 'عجز عهدة') {
+                    $typeColor = 'var(--neg)';
+                    $typeBg    = 'var(--neg-soft)';
+                } elseif ($p['deduction_type'] === 'زيادة وردية') {
+                    $typeColor = 'var(--pos)';
+                    $typeBg    = 'var(--pos-soft)';
+                }
+                ?>
                 <tr>
                     <td><?= e($p['deduction_date']) ?></td>
                     <td style="font-weight:500;"><?= e($p['full_name']) ?></td>
-                    <td><span class="badge" style="background:var(--line-soft);color:var(--ink-800);"><?= e($p['deduction_type']) ?></span></td>
+                    <td><span class="badge" style="background:<?= $typeBg ?>;color:<?= $typeColor ?>;"><?= e($p['deduction_type']) ?></span></td>
                     <td><?= e($p['branch_name'] ?? '—') ?></td>
-                    <td><?= number_format((float)$p['amount'],2) ?></td>
+                    <td style="font-weight:600;<?= ($p['deduction_type']==='زيادة وردية') ? 'color:var(--pos);' : 'color:var(--neg);' ?>"><?= number_format((float)$p['amount'],2) ?></td>
+                    <td><?= is_numeric($p['tolerance']) ? number_format((float)$p['tolerance'],2) : e((string)$p['tolerance']) ?></td>
+                    <td><?= is_numeric($p['exceeded']) ? number_format((float)$p['exceeded'],2) : e((string)$p['exceeded']) ?></td>
                     <td><?= e($p['reason'] ?? '—') ?></td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                 </tr>
