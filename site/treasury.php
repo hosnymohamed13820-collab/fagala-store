@@ -200,15 +200,29 @@ $employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 
 // الفروع (لصرف العهدة من الخزينة)
 $branchesForCustody = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
 
+// ===== فلتر التاريخ لكشف الحساب (الافتراضي: أول الشهر الحالي ← النهارده) =====
+// 🔴 الاسم stFrom/stTo مش from/to عن قصد: معالج التحويل فوق (سطر ١٦٠) بيستخدم
+//    $from و$to لأرقام الخزائن. تسمية زي بعض هنا = فخ صامت لأي تعديل جاي.
+$stFrom = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']))
+    ? $_GET['from']
+    : date('Y-m-01');
+$stTo = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))
+    ? $_GET['to']
+    : date('Y-m-d');
+
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = $_GET['treasury'] ?? '';
 $statement  = [];
 $selectedTreasury = null;
 $isAllStatement = ($selectedParam === 'all');
+$totalDebit  = 0.0;
+$totalCredit = 0.0;
+$totalNet    = 0.0;
+$totalCount  = 0;   // عدد حركات الفترة كلها — الجدول محدود بـLIMIT، الكروت لأ
 
 if ($isAllStatement) {
     // كشف مجمّع لكل الخزائن (مع اسم الخزينة في كل حركة)
-    $st = $pdo->query(
+    $st = $pdo->prepare(
         "SELECT je.*, t.name AS treasury_name, u.full_name AS by_name,
                 COALESCE(ja.name, ec.name) AS entry_code_name,
                 CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
@@ -218,7 +232,9 @@ if ($isAllStatement) {
                     ELSE NULL
                 END AS supplier_name,
                 eu.full_name AS edited_by_name,
-                cb.name AS cost_branch_name
+                cb.name AS cost_branch_name,
+                tfrom.name AS transfer_from_name,
+                tto.name AS transfer_to_name
          FROM journal_entries je
          JOIN treasuries t ON t.id = je.treasury_id
          LEFT JOIN users u ON u.id = je.created_by
@@ -235,9 +251,29 @@ if ($isAllStatement) {
          LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
          LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
          LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+         LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+         LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+         LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
+         WHERE je.entry_date BETWEEN ? AND ?
          ORDER BY je.id DESC LIMIT 300"
     );
+    $st->execute([$stFrom, $stTo]);
     $statement = $st->fetchAll();
+
+    // حساب الكروت باستعلام تجميعي منفصل (SUM) على نفس الفترة من غير LIMIT
+    $sumSt = $pdo->prepare(
+        "SELECT COALESCE(SUM(je.debit), 0) AS total_debit,
+                COALESCE(SUM(je.credit), 0) AS total_credit,
+                COUNT(*) AS cnt
+         FROM journal_entries je
+         WHERE je.entry_date BETWEEN ? AND ?"
+    );
+    $sumSt->execute([$stFrom, $stTo]);
+    $sumRow = $sumSt->fetch();
+    $totalDebit  = (float) ($sumRow['total_debit'] ?? 0);
+    $totalCredit = (float) ($sumRow['total_credit'] ?? 0);
+    $totalNet    = $totalDebit - $totalCredit;
+    $totalCount  = (int) ($sumRow['cnt'] ?? 0);
 } else {
     $selectedId = (int) $selectedParam;
     if ($selectedId > 0) {
@@ -255,7 +291,9 @@ if ($isAllStatement) {
                             ELSE NULL
                         END AS supplier_name,
                         eu.full_name AS edited_by_name,
-                        cb.name AS cost_branch_name
+                        cb.name AS cost_branch_name,
+                        tfrom.name AS transfer_from_name,
+                        tto.name AS transfer_to_name
                  FROM journal_entries je
                  LEFT JOIN users u ON u.id = je.created_by
                  LEFT JOIN users eu ON eu.id = je.edited_by
@@ -271,12 +309,30 @@ if ($isAllStatement) {
                  LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                  LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                  LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
-                 WHERE je.treasury_id = ?
+                 LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                 LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                 LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
+                 WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?
                  ORDER BY je.id DESC
                  LIMIT 200"
             );
-            $st->execute([$selectedId]);
+            $st->execute([$selectedId, $stFrom, $stTo]);
             $statement = $st->fetchAll();
+
+            // حساب الكروت باستعلام تجميعي منفصل (SUM) على نفس الفترة من غير LIMIT
+            $sumSt = $pdo->prepare(
+                "SELECT COALESCE(SUM(je.debit), 0) AS total_debit,
+                        COALESCE(SUM(je.credit), 0) AS total_credit,
+                        COUNT(*) AS cnt
+                 FROM journal_entries je
+                 WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?"
+            );
+            $sumSt->execute([$selectedId, $stFrom, $stTo]);
+            $sumRow = $sumSt->fetch();
+            $totalDebit  = (float) ($sumRow['total_debit'] ?? 0);
+            $totalCredit = (float) ($sumRow['total_credit'] ?? 0);
+            $totalNet    = $totalDebit - $totalCredit;
+            $totalCount  = (int) ($sumRow['cnt'] ?? 0);
         }
     }
 }
@@ -378,6 +434,18 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .amt-credit { color:var(--pos); font-weight:500; }
     .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
     .section-title { font-size:17px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
+    /* شريط الفلتر وكروت الإجماليات لكشف الحساب */
+    .filter-bar { background:var(--line-soft); border-radius:12px; padding:12px 16px; margin-bottom:16px;
+        display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .filter-bar label { font-size:13px; color:var(--ink-700); font-weight:500; }
+    .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:#fff; }
+    .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent); }
+    .btn-filter { padding:8px 16px; font-size:13px; }
+    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
+    .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:12px 16px; }
+    .sc-label { font-size:12px; color:var(--ink-500); margin-bottom:5px; }
+    .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
+    .sc-cur { font-size:13px; font-weight:400; color:var(--ink-500); }
     /* Modal */
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
@@ -420,13 +488,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         <button class="btn btn-white" onclick="openModal('receiptModal')"><i class="ti ti-arrow-down-left"></i> استلام</button>
         <button class="btn btn-white" onclick="openModal('disburseModal')"><i class="ti ti-arrow-up-right"></i> صرف</button>
         <button class="btn btn-white" onclick="openModal('transferModal')"><i class="ti ti-transfer"></i> تحويل</button>
-        <a href="?treasury=all" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
+        <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
     </div>
 </div>
 
 <div class="treasuries-grid">
     <?php foreach ($treasuries as $t): ?>
-        <a href="?treasury=<?= (int)$t['id'] ?>"
+        <a href="?treasury=<?= (int)$t['id'] ?>&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>"
            class="treasury-card <?= (!$isAllStatement && $selectedTreasury && (int)$selectedTreasury['id'] === (int)$t['id']) ? 'selected' : '' ?>">
             <div class="tc-top">
                 <div class="tc-icon"><i class="ti <?= e($typeIcons[$t['type']] ?? 'ti-cash') ?>"></i></div>
@@ -449,6 +517,38 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 300 حركة)</span>
             <a href="treasury.php" class="btn btn-sm" style="float:left;font-size:13px;padding:5px 12px;text-decoration:none;">عرض الخزائن</a>
         </div>
+
+        <form method="get" class="filter-bar">
+            <input type="hidden" name="treasury" value="all">
+            <label>من</label>
+            <input type="date" name="from" value="<?= e($stFrom) ?>">
+            <label>إلى</label>
+            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
+        </form>
+
+        <div class="sum-cards">
+            <div class="sum-card">
+                <div class="sc-label">إجمالي المدين</div>
+                <div class="sc-value amt-debit"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">إجمالي الدائن</div>
+                <div class="sc-value amt-credit"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">الصافي (مدين − دائن)</div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+        </div>
+
+        <?php if ($totalCount > 300): ?>
+            <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
+                الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
+                آخر 300 منهم بس، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+            </div>
+        <?php endif; ?>
+
         <?php if (empty($statement)): ?>
             <div class="empty">لا توجد حركات بعد.</div>
         <?php else: ?>
@@ -461,7 +561,14 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
                         <td style="font-weight:500;"><?= e($row['treasury_name']) ?></td>
-                        <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td class="je-c-desc">
+                            <?= e($row['description']) ?>
+                            <?php if ($row['ref_type'] === 'transfer' && (!empty($row['transfer_from_name']) || !empty($row['transfer_to_name']))): ?>
+                                <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                    من: <?= e($row['transfer_from_name'] ?: '—') ?> ← إلى: <?= e($row['transfer_to_name'] ?: '—') ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
@@ -484,6 +591,38 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             كشف حساب: <?= e($selectedTreasury['name']) ?>
             <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 200 حركة)</span>
         </div>
+
+        <form method="get" class="filter-bar">
+            <input type="hidden" name="treasury" value="<?= (int)$selectedTreasury['id'] ?>">
+            <label>من</label>
+            <input type="date" name="from" value="<?= e($stFrom) ?>">
+            <label>إلى</label>
+            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
+        </form>
+
+        <div class="sum-cards">
+            <div class="sum-card">
+                <div class="sc-label">إجمالي المدين</div>
+                <div class="sc-value amt-debit"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">إجمالي الدائن</div>
+                <div class="sc-value amt-credit"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">الصافي (مدين − دائن)</div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+        </div>
+
+        <?php if ($totalCount > 200): ?>
+            <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
+                الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
+                آخر 200 منهم بس، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+            </div>
+        <?php endif; ?>
+
         <?php if (empty($statement)): ?>
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
@@ -497,7 +636,14 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
-                        <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td class="je-c-desc">
+                            <?= e($row['description']) ?>
+                            <?php if ($row['ref_type'] === 'transfer' && (!empty($row['transfer_from_name']) || !empty($row['transfer_to_name']))): ?>
+                                <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                    من: <?= e($row['transfer_from_name'] ?: '—') ?> ← إلى: <?= e($row['transfer_to_name'] ?: '—') ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>

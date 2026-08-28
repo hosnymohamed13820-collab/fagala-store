@@ -27,6 +27,7 @@ $editable = [
     'agent_watch_from'          => ['مراقبة الوكلاء تبدأ الساعة', 'time'],
     'agent_watch_to'            => ['مراقبة الوكلاء تنتهي الساعة', 'time'],
     'sales_revenue_account_id'  => ['حساب «إيراد مبيعات» اللي الورديات بتترحّل عليه (رقم الحساب)', 'number'],
+    'transfer_account_id'       => ['حساب «تحويل» اللي حركات تحويل الخزائن بتترحّل عليه (رقم الحساب)', 'number'],
     'attendance_edit_user_id'   => ['موظف مسموحله يعدّل ساعات طلبات التصحيح (مع الأونر)', 'user'],
 ];
 
@@ -59,9 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     || $key === 'attendance_edit_user_id') {
                     $val = (string) max(0, (int) $val);
                 }
-                // حساب إيراد المبيعات: رقم حساب موجب (٠ = بدون، والورديات
-                // تترحّل من غير حساب زي الأول بالظبط)
-                if ($key === 'sales_revenue_account_id') {
+                // حساب إيراد المبيعات وحساب التحويل: رقم حساب موجب.
+                // ٠ = بدون — الورديات/التحويلات تترحّل من غير حساب زي الأول بالظبط.
+                if ($key === 'sales_revenue_account_id' || $key === 'transfer_account_id') {
                     $val = (string) max(0, (int) $val);
                 }
                 // عتبات الوكلاء: دقيقة على الأقل، والأحمر مايبقاش أقل من الأصفر

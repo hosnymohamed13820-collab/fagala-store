@@ -120,6 +120,28 @@ function transfer_between_treasuries(
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        // قراءة أسامي الخزينتين في استعلام واحد مجمّع
+        $tStmt = $pdo->prepare('SELECT id, name FROM treasuries WHERE id IN (?, ?)');
+        $tStmt->execute([$fromTreasuryId, $toTreasuryId]);
+        $tNames = [];
+        foreach ($tStmt->fetchAll() as $tr) {
+            $tNames[(int) $tr['id']] = (string) $tr['name'];
+        }
+        $fromName = $tNames[$fromTreasuryId] ?? ('خزينة #' . $fromTreasuryId);
+        $toName   = $tNames[$toTreasuryId] ?? ('خزينة #' . $toTreasuryId);
+
+        $outDesc = 'تحويل صادر إلى ' . $toName;
+        if (mb_strlen($outDesc) > 255) {
+            $outDesc = mb_substr($outDesc, 0, 255);
+        }
+        $inDesc = 'تحويل وارد من ' . $fromName;
+        if (mb_strlen($inDesc) > 255) {
+            $inDesc = mb_substr($inDesc, 0, 255);
+        }
+
+        // حساب «تحويل» من الإعدادات / شجرة الحسابات
+        $transferAccId = transfer_account_id();
+
         // تسجيل التحويل
         $pdo->prepare(
             'INSERT INTO treasury_transfers
@@ -129,10 +151,10 @@ function transfer_between_treasuries(
         $transferId = (int) $pdo->lastInsertId();
 
         // مدين من المصدر | دائن للوجهة (نفس الـ pdo = نفس الـ transaction)
-        post_journal($fromTreasuryId, $amount, 0, $notes ?? 'تحويل صادر', $date,
-                     'transfer', $transferId, $userId, $pdo);
-        post_journal($toTreasuryId, 0, $amount, $notes ?? 'تحويل وارد', $date,
-                     'transfer', $transferId, $userId, $pdo);
+        post_journal($fromTreasuryId, $amount, 0, $outDesc, $date,
+                     'transfer', $transferId, $userId, $pdo, $transferAccId, $notes);
+        post_journal($toTreasuryId, 0, $amount, $inDesc, $date,
+                     'transfer', $transferId, $userId, $pdo, $transferAccId, $notes);
 
         $pdo->commit();
         return $transferId;
@@ -1864,6 +1886,58 @@ function pay_salary(
 /**
  * تحويل دقائق إلى صيغة "HH:MM" للعرض.
  */
+/**
+ * معرف حساب «تحويل» لحركات التحويل بين الخزائن.
+ * 1. بيقرا من الإعدادات `transfer_account_id` ويتأكد إنه موجود ونشط في accounts.
+ * 2. وإلا بيبحث عن حساب نشط باسم «تحويل» وبيحفظه في settings ويرجّعه.
+ * 3. وإلا بينشئ حساب «تحويل» جديد بنوع 'asset' وبيحفظه في settings ويرجّعه.
+ *
+ * @return int|null معرف الحساب أو null في حالة الفشل
+ */
+function transfer_account_id(): ?int
+{
+    $pdo = db();
+    try {
+        $setVal = (int) setting('transfer_account_id', 0);
+        if ($setVal > 0) {
+            $st = $pdo->prepare('SELECT id FROM accounts WHERE id = ? AND is_active = 1 LIMIT 1');
+            $st->execute([$setVal]);
+            $found = $st->fetchColumn();
+            if ($found) {
+                return (int) $found;
+            }
+        }
+
+        // الخطوة ٢: البحث بالاسم لمنع التكرار
+        $st = $pdo->prepare("SELECT id FROM accounts WHERE name = 'تحويل' AND is_active = 1 LIMIT 1");
+        $st->execute();
+        $found = $st->fetchColumn();
+        if ($found) {
+            $id = (int) $found;
+            $pdo->prepare(
+                'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+            )->execute(['transfer_account_id', (string) $id]);
+            return $id;
+        }
+
+        // الخطوة ٣: إنشاء الحساب لو مش موجود خالص
+        $pdo->prepare(
+            "INSERT INTO accounts (parent_id, name, type, is_custody)
+             VALUES (NULL, 'تحويل', 'asset', 0)"
+        )->execute();
+        $id = (int) $pdo->lastInsertId();
+        $pdo->prepare(
+            'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+        )->execute(['transfer_account_id', (string) $id]);
+        return $id;
+    } catch (Throwable $ex) {
+        error_log('transfer_account_id: ' . $ex->getMessage());
+        return null;
+    }
+}
+
 /**
  * قائمة تصنيفات المصروفات النشطة (تُستخدم كـ "القيد" في الحركات المالية).
  * بترجّع [] بأمان لو الجدول مش موجود.

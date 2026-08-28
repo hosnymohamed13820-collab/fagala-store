@@ -52,6 +52,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $systemTotal = (float) $rawSystem;
+                if ($systemTotal <= 0) {
+                    throw new RuntimeException('قيمة السيستم لازم تكون أكبر من صفر.');
+                }
 
                 if ($branchId <= 0) throw new RuntimeException('اختر الفرع.');
 
@@ -658,7 +661,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="grid-top">
                 <div class="fld">
                     <label>إجمالي السيستم</label>
-                    <input type="number" step="0.01" min="0" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
+                    <input type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
                 </div>
             </div>
             <div class="sum-layout">
