@@ -2403,6 +2403,77 @@ function mark_notifications_read(int $userId): void
     db()->prepare('UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0')->execute([$userId]);
 }
 
+/**
+ * إرسال إشعار بصرف المرتب للموظفين.
+ *
+ * - استعلام واحد مجمّع لجلب user_id لكل الموظفين المحددين (WHERE user_id IS NOT NULL).
+ * - إدراج واحد مجمّع في notifications لكل الموظفين.
+ * - مفيش أي استعلام أو إدراج جوه حلقة.
+ * - الموظف اللي user_id بتاعه NULL أو فاضي بيتخطى بهدوء.
+ * - الدالة كلها ملفوفة في try/catch عشان فشل الإشعار ما يوقّعش الصرف المالي.
+ * - ممنوع ظهور أي مبالغ في نص الإشعار.
+ *
+ * @param array<int> $employeeIds معرّفات الموظفين
+ * @param string     $month       شهر المرتب (Y-m)
+ */
+function notify_salaries_paid(array $employeeIds, string $month): void
+{
+    $employeeIds = array_values(array_unique(array_filter(array_map('intval', $employeeIds), fn($x) => $x > 0)));
+    if (empty($employeeIds)) {
+        return;
+    }
+
+    try {
+        $pdo = db();
+        $in = implode(',', array_fill(0, count($employeeIds), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT id, user_id, full_name
+             FROM employees
+             WHERE id IN ($in) AND user_id IS NOT NULL"
+        );
+        $stmt->execute($employeeIds);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            return;
+        }
+
+        $userIds = [];
+        foreach ($rows as $r) {
+            $uid = (int)($r['user_id'] ?? 0);
+            if ($uid > 0) {
+                $userIds[] = $uid;
+            }
+        }
+        $userIds = array_values(array_unique($userIds));
+        if (empty($userIds)) {
+            return;
+        }
+
+        $title = 'تم صرف مرتبك';
+        $body  = 'مرتب شهر ' . $month . ' اتصرف — افتح التفاصيل';
+        $link  = 'my_salary.php';
+        $type  = 'salary';
+
+        $placeholders = [];
+        $params = [];
+        foreach ($userIds as $uid) {
+            $placeholders[] = '(?, ?, ?, ?, ?)';
+            $params[] = $uid;
+            $params[] = $type;
+            $params[] = $title;
+            $params[] = $body;
+            $params[] = $link;
+        }
+
+        $sql = 'INSERT INTO notifications (user_id, type, title, body, link) VALUES ' . implode(', ', $placeholders);
+        $pdo->prepare($sql)->execute($params);
+    } catch (Throwable $e) {
+        error_log('notify_salaries_paid error: ' . $e->getMessage());
+    }
+}
+
+
 function minutes_to_hhmm(int $minutes): string
 {
     if ($minutes < 0) $minutes = 0;

@@ -385,6 +385,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $dueDaysOverride = (float) $_POST['due_days'];
                 }
                 pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride, $dueDaysOverride);
+                notify_salaries_paid([$empId], $month);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
             elseif ($action === 'pay_salary_batch') {
@@ -431,6 +432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $empNames = $empNamesStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
                 $paidCount = 0;
+                $paidEmpIds = [];
                 $fails = [];
                 foreach ($empIds as $rawId) {
                     $empId = (int) $rawId;
@@ -453,9 +455,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveOverride, $dueOverride);
                         $paidCount++;
+                        $paidEmpIds[] = $empId;
                     } catch (Throwable $ex) {
                         $fails[] = $name . ' (' . $ex->getMessage() . ')';
                     }
+                }
+
+                if (!empty($paidEmpIds)) {
+                    notify_salaries_paid($paidEmpIds, $month);
                 }
 
                 if ($paidCount > 0 && empty($fails)) {
