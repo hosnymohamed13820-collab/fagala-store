@@ -381,11 +381,13 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     foreach ($myPeriodAtt as $a) {
         $periodTotalHours += (float) ($a['work_hours'] ?? 0);
     }
+    $empExpectedHours = isset($employee['expected_monthly_hours']) && $employee['expected_monthly_hours'] !== null && $employee['expected_monthly_hours'] !== '' ? (float) $employee['expected_monthly_hours'] : null;
     // حساب أيام العمل والإجازة والاستحقاق من الدالة الموحدة
-    $salDays   = salary_days_from_hours($periodTotalHours);
-    $workDays  = $salDays['work_days'];
-    $leaveDays = $salDays['leave_days'];
-    $dueDays   = $salDays['due_days'];
+    $salDays    = salary_days_from_hours($periodTotalHours, $empExpectedHours);
+    $noExpected = !empty($salDays['no_expected']);
+    $workDays   = $salDays['work_days'];
+    $leaveDays  = $salDays['leave_days'];
+    $dueDays    = $salDays['due_days'];
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
@@ -399,6 +401,13 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
+    <?php if ($noExpected): ?>
+        <div class="flash warning" style="margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+            <i class="ti ti-alert-triangle"></i>
+            <span>الساعات المنتظرة في الشهر مش محددة لبياناتك — تواصل مع الإدارة لتحديدها في التعريفات لحساب أيام العمل والإجازات.</span>
+        </div>
+    <?php endif; ?>
+
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
@@ -406,15 +415,15 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         </div>
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $workDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $noExpected ? '—' : $workDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
         </div>
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الإجازة</div>
-            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $leaveDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $noExpected ? '—' : $leaveDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
         </div>
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الاستحقاق</div>
-            <div style="font-size:18px;font-weight:700;color:var(--ink-900);"><?= $dueDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--ink-900);"><?= $noExpected ? '—' : $dueDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
         </div>
     </div>
 

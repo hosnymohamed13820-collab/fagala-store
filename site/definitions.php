@@ -124,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $phone    = trim($_POST['phone'] ?? '');
             $jobTitle = trim($_POST['job_title'] ?? '');
             $salary   = (float) ($_POST['base_salary'] ?? 0);
+            $expHours = ($_POST['expected_monthly_hours'] ?? '') !== '' ? (float) $_POST['expected_monthly_hours'] : null;
             $expIn    = trim($_POST['expected_in'] ?? '') ?: null;
             $expOut   = trim($_POST['expected_out'] ?? '') ?: null;
             $userId   = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
@@ -131,9 +132,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = 'اسم الموظف مطلوب.'; $flashType = 'error';
             } else {
                 $pdo->prepare(
-                    'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut]);
+                    'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_monthly_hours, expected_in, expected_out)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut]);
                 $flash = 'تم إضافة الموظف.';
             }
             $tab = 'employees';
@@ -145,13 +146,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $phone    = trim($_POST['phone'] ?? '');
             $jobTitle = trim($_POST['job_title'] ?? '');
             $salary   = (float) ($_POST['base_salary'] ?? 0);
+            $expHours = ($_POST['expected_monthly_hours'] ?? '') !== '' ? (float) $_POST['expected_monthly_hours'] : null;
             $expIn    = trim($_POST['expected_in'] ?? '') ?: null;
             $expOut   = trim($_POST['expected_out'] ?? '') ?: null;
             $userId   = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
             if ($id > 0 && $name !== '') {
                 $pdo->prepare(
-                    'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=? WHERE id=?'
-                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $id]);
+                    'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_monthly_hours=?, expected_in=?, expected_out=? WHERE id=?'
+                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut, $id]);
                 $flash = 'تم تعديل الموظف.';
             }
             $tab = 'employees';
@@ -610,7 +612,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا يوجد موظفون بعد.</div>
         <?php else: ?>
         <table>
-            <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>الراتب</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>الراتب</th><th>الساعات المنتظرة</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($employees as $emp): ?>
                 <tr>
@@ -618,6 +620,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($emp['branch_name'] ?? '—') ?></td>
                     <td><?= e($emp['job_title'] ?? '—') ?></td>
                     <td><?= number_format((float)$emp['base_salary'], 2) ?></td>
+                    <td><?= ($emp['expected_monthly_hours'] !== null && $emp['expected_monthly_hours'] !== '') ? ((float)$emp['expected_monthly_hours'] . ' س') : '—' ?></td>
                     <td><?= e($emp['phone'] ?? '—') ?></td>
                     <td><span class="badge <?= $emp['is_active']?'active':'inactive' ?>"><?= $emp['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
@@ -656,6 +659,13 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-row"><label>الوظيفة</label><input type="text" name="job_title" id="e_job"></div>
                 <div class="form-row"><label for="e_salary">الراتب الأساسي</label><input type="number" step="0.01" name="base_salary" id="e_salary" value="0"></div>
+                <div class="form-row">
+                    <label for="e_exp_hours">الساعات المنتظرة في الشهر</label>
+                    <input type="number" step="0.5" min="0" name="expected_monthly_hours" id="e_exp_hours" placeholder="مثلاً 240 أو 300">
+                    <small style="display:block;color:var(--ink-500);font-size:12px;margin-top:4px;">
+                        ٢٤٠ = ٨ ساعات في اليوم · ٣٠٠ = ١٠ ساعات
+                    </small>
+                </div>
                 <div class="form-row"><label for="e_phone">التليفون</label><input type="text" name="phone" id="e_phone"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div class="form-row"><label for="t_name">الحضور المتوقع</label><input type="time" name="expected_in" id="e_in" value="09:00"></div>
@@ -1017,6 +1027,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('e_branch').value = d && d.branch_id ? d.branch_id : '';
         document.getElementById('e_job').value = d && d.job_title ? d.job_title : '';
         document.getElementById('e_salary').value = d ? d.base_salary : '0';
+        document.getElementById('e_exp_hours').value = (d && d.expected_monthly_hours !== null && d.expected_monthly_hours !== undefined) ? d.expected_monthly_hours : '';
         document.getElementById('e_phone').value = d && d.phone ? d.phone : '';
         document.getElementById('e_in').value = d && d.expected_in ? d.expected_in.substring(0,5) : '09:00';
         document.getElementById('e_out').value = d && d.expected_out ? d.expected_out.substring(0,5) : '17:00';

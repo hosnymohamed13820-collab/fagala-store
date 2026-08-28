@@ -481,46 +481,51 @@ if ($tab === 'salaries') {
 
     // الحسابات في PHP بدون أي استعلام داخل الحلقة
     foreach ($empList as $e) {
-        $empId       = (int) $e['id'];
-        $base        = (float) $e['base_salary'];
-        $hours       = (float) ($empHours[$empId] ?? 0);
-        $salDays     = salary_days_from_hours($hours);
-        $workDays    = $salDays['work_days'];
-        $leaveDays   = $salDays['leave_days'];
-        $dueDaysCalc = $salDays['due_days'];
-        $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
-        $gross       = $dayRate * $dueDaysCalc;
-        $bon         = (float) ($bonusMap[$empId] ?? 0);
-        $adv         = (float) ($advMap[$empId] ?? 0);
+        $empId         = (int) $e['id'];
+        $base          = (float) $e['base_salary'];
+        $hours         = (float) ($empHours[$empId] ?? 0);
+        $expectedHours = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
+        $salDays       = salary_days_from_hours($hours, $expectedHours);
+        $noExpected    = !empty($salDays['no_expected']);
+        $workDays      = $salDays['work_days'];
+        $leaveDays     = $salDays['leave_days'];
+        $dueDaysCalc   = $salDays['due_days'];
+        $dayRate       = $base > 0 ? ($base / 30.0) : 0.0;
+        $gross         = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
+        $bon           = (float) ($bonusMap[$empId] ?? 0);
+        $adv           = (float) ($advMap[$empId] ?? 0);
         $monthlyAdvOwed  = (float) ($advBucketsMap[$empId]['monthly'] ?? 0);
         $standingAdvOwed = (float) ($advBucketsMap[$empId]['standing'] ?? 0);
-        $pen         = (float) ($penMap[$empId] ?? 0);
-        $def         = (float) ($defMap[$empId] ?? 0);
+        $pen           = (float) ($penMap[$empId] ?? 0);
+        $def           = (float) ($defMap[$empId] ?? 0);
         $totalDeductions = $adv + $pen + $def;
-        $net         = $gross + $bon - $totalDeductions;
-        $isPaid      = isset($paidMonthMap[$empId]);
+        $net           = $noExpected ? 0.0 : ($gross + $bon - $totalDeductions);
+        $isPaid        = isset($paidMonthMap[$empId]);
 
         $payrollData[] = [
-            'id'                => $empId,
-            'full_name'         => $e['full_name'],
-            'branch_name'       => $e['branch_name'] ?? '',
-            'base_salary'       => $base,
-            'work_hours'        => $hours,
-            'work_days'         => $workDays,
-            'leave_days'        => $leaveDays,
-            'due_days_calc'     => $dueDaysCalc,
-            'day_rate'          => $dayRate,
-            'gross_salary'      => $gross,
-            'bonuses'           => $bon,
-            'total_bonuses'     => $bon,
-            'advances'          => $adv,
-            'monthly_adv_owed'  => $monthlyAdvOwed,
-            'standing_adv_owed' => $standingAdvOwed,
-            'penalties'         => $pen,
-            'deficits'          => $def,
-            'total_deductions'  => $totalDeductions,
-            'net_salary'        => $net,
-            'is_paid'           => $isPaid,
+            'id'                     => $empId,
+            'full_name'              => $e['full_name'],
+            'branch_name'            => $e['branch_name'] ?? '',
+            'base_salary'            => $base,
+            'expected_monthly_hours' => $expectedHours,
+            'no_expected'            => $noExpected,
+            'day_hours'              => $salDays['day_hours'] ?? 0.0,
+            'work_hours'             => $hours,
+            'work_days'              => $workDays,
+            'leave_days'             => $leaveDays,
+            'due_days_calc'          => $dueDaysCalc,
+            'day_rate'               => $dayRate,
+            'gross_salary'           => $gross,
+            'bonuses'                => $bon,
+            'total_bonuses'          => $bon,
+            'advances'               => $adv,
+            'monthly_adv_owed'       => $monthlyAdvOwed,
+            'standing_adv_owed'      => $standingAdvOwed,
+            'penalties'              => $pen,
+            'deficits'               => $def,
+            'total_deductions'       => $totalDeductions,
+            'net_salary'             => $net,
+            'is_paid'                => $isPaid,
         ];
     }
 }
@@ -877,19 +882,26 @@ $statusBadge = function($st) {
                 <?php foreach ($payrollData as $p): ?>
                     <tr data-emp-id="<?= $p['id'] ?>" data-emp-name="<?= e($p['full_name']) ?>" data-day-rate="<?= $p['day_rate'] ?>" data-bonuses="<?= $p['total_bonuses'] ?>" data-deductions="<?= $p['total_deductions'] ?>">
                         <td>
-                            <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= $p['is_paid'] ? 'disabled' : '' ?>>
+                            <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || $p['no_expected']) ? 'disabled' : '' ?>>
                         </td>
                         <td style="font-weight:500;">
                             <?= e($p['full_name']) ?>
                             <?php if ($p['branch_name']): ?>
                                 <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
                             <?php endif; ?>
+                            <?php if ($p['no_expected']): ?>
+                                <div style="font-size:11px;color:var(--warn);font-weight:600;margin-top:2px;">
+                                    <i class="ti ti-alert-triangle"></i> الساعات المنتظرة مش محددة — المرتب مش هيتحسب
+                                </div>
+                            <?php endif; ?>
                         </td>
                         <td><?= number_format($p['work_hours'], 2) ?></td>
-                        <td><?= $p['work_days'] ?></td>
-                        <td><?= $p['leave_days'] ?></td>
+                        <td><?= $p['no_expected'] ? '—' : $p['work_days'] ?></td>
+                        <td><?= $p['no_expected'] ? '—' : $p['leave_days'] ?></td>
                         <td>
-                            <?php if (is_owner() && !$p['is_paid']): ?>
+                            <?php if ($p['no_expected']): ?>
+                                <span style="color:var(--warn);font-weight:600;">—</span>
+                            <?php elseif (is_owner() && !$p['is_paid']): ?>
                                 <input type="number" min="0" max="60" name="due_days[<?= $p['id'] ?>]"
                                        value="<?= $p['due_days_calc'] ?>"
                                        class="due-days-input"
@@ -900,8 +912,8 @@ $statusBadge = function($st) {
                             <?php endif; ?>
                         </td>
                         <td><?= number_format($p['base_salary'], 2) ?></td>
-                        <td><?= number_format($p['day_rate'], 2) ?></td>
-                        <td class="cell-gross"><?= number_format($p['gross_salary'], 2) ?></td>
+                        <td><?= $p['no_expected'] ? '—' : number_format($p['day_rate'], 2) ?></td>
+                        <td class="cell-gross"><?= $p['no_expected'] ? '—' : number_format($p['gross_salary'], 2) ?></td>
                         <td>
                             <?php if ($p['total_bonuses'] > 0): ?>
                                 <span style="color:var(--pos);font-weight:600;">
@@ -934,12 +946,14 @@ $statusBadge = function($st) {
                                 <span style="color:var(--ink-500);">0.00</span>
                             <?php endif; ?>
                         </td>
-                        <td class="cell-net" style="font-weight:700;<?= $p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);' ?>">
-                            <?= number_format($p['net_salary'], 2) ?>
+                        <td class="cell-net" style="font-weight:700;<?= ($p['no_expected']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
+                            <?= $p['no_expected'] ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
                         </td>
                         <td>
                             <?php if ($p['is_paid']): ?>
                                 <span class="badge" style="color:var(--pos);background:var(--pos-soft);">تم الصرف</span>
+                            <?php elseif ($p['no_expected']): ?>
+                                <span class="badge" style="color:var(--warn);background:var(--warn-soft);" title="حدد الساعات المنتظرة في التعريفات أولاً">غير محدد</span>
                             <?php else: ?>
                                 <button type="button" class="btn btn-sm btn-ghost btn-single-pay"
                                         data-emp-id="<?= $p['id'] ?>"

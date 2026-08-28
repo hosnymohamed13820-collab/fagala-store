@@ -1621,33 +1621,56 @@ function receive_custody(
 }
 
 /**
- * حساب أيام العمل والإجازة والاستحقاق من ساعات العمل وفقاً لقواعد الأونر (المصدر الموحد):
- * - أيام العمل      = Floor(ساعات العمل ÷ 6) ولا تقل عن صفر
- * - أيام الإجازة    = Floor(أيام العمل ÷ 6) بحد أقصى 4 أيام في الشهر (MIN(4, Floor(أيام العمل ÷ 6)))
- *                     ٦ أيام عمل → يوم · ١٢ → يومين · ١٨ → ٣ · ٢٤ → ٤ · وأقل من ٦ → صفر
+ * حساب أيام العمل والإجازة والاستحقاق من ساعات العمل وفقاً للساعات المنتظرة شهرياً للموظف (المصدر الموحد):
+ * - ساعات اليوم     = الساعات المنتظرة ÷ 30
+ * - أيام العمل      = ساعات العمل الفعلية ÷ ساعات اليوم
+ * - أيام الإجازة    = Floor(أيام العمل ÷ 6) بحد أقصى 4 أيام في الشهر (min(4, floor(أيام العمل ÷ 6)))
  * - أيام الاستحقاق  = أيام العمل + أيام الإجازة
+ * - الراتب          = سعر الساعة × (الساعات الفعلية + أيام الإجازة × ساعات اليوم)
+ *                   = (الأساسي ÷ 30) × أيام الاستحقاق
  *
- * ⚠️ دي المعادلة الوحيدة المعتمدة للأونر وممنوع تكرارها — أي تعديل يتم هنا فقط وتُنادى من باقي الشاشات.
+ * ⚠️ لو لم تُحدد الساعات المنتظرة ($expectedMonthlyHours <= 0 أو null):
+ *    يُرجع علم no_expected => true مع أصفار، ولا يتم افتراض أي قيمة افتراضية أبداً.
  *
- * @param float $workHours إجمالي ساعات العمل
- * @return array{work_days: int, leave_days: int, due_days: int}
+ * @param float $workHours إجمالي ساعات العمل الفعلية
+ * @param float|null $expectedMonthlyHours الساعات المنتظرة من الموظف في الشهر (مثلاً 240 لـ 8 س/يوم، 300 لـ 10 س/يوم)
+ * @return array{work_days: float, leave_days: int, due_days: float, day_hours: float, no_expected: bool}
  */
-function salary_days_from_hours(float $workHours): array
+function salary_days_from_hours(float $workHours, ?float $expectedMonthlyHours = null): array
 {
-    $workDays = (int) floor($workHours / 6.0);
-    if ($workDays < 0) {
-        $workDays = 0;
+    if ($expectedMonthlyHours === null || $expectedMonthlyHours <= 0.0) {
+        return [
+            'work_days'   => 0.0,
+            'leave_days'  => 0,
+            'due_days'    => 0.0,
+            'day_hours'   => 0.0,
+            'no_expected' => true,
+        ];
     }
-    $leaveDays = (int) floor($workDays / 6);
+
+    if ($workHours < 0.0) {
+        $workHours = 0.0;
+    }
+
+    $dayHours = $expectedMonthlyHours / 30.0;
+    $workDays = $dayHours > 0.0 ? ($workHours / $dayHours) : 0.0;
+
+    $leaveDays = (int) floor($workDays / 6.0);
+    if ($leaveDays < 0) {
+        $leaveDays = 0;
+    }
     if ($leaveDays > 4) {
         $leaveDays = 4;
     }
+
     $dueDays = $workDays + $leaveDays;
 
     return [
-        'work_days'  => $workDays,
-        'leave_days' => $leaveDays,
-        'due_days'   => $dueDays,
+        'work_days'   => round($workDays, 4),
+        'leave_days'  => $leaveDays,
+        'due_days'    => round($dueDays, 4),
+        'day_hours'   => round($dayHours, 4),
+        'no_expected' => false,
     ];
 }
 
@@ -1703,9 +1726,10 @@ function shift_variance_status(float $difference, ?float $tolerance = null): arr
  * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع المكافآت والخصومات).
  *
  * القواعد المعتمدة من المالك:
- * - حساب أيام العمل والإجازة والاستحقاق من salary_days_from_hours()
+ * - حساب أيام العمل والإجازة والاستحقاق من salary_days_from_hours() بناءً على الساعات المنتظرة
+ * - سعر الساعة       = الراتب الأساسي ÷ الساعات المنتظرة
  * - قيمة اليوم       = الراتب الأساسي ÷ 30 (ثابتة دائماً)
- * - الراتب قبل الخصم = قيمة اليوم × أيام الاستحقاق
+ * - الراتب قبل الخصم = قيمة اليوم × أيام الاستحقاق = سعر الساعة × (الساعات الفعلية + أيام الإجازة × ساعات اليوم)
  * - الصافي          = الراتب قبل الخصم + المكافآت − السلف − الجزاءات − عجز العهدة
  *
  * @param int $employeeId معرّف الموظف
@@ -1726,9 +1750,12 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
         $to = date('Y-m-t', strtotime($month . '-01'));
     }
 
-    $emp = $pdo->prepare('SELECT base_salary FROM employees WHERE id = ?');
+    $emp = $pdo->prepare('SELECT full_name, base_salary, expected_monthly_hours FROM employees WHERE id = ?');
     $emp->execute([$employeeId]);
-    $base = (float) $emp->fetchColumn();
+    $empRow = $emp->fetch(PDO::FETCH_ASSOC);
+    $empName = $empRow['full_name'] ?? ('موظف #' . $employeeId);
+    $base = (float) ($empRow['base_salary'] ?? 0);
+    $expectedHours = isset($empRow['expected_monthly_hours']) && $empRow['expected_monthly_hours'] !== null ? (float) $empRow['expected_monthly_hours'] : null;
 
     // إجمالي ساعات العمل في فترة الحضور المحددة (استعلام واحد)
     $att = $pdo->prepare('SELECT COALESCE(SUM(work_hours), 0) FROM attendance WHERE employee_id = ? AND att_date BETWEEN ? AND ?');
@@ -1736,15 +1763,18 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $workHours = (float) $att->fetchColumn();
 
     // حساب أيام العمل والإجازة والاستحقاق من الدالة الموحدة
-    $salDays     = salary_days_from_hours($workHours);
+    $salDays     = salary_days_from_hours($workHours, $expectedHours);
+    $noExpected  = !empty($salDays['no_expected']);
     $workDays    = $salDays['work_days'];
     $leaveDays   = $salDays['leave_days'];
     $dueDaysCalc = $salDays['due_days'];
     $dueDays     = $dueDaysCalc;
+    $dayHours    = $salDays['day_hours'];
+    $hourRate    = ($expectedHours !== null && $expectedHours > 0) ? ($base / $expectedHours) : 0.0;
 
     // قيمة اليوم = الأساسي ÷ 30
     $dayRate = $base > 0 ? ($base / 30.0) : 0.0;
-    $grossSalary = $dayRate * $dueDays;
+    $grossSalary = $noExpected ? 0.0 : ($dayRate * $dueDays);
 
     // المكافآت المعلّقة
     $bon = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_bonuses WHERE employee_id=? AND status="pending"');
@@ -1776,24 +1806,29 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
     $def->execute([$employeeId]);
     $deficits = (float) $def->fetchColumn();
 
-    $net = $grossSalary + $bonuses - $advances - $penalties - $deficits;
+    $net = $noExpected ? 0.0 : ($grossSalary + $bonuses - $advances - $penalties - $deficits);
 
     return [
-        'base_salary'     => $base,
-        'total_bonuses'   => $bonuses,
-        'total_advances'  => $advances,
-        'total_penalties' => $penalties,
-        'total_deficits'  => $deficits,
-        'net_salary'      => $net,
-        'period_from'     => $from,
-        'period_to'       => $to,
-        'work_hours'      => $workHours,
-        'work_days'       => $workDays,
-        'leave_days'      => $leaveDays,
-        'due_days_calc'   => $dueDaysCalc,
-        'due_days'        => $dueDays,
-        'day_rate'        => $dayRate,
-        'gross_salary'    => $grossSalary,
+        'employee_name'          => $empName,
+        'base_salary'            => $base,
+        'expected_monthly_hours' => $expectedHours,
+        'no_expected'            => $noExpected,
+        'day_hours'              => $dayHours,
+        'hour_rate'              => $hourRate,
+        'total_bonuses'          => $bonuses,
+        'total_advances'         => $advances,
+        'total_penalties'        => $penalties,
+        'total_deficits'         => $deficits,
+        'net_salary'             => $net,
+        'period_from'            => $from,
+        'period_to'              => $to,
+        'work_hours'             => $workHours,
+        'work_days'              => $workDays,
+        'leave_days'             => $leaveDays,
+        'due_days_calc'          => $dueDaysCalc,
+        'due_days'               => $dueDays,
+        'day_rate'               => $dayRate,
+        'gross_salary'           => $grossSalary,
     ];
 }
 
@@ -1826,9 +1861,15 @@ function pay_salary(
         }
 
         $calc = compute_salary($employeeId, $month, $from, $to);
+        $name = $calc['employee_name'] ?? ('الموظف #' . $employeeId);
+
+        // حماية طبقة الفلوس: منع صرف مرتب أي موظف لم تُحدد ساعاته المنتظرة
+        if (!empty($calc['no_expected'])) {
+            throw new RuntimeException("لا يمكن صرف المرتب للموظف ($name) لعدم تحديد الساعات المنتظرة شهرياً. يرجى تحديدها من شاشة الموظفين أولاً.");
+        }
 
         // معالجة وتدقيق تعديل أيام الاستحقاق إن وُجد
-        $dueDaysCalc = (int) $calc['due_days_calc'];
+        $dueDaysCalc = (float) $calc['due_days_calc'];
         $dueDays = $dueDaysCalc;
         $editedBy = null;
         $editedAt = null;
@@ -1837,8 +1878,8 @@ function pay_salary(
             if ($dueDaysOverride < 0 || $dueDaysOverride > 60) {
                 throw new RuntimeException('أيام الاستحقاق المعدّلة غير صحيحة (يجب أن تكون بين 0 و 60 يوم).');
             }
-            if ($dueDaysOverride !== $dueDaysCalc) {
-                $dueDays = $dueDaysOverride;
+            if (abs($dueDaysOverride - $dueDaysCalc) > 0.0001) {
+                $dueDays = (float) $dueDaysOverride;
                 $editedBy = $userId;
                 $editedAt = date('Y-m-d H:i:s');
             }
@@ -1850,7 +1891,7 @@ function pay_salary(
 
         $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
         $empName->execute([$employeeId]);
-        $name = $empName->fetchColumn();
+        $name = $empName->fetchColumn() ?: $name;
 
         // تسجيل المرتب في جدول salaries
         $pdo->prepare(

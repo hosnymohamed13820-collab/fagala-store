@@ -714,7 +714,11 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
                 }
 
                 // فحص التعارضات مع البيانات المسجلة في النظام (استعلام مجمّع واحد)
+                // 🔴 الاتنين لازم يتعرّفوا **بره** الشرط: لو مفيش ولا موظف مربوط
+                //    (external_id فاضي عند الكل — وده حال أول استيراد)، الشرط
+                //    بيبقى false والمعاينة كانت بتقع بـcount(null) في PHP 8.
                 $conflicts = [];
+                $protectedRecords = [];
                 if (!empty($validRecords) && $minDate !== null && $maxDate !== null) {
                     $uniqueEmpIds = array_values(array_unique(array_column($validRecords, 'employee_id')));
                     $empPlaceholders = implode(',', array_fill(0, count($uniqueEmpIds), '?'));
