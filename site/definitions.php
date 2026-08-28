@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('definitions');
+require_once __DIR__ . '/finance.php';
 
 $pdo       = db();
 $flash     = '';
@@ -185,6 +186,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $tab = 'categories';
         }
+        elseif ($action === 'edit_category') {
+            $id = (int) ($_POST['id'] ?? 0);
+            $name = trim($_POST['name'] ?? '');
+            if ($id <= 0 || $name === '') {
+                $flash = 'بيانات الحساب غير مكتملة.';
+                $flashType = 'error';
+            } else {
+                $parentId = ($_POST['parent_id'] ?? '') !== '' ? (int) $_POST['parent_id'] : null;
+                if ($parentId === 0) {
+                    $parentId = null;
+                }
+                $accType = in_array($_POST['acc_type'] ?? '', ['asset','liability','revenue','expense'], true)
+                            ? $_POST['acc_type'] : 'expense';
+
+                // حراسات منع الدورة (Cycle Prevention)
+                if ($parentId !== null && $parentId === $id) {
+                    $flash = 'لا يمكن اختيار الحساب كأب لنفسه.';
+                    $flashType = 'error';
+                } elseif ($parentId !== null && $parentId > 0) {
+                    // فحص هل الأب الجديد من نسل الحساب الحالي (امشي لفوق من الأب الجديد)
+                    $allParents = $pdo->query('SELECT id, parent_id FROM accounts')->fetchAll(PDO::FETCH_KEY_PAIR);
+                    $curr = $parentId;
+                    $visited = [];
+                    $hasCycle = false;
+                    $maxHops = 100;
+                    while ($curr !== null && $curr > 0 && $maxHops-- > 0) {
+                        if ($curr === $id) {
+                            $hasCycle = true;
+                            break;
+                        }
+                        if (isset($visited[$curr])) {
+                            // دورة قديمة في البيانات
+                            $hasCycle = true;
+                            break;
+                        }
+                        $visited[$curr] = true;
+                        $curr = isset($allParents[$curr]) && $allParents[$curr] !== null ? (int)$allParents[$curr] : null;
+                    }
+
+                    if ($hasCycle) {
+                        $flash = 'لا يمكن اختيار حساب فرعي كأب للحساب الحالي (منعاً للدوران في الشجرة).';
+                        $flashType = 'error';
+                    }
+                }
+
+                if ($flashType !== 'error') {
+                    try {
+                        // لا نعدّل is_custody هنا (حسابات العهدة لها منطق خاص)
+                        $pdo->prepare(
+                            'UPDATE accounts SET name = ?, parent_id = ?, type = ? WHERE id = ?'
+                        )->execute([$name, $parentId, $accType, $id]);
+                        $flash = 'تم تعديل الحساب بنجاح.';
+                    } catch (PDOException $ex) {
+                        $flash = 'حدث خطأ أو اسم الحساب موجود بالفعل.';
+                        $flashType = 'error';
+                    }
+                }
+            }
+            $tab = 'categories';
+        }
         elseif ($action === 'toggle_category') {
             $id = (int) ($_POST['id'] ?? 0);
             if ($id > 0) {
@@ -341,7 +402,6 @@ $accWalk = function(int $pid, int $depth) use (&$accWalk, &$accFlat, &$accAutoCo
 };
 $accWalk(0, 0);
 // الآباء المتاحين للاختيار عند الإضافة
-$accParents = array_values(array_filter($accFlat, fn($a) => (int)$a['depth'] < 2));
 $treasuries = $pdo->query(
     "SELECT t.*, b.name AS branch_name FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
@@ -787,6 +847,13 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= !empty($c['is_custody']) ? '<span class="tag-on">عهدة</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
                     <td><span class="badge <?= $c['is_active']?'active':'inactive' ?>"><?= $c['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
+                        <button class="btn btn-sm btn-ghost"
+                            onclick='openCat(<?= json_encode([
+                                "id" => (int)$c["id"],
+                                "name" => $c["name"],
+                                "parent_id" => $c["parent_id"] !== null ? (int)$c["parent_id"] : null,
+                                "type" => $c["type"],
+                            ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
                         <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد؟')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_category">
@@ -803,34 +870,32 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="modal-bg" id="catModal">
         <div class="modal">
-            <h3>إضافة حساب</h3>
+            <h3 id="catTitle">إضافة حساب</h3>
             <form method="post">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                <input type="hidden" name="action" value="add_category">
-                <div class="form-row"><label>اسم الحساب *</label><input type="text" name="name" required aria-label="اسم الحساب"></div>
+                <input type="hidden" name="action" id="catAction" value="add_category">
+                <input type="hidden" name="id" id="catId" value="">
+                <div class="form-row"><label for="c_name">اسم الحساب *</label><input type="text" name="name" id="c_name" required aria-label="اسم الحساب"></div>
                 <div class="form-row">
-                    <label>الحساب الأب</label>
-                    <select name="parent_id">
-                        <option value="">— حساب رئيسي —</option>
-                        <?php foreach ($accParents as $ap): ?>
-                            <option value="<?= (int)$ap['id'] ?>">
-                                <?= str_repeat('— ', (int)$ap['depth']) ?><?= e($ap['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                    <label>الحساب الأب (رأس القيد)</label>
+                    <?= acctree_field('parent_id', null, '— بدون أب (حساب رئيسي) —', 'all', 'catParent') ?>
                 </div>
                 <div class="form-row">
-                    <label>النوع</label>
-                    <select name="acc_type">
+                    <label for="c_type">النوع</label>
+                    <select name="acc_type" id="c_type">
                         <option value="expense">مصروف</option>
                         <option value="revenue">إيراد</option>
                         <option value="asset">أصل</option>
                         <option value="liability">التزام</option>
                     </select>
                 </div>
-                <div class="form-row" style="display:flex;align-items:center;gap:8px;">
+                <div class="form-row" id="custodyRow" style="display:flex;align-items:center;gap:8px;">
                     <input type="checkbox" name="is_custody" id="acc_cust" value="1">
                     <label for="acc_cust" style="margin:0;">يظهر في شاشة العهدة</label>
+                </div>
+                <div id="catWarn" style="display:none;margin-top:10px;padding:9px 11px;border-radius:9px;
+                     background:var(--warn-soft);color:var(--warn);border:1px solid #ffe0a8;font-size:12px;line-height:1.6;">
+                    ⚠️ <b>تنبيه:</b> نقل التصنيف تحت رأس قيد جديد هيخلّي التقارير القديمة تعرضه تحت الرأس الجديد (التقارير بتجمّع بحسب شجرة الحسابات الحالية). المبالغ والقيود بتفضل سليمة زي ما هي.
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn">حفظ</button>
@@ -840,6 +905,9 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <?php endif; ?>
+
+<?= acctree_data() ?>
+<script src="assets/acctree.js?v=2"></script>
 
 <script>
     function show(id){ document.getElementById(id).classList.add('open'); }
@@ -958,7 +1026,23 @@ require_once __DIR__ . '/includes/header.php';
     function closeEmp(){ hide('empModal'); }
 
     // التصنيفات
-    function openCat(){ show('catModal'); }
+    function openCat(d){
+        document.getElementById('catTitle').textContent = d ? 'تعديل حساب' : 'إضافة حساب';
+        document.getElementById('catAction').value = d ? 'edit_category' : 'add_category';
+        document.getElementById('catId').value = d ? d.id : '';
+        document.getElementById('c_name').value = d ? d.name : '';
+        document.getElementById('c_type').value = d ? d.type : 'expense';
+        document.getElementById('custodyRow').style.display = d ? 'none' : 'flex';
+        document.getElementById('catWarn').style.display = d ? 'block' : 'none';
+        if (!d) {
+            document.getElementById('acc_cust').checked = false;
+        }
+        var parentEl = document.getElementById('catParent');
+        if (parentEl && typeof acctreeSet === 'function') {
+            acctreeSet(parentEl, (d && d.parent_id) ? d.parent_id : '');
+        }
+        show('catModal');
+    }
     function closeCat(){ hide('catModal'); }
 
     // الخزائن

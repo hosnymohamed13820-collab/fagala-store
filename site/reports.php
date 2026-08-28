@@ -214,6 +214,50 @@ if ($ajax !== '') {
 }
 
 /**
+ * جلب معرّف الحساب المختار وجميع الحسابات المتفرعة منه (النسل) من شجرة الحسابات.
+ * تضمن إن اختيار رأس قيد يطابق حركات كل أبنائه وتفرعاته.
+ *
+ * @param int $rootId معرّف الحساب المختار
+ * @return int[] مصفوفة معرّفات الحسابات (الأب + النسل)
+ */
+function rep_account_family_ids(int $rootId): array
+{
+    // 🔴 بيرجّع [$rootId] على الأقل — مايرجّعش [] أبداً. مصفوفة فاضية معناها
+    //    `IN ()` وده خطأ صياغة في SQL بيوقّع الصفحة (يوصلها `entry_code=0`).
+    if ($rootId <= 0) return [$rootId];
+
+    // 🔴 بنقرا من `accounts` مباشرةً مش من `accounts_tree()`: الشجرة بتفلتر
+    //    `is_active = 1`، والفلتر هنا شغال على **بيانات تاريخية**. لو تصنيف
+    //    اتوقف، حركاته القديمة لازم تفضل تبان لما تفلتر برأس القيد بتاعه،
+    //    وإلا التقرير بينقص فلوس في صمت.
+    static $byParent = null;
+    if ($byParent === null) {
+        $byParent = [];
+        try {
+            foreach (db()->query('SELECT id, parent_id FROM accounts') as $a) {
+                $byParent[(int) ($a['parent_id'] ?? 0)][] = (int) $a['id'];
+            }
+        } catch (Throwable $ex) {
+            $byParent = [];
+        }
+    }
+    $family = [$rootId];
+    $visited = [$rootId => true];
+    $queue = [$rootId];
+    while (!empty($queue)) {
+        $curr = array_shift($queue);
+        foreach ($byParent[$curr] ?? [] as $childId) {
+            if (!isset($visited[$childId])) {
+                $visited[$childId] = true;
+                $family[] = $childId;
+                $queue[] = $childId;
+            }
+        }
+    }
+    return $family;
+}
+
+/**
  * بيانات كل تقرير: بترجّع ['title','headers'=>[],'rows'=>[[]],'totals'=>[]]
  */
 function build_report(PDO $pdo, string $type, string $from, string $to): array
@@ -300,8 +344,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // مش صرف/استلام، واللي اتحدّد قيدها من بوب أب التعديل.
                 // العرض بقى COALESCE فالفلتر لازم يبقى نفسه، وإلا يفلتر
                 // صفوف بتبان في الشاشة بقيد صح.
-                $sqlT .= " AND COALESCE(je.account_id, tm.entry_code_id) = ?";
-                $paramsT[] = $entryFilter;
+                // الحساب المختار أو أي حساب من نسله
+                $familyIds = rep_account_family_ids($entryFilter);
+                $placeholders = implode(',', array_fill(0, count($familyIds), '?'));
+                $sqlT .= " AND COALESCE(je.account_id, tm.entry_code_id) IN ($placeholders)";
+                foreach ($familyIds as $fid) {
+                    $paramsT[] = $fid;
+                }
             }
             if ($branchFilter !== null) {
                 $sqlT .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id) = ?";
@@ -457,8 +506,12 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $paramsExp[] = $treasuryFilter;
             }
             if ($entryFilter !== null) {
-                $sqlExp .= " AND tm.entry_code_id = ?";
-                $paramsExp[] = $entryFilter;
+                $familyIds = rep_account_family_ids($entryFilter);
+                $placeholders = implode(',', array_fill(0, count($familyIds), '?'));
+                $sqlExp .= " AND tm.entry_code_id IN ($placeholders)";
+                foreach ($familyIds as $fid) {
+                    $paramsExp[] = $fid;
+                }
             }
             if ($userFilter !== null) {
                 $sqlExp .= " AND tm.created_by = ?";
