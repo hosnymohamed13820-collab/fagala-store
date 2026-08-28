@@ -22,6 +22,155 @@ $payTreasuries = $pdo->query(
 )->fetchAll();
 $employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
 
+/**
+ * تطبيق تعديلات المكافآت والسلف من شاشة الرواتب في قاعدة البيانات.
+ * مفيش أي استعلام جوه حلقة:
+ * - استعلام مجمّع واحد لجلب عدد وحالة المكافآت المعلّقة لكل الموظفين.
+ * - استعلام مجمّع واحد لجلب عدد وحالة السلف المعلّقة (شهرية ومستديمة) لكل الموظفين.
+ * - إعداد الاستعلامات (prepare) مرة واحدة خارج الحلقة والتنفيذ فقط للصفوف المتغيرة.
+ * - لا يوجد أي حذف (DELETE) للسجلات المالية — التصفير يتم بتحديث المبلغ أو المتبقي لـ 0.
+ * - الخانة الفاضية يتم تجاهلها تماماً، والتعديل يمس فقط المبلغ/المتبقي دون مساس بالسبب أو الملاحظات الأصلية.
+ */
+function apply_payroll_financial_adjustments(PDO $pdo, string $month, string $date, array $bonusesPost, array $monthlyAdvPost, array $standingAdvPost): void
+{
+    // 1) جلب المكافآت المعلّقة مجمّعة لكل موظف (استعلام واحد)
+    $bonStmt = $pdo->query(
+        "SELECT employee_id,
+                COUNT(*) AS cnt,
+                MIN(id) AS single_id,
+                COALESCE(SUM(amount), 0) AS total_amount
+         FROM employee_bonuses
+         WHERE status = 'pending'
+         GROUP BY employee_id"
+    );
+    $bonMap = [];
+    foreach ($bonStmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $bonMap[(int)$r['employee_id']] = [
+            'cnt'          => (int)$r['cnt'],
+            'single_id'    => $r['single_id'] !== null ? (int)$r['single_id'] : null,
+            'total_amount' => (float)$r['total_amount'],
+        ];
+    }
+
+    // 2) جلب السلف المعلّقة مقسمة حسب النوع مجمّعة لكل موظف (استعلام واحد)
+    $advStmt = $pdo->query(
+        "SELECT employee_id,
+                SUM(CASE WHEN adv_type = 'monthly' THEN 1 ELSE 0 END) AS monthly_cnt,
+                MIN(CASE WHEN adv_type = 'monthly' THEN id ELSE NULL END) AS monthly_single_id,
+                COALESCE(SUM(CASE WHEN adv_type = 'monthly' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS monthly_amount,
+                SUM(CASE WHEN adv_type = 'standing' THEN 1 ELSE 0 END) AS standing_cnt,
+                MIN(CASE WHEN adv_type = 'standing' THEN id ELSE NULL END) AS standing_single_id,
+                COALESCE(SUM(CASE WHEN adv_type = 'standing' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS standing_amount
+         FROM employee_advances
+         WHERE status = 'pending'
+         GROUP BY employee_id"
+    );
+    $advMap = [];
+    foreach ($advStmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $advMap[(int)$r['employee_id']] = [
+            'monthly_cnt'        => (int)$r['monthly_cnt'],
+            'monthly_single_id'  => $r['monthly_single_id'] !== null ? (int)$r['monthly_single_id'] : null,
+            'monthly_amount'     => (float)$r['monthly_amount'],
+            'standing_cnt'       => (int)$r['standing_cnt'],
+            'standing_single_id' => $r['standing_single_id'] !== null ? (int)$r['standing_single_id'] : null,
+            'standing_amount'    => (float)$r['standing_amount'],
+        ];
+    }
+
+    // إعداد الجمل مرة واحدة خارج الحلقة (Prepared Statements)
+    $insBonus = $pdo->prepare('INSERT INTO employee_bonuses (employee_id, amount, bonus_date, reason, status) VALUES (?, ?, ?, ?, "pending")');
+    $updBonus = $pdo->prepare('UPDATE employee_bonuses SET amount = ? WHERE id = ? AND status = "pending"');
+
+    $insAdv = $pdo->prepare('INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type) VALUES (?, ?, ?, "pending", ?, 0.00, ?, "monthly")');
+    $updAdv = $pdo->prepare('UPDATE employee_advances SET remaining = ? WHERE id = ? AND status = "pending" AND adv_type = ?');
+
+    $noteReason = 'من شاشة الرواتب — شهر ' . $month;
+
+    // معالجة المكافآت
+    foreach ($bonusesPost as $empIdRaw => $newValRaw) {
+        $empId = (int)$empIdRaw;
+        if ($empId <= 0) continue;
+
+        // إذا كانت الخانة ممسوحة أو متروكة فاضية، تجاهلها تماماً
+        $valStr = trim((string)$newValRaw);
+        if ($valStr === '') {
+            continue;
+        }
+
+        $newAmount = round((float)$valStr, 2);
+        if ($newAmount < 0) $newAmount = 0.0;
+        $info = $bonMap[$empId] ?? ['cnt' => 0, 'single_id' => null, 'total_amount' => 0.0];
+
+        if ($info['cnt'] > 1) {
+            // أكثر من صف معلّق: الحقل كان مقفول ولا يتم التعديل
+            continue;
+        } elseif ($info['cnt'] === 1) {
+            // صف واحد معلّق: تحديث المبلغ لنفس الصف إذا تغيّرت القيمة (حتى لو أصبحت 0) مع الحفاظ على السبب الأصلي
+            if (abs($newAmount - $info['total_amount']) > 0.001) {
+                $updBonus->execute([$newAmount, $info['single_id']]);
+            }
+        } else {
+            // لا يوجد صفوف معلّقة: إضافة صف جديد فقط لو القيمة أكبر من صفر
+            if ($newAmount > 0) {
+                $insBonus->execute([$empId, $newAmount, $date, $noteReason]);
+            }
+        }
+    }
+
+    // معالجة سلف الشهر (monthly)
+    foreach ($monthlyAdvPost as $empIdRaw => $newValRaw) {
+        $empId = (int)$empIdRaw;
+        if ($empId <= 0) continue;
+
+        $valStr = trim((string)$newValRaw);
+        if ($valStr === '') {
+            continue;
+        }
+
+        $newAmount = round((float)$valStr, 2);
+        if ($newAmount < 0) $newAmount = 0.0;
+        $info = $advMap[$empId] ?? ['monthly_cnt' => 0, 'monthly_single_id' => null, 'monthly_amount' => 0.0];
+
+        if ($info['monthly_cnt'] > 1) {
+            continue;
+        } elseif ($info['monthly_cnt'] === 1) {
+            // صف واحد معلّق: تحديث المتبقي remaining فقط لنفس الصف مع الحفاظ على المبلغ الأصلي amount والملاحظات
+            if (abs($newAmount - $info['monthly_amount']) > 0.001) {
+                $updAdv->execute([$newAmount, $info['monthly_single_id'], 'monthly']);
+            }
+        } else {
+            // لا يوجد سلف شهرية معلّقة: إنشاء سلفة شهرية جديدة لو القيمة أكبر من صفر
+            if ($newAmount > 0) {
+                $insAdv->execute([$empId, $newAmount, $date, $noteReason, $newAmount]);
+            }
+        }
+    }
+
+    // معالجة السلف المستديمة (standing) — تعديل الرصيد القائم فقط، وإنشاء الجديد من تاب السلف حصراً
+    foreach ($standingAdvPost as $empIdRaw => $newValRaw) {
+        $empId = (int)$empIdRaw;
+        if ($empId <= 0) continue;
+
+        $valStr = trim((string)$newValRaw);
+        if ($valStr === '') {
+            continue;
+        }
+
+        $newAmount = round((float)$valStr, 2);
+        if ($newAmount < 0) $newAmount = 0.0;
+        $info = $advMap[$empId] ?? ['standing_cnt' => 0, 'standing_single_id' => null, 'standing_amount' => 0.0];
+
+        if ($info['standing_cnt'] > 1) {
+            continue;
+        } elseif ($info['standing_cnt'] === 1) {
+            // صف واحد معلّق: تحديث المتبقي remaining فقط لنفس الصف مع الحفاظ على القسط والمبلغ الأصلي والملاحظات
+            if (abs($newAmount - $info['standing_amount']) > 0.001) {
+                $updAdv->execute([$newAmount, $info['standing_single_id'], 'standing']);
+            }
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
@@ -109,6 +258,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 )->execute([$empId, $amount, $date, $notes ?: null, $monthlyDeduction, $amount, $advType]);
                 $flash = 'تم تسجيل السلفة بنجاح.'; $tab='advances';
             }
+            elseif ($action === 'save_payroll_adjustments') {
+                if (!is_owner()) {
+                    throw new RuntimeException('غير مصرّح لك بتعديل بيانات الرواتب.');
+                }
+                $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
+                $date = trim((string)($_POST['date'] ?? date('Y-m-d')));
+                if (!strtotime($date)) {
+                    $date = date('Y-m-d');
+                }
+                $bonusesPost    = (array)($_POST['bonuses'] ?? []);
+                $monthlyAdvPost = (array)($_POST['monthly_adv'] ?? []);
+                $standingAdvPost= (array)($_POST['standing_adv'] ?? []);
+
+                $pdo->beginTransaction();
+                try {
+                    apply_payroll_financial_adjustments($pdo, $month, $date, $bonusesPost, $monthlyAdvPost, $standingAdvPost);
+                    $pdo->commit();
+                    $flash = 'تم حفظ تعديلات المكافآت والسلف بنجاح.';
+                    $flashType = 'success';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    throw $ex;
+                }
+                $tab = 'salaries';
+            }
             elseif ($action === 'pay_salary') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
@@ -119,14 +293,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!strtotime($date)) {
                     $date = date('Y-m-d');
                 }
-                $dueDaysOverride = null;
-                if (isset($_POST['due_days']) && $_POST['due_days'] !== '') {
+                $leaveDaysOverride = null;
+                if (isset($_POST['leave_days']) && $_POST['leave_days'] !== '') {
                     if (!is_owner()) {
-                        throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                        throw new RuntimeException('غير مصرّح لك بتعديل أيام الإجازة.');
                     }
-                    $dueDaysOverride = (int) $_POST['due_days'];
+                    $leaveDaysOverride = (int) $_POST['leave_days'];
                 }
-                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $dueDaysOverride);
+                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
             elseif ($action === 'pay_salary_batch') {
@@ -149,7 +323,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $date = date('Y-m-d');
                 }
 
-                $dueDaysArr = $_POST['due_days'] ?? [];
+                $leaveDaysArr    = (array)($_POST['leave_days'] ?? []);
+                $bonusesPost     = (array)($_POST['bonuses'] ?? []);
+                $monthlyAdvPost  = (array)($_POST['monthly_adv'] ?? []);
+                $standingAdvPost = (array)($_POST['standing_adv'] ?? []);
+
+                // إذا كان المستخدم هو الأونر، نقوم بحفظ أي تعديلات مالية على المكافآت والسلف في معاملة منفصلة ومغلقة قبل بدء الصرف
+                if (is_owner()) {
+                    $pdo->beginTransaction();
+                    try {
+                        apply_payroll_financial_adjustments($pdo, $month, $date, $bonusesPost, $monthlyAdvPost, $standingAdvPost);
+                        $pdo->commit();
+                    } catch (Throwable $ex) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        throw $ex;
+                    }
+                }
+
                 $empNamesStmt = $pdo->query('SELECT id, full_name FROM employees');
                 $empNames = $empNamesStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
@@ -160,11 +352,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($empId <= 0) continue;
                     $name = $empNames[$empId] ?? ('موظف #' . $empId);
                     $override = null;
-                    if (isset($dueDaysArr[$empId]) && $dueDaysArr[$empId] !== '') {
+                    if (isset($leaveDaysArr[$empId]) && $leaveDaysArr[$empId] !== '') {
                         if (!is_owner()) {
-                            throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                            throw new RuntimeException('غير مصرّح لك بتعديل أيام الإجازة.');
                         }
-                        $override = (int) $dueDaysArr[$empId];
+                        $override = (int) $leaveDaysArr[$empId];
                     }
                     try {
                         pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $override);
@@ -423,12 +615,24 @@ if ($tab === 'salaries') {
     $stAtt->execute([$salFrom, $salTo]);
     $empHours = $stAtt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // 2) المكافآت المعلّقة مجمّعة لكل موظف (استعلام واحد)
-    $bonusMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
-         FROM employee_bonuses WHERE status='pending'
+    // 2) المكافآت المعلّقة مجمّعة لكل موظف مع العدد والـ id الفردي (استعلام واحد)
+    $bonPendingStmt = $pdo->query(
+        "SELECT employee_id,
+                COUNT(*) AS cnt,
+                MIN(id) AS single_id,
+                COALESCE(SUM(amount), 0) AS total_amount
+         FROM employee_bonuses
+         WHERE status = 'pending'
          GROUP BY employee_id"
-    )->fetchAll(PDO::FETCH_KEY_PAIR);
+    );
+    $bonPendingMap = [];
+    foreach ($bonPendingStmt->fetchAll(PDO::FETCH_ASSOC) as $bRow) {
+        $bonPendingMap[(int)$bRow['employee_id']] = [
+            'cnt'          => (int)$bRow['cnt'],
+            'single_id'    => $bRow['single_id'] !== null ? (int)$bRow['single_id'] : null,
+            'total_amount' => (float)$bRow['total_amount'],
+        ];
+    }
 
     // 3) السلف المعلّقة مجمّعة لكل موظف بالأقساط الشهرية (استعلام واحد)
     // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
@@ -462,10 +666,14 @@ if ($tab === 'salaries') {
     $stPaid->execute([$salMonth]);
     $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // 7) أرصدة السلف المعلّقة مقسمة حسب نوع السلفة (سلف الشهر وسلف مستديمة) — استعلام واحد مجمّع
+    // 7) أرصدة السلف المعلّقة مقسمة حسب نوع السلفة مع العدد والـ id (استعلام واحد مجمّع)
     $advBucketsStmt = $pdo->query(
         "SELECT employee_id,
+                SUM(CASE WHEN adv_type = 'monthly' THEN 1 ELSE 0 END) AS monthly_cnt,
+                MIN(CASE WHEN adv_type = 'monthly' THEN id ELSE NULL END) AS monthly_single_id,
                 COALESCE(SUM(CASE WHEN adv_type = 'monthly' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS monthly_adv,
+                SUM(CASE WHEN adv_type = 'standing' THEN 1 ELSE 0 END) AS standing_cnt,
+                MIN(CASE WHEN adv_type = 'standing' THEN id ELSE NULL END) AS standing_single_id,
                 COALESCE(SUM(CASE WHEN adv_type = 'standing' THEN COALESCE(remaining, amount) ELSE 0 END), 0) AS standing_adv
          FROM employee_advances
          WHERE status = 'pending'
@@ -474,37 +682,62 @@ if ($tab === 'salaries') {
     $advBucketsMap = [];
     foreach ($advBucketsStmt->fetchAll(PDO::FETCH_ASSOC) as $bRow) {
         $advBucketsMap[(int)$bRow['employee_id']] = [
-            'monthly'  => (float) $bRow['monthly_adv'],
-            'standing' => (float) $bRow['standing_adv'],
+            'monthly_cnt'        => (int)$bRow['monthly_cnt'],
+            'monthly_single_id'  => $bRow['monthly_single_id'] !== null ? (int)$bRow['monthly_single_id'] : null,
+            'monthly'            => (float)$bRow['monthly_adv'],
+            'standing_cnt'       => (int)$bRow['standing_cnt'],
+            'standing_single_id' => $bRow['standing_single_id'] !== null ? (int)$bRow['standing_single_id'] : null,
+            'standing'           => (float)$bRow['standing_adv'],
         ];
     }
 
     // الحسابات في PHP بدون أي استعلام داخل الحلقة
     foreach ($empList as $e) {
         $empId         = (int) $e['id'];
+        $salaryMode    = $e['salary_mode'] ?? 'hours';
+        $isFixed       = ($salaryMode === 'fixed');
         $base          = (float) $e['base_salary'];
-        $hours         = (float) ($empHours[$empId] ?? 0);
         $expectedHours = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
-        $salDays       = salary_days_from_hours($hours, $expectedHours);
-        $noExpected    = !empty($salDays['no_expected']);
-        $workDays      = $salDays['work_days'];
-        $leaveDays     = $salDays['leave_days'];
-        $dueDaysCalc   = $salDays['due_days'];
-        $dayRate       = $base > 0 ? ($base / 30.0) : 0.0;
-        $gross         = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
-        $bon           = (float) ($bonusMap[$empId] ?? 0);
-        $adv           = (float) ($advMap[$empId] ?? 0);
-        $monthlyAdvOwed  = (float) ($advBucketsMap[$empId]['monthly'] ?? 0);
-        $standingAdvOwed = (float) ($advBucketsMap[$empId]['standing'] ?? 0);
-        $pen           = (float) ($penMap[$empId] ?? 0);
-        $def           = (float) ($defMap[$empId] ?? 0);
+
+        if ($isFixed) {
+            $hours       = 0.0;
+            $noExpected  = false;
+            $workDays    = 0.0;
+            $leaveDays   = 0;
+            $dueDaysCalc = 0.0;
+            $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
+            $gross       = $base;
+        } else {
+            $hours       = (float) ($empHours[$empId] ?? 0);
+            $salDays     = salary_days_from_hours($hours, $expectedHours);
+            $noExpected  = !empty($salDays['no_expected']);
+            $workDays    = $salDays['work_days'];
+            $leaveDays   = $salDays['leave_days'];
+            $dueDaysCalc = $salDays['due_days'];
+            $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
+            $gross       = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
+        }
+
+        $bonInfo         = $bonPendingMap[$empId] ?? ['cnt' => 0, 'single_id' => null, 'total_amount' => 0.0];
+        $bon             = (float) $bonInfo['total_amount'];
+        $bonCnt          = (int) $bonInfo['cnt'];
+        $adv             = (float) ($advMap[$empId] ?? 0);
+        $advBucket       = $advBucketsMap[$empId] ?? ['monthly_cnt' => 0, 'monthly_single_id' => null, 'monthly' => 0.0, 'standing_cnt' => 0, 'standing_single_id' => null, 'standing' => 0.0];
+        $monthlyAdvOwed  = (float) $advBucket['monthly'];
+        $monthlyAdvCnt   = (int) $advBucket['monthly_cnt'];
+        $standingAdvOwed = (float) $advBucket['standing'];
+        $standingAdvCnt  = (int) $advBucket['standing_cnt'];
+        $pen             = (float) ($penMap[$empId] ?? 0);
+        $def             = (float) ($defMap[$empId] ?? 0);
         $totalDeductions = $adv + $pen + $def;
-        $net           = $noExpected ? 0.0 : ($gross + $bon - $totalDeductions);
-        $isPaid        = isset($paidMonthMap[$empId]);
+        $net             = $noExpected ? 0.0 : ($gross + $bon - $totalDeductions);
+        $isPaid          = isset($paidMonthMap[$empId]);
 
         $payrollData[] = [
             'id'                     => $empId,
             'full_name'              => $e['full_name'],
+            'salary_mode'            => $salaryMode,
+            'is_fixed'               => $isFixed,
             'branch_name'            => $e['branch_name'] ?? '',
             'base_salary'            => $base,
             'expected_monthly_hours' => $expectedHours,
@@ -517,10 +750,13 @@ if ($tab === 'salaries') {
             'day_rate'               => $dayRate,
             'gross_salary'           => $gross,
             'bonuses'                => $bon,
+            'bonus_cnt'              => $bonCnt,
             'total_bonuses'          => $bon,
             'advances'               => $adv,
             'monthly_adv_owed'       => $monthlyAdvOwed,
+            'monthly_adv_cnt'        => $monthlyAdvCnt,
             'standing_adv_owed'      => $standingAdvOwed,
+            'standing_adv_cnt'       => $standingAdvCnt,
             'penalties'              => $pen,
             'deficits'               => $def,
             'total_deductions'       => $totalDeductions,
@@ -828,7 +1064,6 @@ $statusBadge = function($st) {
         <?php endif; ?>
         <form method="post" id="batchPayrollForm">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="action" value="pay_salary_batch">
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
             <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
             <input type="hidden" name="salary_month" value="<?= e($salMonth) ?>">
@@ -840,6 +1075,9 @@ $statusBadge = function($st) {
                     <button type="button" class="btn btn-sm btn-ghost" id="btnSalDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء التحديد</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <?php if (is_owner()): ?>
+                        <button type="submit" name="action" value="save_payroll_adjustments" formnovalidate class="btn btn-sm btn-ghost" style="border:1.5px solid var(--line);"><i class="ti ti-device-floppy"></i> حفظ التعديلات</button>
+                    <?php endif; ?>
                     <select name="treasury_id" required style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
                         <option value="">— اختر خزينة الصرف —</option>
                         <?php foreach ($payTreasuries as $t): ?>
@@ -848,7 +1086,7 @@ $statusBadge = function($st) {
                     </select>
                     <input type="date" name="date" value="<?= date('Y-m-d') ?>" required
                            style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
-                    <button type="submit" class="btn btn-sm" onclick="return confirm('تأكيد صرف الرواتب للموظفين المحددين؟')">
+                    <button type="submit" name="action" value="pay_salary_batch" class="btn btn-sm" onclick="return confirm('تأكيد صرف الرواتب للموظفين المحددين؟')">
                         <i class="ti ti-check"></i> صرف المحددين
                     </button>
                 </div>
@@ -880,79 +1118,136 @@ $statusBadge = function($st) {
                 </thead>
                 <tbody>
                 <?php foreach ($payrollData as $p): ?>
-                    <tr data-emp-id="<?= $p['id'] ?>" data-emp-name="<?= e($p['full_name']) ?>" data-day-rate="<?= $p['day_rate'] ?>" data-bonuses="<?= $p['total_bonuses'] ?>" data-deductions="<?= $p['total_deductions'] ?>">
+                    <tr data-emp-id="<?= $p['id'] ?>"
+                        data-salary-mode="<?= e($p['salary_mode']) ?>"
+                        data-base-salary="<?= $p['base_salary'] ?>"
+                        data-work-days="<?= $p['work_days'] ?>"
+                        data-leave-days="<?= $p['leave_days'] ?>"
+                        data-day-rate="<?= $p['day_rate'] ?>"
+                        data-bonuses="<?= $p['total_bonuses'] ?>"
+                        data-monthly-adv="<?= $p['monthly_adv_owed'] ?>"
+                        data-standing-adv="<?= $p['standing_adv_owed'] ?>"
+                        data-penalties="<?= $p['penalties'] ?>"
+                        data-deficits="<?= $p['deficits'] ?>"
+                        data-deductions="<?= $p['total_deductions'] ?>">
                         <td>
-                            <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || $p['no_expected']) ? 'disabled' : '' ?>>
+                            <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || (!$p['is_fixed'] && $p['no_expected'])) ? 'disabled' : '' ?>>
                         </td>
                         <td style="font-weight:500;">
                             <?= e($p['full_name']) ?>
                             <?php if ($p['branch_name']): ?>
                                 <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
                             <?php endif; ?>
-                            <?php if ($p['no_expected']): ?>
+                            <?php if ($p['is_fixed']): ?>
+                                <span class="badge" style="font-size:11px;color:var(--accent);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
+                            <?php elseif ($p['no_expected']): ?>
                                 <div style="font-size:11px;color:var(--warn);font-weight:600;margin-top:2px;">
                                     <i class="ti ti-alert-triangle"></i> الساعات المنتظرة مش محددة — المرتب مش هيتحسب
                                 </div>
                             <?php endif; ?>
                         </td>
-                        <td><?= number_format($p['work_hours'], 2) ?></td>
-                        <td><?= $p['no_expected'] ? '—' : $p['work_days'] ?></td>
-                        <td><?= $p['no_expected'] ? '—' : $p['leave_days'] ?></td>
+                        <td><?= $p['is_fixed'] ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['work_hours'], 2) ?></td>
+                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . round($p['work_days']) . '</span>') ?></td>
                         <td>
-                            <?php if ($p['no_expected']): ?>
-                                <span style="color:var(--warn);font-weight:600;">—</span>
+                            <?php if ($p['is_fixed'] || $p['no_expected']): ?>
+                                <span style="color:var(--ink-400);">—</span>
                             <?php elseif (is_owner() && !$p['is_paid']): ?>
-                                <input type="number" min="0" max="60" name="due_days[<?= $p['id'] ?>]"
-                                       value="<?= $p['due_days_calc'] ?>"
-                                       class="due-days-input"
-                                       data-calc="<?= $p['due_days_calc'] ?>"
-                                       style="width:65px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;font-weight:600;">
+                                <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
+                                       value="<?= (int)$p['leave_days'] ?>"
+                                       class="leave-days-input"
+                                       data-calc="<?= (int)$p['leave_days'] ?>"
+                                       style="width:55px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;font-weight:600;">
                             <?php else: ?>
-                                <span style="font-weight:600;"><?= $p['due_days_calc'] ?></span>
+                                <span style="font-weight:600;"><?= (int)$p['leave_days'] ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($p['is_fixed'] || $p['no_expected']): ?>
+                                <span style="color:var(--ink-400);">—</span>
+                            <?php else: ?>
+                                <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= round($p['due_days_calc']) ?></span>
                             <?php endif; ?>
                         </td>
                         <td><?= number_format($p['base_salary'], 2) ?></td>
-                        <td><?= $p['no_expected'] ? '—' : number_format($p['day_rate'], 2) ?></td>
-                        <td class="cell-gross"><?= $p['no_expected'] ? '—' : number_format($p['gross_salary'], 2) ?></td>
+                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['day_rate'], 2) ?></td>
+                        <td class="cell-gross"><?= ($p['is_fixed']) ? number_format($p['gross_salary'], 2) : ($p['no_expected'] ? '—' : number_format($p['gross_salary'], 2)) ?></td>
                         <td>
-                            <?php if ($p['total_bonuses'] > 0): ?>
-                                <span style="color:var(--pos);font-weight:600;">
-                                     +<?= number_format($p['total_bonuses'], 2) ?>
+                            <?php if ($p['is_paid'] || !is_owner()): ?>
+                                <span style="color:<?= $p['total_bonuses'] > 0 ? 'var(--pos)' : 'var(--ink-500)' ?>;font-weight:600;">
+                                    <?= $p['total_bonuses'] > 0 ? ('+' . number_format($p['total_bonuses'], 2)) : '0.00' ?>
                                 </span>
+                            <?php elseif ($p['bonus_cnt'] > 1): ?>
+                                <span style="color:var(--pos);font-weight:600;">+<?= number_format($p['total_bonuses'], 2) ?></span>
+                                <a href="hr.php?tab=bonuses" style="display:block;font-size:11px;color:var(--accent);text-decoration:none;" title="يوجد أكثر من مكافأة معلّقة — عدلها من تاب المكافآت">تفاصيل (<?= $p['bonus_cnt'] ?>)</a>
+                            <?php elseif ($p['bonus_cnt'] === 1): ?>
+                                <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
+                                       value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
+                                       class="bonus-input"
+                                       data-orig="<?= $p['total_bonuses'] ?>"
+                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--pos);font-weight:600;">
                             <?php else: ?>
-                                <span style="color:var(--ink-500);">0.00</span>
+                                <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
+                                       value=""
+                                       placeholder="0.00"
+                                       class="bonus-input"
+                                       data-orig="0.00"
+                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--pos);font-weight:600;">
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if ($p['monthly_adv_owed'] > 0): ?>
+                            <?php if ($p['is_paid'] || !is_owner()): ?>
+                                <span style="color:<?= $p['monthly_adv_owed'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;">
+                                    <?= number_format($p['monthly_adv_owed'], 2) ?>
+                                </span>
+                            <?php elseif ($p['monthly_adv_cnt'] > 1): ?>
                                 <span style="color:var(--neg);font-weight:500;"><?= number_format($p['monthly_adv_owed'], 2) ?></span>
+                                <a href="hr.php?tab=advances" style="display:block;font-size:11px;color:var(--accent);text-decoration:none;" title="يوجد أكثر من سلفة شهرية معلّقة — عدلها من تاب السلف">تفاصيل (<?= $p['monthly_adv_cnt'] ?>)</a>
+                            <?php elseif ($p['monthly_adv_cnt'] === 1): ?>
+                                <input type="number" step="0.01" min="0" name="monthly_adv[<?= $p['id'] ?>]"
+                                       value="<?= number_format($p['monthly_adv_owed'], 2, '.', '') ?>"
+                                       class="monthly-adv-input"
+                                       data-orig="<?= $p['monthly_adv_owed'] ?>"
+                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
                             <?php else: ?>
-                                <span style="color:var(--ink-500);">0.00</span>
+                                <input type="number" step="0.01" min="0" name="monthly_adv[<?= $p['id'] ?>]"
+                                       value=""
+                                       placeholder="0.00"
+                                       class="monthly-adv-input"
+                                       data-orig="0.00"
+                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if ($p['standing_adv_owed'] > 0): ?>
-                                <span style="color:var(--neg);font-weight:500;"><?= number_format($p['standing_adv_owed'], 2) ?></span>
-                            <?php else: ?>
-                                <span style="color:var(--ink-500);">0.00</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ($p['total_deductions'] > 0): ?>
-                                <span style="color:var(--neg);font-weight:600;" title="سلف: <?= number_format($p['advances'],2) ?> | جزاءات: <?= number_format($p['penalties'],2) ?> | عجز: <?= number_format($p['deficits'],2) ?>">
-                                    <?= number_format($p['total_deductions'], 2) ?>
+                            <?php if ($p['is_paid'] || !is_owner()): ?>
+                                <span style="color:<?= $p['standing_adv_owed'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;">
+                                    <?= number_format($p['standing_adv_owed'], 2) ?>
                                 </span>
+                            <?php elseif ($p['standing_adv_cnt'] > 1): ?>
+                                <span style="color:var(--neg);font-weight:500;"><?= number_format($p['standing_adv_owed'], 2) ?></span>
+                                <a href="hr.php?tab=advances" style="display:block;font-size:11px;color:var(--accent);text-decoration:none;" title="يوجد أكثر من سلفة مستديمة معلّقة — عدلها من تاب السلف">تفاصيل (<?= $p['standing_adv_cnt'] ?>)</a>
+                            <?php elseif ($p['standing_adv_cnt'] === 1): ?>
+                                <input type="number" step="0.01" min="0" name="standing_adv[<?= $p['id'] ?>]"
+                                       value="<?= number_format($p['standing_adv_owed'], 2, '.', '') ?>"
+                                       class="standing-adv-input"
+                                       data-orig="<?= $p['standing_adv_owed'] ?>"
+                                       title="تعديل رصيد السلفة المستديمة القائمة"
+                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
                             <?php else: ?>
-                                <span style="color:var(--ink-500);">0.00</span>
+                                <span style="color:var(--ink-400);font-size:12px;" title="لإضافة سلفة مستديمة جديدة حدد القسط من تاب السلف">—</span>
                             <?php endif; ?>
                         </td>
-                        <td class="cell-net" style="font-weight:700;<?= ($p['no_expected']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
-                            <?= $p['no_expected'] ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
+                        <td class="cell-deductions">
+                            <span style="color:<?= $p['total_deductions'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:600;" title="سلف: <?= number_format($p['advances'],2) ?> | جزاءات: <?= number_format($p['penalties'],2) ?> | عجز: <?= number_format($p['deficits'],2) ?>">
+                                <?= number_format($p['total_deductions'], 2) ?>
+                            </span>
+                        </td>
+                        <td class="cell-net" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
+                            <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
                         </td>
                         <td>
                             <?php if ($p['is_paid']): ?>
                                 <span class="badge" style="color:var(--pos);background:var(--pos-soft);">تم الصرف</span>
-                            <?php elseif ($p['no_expected']): ?>
+                            <?php elseif (!$p['is_fixed'] && $p['no_expected']): ?>
                                 <span class="badge" style="color:var(--warn);background:var(--warn-soft);" title="حدد الساعات المنتظرة في التعريفات أولاً">غير محدد</span>
                             <?php else: ?>
                                 <button type="button" class="btn btn-sm btn-ghost btn-single-pay"
@@ -1258,8 +1553,8 @@ $statusBadge = function($st) {
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
             <?php if (is_owner()): ?>
                 <div class="form-row">
-                    <label>أيام الاستحقاق (تعديل الأونر — اختياري)</label>
-                    <input type="number" min="0" max="60" name="due_days" id="singleSalaryDueDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
+                    <label>أيام الإجازة (تعديل الأونر — اختياري)</label>
+                    <input type="number" min="0" max="60" name="leave_days" id="singleSalaryLeaveDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
             <?php endif; ?>
             <p style="font-size:12px;color:var(--ink-500);">سيتم إضافة المكافآت وخصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
@@ -1419,35 +1714,75 @@ $statusBadge = function($st) {
         if (!modal) return;
         var empSelect = document.getElementById('singleSalaryEmpId');
         if (empSelect) empSelect.value = empId;
-        var dueInput = tr ? tr.querySelector('.due-days-input') : null;
-        var modalDueInput = document.getElementById('singleSalaryDueDays');
-        if (modalDueInput && dueInput) {
-            modalDueInput.value = dueInput.value;
-        } else if (modalDueInput) {
-            modalDueInput.value = '';
+        var leaveInput = tr ? tr.querySelector('.leave-days-input') : null;
+        var modalLeaveInput = document.getElementById('singleSalaryLeaveDays');
+        if (modalLeaveInput && leaveInput) {
+            modalLeaveInput.value = leaveInput.value;
+        } else if (modalLeaveInput) {
+            modalLeaveInput.value = '';
         }
         modal.classList.add('open');
     });
 
-    // تحديث أرقام الاستحقاق والصافي لحظياً عند تعديل أيام الاستحقاق من الأونر
-    document.querySelectorAll('.due-days-input').forEach(function(inp) {
-        inp.addEventListener('input', function() {
-            var tr = inp.closest('tr');
-            if (!tr) return;
-            var dayRate = parseFloat(tr.dataset.dayRate) || 0;
-            var bonuses = parseFloat(tr.dataset.bonuses) || 0;
-            var deductions = parseFloat(tr.dataset.deductions) || 0;
-            var dueDays = parseFloat(inp.value) || 0;
-            var gross = dayRate * dueDays;
-            var net = gross + bonuses - deductions;
-            var grossCell = tr.querySelector('.cell-gross');
-            var netCell = tr.querySelector('.cell-net');
-            if (grossCell) grossCell.textContent = gross.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-            if (netCell) {
-                netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-                netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
+    // تحديث أرقام أيام الاستحقاق والاستحقاق والخصومات والصافي لحظياً عند تعديل أي خانة (إجازة، مكافأة، سلف)
+    document.addEventListener('input', function(e) {
+        var inp = e.target;
+        if (!inp.matches('.leave-days-input, .bonus-input, .monthly-adv-input, .standing-adv-input')) return;
+        var tr = inp.closest('tr');
+        if (!tr) return;
+
+        var salaryMode = tr.dataset.salaryMode || 'hours';
+        var isFixed = (salaryMode === 'fixed');
+        var baseSalary = parseFloat(tr.dataset.baseSalary) || 0;
+        var dayRate = parseFloat(tr.dataset.dayRate) || 0;
+        var workDays = parseFloat(tr.dataset.workDays) || 0;
+        var penalties = parseFloat(tr.dataset.penalties) || 0;
+        var deficits = parseFloat(tr.dataset.deficits) || 0;
+
+        var leaveInp = tr.querySelector('.leave-days-input');
+        var leaveDays = leaveInp ? (leaveInp.value.trim() === '' ? (parseFloat(leaveInp.dataset.calc) || 0) : (parseFloat(leaveInp.value) || 0)) : (parseFloat(tr.dataset.leaveDays) || 0);
+
+        var bonusInp = tr.querySelector('.bonus-input');
+        var bonuses = bonusInp ? (bonusInp.value.trim() === '' ? (parseFloat(bonusInp.dataset.orig) || 0) : (parseFloat(bonusInp.value) || 0)) : (parseFloat(tr.dataset.bonuses) || 0);
+
+        var monthlyInp = tr.querySelector('.monthly-adv-input');
+        var monthlyAdv = monthlyInp ? (monthlyInp.value.trim() === '' ? (parseFloat(monthlyInp.dataset.orig) || 0) : (parseFloat(monthlyInp.value) || 0)) : (parseFloat(tr.dataset.monthlyAdv) || 0);
+
+        var standingInp = tr.querySelector('.standing-adv-input');
+        var standingAdv = standingInp ? (standingInp.value.trim() === '' ? (parseFloat(standingInp.dataset.orig) || 0) : (parseFloat(standingInp.value) || 0)) : (parseFloat(tr.dataset.standingAdv) || 0);
+
+        var gross = 0;
+        if (isFixed) {
+            gross = baseSalary;
+        } else {
+            var exactDueDays = workDays + leaveDays;
+            gross = dayRate * exactDueDays;
+            var dueDaysCell = tr.querySelector('.cell-due-days');
+            if (dueDaysCell) {
+                dueDaysCell.textContent = Math.round(exactDueDays);
+                dueDaysCell.title = 'أيام الاستحقاق الفعلية: ' + exactDueDays.toFixed(3);
             }
-        });
+        }
+
+        var totalDeductions = monthlyAdv + standingAdv + penalties + deficits;
+        var net = gross + bonuses - totalDeductions;
+
+        var grossCell = tr.querySelector('.cell-gross');
+        if (grossCell) {
+            grossCell.textContent = gross.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        }
+
+        var dedCell = tr.querySelector('.cell-deductions');
+        if (dedCell) {
+            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف: ' + (monthlyAdv + standingAdv).toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز: ' + deficits.toFixed(2) + '">' +
+                totalDeductions.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>';
+        }
+
+        var netCell = tr.querySelector('.cell-net');
+        if (netCell) {
+            netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+            netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
+        }
     });
 
     var salMasterCb = document.getElementById('salMasterCb');
