@@ -228,6 +228,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$monthlyDeduction, $advId]);
                 $flash = 'تم تحديث القسط الشهري للسلفة بنجاح.'; $tab='advances';
             }
+            elseif ($action === 'cancel_advance') {
+                if (!is_owner()) {
+                    throw new RuntimeException('غير مصرّح لك بإلغاء السلف.');
+                }
+                $advId = (int)($_POST['advance_id'] ?? 0);
+                if ($advId <= 0) {
+                    throw new RuntimeException('بيانات غير صحيحة.');
+                }
+                $chk = $pdo->prepare('SELECT id, status, notes FROM employee_advances WHERE id = ?');
+                $chk->execute([$advId]);
+                $advRow = $chk->fetch();
+                if (!$advRow) {
+                    throw new RuntimeException('السلفة غير موجودة.');
+                }
+                if ($advRow['status'] !== 'pending') {
+                    throw new RuntimeException('لا يمكن إلغاء سلفة غير معلّقة.');
+                }
+                $oldNotes = trim((string)($advRow['notes'] ?? ''));
+                $cancelNote = 'تم إلغاء السلفة بتاريخ ' . date('Y-m-d');
+                $newNotes = $oldNotes !== '' ? ($oldNotes . "\n" . $cancelNote) : $cancelNote;
+
+                $pdo->prepare('UPDATE employee_advances SET remaining = 0, notes = ? WHERE id = ? AND status = "pending"')
+                    ->execute([$newNotes, $advId]);
+                $flash = 'تم إلغاء السلفة بنجاح.'; $tab='advances';
+            }
             elseif ($action === 'add_advance') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $amount = (float)($_POST['amount'] ?? 0);
@@ -939,9 +964,9 @@ $statusBadge = function($st) {
                         <?php endif; ?>
                     </td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
-                    <td style="font-size:13px;color:var(--ink-500);"><?= e($a['notes'] ?? '—') ?></td>
+                    <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
-                        <?php if ($isPending): ?>
+                        <?php if ($isPending && $remAmount > 0): ?>
                             <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
                                     data-id="<?= (int)$a['id'] ?>"
                                     data-name="<?= e($a['full_name']) ?>"
@@ -949,6 +974,17 @@ $statusBadge = function($st) {
                                     data-remaining="<?= number_format($remAmount, 2) ?>"
                                     data-deduction="<?= $monthlyDed > 0 ? $monthlyDed : 0 ?>"
                                     title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
+                            <?php if (is_owner()): ?>
+                                <form method="post" style="display:inline;margin:0;"
+                                      onsubmit="return confirm('تأكيد إلغاء سلفة <?= e(addslashes($a['full_name'])) ?>؟\nالمبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م');">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="cancel_advance">
+                                    <input type="hidden" name="advance_id" value="<?= (int)$a['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-reject" title="إلغاء السلفة"><i class="ti ti-trash"></i> إلغاء</button>
+                                </form>
+                            <?php endif; ?>
+                        <?php elseif ($isPending && $remAmount <= 0): ?>
+                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);">ملغاة</span>
                         <?php else: ?>
                             <span style="color:#ccc;">—</span>
                         <?php endif; ?>
@@ -992,9 +1028,9 @@ $statusBadge = function($st) {
                         <?php endif; ?>
                     </td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
-                    <td style="font-size:13px;color:var(--ink-500);"><?= e($a['notes'] ?? '—') ?></td>
+                    <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
-                        <?php if ($isPending): ?>
+                        <?php if ($isPending && $remAmount > 0): ?>
                             <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
                                     data-id="<?= (int)$a['id'] ?>"
                                     data-name="<?= e($a['full_name']) ?>"
@@ -1002,6 +1038,17 @@ $statusBadge = function($st) {
                                     data-remaining="<?= number_format($remAmount, 2) ?>"
                                     data-deduction="<?= $monthlyDed > 0 ? $monthlyDed : 0 ?>"
                                     title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
+                            <?php if (is_owner()): ?>
+                                <form method="post" style="display:inline;margin:0;"
+                                      onsubmit="return confirm('تأكيد إلغاء سلفة <?= e(addslashes($a['full_name'])) ?>؟\nالمبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م');">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="cancel_advance">
+                                    <input type="hidden" name="advance_id" value="<?= (int)$a['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-reject" title="إلغاء السلفة"><i class="ti ti-trash"></i> إلغاء</button>
+                                </form>
+                            <?php endif; ?>
+                        <?php elseif ($isPending && $remAmount <= 0): ?>
+                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);">ملغاة</span>
                         <?php else: ?>
                             <span style="color:#ccc;">—</span>
                         <?php endif; ?>

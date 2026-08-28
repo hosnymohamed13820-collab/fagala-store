@@ -1539,26 +1539,60 @@ function recover_advance(
         $empName = $chk->fetchColumn();
         if ($empName === false) throw new RuntimeException('الموظف غير موجود.');
 
-        // الخزينة تستلم
+        // فحص إجمالي السلف المستحقة المعلّقة على الموظف باستعلام واحد قبل عمل القيد
+        $chkAdv = $pdo->prepare(
+            "SELECT COALESCE(SUM(COALESCE(remaining, amount)), 0)
+             FROM employee_advances
+             WHERE employee_id = ? AND status = 'pending'"
+        );
+        $chkAdv->execute([$employeeId]);
+        $totalOutstanding = (float) $chkAdv->fetchColumn();
+
+        if ($totalOutstanding <= 0.0001) {
+            throw new RuntimeException("لا توجد سلف معلّقة مستحقة على الموظف: {$empName}.");
+        }
+
+        if ($amount - $totalOutstanding > 0.01) {
+            throw new RuntimeException(
+                "مبلغ الرد (" . number_format($amount, 2) . " ج.م) أكبر من إجمالي السلف المستحقة على الموظف {$empName} (" . number_format($totalOutstanding, 2) . " ج.م)."
+            );
+        }
+
+        // الخزينة تستلم (القيد يتم فقط بعد التأكد من صحة المبلغ والمستحق)
         post_journal($treasuryId, 0, $amount,
             'رد سلفة من الموظف: ' . $empName, $date,
             'advance_recovery', $employeeId, $userId, $pdo);
 
-        // تسديد السلف المعلّقة (الأقدم أولاً)
+        // تسديد السلف المعلّقة (الأقدم أولاً) مع الحفاظ على المبلغ الأصلي amount
         $remaining = $amount;
-        $st = $pdo->prepare("SELECT id, amount FROM employee_advances WHERE employee_id=? AND status='pending' ORDER BY id ASC FOR UPDATE");
+        $st = $pdo->prepare(
+            "SELECT id, amount, remaining
+             FROM employee_advances
+             WHERE employee_id = ? AND status = 'pending'
+             ORDER BY id ASC FOR UPDATE"
+        );
         $st->execute([$employeeId]);
+
+        $updFull = $pdo->prepare("UPDATE employee_advances SET remaining = 0, status = 'recovered' WHERE id = ?");
+        $updPart = $pdo->prepare("UPDATE employee_advances SET remaining = ? WHERE id = ?");
+
         foreach ($st->fetchAll() as $adv) {
-            if ($remaining <= 0) break;
-            $advAmount = (float) $adv['amount'];
-            if ($remaining >= $advAmount) {
-                // تسديد كامل
-                $pdo->prepare("UPDATE employee_advances SET status='recovered' WHERE id=?")->execute([$adv['id']]);
-                $remaining -= $advAmount;
+            if ($remaining <= 0.0001) break;
+
+            $outstanding = $adv['remaining'] !== null ? (float) $adv['remaining'] : (float) $adv['amount'];
+            if ($outstanding <= 0.0001) {
+                // سلفة ملغاة أو مسددة من قبل — تخطي دون لمس الحالة أو استهلاك المبلغ
+                continue;
+            }
+
+            if ($remaining >= $outstanding - 0.0001) {
+                // سداد كامل للسلفة
+                $updFull->execute([$adv['id']]);
+                $remaining -= $outstanding;
             } else {
-                // تسديد جزئي: قلّل المبلغ المتبقي على السلفة
-                $pdo->prepare("UPDATE employee_advances SET amount = amount - ? WHERE id=?")
-                    ->execute([$remaining, $adv['id']]);
+                // سداد جزئي للسلفة: يتبقى منها الفرق وتظل الحالة pending
+                $newRemaining = $outstanding - $remaining;
+                $updPart->execute([$newRemaining, $adv['id']]);
                 $remaining = 0;
             }
         }
