@@ -64,6 +64,46 @@ function all_modules(): array
 }
 
 /**
+ * سجل أجزاء المديولات المركّبة (module:part).
+ *
+ * ملاحظة: مديول «طلب النواقص» (shortage) لسه مش متجزّأ في المرحلة دي عشان ما يدّيش إحساس كاذب بالتحكم.
+ * الأسماء المحجوزة ليه مستقبلاً:
+ *   - shortage:orders     (طلبات الفروع)
+ *   - shortage:purchases  (مشتريات الإدارة)
+ * وإضافتها هنا هتكون سطر واحد بس لما يتم تقسيم الشاشة في مرحلتها.
+ *
+ * @return array<string, array<string, string>>
+ */
+function module_parts(): array
+{
+    return [
+        'hr' => [
+            'employees'  => 'الموظفون',
+            'advances'   => 'السلف',
+            'bonuses'    => 'المكافآت',
+            'penalties'  => 'الجزاءات',
+            'leaves'     => 'الإجازات',
+            'salaries'   => 'الرواتب',
+            'attendance' => 'الحضور والانصراف',
+            'requests'   => 'طلبات التصحيح',
+        ],
+        'reports' => [
+            'sales'      => 'المبيعات',
+            'treasury'   => 'الخزينة',
+            'expenses'   => 'المصاريف',
+            'jtotals'    => 'إجماليات القيود',
+            'custody'    => 'العهد',
+            'deficits'   => 'العجوزات',
+            'suppliers'  => 'الموردين',
+            'salaries'   => 'الرواتب',
+            'attendance' => 'الحضور',
+            'stocktake'  => 'الجرد',
+            'noprice'    => 'أصناف بدون سعر بيع',
+        ],
+    ];
+}
+
+/**
  * كام محاولة فاشلة مسموح بيها قبل القفل المؤقت.
  * الحساب بيتقفل لو تخطّى العدد ده من نفس اليوزرنيم **أو** من نفس الـIP
  * خلال آخر LOGIN_LOCK_MINUTES دقيقة.
@@ -126,13 +166,28 @@ function attempt_login(string $username, string $password): bool
 
     // نجاح: تخزين بيانات الجلسة
     session_regenerate_id(true); // حماية ضد session fixation
+
+    $permsVer = 1;
+    try {
+        $stVer = db()->prepare('SELECT perms_version FROM users WHERE id = ?');
+        $stVer->execute([(int) $user['id']]);
+        $v = $stVer->fetchColumn();
+        if ($v !== false && $v !== null) {
+            $permsVer = (int) $v;
+        }
+    } catch (Throwable $e) {
+        // لو العمود لسه ما اتضافش على السيرفر، بنكمّل بالقيمة الافتراضية
+        $permsVer = 1;
+    }
+
     $_SESSION['user'] = [
-        'id'        => (int) $user['id'],
-        'username'  => $user['username'],
-        'full_name' => $user['full_name'],
-        'role_id'   => (int) $user['role_id'],
-        'branch_id' => $user['branch_id'] !== null ? (int) $user['branch_id'] : null,
-        'is_owner'  => (int) $user['is_owner'] === 1,
+        'id'            => (int) $user['id'],
+        'username'      => $user['username'],
+        'full_name'     => $user['full_name'],
+        'role_id'       => (int) $user['role_id'],
+        'branch_id'     => $user['branch_id'] !== null ? (int) $user['branch_id'] : null,
+        'is_owner'      => (int) $user['is_owner'] === 1,
+        'perms_version' => $permsVer,
     ];
 
     // تحميل صلاحيات المستخدم في الجلسة (مرة واحدة)
@@ -208,14 +263,23 @@ function is_owner(): bool
 }
 
 /**
- * هل المستخدم الحالي ليه صلاحية المديول ده؟
- * الأونر بياخد true دايماً.
+ * هل المستخدم الحالي ليه صلاحية المفتاح ده؟
+ * المفتاح ممكن يكون مديول بسيط ('cashier') أو مفتاح مركّب ('hr:salaries').
+ *
+ * القواعد:
+ * - الأونر: true دايماً.
+ * - مفتاح مركب ('module:part'): true لو معاه المديول كامل ('module') أو الجزء بالظبط ('module:part').
+ * - مديول بسيط ('hr'): true لو معاه المديول كامل بالظبط. (معاه 'hr:salaries' بس → false).
  */
 function can(string $moduleKey): bool
 {
-    // سكانر الكمبيوتر بيتبع صلاحية استعلام الأسعار (نفس الجمهور — أي موظف)
-    if ($moduleKey === 'remote_scan') $moduleKey = 'price_inquiry';
-    // استيراد الحضور بيتبع صلاحية الموارد البشرية (hr)
+    // =========================================================================
+    //  الأسماء المستعارة — مخالفة لقاعدة «كل صفحة ليها مفتاحها».
+    //  متسابة هنا مؤقتاً عشان ما نكسرش الشاشات على المستخدمين الحاليين.
+    //  هتتشال بترحيل بيانات في مرحلة تانية، و attendance_import هتتشال
+    //  أصلاً لما الصفحة تدخل جوّه تاب الحضور في الموارد البشرية.
+    // =========================================================================
+    if ($moduleKey === 'remote_scan')       $moduleKey = 'price_inquiry';
     if ($moduleKey === 'attendance_import') $moduleKey = 'hr';
 
     if (!is_logged_in()) {
@@ -224,11 +288,60 @@ function can(string $moduleKey): bool
     if (is_owner()) {
         return true;
     }
-    return in_array($moduleKey, $_SESSION['permissions'] ?? [], true);
+
+    $perms = $_SESSION['permissions'] ?? [];
+
+    // لو مفتاح مركّب: مسموح لو معاه المديول كامل كـ wildcard أو معاه الجزء بالتحديد
+    if (str_contains($moduleKey, ':')) {
+        [$mod] = explode(':', $moduleKey, 2);
+        return in_array($mod, $perms, true) || in_array($moduleKey, $perms, true);
+    }
+
+    // مديول بسيط: تطابق تام فقط (can('hr') ترجع true لو معاه 'hr' بس مش لو معاه جزء)
+    return in_array($moduleKey, $perms, true);
+}
+
+/**
+ * هل المستخدم الحالي يقدر يفتح المديول ده أصلاً؟
+ * بترجّع true لو:
+ *  1. أونر
+ *  2. عنده المديول كامل (زي can($moduleKey))
+ *  3. عنده أي جزء من المديول (أي مفتاح يبدأ بـ "$moduleKey:")
+ *
+ * دي معمولة للقايمة الجانبية وحراسة الصفحة الرئيسية للمديول.
+ */
+function can_module(string $moduleKey): bool
+{
+    // الأسماء المستعارة مؤقتاً لحد ما تترحل
+    if ($moduleKey === 'remote_scan')       $moduleKey = 'price_inquiry';
+    if ($moduleKey === 'attendance_import') $moduleKey = 'hr';
+
+    if (!is_logged_in()) {
+        return false;
+    }
+    if (is_owner()) {
+        return true;
+    }
+
+    $perms = $_SESSION['permissions'] ?? [];
+    if (in_array($moduleKey, $perms, true)) {
+        return true;
+    }
+
+    $prefix = $moduleKey . ':';
+    $prefixLen = strlen($prefix);
+    foreach ($perms as $p) {
+        if (strncmp((string) $p, $prefix, $prefixLen) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
  * يفرض تسجيل الدخول — لو مش داخل يحوّله لصفحة الدخول.
+ * كمان بيتأكد إن الحساب لسه نشط وإن الصلاحيات متزامنة مع أحدث إصدار.
  * يتحط في أول كل صفحة محمية.
  */
 function require_login(): void
@@ -236,6 +349,43 @@ function require_login(): void
     if (!is_logged_in()) {
         header('Location: login.php');
         exit;
+    }
+
+    $userId = (int) ($_SESSION['user']['id'] ?? 0);
+    if ($userId <= 0) {
+        logout();
+        header('Location: login.php');
+        exit;
+    }
+
+    try {
+        $st = db()->prepare('SELECT is_active, perms_version FROM users WHERE id = ?');
+        $st->execute([$userId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        // لو المستخدم اتمسح أو حسابه اتعطّل وهو شغال، يطرد فوراً
+        if (!$row || empty($row['is_active'])) {
+            logout();
+            header('Location: login.php');
+            exit;
+        }
+
+        // لو رقم إصدار الصلاحيات اتغير (الأونر عدّل صلاحياته)، نحدّث الجلسة فوراً من غير خروج
+        if (isset($row['perms_version'])) {
+            $currentVer = (int) $row['perms_version'];
+            $sessionVer = (int) ($_SESSION['user']['perms_version'] ?? 0);
+            if ($sessionVer !== $currentVer) {
+                load_permissions($userId);
+                $_SESSION['user']['perms_version'] = $currentVer;
+            }
+        }
+    } catch (Throwable $ex) {
+        // =====================================================================
+        //  حزام أمان حاسم: الدالة دي بتشتغل في أول كل ريكوست لكل الـ ٤٩ مستخدم.
+        //  لو الاستعلام رمى أي خطأ (مثلاً ملف SQL لسه ما اتنفّذش على السيرفر
+        //  والعمود perms_version لسه مش موجود، أو فيه عطل لحظي)، بنبلع الخطأ
+        //  بهدوء ونكمّل بالسلوك العادي من غير ما نوقّع الموقع في وش الناس.
+        // =====================================================================
     }
 }
 
@@ -256,13 +406,29 @@ function require_permission(string $moduleKey): void
 }
 
 /**
+ * يفرض صلاحية الوصول للمديول (سواء المديول كامل أو أي جزء منه) — لو مالوش يمنعه تماماً.
+ * نفس سلوك require_permission بس بتستعمل can_module().
+ */
+function require_module_access(string $moduleKey): void
+{
+    require_login();
+    if (!can_module($moduleKey)) {
+        http_response_code(403);
+        die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+            . '<h2>🚫 غير مصرّح</h2>'
+            . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+            . '<a href="logout.php">تسجيل الخروج</a></div>');
+    }
+}
+
+/**
  * أول مديول متاح للمستخدم (للتوجيه بعد الدخول).
  * لو مفيش، بيرجّع dashboard.
  */
 function first_allowed_module(): string
 {
     foreach (all_modules() as $key => $mod) {
-        if (can($key)) {
+        if (can_module($key)) {
             return $mod['url'];
         }
     }

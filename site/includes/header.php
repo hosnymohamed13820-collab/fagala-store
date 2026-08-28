@@ -64,7 +64,7 @@ $modules     = all_modules();
         </div>
         <nav class="sidebar-nav">
             <?php foreach ($modules as $key => $mod): ?>
-                <?php if (can($key)): // يظهر بس اللي ليه صلاحية ?>
+                <?php if (can_module($key)): // يظهر بس اللي ليه صلاحية ?>
                     <a href="<?= e($mod['url']) ?>"
                        class="nav-item <?= $active === $key ? 'active' : '' ?>">
                         <i class="ti <?= e($mod['icon']) ?>"></i>

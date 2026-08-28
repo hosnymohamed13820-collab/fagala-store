@@ -99,43 +99,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $allowAny = !empty($_POST['allow_anywhere']) ? 1 : 0;
 
             if ($userId > 0 && $fullName !== '' && $roleId > 0) {
-                if ($password !== '') {
-                    $hash = password_hash($password, PASSWORD_DEFAULT);
-                    $pdo->prepare(
-                        'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, password_hash = ? WHERE id = ?'
-                    )->execute([$fullName, $roleId, $branchId, $hash, $userId]);
-                } else {
-                    $pdo->prepare(
-                        'UPDATE users SET full_name = ?, role_id = ?, branch_id = ? WHERE id = ?'
-                    )->execute([$fullName, $roleId, $branchId, $userId]);
-                }
-
-                $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
-                $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
-                foreach ($perms as $mk) {
-                    if (isset($modules[$mk])) $insP->execute([$userId, $mk]);
-                }
-
-                // upsert سجل الموظف المربوط
-                $empChk = $pdo->prepare('SELECT id FROM employees WHERE user_id = ?');
-                $empChk->execute([$userId]);
-                $empId = $empChk->fetchColumn();
-                if ($isEmp) {
-                    if ($empId) {
+                $pdo->beginTransaction();
+                try {
+                    if ($password !== '') {
+                        $hash = password_hash($password, PASSWORD_DEFAULT);
                         $pdo->prepare(
-                            'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
-                        )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                            'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, password_hash = ?, perms_version = perms_version + 1 WHERE id = ?'
+                        )->execute([$fullName, $roleId, $branchId, $hash, $userId]);
                     } else {
                         $pdo->prepare(
-                            'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out, allow_anywhere, is_active)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
-                        )->execute([$fullName, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny]);
+                            'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, perms_version = perms_version + 1 WHERE id = ?'
+                        )->execute([$fullName, $roleId, $branchId, $userId]);
                     }
-                } elseif ($empId) {
-                    // اتشال عنه صفة الموظف → عطّل سجل الموظف
-                    $pdo->prepare('UPDATE employees SET is_active=0 WHERE id=?')->execute([$empId]);
+
+                    $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
+                    $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
+                    foreach ($perms as $mk) {
+                        if (isset($modules[$mk])) $insP->execute([$userId, $mk]);
+                    }
+
+                    // upsert سجل الموظف المربوط
+                    $empChk = $pdo->prepare('SELECT id FROM employees WHERE user_id = ?');
+                    $empChk->execute([$userId]);
+                    $empId = $empChk->fetchColumn();
+                    if ($isEmp) {
+                        if ($empId) {
+                            $pdo->prepare(
+                                'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
+                            )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                        } else {
+                            $pdo->prepare(
+                                'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out, allow_anywhere, is_active)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+                            )->execute([$fullName, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny]);
+                        }
+                    } elseif ($empId) {
+                        // اتشال عنه صفة الموظف → عطّل سجل الموظف
+                        $pdo->prepare('UPDATE employees SET is_active=0 WHERE id=?')->execute([$empId]);
+                    }
+
+                    $pdo->commit();
+                    $flash = 'تم تعديل المستخدم بنجاح.';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    $flash = 'حدث خطأ أثناء حفظ التعديلات: ' . $ex->getMessage();
+                    $flashType = 'error';
                 }
-                $flash = 'تم تعديل المستخدم بنجاح.';
             } else {
                 $flash = 'بيانات غير مكتملة.';
                 $flashType = 'error';
@@ -147,8 +158,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userId = (int) ($_POST['user_id'] ?? 0);
             // منع الأونر من إيقاف نفسه
             if ($userId > 0 && $userId !== (int) current_user()['id']) {
-                $pdo->prepare('UPDATE users SET is_active = 1 - is_active WHERE id = ?')->execute([$userId]);
-                $flash = 'تم تحديث حالة المستخدم.';
+                $pdo->beginTransaction();
+                try {
+                    $pdo->prepare('UPDATE users SET is_active = 1 - is_active, perms_version = perms_version + 1 WHERE id = ?')->execute([$userId]);
+                    $pdo->commit();
+                    $flash = 'تم تحديث حالة المستخدم.';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    $flash = 'حدث خطأ أثناء تحديث حالة المستخدم.';
+                    $flashType = 'error';
+                }
             } else {
                 $flash = 'لا يمكنك إيقاف حسابك الخاص.';
                 $flashType = 'error';
