@@ -820,6 +820,11 @@ $statusBadge = function($st) {
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .payroll-num { width:95px; text-align:center; padding:4px 6px; border:1.5px solid var(--line);
+        border-radius:6px; font-family:inherit; font-size:13px; -moz-appearance:textfield; appearance:textfield; }
+    .payroll-num::-webkit-outer-spin-button,
+    .payroll-num::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+    .payroll-num.is-days { width:55px; }
 </style>
 
 <?php if ($flash): ?>
@@ -1147,16 +1152,16 @@ $statusBadge = function($st) {
                             <?php endif; ?>
                         </td>
                         <td><?= $p['is_fixed'] ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['work_hours'], 2) ?></td>
-                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . round($p['work_days']) . '</span>') ?></td>
+                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . number_format($p['work_days'], 2) . '</span>') ?></td>
                         <td>
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
                                 <span style="color:var(--ink-400);">—</span>
                             <?php elseif (is_owner() && !$p['is_paid']): ?>
                                 <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
                                        value="<?= (int)$p['leave_days'] ?>"
-                                       class="leave-days-input"
+                                       class="leave-days-input payroll-num is-days"
                                        data-calc="<?= (int)$p['leave_days'] ?>"
-                                       style="width:55px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;font-weight:600;">
+                                       style="font-weight:600;">
                             <?php else: ?>
                                 <span style="font-weight:600;"><?= (int)$p['leave_days'] ?></span>
                             <?php endif; ?>
@@ -1165,7 +1170,7 @@ $statusBadge = function($st) {
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
                                 <span style="color:var(--ink-400);">—</span>
                             <?php else: ?>
-                                <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= round($p['due_days_calc']) ?></span>
+                                <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= number_format($p['due_days_calc'], 2) ?></span>
                             <?php endif; ?>
                         </td>
                         <td><?= number_format($p['base_salary'], 2) ?></td>
@@ -1182,16 +1187,16 @@ $statusBadge = function($st) {
                             <?php elseif ($p['bonus_cnt'] === 1): ?>
                                 <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
                                        value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
-                                       class="bonus-input"
+                                       class="bonus-input payroll-num"
                                        data-orig="<?= $p['total_bonuses'] ?>"
-                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--pos);font-weight:600;">
+                                       style="color:var(--pos);font-weight:600;">
                             <?php else: ?>
                                 <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
                                        value=""
                                        placeholder="0.00"
-                                       class="bonus-input"
+                                       class="bonus-input payroll-num"
                                        data-orig="0.00"
-                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--pos);font-weight:600;">
+                                       style="color:var(--pos);font-weight:600;">
                             <?php endif; ?>
                         </td>
                         <td>
@@ -1205,16 +1210,16 @@ $statusBadge = function($st) {
                             <?php elseif ($p['monthly_adv_cnt'] === 1): ?>
                                 <input type="number" step="0.01" min="0" name="monthly_adv[<?= $p['id'] ?>]"
                                        value="<?= number_format($p['monthly_adv_owed'], 2, '.', '') ?>"
-                                       class="monthly-adv-input"
+                                       class="monthly-adv-input payroll-num"
                                        data-orig="<?= $p['monthly_adv_owed'] ?>"
-                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
+                                       style="color:var(--neg);font-weight:500;">
                             <?php else: ?>
                                 <input type="number" step="0.01" min="0" name="monthly_adv[<?= $p['id'] ?>]"
                                        value=""
                                        placeholder="0.00"
-                                       class="monthly-adv-input"
+                                       class="monthly-adv-input payroll-num"
                                        data-orig="0.00"
-                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
+                                       style="color:var(--neg);font-weight:500;">
                             <?php endif; ?>
                         </td>
                         <td>
@@ -1228,10 +1233,10 @@ $statusBadge = function($st) {
                             <?php elseif ($p['standing_adv_cnt'] === 1): ?>
                                 <input type="number" step="0.01" min="0" name="standing_adv[<?= $p['id'] ?>]"
                                        value="<?= number_format($p['standing_adv_owed'], 2, '.', '') ?>"
-                                       class="standing-adv-input"
+                                       class="standing-adv-input payroll-num"
                                        data-orig="<?= $p['standing_adv_owed'] ?>"
                                        title="تعديل رصيد السلفة المستديمة القائمة"
-                                       style="width:70px;text-align:center;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;color:var(--neg);font-weight:500;">
+                                       style="color:var(--neg);font-weight:500;">
                             <?php else: ?>
                                 <span style="color:var(--ink-400);font-size:12px;" title="لإضافة سلفة مستديمة جديدة حدد القسط من تاب السلف">—</span>
                             <?php endif; ?>
@@ -1759,7 +1764,7 @@ $statusBadge = function($st) {
             gross = dayRate * exactDueDays;
             var dueDaysCell = tr.querySelector('.cell-due-days');
             if (dueDaysCell) {
-                dueDaysCell.textContent = Math.round(exactDueDays);
+                dueDaysCell.textContent = exactDueDays.toFixed(2);
                 dueDaysCell.title = 'أيام الاستحقاق الفعلية: ' + exactDueDays.toFixed(3);
             }
         }
