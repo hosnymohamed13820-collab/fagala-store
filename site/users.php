@@ -19,10 +19,165 @@ if (!is_owner()) {
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }
 
-$pdo      = db();
-$modules  = all_modules();
-$flash    = '';
-$flashType = 'success';
+$pdo         = db();
+$modules     = all_modules();
+$moduleParts = module_parts();
+$flash       = '';
+$flashType   = 'success';
+
+/**
+ * تنقية الصلاحيات والتحقق منها وتطبيق قاعدة «كامل ولا أجزاء» في السيرفر.
+ *
+ * القواعد:
+ * 1. المفاتيح المقبولة:
+ *    - مديول بسيط موجود في all_modules().
+ *    - مفتاح مركب module:part حيث module في all_modules() و part في module_parts()[$module].
+ *    أي مفتاح تاني يُرفض ويتجاهل بصمت.
+ * 2. قاعدة «كامل ولا أجزاء»:
+ *    - لو تحدد المديول كامل ← يتخزن المديول بس (مثل 'hr') وما يتخزنش أي 'hr:*'.
+ *    - لو تحدد أجزاء بس ← يتخزن 'hr:part' لكل جزء محدد وما يتخزنش 'hr'.
+ *    - لو مفيش حاجة تحددت للمديول ← ما يتخزنش أي مفتاح ليه.
+ *
+ * @param array $rawPerms
+ * @return array<string>
+ */
+function sanitize_user_permissions(array $rawPerms): array
+{
+    $allMods   = all_modules();
+    $modParts  = module_parts();
+
+    $selectedFull  = []; // المديولات الكاملة
+    $selectedParts = []; // الأجزاء المحددة: [mod => [partKey => true]]
+    $simpleMods    = []; // مديولات عادية مالهاش أجزاء
+
+    foreach ($rawPerms as $rawKey) {
+        if (!is_string($rawKey)) continue;
+        $rawKey = trim($rawKey);
+        if ($rawKey === '') continue;
+
+        if (str_contains($rawKey, ':')) {
+            $pieces = explode(':', $rawKey, 2);
+            if (count($pieces) === 2) {
+                [$mod, $part] = $pieces;
+                // شرط صارم: المديول موجود في all_modules والجزء معرّف في module_parts
+                if (isset($allMods[$mod]) && isset($modParts[$mod][$part])) {
+                    $selectedParts[$mod][$part] = true;
+                }
+            }
+        } else {
+            if (isset($allMods[$rawKey])) {
+                if (isset($modParts[$rawKey])) {
+                    // مديول ليه أجزاء بس اتحدد كـ «كامل»
+                    $selectedFull[$rawKey] = true;
+                } else {
+                    // مديول عادي مالوش أجزاء
+                    $simpleMods[$rawKey] = true;
+                }
+            }
+        }
+    }
+
+    $cleanPerms = [];
+
+    // 1. المديولات العادية التي ليس لها أجزاء
+    foreach (array_keys($simpleMods) as $mk) {
+        $cleanPerms[] = $mk;
+    }
+
+    // 2. المديولات التي لها أجزاء: تطبيق قاعدة «كامل ولا أجزاء»
+    foreach ($modParts as $modKey => $parts) {
+        if (!empty($selectedFull[$modKey])) {
+            // تحدد كامل ← نخزن المديول فقط ونلغي أي أجزاء تابعة
+            $cleanPerms[] = $modKey;
+        } elseif (!empty($selectedParts[$modKey])) {
+            // تحدد أجزاء فقط ← نخزن كل جزء صالح
+            foreach (array_keys($parts) as $partKey) {
+                if (!empty($selectedParts[$modKey][$partKey])) {
+                    $cleanPerms[] = $modKey . ':' . $partKey;
+                }
+            }
+        }
+    }
+
+    return $cleanPerms;
+}
+
+/**
+ * تجهيز شرائح الصلاحيات لجدول المستخدمين.
+ *
+ * @param array $uperms قائمة مفاتيح الصلاحيات المخزنة للمستخدم
+ * @param array $modules كل المديولات
+ * @param array $moduleParts أجزاء المديولات
+ * @return array<array{text: string, title: string}>
+ */
+function format_user_perm_chips(array $uperms, array $modules, array $moduleParts): array
+{
+    $chips = [];
+    $groupedParts = []; // [mod => [partKey => partLabel]]
+    $fullMods = [];
+    $otherKeys = [];
+
+    foreach ($uperms as $mk) {
+        if (str_contains($mk, ':')) {
+            [$mod, $part] = explode(':', $mk, 2);
+            if (isset($moduleParts[$mod][$part])) {
+                $groupedParts[$mod][$part] = $moduleParts[$mod][$part];
+            } else {
+                $modLabel = $modules[$mod]['label'] ?? $mod;
+                $groupedParts[$mod][$part] = $part;
+            }
+        } else {
+            if (isset($modules[$mk])) {
+                $fullMods[$mk] = $modules[$mk]['label'];
+            } else {
+                $otherKeys[] = $mk;
+            }
+        }
+    }
+
+    // 1. المديولات الكاملة
+    foreach ($fullMods as $mk => $label) {
+        $chips[] = [
+            'text'  => $label,
+            'title' => '',
+        ];
+    }
+
+    // 2. المديولات ذات الأجزاء
+    foreach ($groupedParts as $mod => $parts) {
+        // حماية: لو المديول الكامل موجود ما نكررش الأجزاء
+        if (isset($fullMods[$mod])) {
+            continue;
+        }
+        $modLabel = $modules[$mod]['label'] ?? $mod;
+        $partLabels = array_values($parts);
+        $count = count($partLabels);
+
+        if ($count <= 3) {
+            $chips[] = [
+                'text'  => $modLabel . ': ' . implode(' · ', $partLabels),
+                'title' => '',
+            ];
+        } else {
+            $visible = array_slice($partLabels, 0, 3);
+            $remaining = $count - 3;
+            $chips[] = [
+                'text'  => $modLabel . ': ' . implode(' · ', $visible) . ' +' . $remaining,
+                'title' => $modLabel . ': ' . implode(' · ', $partLabels),
+            ];
+        }
+    }
+
+    // 3. أي مفتاح آخر
+    foreach ($otherKeys as $k) {
+        $chips[] = [
+            'text'  => $k,
+            'title' => '',
+        ];
+    }
+
+    return $chips;
+}
 
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -67,8 +222,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $newId = (int) $pdo->lastInsertId();
 
                     $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
-                    foreach ($perms as $mk) {
-                        if (isset($modules[$mk])) $insP->execute([$newId, $mk]);
+                    $cleanPerms = sanitize_user_permissions((array) $perms);
+                    foreach ($cleanPerms as $mk) {
+                        $insP->execute([$newId, $mk]);
                     }
                     // إنشاء سجل موظف مربوط (لو متعلّم كموظف)
                     if ($isEmp) {
@@ -114,8 +270,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
                     $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
-                    foreach ($perms as $mk) {
-                        if (isset($modules[$mk])) $insP->execute([$userId, $mk]);
+                    $cleanPerms = sanitize_user_permissions((array) $perms);
+                    foreach ($cleanPerms as $mk) {
+                        $insP->execute([$userId, $mk]);
                     }
 
                     // upsert سجل الموظف المربوط
@@ -229,7 +386,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
-    .btn-ghost:hover { background:var(--line); }
+    .btn-ghost:hover { background:var(--line); color:var(--accent-hover); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:13px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -268,11 +425,37 @@ require_once __DIR__ . '/includes/header.php';
     }
     .perm-item { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--ink-800); cursor:pointer; }
     .perm-item input { width:auto; }
+    .perm-group {
+        grid-column: 1 / -1;
+        background: var(--line-soft);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px 12px;
+        margin: 2px 0;
+    }
+    .perm-group-hint {
+        font-size: 11.5px;
+        color: var(--ink-500);
+        margin: 3px 22px 8px 0;
+    }
+    .perm-parts-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 10px;
+        padding-right: 22px;
+    }
+    .perm-part-item {
+        font-size: 12.5px;
+        color: var(--ink-700);
+    }
+    .perm-part-item input:disabled + span {
+        color: var(--ink-400);
+    }
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
-    .btn-cancel:hover { background:#e8e5f3; }
+    .btn-cancel:hover { background:#e8e5f3; color:#666; }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
-    @media (max-width:600px){ .form-grid, .perms-box { grid-template-columns:1fr; } }
+    @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
 </style>
 
 <?php if ($flash): ?>
@@ -322,9 +505,10 @@ require_once __DIR__ . '/includes/header.php';
                         <?php elseif (empty($uperms)): ?>
                             <span style="color:#bbb;font-size:12px;">لا يوجد</span>
                         <?php else: ?>
+                            <?php $chips = format_user_perm_chips($uperms, $modules, $moduleParts); ?>
                             <div class="perm-chips">
-                                <?php foreach ($uperms as $mk): ?>
-                                    <span class="perm-chip"><?= e($modules[$mk]['label'] ?? $mk) ?></span>
+                                <?php foreach ($chips as $chip): ?>
+                                    <span class="perm-chip"<?php if ($chip['title'] !== ''): ?> title="<?= e($chip['title']) ?>"<?php endif; ?>><?= e($chip['text']) ?></span>
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
@@ -469,11 +653,33 @@ require_once __DIR__ . '/includes/header.php';
                 <label>الصلاحيات — علّم على اللي عايز تديهاله</label>
                 <div class="perms-box">
                     <?php foreach ($modules as $key => $mod): ?>
-                        <label class="perm-item">
-                            <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
-                                   class="perm-check">
-                            <?= e($mod['label']) ?>
-                        </label>
+                        <?php if (isset($moduleParts[$key])): ?>
+                            <div class="perm-group">
+                                <label class="perm-item" style="font-weight:600;">
+                                    <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                                           class="perm-check perm-mod-full" data-mod="<?= e($key) ?>"
+                                           onchange="onModuleFullChange(this)">
+                                    <span><?= e($mod['label']) ?> (كامل)</span>
+                                </label>
+                                <div class="perm-group-hint">«كامل» يعني كل الأجزاء دلوقتي وأي جزء يتضاف بعدين.</div>
+                                <div class="perm-parts-grid">
+                                    <?php foreach ($moduleParts[$key] as $pKey => $pLabel): ?>
+                                        <label class="perm-item perm-part-item">
+                                            <input type="checkbox" name="permissions[]" value="<?= e($key . ':' . $pKey) ?>"
+                                                   class="perm-check perm-part-check" data-mod="<?= e($key) ?>"
+                                                   onchange="onPartChange(this)">
+                                            <span><?= e($pLabel) ?></span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <label class="perm-item">
+                                <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                                       class="perm-check">
+                                <span><?= e($mod['label']) ?></span>
+                            </label>
+                        <?php endif; ?>
                     <?php endforeach; ?>
                 </div>
             </div>
@@ -530,10 +736,49 @@ require_once __DIR__ . '/includes/header.php';
         toggleEmp();
         // تعليم الصلاحيات
         clearPerms();
+        const userPerms = Array.isArray(data.perms) ? data.perms : [];
         document.querySelectorAll('.perm-check').forEach(cb => {
-            cb.checked = data.perms.includes(cb.value);
+            cb.checked = userPerms.includes(cb.value);
+        });
+        // لو «كامل» متعلم للمديول، نقفل أجزاءه
+        document.querySelectorAll('.perm-mod-full').forEach(fullCb => {
+            const mod = fullCb.dataset.mod;
+            const partCbs = document.querySelectorAll('.perm-part-check[data-mod="' + mod + '"]');
+            if (fullCb.checked) {
+                partCbs.forEach(cb => {
+                    cb.checked = false;
+                    cb.disabled = true;
+                });
+            } else {
+                partCbs.forEach(cb => {
+                    cb.disabled = false;
+                });
+            }
         });
         modal.classList.add('open');
+    }
+
+    function onModuleFullChange(fullCb) {
+        const mod = fullCb.dataset.mod;
+        const partCbs = document.querySelectorAll('.perm-part-check[data-mod="' + mod + '"]');
+        if (fullCb.checked) {
+            partCbs.forEach(cb => {
+                cb.checked = false;
+                cb.disabled = true;
+            });
+        } else {
+            partCbs.forEach(cb => {
+                cb.disabled = false;
+            });
+        }
+    }
+
+    function onPartChange(partCb) {
+        const mod = partCb.dataset.mod;
+        const fullCb = document.querySelector('.perm-mod-full[data-mod="' + mod + '"]');
+        if (partCb.checked && fullCb) {
+            fullCb.checked = false;
+        }
     }
 
     function toggleEmp() {
@@ -542,7 +787,10 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function clearPerms() {
-        document.querySelectorAll('.perm-check').forEach(cb => cb.checked = false);
+        document.querySelectorAll('.perm-check').forEach(cb => {
+            cb.checked = false;
+            cb.disabled = false;
+        });
     }
 
     function closeModal() {
