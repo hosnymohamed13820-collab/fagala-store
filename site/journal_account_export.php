@@ -11,6 +11,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('reports');
+require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/xlsx_lib.php';
 
 $accId = (int) ($_GET['acc'] ?? 0);
@@ -62,7 +63,9 @@ $st = $pdo->prepare(
     "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
             je.running_balance, je.notes, je.ref_type,
             t.name AS treasury, u.full_name AS by_name,
-            cb.name AS branch_name
+            cb.name AS branch_name,
+            tfrom.name AS transfer_from_name,
+            tto.name AS transfer_to_name
        FROM journal_entries je
        JOIN treasuries t ON t.id = je.treasury_id
        LEFT JOIN users u ON u.id = je.created_by
@@ -77,6 +80,9 @@ $st = $pdo->prepare(
        LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
        LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
        LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+       LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+       LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+       LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
       WHERE je.entry_date BETWEEN ? AND ? AND $accCond $branchCond
       ORDER BY je.entry_date, je.id"
 );
@@ -121,9 +127,15 @@ foreach ($st as $r) {
     $totDebit  += $dr;
     $totCredit += $cr;
 
+    $desc = (string) $r['description'];
+    $tPath = je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
+    if ($tPath !== '') {
+        $desc = $desc !== '' ? ($desc . ' — ' . $tPath) : $tPath;
+    }
+
     $x->addRow([
         (string) $r['entry_date'],
-        (string) $r['description'],
+        $desc,
         $kinds[$r['ref_type']] ?? ($r['ref_type'] ?: '—'),
         (string) $r['treasury'],
         (string) ($r['branch_name'] ?? '—'),

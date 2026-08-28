@@ -65,7 +65,9 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
             "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
                     je.running_balance, je.notes, je.ref_type,
                     t.name AS treasury, u.full_name AS by_name,
-                    cb.name AS branch_name
+                    cb.name AS branch_name,
+                    tfrom.name AS transfer_from_name,
+                    tto.name AS transfer_to_name
                FROM journal_entries je
                JOIN treasuries t ON t.id = je.treasury_id
                LEFT JOIN users u ON u.id = je.created_by
@@ -80,6 +82,9 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+               LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+               LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+               LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
               WHERE je.entry_date BETWEEN ? AND ? AND $accCond $branchCond
               ORDER BY je.entry_date, je.id"
         );
@@ -93,6 +98,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                 'id'       => (int) $r['id'],
                 'date'     => $r['entry_date'],
                 'desc'     => (string) $r['description'],
+                'path'     => je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null),
                 'kind'     => $kinds[$r['ref_type']] ?? '—',
                 'treasury' => (string) $r['treasury'],
                 'branch'   => (string) ($r['branch_name'] ?? '—'),
@@ -323,7 +329,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         u.full_name AS by_name,
                         COALESCE(ja.name, ec.name) AS entry_code_name,
                         je.notes,
-                        cb.name AS cost_branch_name
+                        cb.name AS cost_branch_name,
+                        tfrom.name AS transfer_from_name,
+                        tto.name AS transfer_to_name
                  FROM journal_entries je JOIN treasuries t ON t.id=je.treasury_id
                  LEFT JOIN users u ON u.id=je.created_by
                  LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
@@ -336,6 +344,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                  LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                  LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                  LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+                 LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                 LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                 LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                  WHERE je.entry_date BETWEEN ? AND ?";
             $paramsT = [$from, $to];
             if ($entryFilter !== null) {
@@ -359,7 +370,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $sqlT .= " ORDER BY je.id DESC";
             $st = $pdo->prepare($sqlT);
             $st->execute($paramsT);
-            $rows=[]; $tDr=0; $tCr=0;
+            $rows=[]; $rowPaths=[]; $tDr=0; $tCr=0;
             foreach ($st as $r) {
                 $tDr+=(float)$r['debit']; $tCr+=(float)$r['credit'];
                 $rows[]=[$r['entry_date'], $r['treasury'], $r['description'], $r['entry_code_name'] ?? '—',
@@ -367,12 +378,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     number_format((float)$r['debit'],2), number_format((float)$r['credit'],2),
                     number_format((float)$r['running_balance'],2), $r['by_name'] ?? '—',
                     (string)($r['notes'] ?? '')];
+                $rowPaths[]=je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
             }
             // notes_col = رقم عمود الملاحظات. الجدول بيقصّه بـ ellipsis
             // ويحط النص الكامل في tooltip، والتصدير بياخده كامل من $rows.
             return ['title'=>'تقرير الخزينة',
                 'headers'=>['التاريخ','الخزينة','البيان','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                'rows'=>$rows,'notes_col'=>9,
+                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>9,
                 // الصافي = مدين − دائن (مش العكس). القيمة السالبة معناها
                 // دخل أكتر من اللي خرج.
                 'sum_cards'=>[
@@ -414,7 +426,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     "SELECT je.entry_date, je.description, je.debit, je.credit,
                             je.running_balance, je.notes,
                             u.full_name AS by_name,
-                            COALESCE(ja.name, ec.name) AS entry_code_name
+                            COALESCE(ja.name, ec.name) AS entry_code_name,
+                            tfrom.name AS transfer_from_name,
+                            tto.name AS transfer_to_name
                        FROM journal_entries je
                        LEFT JOIN users u ON u.id = je.created_by
                        LEFT JOIN treasury_movements tm
@@ -422,13 +436,16 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                              AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
                        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                        LEFT JOIN accounts ja ON ja.id = je.account_id
+                       LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                       LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                       LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                       WHERE je.treasury_id = ?
                         AND je.entry_date BETWEEN ? AND ?
                       ORDER BY je.entry_date, je.id"
                 );
                 $st->execute([(int)$trId, $from, $to]);
 
-                $rows = []; $tDr = 0; $tCr = 0;
+                $rows = []; $rowPaths = []; $tDr = 0; $tCr = 0;
                 foreach ($st as $r) {
                     $tDr += (float)$r['debit'];
                     $tCr += (float)$r['credit'];
@@ -439,13 +456,14 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         number_format((float)$r['running_balance'],2),
                         $r['by_name'] ?? '—',
                         (string)($r['notes'] ?? '')];
+                    $rowPaths[] = je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
                 }
                 // المصروف = مدين (خارج من العهدة) · المستلم = دائن (داخل).
                 // الكروت بتتحسب من نفس الصفوف الظاهرة، فبتتغيّر مع
                 // التاريخ والفرع وأي فلتر على الجدول.
                 return ['title'=>'كشف عهدة: '.$branchName,
                     'headers'=>['التاريخ','البيان','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                    'rows'=>$rows, 'notes_col'=>7,
+                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>7,
                     'sum_cards'=>[
                         ['label'=>'إجمالي المصروف', 'col'=>3],
                         ['label'=>'إجمالي المستلم', 'col'=>4],
@@ -810,7 +828,15 @@ if ($export && $type !== 'stocktake') {
     echo "\xEF\xBB\xBF"; // BOM للعربي في إكسل
     $out = fopen('php://output', 'w');
     fputcsv($out, $report['headers']);
-    foreach ($report['rows'] as $row) fputcsv($out, $row);
+    $descCol = ($type === 'treasury') ? 2 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 1 : -1);
+    foreach ($report['rows'] as $ri => $row) {
+        if ($descCol >= 0 && !empty($report['row_paths'][$ri])) {
+            $row[$descCol] = (string)$row[$descCol] !== ''
+                ? ($row[$descCol] . ' — ' . $report['row_paths'][$ri])
+                : $report['row_paths'][$ri];
+        }
+        fputcsv($out, $row);
+    }
     if (!empty($report['totals'])) fputcsv($out, $report['totals']);
     fclose($out);
     exit;
@@ -1794,6 +1820,13 @@ require_once __DIR__ . '/includes/header.php';
                                 <span class="badge" style="background:var(--line-soft);color:var(--ink-600);padding:3px 8px;border-radius:6px;font-size:12px;"><?= e((string)$cell) ?></span>
                             <?php endif; ?>
                         </td>
+                    <?php elseif (!empty($report['row_paths'][$ri]) && (($type === 'treasury' && $ci === 2) || ($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '' && $ci === 1))): ?>
+                        <td>
+                            <?= e((string)$cell) ?>
+                            <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                <?= e($report['row_paths'][$ri]) ?>
+                            </div>
+                        </td>
                     <?php else: ?>
                         <td><?= e((string)$cell) ?></td>
                     <?php endif; ?>
@@ -2005,7 +2038,8 @@ function jeToggle(tr) {
                                                    maximumFractionDigits: 2 }) : '—';
         };
         d.rows.forEach(function (r) {
-            h += '<tr><td>' + esc(r.date) + '</td><td>' + esc(r.desc) + '</td>' +
+            var descHtml = esc(r.desc) + (r.path ? '<div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">' + esc(r.path) + '</div>' : '');
+            h += '<tr><td>' + esc(r.date) + '</td><td>' + descHtml + '</td>' +
                  '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
                  '<td>' + esc(r.branch || '—') + '</td>' +
                  '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +

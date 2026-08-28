@@ -2293,6 +2293,20 @@ function money_fmt($amount): string
 }
 
 /**
+ * مسار التحويل بين الخزائن كنص عادي (بدون HTML).
+ * يرجع '' لو الاسمين فاضيين، أو 'من: X ← إلى: Y' مع تعويض الفاضي بـ'—'.
+ */
+function je_transfer_path(?string $fromName, ?string $toName): string
+{
+    $from = trim((string) $fromName);
+    $to   = trim((string) $toName);
+    if ($from === '' && $to === '') {
+        return '';
+    }
+    return 'من: ' . ($from !== '' ? $from : '—') . ' ← إلى: ' . ($to !== '' ? $to : '—');
+}
+
+/**
  * حساب دقائق العمل بين وقتين (HH:MM:SS).
  * بيتعامل مع الورديات اللي بتعدّي منتصف الليل (خروج < دخول).
  */

@@ -563,9 +563,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td style="font-weight:500;"><?= e($row['treasury_name']) ?></td>
                         <td class="je-c-desc">
                             <?= e($row['description']) ?>
-                            <?php if ($row['ref_type'] === 'transfer' && (!empty($row['transfer_from_name']) || !empty($row['transfer_to_name']))): ?>
+                            <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
+                            <?php if ($tPath !== ''): ?>
                                 <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
-                                    من: <?= e($row['transfer_from_name'] ?: '—') ?> ← إلى: <?= e($row['transfer_to_name'] ?: '—') ?>
+                                    <?= e($tPath) ?>
                                 </div>
                             <?php endif; ?>
                         </td>
@@ -638,9 +639,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td><?= e($row['entry_date']) ?></td>
                         <td class="je-c-desc">
                             <?= e($row['description']) ?>
-                            <?php if ($row['ref_type'] === 'transfer' && (!empty($row['transfer_from_name']) || !empty($row['transfer_to_name']))): ?>
+                            <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
+                            <?php if ($tPath !== ''): ?>
                                 <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
-                                    من: <?= e($row['transfer_from_name'] ?: '—') ?> ← إلى: <?= e($row['transfer_to_name'] ?: '—') ?>
+                                    <?= e($tPath) ?>
                                 </div>
                             <?php endif; ?>
                         </td>
