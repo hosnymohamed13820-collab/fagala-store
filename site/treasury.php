@@ -460,6 +460,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel:hover { background:var(--line); }
     /* عمود الملاحظات: النص الطويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل من الداتا مش من الخلية. */
     .je-c-notes { white-space:nowrap; }

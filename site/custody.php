@@ -202,6 +202,7 @@ require_once __DIR__ . '/includes/header.php';
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel:hover { background:var(--line); }
 </style>
 
 <?php if ($flash): ?>

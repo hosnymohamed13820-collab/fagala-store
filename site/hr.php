@@ -846,7 +846,9 @@ $statusBadge = function($st) {
     .btn-sm { padding:6px 12px; font-size:13px; }
     .btn-approve { background:var(--pos); } .btn-reject { background:var(--neg); }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost:hover { background:var(--line); }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }

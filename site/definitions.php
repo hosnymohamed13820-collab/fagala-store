@@ -471,6 +471,7 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel:hover { background:var(--line); }
     .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
 </style>
 

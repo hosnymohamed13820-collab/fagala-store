@@ -500,6 +500,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn-green { background:var(--pos); } .btn-green:hover { background:#15835f; }
     .btn-red { background:var(--neg); } .btn-red:hover { background:#c93f3e; }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
     .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px; }
@@ -525,6 +526,7 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel:hover { background:var(--line); }
     .sheet-link { color:var(--accent); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
     .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:#fff; border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }

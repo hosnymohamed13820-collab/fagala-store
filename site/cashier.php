@@ -337,6 +337,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost:hover { background:var(--line); }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
