@@ -8,12 +8,37 @@
  * - تصدير CSV لأي تقرير.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('reports');
+require_module_access('reports');
 require_once __DIR__ . '/finance.php';
 
 $pdo = db();
 
-$type = $_GET['type'] ?? 'sales';
+// قراءة التقارير المسموحة للمستخدم بناءً على أجزاء مديول التقارير
+$repParts = module_parts()['reports'] ?? [];
+$allowedTypes = [];
+foreach ($repParts as $k => $label) {
+    if (can('reports:' . $k)) {
+        $allowedTypes[$k] = $label;
+    }
+}
+
+// لو المستخدم مالوش أي تقرير مسموح (حزام أمان إضافي)
+if (empty($allowedTypes)) {
+    http_response_code(403);
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+        . '<h2>🚫 غير مصرّح</h2>'
+        . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+        . '<a href="logout.php">تسجيل الخروج</a></div>');
+}
+
+// تحديد نوع التقرير النشط: لو طلب نوع مسموح يفتحه، لو مالوش صلاحيته (أو مبعتش) يتحوّل لأول نوع مسموح له
+$requestedType = (string)($_GET['type'] ?? '');
+if (isset($allowedTypes[$requestedType])) {
+    $type = $requestedType;
+} else {
+    $type = (string) array_key_first($allowedTypes);
+}
+
 $from = $_GET['from'] ?? date('Y-m-01');           // أول الشهر افتراضياً
 $to   = $_GET['to']   ?? date('Y-m-d');
 if (!strtotime($from)) $from = date('Y-m-01');
@@ -33,6 +58,11 @@ $export = isset($_GET['export']);
 // =====================================================================
 if (($_GET['ajax'] ?? '') === 'je_details') {
     header('Content-Type: application/json; charset=utf-8');
+    if (!can('reports:jtotals') && !can('reports:treasury')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'غير مصرّح لك بالوصول لتفاصيل القيود.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     try {
         $accId = (int) ($_GET['acc'] ?? 0);          // 0 = «بدون قيد»
         $dFrom = $_GET['from'] ?? date('Y-m-01');
@@ -120,6 +150,11 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
 $ajax = $_GET['ajax'] ?? '';
 if ($ajax !== '') {
     header('Content-Type: application/json; charset=utf-8');
+    if (!can('reports:noprice')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'غير مصرّح لك بالوصول لهذه العمليات.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     require_once __DIR__ . '/price_draft_lib.php';
     $uid = current_user()['id'] ?? null;
 
@@ -1034,6 +1069,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="rep-tabs">
     <?php foreach ($reportTypes as $k=>$label): ?>
+        <?php if (!isset($allowedTypes[$k])) continue; ?>
         <a href="?type=<?= $k ?>&from=<?= e($from) ?>&to=<?= e($to) ?>"
            class="rep-tab <?= $type===$k?'active':'' ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
