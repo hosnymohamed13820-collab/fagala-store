@@ -874,7 +874,12 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'advances'): ?>
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة</span>
-        <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <?php if (is_owner()): ?>
+                <a href="advances_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> استيراد شيت السلف</a>
+            <?php endif; ?>
+            <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
+        </div>
     </div>
     <div class="card">
         <div class="section-title">السلف</div>
