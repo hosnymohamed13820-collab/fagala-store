@@ -5,7 +5,7 @@
  *
  * الرحلة:
  *  1. رفع ملف إكسيل (.xlsx) وحفظه مؤقتاً بتوكن
- *  2. ربط الأعمدة وتحديد عمود الاسم وعمود الإجمالي (المبلغ)
+ *  2. ربط الأعمدة واكتشاف صف العناوين وعمود الاسم وعمود اجمالي المتبقي (المبلغ)
  *  3. مطابقة الموظفين ومعاينة الأرصدة وتعديل المبالغ والأقساط
  *  4. تأكيد الرفع وتحديث قاعدة البيانات في معاملة واحدة (Transaction)
  */
@@ -37,6 +37,21 @@ foreach ((array) glob($tmpDir . '/*.xlsx') as $old) {
 }
 
 // ===== دوال مساعدة محلية لتنظيف وتحليل البيانات =====
+
+/**
+ * تحويل فهرس العمود الرقمي (0-based) إلى رمز حرفي مثل A أو J أو AA
+ */
+function adv_index_to_col(int $idx): string
+{
+    $letters = '';
+    $idx++;
+    while ($idx > 0) {
+        $mod = ($idx - 1) % 26;
+        $letters = chr(65 + $mod) . $letters;
+        $idx = (int)(($idx - $mod) / 26);
+    }
+    return $letters;
+}
 
 /**
  * تنظيف القيمة النصية والتأكد من أنها ليست فارغة أو شرطة
@@ -100,44 +115,173 @@ function adv_parse_amount(?string $v): ?float
 }
 
 /**
- * اكتشاف الأعمدة الافتراضية (عمود الاسم وعمود الإجمالي) من نصوص العناوين
+ * اكتشاف صف العناوين تلقائياً بالبحث في أول 10 صفوف
+ * عن أول صف يحتوي على خلية تطابق أي عنوان متوقع
+ * يعيد رقم الصف الحقيقي (1-based row number)
+ */
+function adv_detect_header_row(array $sheetRows): int
+{
+    $maxRowsToCheck = min(10, count($sheetRows));
+    $expectedHeaders = [
+        'تسميات الصفوف',
+        'تسميات',
+        'الاسم',
+        'اسم',
+        'الفرع',
+        'فرع',
+        'اجمالي المتبقي',
+        'الاجمالي',
+        'اجمالي',
+        'المتبقي',
+        'المبلغ',
+    ];
+
+    for ($i = 0; $i < $maxRowsToCheck; $i++) {
+        $cells = $sheetRows[$i]['cells'] ?? [];
+        foreach ($cells as $cell) {
+            $raw = trim((string)$cell);
+            if ($raw === '') continue;
+
+            // استبعاد أعمدة الجدول المحوري (Pivot Table)
+            $rawLower = strtolower($raw);
+            if (str_starts_with($rawLower, 'sum of') || str_starts_with($rawLower, 'row labels') || str_starts_with($rawLower, 'column')) {
+                continue;
+            }
+
+            $norm = adv_normalize_name($raw);
+            if ($norm === '') continue;
+
+            foreach ($expectedHeaders as $exp) {
+                $expNorm = adv_normalize_name($exp);
+                if ($norm === $expNorm || mb_strpos($norm, $expNorm) !== false) {
+                    // أول صف يحقق أي عنوان متوقع = هو صف العناوين
+                    return (int)($sheetRows[$i]['row'] ?? ($i + 1));
+                }
+            }
+        }
+    }
+
+    // احتياطي: أول صف
+    return (int)($sheetRows[0]['row'] ?? 1);
+}
+
+/**
+ * اكتشاف الأعمدة الافتراضية (عمود الاسم وعمود اجمالي المتبقي) من نصوص العناوين
+ * مع استبعاد أعمدة الجدول المحوري (Pivot Table) مثل: Sum of, Row Labels, Column
  */
 function adv_detect_columns(array $headers): array
 {
     $nameCol = -1;
     $amountCol = -1;
 
+    // مصفوفة لتنظيف وفحص كل عنوان وتحديد هل هو عمود جدول محوري أم لا
+    $cleanedHeaders = [];
     foreach ($headers as $i => $h) {
-        $norm = adv_normalize_name((string) $h);
-        if ($nameCol === -1) {
-            if (mb_strpos($norm, 'اسم') !== false || mb_strpos($norm, 'تسميات') !== false || mb_strpos($norm, 'موظف') !== false) {
-                $nameCol = $i;
-            }
+        $raw = trim((string)$h);
+        $rawLower = strtolower($raw);
+        $isPivot = (
+            str_starts_with($rawLower, 'sum of') ||
+            str_starts_with($rawLower, 'row labels') ||
+            str_starts_with($rawLower, 'column')
+        );
+        $norm = adv_normalize_name($raw);
+        $cleanedHeaders[$i] = [
+            'raw'      => $raw,
+            'norm'     => $norm,
+            'is_pivot' => $isPivot,
+        ];
+    }
+
+    // 1) اكتشاف عمود الاسم (تسميات الصفوف / الاسم / الموظف) مع استبعاد أعمدة المحوري
+    foreach ($cleanedHeaders as $i => $item) {
+        if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+        if ($item['norm'] === 'تسميات الصفوف' || $item['norm'] === 'اسم الموظف' || $item['norm'] === 'الاسم' || $item['norm'] === 'اسم') {
+            $nameCol = $i;
+            break;
         }
-        if ($amountCol === -1) {
-            if ($norm === 'الاجمالي' || $norm === 'اجمالي' || $norm === 'المبلغ' || $norm === 'المتبقي' || $norm === 'اجمالي المتبقي') {
-                $amountCol = $i;
+    }
+    if ($nameCol === -1) {
+        foreach ($cleanedHeaders as $i => $item) {
+            if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+            if (mb_strpos($item['norm'], 'تسميات') !== false || mb_strpos($item['norm'], 'اسم') !== false || mb_strpos($item['norm'], 'موظف') !== false) {
+                $nameCol = $i;
+                break;
             }
         }
     }
 
-    // محاولة ثانية لاكتشاف عمود المبلغ لو لم يتم العثور على تطابق كامل
+    // 2) اكتشاف عمود المبلغ حسب ترتيب الأولويات الصارم:
+    // أولوية 1: عنوان بيساوي "اجمالي المتبقي" بعد التنضيف (يشمل إجمالي المتبقي / اجمالى المتبقى بعد التطبيع)
+    foreach ($cleanedHeaders as $i => $item) {
+        if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+        if ($item['norm'] === 'اجمالي المتبقي') {
+            $amountCol = $i;
+            break;
+        }
+    }
+
+    // أولوية 2 (احتياطي فرعي): يحتوي على "اجمالي المتبقي"
     if ($amountCol === -1) {
-        foreach ($headers as $i => $h) {
-            $norm = adv_normalize_name((string) $h);
-            if (mb_strpos($norm, 'اجمالي') !== false || mb_strpos($norm, 'متبقي') !== false) {
+        foreach ($cleanedHeaders as $i => $item) {
+            if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+            if (mb_strpos($item['norm'], 'اجمالي المتبقي') !== false) {
                 $amountCol = $i;
                 break;
             }
         }
     }
 
-    // افتراضات احتياطية إذا لم يتطابق أي نص
-    if ($nameCol === -1) {
-        $nameCol = count($headers) > 1 ? 1 : 0;
-    }
+    // أولوية 3: الإجمالي / الاجمالي / المبلغ / المتبقي (تطابق تام) كاحتياطي فقط
     if ($amountCol === -1) {
-        $amountCol = count($headers) > 10 ? 10 : (count($headers) - 1);
+        foreach ($cleanedHeaders as $i => $item) {
+            if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+            if (in_array($item['norm'], ['الاجمالي', 'اجمالي', 'المتبقي', 'متبقي', 'المبلغ', 'مبلغ'], true)) {
+                $amountCol = $i;
+                break;
+            }
+        }
+    }
+
+    // أولوية 4: يحتوي على اجمالي أو متبقي أو مبلغ
+    if ($amountCol === -1) {
+        foreach ($cleanedHeaders as $i => $item) {
+            if ($item['is_pivot'] || $item['norm'] === '') continue;
+
+            if (mb_strpos($item['norm'], 'اجمالي') !== false || mb_strpos($item['norm'], 'متبقي') !== false || mb_strpos($item['norm'], 'مبلغ') !== false) {
+                $amountCol = $i;
+                break;
+            }
+        }
+    }
+
+    // افتراضات احتياطية في حال عدم وجود أي عناوين مطابقة
+    if ($nameCol === -1) {
+        foreach ($cleanedHeaders as $i => $item) {
+            if (!$item['is_pivot']) {
+                $nameCol = $i;
+                break;
+            }
+        }
+        if ($nameCol === -1) {
+            $nameCol = count($headers) > 1 ? 1 : 0;
+        }
+    }
+
+    if ($amountCol === -1) {
+        for ($i = count($headers) - 1; $i >= 0; $i--) {
+            if (!($cleanedHeaders[$i]['is_pivot'] ?? false) && $i !== $nameCol) {
+                $amountCol = $i;
+                break;
+            }
+        }
+        if ($amountCol === -1) {
+            $amountCol = count($headers) > 10 ? 10 : (count($headers) - 1);
+        }
     }
 
     return [
@@ -288,6 +432,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException("تعذر التأكيد: الموظف ({$empName}) لديه أكثر من سلفة مستديمة معلّقة حالياً ({$advInfo['pending_count']} سلف مستديمة). برجاء تسوية سلفه من تاب السلف أولاً.");
                     }
 
+                    // 🔴 التمييز بين الصفر اللي بيتخطى والصفر اللي بيصفّر سلفة قائمة:
+                    // لو الموظف متبقي حسابه صفر ومالوش سلفة قائمة أصلاً ← تخطي بهدوء ومفيش صف هيتعمل، لأن سلفة بصفر ملهاش معنى.
+                    // أما لو عنده سلفة مستديمة شغالة ومكتوب له صفر ← ده تصفير مقصود للسلفة القائمة فنخلي remaining = 0.
+                    if ($amount == 0.0 && $advInfo['pending_count'] === 0) {
+                        $skippedCount++;
+                        continue;
+                    }
+
                     // القسط الشهري
                     $monthlyDed = (isset($r['monthly_deduction']) && is_numeric($r['monthly_deduction']))
                         ? max(0.0, round((float)$r['monthly_deduction'], 2))
@@ -304,6 +456,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (empty($toProcess)) {
+                    if ($skippedCount > 0) {
+                        // كل الصفوف المحددة تم تخطيها بهدوء (مثلاً كانت أصفار لموظفين ليس لديهم سلف)
+                        @unlink($filePath);
+                        unset($_SESSION['adv_import_tok'], $_SESSION['adv_import_orig_name']);
+                        $_SESSION['flash'] = 'تمت المعالجة: لم يتم إنشاء أي سلف جديدة وتم تخطي ' . number_format($skippedCount) . ' صف.';
+                        $_SESSION['flash_type'] = 'success';
+                        header('Location: advances_import.php');
+                        exit;
+                    }
                     throw new RuntimeException('لم يتم تحديد أي صف صالح للرفع.');
                 }
 
@@ -336,6 +497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $insertedCount++;
                         } else {
                             // pending_count === 1
+                            // لو المبلغ صفر ده تصفير مقصود للرصيد المتبقي remaining = 0
                             $updAdv->execute([
                                 $item['amount'],
                                 $item['monthly_ded'],
@@ -396,14 +558,35 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             throw new RuntimeException('الملف فارغ أو لا يحتوي على صفوف بيانات.');
         }
 
-        $headers = $sheetRows[0]['cells'];
+        // اكتشاف صف العناوين أو استخدام القيمة المحددة من المستخدم
+        $detectedHeaderRow = adv_detect_header_row($sheetRows);
+        $headerRow = isset($_REQUEST['header_row']) && is_numeric($_REQUEST['header_row'])
+            ? (int) $_REQUEST['header_row']
+            : $detectedHeaderRow;
+
+        // إيجاد فهرس صف العناوين داخل مصفوفة $sheetRows
+        $headerRowIndex = 0;
+        $foundHeaderRow = false;
+        foreach ($sheetRows as $idx => $sr) {
+            if ((int)$sr['row'] === $headerRow) {
+                $headerRowIndex = $idx;
+                $foundHeaderRow = true;
+                break;
+            }
+        }
+        if (!$foundHeaderRow) {
+            $headerRowIndex = 0;
+            $headerRow = (int)($sheetRows[0]['row'] ?? 1);
+        }
+
+        $headers = $sheetRows[$headerRowIndex]['cells'];
         $detectedCols = adv_detect_columns($headers);
 
-        $nameCol = isset($_REQUEST['name_col']) && is_numeric($_REQUEST['name_col'])
+        $nameCol = isset($_REQUEST['name_col']) && is_numeric($_REQUEST['name_col']) && (int)$_REQUEST['name_col'] >= 0 && (int)$_REQUEST['name_col'] < count($headers)
             ? (int) $_REQUEST['name_col']
             : $detectedCols['name_col'];
 
-        $amountCol = isset($_REQUEST['amount_col']) && is_numeric($_REQUEST['amount_col'])
+        $amountCol = isset($_REQUEST['amount_col']) && is_numeric($_REQUEST['amount_col']) && (int)$_REQUEST['amount_col'] >= 0 && (int)$_REQUEST['amount_col'] < count($headers)
             ? (int) $_REQUEST['amount_col']
             : $detectedCols['amount_col'];
 
@@ -451,17 +634,21 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
         $unmappedCount = 0;
         $missingAmountCount = 0;
         $negativeCount = 0;
+        $zeroCount = 0;
         $lockedCount = 0;
         $newCount = 0;
         $updateCount = 0;
+        $emptyNameCount = 0;
 
-        for ($rIdx = 1; $rIdx < count($sheetRows); $rIdx++) {
+        // قراءة صفوف البيانات ابتداءً من الصف الذي يلي صف العناوين مباشرة
+        for ($rIdx = $headerRowIndex + 1; $rIdx < count($sheetRows); $rIdx++) {
             $rowNum = $sheetRows[$rIdx]['row'];
             $cells = $sheetRows[$rIdx]['cells'];
 
             $rawName = trim((string)($cells[$nameCol] ?? ''));
             if ($rawName === '') {
-                continue; // تخطي الصفوف الفارغة تماماً من الاسم
+                $emptyNameCount++;
+                continue; // تخطي الصفوف الفارغة تماماً من الاسم — ما تظهرش خالص في المعاينة
             }
 
             $rawAmount = $cells[$amountCol] ?? null;
@@ -479,13 +666,16 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             $isUnmapped = ($matchedEmpId === 0);
             $isMissing  = ($parsedAmount === null);
             $isNegative = ($parsedAmount !== null && $parsedAmount < 0);
+            $isZero     = ($parsedAmount !== null && (float)$parsedAmount == 0.0);
             $isLocked   = ($matchedEmpId > 0 && $advInfo['pending_count'] > 1);
 
-            $isSelectedByDefault = (!$isUnmapped && !$isMissing && !$isNegative && !$isLocked);
+            // غير محدد افتراضياً إذا كان غير مربوط بموظف أو مفقود أو سالب أو صفر أو مقفول
+            $isSelectedByDefault = (!$isUnmapped && !$isMissing && !$isNegative && !$isLocked && !$isZero);
 
             if ($isUnmapped) $unmappedCount++;
             if ($isMissing) $missingAmountCount++;
             if ($isNegative) $negativeCount++;
+            if ($isZero) $zeroCount++;
             if ($isLocked) $lockedCount++;
 
             if ($isSelectedByDefault) {
@@ -507,6 +697,7 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
                 'is_unmapped'           => $isUnmapped,
                 'is_missing'            => $isMissing,
                 'is_negative'           => $isNegative,
+                'is_zero'               => $isZero,
                 'is_locked'             => $isLocked,
                 'selected_by_default'   => $isSelectedByDefault,
             ];
@@ -529,13 +720,17 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             'token'                => $activeTok,
             'file_name'            => $activeFileName,
             'headers'              => $headers,
+            'header_row'           => $headerRow,
+            'total_sheet_rows'     => count($sheetRows),
+            'total_data_rows'      => count($sheetRows) - ($headerRowIndex + 1),
             'name_col'             => $nameCol,
             'amount_col'           => $amountCol,
             'rows'                 => $parsedRows,
-            'total_sheet_rows'     => count($sheetRows) - 1,
             'unmapped_count'       => $unmappedCount,
             'missing_amount_count' => $missingAmountCount,
             'negative_count'       => $negativeCount,
+            'zero_count'           => $zeroCount,
+            'empty_name_count'     => $emptyNameCount,
             'locked_count'         => $lockedCount,
             'new_count'            => $newCount,
             'update_count'         => $updateCount,
@@ -625,8 +820,8 @@ require_once __DIR__ . '/includes/header.php';
             <span><i class="ti ti-file-spreadsheet" style="color:var(--accent);margin-left:6px;"></i> رفع شيت إكسيل بأرصدة السلف المستديمة</span>
         </div>
         <p style="font-size:13.5px;color:var(--ink-600);margin-bottom:18px;line-height:1.6;">
-            ارفع ملف إكسيل (.xlsx) الذي يحتوي على أسماء الموظفين وإجمالي أرصدة السلف المستديمة المستحقة عليهم.
-            النظام سيقرأ عمود الاسم وعمود الإجمالي فقط ويتجاهل باقي الأعمدة تماماً،
+            ارفع ملف إكسيل (.xlsx) الذي يحتوي على أسماء الموظفين واجمالي المتبقي من أرصدة السلف المستديمة المستحقة عليهم.
+            النظام سيقرأ عمود الاسم وعمود اجمالي المتبقي فقط ويتجاهل باقي الأعمدة تماماً،
             ويتيح لك ربط كل اسم بالموظف المقابل في النظام وتحديد القسط الشهري ومعاينة الرصيد قبل الحفظ.
         </p>
 
@@ -649,7 +844,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="att-h">
             <span>
                 <i class="ti ti-eye" style="color:var(--accent);margin-left:6px;"></i>
-                معاينة ملف: <b><?= e($previewData['file_name']) ?></b> (<?= number_format($previewData['total_sheet_rows']) ?> صف بيانات)
+                معاينة ملف: <b><?= e($previewData['file_name']) ?></b> (<?= number_format(count($previewData['rows'])) ?> صف معروض<?= $previewData['empty_name_count'] > 0 ? ' · اتخطى ' . number_format($previewData['empty_name_count']) . ' صف فاضي' : '' ?>)
             </span>
             <form method="post" style="display:inline;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -661,17 +856,21 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
 
-        <?php // خطوة ٢: تحديد العمودين وتأكيد الاختيار ?>
+        <?php // خطوة ٢: تحديد صف العناوين والأعمدة وتحديث المعاينة ?>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:18px;">
             <form method="get" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                 <div style="font-weight:600;color:var(--ink-800);display:flex;align-items:center;gap:6px;">
-                    <i class="ti ti-adjustments" style="color:var(--accent);"></i> تحديد العمودين من الشيتة:
+                    <i class="ti ti-adjustments" style="color:var(--accent);"></i> إعدادات قراءة الشيتة:
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <label style="font-size:13px;color:var(--ink-700);font-weight:500;">صف العناوين:</label>
+                    <input type="number" name="header_row" min="1" max="<?= count($sheetRows) ?>" value="<?= (int)$previewData['header_row'] ?>" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-family:'IBM Plex Mono', monospace;font-size:13px;text-align:center;background:var(--surface);">
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <label style="font-size:13px;color:var(--ink-700);font-weight:500;">عمود الاسم:</label>
                     <select name="name_col" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface);">
                         <?php foreach ($previewData['headers'] as $hIdx => $hText): ?>
-                            <?php $colLetter = chr(65 + $hIdx); ?>
+                            <?php $colLetter = adv_index_to_col($hIdx); ?>
                             <option value="<?= $hIdx ?>" <?= $previewData['name_col'] === $hIdx ? 'selected' : '' ?>>
                                 عمود <?= $colLetter ?>: <?= e(trim((string)$hText) ?: '(بدون عنوان)') ?>
                             </option>
@@ -680,10 +879,10 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <div style="display:flex;align-items:center;gap:6px;">
-                    <label style="font-size:13px;color:var(--ink-700);font-weight:500;">عمود المبلغ (الإجمالي):</label>
+                    <label style="font-size:13px;color:var(--ink-700);font-weight:500;">عمود المبلغ (اجمالي المتبقي):</label>
                     <select name="amount_col" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface);">
                         <?php foreach ($previewData['headers'] as $hIdx => $hText): ?>
-                            <?php $colLetter = chr(65 + $hIdx); ?>
+                            <?php $colLetter = adv_index_to_col($hIdx); ?>
                             <option value="<?= $hIdx ?>" <?= $previewData['amount_col'] === $hIdx ? 'selected' : '' ?>>
                                 عمود <?= $colLetter ?>: <?= e(trim((string)$hText) ?: '(بدون عنوان)') ?>
                             </option>
@@ -692,7 +891,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <button type="submit" class="btn btn-sm btn-ghost">
-                    <i class="ti ti-refresh"></i> تحديث الأعمدة
+                    <i class="ti ti-refresh"></i> تحديث الإعدادات
                 </button>
             </form>
         </div>
@@ -700,8 +899,8 @@ require_once __DIR__ . '/includes/header.php';
         <?php // إحصائيات سريعة للبيانات ?>
         <div class="att-stats">
             <div class="stat-box">
-                <div class="stat-val"><?= number_format($previewData['total_sheet_rows']) ?></div>
-                <div class="stat-lbl">إجمالي صفوف الملف</div>
+                <div class="stat-val"><?= number_format(count($previewData['rows'])) ?></div>
+                <div class="stat-lbl">صفوف معروضة بالمعاينة</div>
             </div>
             <div class="stat-box">
                 <div class="stat-val" id="statChecked" style="color:var(--pos);">
@@ -734,11 +933,25 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="stat-lbl">مبالغ سالبة (تتطلب تعديل)</div>
             </div>
             <div class="stat-box">
+                <div class="stat-val" id="statZero" style="color:var(--ink-500);">
+                    <?= number_format($previewData['zero_count']) ?>
+                </div>
+                <div class="stat-lbl">رصيد صفر (مسدد)</div>
+            </div>
+            <div class="stat-box">
                 <div class="stat-val" style="color:<?= $previewData['missing_amount_count'] > 0 ? 'var(--warn)' : 'var(--ink-500)' ?>;">
                     <?= number_format($previewData['missing_amount_count']) ?>
                 </div>
                 <div class="stat-lbl">بدون رقم / #N/A</div>
             </div>
+            <?php if ($previewData['empty_name_count'] > 0): ?>
+                <div class="stat-box">
+                    <div class="stat-val" style="color:var(--ink-500);">
+                        <?= number_format($previewData['empty_name_count']) ?>
+                    </div>
+                    <div class="stat-lbl">اتخطى <?= number_format($previewData['empty_name_count']) ?> صف فاضي</div>
+                </div>
+            <?php endif; ?>
         </div>
 
         <?php // خطوة ٣: شريط القسط الشهري الافتراضي وتحديد الكل ?>
@@ -775,7 +988,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th>الاسم في الشيتة</th>
                             <th>الموظف في النظام</th>
                             <th>رصيد السلف المستديمة الحالي</th>
-                            <th>المبلغ من الشيتة</th>
+                            <th>المبلغ من الشيتة (اجمالي المتبقي)</th>
                             <th>القسط الشهري</th>
                             <th>النتيجة بعد الرفع</th>
                         </tr>
@@ -786,6 +999,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $rIdx = $r['index'];
                                 $isMissing = $r['is_missing'];
                                 $isNegative = $r['is_negative'];
+                                $isZero = $r['is_zero'];
                                 $isLocked = $r['is_locked'];
                                 $matchedId = $r['matched_emp_id'];
                                 $advInfo = $r['adv_info'];
@@ -839,6 +1053,9 @@ require_once __DIR__ . '/includes/header.php';
                                     <?php elseif ($isNegative): ?>
                                         <input type="number" step="0.01" name="rows[<?= $rIdx ?>][amount]" class="row-amount-input is-negative" value="<?= number_format($r['parsed_amount'], 2, '.', '') ?>">
                                         <div style="font-size:11px;color:var(--neg);margin-top:3px;white-space:nowrap;"><i class="ti ti-alert-triangle"></i> الرقم سالب — عدّله قبل الرفع</div>
+                                    <?php elseif ($isZero): ?>
+                                        <input type="number" step="0.01" name="rows[<?= $rIdx ?>][amount]" class="row-amount-input" value="0.00">
+                                        <span class="badge badge-neutral" style="margin-top:3px;display:inline-block;">رصيده صفر — مش محتاج يترفع</span>
                                     <?php else: ?>
                                         <input type="number" step="0.01" name="rows[<?= $rIdx ?>][amount]" class="row-amount-input" value="<?= number_format($r['parsed_amount'], 2, '.', '') ?>" style="font-weight:600;">
                                     <?php endif; ?>
@@ -855,6 +1072,8 @@ require_once __DIR__ . '/includes/header.php';
                                             <span class="badge badge-neg">مقفول (أكثر من سلفة مستديمة معلّقة)</span>
                                         <?php elseif ($isNegative): ?>
                                             <span class="badge badge-neg">رقم سالب (مرفوض)</span>
+                                        <?php elseif ($isZero): ?>
+                                            <span class="badge badge-neutral">رصيده صفر — مش محتاج يترفع</span>
                                         <?php elseif ($isMissing): ?>
                                             <span class="badge badge-warn">مفيش رقم (تخطي)</span>
                                         <?php elseif ($matchedId === 0): ?>
@@ -904,6 +1123,7 @@ require_once __DIR__ . '/includes/header.php';
             const hasAmount = rawAmountStr !== '' && !isNaN(parseFloat(rawAmountStr));
             const amount = hasAmount ? parseFloat(rawAmountStr) : null;
             const isNegative = amount !== null && amount < 0;
+            const isZero = amount !== null && amount === 0;
 
             const rawDedStr = dedInput ? dedInput.value.trim() : '';
             const monthlyDed = (rawDedStr !== '' && !isNaN(parseFloat(rawDedStr))) ? Math.max(0, parseFloat(rawDedStr)) : 0;
@@ -956,7 +1176,11 @@ require_once __DIR__ . '/includes/header.php';
             // 5) النتيجة بعد الرفع
             if (resultCell) {
                 if (!isChecked) {
-                    resultCell.innerHTML = '<span class="badge badge-neutral">تخطي (لن يتم رفعه)</span>';
+                    if (isZero) {
+                        resultCell.innerHTML = '<span class="badge badge-neutral">رصيده صفر — مش محتاج يترفع</span>';
+                    } else {
+                        resultCell.innerHTML = '<span class="badge badge-neutral">تخطي (لن يتم رفعه)</span>';
+                    }
                 } else if (empId === 0) {
                     resultCell.innerHTML = '<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> اختر الموظف</span>';
                 } else if (isLocked) {
@@ -965,6 +1189,12 @@ require_once __DIR__ . '/includes/header.php';
                     resultCell.innerHTML = '<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> أدخل المبلغ</span>';
                 } else if (isNegative) {
                     resultCell.innerHTML = '<span class="badge badge-neg"><i class="ti ti-alert-triangle"></i> مبلغ سالب (مرفوض)</span>';
+                } else if (isZero) {
+                    if (empInfo && empInfo.pending_count === 1) {
+                        resultCell.innerHTML = '<span class="badge badge-warn"><i class="ti ti-refresh"></i> تصفير الرصيد القائم: 0.00 ج (كان ' + empInfo.current_balance.toFixed(2) + ' ج)</span>';
+                    } else {
+                        resultCell.innerHTML = '<span class="badge badge-neutral">رصيد صفر (تخطي — لن يُنشأ صف)</span>';
+                    }
                 } else if (empInfo && empInfo.pending_count === 0) {
                     resultCell.innerHTML = '<span class="badge badge-pos"><i class="ti ti-plus"></i> سلفة مستديمة جديدة: ' + amount.toFixed(2) + ' ج'
                                          + (monthlyDed > 0 ? ' (قسط ' + monthlyDed.toFixed(2) + ' ج)' : ' (خصم كامل)') + '</span>';
@@ -980,24 +1210,32 @@ require_once __DIR__ . '/includes/header.php';
             let newCount = 0;
             let updateCount = 0;
             let negCount = 0;
+            let zeroCount = 0;
 
             document.querySelectorAll('#advancesTable tbody tr').forEach(tr => {
+                const amountInput = tr.querySelector('.row-amount-input');
+                const rawAmount = amountInput ? amountInput.value.trim() : '';
+                const hasAmount = rawAmount !== '' && !isNaN(parseFloat(rawAmount));
+                const amount = hasAmount ? parseFloat(rawAmount) : null;
+
+                if (amount !== null && amount < 0) negCount++;
+                if (amount !== null && amount === 0) zeroCount++;
+
                 const cb = tr.querySelector('.row-cb');
                 if (cb && cb.checked) {
                     checkedCount++;
                     const empSelect = tr.querySelector('.select-emp');
                     const empId = empSelect ? parseInt(empSelect.value, 10) || 0 : 0;
                     const empInfo = EMP_DATA[empId] || null;
-                    const amountInput = tr.querySelector('.row-amount-input');
-                    const rawAmount = amountInput ? amountInput.value.trim() : '';
-                    const hasAmount = rawAmount !== '' && !isNaN(parseFloat(rawAmount));
-                    const amount = hasAmount ? parseFloat(rawAmount) : null;
-
-                    if (amount !== null && amount < 0) negCount++;
 
                     if (empInfo && hasAmount && amount >= 0) {
-                        if (empInfo.pending_count === 0) newCount++;
-                        else if (empInfo.pending_count === 1) updateCount++;
+                        if (amount === 0) {
+                            if (empInfo.pending_count === 1) updateCount++;
+                            // لو رصيده صفر وماعندوش سلفة معلقة أصلاً مابيتعدش في سلف جديدة
+                        } else {
+                            if (empInfo.pending_count === 0) newCount++;
+                            else if (empInfo.pending_count === 1) updateCount++;
+                        }
                     }
                 }
             });
@@ -1006,11 +1244,13 @@ require_once __DIR__ . '/includes/header.php';
             const statNew = document.getElementById('statNew');
             const statUpdate = document.getElementById('statUpdate');
             const statNeg = document.getElementById('statNeg');
+            const statZero = document.getElementById('statZero');
 
             if (statChecked) statChecked.textContent = checkedCount;
             if (statNew) statNew.textContent = newCount;
             if (statUpdate) statUpdate.textContent = updateCount;
             if (statNeg) statNeg.textContent = negCount;
+            if (statZero) statZero.textContent = zeroCount;
         }
 
         // تفويض الأحداث على مستوى الجدول
@@ -1156,3 +1396,4 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php
 require_once __DIR__ . '/includes/footer.php';
+
