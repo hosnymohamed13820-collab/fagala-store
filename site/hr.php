@@ -300,7 +300,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $leaveDaysOverride = (int) $_POST['leave_days'];
                 }
-                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride);
+                $dueDaysOverride = null;
+                if (isset($_POST['due_days']) && $_POST['due_days'] !== '') {
+                    if (!is_owner()) {
+                        throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                    }
+                    $dueDaysOverride = (float) $_POST['due_days'];
+                }
+                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride, $dueDaysOverride);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
             elseif ($action === 'pay_salary_batch') {
@@ -324,6 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $leaveDaysArr    = (array)($_POST['leave_days'] ?? []);
+                $dueDaysArr      = (array)($_POST['due_days'] ?? []);
                 $bonusesPost     = (array)($_POST['bonuses'] ?? []);
                 $monthlyAdvPost  = (array)($_POST['monthly_adv'] ?? []);
                 $standingAdvPost = (array)($_POST['standing_adv'] ?? []);
@@ -351,15 +359,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $empId = (int) $rawId;
                     if ($empId <= 0) continue;
                     $name = $empNames[$empId] ?? ('موظف #' . $empId);
-                    $override = null;
+                    $leaveOverride = null;
                     if (isset($leaveDaysArr[$empId]) && $leaveDaysArr[$empId] !== '') {
                         if (!is_owner()) {
                             throw new RuntimeException('غير مصرّح لك بتعديل أيام الإجازة.');
                         }
-                        $override = (int) $leaveDaysArr[$empId];
+                        $leaveOverride = (int) $leaveDaysArr[$empId];
+                    }
+                    $dueOverride = null;
+                    if (isset($dueDaysArr[$empId]) && $dueDaysArr[$empId] !== '') {
+                        if (!is_owner()) {
+                            throw new RuntimeException('غير مصرّح لك بتعديل أيام الاستحقاق.');
+                        }
+                        $dueOverride = (float) $dueDaysArr[$empId];
                     }
                     try {
-                        pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $override);
+                        pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveOverride, $dueOverride);
                         $paidCount++;
                     } catch (Throwable $ex) {
                         $fails[] = $name . ' (' . $ex->getMessage() . ')';
@@ -872,8 +887,19 @@ $statusBadge = function($st) {
     </div>
 
 <?php elseif ($tab === 'advances'): ?>
+    <?php
+    $monthlyAdvances = [];
+    $standingAdvances = [];
+    foreach ($advances as $a) {
+        if (($a['adv_type'] ?? 'monthly') === 'standing') {
+            $standingAdvances[] = $a;
+        } else {
+            $monthlyAdvances[] = $a;
+        }
+    }
+    ?>
     <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة</span>
+        <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة (<?= count($monthlyAdvances) ?> سلف الشهر · <?= count($standingAdvances) ?> مستديمة)</span>
         <div style="display:flex;gap:8px;align-items:center;">
             <?php if (is_owner()): ?>
                 <a href="advances_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> استيراد شيت السلف</a>
@@ -881,31 +907,81 @@ $statusBadge = function($st) {
             <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
         </div>
     </div>
+
+    <!-- جدول سلف الشهر -->
     <div class="card">
-        <div class="section-title">السلف</div>
-        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">سلف الشهر الحالي تُصرف من موديول الخزينة، ويمكن تسجيل السلف المستديمة أو السلف السابقة من هنا وتحديد قسط شهري لخصمها تدريجياً.</p>
-        <?php if (empty($advances)): ?>
-            <div class="empty">لا توجد سلف.</div>
+        <div class="section-title">سلف الشهر (<?= count($monthlyAdvances) ?>)</div>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">سلف الشهر الحالي تُصرف من موديول الخزينة وتُخصم تلقائياً مع أول راتب.</p>
+        <?php if (empty($monthlyAdvances)): ?>
+            <div class="empty">لا توجد سلف شهرية.</div>
         <?php else: ?>
         <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
-            <?php foreach ($advances as $a):
+            <?php foreach ($monthlyAdvances as $a):
                 $b = $statusBadge($a['status']);
                 $origAmount = (float)$a['amount'];
                 $remAmount  = $a['remaining'] !== null ? (float)$a['remaining'] : $origAmount;
                 $monthlyDed = (float)($a['monthly_deduction'] ?? 0);
                 $isPending  = ($a['status'] === 'pending');
-                $advType    = $a['adv_type'] ?? 'monthly';
-                $tb         = ($advType === 'standing')
-                    ? ['مستديمة', 'var(--accent)', 'var(--accent-soft)']
-                    : ['سلفة الشهر', 'var(--ink-700)', 'var(--line-soft)'];
             ?>
                 <tr>
                     <td><?= e($a['advance_date']) ?></td>
                     <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
-                    <td><span class="badge" style="color:<?=$tb[1]?>;background:<?=$tb[2]?>;"><?=e($tb[0])?></span></td>
+                    <td><?= number_format($origAmount, 2) ?></td>
+                    <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
+                    <td>
+                        <?php if ($monthlyDed > 0): ?>
+                            <span style="font-weight:600;color:var(--accent-hover);"><?= number_format($monthlyDed, 2) ?></span>
+                        <?php else: ?>
+                            <span style="color:var(--ink-500);">بالكامل</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td style="font-size:13px;color:var(--ink-500);"><?= e($a['notes'] ?? '—') ?></td>
+                    <td>
+                        <?php if ($isPending): ?>
+                            <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
+                                    data-id="<?= (int)$a['id'] ?>"
+                                    data-name="<?= e($a['full_name']) ?>"
+                                    data-amount="<?= number_format($origAmount, 2) ?>"
+                                    data-remaining="<?= number_format($remAmount, 2) ?>"
+                                    data-deduction="<?= $monthlyDed > 0 ? $monthlyDed : 0 ?>"
+                                    title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
+                        <?php else: ?>
+                            <span style="color:#ccc;">—</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- جدول السلف المستديمة -->
+    <div class="card">
+        <div class="section-title">السلف المستديمة (<?= count($standingAdvances) ?>)</div>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">السلف المستديمة والمديونيات المرحلة من شهور سابقة، ويمكن تحديد قسط شهري لخصمها تدريجياً أو استيرادها من شيت الإكسيل.</p>
+        <?php if (empty($standingAdvances)): ?>
+            <div class="empty">لا توجد سلف مستديمة.</div>
+        <?php else: ?>
+        <div style="overflow-x:auto;">
+        <table>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
+            <tbody>
+            <?php foreach ($standingAdvances as $a):
+                $b = $statusBadge($a['status']);
+                $origAmount = (float)$a['amount'];
+                $remAmount  = $a['remaining'] !== null ? (float)$a['remaining'] : $origAmount;
+                $monthlyDed = (float)($a['monthly_deduction'] ?? 0);
+                $isPending  = ($a['status'] === 'pending');
+            ?>
+                <tr>
+                    <td><?= e($a['advance_date']) ?></td>
+                    <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
                     <td><?= number_format($origAmount, 2) ?></td>
                     <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
                     <td>
@@ -1174,6 +1250,15 @@ $statusBadge = function($st) {
                         <td>
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
                                 <span style="color:var(--ink-400);">—</span>
+                            <?php elseif (is_owner() && !$p['is_paid']): ?>
+                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                    <input type="number" min="0" max="60" step="0.01" name="due_days[<?= $p['id'] ?>]"
+                                           value="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
+                                           class="due-days-input payroll-num"
+                                           data-calc="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
+                                           style="font-weight:600;">
+                                    <span class="due-days-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب (أيام العمل + الإجازة)">معدّلة</span>
+                                </div>
                             <?php else: ?>
                                 <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= number_format($p['due_days_calc'], 2) ?></span>
                             <?php endif; ?>
@@ -1308,13 +1393,13 @@ $statusBadge = function($st) {
                         <?= !empty($s['period_from']) ? (e($s['period_from']) . ' ← ' . e($s['period_to'])) : '—' ?>
                     </td>
                     <td style="font-size:13px;">
-                        <?= $s['work_hours'] !== null ? (number_format((float)$s['work_hours'], 1) . ' س (' . (int)$s['work_days'] . ' ي)') : '—' ?>
+                        <?= $s['work_hours'] !== null ? (number_format((float)$s['work_hours'], 1) . ' س (' . number_format((float)$s['work_days'], 2) . ' ي)') : '—' ?>
                     </td>
                     <td>
                         <?php if ($s['due_days'] !== null): ?>
-                            <b><?= (int)$s['due_days'] ?></b>
-                            <?php if ($s['due_days_calc'] !== null && (int)$s['due_days'] !== (int)$s['due_days_calc']): ?>
-                                <span style="font-size:11px;color:var(--warn);" title="المحسوب: <?= (int)$s['due_days_calc'] ?>">(معدّل)</span>
+                            <b><?= number_format((float)$s['due_days'], 2) ?></b>
+                            <?php if ($s['due_days_calc'] !== null && abs((float)$s['due_days'] - (float)$s['due_days_calc']) > 0.0001): ?>
+                                <span style="font-size:11px;color:var(--warn);" title="المحسوب: <?= number_format((float)$s['due_days_calc'], 2) ?>">(معدّل)</span>
                             <?php endif; ?>
                         <?php else: ?>
                             —
@@ -1564,7 +1649,11 @@ $statusBadge = function($st) {
             <?php if (is_owner()): ?>
                 <div class="form-row">
                     <label>أيام الإجازة (تعديل الأونر — اختياري)</label>
-                    <input type="number" min="0" max="60" name="leave_days" id="singleSalaryLeaveDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
+                    <input type="number" min="0" max="60" step="1" name="leave_days" id="singleSalaryLeaveDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
+                </div>
+                <div class="form-row">
+                    <label>أيام الاستحقاق (تعديل الأونر — اختياري)</label>
+                    <input type="number" min="0" max="60" step="0.01" name="due_days" id="singleSalaryDueDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
             <?php endif; ?>
             <p style="font-size:12px;color:var(--ink-500);">سيتم إضافة المكافآت وخصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
@@ -1731,13 +1820,21 @@ $statusBadge = function($st) {
         } else if (modalLeaveInput) {
             modalLeaveInput.value = '';
         }
+
+        var dueInput = tr ? tr.querySelector('.due-days-input') : null;
+        var modalDueInput = document.getElementById('singleSalaryDueDays');
+        if (modalDueInput && dueInput) {
+            modalDueInput.value = dueInput.value;
+        } else if (modalDueInput) {
+            modalDueInput.value = '';
+        }
         modal.classList.add('open');
     });
 
-    // تحديث أرقام أيام الاستحقاق والاستحقاق والخصومات والصافي لحظياً عند تعديل أي خانة (إجازة، مكافأة، سلف)
+    // تحديث أرقام أيام الاستحقاق والاستحقاق والخصومات والصافي لحظياً عند تعديل أي خانة (إجازة، استحقاق، مكافأة، سلف)
     document.addEventListener('input', function(e) {
         var inp = e.target;
-        if (!inp.matches('.leave-days-input, .bonus-input, .monthly-adv-input, .standing-adv-input')) return;
+        if (!inp.matches('.leave-days-input, .due-days-input, .bonus-input, .monthly-adv-input, .standing-adv-input')) return;
         var tr = inp.closest('tr');
         if (!tr) return;
 
@@ -1752,6 +1849,15 @@ $statusBadge = function($st) {
         var leaveInp = tr.querySelector('.leave-days-input');
         var leaveDays = leaveInp ? (leaveInp.value.trim() === '' ? (parseFloat(leaveInp.dataset.calc) || 0) : (parseFloat(leaveInp.value) || 0)) : (parseFloat(tr.dataset.leaveDays) || 0);
 
+        var dueInp = tr.querySelector('.due-days-input');
+        var dueBadge = tr.querySelector('.due-days-edited-badge');
+
+        // لو التعديل جه من خانة الإجازة، حدّث خانة الاستحقاق تلقائياً للمحسوب الجديد (أيام العمل + الإجازة الجديدة)
+        if (inp === leaveInp && dueInp) {
+            var autoDue = workDays + leaveDays;
+            dueInp.value = autoDue.toFixed(2);
+        }
+
         var bonusInp = tr.querySelector('.bonus-input');
         var bonuses = bonusInp ? (bonusInp.value.trim() === '' ? (parseFloat(bonusInp.dataset.orig) || 0) : (parseFloat(bonusInp.value) || 0)) : (parseFloat(tr.dataset.bonuses) || 0);
 
@@ -1765,12 +1871,26 @@ $statusBadge = function($st) {
         if (isFixed) {
             gross = baseSalary;
         } else {
-            var exactDueDays = workDays + leaveDays;
-            gross = dayRate * exactDueDays;
+            var calcDueDays = workDays + leaveDays;
+            var effectiveDueDays = calcDueDays;
+            if (dueInp && dueInp.value.trim() !== '') {
+                effectiveDueDays = parseFloat(dueInp.value) || 0;
+            }
+
+            // إظهار أو إخفاء علامة "معدّلة" لو القيمة تختلف عن المحسوب (أيام العمل + الإجازة)
+            if (dueBadge) {
+                if (Math.abs(effectiveDueDays - parseFloat(calcDueDays.toFixed(2))) > 0.0001) {
+                    dueBadge.style.display = 'inline-block';
+                } else {
+                    dueBadge.style.display = 'none';
+                }
+            }
+
+            gross = dayRate * effectiveDueDays;
             var dueDaysCell = tr.querySelector('.cell-due-days');
             if (dueDaysCell) {
-                dueDaysCell.textContent = exactDueDays.toFixed(2);
-                dueDaysCell.title = 'أيام الاستحقاق الفعلية: ' + exactDueDays.toFixed(3);
+                dueDaysCell.textContent = effectiveDueDays.toFixed(2);
+                dueDaysCell.title = 'أيام الاستحقاق الفعلية: ' + effectiveDueDays.toFixed(3);
             }
         }
 

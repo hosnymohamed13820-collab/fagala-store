@@ -220,14 +220,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $activeEmpsStmt = $pdo->query('SELECT id, full_name FROM employees WHERE is_active = 1');
                 $activeEmpsMap = $activeEmpsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-                // 2) جلب السلف المعلّقة مجمّعة لكل موظف (استعلام واحد مجمّع)
+                // 2) جلب السلف المستديمة المعلّقة مجمّعة لكل موظف (استعلام واحد مجمّع)
                 $advStmt = $pdo->query(
                     "SELECT employee_id,
                             COUNT(*) AS pending_count,
                             MIN(id) AS single_id,
                             COALESCE(SUM(COALESCE(remaining, amount)), 0) AS current_balance
                      FROM employee_advances
-                     WHERE status = 'pending'
+                     WHERE status = 'pending' AND adv_type = 'standing'
                      GROUP BY employee_id"
                 );
                 $pendingAdvMap = [];
@@ -277,7 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException("تعذر التأكيد: الموظف ({$empName}) مبلغه سالب ({$amount}). برجاء تعديل المبلغ لقيمة موجبة أو إلغاء تحديد الصف قبل الرفع.");
                     }
 
-                    // فحص عدد السلف المعلّقة
+                    // فحص عدد السلف المستديمة المعلّقة
                     $advInfo = $pendingAdvMap[$empId] ?? [
                         'pending_count'   => 0,
                         'single_id'       => null,
@@ -285,7 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
 
                     if ($advInfo['pending_count'] > 1) {
-                        throw new RuntimeException("تعذر التأكيد: الموظف ({$empName}) لديه أكثر من سلفة معلّقة حالياً ({$advInfo['pending_count']} سلف). برجاء تسوية سلفه من تاب السلف أولاً.");
+                        throw new RuntimeException("تعذر التأكيد: الموظف ({$empName}) لديه أكثر من سلفة مستديمة معلّقة حالياً ({$advInfo['pending_count']} سلف مستديمة). برجاء تسوية سلفه من تاب السلف أولاً.");
                     }
 
                     // القسط الشهري
@@ -315,7 +315,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          VALUES (?, ?, ?, "pending", ?, ?, ?, "standing")'
                     );
                     $updAdv = $pdo->prepare(
-                        'UPDATE employee_advances SET remaining = ?, monthly_deduction = ? WHERE id = ? AND status = "pending"'
+                        'UPDATE employee_advances SET remaining = ?, monthly_deduction = ? WHERE id = ? AND status = "pending" AND adv_type = \'standing\''
                     );
 
                     $today = date('Y-m-d');
@@ -357,9 +357,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @unlink($filePath);
                 unset($_SESSION['adv_import_tok'], $_SESSION['adv_import_orig_name']);
 
-                $summaryMsg = 'تم رفع شيت السلف بنجاح!'
-                    . ' — تم إنشاء ' . number_format($insertedCount) . ' سلفة جديدة'
-                    . ' · تم تحديث ' . number_format($updatedCount) . ' رصيد قائم'
+                $summaryMsg = 'تم رفع شيت السلف المستديمة بنجاح!'
+                    . ' — تم إنشاء ' . number_format($insertedCount) . ' سلفة مستديمة جديدة'
+                    . ' · تم تحديث ' . number_format($updatedCount) . ' رصيد مستديم قائم'
                     . ($skippedCount > 0 ? ' · تم تخطي ' . number_format($skippedCount) . ' صف' : '');
 
                 $_SESSION['flash'] = $summaryMsg;
@@ -428,14 +428,14 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             }
         }
 
-        // جلب أرصدة السلف المعلّقة مجمّعة لكل موظف (استعلام واحد مجمّع)
+        // جلب أرصدة السلف المستديمة المعلّقة مجمّعة لكل موظف (استعلام واحد مجمّع)
         $advStmt = $pdo->query(
             "SELECT employee_id,
                     COUNT(*) AS pending_count,
                     MIN(id) AS single_id,
                     COALESCE(SUM(COALESCE(remaining, amount)), 0) AS current_balance
              FROM employee_advances
-             WHERE status = 'pending'
+             WHERE status = 'pending' AND adv_type = 'standing'
              GROUP BY employee_id"
         );
         $pendingAdvMap = [];
@@ -550,7 +550,7 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
     }
 }
 
-$page_title = 'رفع أرصدة السلف من إكسيل';
+$page_title = 'رفع أرصدة السلف المستديمة من إكسيل';
 $active_module = 'hr';
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -608,7 +608,7 @@ require_once __DIR__ . '/includes/header.php';
         <a href="hr.php?tab=advances" class="btn btn-ghost btn-sm">
             <i class="ti ti-arrow-right"></i> العودة لتاب السلف
         </a>
-        <h2 style="font-size:18px;font-weight:700;color:var(--ink-900);margin:0;">رفع أرصدة السلف من شيت إكسيل</h2>
+        <h2 style="font-size:18px;font-weight:700;color:var(--ink-900);margin:0;">رفع أرصدة السلف المستديمة من شيت إكسيل</h2>
     </div>
 </div>
 
@@ -622,10 +622,10 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (!$previewData): ?>
     <div class="att-card">
         <div class="att-h">
-            <span><i class="ti ti-file-spreadsheet" style="color:var(--accent);margin-left:6px;"></i> رفع شيت إكسيل بأرصدة السلف</span>
+            <span><i class="ti ti-file-spreadsheet" style="color:var(--accent);margin-left:6px;"></i> رفع شيت إكسيل بأرصدة السلف المستديمة</span>
         </div>
         <p style="font-size:13.5px;color:var(--ink-600);margin-bottom:18px;line-height:1.6;">
-            ارفع ملف إكسيل (.xlsx) الذي يحتوي على أسماء الموظفين وإجمالي أرصدة السلف المستحقة عليهم.
+            ارفع ملف إكسيل (.xlsx) الذي يحتوي على أسماء الموظفين وإجمالي أرصدة السلف المستديمة المستحقة عليهم.
             النظام سيقرأ عمود الاسم وعمود الإجمالي فقط ويتجاهل باقي الأعمدة تماماً،
             ويتيح لك ربط كل اسم بالموظف المقابل في النظام وتحديد القسط الشهري ومعاينة الرصيد قبل الحفظ.
         </p>
@@ -713,7 +713,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="stat-val" id="statNew" style="color:var(--accent);">
                     <?= number_format($previewData['new_count']) ?>
                 </div>
-                <div class="stat-lbl">سلف جديدة مقترحة</div>
+                <div class="stat-lbl">سلف مستديمة جديدة مقترحة</div>
             </div>
             <div class="stat-box">
                 <div class="stat-val" id="statUpdate" style="color:var(--ink-700);">
@@ -774,7 +774,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th style="width:40px;">#</th>
                             <th>الاسم في الشيتة</th>
                             <th>الموظف في النظام</th>
-                            <th>رصيد السلف الحالي</th>
+                            <th>رصيد السلف المستديمة الحالي</th>
                             <th>المبلغ من الشيتة</th>
                             <th>القسط الشهري</th>
                             <th>النتيجة بعد الرفع</th>
@@ -814,7 +814,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <option value="">— اختر الموظف —</option>
                                         <?php foreach ($previewData['employees_list'] as $emp): ?>
                                             <option value="<?= (int)$emp['id'] ?>" <?= $matchedId === (int)$emp['id'] ? 'selected' : '' ?>>
-                                                <?= e($emp['full_name']) ?>
+                                                 <?= e($emp['full_name']) ?>
                                                 <?= !empty($emp['branch_name']) ? ' (' . e($emp['branch_name']) . ')' : '' ?>
                                             </option>
                                         <?php endforeach; ?>
@@ -824,11 +824,11 @@ require_once __DIR__ . '/includes/header.php';
                                     <?php if ($matchedId === 0): ?>
                                         <span style="color:var(--ink-400);">—</span>
                                     <?php elseif ($advInfo['pending_count'] === 0): ?>
-                                        <span style="color:var(--ink-500);">0.00 (لا توجد سلف)</span>
+                                        <span style="color:var(--ink-500);">0.00 (لا توجد سلف مستديمة)</span>
                                     <?php elseif ($advInfo['pending_count'] === 1): ?>
                                         <span style="font-weight:600;color:var(--ink-800);"><?= number_format($curBal, 2) ?> ج</span>
                                     <?php else: ?>
-                                        <span class="badge badge-neg">أكثر من سلفة (<?= $advInfo['pending_count'] ?>)</span>
+                                        <span class="badge badge-neg">أكثر من سلفة مستديمة (<?= $advInfo['pending_count'] ?>)</span>
                                         <a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:2px;">عرض في تاب السلف</a>
                                     <?php endif; ?>
                                 </td>
@@ -852,7 +852,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td class="cell-result">
                                     <?php if (!$r['selected_by_default']): ?>
                                         <?php if ($isLocked): ?>
-                                            <span class="badge badge-neg">مقفول (أكثر من سلفة معلّقة)</span>
+                                            <span class="badge badge-neg">مقفول (أكثر من سلفة مستديمة معلّقة)</span>
                                         <?php elseif ($isNegative): ?>
                                             <span class="badge badge-neg">رقم سالب (مرفوض)</span>
                                         <?php elseif ($isMissing): ?>
@@ -864,7 +864,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <?php endif; ?>
                                     <?php else: ?>
                                         <?php if ($advInfo['pending_count'] === 0): ?>
-                                            <span class="badge badge-pos"><i class="ti ti-plus"></i> سلفة جديدة: <?= number_format($r['parsed_amount'], 2) ?> ج</span>
+                                            <span class="badge badge-pos"><i class="ti ti-plus"></i> سلفة مستديمة جديدة: <?= number_format($r['parsed_amount'], 2) ?> ج</span>
                                         <?php else: ?>
                                             <span class="badge badge-neutral"><i class="ti ti-refresh"></i> تحديث الرصيد إلى <?= number_format($r['parsed_amount'], 2) ?> ج</span>
                                         <?php endif; ?>
@@ -878,7 +878,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                 <button type="submit" class="btn btn-success" id="btnConfirmImport" style="font-size:15px;padding:12px 28px;">
-                    <i class="ti ti-check"></i> تأكيد رفع السلف إلى قاعدة البيانات
+                    <i class="ti ti-check"></i> تأكيد رفع السلف المستديمة إلى قاعدة البيانات
                 </button>
             </div>
         </form>
@@ -908,21 +908,21 @@ require_once __DIR__ . '/includes/header.php';
             const rawDedStr = dedInput ? dedInput.value.trim() : '';
             const monthlyDed = (rawDedStr !== '' && !isNaN(parseFloat(rawDedStr))) ? Math.max(0, parseFloat(rawDedStr)) : 0;
 
-            // 1) تحديث رصيد السلف الحالي
+            // 1) تحديث رصيد السلف المستديمة الحالي
             if (curBalCell) {
                 if (!empInfo) {
                     curBalCell.innerHTML = '<span style="color:var(--ink-400);">—</span>';
                 } else if (empInfo.pending_count === 0) {
-                    curBalCell.innerHTML = '<span style="color:var(--ink-500);">0.00 (لا توجد سلف)</span>';
+                    curBalCell.innerHTML = '<span style="color:var(--ink-500);">0.00 (لا توجد سلف مستديمة)</span>';
                 } else if (empInfo.pending_count === 1) {
                     curBalCell.innerHTML = '<span style="font-weight:600;color:var(--ink-800);">' + empInfo.current_balance.toFixed(2) + ' ج</span>';
                 } else {
-                    curBalCell.innerHTML = '<span class="badge badge-neg">أكثر من سلفة (' + empInfo.pending_count + ')</span>'
+                    curBalCell.innerHTML = '<span class="badge badge-neg">أكثر من سلفة مستديمة (' + empInfo.pending_count + ')</span>'
                                          + '<a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:2px;">عرض في تاب السلف</a>';
                 }
             }
 
-            // 2) معالجة القفل إذا كان للموظف أكثر من سلفة معلّقة
+            // 2) معالجة القفل إذا كان للموظف أكثر من سلفة مستديمة معلّقة
             const isLocked = empInfo && empInfo.pending_count > 1;
             if (cb) {
                 if (isLocked) {
@@ -960,13 +960,13 @@ require_once __DIR__ . '/includes/header.php';
                 } else if (empId === 0) {
                     resultCell.innerHTML = '<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> اختر الموظف</span>';
                 } else if (isLocked) {
-                    resultCell.innerHTML = '<span class="badge badge-neg">مقفول (أكثر من سلفة)</span>';
+                    resultCell.innerHTML = '<span class="badge badge-neg">مقفول (أكثر من سلفة مستديمة)</span>';
                 } else if (!hasAmount) {
                     resultCell.innerHTML = '<span class="badge badge-warn"><i class="ti ti-alert-triangle"></i> أدخل المبلغ</span>';
                 } else if (isNegative) {
                     resultCell.innerHTML = '<span class="badge badge-neg"><i class="ti ti-alert-triangle"></i> مبلغ سالب (مرفوض)</span>';
                 } else if (empInfo && empInfo.pending_count === 0) {
-                    resultCell.innerHTML = '<span class="badge badge-pos"><i class="ti ti-plus"></i> سلفة جديدة: ' + amount.toFixed(2) + ' ج'
+                    resultCell.innerHTML = '<span class="badge badge-pos"><i class="ti ti-plus"></i> سلفة مستديمة جديدة: ' + amount.toFixed(2) + ' ج'
                                          + (monthlyDed > 0 ? ' (قسط ' + monthlyDed.toFixed(2) + ' ج)' : ' (خصم كامل)') + '</span>';
                 } else if (empInfo && empInfo.pending_count === 1) {
                     resultCell.innerHTML = '<span class="badge badge-neutral"><i class="ti ti-refresh"></i> تحديث الرصيد: ' + amount.toFixed(2) + ' ج'
@@ -1122,7 +1122,7 @@ require_once __DIR__ . '/includes/header.php';
 
                         const empInfo = EMP_DATA[empId];
                         if (empInfo && empInfo.pending_count > 1) {
-                            errors.push('الموظف (' + empText + ') لديه أكثر من سلفة معلّقة حالياً. لا يمكن رفعه.');
+                            errors.push('الموظف (' + empText + ') لديه أكثر من سلفة مستديمة معلّقة حالياً. لا يمكن رفعه.');
                         }
                     }
                 });
@@ -1139,7 +1139,7 @@ require_once __DIR__ . '/includes/header.php';
                     return false;
                 }
 
-                if (!confirm('تأكيد رفع وتحديث أرصدة السلف لـ ' + checkedRows + ' موظف في قاعدة البيانات؟')) {
+                if (!confirm('تأكيد رفع وتحديث أرصدة السلف المستديمة لـ ' + checkedRows + ' موظف في قاعدة البيانات؟')) {
                     e.preventDefault();
                     return false;
                 }

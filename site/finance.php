@@ -1736,9 +1736,18 @@ function shift_variance_status(float $difference, ?float $tolerance = null): arr
  * @param string $month شهر الراتب (YYYY-MM)
  * @param string|null $from بداية فترة الحضور (افتراضي أول يوم في الشهر)
  * @param string|null $to نهاية فترة الحضور (افتراضي آخر يوم في الشهر)
+ * @param int|null $leaveDaysOverride أيام إجازة معدّلة يدوياً بواسطة الأونر
+ * @param float|null $dueDaysOverride أيام استحقاق معدّلة يدوياً بواسطة الأونر (float لدعم الكسور)
  * @return array تفاصيل المرتب وحساب الساعات والأيام للعرض قبل الاعتماد
  */
-function compute_salary(int $employeeId, string $month, ?string $from = null, ?string $to = null, ?int $leaveDaysOverride = null): array
+function compute_salary(
+    int $employeeId,
+    string $month,
+    ?string $from = null,
+    ?string $to = null,
+    ?int $leaveDaysOverride = null,
+    ?float $dueDaysOverride = null
+): array
 {
     $pdo = db();
 
@@ -1784,8 +1793,18 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
         $workDays      = $salDays['work_days'];
         $leaveDaysCalc = $salDays['leave_days'];
         $leaveDays     = ($leaveDaysOverride !== null && $leaveDaysOverride >= 0) ? $leaveDaysOverride : $leaveDaysCalc;
-        $dueDaysCalc   = $salDays['due_days'];
-        $dueDays       = round($workDays + $leaveDays, 4);
+        $dueDaysCalc   = round($workDays + $leaveDays, 4);
+
+        // ترتيب الأولوية لأيام الاستحقاق:
+        // الخانة في المتصفح بتعرض خانتين عشرية، فالحد الأقصى لخطأ التقريب لوحده هو 0.005 (نص أصغر خانة معروضة 0.01 ÷ 2).
+        // 1. لو $dueDaysOverride مبعوت والفرق عن المحسوب أكبر من 0.005 ← ده تعديل يدوي حقيقي من الأونر ونعتمد القيمة المبعوتة.
+        // 2. لو $dueDaysOverride هو null أو الفرق <= 0.005 ← نعتبره مش تعديل (مجرد تقريب العرض) ونعتمد المحسوب الدقيق.
+        if ($dueDaysOverride !== null && abs($dueDaysOverride - $dueDaysCalc) > 0.005) {
+            $dueDays = round((float) $dueDaysOverride, 4);
+        } else {
+            $dueDays = $dueDaysCalc;
+        }
+
         $dayHours      = $salDays['day_hours'];
         $hourRate      = ($expectedHours !== null && $expectedHours > 0) ? ($base / $expectedHours) : 0.0;
         $dayRate       = $base > 0 ? ($base / 30.0) : 0.0;
@@ -1853,7 +1872,7 @@ function compute_salary(int $employeeId, string $month, ?string $from = null, ?s
 /**
  * اعتماد وصرف مرتب موظف لشهر.
  * - بيحسب المرتب وفترة الحضور، يسجّله، يصرفه من الخزينة (مدين بالصافي).
- * - يتيح للأونر تعديل أيام الإجازة مع حفظ القيمة المحسوبة والمعدلة ومن قام بالتعديل.
+ * - يتيح للأونر تعديل أيام الإجازة والاستحقاق مع حفظ القيمة المحسوبة والمعدلة ومن قام بالتعديل.
  * - بيقفل المكافآت والسلف والجزاءات وعجز العهدة المعلّقة (paid/deducted/recovered).
  *
  * @return int معرّف المرتب
@@ -1866,7 +1885,8 @@ function pay_salary(
     ?int $userId = null,
     ?string $from = null,
     ?string $to = null,
-    ?int $leaveDaysOverride = null
+    ?int $leaveDaysOverride = null,
+    ?float $dueDaysOverride = null
 ): int {
     $pdo = db();
     $pdo->beginTransaction();
@@ -1878,7 +1898,7 @@ function pay_salary(
             throw new RuntimeException('مرتب هذا الشهر مسجّل بالفعل.');
         }
 
-        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride);
+        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride);
         $name = $calc['employee_name'] ?? ('الموظف #' . $employeeId);
         $isFixed = ($calc['salary_mode'] ?? 'hours') === 'fixed';
 
@@ -1911,11 +1931,21 @@ function pay_salary(
                 if ($leaveDaysOverride < 0 || $leaveDaysOverride > 60) {
                     throw new RuntimeException('أيام الإجازة المعدّلة غير صحيحة (يجب أن تكون بين 0 و 60 يوم).');
                 }
-                if ($leaveDaysOverride !== $leaveDaysCalc) {
-                    $editedBy = $userId;
-                    $editedAt = date('Y-m-d H:i:s');
+            }
+
+            if ($dueDaysOverride !== null) {
+                if ($dueDaysOverride < 0 || $dueDaysOverride > 60) {
+                    throw new RuntimeException('أيام الاستحقاق المعدّلة غير صحيحة (يجب أن تكون بين 0 و 60 يوم).');
                 }
             }
+
+            // التدقيق: الخانة بتعرض خانتين عشرية (أقصى خطأ تقريب 0.01 ÷ 2 = 0.005).
+            // لو الفرق أكبر من 0.005 يبقى ده تعديل حقيقي من الأونر مش مجرد تقريب، فنسجّل مين عدّل وتاريخ التعديل.
+            if ($dueDaysOverride !== null && abs($dueDaysOverride - $dueDaysCalc) > 0.005) {
+                $editedBy = $userId;
+                $editedAt = date('Y-m-d H:i:s');
+            }
+
             $grossSalary = $calc['day_rate'] * $dueDays;
         }
 
