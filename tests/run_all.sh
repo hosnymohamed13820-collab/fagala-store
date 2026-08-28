@@ -24,7 +24,7 @@ export PYTHONIOENCODING=utf-8
 find_php() {
     [ -n "${PHP_BIN:-}" ] && [ -x "$PHP_BIN" ] && { echo "$PHP_BIN"; return; }
     command -v php > /dev/null 2>&1 && { echo php; return; }
-    for d in /c/php /c/tools/php /c/xampp/php /c/laragon/bin/php/*              "$HOME"/Downloads/php-*/ /c/Users/*/Downloads/php-*/; do
+    for d in /c/php /c/tools/php /c/xampp/php /c/laragon/bin/php/* /c/laragon/bin/php \n             /d/php /d/php-*/ /d/php*/ /e/php /e/php-*/ \n             "$HOME"/Downloads/php-*/ /c/Users/*/Downloads/php-*/; do
         [ -x "$d/php.exe" ] && { echo "$d/php.exe"; return; }
     done
 }
