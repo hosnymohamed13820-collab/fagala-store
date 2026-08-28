@@ -455,10 +455,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = 'خطأ: ' . $ex->getMessage(); $flashType='error';
         }
     }
-    // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار)
+    // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار) مع الحفاظ على الفلاتر
+    // بنعمل دمج للـ query string الحالية مع $tab اللي المعالج حددها عشان نحافظ على الفلاتر (from/to) ونروح للتاب الصح لو المعالج غيّره
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
-    header('Location: ' . ('hr.php?tab=' . urlencode($tab)));
+    $hrQuery = [];
+    parse_str(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY) ?? '', $hrQuery);
+    $hrQuery['tab'] = $tab;
+    header('Location: hr.php?' . http_build_query($hrQuery));
     exit;
 }
 

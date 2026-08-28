@@ -89,10 +89,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
             $flashType = 'error';
         }
     }
-    // PRG: تحويل لصفحة GET بعد الـ POST عشان الـ Refresh ما يعيدش الإرسال
+    // PRG: تحويل لصفحة GET بعد الـ POST عشان الـ Refresh ما يعيدش الإرسال والحفاظ على الفلاتر
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
-    header('Location: ' . $_SERVER['PHP_SELF']);
+    header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
     exit;
 }
 
