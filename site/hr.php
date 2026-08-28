@@ -8,14 +8,40 @@
  * - طلبات تصحيح الحضور تتعتمد/ترفض هنا.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('hr');
+require_module_access('hr');
 require_once __DIR__ . '/finance.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
-$tab = $_GET['tab'] ?? 'employees';
 
+// قراءة التابات المسموحة للمستخدم بناءً على أجزاء مديول الموارد البشرية
+$hrParts = module_parts()['hr'] ?? [];
+$allowedTabs = [];
+foreach ($hrParts as $tabKey => $tabLabel) {
+    if (can('hr:' . $tabKey)) {
+        $allowedTabs[$tabKey] = $tabLabel;
+    }
+}
+
+// لو المستخدم مالوش أي تاب مسموح (حزام أمان إضافي)
+if (empty($allowedTabs)) {
+    http_response_code(403);
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+        . '<h2>🚫 غير مصرّح</h2>'
+        . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+        . '<a href="logout.php">تسجيل الخروج</a></div>');
+}
+
+// تحديد التاب النشط: لو طلب تاب مسموح يفتحه، لو مالوش صلاحيته يتحوّل لأول تاب مسموح
+$requestedTab = (string)($_GET['tab'] ?? '');
+if (isset($allowedTabs[$requestedTab])) {
+    $tab = $requestedTab;
+} else {
+    $tab = (string) array_key_first($allowedTabs);
+}
+
+// القوائم المنسدلة للمودالات العامة في آخر الصفحة — يتم تحميلها دائماً
 $payTreasuries = $pdo->query(
     "SELECT id, name FROM treasuries WHERE branch_id IS NULL AND is_active=1
      ORDER BY FIELD(type,'cash','main','visa','instapay','card')"
@@ -176,9 +202,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
         $flashType = 'error';
     } else {
-        $action = $_POST['action'] ?? '';
-        try {
-            if ($action === 'add_bonus') {
+        $action = (string)($_POST['action'] ?? '');
+
+        // خريطة العمليات الصريحة وربط كل عملية بجزئها
+        $actionMap = [
+            'add_bonus'                => 'bonuses',
+            'add_penalty'              => 'penalties',
+            'add_leave'                => 'leaves',
+            'add_advance'              => 'advances',
+            'update_advance_deduction' => 'advances',
+            'cancel_advance'           => 'advances',
+            'save_payroll_adjustments' => 'salaries',
+            'pay_salary'               => 'salaries',
+            'pay_salary_batch'         => 'salaries',
+            'approve_request'          => 'requests',
+            'reject_request'           => 'requests',
+            'update_request_time'      => 'requests',
+            'delete_attendance'        => 'attendance',
+        ];
+
+        $targetPart = $actionMap[$action] ?? null;
+        if ($targetPart === null) {
+            $flash = 'عملية غير معروفة أو غير مصرّح بها.';
+            $flashType = 'error';
+        } elseif (!can('hr:' . $targetPart)) {
+            $flash = 'غير مصرّح لك بتنفيذ هذه العملية.';
+            $flashType = 'error';
+        } else {
+            try {
+                if ($action === 'add_bonus') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $amount = (float)($_POST['amount'] ?? 0);
                 $date = $_POST['date'] ?? date('Y-m-d');
@@ -455,6 +507,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = 'خطأ: ' . $ex->getMessage(); $flashType='error';
         }
     }
+}
     // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار) مع الحفاظ على الفلاتر
     // بنعمل دمج للـ query string الحالية مع $tab اللي المعالج حددها عشان نحافظ على الفلاتر (from/to) ونروح للتاب الصح لو المعالج غيّره
     $_SESSION['flash'] = $flash;
@@ -473,154 +526,183 @@ if (isset($_SESSION['flash'])) {
     unset($_SESSION['flash'], $_SESSION['flash_type']);
 }
 
-// بيانات التبويبات
-$empList = $pdo->query(
-    "SELECT e.*, b.name AS branch_name,
-            COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
-     FROM employees e
-     LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
-)->fetchAll();
-$advances = $pdo->query(
-    "SELECT a.*, e.full_name FROM employee_advances a JOIN employees e ON e.id=a.employee_id ORDER BY a.id DESC LIMIT 100"
-)->fetchAll();
-$bonuses = $pdo->query(
-    "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
-)->fetchAll();
-// قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
-$tolerance = (float) setting('custody_deficit_tolerance', '0');
+// بيانات التبويبات المشروطة بالتاب النشط
+$empList = [];
+if ($tab === 'employees' || $tab === 'salaries') {
+    $empList = $pdo->query(
+        "SELECT e.*, b.name AS branch_name,
+                COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
+         FROM employees e
+         LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
+    )->fetchAll();
+}
 
-// فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
-// ABS(s.difference) - ? > 0.0001
-// ⚠️ shift_variance_status() تفضل هي مصدر الحقيقة للقاعدة، والشرط ده فلتر مسبق مطابق ليها رياضياً.
-// أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
-$penStmt = $pdo->prepare(
-    "SELECT p.penalty_date AS deduction_date,
-            e.full_name,
-            'penalty' AS source_type,
-            b.name AS branch_name,
-            p.amount,
-            0.0 AS difference,
-            p.reason,
-            p.status,
-            NULL AS shift_name,
-            NULL AS shift_id,
-            p.id AS sort_id
-       FROM employee_penalties p
-       JOIN employees e ON e.id = p.employee_id
-       LEFT JOIN branches b ON b.id = e.branch_id
+$advances = [];
+if ($tab === 'advances') {
+    $advances = $pdo->query(
+        "SELECT a.*, e.full_name FROM employee_advances a JOIN employees e ON e.id=a.employee_id ORDER BY a.id DESC LIMIT 100"
+    )->fetchAll();
+}
 
-      UNION ALL
-
-     SELECT DATE(cd.created_at) AS deduction_date,
-            e.full_name,
-            'custody_deficit' AS source_type,
-            b.name AS branch_name,
-            cd.amount,
-            0.0 AS difference,
-            COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
-            cd.status,
-            NULL AS shift_name,
-            NULL AS shift_id,
-            cd.id AS sort_id
-       FROM custody_deficits cd
-       LEFT JOIN employees e ON e.id = cd.employee_id
-       LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
-
-      UNION ALL
-
-     SELECT s.business_date AS deduction_date,
-            COALESCE(e.full_name, u.full_name, '—') AS full_name,
-            'shift' AS source_type,
-            b.name AS branch_name,
-            ABS(s.difference) AS amount,
-            s.difference AS difference,
-            NULL AS reason,
-            s.status,
-            s.shift_name,
-            s.id AS shift_id,
-            s.id AS sort_id
-       FROM shifts s
-       LEFT JOIN branches b ON b.id = s.branch_id
-       LEFT JOIN users u ON u.id = s.user_id
-       LEFT JOIN employees e ON e.user_id = u.id
-      WHERE s.difference <> 0
-        AND ABS(s.difference) - ? > 0.0001
-
-      ORDER BY deduction_date DESC, sort_id DESC
-      LIMIT 100"
-);
-$penStmt->execute([$tolerance]);
-$penaltiesRaw = $penStmt->fetchAll();
+$bonuses = [];
+if ($tab === 'bonuses') {
+    $bonuses = $pdo->query(
+        "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
+    )->fetchAll();
+}
 
 $penalties = [];
+if ($tab === 'penalties') {
+    // قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
+    $tolerance = (float) setting('custody_deficit_tolerance', '0');
 
-foreach ($penaltiesRaw as $r) {
-    if ($r['source_type'] === 'penalty') {
-        $penalties[] = [
-            'deduction_date' => (string) $r['deduction_date'],
-            'full_name'      => (string) $r['full_name'],
-            'deduction_type' => 'جزاء',
-            'branch_name'    => $r['branch_name'] ?? '—',
-            'amount'         => (float) $r['amount'],
-            'tolerance'      => '—',
-            'exceeded'       => '—',
-            'reason'         => $r['reason'] ?? '—',
-            'status'         => (string) $r['status'],
-        ];
-    } elseif ($r['source_type'] === 'custody_deficit') {
-        // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
-        // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
-        $amount = (float) $r['amount'];
-        $penalties[] = [
-            'deduction_date' => (string) $r['deduction_date'],
-            'full_name'      => (string) $r['full_name'],
-            'deduction_type' => 'عجز عهدة',
-            'branch_name'    => $r['branch_name'] ?? '—',
-            'amount'         => $amount,
-            'tolerance'      => '—',
-            'exceeded'       => number_format($amount, 2),
-            'reason'         => $r['reason'] ?? 'عجز تسوية عهدة',
-            'status'         => (string) $r['status'],
-        ];
-    } elseif ($r['source_type'] === 'shift') {
-        // فحص فرق الوردية بالعتبة الموحدة
-        $diff = (float) $r['difference'];
-        $vs = shift_variance_status($diff, $tolerance);
+    // فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
+    // ABS(s.difference) - ? > 0.0001
+    // ⚠️ shift_variance_status() تفضل هي مصدر الحقيقة للقاعدة، والشرط ده فلتر مسبق مطابق ليها رياضياً.
+    // أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
+    $penStmt = $pdo->prepare(
+        "SELECT p.penalty_date AS deduction_date,
+                e.full_name,
+                'penalty' AS source_type,
+                b.name AS branch_name,
+                p.amount,
+                0.0 AS difference,
+                p.reason,
+                p.status,
+                NULL AS shift_name,
+                NULL AS shift_id,
+                p.id AS sort_id
+           FROM employee_penalties p
+           JOIN employees e ON e.id = p.employee_id
+           LEFT JOIN branches b ON b.id = e.branch_id
 
-        // اللي داخل العتبة مايظهرش في تاب الجزاءات خالص
-        if (!$vs['over_limit']) {
-            continue;
+          UNION ALL
+
+         SELECT DATE(cd.created_at) AS deduction_date,
+                e.full_name,
+                'custody_deficit' AS source_type,
+                b.name AS branch_name,
+                cd.amount,
+                0.0 AS difference,
+                COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
+                cd.status,
+                NULL AS shift_name,
+                NULL AS shift_id,
+                cd.id AS sort_id
+           FROM custody_deficits cd
+           LEFT JOIN employees e ON e.id = cd.employee_id
+           LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
+
+          UNION ALL
+
+         SELECT s.business_date AS deduction_date,
+                COALESCE(e.full_name, u.full_name, '—') AS full_name,
+                'shift' AS source_type,
+                b.name AS branch_name,
+                ABS(s.difference) AS amount,
+                s.difference AS difference,
+                NULL AS reason,
+                s.status,
+                s.shift_name,
+                s.id AS shift_id,
+                s.id AS sort_id
+           FROM shifts s
+           LEFT JOIN branches b ON b.id = s.branch_id
+           LEFT JOIN users u ON u.id = s.user_id
+           LEFT JOIN employees e ON e.user_id = u.id
+          WHERE s.difference <> 0
+            AND ABS(s.difference) - ? > 0.0001
+
+          ORDER BY deduction_date DESC, sort_id DESC
+          LIMIT 100"
+    );
+    $penStmt->execute([$tolerance]);
+    $penaltiesRaw = $penStmt->fetchAll();
+
+    foreach ($penaltiesRaw as $r) {
+        if ($r['source_type'] === 'penalty') {
+            $penalties[] = [
+                'deduction_date' => (string) $r['deduction_date'],
+                'full_name'      => (string) $r['full_name'],
+                'deduction_type' => 'جزاء',
+                'branch_name'    => $r['branch_name'] ?? '—',
+                'amount'         => (float) $r['amount'],
+                'tolerance'      => '—',
+                'exceeded'       => '—',
+                'reason'         => $r['reason'] ?? '—',
+                'status'         => (string) $r['status'],
+            ];
+        } elseif ($r['source_type'] === 'custody_deficit') {
+            // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
+            // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
+            $amount = (float) $r['amount'];
+            $penalties[] = [
+                'deduction_date' => (string) $r['deduction_date'],
+                'full_name'      => (string) $r['full_name'],
+                'deduction_type' => 'عجز عهدة',
+                'branch_name'    => $r['branch_name'] ?? '—',
+                'amount'         => $amount,
+                'tolerance'      => '—',
+                'exceeded'       => number_format($amount, 2),
+                'reason'         => $r['reason'] ?? 'عجز تسوية عهدة',
+                'status'         => (string) $r['status'],
+            ];
+        } elseif ($r['source_type'] === 'shift') {
+            // فحص فرق الوردية بالعتبة الموحدة
+            $diff = (float) $r['difference'];
+            $vs = shift_variance_status($diff, $tolerance);
+
+            // اللي داخل العتبة مايظهرش في تاب الجزاءات خالص
+            if (!$vs['over_limit']) {
+                continue;
+            }
+
+            $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
+            $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
+            $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
+            $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
+
+            $penalties[] = [
+                'deduction_date' => (string) $r['deduction_date'],
+                'full_name'      => (string) $r['full_name'],
+                'deduction_type' => $dedType,
+                'branch_name'    => $r['branch_name'] ?? '—',
+                'amount'         => $vs['exceeded'], // المبلغ المعروض لصفوف الورديات = المتجاوز
+                'tolerance'      => number_format($vs['tolerance'], 2),
+                'exceeded'       => number_format($vs['exceeded'], 2),
+                'reason'         => $reason,
+                'status'         => (string) $r['status'],
+            ];
         }
-
-        $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
-        $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
-        $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
-        $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
-
-        $penalties[] = [
-            'deduction_date' => (string) $r['deduction_date'],
-            'full_name'      => (string) $r['full_name'],
-            'deduction_type' => $dedType,
-            'branch_name'    => $r['branch_name'] ?? '—',
-            'amount'         => $vs['exceeded'], // المبلغ المعروض لصفوف الورديات = المتجاوز
-            'tolerance'      => number_format($vs['tolerance'], 2),
-            'exceeded'       => number_format($vs['exceeded'], 2),
-            'reason'         => $reason,
-            'status'         => (string) $r['status'],
-        ];
     }
 }
-$leaves = $pdo->query(
-    "SELECT l.*, e.full_name FROM employee_leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.id DESC LIMIT 100"
-)->fetchAll();
-$salaries = $pdo->query(
-    "SELECT s.*, e.full_name FROM salaries s JOIN employees e ON e.id=s.employee_id ORDER BY s.id DESC LIMIT 100"
-)->fetchAll();
-$requests = $pdo->query(
-    "SELECT r.*, e.full_name FROM attendance_requests r JOIN employees e ON e.id=r.employee_id ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100"
-)->fetchAll();
+$leaves = [];
+if ($tab === 'leaves') {
+    $leaves = $pdo->query(
+        "SELECT l.*, e.full_name FROM employee_leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.id DESC LIMIT 100"
+    )->fetchAll();
+}
+$salaries = [];
+if ($tab === 'salaries') {
+    $salaries = $pdo->query(
+        "SELECT s.*, e.full_name FROM salaries s JOIN employees e ON e.id=s.employee_id ORDER BY s.id DESC LIMIT 100"
+    )->fetchAll();
+}
+$requests = [];
 $pendingReqCount = 0;
-foreach ($requests as $r) if ($r['status']==='pending') $pendingReqCount++;
+if ($tab === 'requests') {
+    $requests = $pdo->query(
+        "SELECT r.*, e.full_name FROM attendance_requests r JOIN employees e ON e.id=r.employee_id ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100"
+    )->fetchAll();
+    foreach ($requests as $r) {
+        if ($r['status'] === 'pending') {
+            $pendingReqCount++;
+        }
+    }
+} elseif (isset($allowedTabs['requests'])) {
+    // لو المستخدم معاه صلاحية طلبات التصحيح وهو في تاب تاني، نحسب العدّاد للشريط
+    $pendingReqCount = (int) $pdo->query("SELECT COUNT(*) FROM attendance_requests WHERE status='pending'")->fetchColumn();
+}
 
 // بيانات الحضور للشهر المختار (تبويب الحضور)
 $attMonth = $_GET['month'] ?? date('Y-m');
@@ -878,16 +960,11 @@ $statusBadge = function($st) {
 <?php endif; ?>
 
 <div class="tabs">
-    <a href="?tab=employees" class="tab <?= $tab==='employees'?'active':'' ?>">الموظفون</a>
-    <a href="?tab=advances"  class="tab <?= $tab==='advances'?'active':'' ?>">السلف</a>
-    <a href="?tab=bonuses"   class="tab <?= $tab==='bonuses'?'active':'' ?>">المكافآت</a>
-    <a href="?tab=penalties" class="tab <?= $tab==='penalties'?'active':'' ?>">الجزاءات</a>
-    <a href="?tab=leaves"    class="tab <?= $tab==='leaves'?'active':'' ?>">الإجازات</a>
-    <a href="?tab=salaries"  class="tab <?= $tab==='salaries'?'active':'' ?>">الرواتب</a>
-    <a href="?tab=attendance" class="tab <?= $tab==='attendance'?'active':'' ?>">الحضور والانصراف</a>
-    <a href="?tab=requests"  class="tab <?= $tab==='requests'?'active':'' ?>">
-        طلبات التصحيح<?php if ($pendingReqCount): ?><span class="count"><?= $pendingReqCount ?></span><?php endif; ?>
-    </a>
+    <?php foreach ($allowedTabs as $tabKey => $tabLabel): ?>
+        <a href="?tab=<?= e($tabKey) ?>" class="tab <?= $tab === $tabKey ? 'active' : '' ?>">
+            <?= e($tabLabel) ?><?php if ($tabKey === 'requests' && !empty($pendingReqCount)): ?><span class="count"><?= (int)$pendingReqCount ?></span><?php endif; ?>
+        </a>
+    <?php endforeach; ?>
 </div>
 
 <?php if ($tab === 'employees'): ?>
