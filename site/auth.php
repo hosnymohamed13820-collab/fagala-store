@@ -99,6 +99,7 @@ function module_parts(): array
             'attendance' => 'الحضور',
             'stocktake'  => 'الجرد',
             'noprice'    => 'أصناف بدون سعر بيع',
+            'stock'      => 'استعلام أرصدة الأصناف',
         ],
     ];
 }
