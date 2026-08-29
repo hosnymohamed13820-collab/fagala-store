@@ -4,7 +4,7 @@
  * نظام الفجالة ستور المالي
  *
  * المراحل:
- *   - المرحلة (٣): إنشاء مجموعة شراء + كروت المجموعات + استعراض السطور
+ *   - المرحلة (٣): إنشاء مجموعة شراء + كروت المجموعات
  *   - المرحلة (٤): تحويل استعراض المجموعة لواجهة تفاعلية شبيهة بـ Google Keep
  */
 require_once __DIR__ . '/auth.php';
@@ -16,9 +16,10 @@ $uid           = (int) current_user()['id'];
 $active_module = 'shortage';
 
 // =====================================================================
-//  معالج AJAX لإنشاء مجموعة شراء جديدة
+//  معالجات AJAX
 // =====================================================================
-if (($_GET['ajax'] ?? '') === 'create') {
+$ajax = (string) ($_GET['ajax'] ?? '');
+if ($ajax !== '') {
     header('Content-Type: application/json; charset=utf-8');
     try {
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -32,38 +33,102 @@ if (($_GET['ajax'] ?? '') === 'create') {
             throw new RuntimeException('انتهت صلاحية الجلسة — اعمل ريفريش وحاول تاني.');
         }
 
-        $resIds   = (array) ($body['res_line_ids'] ?? []);
-        $shortIds = (array) ($body['short_line_ids'] ?? []);
-        $name     = (string) ($body['name'] ?? '');
+        switch ($ajax) {
+            // إنشاء مجموعة جديدة
+            case 'create':
+                $resIds   = (array) ($body['res_line_ids'] ?? []);
+                $shortIds = (array) ($body['short_line_ids'] ?? []);
+                $name     = (string) ($body['name'] ?? '');
+                $skipped  = 0;
+                $id = purchase_group_create($resIds, $shortIds, $name, $uid, $skipped);
 
-        $skipped = 0;
-        $id = purchase_group_create($resIds, $shortIds, $name, $uid, $skipped);
+                $msg = 'تم إنشاء مجموعة الشراء رقم #' . $id;
+                if ($skipped > 0) {
+                    $msg .= ' (' . $skipped . ' سطر اتخطّى لعدم توافره)';
+                }
 
-        $msg = 'تم إنشاء مجموعة الشراء رقم #' . $id;
-        if ($skipped > 0) {
-            $msg .= ' (' . $skipped . ' سطر اتخطّى لعدم توافره)';
+                echo json_encode([
+                    'ok'      => true,
+                    'id'      => $id,
+                    'skipped' => $skipped,
+                    'msg'     => $msg,
+                ], JSON_UNESCAPED_UNICODE);
+                break;
+
+            // تشييك / شيل تشييك على سطر
+            case 'toggle':
+                $groupId   = (int) ($body['group_id'] ?? 0);
+                $lineId    = (int) ($body['line_id'] ?? 0);
+                $isChecked = !empty($body['is_checked']);
+                $res = purchase_group_toggle_line($groupId, $lineId, $isChecked, $uid);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            // مسح سطر من المجموعة
+            case 'remove':
+                $groupId = (int) ($body['group_id'] ?? 0);
+                $lineId  = (int) ($body['line_id'] ?? 0);
+                $res = purchase_group_remove_line($groupId, $lineId);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            // شيل التشييك عن الكل
+            case 'uncheck_all':
+                $groupId = (int) ($body['group_id'] ?? 0);
+                $res = purchase_group_uncheck_all($groupId);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            // مسح المتشحّط
+            case 'delete_checked':
+                $groupId = (int) ($body['group_id'] ?? 0);
+                $res = purchase_group_delete_checked($groupId);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            // تعديل اسم المجموعة
+            case 'rename':
+                $groupId = (int) ($body['group_id'] ?? 0);
+                $name    = (string) ($body['name'] ?? '');
+                $res = purchase_group_rename($groupId, $name);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            // ترتيب السطور بالسحب
+            case 'sort':
+                $groupId = (int) ($body['group_id'] ?? 0);
+                $lineIds = (array) ($body['line_ids'] ?? []);
+                $res = purchase_group_sort($groupId, $lineIds);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
+            default:
+                throw new RuntimeException('طلب غير معروف.');
         }
-
-        echo json_encode([
-            'ok'      => true,
-            'id'      => $id,
-            'skipped' => $skipped,
-            'msg'     => $msg,
-        ], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
 
+// =====================================================================
+//  تحميل بيانات الصفحة
+// =====================================================================
 $viewGroupId = (int) ($_GET['g'] ?? 0);
 $groupView   = $viewGroupId > 0 ? purchase_group_get($viewGroupId) : null;
 
-// بيانات شاشة الكروت وبوب أب التجميع
-$openGroups      = purchase_groups_list('open');
-$candidates      = purchase_group_candidates();
-$branches        = db()->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name')->fetchAll();
-$totalCandidates = count($candidates['reservations']) + count($candidates['shortages']);
+// بيانات شاشة الكروت وبوب أب التجميع (تُحمّل فقط عند الحاجة)
+$openGroups      = [];
+$candidates      = ['reservations' => [], 'shortages' => []];
+$branches        = [];
+$totalCandidates = 0;
+
+if ($groupView === null) {
+    $openGroups      = purchase_groups_list('open');
+    $candidates      = purchase_group_candidates();
+    $branches        = db()->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name')->fetchAll();
+    $totalCandidates = count($candidates['reservations']) + count($candidates['shortages']);
+}
 
 $page_title = 'تجميع الحجوزات';
 require_once __DIR__ . '/includes/header.php';
@@ -71,7 +136,7 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center;
-        gap:7px; text-decoration:none; white-space:nowrap; }
+        gap:7px; text-decoration:none; white-space:nowrap; transition:filter .15s; }
     .btn:hover { filter:brightness(0.94); color:#fff; }
     .btn:disabled { opacity:.55; cursor:not-allowed; }
 
@@ -101,8 +166,88 @@ require_once __DIR__ . '/includes/header.php';
     .gc-foot { display:flex; justify-content:space-between; align-items:center;
         font-size:12.5px; color:var(--ink-500); margin-top:8px; }
 
-    /* تفاصيل المجموعة المفردة */
-    .pg-detail-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+    /* تفاصيل المجموعة — شكل Google Keep */
+    .keep-view-wrap { max-width:760px; margin:0 auto 30px; }
+    .keep-top-nav { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .keep-back-link { display:inline-flex; align-items:center; gap:6px; color:var(--ink-600); text-decoration:none; font-size:13.5px; font-weight:600; padding:6px 10px; border-radius:8px; transition:background .15s; }
+    .keep-back-link:hover { background:var(--line-soft); color:var(--ink-800); }
+    .keep-save-toast { font-size:12.5px; font-weight:600; color:var(--pos); display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; background:var(--pos-soft); }
+
+    .keep-card { background:#fff; border:1.5px solid var(--line); border-radius:16px; box-shadow:var(--shadow-sm); padding:20px 22px; position:relative; }
+    .keep-header { display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1.5px solid var(--line-soft); padding-bottom:14px; margin-bottom:12px; }
+    .keep-title-input { flex:1; border:none; background:transparent; font-size:18px; font-weight:700; color:var(--ink-900); font-family:inherit; padding:4px 0; outline:none; border-bottom:2px solid transparent; transition:border-color .15s; }
+    .keep-title-input:focus { border-bottom-color:var(--accent); }
+
+    .keep-menu-wrap { position:relative; }
+    .keep-menu-btn { background:none; border:none; font-size:22px; line-height:1; font-weight:700; color:var(--ink-600); cursor:pointer; padding:6px 10px; border-radius:8px; font-family:inherit; transition:all .15s; }
+    .keep-menu-btn:hover { background:var(--line-soft); color:var(--ink-900); }
+    .keep-dropdown { position:absolute; left:0; top:100%; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-lg); min-width:210px; z-index:100; display:none; padding:6px 0; margin-top:4px; }
+    .keep-dropdown.show { display:block; }
+    .keep-dropdown-item { width:100%; display:flex; align-items:center; gap:9px; padding:10px 16px; border:none; background:none; font-size:13.5px; font-family:inherit; color:var(--ink-800); text-align:right; cursor:pointer; transition:background .15s; }
+    .keep-dropdown-item:hover { background:var(--line-soft); color:var(--ink-900); }
+    .keep-dropdown-item.keep-item-danger { color:var(--neg); }
+    .keep-dropdown-item.keep-item-danger:hover { background:var(--neg-soft); color:var(--neg); }
+
+    .keep-meta { display:flex; flex-wrap:wrap; gap:14px; color:var(--ink-500); font-size:12.5px; margin-bottom:16px; align-items:center; }
+    .keep-meta i { font-size:14px; }
+
+    /* سطور Keep */
+    .keep-list { display:flex; flex-direction:column; gap:3px; }
+    .keep-row { border-radius:10px; transition:background .15s, opacity .15s; padding:2px 0; }
+    .keep-row:hover { background:var(--line-soft); }
+    .keep-row.dragging { opacity:.35; background:var(--accent-soft); }
+    .keep-row.drag-over { border-top:2px solid var(--accent); }
+    .keep-row-main { display:flex; align-items:center; gap:10px; padding:7px 10px; }
+
+    .keep-drag-handle { color:var(--ink-400); font-size:15px; cursor:grab; user-select:none; display:flex; align-items:center; padding:2px 4px; }
+    .keep-drag-handle:active { cursor:grabbing; }
+
+    /* Checkbox */
+    .keep-cb-wrap { position:relative; display:inline-flex; align-items:center; cursor:pointer; user-select:none; }
+    .keep-cb-input { position:absolute; opacity:0; width:0; height:0; }
+    .keep-cb-box { width:20px; height:20px; border:2px solid var(--ink-400); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; color:transparent; background:#fff; }
+    .keep-cb-wrap:hover .keep-cb-box { border-color:var(--accent); }
+    .keep-cb-input:checked + .keep-cb-box { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .keep-cb-box i { font-size:13px; font-weight:bold; }
+
+    /* اسم الصنف والكمية */
+    .keep-item-info { flex:1; display:flex; align-items:center; gap:8px; cursor:pointer; min-width:0; }
+    .keep-item-name { font-size:14.5px; font-weight:600; color:var(--ink-900); }
+    .keep-item-code { font-family:monospace; font-size:12px; color:var(--ink-400); }
+    .keep-qty { font-size:15px; font-weight:700; color:var(--ink-800); min-width:38px; text-align:left; cursor:pointer; }
+    .keep-btn-del { border:none; background:none; color:var(--ink-400); font-size:18px; font-weight:bold; cursor:pointer; padding:3px 8px; border-radius:6px; font-family:inherit; transition:all .15s; }
+    .keep-btn-del:hover { background:var(--neg-soft); color:var(--neg); }
+
+    /* القسم المطوي للمتشحّط */
+    .keep-checked-section { margin-top:16px; border-top:1.5px solid var(--line-soft); padding-top:12px; }
+    .keep-checked-header { display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:700; color:var(--ink-600); cursor:pointer; padding:6px 10px; border-radius:8px; user-select:none; transition:background .15s; margin-bottom:6px; }
+    .keep-checked-header:hover { background:var(--line-soft); color:var(--ink-900); }
+    .keep-chevron { font-size:16px; transition:transform .2s; }
+    .keep-chevron.collapsed { transform:rotate(-90deg); }
+
+    /* التنسيق المشطوب والباهت للمتشحّط */
+    .keep-row.is-checked .keep-item-name { text-decoration:line-through; color:var(--ink-400); font-weight:400; }
+    .keep-row.is-checked .keep-item-code { text-decoration:line-through; color:var(--ink-300); }
+    .keep-row.is-checked .keep-qty { text-decoration:line-through; color:var(--ink-400); font-weight:400; }
+    .keep-row.is-checked .keep-drag-handle { visibility:hidden; }
+
+    /* شجرة تفاصيل المصادر */
+    .keep-sources { padding:8px 14px 12px 14px; margin-right:40px; margin-left:36px; border-right:2.5px solid var(--accent); margin-bottom:8px; background:var(--bg); border-radius:0 0 10px 10px; }
+    .keep-src-inner { display:flex; flex-direction:column; gap:9px; font-size:13px; }
+    .keep-src-branch-block { display:flex; flex-direction:column; gap:4px; }
+    .keep-src-branch-title { display:flex; align-items:center; gap:6px; font-weight:700; color:var(--ink-800); }
+    .keep-src-icon { color:var(--accent); font-size:14px; }
+    .keep-src-arrow { color:var(--ink-400); font-size:12px; margin:0 2px; }
+    .keep-src-val { color:var(--accent); font-weight:700; }
+    .keep-src-sub-list { display:flex; flex-direction:column; gap:3px; margin-right:16px; }
+    .keep-src-sub-item { display:flex; align-items:center; gap:6px; color:var(--ink-700); font-size:12.5px; }
+    .keep-tree-char { color:var(--ink-400); font-family:monospace; font-weight:bold; }
+    .keep-src-dash { color:var(--ink-400); margin:0 2px; }
+    .keep-src-sub-qty { color:var(--ink-900); }
+    .keep-src-empty { color:var(--ink-400); font-style:italic; }
+    .keep-empty-msg { text-align:center; color:var(--ink-400); padding:24px 12px; font-size:14px; }
+
+    /* بوب أب التجميع */
     .pg-table { width:100%; border-collapse:collapse; }
     .pg-table th, .pg-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; }
@@ -110,7 +255,6 @@ require_once __DIR__ . '/includes/header.php';
     .pg-table .nm { text-align:right; font-weight:500; min-width:200px; }
     .pg-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
 
-    /* بوب أب التجميع */
     .pg-modal { position:fixed; inset:0; background:rgba(22,35,61,0.6); z-index:300;
                 display:none; align-items:center; justify-content:center; padding:16px; }
     .pg-modal.on { display:flex; }
@@ -147,74 +291,558 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if ($groupView !== null): ?>
     <!-- ===================================================================== -->
-    <!--  عرض مجموعة شراء محددة (مرحلة بسيطة — والتحويل لـ Keep مرحلة ٤)      -->
+    <!--  المرحلة (٤): عرض مجموعة الشراء — شكل Google Keep                    -->
     <!-- ===================================================================== -->
     <?php
-        $grp      = $groupView['group'];
-        $grpLines = $groupView['lines'];
-        $grpTitle = $grp['name'] ? $grp['name'] : ('مجموعة شراء #' . $grp['id']);
-    ?>
-    <div class="card" style="margin-bottom:16px;">
-        <div class="pg-detail-head">
-            <div>
-                <a href="purchase_groups.php" style="display:inline-flex;align-items:center;gap:6px;color:var(--ink-500);text-decoration:none;font-size:13px;margin-bottom:6px;">
-                    <i class="ti ti-arrow-right"></i> كل مجموعات الشراء
-                </a>
-                <div class="section-title" style="margin-bottom:4px;">
-                    <i class="ti ti-stack-2"></i> <?= e($grpTitle) ?>
+        $grp          = $groupView['group'];
+        $grpLines     = $groupView['lines'];
+        $grpTitle     = $grp['name'] ? $grp['name'] : ('مجموعة ' . $grp['id']);
+        $activeLines  = [];
+        $checkedLines = [];
+
+        foreach ($grpLines as $ln) {
+            if ((int)$ln['is_checked'] === 1) {
+                $checkedLines[] = $ln;
+            } else {
+                $activeLines[] = $ln;
+            }
+        }
+
+        /**
+         * رندر سطر صنف في شكل Keep
+         */
+        function render_keep_line(array $l, bool $isChecked): string
+        {
+            $id           = (int) $l['id'];
+            $name         = !empty($l['item_name']) ? $l['item_name'] : $l['code'];
+            $code         = !empty($l['item_name']) ? $l['code'] : '';
+            $qtyFormatted = rtrim(rtrim(number_format((float)$l['total_qty'], 2, '.', ''), '0'), '.');
+
+            // تجميع المصادر حسب الفرع
+            $sourcesByBranch = [];
+            foreach ($l['sources'] as $s) {
+                $bName = $s['branch_name'] ?: '—';
+                if (!isset($sourcesByBranch[$bName])) {
+                    $sourcesByBranch[$bName] = [
+                        'branch_name' => $bName,
+                        'total_qty'   => 0.0,
+                        'items'       => [],
+                    ];
+                }
+                $sourcesByBranch[$bName]['total_qty'] += (float)$s['qty'];
+                $sourcesByBranch[$bName]['items'][] = $s;
+            }
+
+            ob_start();
+            ?>
+            <div class="keep-row <?= $isChecked ? 'is-checked' : '' ?>" id="line-<?= $id ?>" data-id="<?= $id ?>" draggable="<?= $isChecked ? 'false' : 'true' ?>">
+                <div class="keep-row-main">
+                    <span class="keep-drag-handle" title="اسحب للترتيب">⠿</span>
+                    <label class="keep-cb-wrap">
+                        <input type="checkbox" class="keep-cb-input" <?= $isChecked ? 'checked' : '' ?> onchange="onLineToggle(<?= $id ?>, this.checked)">
+                        <span class="keep-cb-box"><i class="ti ti-check"></i></span>
+                    </label>
+                    <div class="keep-item-info" onclick="toggleSources(<?= $id ?>)" title="اضغط لعرض تفاصيل المصادر">
+                        <span class="keep-item-name"><?= e($name) ?></span>
+                        <?php if ($code !== ''): ?>
+                            <span class="keep-item-code"><?= e($code) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <span class="keep-qty" onclick="toggleSources(<?= $id ?>)"><?= $qtyFormatted ?></span>
+                    <button type="button" class="keep-btn-del" onclick="onLineRemove(<?= $id ?>)" title="مسح">&times;</button>
                 </div>
-                <div style="font-size:13px;color:var(--ink-500);display:flex;gap:16px;flex-wrap:wrap;margin-top:6px;">
-                    <span><i class="ti ti-calendar"></i> <?= e(date('Y-m-d H:i', strtotime((string)$grp['created_at']))) ?></span>
-                    <?php if (!empty($grp['creator'])): ?>
-                        <span><i class="ti ti-user-check"></i> أنشأها: <?= e($grp['creator']) ?></span>
-                    <?php endif; ?>
-                    <span>الحالة: <span class="pill st-<?= e($grp['status']) ?>"><?= $grp['status'] === 'open' ? 'مفتوحة' : 'مغلقة' ?></span></span>
+
+                <div class="keep-sources" id="sources-<?= $id ?>" style="display:none;">
+                    <div class="keep-src-inner">
+                        <?php if (empty($sourcesByBranch)): ?>
+                            <div class="keep-src-empty">مفيش تفاصيل مصادر مسجّلة</div>
+                        <?php else: ?>
+                            <?php foreach ($sourcesByBranch as $sb): ?>
+                                <?php
+                                    $bQty = rtrim(rtrim(number_format($sb['total_qty'], 2, '.', ''), '0'), '.');
+                                    $isSingleShortage = (count($sb['items']) === 1 && $sb['items'][0]['src_type'] === 'shortage');
+                                ?>
+                                <?php if ($isSingleShortage): ?>
+                                    <div class="keep-src-branch-title">
+                                        <span class="keep-src-icon"><i class="ti ti-shopping-cart"></i></span>
+                                        <span>نواقص · <?= e($sb['branch_name']) ?></span>
+                                        <span class="keep-src-arrow">→</span>
+                                        <strong class="keep-src-val"><?= $bQty ?></strong>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="keep-src-branch-block">
+                                        <div class="keep-src-branch-title">
+                                            <span class="keep-src-icon"><i class="ti ti-building-store"></i></span>
+                                            <span><?= e($sb['branch_name']) ?></span>
+                                            <span class="keep-src-arrow">→</span>
+                                            <strong class="keep-src-val"><?= $bQty ?></strong>
+                                        </div>
+                                        <div class="keep-src-sub-list">
+                                            <?php
+                                            $itemCount = count($sb['items']);
+                                            foreach ($sb['items'] as $sIdx => $sItem):
+                                                $isLast = ($sIdx === $itemCount - 1);
+                                                $treeChar = $isLast ? '└' : '├';
+                                                $itemQty = rtrim(rtrim(number_format((float)$sItem['qty'], 2, '.', ''), '0'), '.');
+                                            ?>
+                                                <div class="keep-src-sub-item">
+                                                    <span class="keep-tree-char"><?= $treeChar ?></span>
+                                                    <?php if ($sItem['src_type'] === 'reservation'): ?>
+                                                        <span>حجز <?= e($sItem['customer_name'] ?: 'عميل') ?></span>
+                                                        <span class="keep-src-dash">—</span>
+                                                        <strong class="keep-src-sub-qty"><?= $itemQty ?></strong>
+                                                    <?php else: ?>
+                                                        <span>نواقص</span>
+                                                        <span class="keep-src-dash">—</span>
+                                                        <strong class="keep-src-sub-qty"><?= $itemQty ?></strong>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
-            <div>
-                <span style="font-size:14px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:6px 14px;border-radius:10px;">
-                    إجمالي الأصناف: <?= count($grpLines) ?>
+            <?php
+            return (string) ob_get_clean();
+        }
+    ?>
+
+    <div class="keep-view-wrap">
+        <div class="keep-top-nav">
+            <a href="purchase_groups.php" class="keep-back-link">
+                <i class="ti ti-arrow-right"></i> كل مجموعات الشراء
+            </a>
+            <span id="keepSaveIndicator" class="keep-save-toast" style="display:none;"></span>
+        </div>
+
+        <div class="keep-card">
+            <!-- الهيدر: عنوان الملاحظة قابل للتعديل + قائمة ⋮ -->
+            <div class="keep-header">
+                <input type="text" id="groupTitleInput" class="keep-title-input"
+                       value="<?= e($grpTitle) ?>" placeholder="اسم المجموعة..."
+                       data-original="<?= e($grpTitle) ?>"
+                       onblur="saveGroupName()"
+                       onkeydown="if(event.key==='Enter'){this.blur();}">
+
+                <div class="keep-menu-wrap">
+                    <button type="button" class="keep-menu-btn" onclick="toggleKeepMenu(event)" title="خيارات" aria-label="خيارات">
+                        ⋮
+                    </button>
+                    <div class="keep-dropdown" id="keepDropdown">
+                        <button type="button" class="keep-dropdown-item" onclick="uncheckAll()">
+                            <i class="ti ti-checklist"></i> شيل التشييك عن الكل
+                        </button>
+                        <button type="button" class="keep-dropdown-item keep-item-danger" onclick="deleteChecked()">
+                            <i class="ti ti-trash"></i> امسح المتشحّط
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- بيانات الميتاداتا -->
+            <div class="keep-meta">
+                <span><i class="ti ti-calendar"></i> <?= e(date('Y-m-d H:i', strtotime((string)$grp['created_at']))) ?></span>
+                <?php if (!empty($grp['creator'])): ?>
+                    <span><i class="ti ti-user-check"></i> أنشأها: <?= e($grp['creator']) ?></span>
+                <?php endif; ?>
+                <span class="pill <?= $grp['status'] === 'open' ? 'st-open' : 'st-closed' ?>">
+                    <?= $grp['status'] === 'open' ? 'مفتوحة' : 'مغلقة' ?>
                 </span>
+            </div>
+
+            <!-- قائمة الأصناف غير المتشحّطة (فوق) -->
+            <div class="keep-list" id="activeList">
+                <?php if (empty($activeLines) && empty($checkedLines)): ?>
+                    <div class="keep-empty-msg" id="emptyMsg">المجموعة مفيهاش سطور</div>
+                <?php else: ?>
+                    <?php foreach ($activeLines as $al): ?>
+                        <?= render_keep_line($al, false) ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+
+            <!-- قسم الأصناف المتشحّطة (مطوي تحت) -->
+            <div class="keep-checked-section" id="checkedSection" style="<?= count($checkedLines) > 0 ? '' : 'display:none;' ?>">
+                <div class="keep-checked-header" onclick="toggleCheckedCollapse()">
+                    <i class="ti ti-chevron-down keep-chevron" id="checkedChevron"></i>
+                    <span id="checkedCountLabel"><?= count($checkedLines) ?> أصناف متشحّطة</span>
+                </div>
+                <div class="keep-list keep-list-checked" id="checkedList">
+                    <?php foreach ($checkedLines as $cl): ?>
+                        <?= render_keep_line($cl, true) ?>
+                    <?php endforeach; ?>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="card">
-        <?php if (empty($grpLines)): ?>
-            <div class="pg-empty">المجموعة مفيهاش سطور</div>
-        <?php else: ?>
-            <div style="overflow-x:auto;">
-                <table class="pg-table">
-                    <thead>
-                        <tr>
-                            <th style="width:60px;">#</th>
-                            <th class="cd" style="width:150px;">كود الصنف</th>
-                            <th class="nm">اسم الصنف</th>
-                            <th style="width:120px;">إجمالي الكمية</th>
-                            <th style="width:130px;">الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($grpLines as $idx => $gl): ?>
-                            <tr>
-                                <td><?= $idx + 1 ?></td>
-                                <td class="cd"><?= e($gl['code']) ?></td>
-                                <td class="nm"><?= e($gl['item_name'] ?: '—') ?></td>
-                                <td><strong><?= rtrim(rtrim(number_format((float)$gl['total_qty'], 2, '.', ''), '0'), '.') ?></strong></td>
-                                <td>
-                                    <?php if ((int)$gl['is_checked'] === 1): ?>
-                                        <span class="pill st-closed"><i class="ti ti-check"></i> تم الشراء</span>
-                                    <?php else: ?>
-                                        <span class="pill st-open">قيد الانتظار</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
-    </div>
+    <script>
+        const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
+        const GROUP_ID   = <?= (int)$grp['id'] ?>;
+
+        // ===== التشييك / شيل التشييك =====
+        function onLineToggle(lineId, isChecked) {
+            const row = document.getElementById(`line-${lineId}`);
+            if (!row) return;
+
+            const activeList  = document.getElementById('activeList');
+            const checkedList = document.getElementById('checkedList');
+
+            if (isChecked) {
+                row.classList.add('is-checked');
+                row.setAttribute('draggable', 'false');
+                checkedList.appendChild(row);
+            } else {
+                row.classList.remove('is-checked');
+                row.setAttribute('draggable', 'true');
+                activeList.appendChild(row);
+            }
+
+            updateCheckedCounters();
+
+            fetch('purchase_groups.php?ajax=toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID,
+                    line_id: lineId,
+                    is_checked: isChecked ? 1 : 0
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert(data.error || 'حصل خطأ أثناء تحديث السطر.');
+                    location.reload();
+                }
+            })
+            .catch(err => {
+                alert('فشل الاتصال بالسيرفر.');
+                location.reload();
+            });
+        }
+
+        // ===== مسح سطر =====
+        function onLineRemove(lineId) {
+            const row = document.getElementById(`line-${lineId}`);
+            if (!row) return;
+
+            const isChecked = row.classList.contains('is-checked');
+            if (isChecked) {
+                if (!confirm('الصنف ده متشحّط (اتشرى فعلاً) — متأكد إنك عايز تمسحه من المجموعة؟')) {
+                    return;
+                }
+            }
+
+            row.style.opacity = '0.3';
+
+            fetch('purchase_groups.php?ajax=remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID,
+                    line_id: lineId
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    row.remove();
+                    updateCheckedCounters();
+                    checkEmptyState();
+                } else {
+                    row.style.opacity = '1';
+                    alert(data.error || 'حصل خطأ أثناء مسح السطر.');
+                }
+            })
+            .catch(err => {
+                row.style.opacity = '1';
+                alert('فشل الاتصال بالسيرفر.');
+            });
+        }
+
+        // ===== شيل التشييك عن الكل =====
+        function uncheckAll() {
+            closeKeepMenu();
+            const checkedRows = Array.from(document.querySelectorAll('#checkedList .keep-row'));
+            if (checkedRows.length === 0) return;
+
+            const activeList = document.getElementById('activeList');
+            checkedRows.forEach(row => {
+                row.classList.remove('is-checked');
+                row.setAttribute('draggable', 'true');
+                const cb = row.querySelector('.keep-cb-input');
+                if (cb) cb.checked = false;
+                activeList.appendChild(row);
+            });
+
+            updateCheckedCounters();
+
+            fetch('purchase_groups.php?ajax=uncheck_all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert(data.error || 'حصل خطأ أثناء شيل التشييك.');
+                    location.reload();
+                }
+            })
+            .catch(err => {
+                alert('فشل الاتصال بالسيرفر.');
+                location.reload();
+            });
+        }
+
+        // ===== مسح المتشحّط =====
+        function deleteChecked() {
+            closeKeepMenu();
+            const checkedRows = Array.from(document.querySelectorAll('#checkedList .keep-row'));
+            if (checkedRows.length === 0) {
+                alert('مفيش أصناف متشحّطة للمسح.');
+                return;
+            }
+
+            if (!confirm(`هتمسح ${checkedRows.length} صنف متشحّط — متأكد؟`)) {
+                return;
+            }
+
+            fetch('purchase_groups.php?ajax=delete_checked', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    checkedRows.forEach(r => r.remove());
+                    updateCheckedCounters();
+                    checkEmptyState();
+                } else {
+                    alert(data.error || 'حصل خطأ أثناء مسح المتشحّط.');
+                }
+            })
+            .catch(err => {
+                alert('فشل الاتصال بالسيرفر.');
+            });
+        }
+
+        // ===== حفظ اسم المجموعة في المكان =====
+        function saveGroupName() {
+            const input = document.getElementById('groupTitleInput');
+            if (!input) return;
+            const newName = input.value.trim();
+            const orig    = input.getAttribute('data-original') || '';
+
+            if (newName === orig) return;
+
+            showIndicator('جاري الحفظ...');
+
+            fetch('purchase_groups.php?ajax=rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID,
+                    name: newName
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    input.setAttribute('data-original', newName);
+                    showIndicator('✓ اتحفظ', true);
+                } else {
+                    showIndicator('✗ فشل الحفظ', false);
+                    alert(data.error || 'فشل حفظ الاسم.');
+                }
+            })
+            .catch(err => {
+                showIndicator('✗ مفيش اتصال', false);
+            });
+        }
+
+        function showIndicator(text, isOk) {
+            const el = document.getElementById('keepSaveIndicator');
+            if (!el) return;
+            el.textContent = text;
+            el.style.display = 'inline-flex';
+            el.style.color = (isOk === false) ? 'var(--neg)' : 'var(--pos)';
+            el.style.background = (isOk === false) ? 'var(--neg-soft)' : 'var(--pos-soft)';
+            if (isOk !== undefined) {
+                setTimeout(() => { el.style.display = 'none'; }, 2200);
+            }
+        }
+
+        // ===== فتح/غلق تفاصيل المصادر =====
+        function toggleSources(lineId) {
+            const box = document.getElementById(`sources-${lineId}`);
+            if (!box) return;
+            box.style.display = (box.style.display === 'none' || box.style.display === '') ? 'block' : 'none';
+        }
+
+        // ===== طي وفرد قسم المتشحّط =====
+        function toggleCheckedCollapse() {
+            const list    = document.getElementById('checkedList');
+            const chevron = document.getElementById('checkedChevron');
+            if (!list || !chevron) return;
+
+            if (list.style.display === 'none') {
+                list.style.display = 'flex';
+                chevron.classList.remove('collapsed');
+            } else {
+                list.style.display = 'none';
+                chevron.classList.add('collapsed');
+            }
+        }
+
+        // ===== تحديث العدادات وقسم المتشحّط =====
+        function updateCheckedCounters() {
+            const checkedRows = document.querySelectorAll('#checkedList .keep-row');
+            const count       = checkedRows.length;
+            const sec         = document.getElementById('checkedSection');
+            const label       = document.getElementById('checkedCountLabel');
+
+            if (sec) {
+                sec.style.display = count > 0 ? 'block' : 'none';
+            }
+            if (label) {
+                label.textContent = `${count} أصناف متشحّطة`;
+            }
+        }
+
+        function checkEmptyState() {
+            const activeRows  = document.querySelectorAll('#activeList .keep-row');
+            const checkedRows = document.querySelectorAll('#checkedList .keep-row');
+            const activeList  = document.getElementById('activeList');
+
+            if (activeRows.length === 0 && checkedRows.length === 0) {
+                if (!document.getElementById('emptyMsg')) {
+                    const msg = document.createElement('div');
+                    msg.id = 'emptyMsg';
+                    msg.className = 'keep-empty-msg';
+                    msg.textContent = 'المجموعة مفيهاش سطور';
+                    activeList.appendChild(msg);
+                }
+            } else {
+                const msg = document.getElementById('emptyMsg');
+                if (msg) msg.remove();
+            }
+        }
+
+        // ===== قائمة ⋮ =====
+        function toggleKeepMenu(ev) {
+            ev.stopPropagation();
+            const dd = document.getElementById('keepDropdown');
+            if (dd) dd.classList.toggle('show');
+        }
+
+        function closeKeepMenu() {
+            const dd = document.getElementById('keepDropdown');
+            if (dd) dd.classList.remove('show');
+        }
+
+        document.addEventListener('click', function(ev) {
+            if (!ev.target.closest('.keep-menu-wrap')) {
+                closeKeepMenu();
+            }
+        });
+
+        // ===== الترتيب بالسحب (Drag & Drop) =====
+        let draggedRow = null;
+
+        function initDragAndDrop() {
+            const activeList = document.getElementById('activeList');
+            if (!activeList) return;
+
+            activeList.addEventListener('dragstart', function(ev) {
+                const row = ev.target.closest('.keep-row');
+                if (!row || row.classList.contains('is-checked')) return;
+                draggedRow = row;
+                row.classList.add('dragging');
+                ev.dataTransfer.effectAllowed = 'move';
+                ev.dataTransfer.setData('text/plain', row.getAttribute('data-id'));
+            });
+
+            activeList.addEventListener('dragend', function(ev) {
+                const row = ev.target.closest('.keep-row');
+                if (row) row.classList.remove('dragging');
+                document.querySelectorAll('.keep-row').forEach(r => r.classList.remove('drag-over'));
+                draggedRow = null;
+            });
+
+            activeList.addEventListener('dragover', function(ev) {
+                ev.preventDefault();
+                ev.dataTransfer.dropEffect = 'move';
+                const targetRow = ev.target.closest('.keep-row');
+                if (!targetRow || targetRow === draggedRow || targetRow.classList.contains('is-checked')) return;
+                document.querySelectorAll('.keep-row').forEach(r => r.classList.remove('drag-over'));
+                targetRow.classList.add('drag-over');
+            });
+
+            activeList.addEventListener('dragleave', function(ev) {
+                const targetRow = ev.target.closest('.keep-row');
+                if (targetRow) targetRow.classList.remove('drag-over');
+            });
+
+            activeList.addEventListener('drop', function(ev) {
+                ev.preventDefault();
+                const targetRow = ev.target.closest('.keep-row');
+                if (!targetRow || targetRow === draggedRow || !draggedRow) return;
+                targetRow.classList.remove('drag-over');
+
+                const rect = targetRow.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                if (ev.clientY < midY) {
+                    activeList.insertBefore(draggedRow, targetRow);
+                } else {
+                    activeList.insertBefore(draggedRow, targetRow.nextSibling);
+                }
+
+                saveSortOrder();
+            });
+        }
+
+        function saveSortOrder() {
+            const rows = Array.from(document.querySelectorAll('#activeList .keep-row'));
+            const ids  = rows.map(r => parseInt(r.getAttribute('data-id'), 10)).filter(id => id > 0);
+
+            if (ids.length === 0) return;
+
+            fetch('purchase_groups.php?ajax=sort', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID,
+                    line_ids: ids
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    showIndicator('✓ ترتيب محفوظ', true);
+                }
+            })
+            .catch(() => {});
+        }
+
+        initDragAndDrop();
+    </script>
 
 <?php else: ?>
     <!-- ===================================================================== -->
@@ -250,9 +878,9 @@ require_once __DIR__ . '/includes/header.php';
         <div class="grp-cards">
             <?php foreach ($openGroups as $og): ?>
                 <?php
-                    $pct = (int)$og['pct'];
-                    $col = $pct >= 100 ? 'var(--pos)' : ($pct > 0 ? 'var(--warn)' : 'var(--ink-400)');
-                    $lbl = $pct >= 100 ? 'مكتملة' : ($pct > 0 ? 'شغل جاري' : 'جديدة');
+                    $pct    = (int)$og['pct'];
+                    $col    = $pct >= 100 ? 'var(--pos)' : ($pct > 0 ? 'var(--warn)' : 'var(--ink-400)');
+                    $lbl    = $pct >= 100 ? 'مكتملة' : ($pct > 0 ? 'شغل جاري' : 'جديدة');
                     $gTitle = $og['name'] ? $og['name'] : ('مجموعة شراء #' . $og['id']);
                 ?>
                 <a class="grp-card" href="purchase_groups.php?g=<?= (int)$og['id'] ?>">
