@@ -218,6 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'add_penalty'              => 'penalties',
             'add_leave'                => 'leaves',
             'add_advance'              => 'advances',
+            'add_opening_balance'      => 'advances',
             'update_advance_deduction' => 'advances',
             'cancel_advance'           => 'advances',
             'save_payroll_adjustments' => 'salaries',
@@ -375,6 +376,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo
                 );
                 $flash = 'تم تسجيل السلفة بنجاح.'; $tab='advances';
+            }
+            elseif ($action === 'add_opening_balance') {
+                if (!is_owner()) {
+                    throw new RuntimeException('غير مصرّح لك بتسجيل رصيد افتتاحي.');
+                }
+                $empId = (int)($_POST['employee_id'] ?? 0);
+                $direction = trim((string)($_POST['direction'] ?? ''));
+                $amount = (float)($_POST['amount'] ?? 0);
+                $date = trim((string)($_POST['date'] ?? date('Y-m-d')));
+                $description = trim((string)($_POST['description'] ?? ''));
+
+                if ($empId <= 0) {
+                    throw new RuntimeException('اختر الموظف.');
+                }
+                if ($amount <= 0.00001) {
+                    throw new RuntimeException('المبلغ يجب أن يكون أكبر من صفر.');
+                }
+                if ($direction !== 'debit' && $direction !== 'credit') {
+                    throw new RuntimeException('الاتجاه يجب أن يكون «عليه» (debit) أو «له» (credit).');
+                }
+                if (!strtotime($date)) {
+                    throw new RuntimeException('التاريخ غير صالح.');
+                }
+                if ($description === '') {
+                    throw new RuntimeException('البيان مطلوب.');
+                }
+
+                $chkEmp = $pdo->prepare('SELECT id FROM employees WHERE id = ? AND is_active = 1');
+                $chkEmp->execute([$empId]);
+                if (!$chkEmp->fetch()) {
+                    throw new RuntimeException('الموظف غير موجود أو غير نشط.');
+                }
+
+                emp_ledger_add(
+                    $empId,
+                    $direction,
+                    $amount,
+                    $date,
+                    'opening',
+                    $description,
+                    null,
+                    null,
+                    null,
+                    $uid,
+                    $pdo
+                );
+
+                $flash = 'تم تسجيل الرصيد الافتتاحي بنجاح.'; $tab='advances';
             }
             elseif ($action === 'save_payroll_adjustments') {
                 if (!is_owner()) {
@@ -1059,6 +1108,7 @@ $statusBadge = function($st) {
         <div style="display:flex;gap:8px;align-items:center;">
             <?php if (is_owner()): ?>
                 <a href="advances_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> استيراد شيت السلف</a>
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('openingBalanceModal').classList.add('open')"><i class="ti ti-wallet"></i> تسجيل رصيد افتتاحي</button>
             <?php endif; ?>
             <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
         </div>
@@ -1193,6 +1243,10 @@ $statusBadge = function($st) {
         </div>
         <?php endif; ?>
     </div>
+
+    <p style="color:var(--ink-500);font-size:13px;text-align:center;margin:14px 0 20px;">
+        الأرصدة الافتتاحية بتظهر في <a href="employee_statement.php" style="color:var(--accent);text-decoration:none;font-weight:600;"><i class="ti ti-file-invoice"></i> كشف حساب الموظف</a> مش هنا.
+    </p>
 
 <?php elseif ($tab === 'bonuses'): ?>
     <div class="toolbar">
@@ -1741,6 +1795,38 @@ $statusBadge = function($st) {
         </form>
     </div>
 </div>
+
+<?php if (is_owner()): ?>
+<div class="modal-bg" id="openingBalanceModal">
+    <div class="modal">
+        <h3>تسجيل رصيد افتتاحي</h3>
+        <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;line-height:1.7;">
+            الحركة دي <b>مابتلمسش الخزينة خالص</b> — هي بتسجّل رصيد قديم بين الشركة
+            والموظف مش متسجّل في النظام. لو الفلوس اتحركت فعلاً، سجّلها من الخزينة
+            مش من هنا.
+        </p>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="add_opening_balance">
+            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+                <option value="">— اختر —</option>
+                <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
+            </select></div>
+            <div class="form-row"><label>الاتجاه</label><select name="direction" required>
+                <option value="debit">عليه — الموظف مدين للشركة</option>
+                <option value="credit">له — الشركة مدينة للموظف</option>
+            </select></div>
+            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-row"><label>البيان (مطلوب)</label><input type="text" name="description" required placeholder="مثال: جمعية اتحطت في الشغل" aria-label="البيان"></div>
+            <div class="modal-actions">
+                <button type="submit" class="btn">حفظ</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('openingBalanceModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="modal-bg" id="bonusModal">
     <div class="modal">
