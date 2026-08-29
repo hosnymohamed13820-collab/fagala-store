@@ -613,7 +613,8 @@ function set_branch_distribution(
 ): array {
     if ($qty < 0) throw new InvalidArgumentException('الكمية لا يمكن أن تكون سالبة.');
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // الموزّع سابقاً لباقي الفروع (غير الفرع الحالي) — بقفل للسطور
         $st = $pdo->prepare(
@@ -645,13 +646,13 @@ function set_branch_distribution(
             )->execute([$distributionId, $branchId, $qty, $itemCode]);
         }
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return [
             'remaining'    => $itemQty - $othersTotal - $qty,
             'branch_total' => $qty,
         ];
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1814,3 +1815,449 @@ function clear_invoice_status_manual(int $distributionId): void
         'UPDATE invoice_distribution SET status_manual = 0 WHERE id = ?'
     )->execute([$distributionId]);
 }
+
+// =====================================================================
+//  سحب أعداد الفروع من الحجوزات المفتوحة
+// =====================================================================
+
+/**
+ * معاينة سحب أعداد الفروع من الحجوزات المفتوحة لأصناف الفاتورة.
+ * التوزيع الشره بالأقدم (الأقدم الأول — والفرع مالوش أي دور في الترتيب).
+ *
+ * @param int   $distributionId رقم سجل التوزيع (invoice_distribution.id)
+ * @param array $items          أصناف الفاتورة (بعد merge_invoice_items)
+ * @return array ['items' => array, 'total_candidates' => int]
+ */
+function reservation_pull_preview(int $distributionId, array $items): array
+{
+    $items = merge_invoice_items($items);
+    if (!$items || $distributionId <= 0) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    $pdo = db();
+
+    // استخراج أرقام الأصناف الصالحة (> 0) وربطها ببنود الفاتورة
+    $itemIds = [];
+    $itemsByItemId = [];
+    foreach ($items as $it) {
+        $iid = (int) ($it['item_id'] ?? 0);
+        if ($iid > 0) {
+            $itemIds[$iid] = $iid;
+            $itemsByItemId[$iid] = $it;
+        }
+    }
+
+    if (!$itemIds) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    // تخصيصات الفاتورة دي السابقة (لو الزرار اتشغّل قبل كده)
+    $prevAllocByLine = [];
+    $prevAllocByCode = [];
+    try {
+        $stPrev = $pdo->prepare(
+            'SELECT res_line_id, item_code, qty
+             FROM reservation_allocations
+             WHERE distribution_id = ?'
+        );
+        $stPrev->execute([$distributionId]);
+        foreach ($stPrev->fetchAll() as $r) {
+            $lid = (int) $r['res_line_id'];
+            $q   = (float) $r['qty'];
+            $c   = (string) $r['item_code'];
+            $prevAllocByLine[$lid] = $q;
+            $prevAllocByCode[$c]   = ($prevAllocByCode[$c] ?? 0.0) + $q;
+        }
+    } catch (Throwable $ex) {
+        // الجدول ممكن يكون لسه ما اتعملش
+    }
+
+    // إجمالي الموزّع حالياً لكل كود صنف في الفاتورة
+    $currentDistByCode = [];
+    try {
+        $stDist = $pdo->prepare(
+            'SELECT notes AS item_code, COALESCE(SUM(amount), 0) AS total
+             FROM invoice_distribution_lines
+             WHERE distribution_id = ?
+             GROUP BY notes'
+        );
+        $stDist->execute([$distributionId]);
+        foreach ($stDist->fetchAll() as $r) {
+            $currentDistByCode[(string) $r['item_code']] = (float) $r['total'];
+        }
+    } catch (Throwable $ex) {
+        // تجاهل
+    }
+
+    // ١) الحجوزات المرشحة — استعلام واحد لكل أصناف الفاتورة
+    // الترتيب بالأقدم أولاً (created_at ASC, l.id ASC) والفرع مالوش أي دور
+    $idList = array_values($itemIds);
+    $ph = implode(',', array_fill(0, count($idList), '?'));
+    $sql = "SELECT l.id AS res_line_id, l.reservation_id, l.item_id, l.code,
+                   l.item_name, l.qty, l.allocated_qty,
+                   r.branch_id, r.customer_name, r.created_at,
+                   b.name AS branch_name
+            FROM book_reservation_lines l
+            JOIN book_reservations r ON r.id = l.reservation_id
+            LEFT JOIN branches b ON b.id = r.branch_id
+            WHERE r.status = 'open'
+              AND (l.qty > l.allocated_qty OR l.id IN (
+                  SELECT res_line_id FROM reservation_allocations WHERE distribution_id = ?
+              ))
+              AND l.item_id IN ($ph)
+            ORDER BY r.created_at ASC, l.id ASC";
+
+    $args = array_merge([$distributionId], $idList);
+    $st = $pdo->prepare($sql);
+    $st->execute($args);
+    $candidates = $st->fetchAll();
+
+    if (!$candidates) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    // تجميع المرشحين حسب item_id
+    $candidatesByItem = [];
+    foreach ($candidates as $c) {
+        $candidatesByItem[(int) $c['item_id']][] = $c;
+    }
+
+    $resultItems = [];
+    $totalCandidatesCount = 0;
+
+    foreach ($itemIds as $iid) {
+        if (empty($candidatesByItem[$iid])) {
+            continue; // صنف مالوش أي حجز ← مايظهرش خالص
+        }
+
+        $it = $itemsByItemId[$iid];
+        $code = (string) ($it['item_code'] ?? '');
+        $received = (float) ($it['quantity'] ?? 0);
+        $currDist = $currentDistByCode[$code] ?? 0.0;
+        $prevAlloc = $prevAllocByCode[$code] ?? 0.0;
+
+        // المتاح = المستلم − الموزّع حالياً + تخصيصنا السابق
+        $available = $received - $currDist + $prevAlloc;
+        if ($available < 0) $available = 0.0;
+
+        $availableForItem = $available;
+        $lines = [];
+        $totalReservedForItem = 0.0;
+
+        foreach ($candidatesByItem[$iid] as $c) {
+            $totalCandidatesCount++;
+            $lid = (int) $c['res_line_id'];
+            $lQty = (float) $c['qty'];
+            $lAlloc = (float) $c['allocated_qty'];
+            $pAlloc = $prevAllocByLine[$lid] ?? 0.0;
+
+            // المتبقي في السطر (مع إعادة تخصيصنا السابق له)
+            $remainLine = $lQty - ($lAlloc - $pAlloc);
+            if ($remainLine < 0) $remainLine = 0.0;
+
+            $totalReservedForItem += $remainLine;
+
+            // التوزيع الشره بالأقدم
+            $give = min($remainLine, $availableForItem);
+            if ($give <= 0) $give = 0.0;
+            $availableForItem -= $give;
+
+            $lines[] = [
+                'res_line_id'    => $lid,
+                'reservation_id' => (int) $c['reservation_id'],
+                'item_id'        => (int) $c['item_id'],
+                'code'           => (string) $c['code'],
+                'item_name'      => (string) $c['item_name'],
+                'customer_name'  => (string) ($c['customer_name'] ?? '—'),
+                'created_at'     => (string) ($c['created_at'] ?? ''),
+                'branch_id'      => $c['branch_id'] !== null ? (int) $c['branch_id'] : null,
+                'branch_name'    => (string) ($c['branch_name'] ?? 'بدون فرع'),
+                'qty'            => $lQty,
+                'allocated_qty'  => $lAlloc,
+                'remaining_qty'  => $remainLine,
+                'suggested_qty'  => $give,
+            ];
+        }
+
+        $resultItems[] = [
+            'item_id'        => $iid,
+            'item_code'      => $code,
+            'item_name'      => (string) ($it['item_name'] ?? ''),
+            'received_qty'   => $received,
+            'total_reserved' => $totalReservedForItem,
+            'available_qty'  => $available,
+            'lines'          => $lines,
+        ];
+    }
+
+    return [
+        'items'            => $resultItems,
+        'total_candidates' => $totalCandidatesCount,
+    ];
+}
+
+/**
+ * تطبيق توزيع الحجوزات على الفاتورة وتحديث الأرصدة وتوزيع الفروع.
+ *
+ * @param int    $distributionId رقم سجل التوزيع (invoice_distribution.id)
+ * @param string $invoiceNo      رقم الفاتورة الظاهر
+ * @param array  $itemQty        كميات الأصناف المستلمة [item_code => received_qty]
+ * @param array  $alloc          التخصيصات المعتمدة [res_line_id => qty]
+ * @param int    $userId         رقم المستخدم الحالي
+ * @return array ['ok' => bool, 'allocated_count' => int]
+ */
+function reservation_pull_apply(
+    int $distributionId,
+    string $invoiceNo,
+    array $itemQty,
+    array $alloc,
+    int $userId,
+    array $codeByItemId = []
+): array {
+    if ($distributionId <= 0) {
+        throw new InvalidArgumentException('رقم سجل التوزيع غير صالح.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // تنظيف المدخلات والتحقق من الكميات غير السالبة
+        $cleanAlloc = [];
+        foreach ($alloc as $lid => $q) {
+            $lineId = (int) $lid;
+            $qty    = (float) $q;
+            if ($qty < 0) {
+                throw new InvalidArgumentException('الكمية لا يمكن أن تكون سالبة.');
+            }
+            if ($lineId > 0) {
+                $cleanAlloc[$lineId] = $qty;
+            }
+        }
+
+        // جلب التخصيصات السابقة لهذه الفاتورة
+        $prevAllocByLine = [];
+        $prevAllocByCode = [];
+        $prevAllocByCodeBranch = [];
+        $stPrev = $pdo->prepare(
+            'SELECT res_line_id, item_code, branch_id, qty
+             FROM reservation_allocations
+             WHERE distribution_id = ?'
+        );
+        $stPrev->execute([$distributionId]);
+        foreach ($stPrev->fetchAll() as $r) {
+            $lid = (int) $r['res_line_id'];
+            $q   = (float) $r['qty'];
+            $c   = (string) $r['item_code'];
+            $bid = $r['branch_id'] !== null ? (int) $r['branch_id'] : null;
+            $prevAllocByLine[$lid] = $r;
+            $prevAllocByCode[$c]   = ($prevAllocByCode[$c] ?? 0.0) + $q;
+            if ($bid !== null && $bid > 0) {
+                $prevAllocByCodeBranch[$c][$bid] = ($prevAllocByCodeBranch[$c][$bid] ?? 0.0) + $q;
+            }
+        }
+
+        // كل أرقام السطور المتأثرة (الجديدة أو السابقة)
+        $allLineIds = array_values(array_unique(array_merge(
+            array_keys($cleanAlloc),
+            array_keys($prevAllocByLine)
+        )));
+
+        if (!$allLineIds) {
+            $pdo->commit();
+            return ['ok' => true, 'allocated_count' => 0];
+        }
+
+        // قفل سطور الحجز للتحقق من الداتابيز مباشرة (FOR UPDATE)
+        $ph = implode(',', array_fill(0, count($allLineIds), '?'));
+        $sqlLock = "SELECT l.id AS res_line_id, l.reservation_id, l.item_id, l.code,
+                           l.item_name, l.qty, l.allocated_qty,
+                           r.branch_id, r.status AS res_status
+                    FROM book_reservation_lines l
+                    JOIN book_reservations r ON r.id = l.reservation_id
+                    WHERE l.id IN ($ph)
+                    FOR UPDATE";
+        $stLock = $pdo->prepare($sqlLock);
+        $stLock->execute($allLineIds);
+        $dbLines = [];
+        foreach ($stLock->fetchAll() as $row) {
+            $dbLines[(int) $row['res_line_id']] = $row;
+        }
+
+        // إجمالي الموزّع حالياً في invoice_distribution_lines لكل كود
+        $currentDistByCode = [];
+        $currentDistByCodeBranch = [];
+        $stDist = $pdo->prepare(
+            'SELECT notes AS item_code, branch_id, SUM(amount) AS total
+             FROM invoice_distribution_lines
+             WHERE distribution_id = ?
+             GROUP BY notes, branch_id'
+        );
+        $stDist->execute([$distributionId]);
+        foreach ($stDist->fetchAll() as $r) {
+            $c   = (string) $r['item_code'];
+            $bid = (int) $r['branch_id'];
+            $tot = (float) $r['total'];
+            $currentDistByCode[$c] = ($currentDistByCode[$c] ?? 0.0) + $tot;
+            $currentDistByCodeBranch[$c][$bid] = $tot;
+        }
+
+        // التحقق لكل سطر ومجموع كل صنف
+        $reqByCode = [];
+        $newAllocByCodeBranch = [];
+        $touchedCodes = [];
+
+        foreach ($cleanAlloc as $lineId => $requestedQty) {
+            if (!isset($dbLines[$lineId])) {
+                throw new RuntimeException('سطر الحجز غير موجود.');
+            }
+            $row = $dbLines[$lineId];
+            // 🔴 الكود بتاع الفاتورة مش بتاع الحجز. الصنف ليه أكتر من كود
+            // (أساسي + فرعي) بنفس الـitem_id، والمطابقة بتتم بالـitem_id.
+            // لو أخدنا كود الحجز، $itemQty[$code] بترجع صفر والاعتماد بيترفض.
+            $code = (string) ($codeByItemId[(int) $row['item_id']] ?? $row['code']);
+            $bid  = $row['branch_id'] !== null ? (int) $row['branch_id'] : null;
+
+            // التحقق ١: سطر حجزه مقفول/ملغي
+            if ($requestedQty > 0.0001 && ($row['res_status'] ?? '') !== 'open') {
+                throw new RuntimeException('الحجز اتقفل — اعمل ريفريش.');
+            }
+
+            // التحقق ٢: أكبر من المتبقي في الحجز
+            $prevHere = (float) ($prevAllocByLine[$lineId]['qty'] ?? 0.0);
+            $maxAllowedForLine = (float) $row['qty'] - (float) $row['allocated_qty'] + $prevHere;
+            if ($requestedQty > $maxAllowedForLine + 0.0001) {
+                throw new RuntimeException('أكبر من المتبقي في الحجز.');
+            }
+
+            $reqByCode[$code] = ($reqByCode[$code] ?? 0.0) + $requestedQty;
+            $touchedCodes[$code] = true;
+            if ($bid !== null && $bid > 0 && $requestedQty > 0) {
+                $newAllocByCodeBranch[$code][$bid] = ($newAllocByCodeBranch[$code][$bid] ?? 0.0) + $requestedQty;
+            }
+        }
+
+        // إضافة الأكواد التي كانت مخصصة سابقاً حتى لو تم تصفيرها
+        foreach (array_keys($prevAllocByCode) as $c) {
+            $touchedCodes[$c] = true;
+        }
+
+        // التحقق ٣: إجمالي الموزّع لكل صنف أكبر من الكمية المستلمة
+        foreach ($touchedCodes as $code => $_) {
+            $receivedQty = (float) ($itemQty[$code] ?? 0.0);
+            $currDist    = (float) ($currentDistByCode[$code] ?? 0.0);
+            $prevAlloc   = (float) ($prevAllocByCode[$code] ?? 0.0);
+            $available   = $receivedQty - $currDist + $prevAlloc;
+
+            $totalRequestedForCode = (float) ($reqByCode[$code] ?? 0.0);
+            if ($totalRequestedForCode > $available + 0.0001) {
+                throw new RuntimeException('إجمالي الموزّع أكبر من الكمية المستلمة.');
+            }
+        }
+
+        // كتابة / تحديث reservation_allocations
+        $insAlloc = $pdo->prepare(
+            'INSERT INTO reservation_allocations
+                (distribution_id, invoice_no, item_id, item_code, reservation_id, res_line_id, branch_id, qty, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                invoice_no = VALUES(invoice_no),
+                item_id    = VALUES(item_id),
+                branch_id  = VALUES(branch_id),
+                qty        = VALUES(qty),
+                created_by = VALUES(created_by),
+                updated_at = CURRENT_TIMESTAMP'
+        );
+
+        $delAlloc = $pdo->prepare(
+            'DELETE FROM reservation_allocations
+             WHERE distribution_id = ? AND res_line_id = ?'
+        );
+
+        foreach ($allLineIds as $lineId) {
+            $q = (float) ($cleanAlloc[$lineId] ?? 0.0);
+            if ($q > 0.0001) {
+                $row = $dbLines[$lineId];
+                // نفس القاعدة: بنخزّن كود الفاتورة عشان prevAllocByCode
+                // يطابق invoice_distribution_lines في التشغيلة الجاية
+                $insAlloc->execute([
+                    $distributionId,
+                    $invoiceNo,
+                    (int) $row['item_id'],
+                    (string) ($codeByItemId[(int) $row['item_id']] ?? $row['code']),
+                    (int) $row['reservation_id'],
+                    $lineId,
+                    $row['branch_id'] !== null ? (int) $row['branch_id'] : null,
+                    $q,
+                    $userId,
+                ]);
+            } else {
+                $delAlloc->execute([$distributionId, $lineId]);
+            }
+        }
+
+        // إعادة حساب allocated_qty لكل سطر من reservation_allocations (SUM مش +)
+        $sqlUpdAlloc = "UPDATE book_reservation_lines l
+                        SET l.allocated_qty = (
+                            SELECT COALESCE(SUM(a.qty), 0)
+                            FROM reservation_allocations a
+                            WHERE a.res_line_id = l.id
+                        )
+                        WHERE l.id IN ($ph)";
+        $stUpdAlloc = $pdo->prepare($sqlUpdAlloc);
+        $stUpdAlloc->execute($allLineIds);
+
+        // كتابة توزيع الفروع لكل صنف وفرع عبر set_branch_distribution
+        // الإجمالي الجديد للفرع = الموجود حالياً − تخصيصنا السابق لنفس الفرع + تخصيصنا الجديد
+        foreach (array_keys($touchedCodes) as $code) {
+            $receivedQty = (float) ($itemQty[$code] ?? 0.0);
+
+            // جمع كل الفروع التي لها توزيع حالي أو تخصيص سابق أو جديد
+            $branchesForCode = [];
+            if (!empty($currentDistByCodeBranch[$code])) {
+                foreach (array_keys($currentDistByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+            if (!empty($prevAllocByCodeBranch[$code])) {
+                foreach (array_keys($prevAllocByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+            if (!empty($newAllocByCodeBranch[$code])) {
+                foreach (array_keys($newAllocByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+
+            foreach (array_keys($branchesForCode) as $branchId) {
+                $branchId = (int) $branchId;
+                if ($branchId <= 0) continue; // حجز branch_id = NULL يتخطّى في التوزيع
+
+                $existingQty = (float) ($currentDistByCodeBranch[$code][$branchId] ?? 0.0);
+                $prevAllocQ  = (float) ($prevAllocByCodeBranch[$code][$branchId] ?? 0.0);
+                $newAllocQ   = (float) ($newAllocByCodeBranch[$code][$branchId] ?? 0.0);
+
+                $newTotal = $existingQty - $prevAllocQ + $newAllocQ;
+                if ($newTotal < 0) $newTotal = 0.0;
+
+                set_branch_distribution(
+                    $distributionId,
+                    $code,
+                    $receivedQty,
+                    $branchId,
+                    $newTotal,
+                    $userId
+                );
+            }
+        }
+
+        // تحديث حالة الفاتورة مرة واحدة في الآخر
+        $recalcItems = [];
+        foreach ($itemQty as $c => $q) {
+            $recalcItems[] = ['item_code' => $c, 'quantity' => $q];
+        }
+        recalc_invoice_status($distributionId, $recalcItems);
+
+        $pdo->commit();
+        return ['ok' => true, 'allocated_count' => count($cleanAlloc)];
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+

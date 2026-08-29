@@ -1258,6 +1258,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autos
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reservation_pull_preview') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $distId = (int) ($_POST['distribution_id'] ?? 0);
+        $invId  = $_POST['invoice_id'] ?? null;
+        $suffix = $_POST['suffix'] ?? null;
+        if ($distId <= 0 || $invId === null || $invId === '') {
+            throw new RuntimeException('بيانات ناقصة.');
+        }
+        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+        $items = merge_invoice_items($rawItems);
+        $preview = reservation_pull_preview($distId, $items);
+        echo json_encode(['ok' => true, 'items' => $preview['items'], 'total_candidates' => $preview['total_candidates']], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reservation_pull_apply') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $distId    = (int) ($_POST['distribution_id'] ?? 0);
+        $invoiceNo = trim($_POST['invoice_no'] ?? '');
+        $invId     = $_POST['invoice_id'] ?? null;
+        $suffix    = $_POST['suffix'] ?? null;
+        $allocRaw  = $_POST['alloc'] ?? '[]';
+        $alloc     = is_array($allocRaw) ? $allocRaw : json_decode($allocRaw, true);
+        if (!is_array($alloc)) $alloc = [];
+
+        if ($distId <= 0 || $invId === null || $invId === '') {
+            throw new RuntimeException('بيانات ناقصة.');
+        }
+
+        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+        $items = merge_invoice_items($rawItems);
+        $itemQty      = [];
+        $codeByItemId = [];
+        foreach ($items as $it) {
+            $itemQty[(string) $it['item_code']] = (float) ($it['quantity'] ?? 0);
+            $iid = (int) ($it['item_id'] ?? 0);
+            if ($iid > 0) $codeByItemId[$iid] = (string) $it['item_code'];
+        }
+
+        $res = reservation_pull_apply($distId, $invoiceNo, $itemQty, $alloc, $uid, $codeByItemId);
+        echo json_encode(['ok' => true, 'allocated_count' => $res['allocated_count']], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // ===== تحديد العرض: قائمة أو فاتورة مفتوحة =====
 $openInvoiceId = $_GET['invoice'] ?? null;
 $openSuffix    = $_GET['suffix'] ?? null;
@@ -1824,6 +1882,25 @@ require_once __DIR__ . '/includes/header.php';
     .lk-table th { background:var(--line-soft); padding:9px 14px; font-size:12px; color:var(--ink-500); text-align:right; }
     .lk-table td { padding:9px 14px; border-top:1px solid #f0eefa; font-size:14px; }
 
+    /* ===== بوب أب سحب أعداد الفروع من الحجوزات ===== */
+    .btn-res-pull { background:var(--accent); color:#fff; }
+    .btn-res-pull:hover { background:var(--accent-hover); color:#fff; }
+    .res-card { background:#fff; border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+    .res-card-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--line-soft); }
+    .res-card-title { font-size:14px; font-weight:700; color:var(--ink-900); }
+    .res-card-meta { display:flex; gap:12px; font-size:12.5px; color:var(--ink-500); flex-wrap:wrap; }
+    .res-card-meta b { color:var(--ink-900); }
+    .res-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px; }
+    .res-table th { background:var(--bg); color:var(--ink-700); padding:7px 10px; text-align:right; font-weight:600; border-bottom:1.5px solid var(--line); }
+    .res-table td { padding:7px 10px; border-bottom:1px solid var(--line-soft); color:var(--ink-900); }
+    .res-alloc-inp { width:75px; padding:4px 8px; border:1.5px solid var(--line); border-radius:6px; font-family:inherit; font-size:13px; font-weight:600; }
+    .res-alloc-inp:focus { outline:none; border-color:var(--accent); }
+    .res-alloc-inp.invalid { border-color:var(--neg); background:var(--neg-soft); }
+    .res-branch-sum { font-size:12.5px; color:var(--accent); font-weight:600; padding:6px 10px; background:var(--accent-soft); border-radius:8px; margin-bottom:8px; }
+    .res-card-foot { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-size:12.5px; color:var(--ink-700); padding-top:6px; }
+    .res-card-foot b { color:var(--ink-900); }
+    .res-empty-msg { padding:35px 20px; text-align:center; color:var(--ink-500); font-size:14px; }
+
     .lines-table { width:100%; border-collapse:collapse; font-size:13px; min-width:700px; }
     .lines-table thead th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; padding:11px 10px;
         text-align:center; white-space:nowrap; border-bottom:2px solid var(--line); position:sticky; top:0; }
@@ -2238,9 +2315,13 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- بحث الصنف -->
+        <!-- بحث الصنف + سحب أعداد الفروع -->
         <div class="search-box">
             <button class="btn btn-sm btn-primary" type="button" onclick="openLookup()">
                 <i class="ti ti-search"></i> بحث صنف
+            </button>
+            <button class="btn btn-sm btn-res-pull" type="button" onclick="openReservationPull()">
+                <i class="ti ti-users"></i> سحب أعداد الفروع
             </button>
         </div>
 
@@ -2265,6 +2346,29 @@ require_once __DIR__ . '/includes/header.php';
                         <button type="button" class="btn btn-sm btn-primary" onclick="doLookup()">بحث</button>
                     </div>
                     <div id="lookupResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- بوب أب سحب أعداد الفروع -->
+        <style>
+            /* ti-spin مش موجودة في الـsubset — لازم نعرّفها هنا وإلا الأيقونة
+               بتقف مكانها من غير أي خطأ */
+            .ti-spin { display:inline-block; animation:tiSpin 0.9s linear infinite; }
+            @keyframes tiSpin { to { transform:rotate(360deg); } }
+        </style>
+        <div class="lookup-overlay" id="resPullOverlay" onclick="if(event.target===this)closeReservationPull()">
+            <div class="lookup-box" style="max-width:850px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
+                <div class="lookup-head">
+                    <span><i class="ti ti-users"></i> سحب أعداد الفروع من الحجوزات</span>
+                    <button type="button" class="lookup-x" onclick="closeReservationPull()">&times;</button>
+                </div>
+                <div id="resPullBody" style="overflow-y:auto;padding:16px;flex:1;min-height:0;"></div>
+                <div class="res-pull-foot" id="resPullFoot" style="padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:0 0 14px 14px;flex-shrink:0;">
+                    <div id="resPullSummaryNote" style="font-size:13px;color:var(--ink-500);"></div>
+                    <button type="button" class="btn btn-sm btn-primary" id="btnSubmitResPull" onclick="submitReservationPull()" disabled>
+                        <i class="ti ti-check"></i> اعتماد التوزيع
+                    </button>
                 </div>
             </div>
         </div>
@@ -4630,9 +4734,257 @@ require_once __DIR__ . '/includes/header.php';
     // الأسعار في الشاشة دي ليها مسار حفظ مختلف (كل فواتير المجموعة).
     const GRP_ID  = <?= (int)($grpCurrent['id'] ?? 0) ?>;
     const INV_ID     = '<?= e((string)($openInvoice['inv_id'] ?? '')) ?>';
+    const INV_NO     = '<?= e((string)($openInvoice['inv_no'] ?? '')) ?>';
     const INV_SUFFIX = '<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>';
     const CSRF = '<?= e(csrf_token()) ?>';
     const saveTimers = {};
+
+    // ===== سحب أعداد الفروع من الحجوزات =====
+    const resPullOverlay = document.getElementById('resPullOverlay');
+    const escRes = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function openReservationPull() {
+        if (!resPullOverlay) return;
+        resPullOverlay.classList.add('open');
+        const body = document.getElementById('resPullBody');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        const summary = document.getElementById('resPullSummaryNote');
+        if (btnSubmit) btnSubmit.disabled = true;
+        if (summary) summary.textContent = '';
+        if (body) {
+            body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--ink-500);">'
+                + '<i class="ti ti-loader ti-spin" style="font-size:24px;display:block;margin-bottom:8px;"></i>'
+                + 'جاري فحص الحجوزات المفتوحة…</div>';
+        }
+
+        const fd = new FormData();
+        fd.append('action', 'reservation_pull_preview');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', DIST_ID);
+        fd.append('invoice_id', INV_ID);
+        fd.append('suffix', INV_SUFFIX);
+
+        fetch('invoices.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    body.innerHTML = '<div class="lk-alert lk-alert-warning" style="margin:10px;">'
+                        + escRes(d.error || 'تعذّر جلب بيانات الحجوزات.') + '</div>';
+                    return;
+                }
+                renderReservationPull(d.items || []);
+            })
+            .catch(() => {
+                body.innerHTML = '<div class="lk-alert lk-alert-warning" style="margin:10px;">تعذّر الاتصال بالسيرفر.</div>';
+            });
+    }
+
+    function closeReservationPull() {
+        if (resPullOverlay) resPullOverlay.classList.remove('open');
+    }
+
+    function renderReservationPull(items) {
+        const body = document.getElementById('resPullBody');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        const summary = document.getElementById('resPullSummaryNote');
+        if (!body) return;
+
+        if (!items || items.length === 0) {
+            body.innerHTML = '<div class="res-empty-msg">'
+                + '<i class="ti ti-users" style="font-size:36px;display:block;margin-bottom:10px;color:var(--ink-400);"></i>'
+                + 'مفيش حجوزات على أصناف الفاتورة دي'
+                + '</div>';
+            if (btnSubmit) btnSubmit.disabled = true;
+            if (summary) summary.textContent = '';
+            return;
+        }
+
+        let html = '';
+        items.forEach((it) => {
+            const lines = it.lines || [];
+            html += `<div class="res-card" data-item-code="${escRes(it.item_code)}" data-received="${it.received_qty}">
+                <div class="res-card-head">
+                    <div class="res-card-title">${escRes(it.item_name)} <span style="font-size:12px;color:var(--ink-500);font-weight:normal;">(${escRes(it.item_code)})</span></div>
+                    <div class="res-card-meta">
+                        <span>المستلم: <b>${it.received_qty}</b></span>
+                        <span>إجمالي الحجوزات: <b>${it.total_reserved}</b></span>
+                        <span>المطلوب توزيعه: <b>${it.available_qty}</b></span>
+                    </div>
+                </div>
+                <table class="res-table">
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>العميل</th>
+                            <th>الفرع</th>
+                            <th>المحجوز</th>
+                            <th>المتبقي</th>
+                            <th>المخصص</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            lines.forEach(l => {
+                const dt = l.created_at ? l.created_at.substring(0, 10) : '—';
+                const branchName = l.branch_name || 'بدون فرع';
+                html += `<tr>
+                    <td>${escRes(dt)}</td>
+                    <td>${escRes(l.customer_name)}</td>
+                    <td>${escRes(branchName)}</td>
+                    <td>${l.qty}</td>
+                    <td>${l.remaining_qty}</td>
+                    <td>
+                        <input type="number" step="1" min="0" max="${l.remaining_qty}"
+                               class="res-alloc-inp"
+                               data-line-id="${l.res_line_id}"
+                               data-code="${escRes(it.item_code)}"
+                               data-branch-id="${l.branch_id || ''}"
+                               data-branch-name="${escRes(branchName)}"
+                               data-max="${l.remaining_qty}"
+                               value="${l.suggested_qty}"
+                               oninput="onResAllocInput()">
+                    </td>
+                </tr>`;
+            });
+
+            html += `</tbody>
+                </table>
+                <div class="res-branch-sum"></div>
+                <div class="res-card-foot">
+                    <span>إجمالي المستلم: <b>${it.received_qty}</b></span>
+                    <span>إجمالي الموزّع: <b class="res-dist-total">0</b></span>
+                    <span>متبقي: <b class="res-dist-remain">${it.received_qty}</b></span>
+                </div>
+            </div>`;
+        });
+
+        body.innerHTML = html;
+        onResAllocInput();
+    }
+
+    function onResAllocInput() {
+        const cards = document.querySelectorAll('.res-card');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        let allValid = true;
+        let totalItemsCount = cards.length;
+        let totalAllocatedSum = 0;
+
+        cards.forEach(card => {
+            const received = parseFloat(card.dataset.received) || 0;
+            const inputs = card.querySelectorAll('.res-alloc-inp');
+            let itemAllocSum = 0;
+            const branchSums = {};
+
+            inputs.forEach(inp => {
+                const val = parseFloat(inp.value) || 0;
+                const max = parseFloat(inp.dataset.max) || 0;
+                const bName = inp.dataset.branchName;
+                const bId = inp.dataset.branchId;
+
+                if (val < 0 || val > max + 0.0001) {
+                    inp.classList.add('invalid');
+                    allValid = false;
+                } else {
+                    inp.classList.remove('invalid');
+                }
+
+                itemAllocSum += val;
+                if (val > 0 && bId && bName && bName !== 'بدون فرع') {
+                    branchSums[bName] = (branchSums[bName] || 0) + val;
+                }
+            });
+
+            totalAllocatedSum += itemAllocSum;
+
+            // تحديث الإجمالي والمتبقي للصنف
+            const distTotalEl = card.querySelector('.res-dist-total');
+            const distRemainEl = card.querySelector('.res-dist-remain');
+            const remain = received - itemAllocSum;
+
+            if (distTotalEl) {
+                distTotalEl.textContent = itemAllocSum;
+                distTotalEl.style.color = (itemAllocSum > received + 0.0001) ? 'var(--neg)' : '';
+            }
+            if (distRemainEl) {
+                distRemainEl.textContent = remain;
+                distRemainEl.style.color = (remain < -0.0001) ? 'var(--neg)' : '';
+            }
+
+            if (itemAllocSum > received + 0.0001) {
+                allValid = false;
+            }
+
+            // ملخص توزيع الفروع
+            const branchSumEl = card.querySelector('.res-branch-sum');
+            if (branchSumEl) {
+                const parts = [];
+                for (const [bn, bq] of Object.entries(branchSums)) {
+                    parts.push(`${bn} ${bq}`);
+                }
+                branchSumEl.textContent = parts.length ? ('توزيع الفروع: ' + parts.join(' · ')) : 'توزيع الفروع: —';
+            }
+        });
+
+        if (totalItemsCount === 0) allValid = false;
+        if (btnSubmit) {
+            btnSubmit.disabled = !allValid;
+        }
+
+        const summaryNote = document.getElementById('resPullSummaryNote');
+        if (summaryNote) {
+            summaryNote.textContent = allValid
+                ? `جاهز للاعتماد (${totalItemsCount} صنف — إجمالي التخصيص: ${totalAllocatedSum})`
+                : 'يوجد خطأ في توزيع الكميات (تأكد من عدم تجاوز المستلم أو المتبقي في الحجز)';
+            summaryNote.style.color = allValid ? 'var(--ink-500)' : 'var(--neg)';
+        }
+    }
+
+    function submitReservationPull() {
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        if (btnSubmit && btnSubmit.disabled) return;
+
+        const alloc = {};
+        document.querySelectorAll('.res-alloc-inp').forEach(inp => {
+            const lid = inp.dataset.lineId;
+            const val = parseFloat(inp.value) || 0;
+            if (lid) alloc[lid] = val;
+        });
+
+        if (btnSubmit) {
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = '<i class="ti ti-loader ti-spin"></i> جاري الاعتماد…';
+        }
+
+        const fd = new FormData();
+        fd.append('action', 'reservation_pull_apply');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', DIST_ID);
+        fd.append('invoice_no', INV_NO);
+        fd.append('invoice_id', INV_ID);
+        fd.append('suffix', INV_SUFFIX);
+        fd.append('alloc', JSON.stringify(alloc));
+
+        fetch('invoices.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    alert('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'));
+                    if (btnSubmit) {
+                        btnSubmit.disabled = false;
+                        btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
+                    }
+                    return;
+                }
+                location.reload();
+            })
+            .catch(() => {
+                alert('تعذّر الاتصال بالسيرفر.');
+                if (btnSubmit) {
+                    btnSubmit.disabled = false;
+                    btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
+                }
+            });
+    }
 
     // ===== ملاحظات الفاتورة (حفظ تلقائي بعد وقفة كتابة) =====
     let notesTimer = null;
