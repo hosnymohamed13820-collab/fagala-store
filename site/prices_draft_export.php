@@ -16,7 +16,14 @@
  * بيصدّر **كل صفوف التقرير** (مش المعدّل بس).
  */
 require_once __DIR__ . '/auth.php';
-require_permission('reports');
+require_module_access('reports');
+if (!can('reports:noprice')) {
+    http_response_code(403);
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+        . '<h2>🚫 غير مصرّح</h2>'
+        . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+        . '<a href="logout.php">تسجيل الخروج</a></div>');
+}
 require_once __DIR__ . '/receiving_lib.php';   // fmt_price_out()
 require_once __DIR__ . '/price_draft_lib.php';
 
