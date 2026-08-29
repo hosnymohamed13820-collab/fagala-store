@@ -1556,6 +1556,69 @@ function emp_ledger_diff(PDO $pdo, int $employeeId, float $oldAmount, float $new
 }
 
 /**
+ * رصيد سجل حساب الموظف الحالي (debit - credit).
+ * 
+ * - موجب = الموظف عليه فلوس (مديونية للشركة).
+ * - سالب = الموظف له فلوس (الشركة مدينة له).
+ * - صفر  = حسابه متصفّر أو مفيش حركات.
+ *
+ * @param int      $employeeId معرّف الموظف
+ * @param PDO|null $pdo        كائن PDO اختياري (لو جوه معاملة)
+ * @return float رصيد الموظف
+ */
+function emp_ledger_balance(int $employeeId, ?PDO $pdo = null): float
+{
+    if ($employeeId <= 0) {
+        return 0.0;
+    }
+    $db = $pdo ?? db();
+    $st = $db->prepare(
+        'SELECT COALESCE(SUM(CASE WHEN direction = "debit" THEN amount ELSE -amount END), 0)
+         FROM employee_ledger
+         WHERE employee_id = ?'
+    );
+    $st->execute([$employeeId]);
+    return (float) $st->fetchColumn();
+}
+
+/**
+ * جلب أرصدة سجل حساب مجموعة موظفين دفعة واحدة باستعلام واحد مجمّع.
+ * 🔴 ممنوع نداء emp_ledger_balance() جوه حلقة — استعمل دي للشاشات المجمّعة.
+ *
+ * @param array    $employeeIds مصفوفة معرّفات الموظفين
+ * @param PDO|null $pdo         كائن PDO اختياري
+ * @return array مصفوفة [employee_id => balance]
+ */
+function emp_ledger_balances(array $employeeIds, ?PDO $pdo = null): array
+{
+    $cleanIds = array_values(array_unique(array_filter(array_map('intval', $employeeIds), fn($id) => $id > 0)));
+    if (empty($cleanIds)) {
+        return [];
+    }
+
+    $res = [];
+    foreach ($cleanIds as $id) {
+        $res[$id] = 0.0;
+    }
+
+    $db = $pdo ?? db();
+    $placeholders = implode(',', array_fill(0, count($cleanIds), '?'));
+    $st = $db->prepare(
+        "SELECT employee_id,
+                COALESCE(SUM(CASE WHEN direction = 'debit' THEN amount ELSE -amount END), 0) AS balance
+         FROM employee_ledger
+         WHERE employee_id IN ($placeholders)
+         GROUP BY employee_id"
+    );
+    $st->execute($cleanIds);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $res[(int)$row['employee_id']] = (float)$row['balance'];
+    }
+
+    return $res;
+}
+
+/**
  * صرف سلفة لموظف عبر إذن صرف.
  * - الفلوس تطلع من الخزينة (مدين).
  * - تتسجّل سلفة على الموظف (employee_advances) بحالة pending.
@@ -1975,20 +2038,26 @@ function compute_salary(
     $bon->execute([$employeeId]);
     $bonuses = (float) $bon->fetchColumn();
 
-    // السلف المعلّقة (حساب الأقساط الشهرية أو كامل المبلغ المتبقي لو القسط 0)
+    // السلف المعلّقة (حساب الأقساط الشهرية أو كامل المبلغ المتبقي لو القسط 0 مع سقف رصيد السجل الموجب)
     // ⚠️ المعادلة مكررة بين هنا و pay_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
-    $adv = $pdo->prepare(
-        'SELECT COALESCE(SUM(
-            CASE
-                WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
-                ELSE COALESCE(remaining, amount)
-            END
-        ), 0)
-        FROM employee_advances
-        WHERE employee_id = ? AND status = "pending"'
-    );
-    $adv->execute([$employeeId]);
-    $advances = (float) $adv->fetchColumn();
+    $ledgerBal = emp_ledger_balance($employeeId, $pdo);
+    if ($ledgerBal <= 0.0) {
+        $advances = 0.0;
+    } else {
+        $adv = $pdo->prepare(
+            'SELECT COALESCE(SUM(
+                CASE
+                    WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
+                    ELSE COALESCE(remaining, amount)
+                END
+            ), 0)
+            FROM employee_advances
+            WHERE employee_id = ? AND status = "pending"'
+        );
+        $adv->execute([$employeeId]);
+        $advCalculated = (float) $adv->fetchColumn();
+        $advances = min($advCalculated, $ledgerBal);
+    }
 
     // الجزاءات المعلّقة
     $pen = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_penalties WHERE employee_id=? AND status="pending"');
@@ -2142,8 +2211,11 @@ function pay_salary(
         $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
             ->execute([$employeeId]);
 
-        // تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة)
+        // تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة مع سقف رصيد السجل الموجب)
         // ⚠️ المعادلة مكررة بين هنا و compute_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
+        $ledgerBalance = emp_ledger_balance($employeeId, $pdo);
+        $remCap = $ledgerBalance > 0 ? $ledgerBalance : 0.0;
+
         $advStmt = $pdo->prepare(
             'SELECT id, amount, monthly_deduction, remaining, adv_type
              FROM employee_advances
@@ -2167,6 +2239,13 @@ function pay_salary(
             $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
 
             $take = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
+            $take = min($take, $remCap);
+
+            if ($take <= 0.00001) {
+                continue;
+            }
+
+            $remCap -= $take;
             $newRemaining = $outstanding - $take;
 
             if ($newRemaining <= 0.00001) {

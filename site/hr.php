@@ -857,9 +857,9 @@ if ($tab === 'salaries') {
         ];
     }
 
-    // 3) السلف المعلّقة مجمّعة لكل موظف بالأقساط الشهرية (استعلام واحد)
+    // 3) السلف المعلّقة مجمّعة لكل موظف بالأقساط الشهرية مع سقف رصيد السجل الموجب (استعلامان مجمّعان بدون أي استعلام في حلقة)
     // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-    $advMap = $pdo->query(
+    $advRawMap = $pdo->query(
         "SELECT employee_id, COALESCE(SUM(
             CASE
                 WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
@@ -869,6 +869,19 @@ if ($tab === 'salaries') {
          FROM employee_advances WHERE status='pending'
          GROUP BY employee_id"
     )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $allEmpIds = !empty($empList) ? array_column($empList, 'id') : [];
+    $ledgerBalancesMap = emp_ledger_balances($allEmpIds, $pdo);
+
+    $advMap = [];
+    foreach ($advRawMap as $eId => $rawAdv) {
+        $lBal = $ledgerBalancesMap[(int)$eId] ?? 0.0;
+        if ($lBal <= 0.0) {
+            $advMap[(int)$eId] = 0.0;
+        } else {
+            $advMap[(int)$eId] = min((float)$rawAdv, $lBal);
+        }
+    }
 
     // 4) الجزاءات المعلّقة مجمّعة لكل موظف (استعلام واحد)
     $penMap = $pdo->query(
@@ -916,11 +929,12 @@ if ($tab === 'salaries') {
 
     // الحسابات في PHP بدون أي استعلام داخل الحلقة
     foreach ($empList as $e) {
-        $empId         = (int) $e['id'];
-        $salaryMode    = $e['salary_mode'] ?? 'hours';
-        $isFixed       = ($salaryMode === 'fixed');
-        $base          = (float) $e['base_salary'];
-        $expectedHours = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
+        $empId           = (int) $e['id'];
+        $salaryMode      = $e['salary_mode'] ?? 'hours';
+        $isFixed         = ($salaryMode === 'fixed');
+        $base            = (float) $e['base_salary'];
+        $expectedHours   = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
+        $empLedgerBal    = $ledgerBalancesMap[$empId] ?? 0.0;
 
         if ($isFixed) {
             $hours       = 0.0;
@@ -976,6 +990,7 @@ if ($tab === 'salaries') {
             'bonus_cnt'              => $bonCnt,
             'total_bonuses'          => $bon,
             'advances'               => $adv,
+            'ledger_balance'         => $empLedgerBal,
             'monthly_adv_owed'       => $monthlyAdvOwed,
             'monthly_adv_cnt'        => $monthlyAdvCnt,
             'standing_adv_owed'      => $standingAdvOwed,
@@ -1457,6 +1472,9 @@ $statusBadge = function($st) {
                             <?= e($p['full_name']) ?>
                             <?php if ($p['branch_name']): ?>
                                 <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
+                            <?php endif; ?>
+                            <?php if ($p['ledger_balance'] < -0.005): ?>
+                                <span class="badge" style="font-size:11px;color:var(--pos);background:var(--pos-soft);margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
                             <?php endif; ?>
                             <?php if ($p['is_fixed']): ?>
                                 <span class="badge" style="font-size:11px;color:var(--accent);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
