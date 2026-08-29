@@ -21,6 +21,7 @@ if (!is_owner()) {
 }
 
 require_once __DIR__ . '/xlsx_read_lib.php';
+require_once __DIR__ . '/finance.php';   // emp_ledger_add / emp_ledger_diff
 
 $pdo = db();
 $flash = '';
@@ -495,6 +496,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $item['amount'],
                             ]);
                             $insertedCount++;
+
+                            emp_ledger_add(
+                                $item['emp_id'], 'debit', $item['amount'], $today, 'advance',
+                                'سلفة مستديمة من رفع شيت السلف', null, 'advance',
+                                (int) $pdo->lastInsertId(), emp_ledger_uid(), $pdo
+                            );
                         } else {
                             // pending_count === 1
                             // لو المبلغ صفر ده تصفير مقصود للرصيد المتبقي remaining = 0
@@ -504,6 +511,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $item['adv_info']['single_id'],
                             ]);
                             $updatedCount++;
+
+                            // الفرق بين الرصيد القديم والجديد — مش القيمة الجديدة
+                            emp_ledger_diff(
+                                $pdo, $item['emp_id'],
+                                (float) $item['adv_info']['current_balance'],
+                                (float) $item['amount'],
+                                $today, 'advance', (int) $item['adv_info']['single_id']
+                            );
                         }
                     }
 

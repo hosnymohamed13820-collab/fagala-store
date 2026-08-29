@@ -1464,6 +1464,98 @@ function pay_supplier_invoice(
  * ===================================================================== */
 
 /**
+ * تسجيل حركة في سجل حساب الموظف (employee_ledger).
+ * - تسجيل فقط في المرحلة دي — مفيش أي قراءة منه في النظام.
+ * - المبلغ <= 0 يتم تخطيه بهدوء دون تسجيل ودون استثناء.
+ * - الاتجاه لازم يكون 'debit' أو 'credit' وإلا يرمي استثناء.
+ * - الدالة لا تفتح معاملة بنفسها ولا تعمل commit — بتنفذ INSERT واحد فقط داخل المعاملة الممررة.
+ *
+ * @param int         $employeeId  معرّف الموظف
+ * @param string      $direction   'debit' (عليه / زوّد مديونيته) أو 'credit' (له / قلّل مديونيته)
+ * @param float       $amount      مبلغ الحركة (موجب)
+ * @param string      $date        تاريخ الحركة YYYY-MM-DD
+ * @param string      $moveType    نوع الحركة (advance, salary_deduction, cash_repay, cancel, opening)
+ * @param string|null $description وصف الحركة بالعربية
+ * @param int|null    $treasuryId  معرّف الخزينة لو الحركة نقدية كاش
+ * @param string|null $refType     نوع المرجع المرتبط (advance, salary, ...)
+ * @param int|null    $refId       معرّف المرجع
+ * @param int|null    $userId      معرّف المستخدم الذي قام بالعملية
+ * @param PDO|null    $pdo         كائن PDO لو المعاملة مفتوحة مسبقاً
+ */
+function emp_ledger_add(
+    int $employeeId,
+    string $direction,
+    float $amount,
+    string $date,
+    string $moveType,
+    ?string $description = null,
+    ?int $treasuryId = null,
+    ?string $refType = null,
+    ?int $refId = null,
+    ?int $userId = null,
+    ?PDO $pdo = null
+): void {
+    if ($amount <= 0.00001) {
+        return;
+    }
+
+    if ($direction !== 'debit' && $direction !== 'credit') {
+        throw new InvalidArgumentException("اتجاه الحركة غير صحيح ($direction) — يجب أن يكون debit أو credit.");
+    }
+
+    $db = $pdo ?? db();
+    $st = $db->prepare(
+        'INSERT INTO employee_ledger
+            (employee_id, entry_date, direction, amount, move_type, description, treasury_id, ref_type, ref_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $st->execute([
+        $employeeId,
+        $date,
+        $direction,
+        round($amount, 2),
+        $moveType,
+        $description,
+        $treasuryId,
+        $refType,
+        $refId,
+        $userId,
+    ]);
+}
+
+/**
+ * معرّف المستخدم الحالي لتسجيل حركات سجل حساب الموظف (null لو مفيش جلسة).
+ */
+function emp_ledger_uid(): ?int
+{
+    $u = function_exists('current_user') ? current_user() : null;
+    return isset($u['id']) ? (int) $u['id'] : null;
+}
+
+/**
+ * تسجيل **الفرق** بين رصيد سلفة قديم وجديد في سجل حساب الموظف.
+ *
+ * 🔴 الفرق مش القيمة الجديدة: رصيد من 800 لـ600 = حركة 200 له (credit)،
+ * ومن 800 لـ1000 = حركة 200 عليه (debit). لو سجّلنا القيمة الجديدة
+ * الرصيد كله بيبوظ.
+ */
+function emp_ledger_diff(PDO $pdo, int $employeeId, float $oldAmount, float $newAmount,
+                         string $date, string $refType, int $refId): void
+{
+    $diff = round($newAmount - $oldAmount, 2);
+    if (abs($diff) < 0.005) {
+        return;
+    }
+    if ($diff < 0) {
+        emp_ledger_add($employeeId, 'credit', -$diff, $date, 'cancel',
+                       'تعديل رصيد سلفة بالنقصان', null, $refType, $refId, emp_ledger_uid(), $pdo);
+    } else {
+        emp_ledger_add($employeeId, 'debit', $diff, $date, 'advance',
+                       'تعديل رصيد سلفة بالزيادة', null, $refType, $refId, emp_ledger_uid(), $pdo);
+    }
+}
+
+/**
  * صرف سلفة لموظف عبر إذن صرف.
  * - الفلوس تطلع من الخزينة (مدين).
  * - تتسجّل سلفة على الموظف (employee_advances) بحالة pending.
@@ -1504,6 +1596,21 @@ function disburse_advance(
              VALUES (?, ?, ?, "pending", ?)'
         )->execute([$employeeId, $amount, $date, $notes]);
         $advanceId = (int) $pdo->lastInsertId();
+
+        // تسجيل الحركة في سجل حساب الموظف
+        emp_ledger_add(
+            $employeeId,
+            'debit',
+            $amount,
+            $date,
+            'advance',
+            $notes ?: ('سلفة نقدية من الخزينة — ' . $empName),
+            $treasuryId,
+            'advance',
+            $advanceId,
+            $userId,
+            $pdo
+        );
 
         $pdo->commit();
         return $advanceId;
@@ -1595,6 +1702,24 @@ function recover_advance(
                 $updPart->execute([$newRemaining, $adv['id']]);
                 $remaining = 0;
             }
+        }
+
+        // تسجيل السداد النقدي في سجل حساب الموظف
+        $repaidAmount = $amount - $remaining;
+        if ($repaidAmount > 0.0001) {
+            emp_ledger_add(
+                $employeeId,
+                'credit',
+                $repaidAmount,
+                $date,
+                'cash_repay',
+                $notes ?: ('سداد نقدي لسلفة — ' . $empName),
+                $treasuryId,
+                'advance_recovery',
+                $employeeId,
+                $userId,
+                $pdo
+            );
         }
 
         $pdo->commit();
@@ -2050,6 +2175,22 @@ function pay_salary(
                 $newType = ($advType === 'monthly') ? 'standing' : $advType;
                 $updAdvStmt->execute([$newRemaining, 'pending', $newType, $advId]);
             }
+
+            // تسجيل الخصم في سجل حساب الموظف — بالمبلغ اللي اتخصم الشهر ده بس ($take)
+            // مش المتبقي كله ولا المبلغ الأصلي. جوّه نفس المعاملة عشان لو المرتب اترجع يترجع معاه.
+            emp_ledger_add(
+                $employeeId,
+                'credit',
+                $take,
+                $date,
+                'salary_deduction',
+                'خصم سلفة من مرتب شهر ' . $month,
+                null,
+                'advance',
+                $advId,
+                $userId,
+                $pdo
+            );
         }
 
         $pdo->prepare('UPDATE employee_penalties SET status="deducted" WHERE employee_id=? AND status="pending"')

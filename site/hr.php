@@ -163,11 +163,16 @@ function apply_payroll_financial_adjustments(PDO $pdo, string $month, string $da
             // صف واحد معلّق: تحديث المتبقي remaining فقط لنفس الصف مع الحفاظ على المبلغ الأصلي amount والملاحظات
             if (abs($newAmount - $info['monthly_amount']) > 0.001) {
                 $updAdv->execute([$newAmount, $info['monthly_single_id'], 'monthly']);
+                emp_ledger_diff($pdo, $empId, (float) $info['monthly_amount'], $newAmount,
+                                $date, 'advance', (int) $info['monthly_single_id']);
             }
         } else {
             // لا يوجد سلف شهرية معلّقة: إنشاء سلفة شهرية جديدة لو القيمة أكبر من صفر
             if ($newAmount > 0) {
                 $insAdv->execute([$empId, $newAmount, $date, $noteReason, $newAmount]);
+                emp_ledger_add($empId, 'debit', $newAmount, $date, 'advance',
+                               'سلفة اتسجّلت من شاشة الرواتب', null, 'advance',
+                               (int) $pdo->lastInsertId(), emp_ledger_uid(), $pdo);
             }
         }
     }
@@ -192,10 +197,13 @@ function apply_payroll_financial_adjustments(PDO $pdo, string $month, string $da
             // صف واحد معلّق: تحديث المتبقي remaining فقط لنفس الصف مع الحفاظ على القسط والمبلغ الأصلي والملاحظات
             if (abs($newAmount - $info['standing_amount']) > 0.001) {
                 $updAdv->execute([$newAmount, $info['standing_single_id'], 'standing']);
+                emp_ledger_diff($pdo, $empId, (float) $info['standing_amount'], $newAmount,
+                                $date, 'advance', (int) $info['standing_single_id']);
             }
         }
     }
 }
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -288,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($advId <= 0) {
                     throw new RuntimeException('بيانات غير صحيحة.');
                 }
-                $chk = $pdo->prepare('SELECT id, status, notes FROM employee_advances WHERE id = ?');
+                $chk = $pdo->prepare('SELECT id, employee_id, amount, remaining, status, notes FROM employee_advances WHERE id = ?');
                 $chk->execute([$advId]);
                 $advRow = $chk->fetch();
                 if (!$advRow) {
@@ -301,8 +309,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cancelNote = 'تم إلغاء السلفة بتاريخ ' . date('Y-m-d');
                 $newNotes = $oldNotes !== '' ? ($oldNotes . "\n" . $cancelNote) : $cancelNote;
 
+                // المتبقي بيتقرا قبل التصفير — لو اتقرا بعده هيبقى صفر والحركة تضيع
+                $cancelledAmount = $advRow['remaining'] !== null
+                    ? (float) $advRow['remaining']
+                    : (float) $advRow['amount'];
+
                 $pdo->prepare('UPDATE employee_advances SET remaining = 0, notes = ? WHERE id = ? AND status = "pending"')
                     ->execute([$newNotes, $advId]);
+
+                emp_ledger_add(
+                    (int) $advRow['employee_id'],
+                    'credit',
+                    $cancelledAmount,
+                    date('Y-m-d'),
+                    'cancel',
+                    'إلغاء سلفة',
+                    null,
+                    'advance',
+                    $advId,
+                    $uid,
+                    $pdo
+                );
                 $flash = 'تم إلغاء السلفة بنجاح.'; $tab='advances';
             }
             elseif ($action === 'add_advance') {
@@ -333,6 +360,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type)
                      VALUES (?, ?, ?, "pending", ?, ?, ?, ?)'
                 )->execute([$empId, $amount, $date, $notes ?: null, $monthlyDeduction, $amount, $advType]);
+
+                emp_ledger_add(
+                    $empId,
+                    'debit',
+                    $amount,
+                    $date,
+                    'advance',
+                    'سلفة قديمة اتسجّلت من تاب السلف',
+                    null,
+                    'advance',
+                    (int) $pdo->lastInsertId(),
+                    $uid,
+                    $pdo
+                );
                 $flash = 'تم تسجيل السلفة بنجاح.'; $tab='advances';
             }
             elseif ($action === 'save_payroll_adjustments') {
