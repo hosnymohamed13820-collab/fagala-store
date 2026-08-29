@@ -363,6 +363,12 @@ require_once __DIR__ . '/includes/header.php';
             <div class="val"><?= number_format($netSalary, 2) ?> ج.م</div>
         </div>
 
+        <div style="text-align: center; margin-top: 16px;">
+            <a href="employee_statement.php" style="font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                <i class="ti ti-file-invoice"></i> كشف حسابك
+            </a>
+        </div>
+
         <?php if ($isManager): ?>
             <div style="text-align: center; margin-top: 20px;">
                 <a href="hr.php?tab=salaries" class="btn btn-secondary">

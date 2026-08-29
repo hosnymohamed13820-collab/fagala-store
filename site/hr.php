@@ -1097,6 +1097,7 @@ $statusBadge = function($st) {
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
+                        <a href="employee_statement.php?emp=<?= (int)$a['employee_id'] ?>" class="btn btn-sm btn-ghost" title="كشف حساب الموظف"><i class="ti ti-file-invoice"></i> كشف الحساب</a>
                         <?php if ($isPending && $remAmount > 0): ?>
                             <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
                                     data-id="<?= (int)$a['id'] ?>"
@@ -1161,6 +1162,7 @@ $statusBadge = function($st) {
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
+                        <a href="employee_statement.php?emp=<?= (int)$a['employee_id'] ?>" class="btn btn-sm btn-ghost" title="كشف حساب الموظف"><i class="ti ti-file-invoice"></i> كشف الحساب</a>
                         <?php if ($isPending && $remAmount > 0): ?>
                             <button type="button" class="btn btn-sm btn-ghost btn-edit-adv"
                                     data-id="<?= (int)$a['id'] ?>"
