@@ -849,6 +849,36 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             return ['title'=>'تقرير الحضور','headers'=>['التاريخ','الموظف','حضور','انصراف','ساعات العمل','الحالة'],
                 'rows'=>$rows,'totals'=>['','','','','إجمالي: '.minutes_to_hhmm($tMin),'']];
 
+        case 'attendance_totals':
+            $st = $pdo->prepare(
+                "SELECT e.full_name, b.name AS branch_name,
+                        COUNT(CASE WHEN a.work_hours > 0 THEN 1 END) AS attend_days,
+                        COALESCE(SUM(a.work_hours), 0) AS total_hours
+                 FROM attendance a
+                 JOIN employees e ON e.id = a.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 WHERE a.att_date BETWEEN ? AND ?
+                 GROUP BY e.id, e.full_name, b.name
+                 HAVING attend_days > 0
+                 ORDER BY e.full_name"
+            );
+            $st->execute([$from, $to]);
+            $rows = []; $tDays = 0; $tMin = 0;
+            foreach ($st as $r) {
+                $days = (int) $r['attend_days'];
+                $mins = (int) round((float) $r['total_hours'] * 60);
+                $tDays += $days;
+                $tMin += $mins;
+                $rows[] = [
+                    $r['full_name'],
+                    !empty($r['branch_name']) ? $r['branch_name'] : '—',
+                    $days,
+                    minutes_to_hhmm($mins),
+                ];
+            }
+            return ['title' => 'تقرير إجمالي الحضور', 'headers' => ['الموظف', 'الفرع', 'أيام الحضور', 'إجمالي الساعات'],
+                'rows' => $rows, 'totals' => ['إجمالي:', '', $tDays, minutes_to_hhmm($tMin)]];
+
         default:
             return ['title'=>'','headers'=>[],'rows'=>[],'totals'=>[]];
     }
@@ -880,7 +910,7 @@ if ($export && $type !== 'stocktake') {
 $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
-    'suppliers'=>'الموردين','salaries'=>'الرواتب','attendance'=>'الحضور',
+    'suppliers'=>'الموردين','salaries'=>'الرواتب','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع',
 ];
 
