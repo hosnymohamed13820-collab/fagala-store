@@ -64,7 +64,8 @@ if ($ajax !== '') {
                     (int) ($body['to_branch'] ?? 0),
                     (array) ($body['lines'] ?? []),
                     (string) ($body['notes'] ?? ''),
-                    $uid
+                    $uid,
+                    (string) ($body['source'] ?? 'branch')
                 );
                 echo json_encode([
                     'ok'      => true,
@@ -170,6 +171,12 @@ require_once __DIR__ . '/includes/header.php';
                  color:var(--ink-900); font-weight:600; }
     .shr-summary { background:rgba(34,197,94,0.08); border-radius:10px; padding:10px 14px;
                    font-size:13.5px; color:var(--ink-700); margin-bottom:14px; }
+    .shr-src-btn { flex:1; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
+                   background:#fff; color:var(--ink-700); font-size:13.5px; font-weight:600;
+                   cursor:pointer; font-family:inherit; transition:all 0.15s; }
+    .shr-src-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--line-soft); }
+    .shr-src-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .shr-src-btn.active:hover { background:var(--accent-hover); color:#fff; }
     .shr-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
     .shr-err { color:var(--neg); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
@@ -254,10 +261,18 @@ require_once __DIR__ . '/includes/header.php';
 <!-- ===== بوب أب طلب النواقص ===== -->
 <div class="shr-overlay" id="shrOverlay" onclick="if(event.target===this)closeRequest()">
     <div class="shr-modal">
-        <h3>🛒 إرسال طلب نواقص</h3>
+        <h3 id="shrModalTitle">🛒 إرسال طلب نواقص</h3>
         <div class="shr-summary" id="shrSummary"></div>
 
         <div class="shr-fld">
+            <label>وجهة الطلب</label>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="shr-src-btn active" id="srcBranchBtn" onclick="setReqSource('branch')">من فرع تاني</button>
+                <button type="button" class="shr-src-btn" id="srcPurchaseBtn" onclick="setReqSource('purchase')">من المشتريات</button>
+            </div>
+        </div>
+
+        <div class="shr-fld" id="fromBranchFld">
             <label>الفرع الطالب (اللي ناقصه الأصناف)</label>
             <?php if ($myBranchId > 0):
                 $myBranchName = '';
@@ -275,7 +290,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         </div>
 
-        <div class="shr-fld">
+        <div class="shr-fld" id="toBranchFld">
             <label>الفرع المطلوب منه (اللي هيجهّز)</label>
             <select id="toBranch">
                 <option value="0">— اختار الفرع —</option>
@@ -287,7 +302,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="shr-fld">
             <label>ملاحظات (اختياري)</label>
-            <textarea id="shrNotes" placeholder="أي تفاصيل زيادة للفرع اللي هيجهّز…"></textarea>
+            <textarea id="shrNotes" placeholder="أي تفاصيل زيادة…"></textarea>
         </div>
 
         <div class="shr-err" id="shrErr"></div>
@@ -538,6 +553,18 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     // ===== بوب أب الطلب =====
+    let reqSource = 'branch';
+
+    function setReqSource(src) {
+        reqSource = (src === 'purchase') ? 'purchase' : 'branch';
+        const isPurch = (reqSource === 'purchase');
+        document.getElementById('srcBranchBtn').classList.toggle('active', !isPurch);
+        document.getElementById('srcPurchaseBtn').classList.toggle('active', isPurch);
+        document.getElementById('toBranchFld').style.display = isPurch ? 'none' : 'block';
+        document.getElementById('shrModalTitle').textContent = isPurch ? '🛒 طلب من المشتريات' : '🛒 إرسال طلب نواقص';
+        document.getElementById('shrErr').textContent = '';
+    }
+
     function requestLines() {
         return Object.keys(reqQty).map(code => {
             const r = rowByCode[code] || added.find(x => x.code === code) || {};
@@ -551,6 +578,7 @@ require_once __DIR__ . '/includes/header.php';
             setStatus('✗ اكتب الكمية المطلوبة لصنف واحد على الأقل الأول', 'var(--neg)');
             return;
         }
+        setReqSource('branch');
         document.getElementById('shrSummary').textContent =
             'هتطلب ' + lines.length + ' صنف — راجع الكميات في الجدول قبل الإرسال.';
         document.getElementById('shrErr').textContent = '';
@@ -566,8 +594,10 @@ require_once __DIR__ . '/includes/header.php';
         const to   = +document.getElementById('toBranch').value || 0;
         err.textContent = '';
         if (!from) { err.textContent = 'اختار الفرع الطالب.'; return; }
-        if (!to)   { err.textContent = 'اختار الفرع المطلوب منه.'; return; }
-        if (from === to) { err.textContent = 'الفرعين مينفعش يكونوا نفس الفرع.'; return; }
+        if (reqSource === 'branch') {
+            if (!to)   { err.textContent = 'اختار الفرع المطلوب منه.'; return; }
+            if (from === to) { err.textContent = 'الفرعين مينفعش يكونوا نفس الفرع.'; return; }
+        }
 
         const btn = document.getElementById('shrSubmit');
         btn.disabled = true;
@@ -576,8 +606,9 @@ require_once __DIR__ . '/includes/header.php';
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 csrf: CSRF,
+                source: reqSource,
                 from_branch: from,
-                to_branch: to,
+                to_branch: reqSource === 'branch' ? to : 0,
                 notes: document.getElementById('shrNotes').value,
                 lines: requestLines(),
             }),

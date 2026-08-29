@@ -19,6 +19,12 @@ function shortage_supervisor_id(): int
     return (int) setting('shortage_supervisor_id', 0);
 }
 
+/** مسؤول المشتريات من الإعدادات (0 = مش متحدد) */
+function purchase_supervisor_id(): int
+{
+    return (int) setting('purchase_supervisor_id', 0);
+}
+
 /** كل الأونرز النشطين @return int[] */
 function shortage_owner_ids(): array
 {
@@ -48,7 +54,7 @@ function shortage_branch_user_ids(int $branchId): array
 }
 
 /**
- * إنشاء طلب نواقص كامل: السجل + الأسطر + المهمة + الإشعارات الثلاثة.
+ * إنشاء طلب نواقص كامل: السجل + الأسطر + المهمة + الإشعارات.
  *
  * @param array $lines كل عنصر: ['code'=>..,'name'=>..,'qty'=>..]
  * @return array{request_id:int, task_id:int, targets:int}
@@ -58,13 +64,21 @@ function create_shortage_request(
     int $toBranchId,
     array $lines,
     ?string $notes,
-    int $userId
+    int $userId,
+    string $source = 'branch'
 ): array {
     // ===== تحقق =====
+    if ($source !== 'branch' && $source !== 'purchase') {
+        throw new InvalidArgumentException('مصدر الطلب غير صالح.');
+    }
     if ($fromBranchId <= 0) throw new RuntimeException('اختار الفرع الطالب.');
-    if ($toBranchId   <= 0) throw new RuntimeException('اختار الفرع المطلوب منه.');
-    if ($fromBranchId === $toBranchId) {
-        throw new RuntimeException('الفرع الطالب والمطلوب منه مينفعش يكونوا نفس الفرع.');
+    if ($source === 'branch') {
+        if ($toBranchId <= 0) throw new RuntimeException('اختار الفرع المطلوب منه.');
+        if ($fromBranchId === $toBranchId) {
+            throw new RuntimeException('الفرع الطالب والمطلوب منه مينفعش يكونوا نفس الفرع.');
+        }
+    } else {
+        $toBranchId = 0;
     }
 
     $clean = [];
@@ -87,50 +101,90 @@ function create_shortage_request(
     if ($notes === '') $notes = null;
     if ($notes !== null) $notes = mb_substr($notes, 0, 1000);
 
-    // أسماء الفروع (للعناوين والرسائل)
     $pdo = db();
-    $bst = $pdo->prepare('SELECT id, name FROM branches WHERE id IN (?, ?)');
-    $bst->execute([$fromBranchId, $toBranchId]);
-    $bmap = [];
-    foreach ($bst->fetchAll() as $b) $bmap[(int) $b['id']] = (string) $b['name'];
-    if (!isset($bmap[$fromBranchId], $bmap[$toBranchId])) {
-        throw new RuntimeException('فرع غير موجود.');
-    }
-    $fromName = $bmap[$fromBranchId];
-    $toName   = $bmap[$toBranchId];
 
-    // المستهدفين = موظفين الفرع المطلوب منه (من غير الطالب نفسه لو صدف)
-    $targets = array_values(array_diff(shortage_branch_user_ids($toBranchId), [$userId]));
-    if (empty($targets)) {
-        throw new RuntimeException('مفيش مستخدمين نشطين متسجّلين على فرع ' . $toName . ' — ظبّط المستخدمين الأول.');
+    // أسماء الفروع والمستهدفين
+    if ($source === 'branch') {
+        $bst = $pdo->prepare('SELECT id, name FROM branches WHERE id IN (?, ?)');
+        $bst->execute([$fromBranchId, $toBranchId]);
+        $bmap = [];
+        foreach ($bst->fetchAll() as $b) $bmap[(int) $b['id']] = (string) $b['name'];
+        if (!isset($bmap[$fromBranchId], $bmap[$toBranchId])) {
+            throw new RuntimeException('فرع غير موجود.');
+        }
+        $fromName = $bmap[$fromBranchId];
+        $toName   = $bmap[$toBranchId];
+
+        // المستهدفين = موظفين الفرع المطلوب منه (من غير الطالب نفسه لو صدف)
+        $targets = array_values(array_diff(shortage_branch_user_ids($toBranchId), [$userId]));
+        if (empty($targets)) {
+            throw new RuntimeException('مفيش مستخدمين نشطين متسجّلين على فرع ' . $toName . ' — ظبّط المستخدمين الأول.');
+        }
+    } else {
+        $bst = $pdo->prepare('SELECT id, name FROM branches WHERE id = ?');
+        $bst->execute([$fromBranchId]);
+        $b = $bst->fetch();
+        if (!$b) {
+            throw new RuntimeException('فرع غير موجود.');
+        }
+        $fromName = (string) $b['name'];
+        $toName   = '';
+
+        // المستهدفين = مسؤول المشتريات + كل الأونرز (من غير الطالب نفسه)
+        $targets = shortage_owner_ids();
+        $psup = purchase_supervisor_id();
+        if ($psup > 0) $targets[] = $psup;
+        $targets = array_values(array_diff(array_unique($targets), [$userId]));
+        if (empty($targets)) {
+            throw new RuntimeException('مفيش مسؤول مشتريات متحدد ولا أونر نشط — ظبّط «مسؤول المشتريات» من الإعدادات الأول.');
+        }
     }
 
     $n = count($clean);
+
+    // ترجمة الأكواد لـ item_id باستعلام واحد من السيرفر
+    require_once __DIR__ . '/stock_query_lib.php';
+    $idMap = stock_codes_to_ids(array_column($clean, 'code'));
 
     // ===== الكتابة (معاملة واحدة) =====
     $pdo->beginTransaction();
     try {
         // ١) الطلب
         $pdo->prepare(
-            'INSERT INTO shortage_requests (from_branch_id, to_branch_id, requested_by, notes)
-             VALUES (?, ?, ?, ?)'
-        )->execute([$fromBranchId, $toBranchId, $userId, $notes]);
+            'INSERT INTO shortage_requests (source, from_branch_id, to_branch_id, requested_by, notes)
+             VALUES (?, ?, ?, ?, ?)'
+        )->execute([
+            $source,
+            $fromBranchId,
+            ($source === 'purchase' ? null : $toBranchId),
+            $userId,
+            $notes
+        ]);
         $requestId = (int) $pdo->lastInsertId();
 
         // ٢) الأسطر
         $insLine = $pdo->prepare(
-            'INSERT INTO shortage_request_lines (request_id, code, item_name, qty) VALUES (?, ?, ?, ?)'
+            'INSERT INTO shortage_request_lines (request_id, item_id, code, item_name, qty) VALUES (?, ?, ?, ?, ?)'
         );
         foreach ($clean as $l) {
-            $insLine->execute([$requestId, $l['code'], $l['name'], $l['qty']]);
+            $itemId = (int) ($idMap[$l['code']] ?? 0);
+            $insLine->execute([$requestId, $itemId, $l['code'], $l['name'], $l['qty']]);
         }
 
         // ٣) المهمة — المنشئ هو الموظف الطالب عشان يتابعها في "اللي أصدرتها"
-        $title = 'طلب نواقص لفرع ' . $fromName . ' — ' . $n . ' صنف';
-        $details = 'فرع ' . $fromName . ' طالب ' . $n . ' صنف من فرع ' . $toName . '.'
-                 . "\nالأصناف والكميات موجودة جوه المهمة."
-                 . "\nبعد تجهيز الطلب وعمل الفاتورة: ارفعوا صورة/ملف الفاتورة كمرفق هنا وعلّموا المهمة تمت."
-                 . ($notes !== null ? "\n\nملاحظات الطالب: " . $notes : '');
+        if ($source === 'purchase') {
+            $title = 'طلب مشتريات من فرع ' . $fromName . ' — ' . $n . ' صنف';
+            $details = 'فرع ' . $fromName . ' طالب ' . $n . ' صنف من المشتريات.'
+                     . "\nالأصناف والكميات موجودة جوه المهمة."
+                     . ($notes !== null ? "\n\nملاحظات الطالب: " . $notes : '');
+        } else {
+            $title = 'طلب نواقص لفرع ' . $fromName . ' — ' . $n . ' صنف';
+            $details = 'فرع ' . $fromName . ' طالب ' . $n . ' صنف من فرع ' . $toName . '.'
+                     . "\nالأصناف والكميات موجودة جوه المهمة."
+                     . "\nبعد تجهيز الطلب وعمل الفاتورة: ارفعوا صورة/ملف الفاتورة كمرفق هنا وعلّموا المهمة تمت."
+                     . ($notes !== null ? "\n\nملاحظات الطالب: " . $notes : '');
+        }
+
         $pdo->prepare(
             'INSERT INTO tasks (title, details, priority, due_date, created_by, status, ref_type, ref_id)
              VALUES (?, ?, "important", NULL, ?, "open", "shortage", ?)'
@@ -140,35 +194,46 @@ function create_shortage_request(
         $pdo->prepare('UPDATE shortage_requests SET task_id = ? WHERE id = ?')
             ->execute([$taskId, $requestId]);
 
-        // ٤) المستهدفين + إشعارهم (رسالة الفرع المنفّذ)
+        // ٤) المستهدفين + إشعارهم
         $insTarget = $pdo->prepare('INSERT IGNORE INTO task_targets (task_id, user_id) VALUES (?, ?)');
         $insNotif  = $pdo->prepare(
             'INSERT INTO notifications (user_id, type, title, body, link) VALUES (?, "shortage", ?, ?, ?)'
         );
         $link = 'tasks.php?task=' . $taskId;
+
+        if ($source === 'purchase') {
+            $notifTitle = '🛒 طلب مشتريات من فرع ' . $fromName;
+            $notifBody  = mb_substr('مطلوب توفير ' . $n . ' صنف من المشتريات', 0, 255);
+        } else {
+            $notifTitle = '🛒 طلب نواقص من فرع ' . $fromName;
+            $notifBody  = mb_substr('مطلوب تجهيز ' . $n . ' صنف — جهّزوا الطلب وارفعوا إثبات الفاتورة على المهمة', 0, 255);
+        }
+
         foreach ($targets as $tid) {
             $insTarget->execute([$taskId, $tid]);
             $insNotif->execute([
                 $tid,
-                '🛒 طلب نواقص من فرع ' . $fromName,
-                mb_substr('مطلوب تجهيز ' . $n . ' صنف — جهّزوا الطلب وارفعوا إثبات الفاتورة على المهمة', 0, 255),
+                $notifTitle,
+                $notifBody,
                 $link,
             ]);
         }
 
-        // ٥) إشعار المتابعة (رسالة مختلفة) — الأونر + المسؤول، من غير تكرار
+        // ٥) إشعار المتابعة (لطلب الفرع فقط) — الأونر + المسؤول، من غير تكرار
         //    ومن غير الطالب نفسه (هو عارف إنه طلب) ولا المستهدفين
-        $watchers = shortage_owner_ids();
-        $sup = shortage_supervisor_id();
-        if ($sup > 0) $watchers[] = $sup;
-        $watchers = array_values(array_diff(array_unique($watchers), $targets, [$userId]));
-        foreach ($watchers as $wid) {
-            $insNotif->execute([
-                $wid,
-                '📋 متابعة نواقص',
-                mb_substr('فرع ' . $fromName . ' طلب ' . $n . ' صنف من فرع ' . $toName, 0, 255),
-                $link,
-            ]);
+        if ($source === 'branch') {
+            $watchers = shortage_owner_ids();
+            $sup = shortage_supervisor_id();
+            if ($sup > 0) $watchers[] = $sup;
+            $watchers = array_values(array_diff(array_unique($watchers), $targets, [$userId]));
+            foreach ($watchers as $wid) {
+                $insNotif->execute([
+                    $wid,
+                    '📋 متابعة نواقص',
+                    mb_substr('فرع ' . $fromName . ' طلب ' . $n . ' صنف من فرع ' . $toName, 0, 255),
+                    $link,
+                ]);
+            }
         }
 
         $pdo->commit();
@@ -191,7 +256,7 @@ function shortage_by_task(int $taskId): ?array
             'SELECT r.*, bf.name AS from_name, bt.name AS to_name, u.full_name AS requester
              FROM shortage_requests r
              JOIN branches bf ON bf.id = r.from_branch_id
-             JOIN branches bt ON bt.id = r.to_branch_id
+             LEFT JOIN branches bt ON bt.id = r.to_branch_id
              LEFT JOIN users u ON u.id = r.requested_by
              WHERE r.task_id = ? LIMIT 1'
         );
@@ -232,7 +297,7 @@ function shortage_pending_count(int $userId): int
 //  مرفقات المهام (عامة لكل المهام)
 // =====================================================================
 
-/** هل المستخدم مصرّح يشوف المهمة دي؟ (مستهدف/منشئ/أونر/مسؤول النواقص) */
+/** هل المستخدم مصرّح يشوف المهمة دي؟ (مستهدف/منشئ/أونر/مسؤول النواقص/مسؤول المشتريات) */
 function can_view_task(int $taskId, int $userId): bool
 {
     if ($taskId <= 0 || $userId <= 0) return false;
@@ -243,7 +308,9 @@ function can_view_task(int $taskId, int $userId): bool
     $t = $st->fetch();
     if (!$t) return false;
     if ((int) $t['created_by'] === $userId) return true;
-    if (($t['ref_type'] ?? '') === 'shortage' && $userId === shortage_supervisor_id()) return true;
+    if (($t['ref_type'] ?? '') === 'shortage' && (
+        $userId === shortage_supervisor_id() || $userId === purchase_supervisor_id()
+    )) return true;
 
     $chk = db()->prepare('SELECT 1 FROM task_targets WHERE task_id = ? AND user_id = ? LIMIT 1');
     $chk->execute([$taskId, $userId]);

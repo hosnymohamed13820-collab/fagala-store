@@ -21,6 +21,7 @@ $editable = [
     'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
     'currency'                  => ['العملة', 'text'],
     'shortage_supervisor_id'    => ['مسؤول متابعة طلبات النواقص (بيوصله إشعار مع الأونر)', 'user'],
+    'purchase_supervisor_id'    => ['مسؤول المشتريات (بيوصله طلب المشتريات مع الأونر)', 'user'],
     'agent_watcher_id'          => ['مسؤول متابعة وكلاء المزامنة (بيوصله تنبيه مع الأونر)', 'user'],
     'agent_warn_min'            => ['تنبيه أصفر لو وكيل سكت (بالدقايق)', 'number'],
     'agent_alert_min'           => ['تنبيه أحمر لو وكيل سكت (بالدقايق)', 'number'],
@@ -54,10 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($key === 'custody_deficit_tolerance') {
                     $val = (string) max(0, (float) $val);
                 }
-                // مسؤول النواقص وموظف تعديل الحضور ومسؤول الوكلاء:
+                // مسؤول النواقص ومسؤول المشتريات وموظف تعديل الحضور ومسؤول الوكلاء:
                 // رقم مستخدم (٠ = مفيش)
-                if ($key === 'shortage_supervisor_id' || $key === 'agent_watcher_id'
-                    || $key === 'attendance_edit_user_id') {
+                if ($key === 'shortage_supervisor_id' || $key === 'purchase_supervisor_id'
+                    || $key === 'agent_watcher_id' || $key === 'attendance_edit_user_id') {
                     $val = (string) max(0, (int) $val);
                 }
                 // حساب إيراد المبيعات وحساب التحويل: رقم حساب موجب.
