@@ -1836,7 +1836,7 @@ $statusBadge = function($st) {
             </select></div>
             <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>البيان (مطلوب)</label><input type="text" name="description" required placeholder="مثال: جمعية اتحطت في الشغل" aria-label="البيان"></div>
+            <div class="form-row"><label>البيان (مطلوب)</label><input type="text" name="description" required aria-label="البيان"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('openingBalanceModal').classList.remove('open')">إلغاء</button>
