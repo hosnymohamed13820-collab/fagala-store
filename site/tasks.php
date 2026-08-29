@@ -226,7 +226,7 @@ $prioBadge = function($p) {
             <div style="margin-top:18px;padding:16px;background:rgba(34,197,94,0.06);border:1.5px solid rgba(34,197,94,0.25);border-radius:12px;">
                 <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-700);margin-bottom:12px;">
                     <span>🛒 <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
-                    <span><b>المطلوب منه:</b> <?= e($shr['to_name']) ?></span>
+                    <span><b>المطلوب منه:</b> <?= e(($shr['source'] ?? 'branch') === 'purchase' ? 'المشتريات' : ($shr['to_name'] ?? '—')) ?></span>
                     <span><b>الطالب:</b> <?= e($shr['requester'] ?? '—') ?></span>
                 </div>
                 <div style="overflow-x:auto;">
