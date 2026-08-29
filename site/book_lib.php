@@ -39,9 +39,10 @@ function book_tabs_bar(string $active): string
 {
     $tabs = [
         'shortage' => ['طلب نواقص',   'ti-shopping-cart', 'shortage.php'],
-        'books'    => ['طلبيات الكتب', 'ti-book',          'book_orders.php'],
-        'reserve'  => ['حجز الكتب',    'ti-bookmark',      'book_reserve.php'],
-        'market'   => ['أسعار السوق',  'ti-tag',           'market_prices.php'],
+        'breq'     => ['طلبات الفروع', 'ti-list-details',  'branch_requests.php'],
+        'books'    => ['طلبيات الكتب', 'ti-list',          'book_orders.php'],
+        'reserve'  => ['حجز الكتب',    'ti-user-check',    'book_reserve.php'],
+        'market'   => ['أسعار السوق',  'ti-discount',      'market_prices.php'],
     ];
 
     $css = '<style>
