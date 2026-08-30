@@ -93,6 +93,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flashType = $hasErr ? 'error' : 'success';
             }
         }
+    } elseif (isset($_POST['send_real_notify'])) {
+        // ---------------------------------------------------------------
+        //  إشعار ترحيب حقيقي — بيعدّي على notify() زي أي إشعار في النظام.
+        //
+        //  الزرار التجريبي اللي فوق **بيتخطى الطابور** وبيبعت مباشرة، فهو
+        //  بيختبر التشفير والتوقيع وبس. الزرار ده بيمشي في السلسلة كلها:
+        //      notify() → notifications (الجرس) + push_queue → push_worker (الكرون) → التليفون
+        //  فلو الكرون واقف أو push_enqueue بايظة، ده اللي بيكشفها.
+        // ---------------------------------------------------------------
+        if (!is_owner()) {
+            $flash = 'مالكش صلاحية — الإشعار ده للأونر بس.';
+            $flashType = 'error';
+        } else {
+            require_once __DIR__ . '/push_lib.php';
+            $currentUserId = (int) current_user()['id'];
+
+            notify(
+                $pdo,
+                [$currentUserId],
+                'test',
+                '👋 أهلاً بيك في الفجالة ستور',
+                'ده إشعار ترحيب حقيقي عدّى على نفس طريق أي إشعار في النظام.',
+                'settings.php#test-push'
+            );
+
+            // بنقرا حالة الصف اللي لسه اتعمل + ملخص الطابور كله (استعلامين مجمّعين)
+            $qRow = $pdo->prepare(
+                'SELECT id, status, tries, last_error, created_at, sent_at
+                   FROM push_queue
+                  WHERE user_id = ?
+                  ORDER BY id DESC
+                  LIMIT 1'
+            );
+            $qRow->execute([$currentUserId]);
+            $lastQueued = $qRow->fetch(PDO::FETCH_ASSOC) ?: null;
+
+            $qSum = $pdo->query(
+                "SELECT status, COUNT(*) AS cnt FROM push_queue GROUP BY status"
+            )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            $subCnt = (int) $pdo->query('SELECT COUNT(*) FROM push_subscriptions')->fetchColumn();
+
+            $_SESSION['real_notify_diag'] = [
+                'queued'   => $lastQueued,
+                'summary'  => $qSum,
+                'sub_cnt'  => $subCnt,
+            ];
+            $flash = 'الإشعار اتسجّل. شوف التشخيص تحت عشان تعرف وقف فين.';
+            $flashType = 'success';
+        }
     } else {
         $upd = $pdo->prepare(
             'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
@@ -145,6 +195,8 @@ if (isset($_SESSION['flash'])) {
 }
 $testPushResults = $_SESSION['test_push_results'] ?? [];
 unset($_SESSION['test_push_results']);
+$realNotifyDiag = $_SESSION['real_notify_diag'] ?? null;
+unset($_SESSION['real_notify_diag']);
 
 // جلب القيم الحالية
 $current = [];
@@ -255,6 +307,83 @@ require_once __DIR__ . '/includes/header.php';
         <input type="hidden" name="send_test_push" value="1">
         <button type="submit" class="btn">
             <i class="ti ti-send"></i> ابعت إشعار تجريبي لنفسي
+        </button>
+    </form>
+</div>
+
+<div class="card" id="real-notify">
+    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:4px;">إشعار ترحيب حقيقي (السلسلة كاملة)</h3>
+    <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;">
+        الزرار اللي فوق بيتخطى الطابور وبيبعت مباشرة — بيختبر التشفير وبس.
+        الزرار ده بيمشي في الطريق الحقيقي:
+        <b>الجرس ← الطابور ← الكرون ← التليفون</b> — فبيوريك وقف فين بالظبط.
+    </p>
+
+    <?php if ($realNotifyDiag !== null):
+        $rq   = $realNotifyDiag['queued'] ?? null;
+        $rSum = $realNotifyDiag['summary'] ?? [];
+        $rSub = (int) ($realNotifyDiag['sub_cnt'] ?? 0);
+        $pendCnt = (int) ($rSum['pending'] ?? 0);
+        $sentCnt = (int) ($rSum['sent'] ?? 0);
+        $failCnt = (int) ($rSum['failed'] ?? 0);
+
+        // الحكم: إيه اللي المفروض محمد يعمله دلوقتي
+        if ($rq === null) {
+            $verdict = '🔴 الجرس اشتغل بس **مفيش صف في الطابور** — يعني `push_enqueue()` مش شغالة. شوف لوج الأخطاء على السيرفر.';
+            $vCol = 'var(--neg)'; $vBg = 'var(--neg-soft)';
+        } elseif ($rSub === 0) {
+            $verdict = '🔴 **مفيش ولا جهاز مشترك خالص.** افتح الموقع من التليفون ودوس «فعّل إشعارات الموبايل».';
+            $vCol = 'var(--neg)'; $vBg = 'var(--neg-soft)';
+        } elseif ($pendCnt > 1) {
+            $verdict = '🔴 فيه ' . $pendCnt . ' صف واقف في الطابور — **الكرون مش شغال**. سطر الكرون موجود في `local/upgrade_push.sql`.';
+            $vCol = 'var(--neg)'; $vBg = 'var(--neg-soft)';
+        } else {
+            $verdict = '⏳ الصف اتحط في الطابور. استنى دقيقة وحدّث الصفحة: لو بقى «sent» يبقى الكرون شغال — ساعتها لو الدرج لسه فاضي، المشكلة في التليفون نفسه (الاشتراك أو الـservice worker).';
+            $vCol = 'var(--warn)'; $vBg = 'var(--warn-soft)';
+        }
+    ?>
+        <div style="padding:12px 14px;border-radius:10px;background:<?= $vBg ?>;color:<?= $vCol ?>;font-size:13px;font-weight:600;margin-bottom:12px;">
+            <?= e($verdict) ?>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
+            <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
+                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">أجهزة مشتركة</div>
+                <div style="font-size:17px;font-weight:700;color:var(--accent);"><?= $rSub ?></div>
+            </div>
+            <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
+                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">في الطابور (pending)</div>
+                <div style="font-size:17px;font-weight:700;color:<?= $pendCnt > 1 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><?= $pendCnt ?></div>
+            </div>
+            <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
+                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">اتبعت (sent)</div>
+                <div style="font-size:17px;font-weight:700;color:var(--pos);"><?= $sentCnt ?></div>
+            </div>
+            <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
+                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">فشل (failed)</div>
+                <div style="font-size:17px;font-weight:700;color:<?= $failCnt > 0 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><?= $failCnt ?></div>
+            </div>
+        </div>
+
+        <?php if ($rq !== null): ?>
+            <div style="font-size:12.5px;color:var(--ink-600);background:var(--line-soft);border-radius:10px;padding:10px 14px;">
+                <b>آخر صف ليك في الطابور:</b>
+                رقم <?= (int)$rq['id'] ?> ·
+                الحالة <b><?= e((string)$rq['status']) ?></b> ·
+                محاولات <?= (int)$rq['tries'] ?>
+                <?php if (!empty($rq['sent_at'])): ?> · اتبعت <?= e((string)$rq['sent_at']) ?><?php endif; ?>
+                <?php if (!empty($rq['last_error'])): ?>
+                    <div style="color:var(--neg);margin-top:4px;"><b>آخر خطأ:</b> <?= e(mb_substr((string)$rq['last_error'], 0, 120)) ?></div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+    <?php endif; ?>
+
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="send_real_notify" value="1">
+        <button type="submit" class="btn">
+            <i class="ti ti-bell"></i> ابعت إشعار ترحيب حقيقي
         </button>
     </form>
 </div>
