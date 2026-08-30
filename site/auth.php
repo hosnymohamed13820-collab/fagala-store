@@ -23,14 +23,40 @@ if (session_status() === PHP_SESSION_NONE) {
         || (($_SERVER['SERVER_PORT'] ?? '') == 443)
         || (strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
+    // ---------------------------------------------------------------
+    //  مدة الجلسة
+    //
+    //  كانت 'lifetime' => 0 يعني الكوكي بتموت بقفل المتصفح، وPHP بيمسح
+    //  السيشن من السيرفر بعد ٢٤ دقيقة خمول (الافتراضي). فأي وقت بعيد عن
+    //  الجهاز أو قفلة نت = خروج تلقائي.
+    //
+    //  🔴 ده مالوش علاقة بإشعارات الموبايل — الاشتراك متخزّن في المتصفح
+    //  و logout() مابيمسحهوش، فالإشعار بيوصل حتى والمتصفح مقفول وحتى لو
+    //  المستخدم عامل خروج.
+    // ---------------------------------------------------------------
+    $sessLifetime = 30 * 24 * 60 * 60;   // ٣٠ يوم
+    @ini_set('session.gc_maxlifetime', (string) $sessLifetime);
+
     session_set_cookie_params([
-        'lifetime' => 0,
+        'lifetime' => $sessLifetime,
         'path'     => '/',
         'httponly' => true,
         'secure'   => $isHttps,
         'samesite' => 'Lax',
     ]);
     session_start();
+
+    // تجديد متدحرج: كل طلب من مستخدم داخل بيمدّد الكوكي من جديد، فاللي
+    // بيستعمل النظام عمره ما يتقفل عليه.
+    if (!empty($_SESSION['user']['id']) && !headers_sent()) {
+        setcookie(session_name(), session_id(), [
+            'expires'  => time() + $sessLifetime,
+            'path'     => '/',
+            'httponly' => true,
+            'secure'   => $isHttps,
+            'samesite' => 'Lax',
+        ]);
+    }
 }
 
 /**
