@@ -244,6 +244,23 @@ require_once __DIR__ . '/includes/header.php';
         width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
     .form-row input:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row select {
+        width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
+        font-size:14px; font-family:inherit; background:var(--line-soft); }
+
+    /* الحقول مقفولة افتراضياً — تعديل بالغلط في إعداد زي حساب الإيراد أو
+       مفتاح الإشعارات ممكن يوقّع حاجات، فالقفل هو الوضع الطبيعي. */
+    .fld-line { display:flex; gap:8px; align-items:center; }
+    .fld-line input, .fld-line select { flex:1; min-width:0; }
+    .form-row.is-locked input, .form-row.is-locked select {
+        background:var(--line-soft); color:var(--ink-500); cursor:default; }
+    .fld-edit {
+        flex:none; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
+        background:#fff; color:var(--accent); font-family:inherit; font-size:13px;
+        font-weight:600; cursor:pointer; }
+    .fld-edit:hover { background:var(--accent-soft); color:var(--accent-hover); }
+    .form-row.is-open .fld-edit { border-color:var(--neg); color:var(--neg); }
+    .form-row.is-open .fld-edit:hover { background:var(--neg-soft); color:var(--neg); }
     .btn { background:var(--accent); color:#fff; border:none; padding:12px 28px; border-radius:10px;
         font-size:15px; font-family:inherit; cursor:pointer; font-weight:600; }
     .btn:hover { background:var(--accent-hover); }
@@ -269,28 +286,85 @@ require_once __DIR__ . '/includes/header.php';
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <?php foreach ($editable as $key => $meta): ?>
             <?php [$label, $type] = $meta; ?>
-            <div class="form-row">
-                <label><?= e($label) ?></label>
-                <?php if ($type === 'user'): ?>
-                    <select name="<?= e($key) ?>" style="width:100%;padding:11px 13px;border:1.5px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:var(--line-soft);">
-                        <option value="0">— مفيش (الأونر بس) —</option>
-                        <?php foreach ($settingsUsers as $su): ?>
-                            <option value="<?= (int)$su['id'] ?>" <?= (int)($current[$key] ?? 0) === (int)$su['id'] ? 'selected' : '' ?>>
-                                <?= e($su['full_name']) ?><?= $su['branch_name'] ? ' — ' . e($su['branch_name']) : '' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                <?php else: ?>
-                    <input type="<?= e($type) ?>"
-                           <?= $type === 'number' ? 'step="0.01" min="0"' : '' ?>
-                           name="<?= e($key) ?>"
-                           value="<?= e($current[$key] ?? '') ?>">
-                <?php endif; ?>
+            <div class="form-row is-locked">
+                <label for="fld_<?= e($key) ?>"><?= e($label) ?></label>
+                <div class="fld-line">
+                    <?php if ($type === 'user'): ?>
+                        <select id="fld_<?= e($key) ?>" name="<?= e($key) ?>" disabled>
+                            <option value="0">— مفيش (الأونر بس) —</option>
+                            <?php foreach ($settingsUsers as $su): ?>
+                                <option value="<?= (int)$su['id'] ?>" <?= (int)($current[$key] ?? 0) === (int)$su['id'] ? 'selected' : '' ?>>
+                                    <?= e($su['full_name']) ?><?= $su['branch_name'] ? ' — ' . e($su['branch_name']) : '' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    <?php else: ?>
+                        <input type="<?= e($type) ?>"
+                               id="fld_<?= e($key) ?>"
+                               <?= $type === 'number' ? 'step="0.01" min="0"' : '' ?>
+                               name="<?= e($key) ?>"
+                               value="<?= e($current[$key] ?? '') ?>"
+                               readonly>
+                    <?php endif; ?>
+                    <button type="button" class="fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
+                </div>
             </div>
         <?php endforeach; ?>
         <button type="submit" class="btn">حفظ الإعدادات</button>
     </form>
 </div>
+
+<script>
+// الحقول مقفولة افتراضياً وكل واحد جنبه زرار «تعديل».
+// السبب: تعديل بالغلط في إعداد زي «حساب إيراد المبيعات» أو مفتاح الإشعارات
+// ممكن يوقّع حاجات من غير ما حد ياخد باله. فالقفل هو الوضع الطبيعي.
+(function () {
+    var form = document.querySelector('.settings-form');
+    if (!form) return;
+
+    form.querySelectorAll('.form-row').forEach(function (row) {
+        var fld = row.querySelector('input, select');
+        var btn = row.querySelector('.fld-edit');
+        if (!fld || !btn) return;
+
+        var original = (fld.tagName === 'SELECT') ? fld.value : fld.value;
+
+        btn.addEventListener('click', function () {
+            if (row.classList.contains('is-open')) {
+                // إلغاء: رجّع القيمة الأصلية واقفل تاني
+                fld.value = original;
+                lock();
+            } else {
+                row.classList.remove('is-locked');
+                row.classList.add('is-open');
+                if (fld.tagName === 'SELECT') { fld.disabled = false; }
+                else { fld.removeAttribute('readonly'); }
+                btn.textContent = 'إلغاء';
+                btn.title = 'رجّع القيمة زي ما كانت';
+                fld.focus();
+            }
+        });
+
+        function lock() {
+            row.classList.remove('is-open');
+            row.classList.add('is-locked');
+            if (fld.tagName === 'SELECT') { fld.disabled = true; }
+            else { fld.setAttribute('readonly', 'readonly'); }
+            btn.textContent = 'تعديل';
+            btn.title = 'اضغط عشان تعدّل القيمة دي';
+        }
+    });
+
+    // 🔴 الـselect المقفول (disabled) مابيتبعتش مع الفورم — فبنفك القفل عن
+    // كل الحقول لحظة الإرسال عشان القيم كلها توصل زي ما هي.
+    form.addEventListener('submit', function () {
+        form.querySelectorAll('input, select').forEach(function (f) {
+            f.disabled = false;
+            f.removeAttribute('readonly');
+        });
+    });
+})();
+</script>
 
 <?php if (is_owner()): ?>
 <div class="card" id="test-push">
