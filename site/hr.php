@@ -2272,7 +2272,14 @@ $statusBadge = function($st) {
             }
         }
 
-        var totalDeductions = monthlyTake + standingTake + cashierTake + penalties + deficits;
+        // سقف عجز الكاشير: المرتب بيتصفّر ومابينزلش تحت الصفر، والباقي بينزل
+        // سلفة مستديمة وقت الصرف. نفس منطق compute_salary() و pay_salary()
+        // بالظبط — لو غيّرت هنا غيّر في التلاتة.
+        var beforeCashier = gross + bonuses - monthlyTake - standingTake - penalties - deficits;
+        var cashierApplied = cashierTake > beforeCashier ? Math.max(0, beforeCashier) : cashierTake;
+        var cashierToAdvance = Math.max(0, cashierTake - cashierApplied);
+
+        var totalDeductions = monthlyTake + standingTake + cashierApplied + penalties + deficits;
         var net = gross + bonuses - totalDeductions;
 
         var grossCell = tr.querySelector('.cell-gross');
@@ -2282,7 +2289,7 @@ $statusBadge = function($st) {
 
         var dedCell = tr.querySelector('.cell-deductions');
         if (dedCell) {
-            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز عهدة: ' + deficits.toFixed(2) + ' | عجز كاشير: ' + cashierTake.toFixed(2) + '">' +
+            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز عهدة: ' + deficits.toFixed(2) + ' | عجز كاشير: ' + cashierApplied.toFixed(2) + '">' +
                 totalDeductions.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>';
         }
 
@@ -2290,6 +2297,10 @@ $statusBadge = function($st) {
         if (netCell) {
             netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
             netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
+            // الباقي من عجز الكاشير اللي المرتب مشالوش — هينزل سلفة مستديمة
+            netCell.title = cashierToAdvance > 0.005
+                ? ('المرتب مشالش ' + cashierToAdvance.toFixed(2) + ' من عجز الكاشير — هينزلوا سلفة مستديمة على الموظف')
+                : '';
         }
     });
 

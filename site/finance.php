@@ -2151,7 +2151,25 @@ function compute_salary(
         ? round((float)$cashierTakeOverride, 2)
         : $cashierDefCalc;
 
-    $net = $noExpected ? 0.0 : ($grossSalary + $bonuses - $totalAdvances - $penalties - $deficits - $cashierDeficits);
+    // ---------------------------------------------------------------
+    //  سقف عجز الكاشير: المرتب بيتصفّر ومابينزلش تحت الصفر.
+    //
+    //  قرار محمد: نخصم لحد ما المرتب يبقى صفر، والباقي ينزل سلفة
+    //  مستديمة على الموظف (pay_salary بتعملها). كاشير عجزه ٧,١٩٠.٩٩
+    //  ومرتبه ٣,٤٦١.٧٠ ← يتخصم ٣,٤٦١.٧٠ والصافي صفر، و٣,٧٢٩.٢٩
+    //  ينزلوا سلفة — مش صافي بـسالب ٣,٧٥٩.٢٩ زي الأول.
+    //
+    //  🔴 السقف على عجز الكاشير **بس** لأنه هو اللي عنده آلية ترحيل.
+    //  لو السلف والجزاءات وعجز العهدة لوحدهم أكبر من المرتب، الصافي
+    //  بيفضل سالب و pay_salary() بترفض الصرف — لأن تسقيفهم من غير
+    //  ترحيل معناه إن الفرق يختفي من غير ما حد يدفعه.
+    // ---------------------------------------------------------------
+    $beforeCashier = $grossSalary + $bonuses - $totalAdvances - $penalties - $deficits;
+    if (!$noExpected && $cashierDeficits > $beforeCashier) {
+        $cashierDeficits = max(0.0, round($beforeCashier, 2));
+    }
+
+    $net = $noExpected ? 0.0 : ($beforeCashier - $cashierDeficits);
 
     return [
         'employee_name'          => $empName,
@@ -2267,8 +2285,30 @@ function pay_salary(
             $grossSalary = $calc['day_rate'] * $dueDays;
         }
 
-        // إعادة حساب الصافي بناءً على الاستحقاق الفعلي والخصومات والمكافآت وعجز الكاشير المخصوم
-        $netSalary = $grossSalary + $calc['total_bonuses'] - $calc['total_advances'] - $calc['total_penalties'] - $calc['total_deficits'] - $calc['total_cashier_deficits'];
+        // إعادة حساب الصافي بناءً على الاستحقاق الفعلي والخصومات والمكافآت وعجز الكاشير المخصوم.
+        //
+        // 🔴 بنعيد تطبيق سقف عجز الكاشير هنا مش بنعتمد على اللي جه من
+        // compute_salary() — لأن $grossSalary هنا ممكن يكون اتغيّر بسبب
+        // $dueDaysOverride، فالسقف المحسوب هناك مابيبقاش مظبوط.
+        $beforeCashier = $grossSalary + $calc['total_bonuses'] - $calc['total_advances']
+                       - $calc['total_penalties'] - $calc['total_deficits'];
+        $cashierTaken = (float) $calc['total_cashier_deficits'];
+        if ($cashierTaken > $beforeCashier) {
+            $cashierTaken = max(0.0, round($beforeCashier, 2));
+        }
+        $netSalary = round($beforeCashier - $cashierTaken, 2);
+
+        // الصافي لسه سالب؟ يبقى السلف والجزاءات وعجز العهدة لوحدهم أكبر من
+        // المرتب. دول مالهمش آلية ترحيل زي عجز الكاشير — لو سقّفناهم الفرق
+        // هيختفي من غير ما الموظف يدفعه. فبنرفض والأونر يقلّل المخصوم بإيده.
+        if ($netSalary < -0.005) {
+            throw new RuntimeException(
+                'الخصومات أكبر من المرتب للموظف (' . $name . ') — الاستحقاق '
+                . number_format($grossSalary + $calc['total_bonuses'], 2)
+                . ' والخصومات ' . number_format($calc['total_advances'] + $calc['total_penalties'] + $calc['total_deficits'], 2)
+                . '. قلّل «المخصوم» من السلف أو راجع الجزاءات وعجز العهدة.'
+            );
+        }
 
         $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
         $empName->execute([$employeeId]);
@@ -2284,7 +2324,7 @@ function pay_salary(
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $employeeId, $month, $calc['base_salary'], $calc['total_bonuses'], $calc['total_advances'],
-            $calc['total_penalties'], $calc['total_deficits'], $calc['total_cashier_deficits'], $netSalary,
+            $calc['total_penalties'], $calc['total_deficits'], $cashierTaken, $netSalary,
             $calc['period_from'], $calc['period_to'], $workHours, $workDays,
             $leaveDays, $dueDaysCalc, $dueDays, $editedBy, $editedAt,
         ]);
@@ -2412,7 +2452,7 @@ function pay_salary(
 
         // (٢-ب) باقي عجز الكاشير غير المخصوم يتحول لسلفة مستديمة وقيد debit في سجل الموظف
         $cashierCalcTotal = (float)($calc['cashier_deficits_calc'] ?? 0.0);
-        $cashierDeducted = (float)($calc['total_cashier_deficits'] ?? 0.0);
+        $cashierDeducted = $cashierTaken;   // المسقّف مش اللي جه من compute_salary
         $cashierRemaining = round($cashierCalcTotal - $cashierDeducted, 2);
 
         if ($cashierRemaining > 0.005) {
