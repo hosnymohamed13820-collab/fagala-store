@@ -1047,8 +1047,8 @@ function delete_custody_expense(int $lineId, ?int $userId = null): void
  *  - الفرق = الفعلي − آخر المدة المفروض:
  *      • عجز (الفرق سالب): يتسجل في كشف الحساب على خزينة العهدة (مدين) لتصفيرها،
  *        وبيتحدد لو يتحمّله الموظف:
- *          - |العجز| >= العتبة → ذمة على الموظف (custody_deficits, status=pending).
- *          - |العجز| <  العتبة → المحل يتحمله (مفيش ذمة على الموظف).
+ *          - |العجز| >  العتبة → ذمة على الموظف (custody_deficits, status=pending).
+ *          - |العجز| <= العتبة → المحل يتحمله (مفيش ذمة على الموظف).
  *      • زيادة (الفرق موجب): تدخل الكاش الرئيسي (دائن) وتطلع من العهدة... لكن العهدة
  *        أصلاً فيها أقل من الفعلي؟ لا — الزيادة معناها الفعلي أكبر من المفروض،
  *        يبقى خزينة العهدة (اللي رصيدها = آخر المدة المفروض) محتاجة credit بالزيادة
@@ -1129,7 +1129,7 @@ function close_custody(
                          $date, 'custody_deficit', $custodyId, $userId, $pdo);
 
             // هل يتحمّله الموظف؟
-            if ($deficit >= $tolerance) {
+            if ($deficit > $tolerance) {
                 $onEmployee = true;
                 $pdo->prepare(
                     'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
@@ -1902,15 +1902,16 @@ function salary_days_from_hours(float $workHours, ?float $expectedMonthlyHours =
  * - kind: 'shortage' (عجز لو difference < 0) · 'over' (زيادة لو difference > 0) · 'none' (لو 0)
  * - amount: القيمة المطلقة للفرق (abs($difference))
  * - tolerance: عتبة التسامح المستعملة
- * - exceeded: الجزء المتجاوز للعتبة = max(0, amount - tolerance)
- * - over_limit: هل تجاوز العتبة؟ (exceeded > 0)
+ * - exceeded: المبلغ المتجاوز أو المخصوم = لو تجاوز العتبة يتخصم المبلغ كامل ($amount)، لو داخلها أو مساويها 0.0 (قاعدة بوابة: ٣١ ← ٣١، ٣٠ ← ٠)
+ * - above_tolerance: الجزء فوق العتبة = max(0, amount - tolerance) للعرض المعلوماتي فقط
+ * - over_limit: هل تجاوز العتبة؟ (amount - tolerance > 0.0001)
  * - status_label: 'داخل العتبة' أو 'تجاوز العتبة'
  *
  * ⚠️ المصدر الموحد للحقيقة لمنطق العتبة في تقرير العجوزات وتاب الجزاءات.
  *
  * @param float $difference فرق الوردية (سالب=عجز، موجب=زيادة)
  * @param float|null $tolerance العتبة (افتراضي من إعداد custody_deficit_tolerance)
- * @return array{kind: string, amount: float, tolerance: float, exceeded: float, over_limit: bool, status_label: string}
+ * @return array{kind: string, amount: float, tolerance: float, exceeded: float, above_tolerance: float, over_limit: bool, status_label: string}
  */
 function shift_variance_status(float $difference, ?float $tolerance = null): array
 {
@@ -1930,18 +1931,21 @@ function shift_variance_status(float $difference, ?float $tolerance = null): arr
         $kind = 'none';
     }
 
-    // المتجاوز = max(0, amount - tolerance) وفقاً لقرار الأونر
-    $exceeded = max(0.0, round($amount - $tolerance, 2));
-    $overLimit = $exceeded > 0.0001;
+    // العتبة بوابة: اللي فوقها يتخصم كامل ($amount)، واللي تحتها أو مساويها يتسامح (0.0)
+    // مثال: عتبة ٣٠ ← عجز ٣٠ يتسامح (0)، عجز ٣١ يتخصم ٣١ كاملة
+    $aboveTolerance = max(0.0, round($amount - $tolerance, 2));
+    $overLimit = ($amount - $tolerance) > 0.0001;
+    $exceeded = $overLimit ? round($amount, 2) : 0.0;
     $statusLabel = $overLimit ? 'تجاوز العتبة' : 'داخل العتبة';
 
     return [
-        'kind'         => $kind,
-        'amount'       => round($amount, 2),
-        'tolerance'    => round($tolerance, 2),
-        'exceeded'     => $exceeded,
-        'over_limit'   => $overLimit,
-        'status_label' => $statusLabel,
+        'kind'            => $kind,
+        'amount'          => round($amount, 2),
+        'tolerance'       => round($tolerance, 2),
+        'exceeded'        => $exceeded,
+        'above_tolerance' => $aboveTolerance,
+        'over_limit'      => $overLimit,
+        'status_label'    => $statusLabel,
     ];
 }
 
@@ -1983,7 +1987,7 @@ function compute_salary(
     ?float $dueDaysOverride = null,
     ?float $monthlyTakeOverride = null,
     ?float $standingTakeOverride = null,
-    ?float $cashierDeficitOverride = null
+    ?float $cashierTakeOverride = null
 ): array
 {
     $pdo = db();
@@ -2111,7 +2115,7 @@ function compute_salary(
                 s.business_date AS shift_date,
                 s.difference AS variance,
                 ? AS tolerance,
-                GREATEST(0, ABS(s.difference) - ?) AS exceeded
+                ABS(s.difference) AS exceeded
            FROM shifts s
            JOIN users     u ON u.id = s.user_id
            JOIN employees e ON e.user_id = u.id
@@ -2123,7 +2127,7 @@ function compute_salary(
             AND d.id IS NULL
           ORDER BY s.id ASC"
     );
-    $stCashierDef->execute([$tolerance, $tolerance, $employeeId, $from, $to, $tolerance]);
+    $stCashierDef->execute([$tolerance, $employeeId, $from, $to, $tolerance]);
     $cashierDefRows = $stCashierDef->fetchAll(PDO::FETCH_ASSOC);
 
     $cashierDefCalc = 0.0;
@@ -2143,8 +2147,8 @@ function compute_salary(
     }
     $cashierDefCalc = round($cashierDefCalc, 2);
 
-    $cashierDeficits = ($cashierDeficitOverride !== null && $cashierDeficitOverride >= 0)
-        ? round((float)$cashierDeficitOverride, 2)
+    $cashierDeficits = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
+        ? round((float)$cashierTakeOverride, 2)
         : $cashierDefCalc;
 
     $net = $noExpected ? 0.0 : ($grossSalary + $bonuses - $totalAdvances - $penalties - $deficits - $cashierDeficits);
@@ -2200,7 +2204,7 @@ function pay_salary(
     ?float $dueDaysOverride = null,
     ?float $monthlyTakeOverride = null,
     ?float $standingTakeOverride = null,
-    ?float $cashierDeficitOverride = null
+    ?float $cashierTakeOverride = null
 ): int {
     $pdo = db();
     $pdo->beginTransaction();
@@ -2212,7 +2216,7 @@ function pay_salary(
             throw new RuntimeException('مرتب هذا الشهر مسجّل بالفعل.');
         }
 
-        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierDeficitOverride);
+        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierTakeOverride);
         $name = $calc['employee_name'] ?? ('الموظف #' . $employeeId);
         $isFixed = ($calc['salary_mode'] ?? 'hours') === 'fixed';
 

@@ -405,14 +405,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $standingTakeOverride = max(0.0, (float)$_POST['standing_take']);
                 }
-                $cashierDeficitOverride = null;
-                if (isset($_POST['cashier_deficit']) && trim((string)$_POST['cashier_deficit']) !== '') {
+                $cashierTakeOverride = null;
+                if (isset($_POST['cashier_take']) && trim((string)$_POST['cashier_take']) !== '') {
                     if (!is_owner()) {
                         throw new RuntimeException('غير مصرّح لك بتعديل عجز الكاشير.');
                     }
-                    $cashierDeficitOverride = max(0.0, (float)$_POST['cashier_deficit']);
+                    $cashierTakeOverride = max(0.0, (float)$_POST['cashier_take']);
                 }
-                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierDeficitOverride);
+                pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierTakeOverride);
                 notify_salaries_paid([$empId], $month);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
@@ -441,7 +441,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $bonusesPost        = (array)($_POST['bonuses'] ?? []);
                 $monthlyTakeArr     = (array)($_POST['monthly_take'] ?? []);
                 $standingTakeArr    = (array)($_POST['standing_take'] ?? []);
-                $cashierDeficitArr  = (array)($_POST['cashier_deficit'] ?? []);
+                $cashierTakeArr     = (array)($_POST['cashier_take'] ?? []);
 
                 // إذا كان المستخدم هو الأونر، نقوم بحفظ أي تعديلات على المكافآت في معاملة منفصلة ومغلقة قبل بدء الصرف
                 if (is_owner()) {
@@ -495,15 +495,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         $standingTakeOverride = max(0.0, (float)$standingTakeArr[$empId]);
                     }
-                    $cashierDeficitOverride = null;
-                    if (isset($cashierDeficitArr[$empId]) && trim((string)$cashierDeficitArr[$empId]) !== '') {
+                    $cashierTakeOverride = null;
+                    if (isset($cashierTakeArr[$empId]) && trim((string)$cashierTakeArr[$empId]) !== '') {
                         if (!is_owner()) {
                             throw new RuntimeException('غير مصرّح لك بتعديل عجز الكاشير.');
                         }
-                        $cashierDeficitOverride = max(0.0, (float)$cashierDeficitArr[$empId]);
+                        $cashierTakeOverride = max(0.0, (float)$cashierTakeArr[$empId]);
                     }
                     try {
-                        pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveOverride, $dueOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierDeficitOverride);
+                        pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveOverride, $dueOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierTakeOverride);
                         $paidCount++;
                         $paidEmpIds[] = $empId;
                     } catch (Throwable $ex) {
@@ -724,7 +724,7 @@ if ($tab === 'penalties') {
                 'full_name'      => (string) $r['full_name'],
                 'deduction_type' => $dedType,
                 'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => $vs['exceeded'], // المبلغ المعروض لصفوف الورديات = المتجاوز
+                'amount'         => $vs['amount'],
                 'tolerance'      => number_format($vs['tolerance'], 2),
                 'exceeded'       => number_format($vs['exceeded'], 2),
                 'reason'         => $reason,
@@ -851,7 +851,7 @@ if ($tab === 'salaries') {
     $tolerance = custody_tolerance();
     $cashierDefStmt = $pdo->prepare(
         "SELECT e.id AS employee_id,
-                COALESCE(SUM(GREATEST(0, ABS(s.difference) - ?)), 0) AS exceeded_total,
+                COALESCE(SUM(ABS(s.difference)), 0) AS exceeded_total,
                 COUNT(*) AS shift_cnt
            FROM shifts s
            JOIN users     u ON u.id = s.user_id
@@ -863,7 +863,7 @@ if ($tab === 'salaries') {
             AND d.id IS NULL
           GROUP BY e.id"
     );
-    $cashierDefStmt->execute([$tolerance, $salFrom, $salTo, $tolerance]);
+    $cashierDefStmt->execute([$salFrom, $salTo, $tolerance]);
     $cashierDeficitMap = [];
     foreach ($cashierDefStmt->fetchAll(PDO::FETCH_ASSOC) as $cRow) {
         $cashierDeficitMap[(int)$cRow['employee_id']] = [
@@ -1280,7 +1280,7 @@ $statusBadge = function($st) {
         <?php else: ?>
         <div style="overflow-x:auto;">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>المتجاوز</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
             <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
                 <?php
@@ -1429,6 +1429,7 @@ $statusBadge = function($st) {
                         <th>سلف مستديمة</th>
                         <th>المخصوم من المستديمة</th>
                         <th>عجز الكاشير</th>
+                        <th>المخصوم من العجز</th>
                         <th>الخصومات</th>
                         <th>الصافي</th>
                         <th>إجراء</th>
@@ -1448,6 +1449,7 @@ $statusBadge = function($st) {
                         data-standing-adv="<?= $p['standing_adv_owed'] ?>"
                         data-standing-take="<?= $p['standing_adv_take'] ?>"
                         data-cashier-deficit="<?= $p['cashier_deficit'] ?>"
+                        data-cashier-take="<?= $p['cashier_deficit'] ?>"
                         data-penalties="<?= $p['penalties'] ?>"
                         data-deficits="<?= $p['deficits'] ?>"
                         data-deductions="<?= $p['total_deductions'] ?>">
@@ -1570,19 +1572,23 @@ $statusBadge = function($st) {
                             <?php endif; ?>
                         </td>
                         <td>
+                            <span style="color:<?= $p['cashier_deficit'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;" title="<?= e("عجز الكاشير المتجاوز للعتبة في الفترة دي ({$p['cashier_shift_cnt']} وردية)") ?>">
+                                <?= number_format($p['cashier_deficit'], 2) ?>
+                            </span>
+                        </td>
+                        <td>
                             <?php if ($p['is_paid'] || !is_owner()): ?>
-                                <span style="color:<?= $p['cashier_deficit'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;" title="<?= e("عجز الكاشير المتجاوز للعتبة في الفترة دي ({$p['cashier_shift_cnt']} وردية)") ?>">
+                                <span style="color:<?= $p['cashier_deficit'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;">
                                     <?= number_format($p['cashier_deficit'], 2) ?>
                                 </span>
                             <?php else: ?>
                                 <div style="display:inline-flex;align-items:center;gap:4px;">
-                                    <input type="number" step="0.01" min="0" name="cashier_deficit[<?= $p['id'] ?>]"
+                                    <input type="number" step="0.01" min="0" name="cashier_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
-                                           class="cashier-def-input payroll-num"
+                                           class="cashier-take-input payroll-num"
                                            data-calc="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
-                                           title="<?= e("عجز الكاشير المتجاوز للعتبة في الفترة دي ({$p['cashier_shift_cnt']} وردية) — عدّله لو عايز تخصم أكتر أو أقل") ?>"
                                            style="color:var(--neg);font-weight:500;">
-                                    <span class="cashier-def-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="cashier-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                 </div>
                             <?php endif; ?>
                         </td>
@@ -1970,7 +1976,7 @@ $statusBadge = function($st) {
                 </div>
                 <div class="form-row">
                     <label>عجز الكاشير المخصوم (تعديل الأونر — اختياري)</label>
-                    <input type="number" min="0" step="0.01" name="cashier_deficit" id="singleSalaryCashierDeficit" placeholder="اتركه فارغاً للاعتماد التلقائي">
+                    <input type="number" min="0" step="0.01" name="cashier_take" id="singleSalaryCashierTake" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
             <?php endif; ?>
             <p style="font-size:12px;color:var(--ink-500);">سيتم إضافة المكافآت وخصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
@@ -2162,12 +2168,12 @@ $statusBadge = function($st) {
             modalSTake.value = '';
         }
 
-        var cDefInput = tr ? tr.querySelector('.cashier-def-input') : null;
-        var modalCDef = document.getElementById('singleSalaryCashierDeficit');
-        if (modalCDef && cDefInput) {
-            modalCDef.value = cDefInput.value;
-        } else if (modalCDef) {
-            modalCDef.value = '';
+        var cTakeInput = tr ? tr.querySelector('.cashier-take-input') : null;
+        var modalCTake = document.getElementById('singleSalaryCashierTake');
+        if (modalCTake && cTakeInput) {
+            modalCTake.value = cTakeInput.value;
+        } else if (modalCTake) {
+            modalCTake.value = '';
         }
 
         modal.classList.add('open');
@@ -2176,7 +2182,7 @@ $statusBadge = function($st) {
     // تحديث أرقام أيام الاستحقاق والاستحقاق والخصومات والصافي لحظياً عند تعديل أي خانة
     document.addEventListener('input', function(e) {
         var inp = e.target;
-        if (!inp.matches('.leave-days-input, .due-days-input, .bonus-input, .monthly-take-input, .standing-take-input, .cashier-def-input')) return;
+        if (!inp.matches('.leave-days-input, .due-days-input, .bonus-input, .monthly-take-input, .standing-take-input, .cashier-take-input')) return;
         var tr = inp.closest('tr');
         if (!tr) return;
 
@@ -2227,9 +2233,9 @@ $statusBadge = function($st) {
             }
         }
 
-        var cashierInp = tr.querySelector('.cashier-def-input');
-        var cashierBadge = tr.querySelector('.cashier-def-edited-badge');
-        var cashierDef = cashierInp ? (cashierInp.value.trim() === '' ? (parseFloat(cashierInp.dataset.calc) || 0) : (parseFloat(cashierInp.value) || 0)) : (parseFloat(tr.dataset.cashierDeficit) || 0);
+        var cashierInp = tr.querySelector('.cashier-take-input');
+        var cashierBadge = tr.querySelector('.cashier-take-edited-badge');
+        var cashierTake = cashierInp ? (cashierInp.value.trim() === '' ? (parseFloat(cashierInp.dataset.calc) || 0) : (parseFloat(cashierInp.value) || 0)) : (parseFloat(tr.dataset.cashierTake) || 0);
         if (cashierInp && cashierBadge) {
             var cCalc = parseFloat(cashierInp.dataset.calc) || 0;
             if (cashierInp.value.trim() !== '' && Math.abs(parseFloat(cashierInp.value) - cCalc) > 0.005) {
@@ -2266,7 +2272,7 @@ $statusBadge = function($st) {
             }
         }
 
-        var totalDeductions = monthlyTake + standingTake + penalties + deficits + cashierDef;
+        var totalDeductions = monthlyTake + standingTake + cashierTake + penalties + deficits;
         var net = gross + bonuses - totalDeductions;
 
         var grossCell = tr.querySelector('.cell-gross');
@@ -2276,7 +2282,7 @@ $statusBadge = function($st) {
 
         var dedCell = tr.querySelector('.cell-deductions');
         if (dedCell) {
-            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز عهدة: ' + deficits.toFixed(2) + ' | عجز كاشير: ' + cashierDef.toFixed(2) + '">' +
+            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز عهدة: ' + deficits.toFixed(2) + ' | عجز كاشير: ' + cashierTake.toFixed(2) + '">' +
                 totalDeductions.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>';
         }
 
