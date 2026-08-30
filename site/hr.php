@@ -776,9 +776,26 @@ if ($tab === 'attendance') {
 }
 
 // بيانات الرواتب وحساب المستحقات للفترة (تبويب الرواتب)
-// الفترة الافتراضية: من ٢٦ الشهر السابق إلى ٢٥ الشهر الحالي
-$defaultSalFrom = date('Y-m-26', strtotime('first day of last month'));
-$defaultSalTo   = date('Y-m-25');
+// الفترة الافتراضية: من ٢٦ الشهر السابق إلى ٢٥ الشهر الحالي.
+//
+// 🔴 وفيها مهلة ٥ أيام: أول ٥ أيام في الشهر بنفضل على الفترة اللي **خلصت**
+// مش اللي لسه بادية. السبب إن الصرف بيتعمل في الأيام دي بالظبط — لو قلبنا
+// على الفترة الجديدة يوم ١، الأونر يفتح الشاشة يلاقي ساعات ٥ أيام بس
+// وأرقام مرتبات ناقصة قدامه ويفتكرها بق.
+//
+//   ٣١ أغسطس ← ٢٦ يوليو … ٢٥ أغسطس
+//   ١ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (لسه في المهلة)
+//   ٥ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (آخر يوم في المهلة)
+//   ٦ سبتمبر  ← ٢٦ أغسطس … ٢٥ سبتمبر  (قلبت)
+//
+// ⚠️ صفحة تسجيل الحضور بتقلب يوم ١ من غير مهلة — ده مقصود، الموظف عايز
+//    يشوف فترته الجارية. شوف التعليق في attendance.php.
+const PAYROLL_GRACE_DAYS = 5;
+$salAnchor = (int) date('j') <= PAYROLL_GRACE_DAYS
+    ? strtotime('first day of last month')
+    : strtotime('first day of this month');
+$defaultSalTo   = date('Y-m-25', $salAnchor);
+$defaultSalFrom = date('Y-m-26', strtotime('-1 month', $salAnchor));
 $salFrom = $_GET['from'] ?? $defaultSalFrom;
 $salTo   = $_GET['to']   ?? $defaultSalTo;
 if (!strtotime($salFrom)) $salFrom = $defaultSalFrom;
