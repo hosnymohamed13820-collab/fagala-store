@@ -450,11 +450,24 @@ require_once __DIR__ . '/includes/header.php';
     <?php
         // بصمات اشتراكات المستخدم الحالي — عشان الجافاسكربت يقارن الاشتراك
         // اللي على الجهاز بالمتسجّل عندنا. بنمرّر الـhash بس مش الـendpoint.
-        $myHashStmt = $pdo->prepare('SELECT endpoint_hash FROM push_subscriptions WHERE user_id = ?');
+        // بنمرّر بصمات (sha256) مش القيم نفسها — الـauth سر ومايتطبعش في الصفحة.
+        $myHashStmt = $pdo->prepare(
+            'SELECT endpoint_hash, SHA2(p256dh, 256) AS k_hash, SHA2(auth, 256) AS a_hash
+               FROM push_subscriptions WHERE user_id = ?'
+        );
         $myHashStmt->execute([(int) current_user()['id']]);
-        $myHashes = $myHashStmt->fetchAll(PDO::FETCH_COLUMN);
+        $mySubRows = $myHashStmt->fetchAll(PDO::FETCH_ASSOC);
+        $myHashes  = array_column($mySubRows, 'endpoint_hash');
+        $myKeyMap  = [];
+        foreach ($mySubRows as $sr) {
+            $myKeyMap[(string) $sr['endpoint_hash']] = [
+                'k' => (string) $sr['k_hash'],
+                'a' => (string) $sr['a_hash'],
+            ];
+        }
     ?>
     <div id="devCheck" data-hashes="<?= e(json_encode(array_values($myHashes), JSON_UNESCAPED_UNICODE)) ?>"
+        data-keymap="<?= e(json_encode($myKeyMap, JSON_UNESCAPED_UNICODE)) ?>"
         style="margin-bottom:14px;font-size:12.5px;color:var(--ink-600);
         background:var(--line-soft);border-radius:10px;padding:10px 14px;">
         بنفحص الجهاز ده…
@@ -667,14 +680,52 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                 .then(function (buf) {
                     var hex = Array.from(new Uint8Array(buf))
                         .map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
-                    if (stored.indexOf(hex) !== -1) {
-                        out.push(line(true, 'الاشتراك ده هو نفسه المتسجّل عندنا'));
-                    } else {
+                    if (stored.indexOf(hex) === -1) {
                         out.push(line(false, 'الاشتراك اللي على الجهاز <b>مش هو</b> المتسجّل عندنا — '
                             + 'السيرفر بيبعت لاشتراك قديم. دوس «أعِد تسجيل الجهاز ده» تحت.'));
-                        var rf = document.getElementById('resubForm');
-                        if (rf) rf.style.display = 'block';
+                        var rf0 = document.getElementById('resubForm');
+                        if (rf0) rf0.style.display = 'block';
+                        return;
                     }
+                    out.push(line(true, 'الاشتراك ده هو نفسه المتسجّل عندنا'));
+
+                    // 🔴 المفاتيح كمان — نفس الـendpoint ممكن يكون متخزّن بمفاتيح قديمة.
+                    // ساعتها FCM بتقبل وترد ٢٠١، والمتصفح يفشل يفك التشفير ويرمي
+                    // الرسالة في صمت من غير ما يشغّل معالج push خالص.
+                    var keymap = {};
+                    try { keymap = JSON.parse(box.dataset.keymap || '{}'); } catch (e) {}
+                    var expect = keymap[hex];
+                    if (!expect) return;
+
+                    function b64url(buf) {
+                        var s = btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+                        return s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+                    }
+                    function sha256hex(str) {
+                        return crypto.subtle.digest('SHA-256', new TextEncoder().encode(str))
+                            .then(function (b) {
+                                return Array.from(new Uint8Array(b))
+                                    .map(function (x) { return x.toString(16).padStart(2, '0'); }).join('');
+                            });
+                    }
+
+                    var liveK = b64url(sub.getKey('p256dh'));
+                    var liveA = b64url(sub.getKey('auth'));
+
+                    return Promise.all([sha256hex(liveK), sha256hex(liveA)]).then(function (r) {
+                        var kOk = (r[0] === (expect.k || '').toLowerCase());
+                        var aOk = (r[1] === (expect.a || '').toLowerCase());
+                        if (kOk && aOk) {
+                            out.push(line(true, 'مفاتيح التشفير المتخزّنة مطابقة لمفاتيح الجهاز'));
+                        } else {
+                            out.push(line(false, '<b>مفاتيح التشفير المتخزّنة قديمة</b> — '
+                                + 'عشان كده الرسالة بتوصل والمتصفح مش قادر يفكّها فبيرميها في صمت. '
+                                + 'دوس «أعِد تسجيل الجهاز ده» تحت.'
+                                + (kOk ? '' : ' (p256dh مختلف)') + (aOk ? '' : ' (auth مختلف)')));
+                            var rf1 = document.getElementById('resubForm');
+                            if (rf1) rf1.style.display = 'block';
+                        }
+                    });
                 })
                 .catch(function () {
                     out.push(line(null, 'مقدرناش نقارن الاشتراك بالمتسجّل (المقارنة محتاجة HTTPS)'));
