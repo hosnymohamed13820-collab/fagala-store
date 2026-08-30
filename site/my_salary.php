@@ -368,6 +368,11 @@ require_once __DIR__ . '/includes/header.php';
         <div class="salary-net-box">
             <div class="lbl">صافي المرتب المصروف</div>
             <div class="val"><?= number_format($netSalary, 2) ?> ج.م</div>
+            <?php if ($netSalary <= 0.005 && ($advances + $penalties + $deficits + $cashierDef) > 0): ?>
+                <div style="font-size: 12px; color: var(--neg); margin-top: 6px; font-weight: 600;">
+                    المرتب مشالش كل الخصومات — الباقي اتحوّل سلفة عليك.
+                </div>
+            <?php endif; ?>
         </div>
 
         <div style="text-align: center; margin-top: 16px;">

@@ -926,9 +926,13 @@ if ($tab === 'salaries') {
         $bon             = (float) $bonInfo['total_amount'];
         $bonCnt          = (int) $bonInfo['cnt'];
 
-        // حساب السلف بالترتيب (id تصاعدي) وسقف رصيد السجل
+        // حساب السلف بالترتيب (id تصاعدي) وسقف رصيد السجل والوعاء
+        // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
+        $pot             = $noExpected ? 0.0 : ($gross + $bon);
+
         $empAdvRows      = $advRowsByEmp[$empId] ?? [];
-        $remCap          = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
+        $maxLedgerCap    = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
+        $remCap          = min($maxLedgerCap, $pot);
         $monthlyAdvOwed  = 0.0;
         $monthlyAdvTake  = 0.0;
         $standingAdvOwed = 0.0;
@@ -949,16 +953,30 @@ if ($tab === 'salaries') {
                 $monthlyAdvOwed += $advOutstanding;
             }
         }
-        $adv             = $monthlyAdvTake + $standingAdvTake;
+        $advApplied      = round($monthlyAdvTake + $standingAdvTake, 2);
+        $pot            -= $advApplied;
+
+        $penFull         = (float) ($penMap[$empId] ?? 0);
+        $penApplied      = min($penFull, $pot);
+        $penApplied      = max(0.0, round($penApplied, 2));
+        $pot            -= $penApplied;
+
+        $defFull         = (float) ($defMap[$empId] ?? 0);
+        $defApplied      = min($defFull, $pot);
+        $defApplied      = max(0.0, round($defApplied, 2));
+        $pot            -= $defApplied;
 
         $cDefInfo        = $cashierDeficitMap[$empId] ?? ['exceeded_total' => 0.0, 'shift_cnt' => 0];
-        $cashierDef      = (float) $cDefInfo['exceeded_total'];
+        $cashierDefCalc  = (float) $cDefInfo['exceeded_total'];
         $cashierShiftCnt = (int) $cDefInfo['shift_cnt'];
+        $cashierApplied  = min($cashierDefCalc, $pot);
+        $cashierApplied  = max(0.0, round($cashierApplied, 2));
+        $pot            -= $cashierApplied;
 
-        $pen             = (float) ($penMap[$empId] ?? 0);
-        $def             = (float) ($defMap[$empId] ?? 0);
-        $totalDeductions = $adv + $pen + $def + $cashierDef;
-        $net             = $noExpected ? 0.0 : ($gross + $bon - $totalDeductions);
+        $totalDeductions = round($advApplied + $penApplied + $defApplied + $cashierApplied, 2);
+        $net             = $noExpected ? 0.0 : max(0.0, round($pot, 2));
+        $carryToAdvance  = round(($penFull - $penApplied) + ($defFull - $defApplied) + ($cashierDefCalc - $cashierApplied), 2);
+        $carryToAdvance  = max(0.0, $carryToAdvance);
         $isPaid          = isset($paidMonthMap[$empId]);
 
         $payrollData[] = [
@@ -980,16 +998,20 @@ if ($tab === 'salaries') {
             'bonuses'                => $bon,
             'bonus_cnt'              => $bonCnt,
             'total_bonuses'          => $bon,
-            'advances'               => $adv,
+            'advances'               => $advApplied,
             'ledger_balance'         => $empLedgerBal,
             'monthly_adv_owed'       => $monthlyAdvOwed,
             'monthly_adv_take'       => $monthlyAdvTake,
             'standing_adv_owed'      => $standingAdvOwed,
             'standing_adv_take'      => $standingAdvTake,
-            'cashier_deficit'        => $cashierDef,
+            'cashier_deficit'        => $cashierApplied,
+            'cashier_deficit_calc'   => $cashierDefCalc,
             'cashier_shift_cnt'      => $cashierShiftCnt,
-            'penalties'              => $pen,
-            'deficits'               => $def,
+            'penalties'              => $penApplied,
+            'penalties_full'         => $penFull,
+            'deficits'               => $defApplied,
+            'deficits_full'          => $defFull,
+            'carry_to_advance'       => $carryToAdvance,
             'total_deductions'       => $totalDeductions,
             'net_salary'             => $net,
             'is_paid'                => $isPaid,
@@ -1465,10 +1487,11 @@ $statusBadge = function($st) {
                         data-monthly-take="<?= $p['monthly_adv_take'] ?>"
                         data-standing-adv="<?= $p['standing_adv_owed'] ?>"
                         data-standing-take="<?= $p['standing_adv_take'] ?>"
-                        data-cashier-deficit="<?= $p['cashier_deficit'] ?>"
+                        data-cashier-deficit="<?= $p['cashier_deficit_calc'] ?>"
                         data-cashier-take="<?= $p['cashier_deficit'] ?>"
-                        data-penalties="<?= $p['penalties'] ?>"
-                        data-deficits="<?= $p['deficits'] ?>"
+                        data-penalties="<?= $p['penalties_full'] ?>"
+                        data-deficits="<?= $p['deficits_full'] ?>"
+                        data-carry="<?= $p['carry_to_advance'] ?>"
                         data-deductions="<?= $p['total_deductions'] ?>">
                         <td>
                             <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || (!$p['is_fixed'] && $p['no_expected'])) ? 'disabled' : '' ?>>
@@ -1589,8 +1612,8 @@ $statusBadge = function($st) {
                             <?php endif; ?>
                         </td>
                         <td>
-                            <span style="color:<?= $p['cashier_deficit'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;" title="<?= e("عجز الكاشير المتجاوز للعتبة في الفترة دي ({$p['cashier_shift_cnt']} وردية)") ?>">
-                                <?= number_format($p['cashier_deficit'], 2) ?>
+                            <span style="color:<?= $p['cashier_deficit_calc'] > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;font-weight:500;" title="<?= e("عجز الكاشير المتجاوز للعتبة في الفترة دي ({$p['cashier_shift_cnt']} وردية)") ?>">
+                                <?= number_format($p['cashier_deficit_calc'], 2) ?>
                             </span>
                         </td>
                         <td>
@@ -1614,7 +1637,13 @@ $statusBadge = function($st) {
                                 <?= number_format($p['total_deductions'], 2) ?>
                             </span>
                         </td>
-                        <td class="cell-net" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
+                        <?php
+                        $netTitle = '';
+                        if (!$p['no_expected'] && $p['carry_to_advance'] > 0.005) {
+                            $netTitle = 'المرتب مشالش ' . number_format($p['carry_to_advance'], 2) . ' — هينزلوا سلفة مستديمة على الموظف';
+                        }
+                        ?>
+                        <td class="cell-net" title="<?= e($netTitle) ?>" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
                             <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
                         </td>
                         <td>
@@ -2210,6 +2239,7 @@ $statusBadge = function($st) {
         var workDays = parseFloat(tr.dataset.workDays) || 0;
         var penalties = parseFloat(tr.dataset.penalties) || 0;
         var deficits = parseFloat(tr.dataset.deficits) || 0;
+        var cashierDefCalc = parseFloat(tr.dataset.cashierDeficit) || 0;
 
         var leaveInp = tr.querySelector('.leave-days-input');
         var leaveDays = leaveInp ? (leaveInp.value.trim() === '' ? (parseFloat(leaveInp.dataset.calc) || 0) : (parseFloat(leaveInp.value) || 0)) : (parseFloat(tr.dataset.leaveDays) || 0);
@@ -2289,15 +2319,52 @@ $statusBadge = function($st) {
             }
         }
 
-        // سقف عجز الكاشير: المرتب بيتصفّر ومابينزلش تحت الصفر، والباقي بينزل
-        // سلفة مستديمة وقت الصرف. نفس منطق compute_salary() و pay_salary()
-        // بالظبط — لو غيّرت هنا غيّر في التلاتة.
-        var beforeCashier = gross + bonuses - monthlyTake - standingTake - penalties - deficits;
-        var cashierApplied = cashierTake > beforeCashier ? Math.max(0, beforeCashier) : cashierTake;
-        var cashierToAdvance = Math.max(0, cashierTake - cashierApplied);
+        // ---------------------------------------------------------------
+        // ترتيب الخصومات وسقف المرتب: المرتب بيتصفّر ومابينزلش تحت الصفر.
+        //
+        // قرار محمد: نخصم بالترتيب لحد ما المرتب يبقى صفر، واللي مقدرناش
+        // نخصمه ينزل سلفة مستديمة على الموظف. مفيش صافي سالب ومفيش فلوس تضيع.
+        //
+        // الترتيب الملزم:
+        // الوعاء = الاستحقاق قبل الخصم + المكافآت
+        // ١) السلف      = min(المحسوب, سقف رصيد السجل, الوعاء)  ← الوعاء -= اللي اتخصم
+        // ٢) الجزاءات    = min(الجزاءات, الوعاء)                 ← الوعاء -= اللي اتخصم
+        // ٣) عجز العهدة  = min(عجز العهدة, الوعاء)               ← الوعاء -= اللي اتخصم
+        // ٤) عجز الكاشير = min(المخصوم, الوعاء)                  ← الوعاء -= اللي اتخصم
+        //
+        // الصافي = الوعاء (لازم >= 0 دايماً)
+        // المرحّل = (الجزاءات − المخصوم) + (عجز العهدة − المخصوم) + (عجز الكاشير المحسوب − المخصوم)
+        // السلف مالهاش مرحّل — الباقي بيفضل في employee_advances.remaining تلقائي.
+        // ---------------------------------------------------------------
+        var pot = gross + bonuses;
 
-        var totalDeductions = monthlyTake + standingTake + cashierApplied + penalties + deficits;
-        var net = gross + bonuses - totalDeductions;
+        // ١) السلف = min(المحسوب, سقف رصيد السجل, الوعاء)
+        var advTaken = monthlyTake + standingTake;
+        var advApplied = Math.min(advTaken, pot);
+        advApplied = Math.max(0, advApplied);
+        pot -= advApplied;
+
+        // ٢) الجزاءات = min(الجزاءات, الوعاء)
+        var penaltiesApplied = Math.min(penalties, pot);
+        penaltiesApplied = Math.max(0, penaltiesApplied);
+        pot -= penaltiesApplied;
+
+        // ٣) عجز العهدة = min(عجز العهدة, الوعاء)
+        var deficitsApplied = Math.min(deficits, pot);
+        deficitsApplied = Math.max(0, deficitsApplied);
+        pot -= deficitsApplied;
+
+        // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+        var cashierApplied = Math.min(cashierTake, pot);
+        cashierApplied = Math.max(0, cashierApplied);
+        pot -= cashierApplied;
+
+        var net = Math.max(0, pot);
+
+        var carryToAdvance = (penalties - penaltiesApplied) + (deficits - deficitsApplied) + (cashierDefCalc - cashierApplied);
+        carryToAdvance = Math.max(0, carryToAdvance);
+
+        var totalDeductions = advApplied + penaltiesApplied + deficitsApplied + cashierApplied;
 
         var grossCell = tr.querySelector('.cell-gross');
         if (grossCell) {
@@ -2306,7 +2373,7 @@ $statusBadge = function($st) {
 
         var dedCell = tr.querySelector('.cell-deductions');
         if (dedCell) {
-            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penalties.toFixed(2) + ' | عجز عهدة: ' + deficits.toFixed(2) + ' | عجز كاشير: ' + cashierApplied.toFixed(2) + '">' +
+            dedCell.innerHTML = '<span style="color:' + (totalDeductions > 0 ? 'var(--neg)' : 'var(--ink-500)') + ';font-weight:600;" title="سلف شهر: ' + monthlyTake.toFixed(2) + ' | مستديمة: ' + standingTake.toFixed(2) + ' | جزاءات: ' + penaltiesApplied.toFixed(2) + ' | عجز عهدة: ' + deficitsApplied.toFixed(2) + ' | عجز كاشير: ' + cashierApplied.toFixed(2) + '">' +
                 totalDeductions.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span>';
         }
 
@@ -2314,9 +2381,9 @@ $statusBadge = function($st) {
         if (netCell) {
             netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
             netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
-            // الباقي من عجز الكاشير اللي المرتب مشالوش — هينزل سلفة مستديمة
-            netCell.title = cashierToAdvance > 0.005
-                ? ('المرتب مشالش ' + cashierToAdvance.toFixed(2) + ' من عجز الكاشير — هينزلوا سلفة مستديمة على الموظف')
+            // المرحّل الإجمالي اللي المرتب مشالوش — هينزل سلفة مستديمة على الموظف
+            netCell.title = carryToAdvance > 0.005
+                ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
                 : '';
         }
     });

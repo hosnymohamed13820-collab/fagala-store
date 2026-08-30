@@ -2152,24 +2152,53 @@ function compute_salary(
         : $cashierDefCalc;
 
     // ---------------------------------------------------------------
-    //  سقف عجز الكاشير: المرتب بيتصفّر ومابينزلش تحت الصفر.
+    // ترتيب الخصومات وسقف المرتب: المرتب بيتصفّر ومابينزلش تحت الصفر.
     //
-    //  قرار محمد: نخصم لحد ما المرتب يبقى صفر، والباقي ينزل سلفة
-    //  مستديمة على الموظف (pay_salary بتعملها). كاشير عجزه ٧,١٩٠.٩٩
-    //  ومرتبه ٣,٤٦١.٧٠ ← يتخصم ٣,٤٦١.٧٠ والصافي صفر، و٣,٧٢٩.٢٩
-    //  ينزلوا سلفة — مش صافي بـسالب ٣,٧٥٩.٢٩ زي الأول.
+    // قرار محمد: نخصم بالترتيب لحد ما المرتب يبقى صفر، واللي مقدرناش
+    // نخصمه ينزل سلفة مستديمة على الموظف. مفيش صافي سالب ومفيش فلوس تضيع.
     //
-    //  🔴 السقف على عجز الكاشير **بس** لأنه هو اللي عنده آلية ترحيل.
-    //  لو السلف والجزاءات وعجز العهدة لوحدهم أكبر من المرتب، الصافي
-    //  بيفضل سالب و pay_salary() بترفض الصرف — لأن تسقيفهم من غير
-    //  ترحيل معناه إن الفرق يختفي من غير ما حد يدفعه.
+    // الترتيب الملزم:
+    // الوعاء = الاستحقاق قبل الخصم + المكافآت
+    // ١) السلف      = min(المحسوب, سقف رصيد السجل, الوعاء)  ← الوعاء -= اللي اتخصم
+    // ٢) الجزاءات    = min(الجزاءات, الوعاء)                 ← الوعاء -= اللي اتخصم
+    // ٣) عجز العهدة  = min(عجز العهدة, الوعاء)               ← الوعاء -= اللي اتخصم
+    // ٤) عجز الكاشير = min(المخصوم, الوعاء)                  ← الوعاء -= اللي اتخصم
+    //
+    // الصافي = الوعاء (لازم >= 0 دايماً)
+    // المرحّل = (الجزاءات − المخصوم) + (عجز العهدة − المخصوم) + (عجز الكاشير المحسوب − المخصوم)
+    // السلف مالهاش مرحّل — الباقي بيفضل في employee_advances.remaining تلقائي.
     // ---------------------------------------------------------------
-    $beforeCashier = $grossSalary + $bonuses - $totalAdvances - $penalties - $deficits;
-    if (!$noExpected && $cashierDeficits > $beforeCashier) {
-        $cashierDeficits = max(0.0, round($beforeCashier, 2));
-    }
+    $pot = $noExpected ? 0.0 : ($grossSalary + $bonuses);
 
-    $net = $noExpected ? 0.0 : ($beforeCashier - $cashierDeficits);
+    // ١) السلف = min(المحسوب, سقف رصيد السجل, الوعاء)
+    $advApplied = min($totalAdvances, $pot);
+    $advApplied = max(0.0, round($advApplied, 2));
+    $pot -= $advApplied;
+
+    // ٢) الجزاءات = min(الجزاءات, الوعاء)
+    $penaltiesFull = $penalties;
+    $penApplied = min($penaltiesFull, $pot);
+    $penApplied = max(0.0, round($penApplied, 2));
+    $pot -= $penApplied;
+
+    // ٣) عجز العهدة = min(عجز العهدة, الوعاء)
+    $deficitsFull = $deficits;
+    $defApplied = min($deficitsFull, $pot);
+    $defApplied = max(0.0, round($defApplied, 2));
+    $pot -= $defApplied;
+
+    // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+    $cashierTake = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
+        ? round((float)$cashierTakeOverride, 2)
+        : $cashierDefCalc;
+    $cashierApplied = min($cashierTake, $pot);
+    $cashierApplied = max(0.0, round($cashierApplied, 2));
+    $pot -= $cashierApplied;
+
+    $netSalary = $noExpected ? 0.0 : max(0.0, round($pot, 2));
+
+    $carryToAdvance = round(($penaltiesFull - $penApplied) + ($deficitsFull - $defApplied) + ($cashierDefCalc - $cashierApplied), 2);
+    $carryToAdvance = max(0.0, $carryToAdvance);
 
     return [
         'employee_name'          => $empName,
@@ -2180,14 +2209,17 @@ function compute_salary(
         'day_hours'              => $dayHours,
         'hour_rate'              => $hourRate,
         'total_bonuses'          => $bonuses,
-        'total_advances'         => $totalAdvances,
-        'total_penalties'        => $penalties,
-        'total_deficits'         => $deficits,
-        'total_cashier_deficits' => $cashierDeficits,
+        'total_advances'         => $advApplied,
+        'total_penalties'        => $penApplied,
+        'total_deficits'         => $defApplied,
+        'total_cashier_deficits' => $cashierApplied,
+        'penalties_full'         => $penaltiesFull,
+        'deficits_full'          => $deficitsFull,
+        'carry_to_advance'       => $carryToAdvance,
         'cashier_shift_ids'      => $cashierShiftIds,
         'cashier_shift_details'  => $cashierShiftDetails,
         'cashier_deficits_calc'  => $cashierDefCalc,
-        'net_salary'             => $net,
+        'net_salary'             => $netSalary,
         'period_from'            => $from,
         'period_to'              => $to,
         'work_hours'             => $workHours,
@@ -2206,7 +2238,7 @@ function compute_salary(
  * - بيحسب المرتب وفترة الحضور، يسجّله، يصرفه من الخزينة (مدين بالصافي).
  * - يتيح للأونر تعديل أيام الإجازة والاستحقاق والمخصوم من السلف وعجز الكاشير مع حفظ التعديلات.
  * - بيقفل المكافآت والسلف والجزاءات وعجز العهدة المعلّقة (paid/deducted/recovered).
- * - بيسجّل الورديات التي تم فحص عجزها في salary_shift_deficits لمنع تكرار الخصم، ويحوّل باقي العجز غير المخصوم لسلفة مستديمة.
+ * - بيسجّل الورديات التي تم فحص عجزها في salary_shift_deficits لمنع تكرار الخصم، ويحوّل باقي الخصومات غير المخصومة لسلفة مستديمة.
  *
  * @return int معرّف المرتب
  */
@@ -2285,66 +2317,30 @@ function pay_salary(
             $grossSalary = $calc['day_rate'] * $dueDays;
         }
 
-        // إعادة حساب الصافي بناءً على الاستحقاق الفعلي والخصومات والمكافآت وعجز الكاشير المخصوم.
+        // ---------------------------------------------------------------
+        // ترتيب الخصومات وسقف المرتب: المرتب بيتصفّر ومابينزلش تحت الصفر.
         //
-        // 🔴 بنعيد تطبيق سقف عجز الكاشير هنا مش بنعتمد على اللي جه من
-        // compute_salary() — لأن $grossSalary هنا ممكن يكون اتغيّر بسبب
-        // $dueDaysOverride، فالسقف المحسوب هناك مابيبقاش مظبوط.
-        $beforeCashier = $grossSalary + $calc['total_bonuses'] - $calc['total_advances']
-                       - $calc['total_penalties'] - $calc['total_deficits'];
-        $cashierTaken = (float) $calc['total_cashier_deficits'];
-        if ($cashierTaken > $beforeCashier) {
-            $cashierTaken = max(0.0, round($beforeCashier, 2));
-        }
-        $netSalary = round($beforeCashier - $cashierTaken, 2);
+        // 🔴 بنعيد تطبيق الترتيب بنفسه هنا مش بناخد اللي جه من compute_salary()
+        // — لأن $grossSalary هنا ممكن يكون اتغيّر بسبب $dueDaysOverride.
+        //
+        // الترتيب الملزم:
+        // الوعاء = الاستحقاق قبل الخصم + المكافآت
+        // ١) السلف      = min(المحسوب, سقف رصيد السجل, الوعاء)  ← الوعاء -= اللي اتخصم
+        // ٢) الجزاءات    = min(الجزاءات, الوعاء)                 ← الوعاء -= اللي اتخصم
+        // ٣) عجز العهدة  = min(عجز العهدة, الوعاء)               ← الوعاء -= اللي اتخصم
+        // ٤) عجز الكاشير = min(المخصوم, الوعاء)                  ← الوعاء -= اللي اتخصم
+        //
+        // الصافي = الوعاء (لازم >= 0 دايماً)
+        // المرحّل = (الجزاءات − المخصوم) + (عجز العهدة − المخصوم) + (عجز الكاشير المحسوب − المخصوم)
+        // السلف مالهاش مرحّل — الباقي بيفضل في employee_advances.remaining تلقائي.
+        // ---------------------------------------------------------------
+        $pot = $grossSalary + (float)$calc['total_bonuses'];
 
-        // الصافي لسه سالب؟ يبقى السلف والجزاءات وعجز العهدة لوحدهم أكبر من
-        // المرتب. دول مالهمش آلية ترحيل زي عجز الكاشير — لو سقّفناهم الفرق
-        // هيختفي من غير ما الموظف يدفعه. فبنرفض والأونر يقلّل المخصوم بإيده.
-        if ($netSalary < -0.005) {
-            throw new RuntimeException(
-                'الخصومات أكبر من المرتب للموظف (' . $name . ') — الاستحقاق '
-                . number_format($grossSalary + $calc['total_bonuses'], 2)
-                . ' والخصومات ' . number_format($calc['total_advances'] + $calc['total_penalties'] + $calc['total_deficits'], 2)
-                . '. قلّل «المخصوم» من السلف أو راجع الجزاءات وعجز العهدة.'
-            );
-        }
-
-        $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
-        $empName->execute([$employeeId]);
-        $name = $empName->fetchColumn() ?: $name;
-
-        // تسجيل المرتب في جدول salaries (20 عمود و 18 علامة ? بالإضافة لـ "paid" و NOW())
-        $pdo->prepare(
-            'INSERT INTO salaries
-                (employee_id, salary_month, base_salary, total_bonuses, total_advances, total_penalties,
-                 total_deficits, total_cashier_deficits, net_salary, status, paid_at,
-                 period_from, period_to, work_hours, work_days, leave_days,
-                 due_days_calc, due_days, due_days_edited_by, due_days_edited_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        )->execute([
-            $employeeId, $month, $calc['base_salary'], $calc['total_bonuses'], $calc['total_advances'],
-            $calc['total_penalties'], $calc['total_deficits'], $cashierTaken, $netSalary,
-            $calc['period_from'], $calc['period_to'], $workHours, $workDays,
-            $leaveDays, $dueDaysCalc, $dueDays, $editedBy, $editedAt,
-        ]);
-        $salaryId = (int) $pdo->lastInsertId();
-
-        // صرف الصافي من الخزينة (لو موجب)
-        if ($netSalary > 0) {
-            post_journal($treasuryId, $netSalary, 0,
-                'صرف مرتب: ' . $name . ' (' . $month . ')', $date,
-                'salary', $salaryId, $userId, $pdo);
-        }
-
-        // إقفال المستحقات والخصومات المعلّقة
-        $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
-            ->execute([$employeeId]);
-
-        // تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة مع سقف رصيد السجل الموجب)
+        // ١) تسوية أقساط السلف المعلّقة للموظف (قراءة مجمّعة وتحديث الصفوف داخل المعاملة مع سقف رصيد السجل والوعاء)
         // ⚠️ المعادلة مكررة بين هنا و compute_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
         $ledgerBalance = emp_ledger_balance($employeeId, $pdo);
-        $remCap = $ledgerBalance > 0 ? $ledgerBalance : 0.0;
+        $maxLedgerCap = $ledgerBalance > 0 ? $ledgerBalance : 0.0;
+        $remCap = min($maxLedgerCap, $pot);
 
         $advStmt = $pdo->prepare(
             'SELECT id, amount, monthly_deduction, remaining, adv_type
@@ -2380,6 +2376,7 @@ function pay_salary(
              WHERE id = ?'
         );
 
+        $advApplied = 0.0;
         foreach ($pendingAdvances as $advRow) {
             $advId = (int) $advRow['id'];
             $origAmount = (float) $advRow['amount'];
@@ -2401,6 +2398,7 @@ function pay_salary(
                 continue;
             }
 
+            $advApplied += $take;
             $newRemaining = round($outstanding - $take, 2);
 
             if ($newRemaining <= 0.00001) {
@@ -2426,6 +2424,65 @@ function pay_salary(
                 $pdo
             );
         }
+        $advApplied = round($advApplied, 2);
+        $pot -= $advApplied;
+
+        // ٢) الجزاءات = min(الجزاءات, الوعاء)
+        $penaltiesFull = (float)($calc['penalties_full'] ?? $calc['total_penalties']);
+        $penApplied = min($penaltiesFull, $pot);
+        $penApplied = max(0.0, round($penApplied, 2));
+        $pot -= $penApplied;
+
+        // ٣) عجز العهدة = min(عجز العهدة, الوعاء)
+        $deficitsFull = (float)($calc['deficits_full'] ?? $calc['total_deficits']);
+        $defApplied = min($deficitsFull, $pot);
+        $defApplied = max(0.0, round($defApplied, 2));
+        $pot -= $defApplied;
+
+        // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+        $cashierCalcTotal = (float)($calc['cashier_deficits_calc'] ?? 0.0);
+        $cashierTake = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
+            ? round((float)$cashierTakeOverride, 2)
+            : $cashierCalcTotal;
+        $cashierApplied = min($cashierTake, $pot);
+        $cashierApplied = max(0.0, round($cashierApplied, 2));
+        $pot -= $cashierApplied;
+
+        $netSalary = max(0.0, round($pot, 2));
+
+        $carryToAdvance = round(($penaltiesFull - $penApplied) + ($deficitsFull - $defApplied) + ($cashierCalcTotal - $cashierApplied), 2);
+        $carryToAdvance = max(0.0, $carryToAdvance);
+
+        $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
+        $empName->execute([$employeeId]);
+        $name = $empName->fetchColumn() ?: $name;
+
+        // تسجيل المرتب في جدول salaries (20 عمود و 18 علامة ? بالإضافة لـ "paid" و NOW())
+        $pdo->prepare(
+            'INSERT INTO salaries
+                (employee_id, salary_month, base_salary, total_bonuses, total_advances, total_penalties,
+                 total_deficits, total_cashier_deficits, net_salary, status, paid_at,
+                 period_from, period_to, work_hours, work_days, leave_days,
+                 due_days_calc, due_days, due_days_edited_by, due_days_edited_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([
+            $employeeId, $month, $calc['base_salary'], $calc['total_bonuses'], $advApplied,
+            $penApplied, $defApplied, $cashierApplied, $netSalary,
+            $calc['period_from'], $calc['period_to'], $workHours, $workDays,
+            $leaveDays, $dueDaysCalc, $dueDays, $editedBy, $editedAt,
+        ]);
+        $salaryId = (int) $pdo->lastInsertId();
+
+        // صرف الصافي من الخزينة (لو موجب)
+        if ($netSalary > 0) {
+            post_journal($treasuryId, $netSalary, 0,
+                'صرف مرتب: ' . $name . ' (' . $month . ')', $date,
+                'salary', $salaryId, $userId, $pdo);
+        }
+
+        // إقفال المستحقات والخصومات المعلّقة
+        $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
+            ->execute([$employeeId]);
 
         $pdo->prepare('UPDATE employee_penalties SET status="deducted" WHERE employee_id=? AND status="pending"')
             ->execute([$employeeId]);
@@ -2450,28 +2507,24 @@ function pay_salary(
             $pdo->prepare($sqlShifts)->execute($shiftValues);
         }
 
-        // (٢-ب) باقي عجز الكاشير غير المخصوم يتحول لسلفة مستديمة وقيد debit في سجل الموظف
-        $cashierCalcTotal = (float)($calc['cashier_deficits_calc'] ?? 0.0);
-        $cashierDeducted = $cashierTaken;   // المسقّف مش اللي جه من compute_salary
-        $cashierRemaining = round($cashierCalcTotal - $cashierDeducted, 2);
-
-        if ($cashierRemaining > 0.005) {
+        // (٢-ب) سلفة المرحّل: باقي الخصومات (جزاءات + عجز عهدة + عجز كاشير) غير المخصومة يتحول لسلفة مستديمة وقيد debit في سجل الموظف
+        if ($carryToAdvance > 0.005) {
             $insStandingAdv = $pdo->prepare(
                 'INSERT INTO employee_advances
                     (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type)
                  VALUES (?, ?, ?, "pending", ?, 0.00, ?, "standing")'
             );
-            $advNote = 'باقي عجز كاشير من مرتب شهر ' . $month;
-            $insStandingAdv->execute([$employeeId, $cashierRemaining, $date, $advNote, $cashierRemaining]);
+            $advNote = 'باقي خصومات من مرتب شهر ' . $month;
+            $insStandingAdv->execute([$employeeId, $carryToAdvance, $date, $advNote, $carryToAdvance]);
             $newAdvId = (int)$pdo->lastInsertId();
 
             emp_ledger_add(
                 $employeeId,
                 'debit',
-                $cashierRemaining,
+                $carryToAdvance,
                 $date,
                 'advance',
-                'باقي عجز كاشير اتحوّل لسلفة مستديمة — شهر ' . $month,
+                'باقي خصومات اتحوّلت لسلفة مستديمة — شهر ' . $month,
                 null,
                 'advance',
                 $newAdvId,
