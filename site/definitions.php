@@ -928,7 +928,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div id="catWarn" style="display:none;margin-top:10px;padding:9px 11px;border-radius:9px;
                      background:var(--warn-soft);color:var(--warn);border:1px solid #ffe0a8;font-size:12px;line-height:1.6;">
-                    ⚠️ <b>تنبيه:</b> نقل التصنيف تحت رأس قيد جديد هيخلّي التقارير القديمة تعرضه تحت الرأس الجديد (التقارير بتجمّع بحسب شجرة الحسابات الحالية). المبالغ والقيود بتفضل سليمة زي ما هي.
+                    <i class="ti ti-alert-triangle"></i> <b>تنبيه:</b> نقل التصنيف تحت رأس قيد جديد هيخلّي التقارير القديمة تعرضه تحت الرأس الجديد (التقارير بتجمّع بحسب شجرة الحسابات الحالية). المبالغ والقيود بتفضل سليمة زي ما هي.
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn">حفظ</button>

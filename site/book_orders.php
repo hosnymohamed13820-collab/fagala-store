@@ -140,7 +140,7 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('books') ?>
 
 <div class="card" style="margin-bottom:16px;">
-    <div class="section-title">📚 طلبيات الكتب</div>
+    <div class="section-title"><i class="ti ti-book"></i> طلبيات الكتب</div>
 
     <!-- البحث والإضافة -->
     <div class="bo-bar">

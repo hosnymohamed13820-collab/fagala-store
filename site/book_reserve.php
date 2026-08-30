@@ -215,7 +215,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php else: // ===== حجز جديد ===== ?>
     <div class="card" style="margin-bottom:16px;">
-        <div class="section-title">🔖 حجز جديد</div>
+        <div class="section-title"><i class="ti ti-bookmark"></i> حجز جديد</div>
 
         <div class="rs-grid">
             <div class="rs-fld">

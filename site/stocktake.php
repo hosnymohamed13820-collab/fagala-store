@@ -716,7 +716,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="code" id="codeInput" maxlength="14" required autofocus autocomplete="off"
                            style="width:160px;" oninput="lookupName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;">📷</button>
+                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
@@ -883,7 +883,7 @@ require_once __DIR__ . '/includes/header.php';
             var ov = document.createElement('div');
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(30,27,75,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
             ov.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
-                + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;">⚠️ ' + title + '</h3>'
+                + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> ' + title + '</h3>'
                 + '<p style="color:#444;font-size:14px;line-height:1.8;">' + html + '</p>'
                 + '<button style="margin-top:16px;padding:9px 28px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;">تمام</button></div>';
             ov.querySelector('button').onclick = function(){ ov.remove(); var ci=document.getElementById('codeInput'); if(ci) ci.focus(); };
@@ -964,7 +964,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="code" id="revCode" maxlength="14" required autocomplete="off"
                            placeholder="اضرب أو اكتب الكود" style="width:160px;" oninput="lookupRevName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('revCode')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;">📷</button>
+                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
@@ -1118,7 +1118,7 @@ require_once __DIR__ . '/includes/header.php';
             <?= $isReviewing ? 'عدّل الكمية النهائية واضغط Enter (يحفظ فوراً)، أو عدّل الكل واضغط "تم الانتهاء".' : '' ?>
         </p>
         <?php if (empty($diffLines)): ?>
-            <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. 🎉</div>
+            <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. <i class="ti ti-confetti"></i></div>
         <?php endif; ?>
         <input type="text" id="reviewSearch" placeholder="🔍 ابحث في الأصناف المفرّقة..."
                onkeyup="filterTable('reviewSearch','reviewTable')"
@@ -1203,7 +1203,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- أداة الأكواد المربوطة داخل المحضر (متاحة للجارد والمراجع) -->
     <div class="card">
         <div class="section-title" style="cursor:pointer;" onclick="var b=document.getElementById('linkedBoxInner');b.style.display=b.style.display==='none'?'block':'none';">
-            🔗 معرفة الأكواد المربوطة (اضغط للفتح/الإغلاق)
+            <i class="ti ti-link"></i> معرفة الأكواد المربوطة (اضغط للفتح/الإغلاق)
         </div>
         <div id="linkedBoxInner" style="display:none;">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1212,7 +1212,7 @@ require_once __DIR__ . '/includes/header.php';
                        enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked('linkedCodeInput2','linkedResult2');}"
                        style="flex:1;min-width:200px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
                 <button type="button" onclick="openBarcodeScanner('linkedCodeInput2')" title="مسح بالكاميرا"
-                        style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                        style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 <button type="button" class="btn" onclick="lookupLinked('linkedCodeInput2','linkedResult2')"><i class="ti ti-link"></i> عرض</button>
             </div>
             <div id="linkedResult2" style="margin-top:14px;"></div>
@@ -1297,14 +1297,14 @@ require_once __DIR__ . '/includes/header.php';
 <?php else: ?>
     <!-- أداة: الأكواد المربوطة ببعض (استعلام مستقل عن الجرد) -->
     <div class="card">
-        <div class="section-title">🔗 الأكواد المربوطة (اضرب كود يطلعلك كل الأكواد المربوطة بيه)</div>
+        <div class="section-title"><i class="ti ti-link"></i> الأكواد المربوطة (اضرب كود يطلعلك كل الأكواد المربوطة بيه)</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <input type="text" id="linkedCodeInput" autocomplete="off"
                    placeholder="اضرب أو اكتب الكود ودوس Enter..."
                    enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked();}"
                    style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
             <button type="button" onclick="openBarcodeScanner('linkedCodeInput')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button type="button" class="btn" onclick="lookupLinked()"><i class="ti ti-link"></i> عرض المربوط</button>
         </div>
         <div id="linkedResult" style="margin-top:14px;"></div>
@@ -1319,7 +1319,7 @@ require_once __DIR__ . '/includes/header.php';
                    placeholder="اضرب أو اكتب كود الصنف بالظبط..."
                    style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
             <button type="button" onclick="openBarcodeScanner('sheetItemSearch')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button class="btn"><i class="ti ti-search"></i> بحث</button>
             <?php if ($searchTerm !== ''): ?>
                 <a href="stocktake.php" class="btn btn-ghost" style="text-decoration:none;">مسح</a>
@@ -1435,7 +1435,7 @@ require_once __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="sheet_id" value="<?= (int)$sh['id'] ?>">
                                             <button type="submit" style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12px;">حذف</button>
                                         </form>
-                                    <?php else: ?><span style="color:#ccc;" title="مايتمسحش لأنه منتهي">🔒</span><?php endif; ?>
+                                    <?php else: ?><span style="color:#ccc;" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
                                 </td>
                                 <?php endif; ?>
                             </tr>
@@ -1555,7 +1555,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (isset($_GET['notfound'])): ?>
 <div id="notfoundModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
-        <div style="font-size:48px;margin-bottom:8px;">⚠️</div>
+        <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">الكود غير موجود</h3>
         <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكود <strong style="color:var(--ink-900);"><?= e($_GET['notfound']) ?></strong> مش موجود في قاعدة بيانات الأصناف.
@@ -1582,7 +1582,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (isset($_GET['badqty'])): ?>
 <div id="badqtyModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
     <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
-        <div style="font-size:48px;margin-bottom:8px;">🚫</div>
+        <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-ban"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">كمية غير منطقية</h3>
         <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكمية <strong style="color:var(--neg);"><?= e($_GET['badqty']) ?></strong> كبيرة جداً ومش منطقية.

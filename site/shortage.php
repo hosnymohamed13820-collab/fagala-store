@@ -184,7 +184,7 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('shortage') ?>
 
 <div class="card">
-    <div class="section-title">🛒 طلب نواقص</div>
+    <div class="section-title"><i class="ti ti-shopping-cart"></i> طلب نواقص</div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">

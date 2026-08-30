@@ -26,7 +26,7 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 <div class="pc-wrap">
     <div class="card">
-        <div class="section-title">🖥️ اقتران الموبايل كسكانر للكمبيوتر</div>
+        <div class="section-title"><i class="ti ti-device-desktop"></i> اقتران الموبايل كسكانر للكمبيوتر</div>
         <div class="pc-sess">
             <label for="pcSession" style="font-size:13px;color:var(--ink-500);">كود الاقتران:</label>
             <input type="text" id="pcSession" placeholder="PC1" aria-label="كود الاقتران"

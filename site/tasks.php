@@ -225,7 +225,7 @@ $prioBadge = function($p) {
         <?php if (!empty($openShortage)): $shr = $openShortage['request']; ?>
             <div style="margin-top:18px;padding:16px;background:rgba(34,197,94,0.06);border:1.5px solid rgba(34,197,94,0.25);border-radius:12px;">
                 <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-700);margin-bottom:12px;">
-                    <span>🛒 <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
+                    <span><i class="ti ti-shopping-cart"></i> <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
                     <span><b>المطلوب منه:</b> <?= e(($shr['source'] ?? 'branch') === 'purchase' ? 'المشتريات' : ($shr['to_name'] ?? '—')) ?></span>
                     <span><b>الطالب:</b> <?= e($shr['requester'] ?? '—') ?></span>
                 </div>
@@ -268,7 +268,7 @@ $prioBadge = function($p) {
 
     <!-- المرفقات -->
     <div class="card">
-        <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;">📎 المرفقات (إثبات التنفيذ)</div>
+        <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;"><i class="ti ti-paperclip"></i> المرفقات (إثبات التنفيذ)</div>
         <?php if (empty($openAttachments)): ?>
             <div class="empty" style="padding:12px;">مفيش مرفقات بعد.</div>
         <?php else: foreach ($openAttachments as $a): ?>

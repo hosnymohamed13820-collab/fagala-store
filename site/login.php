@@ -243,7 +243,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
                 style="display:none;width:100%;margin-top:14px;padding:12px;background:#fff;color:var(--accent);
                        border:1.5px solid var(--accent);border-radius:10px;font-family:inherit;font-size:15px;
                        font-weight:600;cursor:pointer;">
-            📲 نزّل التطبيق على جهازك
+            <i class="ti ti-device-mobile"></i> نزّل التطبيق على جهازك
         </button>
         <p id="iosHint" style="display:none;margin-top:12px;font-size:12px;color:var(--ink-500);text-align:center;line-height:1.7;">
             لتثبيت التطبيق على الآيفون: افتح من Safari، اضغط زر المشاركة ⬆️، ثم "إضافة إلى الشاشة الرئيسية".

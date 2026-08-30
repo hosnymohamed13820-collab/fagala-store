@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 </head>
 <body>
     <div class="top">
-        <b>📡 سكانر الكمبيوتر</b>
+        <b><i class="ti ti-antenna-bars-5"></i> سكانر الكمبيوتر</b>
         <a href="<?= e(first_allowed_module()) ?>">← رجوع للنظام</a>
     </div>
     <div class="card">
@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
             <label for="rsSession">كود الجهاز:</label>
             <input type="text" id="rsSession" value="<?= e($session) ?>" placeholder="PC1"
                    aria-label="كود الاقتران" autocomplete="off" enterkeyhint="go">
-            <button type="button" class="go" style="width:auto;padding:12px 18px;" onclick="startRemote()">📷</button>
+            <button type="button" class="go" style="width:auto;padding:12px 18px;" onclick="startRemote()"><i class="ti ti-camera"></i></button>
         </div>
         <!-- خانة مخفية بيصب فيها المكون المشترك -->
         <input type="text" id="rsBarcode" aria-label="باركود" oninput="pushCode(this)"
@@ -189,7 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
                        '<span class="dot"></span>' +
                        '<span class="dinfo"><span class="dname">' + name + '</span><br>' +
                        '<span class="dsub">' + d.session_code + ' · ' + sub + '</span></span>' +
-                       '<span class="dgo">' + (on ? '📷' : '💤') + '</span></div>';
+                       '<span class="dgo"><i class="ti ' + (on ? 'ti-camera' : 'ti-zzz') + '"></i></span></div>';
             }).join('');
         }).catch(() => {});
     }

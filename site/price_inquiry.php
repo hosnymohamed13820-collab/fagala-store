@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/header.php';
         resultCard.classList.add('show');
         if (data.error) {
             resultCard.classList.add('notfound');
-            resultContent.innerHTML = '<div class="res-error">❌ ' + data.error + '</div>';
+            resultContent.innerHTML = '<div class="res-error"><i class="ti ti-x"></i> ' + data.error + '</div>';
             return;
         }
         resultCard.classList.remove('notfound');

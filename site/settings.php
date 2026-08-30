@@ -204,11 +204,12 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
             $bg  = $st === AGENT_ALERT ? 'var(--neg-soft,#fbeceb)'
                  : ($st === AGENT_WARN ? 'var(--warn-soft,#f7f0e2)'
                  : ($st === AGENT_OFF  ? 'var(--line-soft,#eff2f6)' : 'var(--pos-soft,#e8f3ec)'));
-            $dot = $st === AGENT_ALERT ? '⛔' : ($st === AGENT_WARN ? '⚠️' : ($st === AGENT_OFF ? '🌙' : '✅'));
+            $dot = $st === AGENT_ALERT ? 'ti-ban' : ($st === AGENT_WARN ? 'ti-alert-triangle'
+                 : ($st === AGENT_OFF ? 'ti-moon' : 'ti-circle-check'));
         ?>
             <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;
                  border-radius:10px;background:<?= $bg ?>;flex-wrap:wrap;">
-                <span style="font-size:17px;"><?= $dot ?></span>
+                <span style="font-size:17px;color:<?= $col ?>;"><i class="ti <?= $dot ?>"></i></span>
                 <b style="min-width:70px;color:<?= $col ?>;"><?= e($a['label']) ?></b>
 
                 <span style="font-size:12.5px;color:var(--ink-600);flex:1;min-width:170px;">

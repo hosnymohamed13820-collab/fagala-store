@@ -126,7 +126,7 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <div class="card">
-    <div class="section-title">📦 استعلام أرصدة الأصناف</div>
+    <div class="section-title"><i class="ti ti-package"></i> استعلام أرصدة الأصناف</div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">

@@ -181,7 +181,7 @@ try {
         background:var(--warn-soft,#fff7e6);border:1.5px solid var(--warn,#d97706);border-radius:12px;
         text-decoration:none;color:var(--warn,#d97706);font-size:14px;font-weight:600;">
         <i class="ti ti-shopping-cart" style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
-        <span style="flex:1;">🛒 عندك <span id="shrNagCount"><?= $shortagePending ?></span> طلب نواقص مستنيك —
+        <span style="flex:1;"><i class="ti ti-shopping-cart"></i> عندك <span id="shrNagCount"><?= $shortagePending ?></span> طلب نواقص مستنيك —
             جهّز الطلب وارفع إثبات الفاتورة وعلّم المهمة تمت.</span>
         <i class="ti ti-chevron-left"></i>
     </a>

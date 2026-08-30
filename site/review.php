@@ -308,7 +308,7 @@ function shift_cashier_amounts(array $s): array {
                      ───────────────────────────────────────────────────── -->
                 <div id="cmp_locked" style="background:#f6f5fd;border-radius:10px;
                      padding:22px;text-align:center;color:var(--ink-500);font-size:14px;">
-                    🔒 أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
+                    <i class="ti ti-lock"></i> أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
                 </div>
                 <table class="cmp-table" id="cmp_table" style="display:none;">
                     <thead><tr><th>البند</th><th>الموظف</th><th>المحاسب</th><th>الفرق</th></tr></thead>

@@ -430,7 +430,7 @@ function grp_admin_toggle(int $branchCount): string
     // ما تفضل تتفرج على كل الفواتير وانت فاكر إن الفلتر شغال.
     if (!grp_branch_stores()) {
         return '<div class="grp-admtip" style="margin-top:9px;color:var(--warn);">'
-            . '⚠️ مفيش فروع متسجّلة بكود مخزن (sto_id) في «التعريفات ← الفروع» — '
+            . '<i class="ti ti-alert-triangle"></i> مفيش فروع متسجّلة بكود مخزن (sto_id) في «التعريفات ← الفروع» — '
             . 'فمقدرناش نفرّق بين فواتير الإدارة والفروع، وبتشوف الكل.</div>';
     }
     if ($branchCount < 1) return '';   // كل الفواتير إدارة أصلاً
@@ -547,7 +547,7 @@ function grp_picker(array $unposted, array $posted, int $groupId = 0, string $gr
             . ' aria-label="بحث عن صنف" placeholder="كود الصنف أو جزء من الاسم…"'
             . ' oninput="grpFindItem()" onkeydown="grpNoEnter(event)">'
             . '<button type="button" class="btn btn-sm" title="مسح بالكاميرا"'
-            . ' onclick="openBarcodeScanner(\'grpItemSearch\')" style="font-size:16px;">📷</button>'
+            . ' onclick="openBarcodeScanner(\'grpItemSearch\')" style="font-size:16px;"><i class="ti ti-camera"></i></button>'
             . '</div>'
             . '<div class="gi-hint">بيدوّر في فواتير الشراء والمردود — المرحّلة والغير محفوظة.</div>'
             . '</div>';
@@ -2298,7 +2298,7 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="done"  <?= $isManual && $curStatus==='done'  ? 'selected' : '' ?>>تم التوزيع</option>
                 </select>
                 <span id="invStatusLock" class="inv-lock" style="<?= $isManual ? '' : 'display:none;' ?>"
-                      title="الحالة مقفولة يدوي">🔒</span>
+                      title="الحالة مقفولة يدوي"><i class="ti ti-lock"></i></span>
             </div>
         </div>
 
@@ -2342,7 +2342,7 @@ require_once __DIR__ . '/includes/header.php';
                                onkeyup="handleLookupKey(event)"
                                onsearch="doLookup()">
                         <button type="button" class="btn btn-sm" onclick="openBarcodeScanner('lookupCode')"
-                                title="مسح بالكاميرا" style="font-size:16px;">📷</button>
+                                title="مسح بالكاميرا" style="font-size:16px;"><i class="ti ti-camera"></i></button>
                         <button type="button" class="btn btn-sm btn-primary" onclick="doLookup()">بحث</button>
                     </div>
                     <div id="lookupResult"></div>
@@ -2699,7 +2699,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="gc-bar"><span style="width:<?= $pct ?>%;background:<?= $col ?>;"></span></div>
                     <?php $gcNote = trim((string)($gc['user_notes'] ?? '')); ?>
                     <?php if ($gcNote !== ''): ?>
-                        <span class="inv-note-text" title="<?= e($gcNote) ?>">📝 <?= e(mb_strimwidth($gcNote, 0, 120, '…')) ?></span>
+                        <span class="inv-note-text" title="<?= e($gcNote) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($gcNote, 0, 120, '…')) ?></span>
                     <?php endif; ?>
                     <div class="gc-foot">
                         <span><?= rtrim(rtrim(number_format((float)$gc['done_qty'],2,'.',''),'0'),'.') ?>
@@ -2803,7 +2803,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             <?php if (!empty($grpData['missing'])): ?>
                 <div class="sqlsrv-warn" style="margin-top:14px;">
-                    ⚠️ فيه <?= count($grpData['missing']) ?> فاتورة مقدرناش نجيب بياناتها
+                    <i class="ti ti-alert-triangle"></i> فيه <?= count($grpData['missing']) ?> فاتورة مقدرناش نجيب بياناتها
                     (يمكن اتحفظت أو اتلغت من نظام الشركة). الباقي شغّال عادي.
                 </div>
             <?php endif; ?>
@@ -2853,7 +2853,7 @@ require_once __DIR__ . '/includes/header.php';
                                    onkeyup="handleLookupKey(event)"
                                    onsearch="doLookup()">
                             <button type="button" class="btn btn-sm" onclick="openBarcodeScanner('lookupCode')"
-                                    title="مسح بالكاميرا" style="font-size:16px;">📷</button>
+                                    title="مسح بالكاميرا" style="font-size:16px;"><i class="ti ti-camera"></i></button>
                             <button type="button" class="btn btn-sm btn-primary" onclick="doLookup()">بحث</button>
                         </div>
                         <div id="lookupResult"></div>
@@ -3413,7 +3413,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endif; ?>
                             <?php $nTxt = trim((string)($invNotes[(string)($inv['inv_no'] ?? '')] ?? '')); ?>
                             <?php if ($nTxt !== ''): ?>
-                                <span class="inv-note-text" title="<?= e($nTxt) ?>">📝 <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
+                                <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
                             <?php endif; ?>
                         </td>
                         <td style="font-size:13px;"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td>
@@ -5210,7 +5210,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 <label><input type="radio" name="iflSkip" value="1" onchange="iflSetSkip(1)"> لا ينزل في التقرير</label>
             </div>
             <div class="sub">
-                ⚠️ الإعداد ده على <b>كود الصنف في كل النظام</b> — يعني مش هينزل في ملف
+                <i class="ti ti-alert-triangle"></i> الإعداد ده على <b>كود الصنف في كل النظام</b> — يعني مش هينزل في ملف
                 أي فرع في أي فاتورة أو مجموعة.<br>
                 التوزيع والكميات والأسعار وملفات الإكسيل <b>ماتتأثرش خالص</b> — ملف الفرع بس.
             </div>
