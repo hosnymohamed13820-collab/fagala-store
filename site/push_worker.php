@@ -21,13 +21,15 @@ function worker_die(string $msg, int $code = 400): void
     exit;
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    worker_die('POST only.', 405);
-}
+if (PHP_SAPI !== 'cli') {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        worker_die('POST only.', 405);
+    }
 
-$token = (string) ($_SERVER['HTTP_X_PUSH_TOKEN'] ?? '');
-if (!hash_equals(PUSH_WORKER_TOKEN, $token)) {
-    worker_die('Unauthorized.', 401);
+    $token = (string) ($_SERVER['HTTP_X_PUSH_TOKEN'] ?? '');
+    if (!hash_equals(PUSH_WORKER_TOKEN, $token)) {
+        worker_die('Unauthorized.', 401);
+    }
 }
 
 require_once __DIR__ . '/config.php';

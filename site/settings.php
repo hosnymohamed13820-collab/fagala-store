@@ -48,6 +48,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
         $flashType = 'error';
+    } elseif (isset($_POST['send_test_push'])) {
+        // فحص الأونر في الـ POST صراحةً
+        if (!is_owner()) {
+            $flash = 'مالكش صلاحية — الإشعار التجريبي للأونر بس.';
+            $flashType = 'error';
+        } else {
+            $currentUserId = (int) current_user()['id'];
+            $st = $pdo->prepare('SELECT id, endpoint, p256dh, auth, user_agent FROM push_subscriptions WHERE user_id = ?');
+            $st->execute([$currentUserId]);
+            $mySubs = $st->fetchAll(PDO::FETCH_ASSOC);
+
+            if (empty($mySubs)) {
+                $flash = 'مفيش أجهزة مشتركة — فعّل الإشعارات من الجرس الأول.';
+                $flashType = 'error';
+            } else {
+                require_once __DIR__ . '/push_lib.php';
+                $testPayload = [
+                    'title' => 'الفجالة ستور — إشعار تجريبي',
+                    'body'  => 'الإشعار وصل. يبقى التشفير والتوقيع شغالين تمام.',
+                    'link'  => '/settings.php',
+                ];
+                $results = [];
+                $hasErr = false;
+                foreach ($mySubs as $s) {
+                    $res = push_send_one($s, $testPayload);
+                    $ua = !empty($s['user_agent']) ? mb_substr((string) $s['user_agent'], 0, 80) : 'جهاز غير معروف';
+                    $errSnippet = !empty($res['error']) ? mb_substr((string) $res['error'], 0, 80) : '';
+                    $isOk = !empty($res['ok']);
+                    if (!$isOk) {
+                        $hasErr = true;
+                    }
+                    $results[] = [
+                        'code' => (int) ($res['code'] ?? 0),
+                        'ok'   => $isOk,
+                        'ua'   => $ua,
+                        'err'  => $errSnippet,
+                    ];
+                }
+                $_SESSION['test_push_results'] = $results;
+                $flash = $hasErr
+                    ? 'الإرسال اتحاول بس فيه أجهزة مانجحتش — التفاصيل تحت.'
+                    : 'الإشعار التجريبي اتبعت لكل أجهزتك.';
+                $flashType = $hasErr ? 'error' : 'success';
+            }
+        }
     } else {
         $upd = $pdo->prepare(
             'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
@@ -98,6 +143,8 @@ if (isset($_SESSION['flash'])) {
     $flashType = $_SESSION['flash_type'] ?? 'success';
     unset($_SESSION['flash'], $_SESSION['flash_type']);
 }
+$testPushResults = $_SESSION['test_push_results'] ?? [];
+unset($_SESSION['test_push_results']);
 
 // جلب القيم الحالية
 $current = [];
@@ -168,6 +215,50 @@ require_once __DIR__ . '/includes/header.php';
         <button type="submit" class="btn">حفظ الإعدادات</button>
     </form>
 </div>
+
+<?php if (is_owner()): ?>
+<div class="card" id="test-push">
+    <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:4px;">إشعار تجريبي (Web Push)</h3>
+    <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;">
+        إرسال فوري من غير الطابور لكل أجهزتك المشتركة للتأكد من سلامة التشفير وتوقيع VAPID.
+    </p>
+
+    <?php if (!empty($testPushResults)): ?>
+        <div style="margin-bottom:14px;display:flex;flex-direction:column;gap:8px;">
+            <?php foreach ($testPushResults as $tRes):
+                $isOk = !empty($tRes['ok']);
+                $cBg  = $isOk ? 'var(--pos-soft)' : 'var(--neg-soft)';
+                $cCol = $isOk ? 'var(--pos)' : 'var(--neg)';
+                $cIcon = $isOk ? 'ti-circle-check' : 'ti-alert-circle';
+            ?>
+                <div style="padding:10px 14px;border-radius:10px;background:<?= $cBg ?>;font-size:13px;">
+                    <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:<?= $cCol ?>;">
+                        <i class="ti <?= $cIcon ?>"></i>
+                        <span>كود الاستجابة: <?= (int)$tRes['code'] ?></span>
+                        <span><?= $isOk ? '— نجح الإرسال' : '— فشل الإرسال' ?></span>
+                    </div>
+                    <div style="font-size:12px;color:var(--ink-600);margin-top:4px;">
+                        <b>الجهاز:</b> <?= e($tRes['ua']) ?>
+                    </div>
+                    <?php if (!empty($tRes['err'])): ?>
+                        <div style="font-size:12px;color:var(--neg);margin-top:2px;">
+                            <b>الرد:</b> <?= e($tRes['err']) ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+        <input type="hidden" name="send_test_push" value="1">
+        <button type="submit" class="btn">
+            <i class="ti ti-send"></i> ابعت إشعار تجريبي لنفسي
+        </button>
+    </form>
+</div>
+<?php endif; ?>
 
 <!-- =====================================================================
      حالة وكلاء المزامنة — بديل فحص الجسر

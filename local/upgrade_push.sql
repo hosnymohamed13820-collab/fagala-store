@@ -45,5 +45,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`)
 VALUES ('vapid_public_key', ''), ('vapid_subject', '')
 ON DUPLICATE KEY UPDATE `setting_value` = `setting_value`;
 
--- سطر الكرون على السيرفر (تشغيل الوركر كل دقيقة عبر POST مع الهيدر):
+-- سطر الكرون على السيرفر (تشغيل الوركر كل دقيقة عبر CLI):
+-- * * * * * /opt/alt/php83/usr/bin/lsphp /home/<اليوزر>/public_html/push_worker.php
+-- أو كبديل عبر POST مع الهيدر:
 -- * * * * * curl -s -m 50 -X POST -H "X-Push-Token: push_8Km4xQ9vR2Nw7Lt5Bz1Yd3Hs6Fj9Gc" https://hosnimanagement.com/push_worker.php
