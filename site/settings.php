@@ -763,7 +763,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
             //    مبستّت. الفحص القديم كان بيجيب 'sw.js?_=<توقيت>' فبيعدّي من كاش
             //    الاستضافة ويقول v20، والمتصفح بيطلب العنوان المسجّل ويستلم نسخة
             //    قديمة من الكاش. فالسطر كان بيقول «تمام» والإشعارات ميتة.
-            var swUrl = 'sw.js?v=20';
+            var swUrl = 'sw.js?v=21';
             return fetch(swUrl, { cache: 'no-store' })
                 .then(function (r) { return r.text(); })
                 .then(function (txt) {

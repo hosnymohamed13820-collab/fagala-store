@@ -46,7 +46,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=20').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=21').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -140,8 +140,12 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
                     <div class="notif-list">
                         <?php if (empty($notifItems)): ?>
                             <div class="notif-empty">مفيش إشعارات</div>
-                        <?php else: foreach ($notifItems as $n): ?>
-                            <a href="<?= e($n['link'] ?: '#') ?>" class="notif-item <?= $n['is_read'] ? '' : 'unread' ?>">
+                        <?php else: foreach ($notifItems as $n):
+                            $notifHref = (!$n['is_read'] && !empty($n['link']))
+                                ? 'notifications_read.php?go=' . urlencode($n['link'])
+                                : ($n['link'] ?: '#');
+                        ?>
+                            <a href="<?= e($notifHref) ?>" class="notif-item <?= $n['is_read'] ? '' : 'unread' ?>">
                                 <div class="ni-title"><?= e($n['title']) ?></div>
                                 <?php if ($n['body']): ?><div class="ni-body"><?= e($n['body']) ?></div><?php endif; ?>
                                 <div class="ni-time"><?= e(date('Y-m-d H:i', strtotime($n['created_at']))) ?></div>

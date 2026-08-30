@@ -27,7 +27,7 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v20'; // v20: بترد على رسالة GET_VERSION عشان صفحة الإعدادات تعرف النسخة الشغالة فعلاً
+const VERSION = 'v21'; // v21: الضغط على الإشعار بيعلّمه مقروء | v20: بترد على GET_VERSION
 const CACHE = 'fagala-' + VERSION;
 
 const ASSETS = [
@@ -155,8 +155,11 @@ self.addEventListener('push', (e) => {
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const rawLink = e.notification.data?.link || './';
-  const targetUrl = new URL(rawLink, self.location.origin).href;
+  const link = e.notification.data?.link;
+  const target = (link && link !== './' && link !== '')
+    ? 'notifications_read.php?go=' + encodeURIComponent(link)
+    : './';
+  const targetUrl = new URL(target, self.location.origin).href;
 
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
