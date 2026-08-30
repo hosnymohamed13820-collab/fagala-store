@@ -107,18 +107,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashType = 'error';
         } else {
             require_once __DIR__ . '/push_lib.php';
-            $currentUserId = (int) current_user()['id'];
+
+            // المستهدف: أي مستخدم نشط — عشان نقدر نجرّب على حد تاني مش الأونر بس.
+            // من غير ده الأداة كانت بتبعت للأونر دايماً، فأي حد تاني جرسه
+            // بيفضل فاضي وإحنا فاكرين إن فيه بق.
+            $targetUserId = (int) ($_POST['notify_user_id'] ?? 0);
+            if ($targetUserId <= 0) {
+                $targetUserId = (int) current_user()['id'];
+            }
+            $chkU = $pdo->prepare('SELECT full_name FROM users WHERE id = ? AND is_active = 1');
+            $chkU->execute([$targetUserId]);
+            $targetName = $chkU->fetchColumn();
+            if ($targetName === false) {
+                throw new RuntimeException('المستخدم ده مش موجود أو مش نشط.');
+            }
 
             notify(
                 $pdo,
-                [$currentUserId],
+                [$targetUserId],
                 'test',
                 '👋 أهلاً بيك في الفجالة ستور',
                 'ده إشعار ترحيب حقيقي عدّى على نفس طريق أي إشعار في النظام.',
-                'settings.php#test-push'
+                'settings.php#real-notify'
             );
 
-            // بنقرا حالة الصف اللي لسه اتعمل + ملخص الطابور كله (استعلامين مجمّعين)
+            // بنقرا حالة الصف اللي لسه اتعمل + ملخص الطابور كله (استعلامات مجمّعة)
             $qRow = $pdo->prepare(
                 'SELECT id, status, tries, last_error, created_at, sent_at
                    FROM push_queue
@@ -126,21 +139,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   ORDER BY id DESC
                   LIMIT 1'
             );
-            $qRow->execute([$currentUserId]);
+            $qRow->execute([$targetUserId]);
             $lastQueued = $qRow->fetch(PDO::FETCH_ASSOC) ?: null;
+
+            // أجهزة المستهدف بالتفصيل — عشان نعرف مين فيهم بيوصله فعلاً
+            $devStmt = $pdo->prepare(
+                'SELECT id, user_agent, fail_count, last_ok_at, created_at
+                   FROM push_subscriptions
+                  WHERE user_id = ?
+                  ORDER BY id ASC'
+            );
+            $devStmt->execute([$targetUserId]);
+            $targetDevices = $devStmt->fetchAll(PDO::FETCH_ASSOC);
 
             $qSum = $pdo->query(
                 "SELECT status, COUNT(*) AS cnt FROM push_queue GROUP BY status"
             )->fetchAll(PDO::FETCH_KEY_PAIR);
 
-            $subCnt = (int) $pdo->query('SELECT COUNT(*) FROM push_subscriptions')->fetchColumn();
-
             $_SESSION['real_notify_diag'] = [
-                'queued'   => $lastQueued,
-                'summary'  => $qSum,
-                'sub_cnt'  => $subCnt,
+                'queued'       => $lastQueued,
+                'summary'      => $qSum,
+                'sub_cnt'      => count($targetDevices),
+                'devices'      => $targetDevices,
+                'target_id'    => $targetUserId,
+                'target_name'  => (string) $targetName,
             ];
-            $flash = 'الإشعار اتسجّل. شوف التشخيص تحت عشان تعرف وقف فين.';
+            $flash = 'الإشعار اتسجّل لـ' . $targetName . '. شوف التشخيص تحت عشان تعرف وقف فين.';
             $flashType = 'success';
         }
     } else {
@@ -323,6 +347,8 @@ require_once __DIR__ . '/includes/header.php';
         $rq   = $realNotifyDiag['queued'] ?? null;
         $rSum = $realNotifyDiag['summary'] ?? [];
         $rSub = (int) ($realNotifyDiag['sub_cnt'] ?? 0);
+        $rDevices = $realNotifyDiag['devices'] ?? [];
+        $rTargetName = (string) ($realNotifyDiag['target_name'] ?? '');
         $pendCnt = (int) ($rSum['pending'] ?? 0);
         $sentCnt = (int) ($rSum['sent'] ?? 0);
         $failCnt = (int) ($rSum['failed'] ?? 0);
@@ -332,7 +358,7 @@ require_once __DIR__ . '/includes/header.php';
             $verdict = '🔴 الجرس اشتغل بس **مفيش صف في الطابور** — يعني `push_enqueue()` مش شغالة. شوف لوج الأخطاء على السيرفر.';
             $vCol = 'var(--neg)'; $vBg = 'var(--neg-soft)';
         } elseif ($rSub === 0) {
-            $verdict = '🔴 **مفيش ولا جهاز مشترك خالص.** افتح الموقع من التليفون ودوس «فعّل إشعارات الموبايل».';
+            $verdict = '🔴 ' . $rTargetName . ' **مالوش ولا جهاز مشترك.** لازم يفتح الموقع من جهازه هو ويدوس «فعّل إشعارات الموبايل» — الاشتراك بيتعمل لكل متصفح لوحده.';
             $vCol = 'var(--neg)'; $vBg = 'var(--neg-soft)';
         } elseif ($pendCnt > 1) {
             $verdict = '🔴 فيه ' . $pendCnt . ' صف واقف في الطابور — **الكرون مش شغال**. سطر الكرون موجود في `local/upgrade_push.sql`.';
@@ -348,8 +374,8 @@ require_once __DIR__ . '/includes/header.php';
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">
             <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
-                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">أجهزة مشتركة</div>
-                <div style="font-size:17px;font-weight:700;color:var(--accent);"><?= $rSub ?></div>
+                <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">أجهزة <?= e($rTargetName) ?></div>
+                <div style="font-size:17px;font-weight:700;color:<?= $rSub === 0 ? 'var(--neg)' : 'var(--accent)' ?>;"><?= $rSub ?></div>
             </div>
             <div style="background:var(--line-soft);border-radius:10px;padding:10px 12px;text-align:center;">
                 <div style="font-size:12px;color:var(--ink-500);margin-bottom:2px;">في الطابور (pending)</div>
@@ -377,11 +403,60 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
             </div>
         <?php endif; ?>
+
+        <?php if (!empty($rDevices)): ?>
+            <div style="margin-top:10px;">
+                <div style="font-size:12.5px;color:var(--ink-600);font-weight:600;margin-bottom:6px;">
+                    أجهزة <?= e($rTargetName) ?> — الإشعار بيتبعت لكلهم مع بعض:
+                </div>
+                <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead><tr>
+                        <?php foreach (['الجهاز','آخر إرسال ناجح','مرات الفشل'] as $dh): ?>
+                            <th style="padding:7px 10px;text-align:right;color:var(--ink-500);border-bottom:1px solid var(--line);"><?= $dh ?></th>
+                        <?php endforeach; ?>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($rDevices as $dv):
+                        $dvFail = (int) $dv['fail_count'];
+                        $dvOk   = $dv['last_ok_at'] ?? null;
+                    ?>
+                        <tr>
+                            <td style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);color:var(--ink-800);">
+                                <?= e(mb_substr((string)($dv['user_agent'] ?? 'جهاز غير معروف'), 0, 70)) ?>
+                            </td>
+                            <td style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);color:<?= $dvOk ? 'var(--pos)' : 'var(--warn)' ?>;">
+                                <?= $dvOk ? e((string)$dvOk) : 'لسه مجاش عليه إشعار' ?>
+                            </td>
+                            <td style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);color:<?= $dvFail > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;">
+                                <?= $dvFail ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <p style="font-size:12px;color:var(--ink-500);margin-top:8px;">
+                    «آخر إرسال ناجح» فيه تاريخ = السيرفر بعت للجهاز ده وGoogle قبلت.
+                    لو الإشعار مع ذلك مابانش في الدرج، المشكلة في إعدادات الإشعارات
+                    على الجهاز نفسه مش في النظام.
+                </p>
+            </div>
+        <?php endif; ?>
     <?php endif; ?>
 
-    <form method="post">
+    <form method="post" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="send_real_notify" value="1">
+        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">ابعت لـ:</label>
+        <select name="notify_user_id" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
+            <?php $meId = (int) current_user()['id']; ?>
+            <?php foreach ($settingsUsers as $su): ?>
+                <option value="<?= (int)$su['id'] ?>" <?= ((int)$su['id'] === $meId) ? 'selected' : '' ?>>
+                    <?= e($su['full_name']) ?><?= !empty($su['branch_name']) ? ' — ' . e($su['branch_name']) : '' ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
         <button type="submit" class="btn">
             <i class="ti ti-bell"></i> ابعت إشعار ترحيب حقيقي
         </button>
