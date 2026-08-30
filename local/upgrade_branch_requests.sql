@@ -33,9 +33,28 @@
 -- ---------------------------------------------------------------------
 ALTER TABLE `shortage_requests`
   ADD COLUMN IF NOT EXISTS `source` ENUM('branch','purchase') NOT NULL DEFAULT 'branch'
-      COMMENT 'branch = طلب من فرع · purchase = طلب من المشتريات',
+      COMMENT 'branch = طلب من فرع · purchase = طلب من المشتريات';
+
+-- ⚠️ العمود `to_branch_id` عليه مفتاح أجنبي اسمه `fk_shr_to`،
+--    و MySQL بيرفض `MODIFY` على عمود مربوط بمفتاح:
+--        #1832 - Cannot change column 'to_branch_id'
+--    فلازم نفكّه ← نعدّل العمود ← نرجّعه.
+--
+--    المفتاح بيرجع بنفس الاسم وبنفس المرجع. الـ NULL مالوش مشكلة مع
+--    المفاتيح الأجنبية — الشرط مابينطبقش أصلاً على القيمة الفاضية.
+--
+-- 🔴 لو الأمر الأول قال «Can't DROP 'fk_shr_to'» يبقى المفتاح اتفكّ
+--    خلاص من تشغيلة قبل كده — عدّي عليه وكمّل.
+
+ALTER TABLE `shortage_requests` DROP FOREIGN KEY `fk_shr_to`;
+
+ALTER TABLE `shortage_requests`
   MODIFY COLUMN `to_branch_id` INT NULL
       COMMENT 'الفرع المطلوب منه — NULL لما الطلب رايح للمشتريات';
+
+ALTER TABLE `shortage_requests`
+  ADD CONSTRAINT `fk_shr_to` FOREIGN KEY (`to_branch_id`)
+      REFERENCES `branches` (`id`);
 
 -- رقم الصنف على السطر. الربط بالـ item_id مش بالكود:
 -- الصنف الواحد ليه أكتر من كود (أساسي + فرعي) وكلهم بنفس الـ item_id،
@@ -187,6 +206,10 @@ VALUES ('purchase_supervisor_id', '0');
 --  فحص بعد التنفيذ (اختياري — الصق كل واحد لوحده)
 -- =====================================================================
 -- SHOW COLUMNS FROM shortage_requests      LIKE 'source';
+-- SHOW COLUMNS FROM shortage_requests      LIKE 'to_branch_id';   -- Null لازم YES
+-- SELECT CONSTRAINT_NAME, DELETE_RULE, UPDATE_RULE
+--   FROM information_schema.REFERENTIAL_CONSTRAINTS
+--  WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'shortage_requests';
 -- SHOW COLUMNS FROM shortage_request_lines LIKE 'item_id';
 -- SHOW COLUMNS FROM book_reservation_lines LIKE 'allocated_qty';
 -- SELECT COUNT(*) FROM purchase_groups;          -- لازم 0
