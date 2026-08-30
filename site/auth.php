@@ -49,7 +49,6 @@ function all_modules(): array
         'treasury'      => ['label' => 'الخزينة وكشف الحساب','icon' => 'ti-building-bank',    'url' => 'treasury.php'],
         'hr'            => ['label' => 'الموارد البشرية',   'icon' => 'ti-users',            'url' => 'hr.php'],
         'attendance'        => ['label' => 'تسجيل الحضور',      'icon' => 'ti-clock-hour-4',     'url' => 'attendance.php'],
-        'attendance_import' => ['label' => 'استيراد الحضور',      'icon' => 'ti-file-spreadsheet', 'url' => 'attendance_import.php'],
         'tasks'         => ['label' => 'المهام',            'icon' => 'ti-inbox',         'url' => 'tasks.php'],
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
@@ -86,6 +85,10 @@ function module_parts(): array
             'salaries'   => 'الرواتب',
             'attendance' => 'الحضور والانصراف',
             'requests'   => 'طلبات التصحيح',
+            // 🔴 مفتاح لوحده مقصود: رفع الشيت بيغيّر ساعات كل الموظفين دفعة
+            //    واحدة، والساعات هي اللي بتحدد المرتبات. مش جزء من 'attendance'.
+            //    وده **مش تاب** — شوف HR_NON_TAB_PARTS في hr.php.
+            'attendance_import' => 'رفع شيت الحضور',
         ],
         'reports' => [
             'sales'      => 'المبيعات',
@@ -275,15 +278,6 @@ function is_owner(): bool
  */
 function can(string $moduleKey): bool
 {
-    // =========================================================================
-    //  الأسماء المستعارة — مخالفة لقاعدة «كل صفحة ليها مفتاحها».
-    //  متسابة هنا مؤقتاً عشان ما نكسرش الشاشات على المستخدمين الحاليين.
-    //  هتتشال بترحيل بيانات في مرحلة تانية، و attendance_import هتتشال
-    //  أصلاً لما الصفحة تدخل جوّه تاب الحضور في الموارد البشرية.
-    // =========================================================================
-    if ($moduleKey === 'remote_scan')       $moduleKey = 'price_inquiry';
-    if ($moduleKey === 'attendance_import') $moduleKey = 'hr';
-
     if (!is_logged_in()) {
         return false;
     }
@@ -314,10 +308,6 @@ function can(string $moduleKey): bool
  */
 function can_module(string $moduleKey): bool
 {
-    // الأسماء المستعارة مؤقتاً لحد ما تترحل
-    if ($moduleKey === 'remote_scan')       $moduleKey = 'price_inquiry';
-    if ($moduleKey === 'attendance_import') $moduleKey = 'hr';
-
     if (!is_logged_in()) {
         return false;
     }

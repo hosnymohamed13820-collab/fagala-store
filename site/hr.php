@@ -17,8 +17,13 @@ $flash = ''; $flashType = 'success';
 
 // قراءة التابات المسموحة للمستخدم بناءً على أجزاء مديول الموارد البشرية
 $hrParts = module_parts()['hr'] ?? [];
+// أجزاء صلاحيات مش تابات — دي مفاتيح لصفحات منفصلة بتتفتح بزرار من جوّه التاب.
+// لو اتشالت من هنا هتطلع تابات فاضية بترندر سجل الحضور بالغلط.
+const HR_NON_TAB_PARTS = ['attendance_import'];
+
 $allowedTabs = [];
 foreach ($hrParts as $tabKey => $tabLabel) {
+    if (in_array($tabKey, HR_NON_TAB_PARTS, true)) continue;
     if (can('hr:' . $tabKey)) {
         $allowedTabs[$tabKey] = $tabLabel;
     }
@@ -1726,6 +1731,12 @@ $statusBadge = function($st) {
 <?php else: // attendance ?>
     <div class="card">
         <div class="section-title">سجل الحضور والانصراف</div>
+        <?php if (can('hr:attendance_import')): ?>
+            <div class="toolbar" style="margin-bottom:14px;">
+                <span style="color:var(--ink-500);font-size:14px;">الحضور بيتسجّل بالبصمة، وتقدر ترفع شيت كروينجو لشهر كامل.</span>
+                <a href="attendance_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> رفع شيت الحضور</a>
+            </div>
+        <?php endif; ?>
         <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
             <input type="hidden" name="tab" value="attendance">
             <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>

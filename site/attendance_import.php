@@ -8,7 +8,7 @@
  *  2. ربط الموظفين (معرّف كروينجو empId -> موظف النظام)
  */
 require_once __DIR__ . '/auth.php';
-require_permission('hr');
+require_permission('hr:attendance_import');
 require_once __DIR__ . '/xlsx_read_lib.php';
 
 $pdo = db();

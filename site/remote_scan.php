@@ -10,7 +10,7 @@
  * المدخلات: ?s=كود_الاقتران (اختياري — بييجي من QR صفحة pc_scan.php)
  */
 require_once __DIR__ . '/auth.php';
-require_login();
+require_permission('remote_scan');
 
 $session = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['s'] ?? ''));
 $uid = (int) (current_user()['id'] ?? 0);
