@@ -141,9 +141,11 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
                         <?php if (empty($notifItems)): ?>
                             <div class="notif-empty">مفيش إشعارات</div>
                         <?php else: foreach ($notifItems as $n):
-                            $notifHref = (!$n['is_read'] && !empty($n['link']))
-                                ? 'notifications_read.php?go=' . urlencode($n['link'])
-                                : ($n['link'] ?: '#');
+                            // الجرس بيبعت رقم الإشعار — أدق من المطابقة باللينك،
+                            // وبيشتغل كمان مع الإشعارات اللي ملهاش لينك.
+                            $notifHref = $n['is_read']
+                                ? ($n['link'] ?: '#')
+                                : 'notifications_read.php?id=' . (int) $n['id'];
                         ?>
                             <a href="<?= e($notifHref) ?>" class="notif-item <?= $n['is_read'] ? '' : 'unread' ?>">
                                 <div class="ni-title"><?= e($n['title']) ?></div>
