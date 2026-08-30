@@ -433,13 +433,19 @@ try {
                         ag.style.display = '';
                     }
                 }
-                if (n > 0) {
-                    // زنّة: اهتزاز على الموبايل + نبض الجرس
+                // زنّة: اهتزاز على الموبايل + نبض أيقونة النواقص.
+                //
+                // كانت `n > 0` — يعني ما دام فيه ولو طلب نواقص واحد معلّق،
+                // الموبايل بيهتز **كل دورة استطلاع** مش لما حاجة جديدة تيجي.
+                // و`last` كانت بتتحفظ تحت ومحدش بيستعملها.
+                // والنبض كان على `.notif-bell` (جرس الإشعارات) والعدّاد ده
+                // بتاع النواقص — فكان بيبان كأنه إشعار وصل وهو مالوش علاقة.
+                if (n > last) {
                     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-                    var bell = document.querySelector('.notif-bell i');
-                    if (bell) {
-                        bell.style.animation = 'shrPulse 0.5s ease-in-out 4';
-                        setTimeout(function () { bell.style.animation = ''; }, 2200);
+                    var shrIcon = document.querySelector('#shrNag > a > i');
+                    if (shrIcon) {
+                        shrIcon.style.animation = 'shrPulse 0.5s ease-in-out 4';
+                        setTimeout(function () { shrIcon.style.animation = 'shrPulse 1.2s ease-in-out infinite'; }, 2200);
                     }
                 }
                 last = n;
