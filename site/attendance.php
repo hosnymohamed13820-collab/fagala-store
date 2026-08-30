@@ -378,16 +378,16 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 <?php if ($employee): ?>
 <?php
     $periodTotalHours = 0.0;
+    $completeDays     = 0;   // أيام فيها حضور وانصراف
+    $missingDays      = 0;   // أيام تسجيلها ناقص (واحد بس من الاتنين)
     foreach ($myPeriodAtt as $a) {
         $periodTotalHours += (float) ($a['work_hours'] ?? 0);
+        $hasIn  = !empty($a['check_in']);
+        $hasOut = !empty($a['check_out']);
+        if ($hasIn && $hasOut)      { $completeDays++; }
+        elseif ($hasIn || $hasOut)  { $missingDays++;  }
+        // الصف اللي مالوش دخول ولا خروج مايتحسبش في ولا واحد فيهم
     }
-    $empExpectedHours = isset($employee['expected_monthly_hours']) && $employee['expected_monthly_hours'] !== null && $employee['expected_monthly_hours'] !== '' ? (float) $employee['expected_monthly_hours'] : null;
-    // حساب أيام العمل والإجازة والاستحقاق من الدالة الموحدة
-    $salDays    = salary_days_from_hours($periodTotalHours, $empExpectedHours);
-    $noExpected = !empty($salDays['no_expected']);
-    $workDays   = $salDays['work_days'];
-    $leaveDays  = $salDays['leave_days'];
-    $dueDays    = $salDays['due_days'];
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
@@ -401,29 +401,19 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
-    <?php if ($noExpected): ?>
-        <div class="flash warning" style="margin-bottom:14px;display:flex;align-items:center;gap:8px;">
-            <i class="ti ti-alert-triangle"></i>
-            <span>الساعات المنتظرة في الشهر مش محددة لبياناتك — تواصل مع الإدارة لتحديدها في التعريفات لحساب أيام العمل والإجازات.</span>
-        </div>
-    <?php endif; ?>
-
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
             <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
         </div>
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $noExpected ? '—' : $workDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام سجّلت فيها حضور وانصراف</div>
+            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $completeDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
         </div>
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الإجازة</div>
-            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $noExpected ? '—' : $leaveDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
-        </div>
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام الاستحقاق</div>
-            <div style="font-size:18px;font-weight:700;color:var(--ink-900);"><?= $noExpected ? '—' : $dueDays ?> <span style="font-size:13px;font-weight:500;"><?= $noExpected ? '' : 'يوم' ?></span></div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+             title="دول الأيام اللي نسيت فيها تسجّل دخول أو خروج — اطلب تصحيح من الزرار اللي فوق">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام تسجيلها ناقص</div>
+            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $missingDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
         </div>
     </div>
 
@@ -446,16 +436,31 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             <?php
                 $inOutside  = !empty($a['check_in_outside']);
                 $outOutside = !empty($a['check_out_outside']);
+                $rowHasIn   = !empty($a['check_in']);
+                $rowHasOut  = !empty($a['check_out']);
+                $rowMissing = ($rowHasIn || $rowHasOut) && !($rowHasIn && $rowHasOut);
             ?>
-            <tr>
+            <tr<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= e($a['att_date']) ?></td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
-                    <?= e($a['check_in'] ? substr($a['check_in'],0,5) : '—') ?>
-                    <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php if ($rowHasIn): ?>
+                        <?= e(substr($a['check_in'],0,5)) ?>
+                        <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php elseif ($rowMissing): ?>
+                        <span style="color:var(--warn);font-weight:600;">ناقص</span>
+                    <?php else: ?>
+                        <?= e('—') ?>
+                    <?php endif; ?>
                 </td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
-                    <?= e($a['check_out'] ? substr($a['check_out'],0,5) : '—') ?>
-                    <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php if ($rowHasOut): ?>
+                        <?= e(substr($a['check_out'],0,5)) ?>
+                        <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php elseif ($rowMissing): ?>
+                        <span style="color:var(--warn);font-weight:600;">ناقص</span>
+                    <?php else: ?>
+                        <?= e('—') ?>
+                    <?php endif; ?>
                 </td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= number_format((float)$a['work_hours'],2) ?></td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
