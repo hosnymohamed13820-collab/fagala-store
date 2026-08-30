@@ -307,6 +307,83 @@ try {
 </div>
 <?php endif; ?>
 
+<?php if ($vapidPublicKey !== ''): ?>
+<!-- ===== دعوة تفعيل إشعارات الموبايل =====
+     🔴 المتصفحات بترفض Notification.requestPermission() لو مانداهاش ضغطة من
+        المستخدم. عشان كده الشريط ده بيظهر لوحده، لكن نافذة الإذن نفسها
+        مابتفتحش غير لما يدوس «فعّل دلوقتي» — ده نفس اللي واتساب ويب بيعمله.
+     بيظهر بس لو: الجهاز بيدعم البوش · الإذن لسه مترفضش · مفيش اشتراك ·
+     وماقفلهوش من أقل من ٣ أيام. -->
+<style>
+    .push-nag-btn { background:var(--accent); color:#fff; border:none; padding:8px 16px;
+        border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;
+        white-space:nowrap; }
+    .push-nag-btn:hover { background:var(--accent-hover); color:#fff; }
+    .push-nag-x { background:none; border:none; color:var(--accent); cursor:pointer;
+        font-size:18px; line-height:1; padding:4px; font-family:inherit; }
+    .push-nag-x:hover { color:var(--accent-hover); }
+</style>
+<div id="pushNag" style="display:none;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;
+        background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:12px;
+        color:var(--accent);font-size:14px;font-weight:600;">
+        <i class="ti ti-bell" style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
+        <span style="flex:1;" id="pushNagText">فعّل إشعارات الموبايل عشان أول ما حاجة تخصّك تنزل توصلك على طول — من غير ما تفضل تفتح الموقع تشوف.</span>
+        <button type="button" class="push-nag-btn" id="pushNagBtn">فعّل دلوقتي</button>
+        <button type="button" class="push-nag-x" id="pushNagClose" title="مش دلوقتي"><i class="ti ti-x"></i></button>
+    </div>
+</div>
+<script>
+(function () {
+    var nag = document.getElementById('pushNag');
+    if (!nag) return;
+    var txt = document.getElementById('pushNagText');
+    var btn = document.getElementById('pushNagBtn');
+    var KEY = 'fgl_push_nag_until';
+    var now = Date.now();
+
+    // اتقفل من قريّب؟ مانزنّش تاني دلوقتي
+    try { if (+localStorage.getItem(KEY) > now) return; } catch (e) {}
+
+    document.getElementById('pushNagClose').addEventListener('click', function () {
+        nag.style.display = 'none';
+        // بيرجع تاني بعد ٣ أيام — دي دعوة مش إنذار
+        try { localStorage.setItem(KEY, String(now + 3 * 24 * 60 * 60 * 1000)); } catch (e) {}
+    });
+
+    var isIos = /iPad|iPhone|iPod/.test(navigator.userAgent)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                    || window.navigator.standalone === true;
+
+    // الآيفون في سفاري العادي: PushManager مش موجود خالص، والحل مش زرار
+    if (!('PushManager' in window) || !('serviceWorker' in navigator)) {
+        if (isIos && !isStandalone) {
+            txt.textContent = 'عشان الإشعارات توصلك على الآيفون: افتح قايمة المشاركة تحت، '
+                            + 'اختار «إضافة إلى الشاشة الرئيسية»، وبعدين افتح الموقع من الأيقونة.';
+            btn.style.display = 'none';
+            nag.style.display = 'block';
+        }
+        return;
+    }
+
+    // رفض قبل كده؟ مانزنّش — لازم يفتحها من إعدادات المتصفح بنفسه
+    if (Notification.permission === 'denied') return;
+
+    navigator.serviceWorker.ready.then(function (reg) {
+        return reg.pushManager.getSubscription();
+    }).then(function (sub) {
+        if (!sub) nag.style.display = 'block';
+    }).catch(function () {});
+
+    btn.addEventListener('click', function () {
+        nag.style.display = 'none';
+        if (typeof enablePushNotifications === 'function') enablePushNotifications();
+    });
+})();
+</script>
+<?php endif; ?>
+
 <div id="shrNag" style="<?= $shortagePending > 0 ? '' : 'display:none;' ?>margin-bottom:16px;">
     <a href="tasks.php" style="display:flex;align-items:center;gap:12px;padding:14px 18px;
         background:var(--warn-soft,#fff7e6);border:1.5px solid var(--warn,#d97706);border-radius:12px;
