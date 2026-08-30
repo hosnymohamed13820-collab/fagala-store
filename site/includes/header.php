@@ -22,6 +22,7 @@ $storeName   = setting('store_name', 'مكتبات الفجالة ستور');
 $pageTitle   = $page_title   ?? 'النظام المالي';
 $active      = $active_module ?? '';
 $modules     = all_modules();
+$vapidPublicKey = (string) setting('vapid_public_key', '');
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -115,10 +116,22 @@ $modules     = all_modules();
                 <div class="notif-panel" id="notifPanel">
                     <div class="notif-head">
                         <span>الإشعارات</span>
-                        <?php if ($notifUnread > 0): ?>
-                            <a href="notifications_read.php?back=<?= urlencode($_SERVER['REQUEST_URI'] ?? 'dashboard.php') ?>" class="notif-mark">تعليم الكل كمقروء</a>
-                        <?php endif; ?>
+                        <div class="notif-actions">
+                            <?php if ($notifUnread > 0): ?>
+                                <a href="notifications_read.php?back=<?= urlencode($_SERVER['REQUEST_URI'] ?? 'dashboard.php') ?>" class="notif-mark">تعليم الكل كمقروء</a>
+                            <?php endif; ?>
+                            <?php if ($vapidPublicKey !== ''): ?>
+                                <button id="pushPromptBtn" class="notif-push-btn" style="display:none;" onclick="enablePushNotifications()">
+                                    <i class="ti ti-bell"></i> فعّل إشعارات الموبايل
+                                </button>
+                            <?php endif; ?>
+                        </div>
                     </div>
+                    <?php if ($vapidPublicKey !== ''): ?>
+                        <div id="iosPushTip" class="notif-ios-tip" style="display:none;">
+                            عشان الإشعارات توصلك على الآيفون، افتح قايمة المشاركة تحت واختار (إضافة إلى الشاشة الرئيسية)، وبعدين افتح الموقع من الأيقونة وفعّل الإشعارات من هنا.
+                        </div>
+                    <?php endif; ?>
                     <div class="notif-list">
                         <?php if (empty($notifItems)): ?>
                             <div class="notif-empty">مفيش إشعارات</div>
@@ -132,6 +145,124 @@ $modules     = all_modules();
                     </div>
                 </div>
             </div>
+            <style>
+                .notif-actions { display: flex; align-items: center; gap: 8px; }
+                .notif-push-btn {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    background: var(--accent-soft);
+                    color: var(--accent);
+                    border: 1px solid var(--accent);
+                    border-radius: var(--r-sm, 6px);
+                    padding: 3px 8px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    text-decoration: none;
+                    font-family: inherit;
+                }
+                .notif-push-btn:hover {
+                    background: var(--line);
+                    color: var(--accent);
+                }
+                .notif-push-btn:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+                .notif-ios-tip {
+                    padding: 10px 14px;
+                    font-size: 12px;
+                    color: var(--warn);
+                    background: var(--surface);
+                    border-bottom: 1px solid var(--line);
+                    line-height: 1.5;
+                }
+            </style>
+            <?php if ($vapidPublicKey !== ''): ?>
+            <script>
+            window.__VAPID_PUBKEY__ = <?= json_encode($vapidPublicKey) ?>;
+            function urlBase64ToUint8Array(base64String) {
+                var padding = '='.repeat((4 - base64String.length % 4) % 4);
+                var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+                var rawData = window.atob(base64);
+                var outputArray = new Uint8Array(rawData.length);
+                for (var i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
+            }
+            function enablePushNotifications() {
+                var btn = document.getElementById('pushPromptBtn');
+                if (btn) btn.disabled = true;
+                if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    return;
+                }
+                Notification.requestPermission().then(function(permission) {
+                    if (permission !== 'granted') {
+                        if (btn) { btn.disabled = false; btn.style.display = 'none'; }
+                        return;
+                    }
+                    return navigator.serviceWorker.ready.then(function(reg) {
+                        var key = window.__VAPID_PUBKEY__;
+                        if (!key) return;
+                        return reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(key)
+                        });
+                    }).then(function(subscription) {
+                        if (!subscription) return;
+                        var subJson = subscription.toJSON();
+                        return fetch('push_subscribe.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'subscribe',
+                                endpoint: subscription.endpoint,
+                                keys: {
+                                    p256dh: subJson.keys?.p256dh || '',
+                                    auth: subJson.keys?.auth || ''
+                                }
+                            })
+                        }).then(function(res) { return res.json(); })
+                          .then(function(data) {
+                              if (data && data.ok) {
+                                  if (btn) btn.style.display = 'none';
+                              } else {
+                                  if (btn) btn.disabled = false;
+                              }
+                          });
+                    });
+                }).catch(function(err) {
+                    console.error(err);
+                    if (btn) btn.disabled = false;
+                });
+            }
+            (function() {
+                var isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                var isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+                if (!('PushManager' in window)) {
+                    if (isIos && !isStandalone) {
+                        var tip = document.getElementById('iosPushTip');
+                        if (tip) tip.style.display = 'block';
+                    }
+                    return;
+                }
+
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.ready.then(function(reg) {
+                        return reg.pushManager.getSubscription();
+                    }).then(function(sub) {
+                        if (!sub && Notification.permission !== 'denied') {
+                            var btn = document.getElementById('pushPromptBtn');
+                            if (btn) btn.style.display = 'inline-flex';
+                        }
+                    }).catch(function() {});
+                }
+            })();
+            </script>
+            <?php endif; ?>
         </div>
         <div class="content">
 <?php

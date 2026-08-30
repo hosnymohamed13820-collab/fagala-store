@@ -11,6 +11,7 @@
  */
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/push_lib.php';
 
 /**
  * تسجيل حركة في كشف الحساب + تحديث رصيد الخزينة (ذرّياً).
@@ -2538,15 +2539,18 @@ function create_task(string $title, ?string $details, string $priority, ?string 
         $taskId = (int) $pdo->lastInsertId();
 
         $insTarget = $pdo->prepare('INSERT IGNORE INTO task_targets (task_id, user_id) VALUES (?, ?)');
-        $insNotif  = $pdo->prepare(
-            'INSERT INTO notifications (user_id, type, title, body, link)
-             VALUES (?, "task", ?, ?, ?)'
-        );
-        $prioLabel = ['normal'=>'', 'important'=>' (مهم)', 'urgent'=>' (عاجل)'][$priority];
         foreach ($userIds as $uid) {
             $insTarget->execute([$taskId, $uid]);
-            $insNotif->execute([$uid, 'مهمة جديدة' . $prioLabel, mb_substr($title, 0, 200), 'tasks.php?task=' . $taskId]);
         }
+        $prioLabel = ['normal'=>'', 'important'=>' (مهم)', 'urgent'=>' (عاجل)'][$priority];
+        notify(
+            $pdo,
+            $userIds,
+            'task',
+            'مهمة جديدة' . $prioLabel,
+            mb_substr($title, 0, 200),
+            'tasks.php?task=' . $taskId
+        );
         $pdo->commit();
         return $taskId;
     } catch (Throwable $ex) {
@@ -2675,19 +2679,7 @@ function notify_salaries_paid(array $employeeIds, string $month): void
         $link  = 'my_salary.php';
         $type  = 'salary';
 
-        $placeholders = [];
-        $params = [];
-        foreach ($userIds as $uid) {
-            $placeholders[] = '(?, ?, ?, ?, ?)';
-            $params[] = $uid;
-            $params[] = $type;
-            $params[] = $title;
-            $params[] = $body;
-            $params[] = $link;
-        }
-
-        $sql = 'INSERT INTO notifications (user_id, type, title, body, link) VALUES ' . implode(', ', $placeholders);
-        $pdo->prepare($sql)->execute($params);
+        notify($pdo, $userIds, $type, $title, $body, $link);
     } catch (Throwable $e) {
         error_log('notify_salaries_paid error: ' . $e->getMessage());
     }

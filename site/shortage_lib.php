@@ -12,6 +12,7 @@
  * مسؤول المتابعة بيتحدد من الإعدادات (shortage_supervisor_id).
  */
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/push_lib.php';
 
 /** مسؤول متابعة النواقص من الإعدادات (0 = مش متحدد) */
 function shortage_supervisor_id(): int
@@ -196,9 +197,6 @@ function create_shortage_request(
 
         // ٤) المستهدفين + إشعارهم
         $insTarget = $pdo->prepare('INSERT IGNORE INTO task_targets (task_id, user_id) VALUES (?, ?)');
-        $insNotif  = $pdo->prepare(
-            'INSERT INTO notifications (user_id, type, title, body, link) VALUES (?, "shortage", ?, ?, ?)'
-        );
         $link = 'tasks.php?task=' . $taskId;
 
         if ($source === 'purchase') {
@@ -211,12 +209,9 @@ function create_shortage_request(
 
         foreach ($targets as $tid) {
             $insTarget->execute([$taskId, $tid]);
-            $insNotif->execute([
-                $tid,
-                $notifTitle,
-                $notifBody,
-                $link,
-            ]);
+        }
+        if (!empty($targets)) {
+            notify($pdo, $targets, 'shortage', $notifTitle, $notifBody, $link);
         }
 
         // ٥) إشعار المتابعة (لطلب الفرع فقط) — الأونر + المسؤول، من غير تكرار
@@ -226,13 +221,15 @@ function create_shortage_request(
             $sup = shortage_supervisor_id();
             if ($sup > 0) $watchers[] = $sup;
             $watchers = array_values(array_diff(array_unique($watchers), $targets, [$userId]));
-            foreach ($watchers as $wid) {
-                $insNotif->execute([
-                    $wid,
+            if (!empty($watchers)) {
+                notify(
+                    $pdo,
+                    $watchers,
+                    'shortage',
                     '📋 متابعة نواقص',
                     mb_substr('فرع ' . $fromName . ' طلب ' . $n . ' صنف من فرع ' . $toName, 0, 255),
-                    $link,
-                ]);
+                    $link
+                );
             }
         }
 

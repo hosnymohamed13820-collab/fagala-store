@@ -27,7 +27,7 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v18'; // v18: خط الأيقونات اتعمله subset من تاني — 97 أيقونة بدل 77
+const VERSION = 'v19'; // v19: دعم إشعارات الويب Push Notifications والنقر عليها
 const CACHE = 'fagala-' + VERSION;
 
 const ASSETS = [
@@ -123,3 +123,55 @@ self.addEventListener('fetch', (e) => {
 
   // أي حاجة تانية (صفحات PHP، بيانات): الشبكة مباشرة — بيانات لايف دايمًا
 });
+
+// =====================================================================
+//  إشعارات الويب (Push Notifications)
+// =====================================================================
+
+self.addEventListener('push', (e) => {
+  let data = {};
+  if (e.data) {
+    try {
+      data = e.data.json();
+    } catch (_) {
+      try {
+        data = { title: e.data.text() };
+      } catch (__) {}
+    }
+  }
+
+  const title = (data && data.title) ? data.title : 'إشعار جديد';
+  const options = {
+    body: (data && data.body) ? data.body : '',
+    icon: './icon-192.png',
+    badge: './favicon-32.png',
+    data: {
+      link: (data && data.link) ? data.link : './'
+    }
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const rawLink = e.notification.data?.link || './';
+  const targetUrl = new URL(rawLink, self.location.origin).href;
+
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          if ('navigate' in client) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
