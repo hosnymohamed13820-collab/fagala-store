@@ -1757,18 +1757,28 @@ $statusBadge = function($st) {
                 $statusMap = ['present'=>['حاضر','var(--pos)','var(--pos-soft)'],'absent'=>['غائب','var(--neg)','var(--neg-soft)'],
                               'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','#666','#eee']];
                 // خلية مكان البصمة: رابط خريطة + تنبيه لو برّة النطاق
-                $locCell = function($lat, $lng, $dist, $outside, $label) {
+                $locCell = function($lat, $lng, $dist, $outside, $label, $acc) {
                     if ($lat === null || $lng === null || $lat === '' || $lng === '') return '';
                     $url = 'https://www.google.com/maps?q=' . $lat . ',' . $lng;
-                    $color = $outside ? 'var(--neg)' : 'var(--pos)';
-                    $txt = $outside ? ('⚠ برّة (' . (int)$dist . 'م)') : '✓ داخل النطاق';
+                    // uncertain مش عمود في الجدول فبنستنتجه من الدقة
+                    $uncertain = ($outside == 0 && $acc !== null && $acc > 100);
+                    if ($outside) {
+                        $color = 'var(--neg)';
+                        $txt = '⚠ برّة (' . (int)$dist . 'م)';
+                    } elseif ($uncertain) {
+                        $color = 'var(--warn)';
+                        $txt = '؟ الموقع مش دقيق (' . (int)$dist . 'م ±' . (int)$acc . 'م)';
+                    } else {
+                        $color = 'var(--pos)';
+                        $txt = '✓ داخل النطاق';
+                    }
                     return '<a href="' . $url . '" target="_blank" style="color:' . $color . ';font-size:12px;text-decoration:none;white-space:nowrap;" title="افتح على الخريطة">'
                          . $label . ' ' . $txt . '</a>';
                 };
                 foreach ($attRows as $a):
                     $sb = $statusMap[$a['status']] ?? ['—','#666','#eee'];
-                    $inLoc  = $locCell($a['check_in_lat'] ?? null,  $a['check_in_lng'] ?? null,  $a['check_in_dist'] ?? null,  !empty($a['check_in_outside']),  'دخول:');
-                    $outLoc = $locCell($a['check_out_lat'] ?? null, $a['check_out_lng'] ?? null, $a['check_out_dist'] ?? null, !empty($a['check_out_outside']), 'خروج:');
+                    $inLoc  = $locCell($a['check_in_lat'] ?? null,  $a['check_in_lng'] ?? null,  $a['check_in_dist'] ?? null,  !empty($a['check_in_outside']),  'دخول:', $a['check_in_acc'] ?? null);
+                    $outLoc = $locCell($a['check_out_lat'] ?? null, $a['check_out_lng'] ?? null, $a['check_out_dist'] ?? null, !empty($a['check_out_outside']), 'خروج:', $a['check_out_acc'] ?? null);
                     $rowFlagged = !empty($a['check_in_outside']) || !empty($a['check_out_outside']);
             ?>
                 <tr<?= $rowFlagged ? ' style="background:#fff6f6;"' : '' ?>>

@@ -32,10 +32,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
         // إحداثيات البصمة (من المتصفح)
         $lat = ($_POST['lat'] ?? '') !== '' ? (float)$_POST['lat'] : null;
         $lng = ($_POST['lng'] ?? '') !== '' ? (float)$_POST['lng'] : null;
+        $acc = ($_POST['acc'] ?? '') !== '' ? (float)$_POST['acc'] : null;
         try {
             if ($action === 'clock_in' || $action === 'clock_out') {
-                $geo = evaluate_geofence($employee, $lat, $lng);
-                $geo['lat'] = $lat; $geo['lng'] = $lng;
+                $geo = evaluate_geofence($employee, $lat, $lng, $acc);
+                $geo['lat'] = $lat; $geo['lng'] = $lng; $geo['acc'] = $acc;
                 $act = $action === 'clock_in' ? 'in' : 'out';
 
                 // ---------------------------------------------------------------
@@ -66,6 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
                 if (!empty($res['outside'])) {
                     $where = ' (تنبيه: كنت خارج نطاق الفرع بمسافة ' . (int)$res['dist'] . ' متر — تم إبلاغ الموارد البشرية)';
                     $flashType = 'error';
+                } elseif (!empty($res['uncertain'])) {
+                    $where = ' (اتسجّل. الموقع اللي وصلنا مش دقيق (±' . (int)$acc . ' م) — لو انت جوّه الفرع مفيش مشكلة.)';
+                    $flashType = 'warning';
                 }
                 if ($action === 'clock_in') {
                     $flash = 'تم تسجيل الحضور.' . $where;
@@ -276,6 +280,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="action" value="clock_in">
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
+                <input type="hidden" name="acc" class="geo-acc">
                 <button type="submit" class="clock-btn btn-in"><i class="ti ti-login"></i> تسجيل الحضور</button>
             </form>
         <?php elseif (!$actOut): ?>
@@ -284,6 +289,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="action" value="clock_out">
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
+                <input type="hidden" name="acc" class="geo-acc">
                 <button type="submit" class="clock-btn btn-out"><i class="ti ti-logout"></i> تسجيل الانصراف</button>
             </form>
         <?php else: ?>
@@ -330,13 +336,14 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         const hint = document.getElementById('geoHint');
         const latEl = form.querySelector('.geo-lat');
         const lngEl = form.querySelector('.geo-lng');
+        const accEl = form.querySelector('.geo-acc');
         let submitting = false;
 
         function showHint(txt, color) {
             if (!hint) return;
             hint.style.display = 'block';
             hint.style.color = color || 'var(--ink-500)';
-            hint.textContent = txt;
+            hint.innerHTML = txt;
         }
 
         form.addEventListener('submit', function(e){
@@ -351,23 +358,48 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             const origHtml = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<i class="ti ti-loader"></i> جاري تحديد موقعك...';
-            showHint('برجاء السماح بالوصول للموقع', 'var(--warn)');
+            showHint('بندوّر على موقعك بدقة...', 'var(--warn)');
 
-            navigator.geolocation.getCurrentPosition(
-                function(pos){
-                    latEl.value = pos.coords.latitude.toFixed(7);
-                    lngEl.value = pos.coords.longitude.toFixed(7);
-                    submitting = true;
-                    form.submit();
-                },
-                function(err){
-                    // فشل/رفض تحديد الموقع → نرسل من غير إحداثيات (السيرفر بيسجّل بدون تقييم)
+            let watchId = null;
+            let timeoutId = null;
+            let bestPos = null;
+
+            function doSubmit() {
+                if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                if (timeoutId !== null) clearTimeout(timeoutId);
+                if (submitting) return;
+                
+                if (bestPos) {
+                    latEl.value = bestPos.coords.latitude.toFixed(7);
+                    lngEl.value = bestPos.coords.longitude.toFixed(7);
+                    if (accEl) accEl.value = bestPos.coords.accuracy.toFixed(2);
+                } else {
+                    latEl.value = ''; lngEl.value = '';
+                    if (accEl) accEl.value = '';
                     btn.disabled = false;
                     btn.innerHTML = origHtml;
                     showHint('تعذّر تحديد الموقع — سيتم التسجيل بدون تحديد المكان', 'var(--neg)');
-                    latEl.value = ''; lngEl.value = '';
-                    submitting = true;
-                    form.submit();
+                }
+                
+                submitting = true;
+                form.submit();
+            }
+
+            timeoutId = setTimeout(doSubmit, 8000);
+
+            watchId = navigator.geolocation.watchPosition(
+                function(pos){
+                    if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
+                        bestPos = pos;
+                        showHint('بندوّر على موقعك بدقة...<br>الدقة: ±' + Math.round(pos.coords.accuracy) + ' م', 'var(--warn)');
+                    }
+                    if (pos.coords.accuracy <= 50) {
+                        doSubmit();
+                    }
+                },
+                function(err){
+                    // فشل أو رفض
+                    if (!bestPos) doSubmit();
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );

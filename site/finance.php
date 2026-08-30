@@ -2776,14 +2776,18 @@ function gps_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): flo
 
 /**
  * تقييم موقع البصمة مقابل نطاق فرع الموظف.
- * بيرجّع: ['dist'=>int|null, 'outside'=>0|1, 'checked'=>bool]
+ * بيرجّع: ['dist'=>int|null, 'outside'=>0|1, 'uncertain'=>0|1, 'checked'=>bool]
  *  - checked=false: مفيش تقييم (الموظف مسموحله من أي مكان، أو الفرع مش مفعّل نطاق،
  *    أو مفيش إحداثيات للفرع، أو الموظف مبعتش موقعه).
- *  - outside=1: بره النطاق (بيتسجّل بس مايمنعش البصمة).
+ *  - outside=1: برّه النطاق **فعلاً** (المسافة المؤكدة أكبر من الراديوس).
+ *  - uncertain=1: المسافة الخام أكبر من الراديوس لكن الدقة ضعيفة فمش متأكدين.
+ *
+ * @param ?float $acc  دقة القراءة بالمتر (من pos.coords.accuracy).
+ *                     null = مش معروفة → السلوك القديم بالظبط.
  */
-function evaluate_geofence(array $employee, ?float $lat, ?float $lng): array
+function evaluate_geofence(array $employee, ?float $lat, ?float $lng, ?float $acc = null): array
 {
-    $out = ['dist' => null, 'outside' => 0, 'checked' => false];
+    $out = ['dist' => null, 'outside' => 0, 'uncertain' => 0, 'checked' => false];
 
     // الموظف مسموحله يبصم من أي مكان → مفيش تقييم
     if (!empty($employee['allow_anywhere'])) return $out;
@@ -2808,8 +2812,24 @@ function evaluate_geofence(array $employee, ?float $lat, ?float $lng): array
     $radius = (int)($b['geofence_radius'] ?: 50);
 
     $out['dist']    = (int)round($dist);
-    $out['outside'] = $dist > $radius ? 1 : 0;
     $out['checked'] = true;
+
+    if ($acc === null) {
+        // الدقة مش معروفة (صفوف قديمة / نداء قديم) → السلوك القديم بالظبط
+        $out['outside'] = $dist > $radius ? 1 : 0;
+    } else {
+        // المسافة المؤكدة = أقل مسافة ممكنة بناءً على هامش الخطأ
+        $confirmedDist = max(0.0, $dist - $acc);
+        if ($confirmedDist > $radius) {
+            // برّه فعلاً — حتى لو طرحنا كل هامش الخطأ لسه بعيد
+            $out['outside'] = 1;
+        } elseif ($dist > $radius) {
+            // المسافة الخام أكبر من الراديوس بس بعد خصم الدقة ممكن يكون جوّه
+            $out['uncertain'] = 1;
+        }
+        // غير كده: dist <= radius → جوّه، outside=0 و uncertain=0
+    }
+
     return $out;
 }
 
@@ -2837,6 +2857,7 @@ function clock_attendance(int $employeeId, string $action, ?string $time = null,
     $lng     = $geo['lng']     ?? null;
     $dist    = $geo['dist']    ?? null;
     $outside = !empty($geo['outside']) ? 1 : 0;
+    $acc     = $geo['acc']     ?? null;
 
     $pdo->beginTransaction();
     try {
@@ -2850,18 +2871,20 @@ function clock_attendance(int $employeeId, string $action, ?string $time = null,
                 throw new RuntimeException('تم تسجيل الحضور بالفعل اليوم.');
             }
             if ($row) {
+                // UPDATE حضور: ٧ علامات ?, ٧ قيم
                 $pdo->prepare('UPDATE attendance SET check_in=?, check_in_lat=?, check_in_lng=?,
-                        check_in_dist=?, check_in_outside=?, status="present" WHERE id=?')
-                    ->execute([$time, $lat, $lng, $dist, $outside, $row['id']]);
+                        check_in_dist=?, check_in_outside=?, check_in_acc=?, status="present" WHERE id=?')
+                    ->execute([$time, $lat, $lng, $dist, $outside, $acc, $row['id']]);
             } else {
+                // INSERT حضور: ٨ علامات ?, ٨ قيم
                 $pdo->prepare(
                     'INSERT INTO attendance (employee_id, att_date, check_in, check_in_lat, check_in_lng,
-                        check_in_dist, check_in_outside, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, "present")'
-                )->execute([$employeeId, $date, $time, $lat, $lng, $dist, $outside]);
+                        check_in_dist, check_in_outside, check_in_acc, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, "present")'
+                )->execute([$employeeId, $date, $time, $lat, $lng, $dist, $outside, $acc]);
             }
             $pdo->commit();
-            return ['status' => 'in', 'hours' => null, 'outside' => $outside, 'dist' => $dist];
+            return ['status' => 'in', 'hours' => null, 'outside' => $outside, 'dist' => $dist, 'uncertain' => (!empty($geo['uncertain']) ? 1 : 0)];
         } else { // out
             if (!$row || !$row['check_in']) {
                 throw new RuntimeException('لازم تسجّل حضور الأول.');
@@ -2874,11 +2897,12 @@ function clock_attendance(int $employeeId, string $action, ?string $time = null,
                 throw new RuntimeException('لازم يكون فيه 5 دقايق على الأقل بين الحضور والانصراف.');
             }
             $hours = round($mins / 60, 2);
+            // UPDATE انصراف: ٨ علامات ?, ٨ قيم
             $pdo->prepare('UPDATE attendance SET check_out=?, check_out_lat=?, check_out_lng=?,
-                    check_out_dist=?, check_out_outside=?, work_hours=? WHERE id=?')
-                ->execute([$time, $lat, $lng, $dist, $outside, $hours, $row['id']]);
+                    check_out_dist=?, check_out_outside=?, check_out_acc=?, work_hours=? WHERE id=?')
+                ->execute([$time, $lat, $lng, $dist, $outside, $acc, $hours, $row['id']]);
             $pdo->commit();
-            return ['status' => 'out', 'hours' => $hours, 'minutes' => $mins, 'outside' => $outside, 'dist' => $dist];
+            return ['status' => 'out', 'hours' => $hours, 'minutes' => $mins, 'outside' => $outside, 'dist' => $dist, 'uncertain' => (!empty($geo['uncertain']) ? 1 : 0)];
         }
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
