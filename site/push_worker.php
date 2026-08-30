@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-const PUSH_WORKER_TOKEN = 'push_8Km4xQ9vR2Nw7Lt5Bz1Yd3Hs6Fj9Gc';
+require_once __DIR__ . '/push_lib.php';   // فيه PUSH_WORKER_TOKEN
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -33,7 +33,6 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/push_lib.php';
 
 try {
     $pdo = db();

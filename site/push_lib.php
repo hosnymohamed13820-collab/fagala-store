@@ -13,6 +13,15 @@
 declare(strict_types=1);
 
 /**
+ * توكن وركر الإشعارات — مصدر واحد.
+ * كان متعرّف في push_worker.php، ونقل هنا عشان push_kick_worker() تقدر
+ * تستعمله من غير ما نكرر السر في مكانين.
+ */
+if (!defined('PUSH_WORKER_TOKEN')) {
+    define('PUSH_WORKER_TOKEN', 'push_8Km4xQ9vR2Nw7Lt5Bz1Yd3Hs6Fj9Gc');
+}
+
+/**
  * إرسال إشعار لمجموعة مستخدمين (تسجيل في الجرس + طابور البوش)
  *
  * @param PDO         $pdo     اتصال الداتابيز الحالي
@@ -92,6 +101,10 @@ function push_enqueue(
 
     $sqlQueue = 'INSERT INTO push_queue (user_id, title, body, link) VALUES ' . implode(', ', $placeholders);
     $pdo->prepare($sqlQueue)->execute($params);
+
+    // نبّه الوركر يشتغل أول ما الطلب يخلص بدل ما الإشعار يستنى الكرون.
+    // بيتأجّل لبعد الـCOMMIT — شوف التعليق فوق push_kick_worker().
+    push_kick_worker();
 }
 
 /**
@@ -465,3 +478,56 @@ function push_send_one(array $sub, array $payload): array
     }
 }
 
+
+/**
+ * تنبيه وركر الإشعارات فوراً بعد ما الطلب يخلص.
+ *
+ * من غيره الإشعار بيستنى الكرون — لحد دقيقة كاملة قاعد في الطابور.
+ *
+ * 🔴 ليه register_shutdown_function ومش نداء مباشر؟
+ * لأن notify() بتشتغل **جوّه ترانزاكشن** مفتوحة (صرف المرتبات، طلبات
+ * النواقص). لو نبّهنا الوركر في نفس اللحظة، هيتصل بالقاعدة ويدوّر على
+ * صفوف لسه ما اتعملهاش COMMIT ومايلاقيش حاجة — والإشعار يستنى الكرون
+ * برضه. الـshutdown بيشتغل بعد ما السكربت يخلص، يعني بعد الـCOMMIT.
+ * ولو الترانزاكشن اترجعت (ROLLBACK)، الصفوف مش موجودة أصلاً والوركر
+ * بيلاقي الطابور فاضي — مفيش ضرر.
+ *
+ * والنداء fire-and-forget: مهلة قصيرة والنتيجة بتتجاهل. الكرون شبكة
+ * الأمان لو الطلب ده فشل لأي سبب.
+ */
+function push_kick_worker(): void
+{
+    static $armed = false;
+    if ($armed) return;
+
+    // من CLI (الكرون نفسه أو أي سكربت) مفيش داعي — ومفيش HTTP_HOST أصلاً
+    if (PHP_SAPI === 'cli' || empty($_SERVER['HTTP_HOST'])) return;
+    if (!function_exists('curl_init')) return;
+
+    $armed = true;
+    $host  = (string) $_SERVER['HTTP_HOST'];
+    $https = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+          || (($_SERVER['SERVER_PORT'] ?? '') == 443)
+          || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');
+
+    register_shutdown_function(static function () use ($host, $https) {
+        // نقفل الرد للمستخدم الأول لو السيرفر بيدعم — عشان مايستناش الطلب ده
+        if (function_exists('fastcgi_finish_request')) {
+            @fastcgi_finish_request();
+        }
+        $url = ($https ? 'https' : 'http') . '://' . $host . '/push_worker.php';
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => '',
+            CURLOPT_HTTPHEADER     => ['X-Push-Token: ' . PUSH_WORKER_TOKEN],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT       => 8,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_NOSIGNAL       => true,
+        ]);
+        @curl_exec($ch);
+        curl_close($ch);
+    });
+}
