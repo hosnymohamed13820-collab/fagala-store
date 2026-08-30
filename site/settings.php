@@ -447,10 +447,23 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- فحص الجهاز ده بالذات — بيشتغل في المتصفح مش على السيرفر،
          فبيقول حالة الجهاز اللي انت فاتح منه دلوقتي (كمبيوتر أو موبايل) -->
-    <div id="devCheck" style="margin-bottom:14px;font-size:12.5px;color:var(--ink-600);
+    <?php
+        // بصمات اشتراكات المستخدم الحالي — عشان الجافاسكربت يقارن الاشتراك
+        // اللي على الجهاز بالمتسجّل عندنا. بنمرّر الـhash بس مش الـendpoint.
+        $myHashStmt = $pdo->prepare('SELECT endpoint_hash FROM push_subscriptions WHERE user_id = ?');
+        $myHashStmt->execute([(int) current_user()['id']]);
+        $myHashes = $myHashStmt->fetchAll(PDO::FETCH_COLUMN);
+    ?>
+    <div id="devCheck" data-hashes="<?= e(json_encode(array_values($myHashes), JSON_UNESCAPED_UNICODE)) ?>"
+        style="margin-bottom:14px;font-size:12.5px;color:var(--ink-600);
         background:var(--line-soft);border-radius:10px;padding:10px 14px;">
         بنفحص الجهاز ده…
     </div>
+    <form method="post" id="resubForm" style="display:none;margin-bottom:14px;">
+        <button type="button" class="btn" onclick="resubscribeThisDevice(this)">
+            <i class="ti ti-refresh"></i> أعِد تسجيل الجهاز ده
+        </button>
+    </form>
 
     <form method="post" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -638,11 +651,35 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
         out.push(line(true, 'الـservice worker متسجّل · الحالة: ' + (reg.active ? 'شغال' : 'لسه بيتفعّل')));
 
         return reg.pushManager.getSubscription().then(function (sub) {
-            if (sub) {
-                out.push(line(true, 'الجهاز ده <b>مشترك</b> في الإشعارات'));
-            } else {
+            if (!sub) {
                 out.push(line(false, 'الجهاز ده <b>مش مشترك</b> — دوس «فعّل إشعارات الموبايل» في الشريط'));
+                return;
             }
+            out.push(line(true, 'الجهاز ده <b>مشترك</b> في الإشعارات'));
+
+            // 🔴 الفحص الحاسم: الاشتراك اللي على الجهاز هو نفسه المتسجّل عندنا؟
+            // لو المتصفح جدّد الاشتراك (endpoint جديد) والقاعدة لسه فيها القديم،
+            // السيرفر بيبعت للقديم و FCM بترد 201 عادي ومحدش بيستلم حاجة.
+            var stored = [];
+            try { stored = JSON.parse(box.dataset.hashes || '[]'); } catch (e) {}
+
+            return crypto.subtle.digest('SHA-256', new TextEncoder().encode(sub.endpoint))
+                .then(function (buf) {
+                    var hex = Array.from(new Uint8Array(buf))
+                        .map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+                    if (stored.indexOf(hex) !== -1) {
+                        out.push(line(true, 'الاشتراك ده هو نفسه المتسجّل عندنا'));
+                    } else {
+                        out.push(line(false, 'الاشتراك اللي على الجهاز <b>مش هو</b> المتسجّل عندنا — '
+                            + 'السيرفر بيبعت لاشتراك قديم. دوس «أعِد تسجيل الجهاز ده» تحت.'));
+                        var rf = document.getElementById('resubForm');
+                        if (rf) rf.style.display = 'block';
+                    }
+                })
+                .catch(function () {
+                    out.push(line(null, 'مقدرناش نقارن الاشتراك بالمتسجّل (المقارنة محتاجة HTTPS)'));
+                });
+        }).then(function () {
 
             // ٣) نسخة الـsw.js اللي فعلاً على السيرفر — من غير كاش
             return fetch('sw.js?_=' + Date.now(), { cache: 'no-store' })
@@ -662,9 +699,71 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
     }).catch(function () {
         out.push(line(null, 'حصل خطأ وإحنا بنفحص الجهاز'));
     }).finally(function () {
-        box.innerHTML = out.join('');
+        box.innerHTML = out.join('')
+            + '<div style="margin-top:8px;">'
+            + '<button type="button" class="btn" style="padding:7px 14px;font-size:13px;" '
+            + 'onclick="localNotifTest(this)">جرّب إشعار محلي (من غير سيرفر)</button>'
+            + '<div id="localTestOut" style="margin-top:6px;"></div></div>';
     });
 })();
+
+// إشعار محلي من الـservice worker نفسه — من غير سيرفر ولا شبكة.
+// لو ده ظهر في الدرج والإشعار الحقيقي لأ ← المشكلة في وصول الرسالة.
+// ولو ده كمان مظهرش ← المشكلة في عرض الإشعارات على الجهاز/النظام نفسه.
+function localNotifTest(btn) {
+    var box = document.getElementById('localTestOut');
+    function say(col, txt) { box.innerHTML = '<span style="color:' + col + ';">' + txt + '</span>'; }
+
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        say('var(--neg)', 'المتصفح ده مابيدعمش الإشعارات.');
+        return;
+    }
+    btn.disabled = true;
+    Notification.requestPermission().then(function (perm) {
+        if (perm !== 'granted') {
+            btn.disabled = false;
+            say('var(--neg)', 'الإذن مش مسموح (' + perm + ') — سيبك من السيرفر، المشكلة هنا.');
+            return;
+        }
+        return navigator.serviceWorker.ready.then(function (reg) {
+            return reg.showNotification('اختبار محلي — الفجالة ستور', {
+                body: 'لو شايف الرسالة دي في الدرج، الجهاز قادر يعرض إشعارات.',
+                icon: './icon-192.png',
+                badge: './favicon-32.png',
+                data: { link: './settings.php#real-notify' }
+            }).then(function () {
+                btn.disabled = false;
+                say('var(--pos)', 'اتبعت. بص على الدرج دلوقتي — ظهر ولا لأ؟');
+            });
+        });
+    }).catch(function (e) {
+        btn.disabled = false;
+        say('var(--neg)', 'فشل العرض: ' + (e && e.message ? e.message : 'خطأ غير معروف'));
+    });
+}
+
+// إعادة تسجيل الجهاز: بنلغي الاشتراك القديم ونعمل واحد جديد ونسجّله عندنا.
+function resubscribeThisDevice(btn) {
+    btn.disabled = true;
+    btn.textContent = 'بنعيد التسجيل…';
+    navigator.serviceWorker.ready.then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (sub) {
+            return sub ? sub.unsubscribe() : true;
+        });
+    }).then(function () {
+        // enablePushNotifications() معرّفة في includes/header.php وبتعمل
+        // الاشتراك وبتبعته لـpush_subscribe.php — بنعيد استخدامها مش بنكررها.
+        if (typeof enablePushNotifications === 'function') {
+            enablePushNotifications();
+            setTimeout(function () { location.reload(); }, 2500);
+        } else {
+            location.reload();
+        }
+    }).catch(function () {
+        btn.disabled = false;
+        btn.textContent = 'أعِد تسجيل الجهاز ده';
+    });
+}
 </script>
 <?php endif; ?>
 
