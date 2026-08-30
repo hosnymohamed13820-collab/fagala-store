@@ -291,10 +291,11 @@ require_once __DIR__ . '/includes/header.php';
     $advances   = (float)$salary['total_advances'];
     $penalties  = (float)$salary['total_penalties'];
     $deficits   = (float)$salary['total_deficits'];
+    $cashierDef = (float)($salary['total_cashier_deficits'] ?? 0);
     $netSalary  = (float)$salary['net_salary'];
 
     // الاستحقاق قبل الخصم
-    $grossSalary = $netSalary - $bonuses + $advances + $penalties + $deficits;
+    $grossSalary = $netSalary - $bonuses + $advances + $penalties + $deficits + $cashierDef;
 ?>
     <div class="salary-card">
         <div class="salary-head">
@@ -356,6 +357,12 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="lbl">عجز العهدة (-)</div>
                 <div class="val"><?= number_format($deficits, 2) ?> ج.م</div>
             </div>
+            <?php if ($cashierDef > 0): ?>
+            <div class="salary-item deduct">
+                <div class="lbl">عجز كاشير (-)</div>
+                <div class="val"><?= number_format($cashierDef, 2) ?> ج.م</div>
+            </div>
+            <?php endif; ?>
         </div>
 
         <div class="salary-net-box">

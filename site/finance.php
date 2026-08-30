@@ -1980,7 +1980,10 @@ function compute_salary(
     ?string $from = null,
     ?string $to = null,
     ?int $leaveDaysOverride = null,
-    ?float $dueDaysOverride = null
+    ?float $dueDaysOverride = null,
+    ?float $monthlyTakeOverride = null,
+    ?float $standingTakeOverride = null,
+    ?float $cashierDeficitOverride = null
 ): array
 {
     $pdo = db();
@@ -2053,23 +2056,43 @@ function compute_salary(
     // السلف المعلّقة (حساب الأقساط الشهرية أو كامل المبلغ المتبقي لو القسط 0 مع سقف رصيد السجل الموجب)
     // ⚠️ المعادلة مكررة بين هنا و pay_salary و hr.php ($advMap) — لو غيّرت هنا، غيّر في التلاتة.
     $ledgerBal = emp_ledger_balance($employeeId, $pdo);
-    if ($ledgerBal <= 0.0) {
-        $advances = 0.0;
-    } else {
-        $adv = $pdo->prepare(
-            'SELECT COALESCE(SUM(
-                CASE
-                    WHEN monthly_deduction > 0 THEN LEAST(monthly_deduction, COALESCE(remaining, amount))
-                    ELSE COALESCE(remaining, amount)
-                END
-            ), 0)
-            FROM employee_advances
-            WHERE employee_id = ? AND status = "pending"'
-        );
-        $adv->execute([$employeeId]);
-        $advCalculated = (float) $adv->fetchColumn();
-        $advances = min($advCalculated, $ledgerBal);
+    $remCap = $ledgerBal > 0 ? $ledgerBal : 0.0;
+
+    $advStmt = $pdo->prepare(
+        'SELECT id, amount, monthly_deduction, remaining, adv_type
+         FROM employee_advances
+         WHERE employee_id = ? AND status = "pending"
+         ORDER BY id ASC'
+    );
+    $advStmt->execute([$employeeId]);
+    $pendingAdvances = $advStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $monthlyTakeCalc = 0.0;
+    $standingTakeCalc = 0.0;
+
+    foreach ($pendingAdvances as $advRow) {
+        $origAmount = (float) $advRow['amount'];
+        $monthlyDed = (float) $advRow['monthly_deduction'];
+        $advType = $advRow['adv_type'] ?? 'monthly';
+        $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
+
+        $take = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
+        $take = min($take, $remCap);
+        $remCap -= $take;
+
+        if ($advType === 'standing') {
+            $standingTakeCalc += $take;
+        } else {
+            $monthlyTakeCalc += $take;
+        }
     }
+
+    $monthlyTake = ($monthlyTakeOverride !== null && $monthlyTakeOverride >= 0) ? $monthlyTakeOverride : $monthlyTakeCalc;
+    $standingTake = ($standingTakeOverride !== null && $standingTakeOverride >= 0) ? $standingTakeOverride : $standingTakeCalc;
+
+    $totalAdvances = $monthlyTake + $standingTake;
+    $maxCap = $ledgerBal > 0 ? $ledgerBal : 0.0;
+    $totalAdvances = min($totalAdvances, $maxCap);
 
     // الجزاءات المعلّقة
     $pen = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM employee_penalties WHERE employee_id=? AND status="pending"');
@@ -2081,7 +2104,50 @@ function compute_salary(
     $def->execute([$employeeId]);
     $deficits = (float) $def->fetchColumn();
 
-    $net = $noExpected ? 0.0 : ($grossSalary + $bonuses - $advances - $penalties - $deficits);
+    // عجز الكاشير المتجاوز للعتبة في الفترة المحددة (غير المخصوم مسبقاً)
+    $tolerance = custody_tolerance();
+    $stCashierDef = $pdo->prepare(
+        "SELECT s.id AS shift_id,
+                s.business_date AS shift_date,
+                s.difference AS variance,
+                ? AS tolerance,
+                GREATEST(0, ABS(s.difference) - ?) AS exceeded
+           FROM shifts s
+           JOIN users     u ON u.id = s.user_id
+           JOIN employees e ON e.user_id = u.id
+           LEFT JOIN salary_shift_deficits d ON d.shift_id = s.id
+          WHERE e.id = ?
+            AND s.business_date BETWEEN ? AND ?
+            AND s.difference < 0
+            AND ABS(s.difference) - ? > 0.0001
+            AND d.id IS NULL
+          ORDER BY s.id ASC"
+    );
+    $stCashierDef->execute([$tolerance, $tolerance, $employeeId, $from, $to, $tolerance]);
+    $cashierDefRows = $stCashierDef->fetchAll(PDO::FETCH_ASSOC);
+
+    $cashierDefCalc = 0.0;
+    $cashierShiftIds = [];
+    $cashierShiftDetails = [];
+    foreach ($cashierDefRows as $cRow) {
+        $exceeded = round((float)$cRow['exceeded'], 2);
+        $cashierDefCalc += $exceeded;
+        $cashierShiftIds[] = (int)$cRow['shift_id'];
+        $cashierShiftDetails[] = [
+            'shift_id'   => (int)$cRow['shift_id'],
+            'shift_date' => (string)$cRow['shift_date'],
+            'variance'   => round((float)$cRow['variance'], 2),
+            'tolerance'  => round((float)$cRow['tolerance'], 2),
+            'exceeded'   => $exceeded,
+        ];
+    }
+    $cashierDefCalc = round($cashierDefCalc, 2);
+
+    $cashierDeficits = ($cashierDeficitOverride !== null && $cashierDeficitOverride >= 0)
+        ? round((float)$cashierDeficitOverride, 2)
+        : $cashierDefCalc;
+
+    $net = $noExpected ? 0.0 : ($grossSalary + $bonuses - $totalAdvances - $penalties - $deficits - $cashierDeficits);
 
     return [
         'employee_name'          => $empName,
@@ -2092,9 +2158,13 @@ function compute_salary(
         'day_hours'              => $dayHours,
         'hour_rate'              => $hourRate,
         'total_bonuses'          => $bonuses,
-        'total_advances'         => $advances,
+        'total_advances'         => $totalAdvances,
         'total_penalties'        => $penalties,
         'total_deficits'         => $deficits,
+        'total_cashier_deficits' => $cashierDeficits,
+        'cashier_shift_ids'      => $cashierShiftIds,
+        'cashier_shift_details'  => $cashierShiftDetails,
+        'cashier_deficits_calc'  => $cashierDefCalc,
         'net_salary'             => $net,
         'period_from'            => $from,
         'period_to'              => $to,
@@ -2112,8 +2182,9 @@ function compute_salary(
 /**
  * اعتماد وصرف مرتب موظف لشهر.
  * - بيحسب المرتب وفترة الحضور، يسجّله، يصرفه من الخزينة (مدين بالصافي).
- * - يتيح للأونر تعديل أيام الإجازة والاستحقاق مع حفظ القيمة المحسوبة والمعدلة ومن قام بالتعديل.
+ * - يتيح للأونر تعديل أيام الإجازة والاستحقاق والمخصوم من السلف وعجز الكاشير مع حفظ التعديلات.
  * - بيقفل المكافآت والسلف والجزاءات وعجز العهدة المعلّقة (paid/deducted/recovered).
+ * - بيسجّل الورديات التي تم فحص عجزها في salary_shift_deficits لمنع تكرار الخصم، ويحوّل باقي العجز غير المخصوم لسلفة مستديمة.
  *
  * @return int معرّف المرتب
  */
@@ -2126,7 +2197,10 @@ function pay_salary(
     ?string $from = null,
     ?string $to = null,
     ?int $leaveDaysOverride = null,
-    ?float $dueDaysOverride = null
+    ?float $dueDaysOverride = null,
+    ?float $monthlyTakeOverride = null,
+    ?float $standingTakeOverride = null,
+    ?float $cashierDeficitOverride = null
 ): int {
     $pdo = db();
     $pdo->beginTransaction();
@@ -2138,7 +2212,7 @@ function pay_salary(
             throw new RuntimeException('مرتب هذا الشهر مسجّل بالفعل.');
         }
 
-        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride);
+        $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierDeficitOverride);
         $name = $calc['employee_name'] ?? ('الموظف #' . $employeeId);
         $isFixed = ($calc['salary_mode'] ?? 'hours') === 'fixed';
 
@@ -2189,24 +2263,24 @@ function pay_salary(
             $grossSalary = $calc['day_rate'] * $dueDays;
         }
 
-        // إعادة حساب الصافي بناءً على الاستحقاق الفعلي والخصومات والمكافآت
-        $netSalary = $grossSalary + $calc['total_bonuses'] - $calc['total_advances'] - $calc['total_penalties'] - $calc['total_deficits'];
+        // إعادة حساب الصافي بناءً على الاستحقاق الفعلي والخصومات والمكافآت وعجز الكاشير المخصوم
+        $netSalary = $grossSalary + $calc['total_bonuses'] - $calc['total_advances'] - $calc['total_penalties'] - $calc['total_deficits'] - $calc['total_cashier_deficits'];
 
         $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
         $empName->execute([$employeeId]);
         $name = $empName->fetchColumn() ?: $name;
 
-        // تسجيل المرتب في جدول salaries
+        // تسجيل المرتب في جدول salaries (20 عمود و 18 علامة ? بالإضافة لـ "paid" و NOW())
         $pdo->prepare(
             'INSERT INTO salaries
                 (employee_id, salary_month, base_salary, total_bonuses, total_advances, total_penalties,
-                 total_deficits, net_salary, status, paid_at,
+                 total_deficits, total_cashier_deficits, net_salary, status, paid_at,
                  period_from, period_to, work_hours, work_days, leave_days,
                  due_days_calc, due_days, due_days_edited_by, due_days_edited_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "paid", NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $employeeId, $month, $calc['base_salary'], $calc['total_bonuses'], $calc['total_advances'],
-            $calc['total_penalties'], $calc['total_deficits'], $netSalary,
+            $calc['total_penalties'], $calc['total_deficits'], $calc['total_cashier_deficits'], $netSalary,
             $calc['period_from'], $calc['period_to'], $workHours, $workDays,
             $leaveDays, $dueDaysCalc, $dueDays, $editedBy, $editedAt,
         ]);
@@ -2237,6 +2311,25 @@ function pay_salary(
         $advStmt->execute([$employeeId]);
         $pendingAdvances = $advStmt->fetchAll(PDO::FETCH_ASSOC);
 
+        // حساب الأقساط المحسوبة لكل نوع كقيمة افتراضية عند عدم وجود override
+        $monthlyCapCalc = 0.0;
+        $standingCapCalc = 0.0;
+        foreach ($pendingAdvances as $advRow) {
+            $origAmount = (float) $advRow['amount'];
+            $monthlyDed = (float) $advRow['monthly_deduction'];
+            $advType = $advRow['adv_type'] ?? 'monthly';
+            $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
+            $defaultTake = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
+            if ($advType === 'standing') {
+                $standingCapCalc += $defaultTake;
+            } else {
+                $monthlyCapCalc += $defaultTake;
+            }
+        }
+
+        $monthlyTypeCap = ($monthlyTakeOverride !== null && $monthlyTakeOverride >= 0) ? (float)$monthlyTakeOverride : $monthlyCapCalc;
+        $standingTypeCap = ($standingTakeOverride !== null && $standingTakeOverride >= 0) ? (float)$standingTakeOverride : $standingCapCalc;
+
         $updAdvStmt = $pdo->prepare(
             'UPDATE employee_advances
              SET remaining = ?, status = ?, adv_type = ?
@@ -2246,19 +2339,25 @@ function pay_salary(
         foreach ($pendingAdvances as $advRow) {
             $advId = (int) $advRow['id'];
             $origAmount = (float) $advRow['amount'];
-            $monthlyDed = (float) $advRow['monthly_deduction'];
             $advType = $advRow['adv_type'] ?? 'monthly';
             $outstanding = $advRow['remaining'] !== null ? (float) $advRow['remaining'] : $origAmount;
 
-            $take = ($monthlyDed > 0) ? min($monthlyDed, $outstanding) : $outstanding;
-            $take = min($take, $remCap);
+            if ($advType === 'standing') {
+                $take = min($outstanding, $standingTypeCap, $remCap);
+                $take = max(0.0, round($take, 2));
+                $standingTypeCap -= $take;
+            } else {
+                $take = min($outstanding, $monthlyTypeCap, $remCap);
+                $take = max(0.0, round($take, 2));
+                $monthlyTypeCap -= $take;
+            }
+            $remCap -= $take;
 
             if ($take <= 0.00001) {
                 continue;
             }
 
-            $remCap -= $take;
-            $newRemaining = $outstanding - $take;
+            $newRemaining = round($outstanding - $take, 2);
 
             if ($newRemaining <= 0.00001) {
                 $updAdvStmt->execute([0.00, 'deducted', $advType, $advId]);
@@ -2288,6 +2387,54 @@ function pay_salary(
             ->execute([$employeeId]);
         $pdo->prepare('UPDATE custody_deficits SET status="recovered", recovered_in_salary_id=? WHERE employee_id=? AND status="pending"')
             ->execute([$salaryId, $employeeId]);
+
+        // (٢-أ) إقفال الورديات التي تم فحص عجزها في الفترة (جملة INSERT واحدة بقيم متعددة)
+        if (!empty($calc['cashier_shift_details'])) {
+            $placeholders = [];
+            $shiftValues = [];
+            foreach ($calc['cashier_shift_details'] as $sr) {
+                $placeholders[] = '(?, ?, ?, ?, ?, ?, ?)';
+                $shiftValues[] = $salaryId;
+                $shiftValues[] = (int)$sr['shift_id'];
+                $shiftValues[] = $employeeId;
+                $shiftValues[] = $sr['shift_date'];
+                $shiftValues[] = (float)$sr['variance'];
+                $shiftValues[] = (float)$sr['tolerance'];
+                $shiftValues[] = (float)$sr['exceeded'];
+            }
+            $sqlShifts = 'INSERT INTO salary_shift_deficits (salary_id, shift_id, employee_id, shift_date, variance, tolerance, exceeded) VALUES ' . implode(', ', $placeholders);
+            $pdo->prepare($sqlShifts)->execute($shiftValues);
+        }
+
+        // (٢-ب) باقي عجز الكاشير غير المخصوم يتحول لسلفة مستديمة وقيد debit في سجل الموظف
+        $cashierCalcTotal = (float)($calc['cashier_deficits_calc'] ?? 0.0);
+        $cashierDeducted = (float)($calc['total_cashier_deficits'] ?? 0.0);
+        $cashierRemaining = round($cashierCalcTotal - $cashierDeducted, 2);
+
+        if ($cashierRemaining > 0.005) {
+            $insStandingAdv = $pdo->prepare(
+                'INSERT INTO employee_advances
+                    (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type)
+                 VALUES (?, ?, ?, "pending", ?, 0.00, ?, "standing")'
+            );
+            $advNote = 'باقي عجز كاشير من مرتب شهر ' . $month;
+            $insStandingAdv->execute([$employeeId, $cashierRemaining, $date, $advNote, $cashierRemaining]);
+            $newAdvId = (int)$pdo->lastInsertId();
+
+            emp_ledger_add(
+                $employeeId,
+                'debit',
+                $cashierRemaining,
+                $date,
+                'advance',
+                'باقي عجز كاشير اتحوّل لسلفة مستديمة — شهر ' . $month,
+                null,
+                'advance',
+                $newAdvId,
+                $userId,
+                $pdo
+            );
+        }
 
         $pdo->commit();
         return $salaryId;
