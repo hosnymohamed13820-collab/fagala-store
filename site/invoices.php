@@ -2351,12 +2351,6 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- بوب أب سحب أعداد الفروع -->
-        <style>
-            /* ti-spin مش موجودة في الـsubset — لازم نعرّفها هنا وإلا الأيقونة
-               بتقف مكانها من غير أي خطأ */
-            .ti-spin { display:inline-block; animation:tiSpin 0.9s linear infinite; }
-            @keyframes tiSpin { to { transform:rotate(360deg); } }
-        </style>
         <div class="lookup-overlay" id="resPullOverlay" onclick="if(event.target===this)closeReservationPull()">
             <div class="lookup-box" style="max-width:850px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
                 <div class="lookup-head">

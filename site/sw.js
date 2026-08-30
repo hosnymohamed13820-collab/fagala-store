@@ -27,7 +27,7 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v17'; // v16: acctree.js نسخة الليستين — كسر كاش ?v=2 في treasury.php و custody.php
+const VERSION = 'v18'; // v18: خط الأيقونات اتعمله subset من تاني — 97 أيقونة بدل 77
 const CACHE = 'fagala-' + VERSION;
 
 const ASSETS = [

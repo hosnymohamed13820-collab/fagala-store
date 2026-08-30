@@ -46,8 +46,8 @@ $modules     = all_modules();
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
          من jsdelivr (4595 أيقونة / 716KB كانت بتتحمّل مع كل صفحة).
          ضفت أيقونة جديدة؟ شوف الشرح في assets/tabler-subset.css -->
-    <link rel="preload" href="assets/tabler-subset.woff2?v=1" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="assets/tabler-subset.css?v=1">
+    <link rel="preload" href="assets/tabler-subset.woff2?v=2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="assets/tabler-subset.css?v=2">
     <!-- الخطوط: IBM Plex Sans Arabic للنص · IBM Plex Mono للأرقام الجدولية -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
