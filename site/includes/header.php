@@ -40,8 +40,13 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
     <link rel="icon" href="favicon.ico?v=3" sizes="any">
     <script>
+        // 🔴 الـ?v= مش زيادة — كاش الاستضافة (LiteSpeed) كان بيمسك `sw.js`
+        // من غير كويري ويرجّع نسخة قديمة، فالمتصفح يفضل يسجّل service worker
+        // قديمة مفيهاش معالج push مهما تعمل Unregister. والإشعارات تتبعت،
+        // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
+        // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=20').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل

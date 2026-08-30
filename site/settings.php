@@ -759,16 +759,21 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                 });
         }).then(function () {
 
-            // ٣) نسخة الـsw.js اللي فعلاً على السيرفر — من غير كاش
-            return fetch('sw.js?_=' + Date.now(), { cache: 'no-store' })
+            // ٣) نجيب sw.js **بنفس العنوان اللي المتصفح بيسجّل بيه** — مش بعنوان
+            //    مبستّت. الفحص القديم كان بيجيب 'sw.js?_=<توقيت>' فبيعدّي من كاش
+            //    الاستضافة ويقول v20، والمتصفح بيطلب العنوان المسجّل ويستلم نسخة
+            //    قديمة من الكاش. فالسطر كان بيقول «تمام» والإشعارات ميتة.
+            var swUrl = 'sw.js?v=20';
+            return fetch(swUrl, { cache: 'no-store' })
                 .then(function (r) { return r.text(); })
                 .then(function (txt) {
                     var m = txt.match(/VERSION\s*=\s*'([^']+)'/);
                     var hasPush = /addEventListener\(\s*['"]push['"]/.test(txt);
-                    out.push(line(true, 'نسخة sw.js على السيرفر: <b>' + (m ? m[1] : 'مش معروفة') + '</b>'));
+                    var srvVer = m ? m[1] : 'مش معروفة';
+                    out.push(line(true, 'نسخة sw.js اللي السيرفر بيرجّعها للمتصفح: <b>' + srvVer + '</b>'));
                     out.push(line(hasPush, hasPush
-                        ? 'فيها معالج push — تقدر تعرض إشعارات'
-                        : '<b>مفيهاش معالج push</b> — دي المشكلة: الرسالة بتوصل ومحدش بيعرضها'));
+                        ? 'فيها معالج push'
+                        : '<b>مفيهاش معالج push</b> — الرسالة بتوصل ومحدش بيعرضها'));
                 })
                 .catch(function () {
                     out.push(line(null, 'مقدرناش نقرا sw.js من السيرفر'));
