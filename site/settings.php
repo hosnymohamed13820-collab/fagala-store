@@ -481,8 +481,8 @@ require_once __DIR__ . '/includes/header.php';
     <form method="post" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="send_real_notify" value="1">
-        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">ابعت لـ:</label>
-        <select name="notify_user_id" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
+        <label for="notifyUserId" style="font-size:13px;color:var(--ink-700);font-weight:500;">ابعت لـ:</label>
+        <select name="notify_user_id" id="notifyUserId" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
             <?php $meId = (int) current_user()['id']; ?>
             <?php foreach ($settingsUsers as $su): ?>
                 <option value="<?= (int)$su['id'] ?>" <?= ((int)$su['id'] === $meId) ? 'selected' : '' ?>>
@@ -662,6 +662,33 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
             return;
         }
         out.push(line(true, 'الـservice worker متسجّل · الحالة: ' + (reg.active ? 'شغال' : 'لسه بيتفعّل')));
+
+        // 🔴 نسأل الـSW **الشغالة** نفسها عن نسختها — مش نقرا الملف من السيرفر.
+        // الفرق ده هو اللي وقّعنا: الملف على السيرفر كان v19 وفيه معالج push،
+        // والنسخة المتركّبة على الجهاز كانت أقدم ومفيهاش — فالإشعارات كانت
+        // بتتقبل من FCM ومحدش بيعرضها.
+        var askVersion = new Promise(function (resolve) {
+            if (!reg.active || !('MessageChannel' in window)) { resolve(null); return; }
+            var ch = new MessageChannel();
+            var done = false;
+            ch.port1.onmessage = function (ev) { done = true; resolve(ev.data || null); };
+            try { reg.active.postMessage({ type: 'GET_VERSION' }, [ch.port2]); }
+            catch (err) { resolve(null); return; }
+            setTimeout(function () { if (!done) resolve(null); }, 1500);
+        });
+
+        return askVersion.then(function (info) {
+            if (info && info.version) {
+                out.push(line(true, 'النسخة <b>الشغالة على الجهاز</b>: <b>' + info.version + '</b>'));
+            } else {
+                out.push(line(false, 'النسخة الشغالة على الجهاز <b>قديمة</b> — مابتردش على سؤال النسخة، '
+                    + 'يعني مفيهاش معالج push. افتح F12 ← Application ← Service Workers ← '
+                    + '<b>Unregister</b>، حدّث الصفحة، وفعّل الإشعارات تاني.'));
+            }
+            return reg;
+        });
+    }).then(function (reg) {
+        if (!reg) return;
 
         return reg.pushManager.getSubscription().then(function (sub) {
             if (!sub) {
