@@ -654,7 +654,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // عجز العهدة: مسجل في custody_deficits (معمولة أصلاً بعد تطبيق العتبة عند الإقفال في close_custody)
             // تماسك الصف: اسم الكاشير من users (shifts.user_id) واسم الموظف من employees (custody_deficits.employee_id)
             $statusFilter = $_GET['status'] ?? ''; // 'within' أو 'exceeded' أو فارغ (الكل)
-            $tolerance = (float) setting('custody_deficit_tolerance', '0');
+            $tolerance = custody_tolerance();
 
             $stMap = [
                 'submitted'   => 'مستلمة',

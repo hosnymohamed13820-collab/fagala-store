@@ -656,11 +656,11 @@ if ($tab === 'bonuses') {
 $penalties = [];
 if ($tab === 'penalties') {
     // قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
-    $tolerance = (float) setting('custody_deficit_tolerance', '0');
+    $tolerance = custody_tolerance();
 
     // فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
     // ABS(s.difference) - ? > 0.0001
-    // ⚠️ shift_variance_status() تفضل هي مصدر الحقيقة للقاعدة، والشرط ده فلتر مسبق مطابق ليها رياضياً.
+    // ⚠️ الشرط ده مطابق رياضياً لـ shift_variance_status() — والاتنين بياخدوا العتبة من custody_tolerance().
     // أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
     $penStmt = $pdo->prepare(
         "SELECT p.penalty_date AS deduction_date,
@@ -1298,6 +1298,10 @@ $statusBadge = function($st) {
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($penalties) ?> استقطاع/جزاء</span>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
+    </div>
+    <div style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
+        العتبة الحالية <strong><?= number_format($tolerance, 2) ?> ج</strong> — أي عجز أو زيادة أقل من كده مش بيظهر هنا.
+        <a href="settings.php" style="color:var(--accent);">غيّرها من الإعدادات</a>
     </div>
     <div class="card">
         <?php if (empty($penalties)): ?>

@@ -1095,7 +1095,7 @@ function close_custody(
         $custodyTreasuryId = (int) $custody['custody_treasury_id'];
         $expected = (float) $custody['closing_balance'];   // آخر المدة المفروض
         $difference = $countedCash - $expected;            // موجب=زيادة، سالب=عجز
-        $tolerance = (float) setting('custody_deficit_tolerance', '30');
+        $tolerance = custody_tolerance();
 
         // الرصيد الحالي لخزينة العهدة (المفروض = $expected نظرياً)
         $balStmt = $pdo->prepare('SELECT balance FROM treasuries WHERE id=? FOR UPDATE');
@@ -1915,7 +1915,7 @@ function salary_days_from_hours(float $workHours, ?float $expectedMonthlyHours =
 function shift_variance_status(float $difference, ?float $tolerance = null): array
 {
     if ($tolerance === null) {
-        $tolerance = (float) setting('custody_deficit_tolerance', '0');
+        $tolerance = custody_tolerance();
     }
     if ($tolerance < 0) {
         $tolerance = 0.0;
@@ -1943,6 +1943,17 @@ function shift_variance_status(float $difference, ?float $tolerance = null): arr
         'over_limit'   => $overLimit,
         'status_label' => $statusLabel,
     ];
+}
+
+/**
+ * عتبة التسامح لعجز/زيادة الكاش — مصدر واحد لكل الصفحات.
+ * كانت متكتبة في ٥ أماكن بافتراضيين مختلفين (٣٠ و٠)، والنتيجة كانت
+ * إن تقفيل العهدة بيتعامل بعتبة ٣٠ وتاب الجزاءات بعتبة ٠.
+ */
+function custody_tolerance(): float
+{
+    $t = (float) setting('custody_deficit_tolerance', '30');
+    return $t > 0 ? $t : 0.0;
 }
 
 /**
@@ -2909,9 +2920,14 @@ function approve_attendance_request(int $requestId, ?int $userId = null): void
         $a->execute([$empId, $date]);
         $att = $a->fetch();
 
+        // الساعات تتحسب من الأوقات النهائية بعد الدمج، مش من اللي في الطلب بس.
+        // لو الطلب فيه طرف واحد (مثلاً requested_out بس) والتاني موجود في سجل الحضور،
+        // لازم نحسب الساعات من الاتنين مع بعض — وإلا work_hours تفضل صفر للأبد.
+        $finalIn  = $in  ?: ($att ? $att['check_in']  : null);
+        $finalOut = $out ?: ($att ? $att['check_out'] : null);
         $hours = null;
-        if ($in && $out) {
-            $hours = round(work_minutes($in, $out) / 60, 2);
+        if ($finalIn && $finalOut) {
+            $hours = round(work_minutes($finalIn, $finalOut) / 60, 2);
         }
 
         if ($att) {

@@ -143,7 +143,7 @@ if ($branchId) {
 }
 
 $denominations = [200, 100, 50, 20, 10, 5, 1];
-$tolerance = (float) setting('custody_deficit_tolerance', '30');
+$tolerance = custody_tolerance();
 
 $page_title    = 'عهدة الفرع';
 $active_module = 'custody';
