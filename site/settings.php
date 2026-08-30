@@ -445,6 +445,13 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     <?php endif; ?>
 
+    <!-- فحص الجهاز ده بالذات — بيشتغل في المتصفح مش على السيرفر،
+         فبيقول حالة الجهاز اللي انت فاتح منه دلوقتي (كمبيوتر أو موبايل) -->
+    <div id="devCheck" style="margin-bottom:14px;font-size:12.5px;color:var(--ink-600);
+        background:var(--line-soft);border-radius:10px;padding:10px 14px;">
+        بنفحص الجهاز ده…
+    </div>
+
     <form method="post" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="send_real_notify" value="1">
@@ -587,5 +594,78 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
         <i class="ti ti-refresh"></i> تحديث
     </a>
 </div>
+
+<?php if (is_owner()): ?>
+<script>
+// فحص الجهاز اللي فاتح الصفحة دلوقتي — كله في المتصفح، مفيش حاجة بتروح للسيرفر.
+// الغرض: نفرّق بين «السيرفر مابعتش» و«بعت والجهاز مش قادر يعرض».
+(function () {
+    var box = document.getElementById('devCheck');
+    if (!box) return;
+
+    function line(ok, txt) {
+        var col = ok === true ? 'var(--pos)' : (ok === false ? 'var(--neg)' : 'var(--warn)');
+        var mark = ok === true ? '✓' : (ok === false ? '✗' : '؟');
+        return '<div style="color:' + col + ';margin:2px 0;"><b>' + mark + '</b> ' + txt + '</div>';
+    }
+
+    var out = [];
+
+    // ١) إذن الإشعارات في المتصفح
+    if (!('Notification' in window)) {
+        out.push(line(false, 'المتصفح ده مابيدعمش الإشعارات خالص'));
+    } else if (Notification.permission === 'granted') {
+        out.push(line(true, 'إذن الإشعارات: مسموح'));
+    } else if (Notification.permission === 'denied') {
+        out.push(line(false, 'إذن الإشعارات: <b>مرفوض</b> — لازم تسمح من إعدادات الموقع في المتصفح'));
+    } else {
+        out.push(line(null, 'إذن الإشعارات: لسه ما اتطلبش — دوس «فعّل إشعارات الموبايل» في الشريط'));
+    }
+
+    // ٢) الـservice worker والاشتراك
+    if (!('serviceWorker' in navigator)) {
+        out.push(line(false, 'المتصفح ده مابيدعمش service worker — الإشعارات مش هتشتغل عليه'));
+        box.innerHTML = out.join('');
+        return;
+    }
+
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+        if (!reg) {
+            out.push(line(false, 'مفيش service worker متسجّل على الجهاز ده — حدّث الصفحة'));
+            box.innerHTML = out.join('');
+            return;
+        }
+        out.push(line(true, 'الـservice worker متسجّل · الحالة: ' + (reg.active ? 'شغال' : 'لسه بيتفعّل')));
+
+        return reg.pushManager.getSubscription().then(function (sub) {
+            if (sub) {
+                out.push(line(true, 'الجهاز ده <b>مشترك</b> في الإشعارات'));
+            } else {
+                out.push(line(false, 'الجهاز ده <b>مش مشترك</b> — دوس «فعّل إشعارات الموبايل» في الشريط'));
+            }
+
+            // ٣) نسخة الـsw.js اللي فعلاً على السيرفر — من غير كاش
+            return fetch('sw.js?_=' + Date.now(), { cache: 'no-store' })
+                .then(function (r) { return r.text(); })
+                .then(function (txt) {
+                    var m = txt.match(/VERSION\s*=\s*'([^']+)'/);
+                    var hasPush = /addEventListener\(\s*['"]push['"]/.test(txt);
+                    out.push(line(true, 'نسخة sw.js على السيرفر: <b>' + (m ? m[1] : 'مش معروفة') + '</b>'));
+                    out.push(line(hasPush, hasPush
+                        ? 'فيها معالج push — تقدر تعرض إشعارات'
+                        : '<b>مفيهاش معالج push</b> — دي المشكلة: الرسالة بتوصل ومحدش بيعرضها'));
+                })
+                .catch(function () {
+                    out.push(line(null, 'مقدرناش نقرا sw.js من السيرفر'));
+                });
+        });
+    }).catch(function () {
+        out.push(line(null, 'حصل خطأ وإحنا بنفحص الجهاز'));
+    }).finally(function () {
+        box.innerHTML = out.join('');
+    });
+})();
+</script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
