@@ -48,8 +48,11 @@ ALTER TABLE `shortage_requests`
 
 ALTER TABLE `shortage_requests` DROP FOREIGN KEY `fk_shr_to`;
 
+-- 🔴 `INT UNSIGNED` مش `INT`. العمود الأصلي `int(10) unsigned` ولازم
+--    نحافظ على النوع بالحرف، وإلا المفتاح مايرجعش يتربط (errno 150)
+--    لأن `branches`.`id` نفسه unsigned.
 ALTER TABLE `shortage_requests`
-  MODIFY COLUMN `to_branch_id` INT NULL
+  MODIFY COLUMN `to_branch_id` INT UNSIGNED NULL
       COMMENT 'الفرع المطلوب منه — NULL لما الطلب رايح للمشتريات';
 
 ALTER TABLE `shortage_requests`
@@ -152,7 +155,7 @@ CREATE TABLE IF NOT EXISTS `purchase_group_sources` (
     `src_type`    ENUM('reservation','shortage') NOT NULL,
     `src_line_id` INT NOT NULL COMMENT 'book_reservation_lines.id أو shortage_request_lines.id',
     `src_head_id` INT NOT NULL COMMENT 'book_reservations.id أو shortage_requests.id',
-    `branch_id`   INT NULL,
+    `branch_id`   INT UNSIGNED NULL COMMENT 'نفس نوع branches.id',
     `qty`         DECIMAL(12,2) NOT NULL DEFAULT 0,
     UNIQUE KEY `uq_pgs` (`line_id`, `src_type`, `src_line_id`),
     KEY `idx_pgs_src`    (`src_type`, `src_line_id`),
@@ -182,7 +185,7 @@ CREATE TABLE IF NOT EXISTS `reservation_allocations` (
     `item_code`       VARCHAR(64)   NOT NULL,
     `reservation_id`  INT           NOT NULL,
     `res_line_id`     INT           NOT NULL COMMENT 'book_reservation_lines.id',
-    `branch_id`       INT           NULL,
+    `branch_id`       INT UNSIGNED  NULL COMMENT 'نفس نوع branches.id',
     `qty`             DECIMAL(12,2) NOT NULL DEFAULT 0,
     `created_by`      INT           NULL,
     `created_at`      TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
