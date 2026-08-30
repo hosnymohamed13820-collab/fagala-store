@@ -1,6 +1,8 @@
 # ===== الفجالة ستور =====
 # أسرار — عمرها ما تتحط في git
 config.php
+config.php.*
+local/config*.php
 *_secret*
 project_users.json
 .env
