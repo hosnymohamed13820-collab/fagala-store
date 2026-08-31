@@ -1014,7 +1014,7 @@ if ($tab === 'salaries') {
                 $confirmRevManual[] = 'سلف بقيمة ' . number_format((float)$confirmRevSalary['total_advances'], 2) . ' ج اتخصمت بدون ربط مباشر (مرتب قديم) — لن تعود تلقائياً.';
             }
 
-            $revDefStmt = $pdo->prepare("SELECT id, amount, description FROM custody_deficits WHERE recovered_in_salary_id = ?");
+            $revDefStmt = $pdo->prepare("SELECT id, amount, notes FROM custody_deficits WHERE recovered_in_salary_id = ?");
             $revDefStmt->execute([$cRevId]);
             $confirmRevDeficits = $revDefStmt->fetchAll(PDO::FETCH_ASSOC);
 
