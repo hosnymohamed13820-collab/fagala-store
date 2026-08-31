@@ -33,6 +33,35 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <!-- PWA -->
     <link rel="manifest" href="manifest.json?v=3">
     <meta name="theme-color" content="#16233d">
+    <script>
+        // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
+        // لو نزل تحت الـCSS، كل صفحة هتومض أبيض ربع ثانية قبل ما تسود.
+        // وبيتنفّذ متزامن بقصد (مفيش defer/async) عشان يخلّص قبل أول رسم.
+        (function () {
+            var t;
+            try { t = localStorage.getItem('fagala-theme'); } catch (e) {}
+            if (t !== 'dark' && t !== 'light') {
+                // أول مرة: امشي ورا إعداد الجهاز نفسه
+                t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)
+                    ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', t);
+            // شريط المتصفح في الموبايل لازم يقلب هو كمان
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+        })();
+
+        // تبديل الوضع الليلي. بيتخزّن في localStorage فبيفضل مع اليوزر
+        // على الجهاز ده — مش في القاعدة، عشان مايبقاش استعلام في كل صفحة.
+        function toggleTheme() {
+            var r = document.documentElement;
+            var t = r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            r.setAttribute('data-theme', t);
+            try { localStorage.setItem('fagala-theme', t); } catch (e) {}
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+        }
+    </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="الفجالة">
@@ -46,7 +75,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=21').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=22').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -58,7 +87,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=1">
+    <link rel="stylesheet" href="assets/fagala.css?v=2">
 </head>
 <body>
 <div class="layout">
@@ -113,6 +142,10 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
                     $notifItems = $nl->fetchAll();
                 } catch (Throwable $e) { /* الجداول لسه مش موجودة */ }
             ?>
+            <button class="theme-toggle" onclick="toggleTheme()"
+                    title="الوضع الليلي" aria-label="تبديل الوضع الليلي">
+                <span class="tt-track"><span class="tt-knob"><i class="ti ti-moon"></i></span></span>
+            </button>
             <div class="notif-wrap">
                 <button class="notif-bell" onclick="toggleNotif(event)" title="الإشعارات">
                     <i class="ti ti-bell"></i>

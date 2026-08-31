@@ -43,6 +43,24 @@
             --warn:      #946105;
             --warn-soft: #fdf4e3;
 
+            /* ===== الدور التاني للألوان الدلالية =====
+               `--pos` و`--neg` و`--warn` بيتقلبوا فاتحين في الوضع الليلي
+               عشان ٤٨٧ استعمال منهم **كتابة**. لكن اللي بيستعملهم
+               **خلفية بكتابة بيضا** (١٢٠ موضع) محتاج لون غامق يقبل
+               الأبيض فوقه. فدول الدور التاني.
+               🔴 قيمهم **واحدة في الوضعين** — كل واحد فيهم الأبيض فوقه
+               عدّى AA: pos ٥.٣٦ · neg ٥.٥٩ · warn ٥.٢٩.
+               عشان كده مش هتلاقيهم في بلوك [data-theme="dark"]. */
+            --pos-fill:  #0b7a52;
+            --neg-fill:  #c0332e;
+            --warn-fill: #946105;
+
+            /* الأزرق ككتابة. `--accent` نفسه بيفضل غامق في الوضعين لأنه
+               خلفية الزراير في كل مكان (الأبيض فوقه ٥.١٤). */
+            --accent-text: #1e6fbf;
+
+            color-scheme: light;
+
             /* ===== الخطوط ===== */
             --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 
@@ -59,6 +77,69 @@
             --sidebar-hover: var(--ink-800);
             --text: var(--ink-800);
             --muted: var(--ink-500);
+        }
+
+        /* =====================================================================
+         *  الوضع الليلي — ٣١ أغسطس ٢٠٢٦
+         *
+         *  الفكرة: مفيش قاعدة CSS واحدة بتتغيّر هنا. **قيم متغيّرات وبس.**
+         *  الصفحة كلها بتقلب لأن كل حاجة بتقرا من المتغيّرات دي.
+         *
+         *  سلّم الحبر **بيتعكس**: في الفاتح `--ink-900` أغمق لون (نص)،
+         *  وفي الليلي بقى **أفتح** لون (نص). عشان كده `--sidebar`
+         *  و`--sidebar-hover` مكتوبين هنا بلون صريح مش `var(--ink-900)`
+         *  — من غير كده الشريط الجانبي كان هيطلع **أبيض**.
+         *
+         *  🔴 كل قيمة هنا اتفحص تباينها بحساب فعلي ومعدّية AA:
+         *     ink-800 على السطح ١٢.٦ · ink-500 ٥.٣٠ · accent-text ٧.٧٣
+         *     pos ٩.٥٠ · neg ٧.١٦ · warn ٨.٦٦
+         *     وكل لون على خلفيته الناعمة: pos ٨.٣١ · neg ٦.٨٦ · warn ٧.٧١
+         *  🔴 أي تعديل في أي قيمة **لازم يتفحص تباينه تاني** قبل ما يتحط.
+         * ===================================================================== */
+        :root[data-theme="dark"] {
+            /* سلّم الحبر معكوس: ٩٠٠ = أنصع نص، ٢٠٠ = أغمق حد */
+            --ink-900: #eef2f8;
+            --ink-800: #dbe3ee;
+            --ink-700: #bcc8d8;
+            --ink-600: #9aa8bf;
+            --ink-500: #8494ac;
+            --ink-400: #6b7b95;
+            --ink-300: #4a5a75;
+            --ink-200: #313f57;
+
+            /* الأسطح: الأرضية أغمق، والكارت طالع فوقها درجة */
+            --bg:        #0f1826;
+            --surface:   #16202f;
+            --line:      #263243;
+            --line-soft: #1b2635;
+
+            /* 🔴 صريحين مش var(--ink-*) — السبب مشروح فوق */
+            --sidebar:       #0a111c;
+            --sidebar-hover: #16202f;
+
+            /* الأزرق: `--accent` و`--accent-hover` **مش هنا** بقصد —
+               دول خلفيات الزراير والأبيض فوقهم عدّى AA في الوضعين
+               (٥.١٤ و٧.٠٥). اللي بيتغيّر هو الأزرق ككتابة وكخلفية ناعمة. */
+            --accent-soft: #14263c;
+            --accent-text: #7ab8f0;
+            --accent-ring: rgba(122,184,240,.22);
+
+            /* الدلالية ككتابة — فاتحة */
+            --pos:  #4ade9a;
+            --neg:  #ff8a80;
+            --warn: #f0b23c;
+
+            /* الخلفيات الناعمة — صبغات غامقة */
+            --pos-soft:  #12301f;
+            --neg-soft:  #3a1a18;
+            --warn-soft: #362614;
+
+            /* الظل على أرضية غامقة لازم يبقى أسود وأقوى، الرمادي بيختفي */
+            --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
+            --shadow:    0 2px 4px rgba(0,0,0,.35), 0 8px 20px rgba(0,0,0,.45);
+            --shadow-lg: 0 18px 44px rgba(0,0,0,.60);
+
+            color-scheme: dark;
         }
         body {
             font-family: var(--font);
@@ -350,13 +431,13 @@
         }
         /* الجرس والإشعارات */
         .notif-wrap { position: relative; }
-        .notif-bell { position: relative; background: var(--accent-soft); border: none; width: 42px; height: 42px; border-radius: 12px; cursor: pointer; color: var(--accent); font-size: 20px; display: flex; align-items: center; justify-content: center; }
+        .notif-bell { position: relative; background: var(--accent-soft); border: none; width: 42px; height: 42px; border-radius: 12px; cursor: pointer; color: var(--accent-text); font-size: 20px; display: flex; align-items: center; justify-content: center; }
         .notif-bell:hover { background: var(--line); }
-        .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-        .notif-panel { display: none; position: absolute; top: 52px; left: 0; width: 340px; max-width: 90vw; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(30,27,75,0.18); border: 1px solid var(--line); z-index: 100; overflow: hidden; }
+        .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--neg-fill); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .notif-panel { display: none; position: absolute; top: 52px; left: 0; width: 340px; max-width: 90vw; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); border: 1px solid var(--line); z-index: 100; overflow: hidden; }
         .notif-panel.open { display: block; }
         .notif-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-900); }
-        .notif-mark { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 400; }
+        .notif-mark { font-size: 12px; color: var(--accent-text); text-decoration: none; font-weight: 400; }
         .notif-list { max-height: 400px; overflow-y: auto; }
         .notif-item { display: block; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); text-decoration: none; color: inherit; }
         .notif-item:hover { background: var(--line-soft); }
@@ -366,6 +447,27 @@
         .ni-body { font-size: 13px; color: var(--ink-500); margin-top: 3px; }
         .ni-time { font-size: 11px; color: var(--ink-300); margin-top: 4px; }
         .notif-empty { text-align: center; color: var(--ink-400); padding: 30px; font-size: 14px; }
+
+        /* ===== سلايدر الوضع الليلي ===== */
+        .theme-toggle { background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; }
+        .tt-track {
+            display:block; position:relative;
+            width:46px; height:26px; border-radius:99px;
+            background: var(--line-soft); border:1px solid var(--line);
+            transition: background .2s, border-color .2s;
+        }
+        .tt-knob {
+            position:absolute; top:2px; right:2px;
+            width:20px; height:20px; border-radius:50%;
+            background: var(--surface); box-shadow: var(--shadow-sm);
+            display:flex; align-items:center; justify-content:center;
+            font-size:12px; color: var(--ink-400);
+            transition: transform .2s, color .2s;
+        }
+        :root[data-theme="dark"] .tt-track { background: var(--accent); border-color: var(--accent); }
+        /* الزرار على اليمين في الوضع الفاتح، وبيمشي شمال في الليلي.
+           translateX فيزيائي مش منطقي — السالب شمال حتى في RTL. */
+        :root[data-theme="dark"] .tt-knob { transform: translateX(-20px); color: var(--accent); }
         .topbar .menu-toggle {
             display: none;
             background: none; border: none;
@@ -401,7 +503,7 @@
             position: sticky;
             top: 0;
             z-index: 5;
-            background: #fff;
+            background: var(--surface);
             box-shadow: 0 1px 0 var(--line);
         }
         /* =================================================================
@@ -651,7 +753,7 @@
 
 .act-pop {
     position:absolute; z-index:60; top:calc(100% + 4px); right:0; left:0;
-    background:#fff; border:1.5px solid var(--line); border-radius:11px;
+    background:var(--surface); border:1.5px solid var(--line); border-radius:11px;
     box-shadow:var(--shadow-lg); overflow:hidden;
 }
 .act-head { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line); }
@@ -659,7 +761,7 @@
     flex:1; padding:7px 10px; border:1.5px solid var(--line); border-radius:8px;
     font-size:13px; font-family:inherit; background:var(--line-soft);
 }
-.act-search:focus { outline:none; border-color:var(--accent); background:#fff; }
+.act-search:focus { outline:none; border-color:var(--accent); background:var(--surface); }
 .act-clear {
     padding:7px 11px; border:none; border-radius:8px; cursor:pointer;
     background:var(--line-soft); color:var(--ink-600); font-size:12px; font-family:inherit;
