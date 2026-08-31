@@ -39,10 +39,26 @@ if (isset($allowedTypes[$requestedType])) {
     $type = (string) array_key_first($allowedTypes);
 }
 
-$from = $_GET['from'] ?? date('Y-m-01');           // أول الشهر افتراضياً
-$to   = $_GET['to']   ?? date('Y-m-d');
-if (!strtotime($from)) $from = date('Y-m-01');
-if (!strtotime($to))   $to   = date('Y-m-d');
+const SALREP_GRACE_DAYS = 5;
+if ($type === 'salaries') {
+    // نفس منطق فترة الرواتب: الشهر بيقفل يوم ٢٥، ومهلة ٥ أيام قبل ما
+    // التقرير يقلب للشهر الجديد — عشان اللي بيصرف يوم ٣ أو ٤ يلاقي
+    // الفترة اللي لسه بيشتغل عليها مفتوحة قدامه.
+    $salAnchor = (int) date('j') <= SALREP_GRACE_DAYS
+        ? strtotime('first day of last month')
+        : strtotime('first day of this month');
+    $defaultTo   = date('Y-m-25', $salAnchor);
+    $defaultFrom = date('Y-m-26', strtotime('-1 month', $salAnchor));
+    $from = $_GET['from'] ?? $defaultFrom;
+    $to   = $_GET['to']   ?? $defaultTo;
+    if (!strtotime($from)) $from = $defaultFrom;
+    if (!strtotime($to))   $to   = $defaultTo;
+} else {
+    $from = $_GET['from'] ?? date('Y-m-01');           // أول الشهر افتراضياً
+    $to   = $_GET['to']   ?? date('Y-m-d');
+    if (!strtotime($from)) $from = date('Y-m-01');
+    if (!strtotime($to))   $to   = date('Y-m-d');
+}
 $export = isset($_GET['export']);
 
 // =====================================================================
@@ -810,23 +826,118 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
         case 'salaries':
             $st = $pdo->prepare(
-                "SELECT s.salary_month, e.full_name, s.base_salary, s.total_advances,
-                        s.total_penalties, s.total_deficits, s.net_salary, s.status
-                 FROM salaries s JOIN employees e ON e.id=s.employee_id
-                 WHERE s.paid_at BETWEEN ? AND DATE_ADD(?, INTERVAL 1 DAY) OR s.salary_month BETWEEN ? AND ?
+                "SELECT s.id, s.salary_month, s.period_from, s.period_to, s.work_hours,
+                        s.base_salary, s.total_bonuses, s.total_advances, s.total_penalties,
+                        s.total_deficits, s.total_cashier_deficits, s.net_salary, s.status, s.paid_at,
+                        e.full_name,
+                        b.name AS branch_name,
+                        GROUP_CONCAT(DISTINCT t.name ORDER BY je.id DESC SEPARATOR '، ') AS treasury_name
+                 FROM salaries s
+                 JOIN employees e ON e.id = s.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 LEFT JOIN journal_entries je ON je.ref_type = 'salary' AND je.ref_id = s.id
+                 LEFT JOIN treasuries t ON t.id = je.treasury_id
+                 WHERE s.paid_at >= ? AND s.paid_at < DATE_ADD(?, INTERVAL 1 DAY)
+                 GROUP BY s.id
                  ORDER BY s.id DESC"
             );
-            $st->execute([$from, $to, substr($from,0,7), substr($to,0,7)]);
-            $rows=[]; $tNet=0;
+            $st->execute([$from, $to]);
+            $rows = [];
+            $details = [];
+            $tNet = 0;
+            $treasuriesList = [];
+
             foreach ($st as $r) {
-                $tNet+=(float)$r['net_salary'];
-                $rows[]=[$r['salary_month'], $r['full_name'], number_format((float)$r['base_salary'],2),
-                    number_format((float)$r['total_advances'],2), number_format((float)$r['total_penalties'],2),
-                    number_format((float)$r['total_deficits'],2), number_format((float)$r['net_salary'],2),
-                    $r['status']==='paid'?'مدفوع':'مسودة'];
+                $net = (float) $r['net_salary'];
+                $tNet += $net;
+                $tName = $r['treasury_name'] ? $r['treasury_name'] : '—';
+                if (!empty($r['treasury_name'])) {
+                    $parts = explode('، ', $r['treasury_name']);
+                    foreach ($parts as $p) {
+                        $p = trim($p);
+                        if ($p !== '' && $p !== '—' && !in_array($p, $treasuriesList, true)) {
+                            $treasuriesList[] = $p;
+                        }
+                    }
+                }
+
+                $bName = $r['branch_name'] ?: '—';
+                $statusLabel = ($r['status'] === 'paid') ? 'مدفوع' : 'مسودة';
+
+                // صف التصدير لـ CSV (يحتوي على عمود الخزينة وباقي الحسابات)
+                $rows[] = [
+                    $r['salary_month'] ?? '—',
+                    $r['full_name'],
+                    $bName,
+                    $tName,
+                    number_format((float)$r['base_salary'], 2),
+                    number_format((float)$r['total_bonuses'], 2),
+                    number_format((float)$r['total_advances'], 2),
+                    number_format((float)$r['total_penalties'], 2),
+                    number_format((float)$r['total_deficits'], 2),
+                    number_format((float)$r['total_cashier_deficits'], 2),
+                    number_format($net, 2),
+                    $statusLabel,
+                ];
+
+                // بيانات واجهة القائمة والتفصيل
+                $base      = (float)$r['base_salary'];
+                $bonuses   = (float)$r['total_bonuses'];
+                $advances  = (float)$r['total_advances'];
+                $penalties = (float)$r['total_penalties'];
+                $deficits  = (float)$r['total_deficits'];
+                $cDeficits = (float)$r['total_cashier_deficits'];
+
+                $entitlement = $base + $bonuses;
+                $deductions  = $advances + $penalties + $deficits + $cDeficits;
+
+                $pFromFmt = $r['period_from'] ? date('j/n', strtotime($r['period_from'])) : '';
+                $pToFmt   = $r['period_to']   ? date('j/n', strtotime($r['period_to'])) : '';
+                $periodStr = ($pFromFmt && $pToFmt) ? ($pFromFmt . ' ← ' . $pToFmt) : ($r['salary_month'] ?? '');
+                $hoursStr  = ($r['work_hours'] !== null && (float)$r['work_hours'] > 0) ? (number_format((float)$r['work_hours'], 2) . ' ساعة') : '';
+
+                $metaParts = array_filter([$bName !== '—' ? $bName : '', $periodStr, $hoursStr]);
+                $subLine = implode(' · ', $metaParts);
+
+                $details[] = [
+                    'id'                     => (int)$r['id'],
+                    'full_name'              => $r['full_name'],
+                    'net_salary'             => $net,
+                    'net_salary_fmt'         => number_format($net, 2),
+                    'status'                 => $r['status'],
+                    'status_label'           => $statusLabel,
+                    'branch_name'            => $bName,
+                    'treasury_name'          => $tName,
+                    'sub_line'               => $subLine,
+                    'base_salary'            => $base,
+                    'total_bonuses'          => $bonuses,
+                    'total_entitlement'      => $entitlement,
+                    'total_advances'         => $advances,
+                    'total_penalties'        => $penalties,
+                    'total_deficits'         => $deficits,
+                    'total_cashier_deficits' => $cDeficits,
+                    'total_deductions'       => $deductions,
+                    'entitlement_fmt'        => number_format($entitlement, 2),
+                    'bonuses_fmt'            => number_format($bonuses, 2),
+                    'advances_fmt'           => number_format($advances, 2),
+                    'penalties_fmt'          => number_format($penalties, 2),
+                    'deficits_fmt'           => number_format($deficits, 2),
+                    'cdeficits_fmt'          => number_format($cDeficits, 2),
+                    'deductions_fmt'         => number_format($deductions, 2),
+                ];
             }
-            return ['title'=>'تقرير الرواتب','headers'=>['الشهر','الموظف','الأساسي','سلف','جزاءات','عجز عهدة','الصافي','الحالة'],
-                'rows'=>$rows,'totals'=>['','','','','','','إجمالي صافي: '.number_format($tNet,2),'']];
+
+            return [
+                'title'      => 'تقرير الرواتب',
+                'layout'     => 'master_detail',
+                'headers'    => ['الشهر', 'الموظف', 'الفرع', 'خزينة الصرف', 'الأساسي', 'مكافآت', 'سلف', 'جزاءات', 'عجز عهدة', 'عجز كاشير', 'الصافي', 'الحالة'],
+                'rows'       => $rows,
+                'totals'     => ['إجمالي:', '', '', '', '', '', '', '', '', '', number_format($tNet, 2), ''],
+                'details'    => $details,
+                'treasuries' => $treasuriesList,
+                'count'      => count($details),
+                'total_net'  => $tNet,
+            ];
 
         case 'attendance':
             $st = $pdo->prepare(
@@ -1095,6 +1206,54 @@ require_once __DIR__ . '/includes/header.php';
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
     .empty { text-align:center; color:var(--ink-400); padding:40px; font-size:15px; }
+
+    /* قائمة وتفصيل الرواتب (Master-Detail) */
+    .sal-sum-cards { margin-bottom:16px; }
+    .sal-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .sal-input, .sal-select { padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-800); }
+    .sal-input { flex:1; min-width:160px; }
+    .sal-select { min-width:130px; }
+    .sal-input:focus, .sal-select:focus { outline:none; border-color:var(--accent); }
+    .sal-master-detail { display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
+    @media (max-width: 768px) {
+        .sal-master-detail { grid-template-columns:1fr; }
+    }
+    .sal-master-list { display:flex; flex-direction:column; gap:8px; max-height:750px; overflow-y:auto; padding-left:2px; }
+    .sal-card { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:12px 14px; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .15s; user-select:none; }
+    .sal-card:hover { border-color:var(--ink-300); background:var(--bg); }
+    .sal-card.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent); }
+    .sal-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .sal-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; }
+    .sal-card-name { font-weight:600; color:var(--ink-900); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sal-card-net { font-size:17px; font-weight:700; margin-bottom:4px; }
+    .sal-card-net.pos { color:var(--pos); }
+    .sal-card-sub { font-size:11.5px; color:var(--ink-500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sal-curr { font-size:11px; font-weight:normal; color:var(--ink-500); }
+    .sal-badge-paid { background:var(--pos-soft); color:var(--pos); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
+    .sal-badge-draft { background:var(--warn-soft); color:var(--warn); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
+    .sal-detail-panel { background:var(--surface); border:1.5px solid var(--line); border-radius:14px; padding:20px; }
+    .sal-detail-card { display:flex; flex-direction:column; gap:14px; }
+    .sal-detail-card[hidden] { display:none !important; }
+    .sal-detail-header { border-bottom:1.5px solid var(--line-soft); padding-bottom:12px; }
+    .sal-detail-name-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+    .sal-detail-name { font-size:18px; font-weight:700; color:var(--ink-900); margin:0; }
+    .sal-detail-sub { font-size:12.5px; color:var(--ink-500); margin-bottom:8px; }
+    .sal-detail-treasury-row { display:inline-flex; align-items:center; gap:6px; background:var(--line-soft); padding:4px 10px; border-radius:6px; font-size:12.5px; }
+    .sal-treasury-label { color:var(--ink-500); }
+    .sal-treasury-val { font-weight:600; color:var(--ink-800); }
+    .sal-breakdown { display:flex; flex-direction:column; gap:8px; }
+    .sal-line { display:flex; align-items:baseline; gap:8px; font-size:13.5px; }
+    .sal-line-label { color:var(--ink-700); white-space:nowrap; }
+    .sal-line-dots { flex:1; border-bottom:1px dotted var(--ink-300); height:1px; margin:0 4px; }
+    .sal-line-val { font-weight:600; color:var(--ink-900); white-space:nowrap; direction:ltr; text-align:left; }
+    .sal-line-val.pos { color:var(--pos); }
+    .sal-line-val.neg { color:var(--neg); }
+    .sal-divider { border-top:1px dashed var(--line); margin:4px 0; }
+    .sal-divider-solid { border-top:1.5px solid var(--line); margin:6px 0; }
+    .sal-subtotal .sal-line-label { font-weight:600; color:var(--ink-900); }
+    .sal-net-row { font-size:16px; margin-top:4px; }
+    .sal-net-row .sal-line-label { font-weight:700; color:var(--ink-900); font-size:16px; }
+    .sal-net-val { font-size:18px; font-weight:800; }
 </style>
 
 <div class="rep-tabs">
@@ -1813,6 +1972,266 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (!empty($report['note'])): ?>
         <div class="empty"><?= e($report['note']) ?></div>
     <?php endif; ?>
+
+    <?php if (($report['layout'] ?? '') === 'master_detail'): ?>
+        <?php if (empty($report['details'])): ?>
+            <div class="empty">لا توجد بيانات في هذه الفترة.</div>
+        <?php else: ?>
+            <div class="sum-cards sal-sum-cards" id="salSummaryCards">
+                <div class="sum-card">
+                    <div class="sc-label">عدد الموظفين</div>
+                    <div class="sc-value" id="salCountCard"><?= number_format($report['count']) ?></div>
+                </div>
+                <div class="sum-card">
+                    <div class="sc-label">إجمالي الصافي</div>
+                    <div class="sc-value pos" id="salNetCard"><?= number_format($report['total_net'], 2) ?></div>
+                </div>
+            </div>
+
+            <div class="sal-filter-bar">
+                <input type="text" id="salSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                <select id="salTreasuryFilter" class="sal-select">
+                    <option value="">كل الخزائن</option>
+                    <?php foreach ($report['treasuries'] as $tr): ?>
+                        <option value="<?= e($tr) ?>"><?= e($tr) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select id="salStatusFilter" class="sal-select">
+                    <option value="">كل الحالات</option>
+                    <option value="paid">مدفوع</option>
+                    <option value="draft">مسودة</option>
+                </select>
+            </div>
+
+            <div class="sal-master-detail">
+                <!-- القائمة (يمين) -->
+                <div class="sal-master-list" id="salMasterList">
+                    <?php foreach ($report['details'] as $idx => $d): ?>
+                        <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                             data-id="<?= $d['id'] ?>"
+                             data-name="<?= e($d['full_name']) ?>"
+                             data-treasury="<?= e($d['treasury_name']) ?>"
+                             data-status="<?= e($d['status']) ?>"
+                             data-net="<?= $d['net_salary'] ?>"
+                             tabindex="0"
+                             role="button"
+                             aria-pressed="<?= $idx === 0 ? 'true' : 'false' ?>">
+                            <div class="sal-card-header">
+                                <div class="sal-card-name"><?= e($d['full_name']) ?></div>
+                                <span class="badge sal-badge-<?= e($d['status']) ?>">
+                                    <?= e($d['status_label']) ?>
+                                </span>
+                            </div>
+                            <div class="sal-card-net pos"><?= e($d['net_salary_fmt']) ?> <span class="sal-curr">ج.م</span></div>
+                            <?php if ($d['branch_name'] !== '—' || $d['treasury_name'] !== '—'): ?>
+                                <div class="sal-card-sub">
+                                    <?= e(implode(' · ', array_filter([$d['branch_name'] !== '—' ? $d['branch_name'] : '', $d['treasury_name'] !== '—' ? $d['treasury_name'] : '']))) ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <div id="salEmptyList" class="empty" style="display:none;padding:24px 12px;">
+                        مفيش موظف مطابق للفلتر.
+                    </div>
+                </div>
+
+                <!-- التفصيل (شمال) -->
+                <div class="sal-detail-panel" id="salDetailPanel">
+                    <?php foreach ($report['details'] as $idx => $d): ?>
+                        <div class="sal-detail-card" id="salDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                            <div class="sal-detail-header">
+                                <div class="sal-detail-name-row">
+                                    <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
+                                    <span class="badge sal-badge-<?= e($d['status']) ?>">
+                                        <?= e($d['status_label']) ?>
+                                    </span>
+                                </div>
+                                <?php if (!empty($d['sub_line'])): ?>
+                                    <div class="sal-detail-sub"><?= e($d['sub_line']) ?></div>
+                                <?php endif; ?>
+                                <div class="sal-detail-treasury-row">
+                                    <span class="sal-treasury-label">خزينة الصرف:</span>
+                                    <span class="sal-treasury-val"><?= e($d['treasury_name']) ?></span>
+                                </div>
+                            </div>
+
+                            <div class="sal-breakdown">
+                                <div class="sal-line">
+                                    <span class="sal-line-label">الاستحقاق قبل الخصم</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val"><?= e($d['entitlement_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">المكافآت</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_bonuses'] > 0 ? 'pos' : '' ?>"><?= e($d['bonuses_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">السلف</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_advances'] > 0 ? 'neg' : '' ?>"><?= e($d['advances_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">الجزاءات</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_penalties'] > 0 ? 'neg' : '' ?>"><?= e($d['penalties_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">عجز العهدة</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_deficits'] > 0 ? 'neg' : '' ?>"><?= e($d['deficits_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">عجز الكاشير</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_cashier_deficits'] > 0 ? 'neg' : '' ?>"><?= e($d['cdeficits_fmt']) ?></span>
+                                </div>
+
+                                <div class="sal-divider-solid"></div>
+
+                                <div class="sal-line sal-subtotal">
+                                    <span class="sal-line-label">إجمالي الخصومات</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_deductions'] > 0 ? 'neg' : '' ?>"><?= e($d['deductions_fmt']) ?></span>
+                                </div>
+
+                                <div class="sal-line sal-net-row">
+                                    <span class="sal-line-label">الصافي</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val pos sal-net-val"><?= e($d['net_salary_fmt']) ?> <span class="sal-curr">ج.م</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+
+                    <div id="salDetailEmpty" class="sal-detail-card" hidden>
+                        <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            (function () {
+                var masterList = document.getElementById('salMasterList');
+                if (!masterList) return;
+                var cards = Array.from(masterList.querySelectorAll('.sal-card'));
+                var searchInput = document.getElementById('salSearch');
+                var treasurySelect = document.getElementById('salTreasuryFilter');
+                var statusSelect = document.getElementById('salStatusFilter');
+                var countEl = document.getElementById('salCountCard');
+                var netEl = document.getElementById('salNetCard');
+                var summaryBox = document.getElementById('salSummaryCards');
+                var emptyListEl = document.getElementById('salEmptyList');
+                var emptyDetailEl = document.getElementById('salDetailEmpty');
+                var detailPanel = document.getElementById('salDetailPanel');
+
+                function norm(str) {
+                    return String(str || '').toLowerCase()
+                        .replace(/[أإآ]/g, 'ا')
+                        .replace(/ة/g, 'ه')
+                        .replace(/ى/g, 'ي')
+                        .replace(/[\u064B-\u065F]/g, '')
+                        .trim();
+                }
+
+                function selectCard(card) {
+                    cards.forEach(function (c) {
+                        c.classList.remove('active');
+                        c.setAttribute('aria-pressed', 'false');
+                    });
+                    if (detailPanel) {
+                        var allDetails = detailPanel.querySelectorAll('.sal-detail-card');
+                        allDetails.forEach(function (d) { d.hidden = true; });
+                    }
+
+                    if (!card) {
+                        if (emptyDetailEl) emptyDetailEl.hidden = false;
+                        return;
+                    }
+
+                    card.classList.add('active');
+                    card.setAttribute('aria-pressed', 'true');
+                    var targetId = 'salDetail_' + card.dataset.id;
+                    var targetDetail = document.getElementById(targetId);
+                    if (targetDetail) {
+                        targetDetail.hidden = false;
+                    }
+                    if (emptyDetailEl) emptyDetailEl.hidden = true;
+                }
+
+                function applyFilter() {
+                    var q = searchInput ? norm(searchInput.value) : '';
+                    var tr = treasurySelect ? (treasurySelect.value || '').trim() : '';
+                    var st = statusSelect ? (statusSelect.value || '').trim() : '';
+
+                    var visibleCount = 0;
+                    var visibleNet = 0;
+                    var firstVisible = null;
+                    var activeVisible = false;
+
+                    cards.forEach(function (card) {
+                        var cardName = norm(card.dataset.name);
+                        var cardTr = card.dataset.treasury || '';
+                        var cardSt = card.dataset.status || '';
+
+                        var matchName = !q || cardName.indexOf(q) !== -1;
+                        var matchTr = !tr || cardTr === tr || cardTr.indexOf(tr) !== -1;
+                        var matchSt = !st || cardSt === st;
+
+                        var match = matchName && matchTr && matchSt;
+                        card.hidden = !match;
+
+                        if (match) {
+                            visibleCount++;
+                            visibleNet += parseFloat(card.dataset.net || '0');
+                            if (!firstVisible) firstVisible = card;
+                            if (card.classList.contains('active')) activeVisible = true;
+                        }
+                    });
+
+                    if (countEl) countEl.textContent = visibleCount.toLocaleString('en-US');
+                    if (netEl) netEl.textContent = visibleNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                    var isFiltered = Boolean(q || tr || st);
+                    if (summaryBox) {
+                        if (isFiltered) summaryBox.classList.add('filtered');
+                        else summaryBox.classList.remove('filtered');
+                    }
+
+                    if (visibleCount === 0) {
+                        if (emptyListEl) emptyListEl.style.display = 'block';
+                        selectCard(null);
+                    } else {
+                        if (emptyListEl) emptyListEl.style.display = 'none';
+                        if (!activeVisible && firstVisible) {
+                            selectCard(firstVisible);
+                        }
+                    }
+                }
+
+                masterList.addEventListener('click', function (e) {
+                    var card = e.target.closest('.sal-card');
+                    if (!card || card.hidden) return;
+                    selectCard(card);
+                });
+
+                masterList.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        var card = e.target.closest('.sal-card');
+                        if (card && !card.hidden) {
+                            e.preventDefault();
+                            selectCard(card);
+                        }
+                    }
+                });
+
+                if (searchInput) searchInput.addEventListener('input', applyFilter);
+                if (treasurySelect) treasurySelect.addEventListener('change', applyFilter);
+                if (statusSelect) statusSelect.addEventListener('change', applyFilter);
+            })();
+            </script>
+        <?php endif; ?>
+    <?php else: ?>
     <?php if (!empty($report['sum_cards']) && !empty($report['rows'])): ?>
         <?php /* الكروت بتتحسب في المتصفح من الصفوف الظاهرة في الجدول.
                  القيم الابتدائية سيرفر-سايد عشان الكروت تبان صح حتى لو
@@ -1909,6 +2328,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    <?php endif; ?>
     <?php endif; ?>
 </div>
 <?php endif; ?>
