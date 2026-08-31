@@ -16,6 +16,11 @@
 --  مافيش عمود بيتشال ولا داتا بتتمسح. كله إضافة.
 -- =====================================================================
 
+-- 🔴 اختيار القاعدة صراحةً — من غير السطر ده phpMyAdmin ممكن يشغّل
+--    الأوامر على `information_schema` وترجع:
+--    #1109 - Unknown table 'salaries' in information_schema
+USE `u834909335_fagala`;
+
 -- (١) المرتب المرجّع — عمود بدل ما نلمس الـENUM
 --     🔴 سبب استخدام عمود جديد مش قيمة جديدة في `status`: توسيع ENUM
 --        بيقفل الجدول ولازم نعرف قيمه الحالية بالظبط. العمود الفاضي
@@ -50,15 +55,15 @@ CREATE TABLE IF NOT EXISTS `salary_advance_recoveries` (
 --  الفحص
 -- =====================================================================
 SELECT 'salaries'          AS `الجدول`, COUNT(*) AS `أعمدة الإرجاع` FROM information_schema.COLUMNS
- WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'salaries'
+ WHERE TABLE_SCHEMA = 'u834909335_fagala' AND TABLE_NAME = 'salaries'
    AND COLUMN_NAME IN ('reversed_at','reversed_by','reverse_reason')
 UNION ALL
 SELECT 'employee_bonuses', COUNT(*) FROM information_schema.COLUMNS
- WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employee_bonuses'
+ WHERE TABLE_SCHEMA = 'u834909335_fagala' AND TABLE_NAME = 'employee_bonuses'
    AND COLUMN_NAME = 'paid_in_salary_id'
 UNION ALL
 SELECT 'employee_penalties', COUNT(*) FROM information_schema.COLUMNS
- WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employee_penalties'
+ WHERE TABLE_SCHEMA = 'u834909335_fagala' AND TABLE_NAME = 'employee_penalties'
    AND COLUMN_NAME = 'deducted_in_salary_id';
 -- المتوقع: 3 · 1 · 1
 

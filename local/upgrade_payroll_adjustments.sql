@@ -15,6 +15,11 @@
 --     الاتنين **مش نفس الحاجة** ولازم يفضلوا متفرقين.
 -- =====================================================================
 
+-- 🔴 اختيار القاعدة صراحةً — من غير السطر ده phpMyAdmin ممكن يشغّل
+--    الأوامر على `information_schema` وترجع:
+--    #1109 - Unknown table 'salaries' in information_schema
+USE `u834909335_fagala`;
+
 CREATE TABLE IF NOT EXISTS `payroll_adjustments` (
   `id`            INT NOT NULL AUTO_INCREMENT,
   `employee_id`   INT NOT NULL,
