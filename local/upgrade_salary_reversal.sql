@@ -33,11 +33,11 @@ ALTER TABLE `salaries`
 -- (٢) ربط المكافأة والجزاء بالمرتب اللي قفلهم
 ALTER TABLE `employee_bonuses`
   ADD COLUMN IF NOT EXISTS `paid_in_salary_id` BIGINT UNSIGNED NULL,
-  ADD KEY `ix_bonus_salary` (`paid_in_salary_id`);
+  ADD KEY IF NOT EXISTS `ix_bonus_salary` (`paid_in_salary_id`);
 
 ALTER TABLE `employee_penalties`
   ADD COLUMN IF NOT EXISTS `deducted_in_salary_id` BIGINT UNSIGNED NULL,
-  ADD KEY `ix_pen_salary` (`deducted_in_salary_id`);
+  ADD KEY IF NOT EXISTS `ix_pen_salary` (`deducted_in_salary_id`);
 
 -- (٣) السلف: المرتب بيخصم من أكتر من سلفة، وكل واحدة بمبلغ مختلف.
 --     `salaries.total_advances` فيه الإجمالي بس — مش كفاية للإرجاع.
