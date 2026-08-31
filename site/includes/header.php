@@ -75,7 +75,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=22').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=23').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -87,7 +87,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=6">
+    <link rel="stylesheet" href="assets/fagala.css?v=7">
 </head>
 <body>
 <div class="layout">
