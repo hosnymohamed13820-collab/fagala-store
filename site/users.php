@@ -396,7 +396,7 @@ require_once __DIR__ . '/includes/header.php';
     }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
     .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
-    .badge.owner { background:#ede9ff; color:var(--accent-text); }
+    .badge.owner { background:var(--line-soft); color:var(--accent-text); }
     .perm-chips { display:flex; flex-wrap:wrap; gap:4px; }
     .perm-chip { background:var(--bg); color:var(--accent-text); padding:2px 8px; border-radius:6px; font-size:11px; }
     .perm-all { color:var(--accent-text); font-weight:600; font-size:12px; }
@@ -453,7 +453,7 @@ require_once __DIR__ . '/includes/header.php';
     }
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:#e8e5f3; color:var(--ink-500); }
+    .btn-cancel:hover { background:var(--line-soft); color:var(--ink-500); }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
     @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
 </style>

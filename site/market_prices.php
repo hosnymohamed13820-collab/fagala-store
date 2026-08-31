@@ -155,7 +155,7 @@ require_once __DIR__ . '/includes/header.php';
     .mk-stat b { color:var(--ink-900); }
     .mk-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
     .mk-f { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
-        color:var(--ink-700,#4a4a68); font-size:13px; text-decoration:none; }
+        color:var(--ink-700,var(--accent-text)); font-size:13px; text-decoration:none; }
     .mk-f.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
     .mk-card { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:10px;
         box-shadow:0 1px 6px rgba(124,111,247,0.06); }
@@ -166,13 +166,13 @@ require_once __DIR__ . '/includes/header.php';
         padding:7px 0; font-size:13px; }
     .mk-badge { padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; }
     .mk-strong { background:var(--pos-fill); }
-    .mk-maybe  { background:#e0a516; }
-    .mk-weak   { background:#b9b7c9; }
-    .mk-linked { background:#eefaf4; border:1.5px solid var(--pos); }
+    .mk-maybe  { background:var(--warn-fill); }
+    .mk-weak   { background:var(--ink-200); }
+    .mk-linked { background:var(--line-soft); border:1.5px solid var(--pos); }
     .mk-ign    { opacity:.55; }
     .btn-sm { padding:6px 13px; font-size:12px; border-radius:8px; border:none; cursor:pointer;
         font-family:inherit; background:var(--accent); color:#fff; }
-    .btn-sm.ghost { background:var(--surface); border:1.5px solid var(--line); color:var(--ink-700,#4a4a68); }
+    .btn-sm.ghost { background:var(--surface); border:1.5px solid var(--line); color:var(--ink-700,var(--accent-text)); }
     .btn-sm[disabled] { opacity:.5; cursor:not-allowed; }
     .mk-search { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px;
         font-family:inherit; font-size:13px; }
@@ -254,7 +254,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($filter === 'unlinked' && $books['total'] > 0): ?>
-<div class="mk-card" style="background:#f7f6ff;border:1.5px dashed var(--accent);">
+<div class="mk-card" style="background:var(--surface);border:1.5px dashed var(--accent);">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn" id="mkBulk"><i class="ti ti-wand"></i> أكّد كل المطابقات القوية</button>
         <span class="mk-stat" id="mkBulkMsg" style="flex:1;">

@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
                   padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
-                 background:var(--surface); color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
+                 background:var(--surface); color:var(--ink-700,var(--accent-text)); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
     .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
     .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
@@ -139,7 +139,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table th.req, .sq-table td.req { background:rgba(34,197,94,0.07); }
     .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
     .sq-table .code-cell { font-family:monospace; color:var(--ink-500); font-size:12px; }
-    .sq-table .zero { color:#c9c9d4; }
+    .sq-table .zero { color:var(--ink-400); }
     .sq-table .pos { color:var(--pos); font-weight:600; }
     .sq-table tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
     .sq-table tbody tr:hover td { background:rgba(124,111,247,0.04); }

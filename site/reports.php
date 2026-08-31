@@ -1052,7 +1052,7 @@ require_once __DIR__ . '/includes/header.php';
     .filter-bar input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 18px; cursor:pointer; font-family:inherit; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
     .btn:hover { background:var(--accent-hover); }
-    .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:#15835f; }
+    .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:var(--pos-fill); }
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .rep-title { font-size:17px; color:var(--ink-900); font-weight:700; margin-bottom:4px; }
     /* كروت الإجماليات — بتتحسب من الصفوف الظاهرة في الجدول */
@@ -1357,7 +1357,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= $fmt($rev) ?></td>
                         <td style="font-weight:600;color:var(--accent-text);"><?= $fmt($fin) ?></td>
                         <td><?= $fmt($sys) ?></td>
-                        <td style="color:<?= $diff!==null&&$diff<0?'var(--neg)':($diff>0?'var(--pos)':'#666') ?>;"><?= $fmt($diff) ?></td>
+                        <td style="color:<?= $diff!==null&&$diff<0?'var(--neg)':($diff>0?'var(--pos)':'var(--ink-500)') ?>;"><?= $fmt($diff) ?></td>
                         <td><?= $cost!==null?number_format($cost,2):'—' ?></td>
                         <td style="color:var(--ink-500);font-size:12px;"><?= e($l['counter_name'] ?? '—') ?></td>
                     </tr>
@@ -1399,8 +1399,8 @@ require_once __DIR__ . '/includes/header.php';
     .np-table input { padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         font-family:inherit; font-size:13px; width:100px; text-align:left; direction:ltr; }
     .np-table input:focus { outline:none; border-color:var(--accent-text); }
-    .np-table input.np-dirty { border-color:var(--pos); background:#f2fdf8; }
-    .np-table tr.np-nocost td { background:#fff9ec; }
+    .np-table input.np-dirty { border-color:var(--pos); background:var(--surface); }
+    .np-table tr.np-nocost td { background:var(--line-soft); }
     .np-x { background:none; border:none; cursor:pointer; color:var(--neg); font-size:16px; padding:2px 6px; }
 
     .np-modal { position:fixed; inset:0; background:rgba(20,16,50,0.55); z-index:200;

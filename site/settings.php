@@ -279,12 +279,12 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
         <div style="display:flex;flex-direction:column;gap:8px;">
         <?php foreach ($agents as $a):
             $st = $a['status'];
-            $col = $st === AGENT_ALERT ? 'var(--neg,#9d3b38)'
-                 : ($st === AGENT_WARN ? 'var(--warn,#8a6524)'
-                 : ($st === AGENT_OFF  ? 'var(--ink-400,#94a3b8)' : 'var(--pos,#2f6b4f)'));
-            $bg  = $st === AGENT_ALERT ? 'var(--neg-soft,#fbeceb)'
-                 : ($st === AGENT_WARN ? 'var(--warn-soft,#f7f0e2)'
-                 : ($st === AGENT_OFF  ? 'var(--line-soft,#eff2f6)' : 'var(--pos-soft,#e8f3ec)'));
+            $col = $st === AGENT_ALERT ? 'var(--neg,var(--neg))'
+                 : ($st === AGENT_WARN ? 'var(--warn,var(--warn))'
+                 : ($st === AGENT_OFF  ? 'var(--ink-400,var(--ink-400))' : 'var(--pos,var(--pos))'));
+            $bg  = $st === AGENT_ALERT ? 'var(--neg-soft,var(--ink-400))'
+                 : ($st === AGENT_WARN ? 'var(--warn-soft,var(--warn))'
+                 : ($st === AGENT_OFF  ? 'var(--line-soft,var(--ink-400))' : 'var(--pos-soft,var(--ink-400))'));
             $dot = $st === AGENT_ALERT ? 'ti-ban' : ($st === AGENT_WARN ? 'ti-alert-triangle'
                  : ($st === AGENT_OFF ? 'ti-moon' : 'ti-circle-check'));
         ?>
@@ -342,7 +342,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
     $onBr    = ($balNow !== 'hq_balances');
     ?>
     <div style="margin-top:14px;padding:12px 14px;border-radius:10px;
-         background:<?= $onBr ? 'var(--pos-soft,#e8f3ec)' : 'var(--line-soft,#eff2f6)' ?>;
+         background:<?= $onBr ? 'var(--pos-soft,var(--line-soft))' : 'var(--line-soft,var(--line-soft))' ?>;
          font-size:13px;">
         <b>مصدر الأرصدة:</b>
         <?php if ($onBr): ?>

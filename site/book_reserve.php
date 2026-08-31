@@ -121,7 +121,7 @@ require_once __DIR__ . '/includes/header.php';
     .pill { display:inline-block; padding:4px 13px; border-radius:20px; font-size:12.5px;
             font-weight:700; white-space:nowrap; }
     .pill.yes { background:rgba(34,197,94,.13); color:var(--pos); }
-    .pill.no  { background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
+    .pill.no  { background:var(--warn-soft); color:var(--warn); }
     .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
     .pill.st-delivered { background:rgba(34,197,94,.13); color:var(--pos); }
     .pill.st-cancelled { background:var(--line-soft); color:var(--ink-500); }
@@ -136,8 +136,8 @@ require_once __DIR__ . '/includes/header.php';
                    flex-wrap:wrap; padding:12px 16px; border:1px solid var(--line-soft);
                    border-radius:11px; margin-bottom:8px; text-decoration:none; color:inherit; }
     .rs-list-row:hover { border-color:var(--accent-text); background:var(--accent-soft); }
-    .rs-warn { padding:12px 18px; background:var(--warn-soft,#fff7e6); border-radius:10px;
-               border:1.5px solid var(--warn,#d97706); color:var(--warn,#d97706);
+    .rs-warn { padding:12px 18px; background:var(--warn-soft,var(--line-soft)); border-radius:10px;
+               border:1.5px solid var(--warn,var(--warn)); color:var(--warn,var(--warn));
                font-size:13.5px; margin-bottom:16px; line-height:1.8; }
 </style>
 
@@ -407,7 +407,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.code === row.code)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,#d97706)');
+            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusQty(row.code);
             return;
         }

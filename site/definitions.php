@@ -599,7 +599,7 @@ require_once __DIR__ . '/includes/header.php';
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <?php elseif ($tab === 'employees'): ?>
-    <div class="card" style="background:var(--warn-soft);border:1.5px solid #ffe0a8;margin-bottom:14px;">
+    <div class="card" style="background:var(--warn-soft);border:1.5px solid var(--warn);margin-bottom:14px;">
         <div style="color:var(--warn);font-size:13px;line-height:1.7;">
             <strong>ملاحظة:</strong> الأفضل إنشاء الموظف من صفحة <strong>المستخدمين</strong> (كل موظف = حساب مستخدم،
             تحدّدله كل حاجة من مكان واحد: الدخول، الصلاحيات، الفرع، المرتب، مواعيد الحضور). الموظفون اللي بتضيفهم هنا
@@ -927,7 +927,7 @@ require_once __DIR__ . '/includes/header.php';
                     <label for="acc_cust" style="margin:0;">يظهر في شاشة العهدة</label>
                 </div>
                 <div id="catWarn" style="display:none;margin-top:10px;padding:9px 11px;border-radius:9px;
-                     background:var(--warn-soft);color:var(--warn);border:1px solid #ffe0a8;font-size:12px;line-height:1.6;">
+                     background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);font-size:12px;line-height:1.6;">
                     <i class="ti ti-alert-triangle"></i> <b>تنبيه:</b> نقل التصنيف تحت رأس قيد جديد هيخلّي التقارير القديمة تعرضه تحت الرأس الجديد (التقارير بتجمّع بحسب شجرة الحسابات الحالية). المبالغ والقيود بتفضل سليمة زي ما هي.
                 </div>
                 <div class="modal-actions">

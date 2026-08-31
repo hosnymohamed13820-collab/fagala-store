@@ -110,7 +110,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-pane { display:none; } .rv-pane.active { display:block; }
     /* كروت الورديات */
     .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
-        box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid #f0a500; }
+        box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
     .shift-card.done { border-right-color:var(--pos); }
     .shift-card.rej { border-right-color:var(--neg); }
     .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
@@ -131,7 +131,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-mhead .t { font-size:16px; color:var(--ink-900); font-weight:700; }
     .rv-x { background:none; border:none; font-size:26px; color:var(--ink-400); cursor:pointer; }
     .rv-mbody { padding:18px 22px; }
-    .rv-note { background:#eef5ff; color:#2d6cc0; padding:10px 14px; border-radius:9px; font-size:13px; margin-bottom:14px; }
+    .rv-note { background:var(--surface); color:var(--accent-text); padding:10px 14px; border-radius:9px; font-size:13px; margin-bottom:14px; }
     .rv-sys { margin-bottom:14px; }
     .rv-sys label { font-size:13px; color:var(--ink-500); display:block; margin-bottom:5px; }
     .rv-sys input { width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:15px; }
@@ -291,7 +291,7 @@ function shift_cashier_amounts(array $s): array {
                     <?php endfor; ?>
                     </tbody>
                 </table>
-                <button type="button" onclick="rvAddRow('<?= $mk ?>')" style="margin-top:8px;background:#f0eefc;color:#5b52c9;border:1.5px dashed #c7c0f0;border-radius:8px;padding:7px 14px;font-family:inherit;font-size:13px;cursor:pointer;">+ إضافة صف</button>
+                <button type="button" onclick="rvAddRow('<?= $mk ?>')" style="margin-top:8px;background:var(--line-soft);color:var(--accent-text);border:1.5px dashed var(--accent);border-radius:8px;padding:7px 14px;font-family:inherit;font-size:13px;cursor:pointer;">+ إضافة صف</button>
                 <div class="rv-total">إجمالي <?= $ml ?>: <span id="rv_<?= $mk ?>_t">0.00</span> ج.م</div>
             </div>
             <?php endforeach; ?>
@@ -306,7 +306,7 @@ function shift_cashier_amounts(array $s): array {
                      السبب: لو شاف أرقام الموظف وهو بيعدّ، هينسخها بدل
                      ما يعدّ بنفسه، والمراجعة تبقى بلا قيمة.
                      ───────────────────────────────────────────────────── -->
-                <div id="cmp_locked" style="background:#f6f5fd;border-radius:10px;
+                <div id="cmp_locked" style="background:var(--surface);border-radius:10px;
                      padding:22px;text-align:center;color:var(--ink-500);font-size:14px;">
                     <i class="ti ti-lock"></i> أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
                 </div>

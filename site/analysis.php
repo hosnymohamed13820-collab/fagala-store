@@ -358,7 +358,7 @@ require_once __DIR__ . '/includes/header.php';
     .an-tbl thead tr:last-child th { top:30px; }
 
     .an-tbl td { padding:7px 9px; text-align:center; color:var(--ink-800); }
-    .an-tbl tbody tr:nth-child(even) td { background:#fbfcfd; }
+    .an-tbl tbody tr:nth-child(even) td { background:var(--surface); }
     .an-tbl tbody tr:hover td { background:var(--accent-soft); }
 
     /* الأرقام: خانات متساوية العرض، واتجاه لاتيني عشان السالب يطلع
@@ -375,14 +375,14 @@ require_once __DIR__ . '/includes/header.php';
     .an-tbl .c-name { right:118px;              width:210px; min-width:210px;
         white-space:normal; line-height:1.5; }
     .an-tbl tbody tr:nth-child(even) .c-code,
-    .an-tbl tbody tr:nth-child(even) .c-name { background:#fbfcfd; }
+    .an-tbl tbody tr:nth-child(even) .c-name { background:var(--surface); }
     .an-tbl tbody tr:hover .c-code,
     .an-tbl tbody tr:hover .c-name { background:var(--accent-soft); }
     .an-tbl thead .c-code, .an-tbl thead .c-name { z-index:6; background:var(--bg); }
 
     /* تظليل خفيف يفصل مجموعة كل فرع عن اللي جنبها */
-    .an-tbl .g1 td, .an-tbl td.g1 { background:#f7f9fb; }
-    .an-tbl tbody tr:nth-child(even) td.g1 { background:#f2f5f8; }
+    .an-tbl .g1 td, .an-tbl td.g1 { background:var(--surface); }
+    .an-tbl tbody tr:nth-child(even) td.g1 { background:var(--line-soft); }
     .an-tbl tbody tr:hover td.g1 { background:var(--accent-soft); }
     /* فاصل المجموعات بقى أعرض شوية عشان يفضل باين وسط البوردر العام */
     .an-tbl th.gsep, .an-tbl td.gsep { border-right-width:2px; }
@@ -418,11 +418,11 @@ require_once __DIR__ . '/includes/header.php';
     .an-legend i { width:22px; height:10px; border-radius:3px; display:inline-block; }
 
     .an-warn { padding:11px 14px; border-radius:var(--r); background:var(--warn-soft);
-        border:1px solid #e8d5aa; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--warn); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
     .an-ok   { padding:11px 14px; border-radius:var(--r); background:var(--pos-soft);
-        border:1px solid #b8d6c6; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--pos); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
     .an-err  { padding:11px 14px; border-radius:var(--r); background:var(--neg-soft);
-        border:1px solid #e0b5b3; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--neg); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
 
     .an-prev { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:12px; }
     .an-prev th, .an-prev td { padding:6px 8px; border:1px solid var(--line-soft); text-align:center; }

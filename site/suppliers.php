@@ -179,7 +179,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php foreach ($manualInvoices as $inv): ?>
                 <?php
                     $remaining = (float)$inv['total_amount'] - (float)$inv['paid_amount'];
-                    $sl = $statusLabels[$inv['status']] ?? ['—','#666','#eee'];
+                    $sl = $statusLabels[$inv['status']] ?? ['—','var(--ink-500)','var(--line)'];
                 ?>
                 <tr>
                     <td><?= e($inv['invoice_date']) ?></td>

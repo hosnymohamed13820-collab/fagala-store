@@ -85,11 +85,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <link rel="icon" href="favicon-32.png?v=3">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-    :root { --navy:#16233d; --steel:#2f5d8a; --gold:#d6af6a; --line:#e3e1ef;
-            --ink:#1E1B4B; --mut:#8884a8; --pos:#1a9e5c; --neg:#d64545; }
+    :root { --navy:var(--ink-900); --steel:var(--accent-text); --gold:var(--warn); --line:var(--ink-400);
+            --ink:var(--accent-text); --mut:var(--accent-text); --pos:var(--pos); --neg:var(--neg); }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'IBM Plex Sans Arabic',sans-serif; }
     html, body { overflow-x:hidden; }
-    body { background:#f2f3f8; min-height:100vh; padding:16px; }
+    body { background:var(--line-soft); min-height:100vh; padding:16px; }
     .top { display:flex; align-items:center; justify-content:space-between; max-width:480px;
            margin:0 auto 14px; }
     .top a { color:var(--steel); text-decoration:none; font-size:14px; }
@@ -107,10 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     .go:active { background:var(--steel); }
     #devList { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
     .dev { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
-           border-radius:12px; cursor:pointer; background:#fbfbfd; }
-    .dev:active { background:#eef1f7; }
+           border-radius:12px; cursor:pointer; background:var(--surface); }
+    .dev:active { background:var(--line-soft); }
     .dev.off { opacity:0.55; }
-    .dev .dot { width:12px; height:12px; border-radius:50%; background:#b9b6cc; flex-shrink:0; }
+    .dev .dot { width:12px; height:12px; border-radius:50%; background:var(--accent-soft); flex-shrink:0; }
     .dev.on .dot { background:var(--pos-fill); box-shadow:0 0 0 4px rgba(26,158,92,0.15); }
     .dev .dinfo { flex:1; min-width:0; }
     .dev .dname { font-weight:700; color:var(--navy); font-size:16px; }

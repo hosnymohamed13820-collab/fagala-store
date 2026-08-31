@@ -991,7 +991,7 @@ function stk_export_xlsx(array $headers, array $rows, string $filename, array $c
         header('Content-Type: text/html; charset=utf-8');
         echo '<div style="font-family:sans-serif;direction:rtl;padding:40px;text-align:center;">'
            . '<h2 style="color:var(--neg);">تصدير Excel غير متاح</h2>'
-           . '<p style="font-size:16px;line-height:1.8;color:#444;">إكستنشن <strong>zip</strong> مش مفعّل في PHP على الجهاز ده.<br>'
+           . '<p style="font-size:16px;line-height:1.8;color:var(--ink-600);">إكستنشن <strong>zip</strong> مش مفعّل في PHP على الجهاز ده.<br>'
            . 'فعّله من <code>php.ini</code> (شيل ; من <code>extension=zip</code>) وأعد تشغيل Apache.<br>'
            . 'أو استخدم زر <strong>تصدير CSV</strong> اللي بيشتغل من غير أي إعداد.</p>'
            . '<a href="javascript:history.back()" style="display:inline-block;margin-top:16px;padding:10px 24px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none;">رجوع</a>'

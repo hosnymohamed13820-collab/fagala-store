@@ -127,12 +127,12 @@ require_once __DIR__ . '/includes/header.php';
     .q-ind { font-size:12px; margin-right:4px; }
 
     .tag-no { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px;
-              font-weight:700; background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
+              font-weight:700; background:var(--warn-soft); color:var(--warn); }
 
     .bo-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .bo-status { font-size:13px; min-height:20px; margin-bottom:10px; }
     .bo-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-                background:var(--ink-900,#16233d); color:#fff; padding:13px 24px; border-radius:12px;
+                background:var(--ink-900,var(--ink-900)); color:#fff; padding:13px 24px; border-radius:12px;
                 font-size:14px; z-index:400; opacity:0; pointer-events:none; transition:opacity .2s; }
     .bo-toast.show { opacity:1; }
 </style>
@@ -307,7 +307,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.id === row.id)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,#d97706)');
+            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusFirstQty(row.id);
             return;
         }
@@ -323,7 +323,7 @@ require_once __DIR__ . '/includes/header.php';
             setStatus('✓ اتضاف ' + row.name, 'var(--pos)');
         } else {
             setStatus('⚠️ ' + row.name + ' ملوش طلبية — اتضاف فاضي، اكتب هتجيب منه كام من كل مورد',
-                      'var(--warn,#d97706)');
+                      'var(--warn,var(--warn))');
         }
         render();
         focusFirstQty(row.id);

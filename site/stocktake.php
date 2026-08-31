@@ -497,8 +497,8 @@ require_once __DIR__ . '/includes/header.php';
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; }
-    .btn-green { background:var(--pos-fill); } .btn-green:hover { background:#15835f; }
-    .btn-red { background:var(--neg-fill); } .btn-red:hover { background:#c93f3e; }
+    .btn-green { background:var(--pos-fill); } .btn-green:hover { background:var(--pos-fill); }
+    .btn-red { background:var(--neg-fill); } .btn-red:hover { background:var(--neg-fill); }
     .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
@@ -530,7 +530,7 @@ require_once __DIR__ . '/includes/header.php';
     .sheet-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
     .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
-    .status-chip:hover { border-color:#c9c2f5; }
+    .status-chip:hover { border-color:var(--accent); }
     .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent-text); font-weight:600; }
     .tree-section { border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
     .tree-head { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; background:var(--line-soft); user-select:none; }
@@ -538,7 +538,7 @@ require_once __DIR__ . '/includes/header.php';
     .tree-caret { color:var(--accent-text); font-size:13px; transition:transform .15s; display:inline-block; }
     .tree-section.open .tree-caret { transform:rotate(90deg); }
     .tree-name { font-weight:600; color:var(--ink-900); font-size:15px; flex:1; }
-    .tree-count { font-size:12px; color:var(--ink-500); background:#eceafb; padding:3px 10px; border-radius:20px; }
+    .tree-count { font-size:12px; color:var(--ink-500); background:var(--line-soft); padding:3px 10px; border-radius:20px; }
     .tree-body { display:none; padding:4px 8px 8px; overflow-x:auto; }
     .tree-section.open .tree-body { display:block; }
     .sheet-link:hover { text-decoration:underline; }
@@ -575,7 +575,7 @@ require_once __DIR__ . '/includes/header.php';
                 <strong style="color:var(--pos);">نشط<span class="dot on"></span></strong>
                 <?php if ($session['has_balance']): ?><span style="color:var(--ink-500);font-size:13px;">— رصيد مرفوع</span><?php endif; ?>
             <?php else: ?>
-                <strong style="color:#888;">متوقف<span class="dot off"></span></strong>
+                <strong style="color:var(--ink-400);">متوقف<span class="dot off"></span></strong>
             <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -884,7 +884,7 @@ require_once __DIR__ . '/includes/header.php';
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(30,27,75,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
             ov.innerHTML = '<div style="background:var(--surface);border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
                 + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> ' + title + '</h3>'
-                + '<p style="color:#444;font-size:14px;line-height:1.8;">' + html + '</p>'
+                + '<p style="color:var(--ink-600);font-size:14px;line-height:1.8;">' + html + '</p>'
                 + '<button style="margin-top:16px;padding:9px 28px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;">تمام</button></div>';
             ov.querySelector('button').onclick = function(){ ov.remove(); var ci=document.getElementById('codeInput'); if(ci) ci.focus(); };
             document.body.appendChild(ov);
@@ -1075,7 +1075,7 @@ require_once __DIR__ . '/includes/header.php';
                 fd.append('sheet_id','<?= (int)$openSheet['id'] ?>');
                 fd.append('line_id', input.dataset.line);
                 fd.append('review_qty', input.value);
-                input.style.borderColor = '#f0a500';
+                input.style.borderColor = 'var(--warn)';
                 fetch('stocktake.php', { method:'POST', body: fd })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -1136,7 +1136,7 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                 <?php foreach ($diffLines as $cl): ?>
                     <?php
-                        $bg = ['less'=>'background:#fdeeee;','more'=>'background:#fff7e6;'][$cl['_state']] ?? '';
+                        $bg = ['less'=>'background:var(--line-soft);','more'=>'background:var(--line-soft);'][$cl['_state']] ?? '';
                         $final = $cl['final_qty']!==null ? (float)$cl['final_qty'] : $cl['_review'];
                     ?>
                     <tr style="<?= $bg ?>">
@@ -1175,7 +1175,7 @@ require_once __DIR__ . '/includes/header.php';
                 fd.append('sheet_id', '<?= (int)$openSheet['id'] ?>');
                 fd.append('line_id', input.dataset.line);
                 fd.append('final_qty', input.value);
-                input.style.borderColor = '#f0a500';
+                input.style.borderColor = 'var(--warn)';
                 fetch('stocktake.php', { method:'POST', body: fd })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -1343,7 +1343,7 @@ require_once __DIR__ . '/includes/header.php';
                            : ($sr['review_qty'] !== null ? (float)$sr['review_qty'] : (float)$sr['base_qty']);
                         $qOut = rtrim(rtrim(number_format($q,3),'0'),'.');
                         $stMap2 = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                        $bb = $stMap2[$sr['sheet_status']] ?? ['—','#666','#eee'];
+                        $bb = $stMap2[$sr['sheet_status']] ?? ['—','var(--ink-500)','var(--line)'];
                     ?>
                     <tr>
                         <td><?= e($sr['entered_code']) ?></td>
@@ -1410,7 +1410,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php foreach ($groupSheets as $sh): ?>
                             <?php
                                 $stMap = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                                $b = $stMap[$sh['status']] ?? ['—','#666','#eee'];
+                                $b = $stMap[$sh['status']] ?? ['—','var(--ink-500)','var(--line)'];
                                 $searchStr = '#'.(int)$sh['sheet_no'].' '.($sh['sheet_no']).' '.($sh['place_note'] ?: ($sh['branch_name'] ?? '')).' '.($sh['counter_name'] ?? '').' '.($sh['reviewer_name'] ?? '');
                             ?>
                             <tr class="sheet-row" onclick="openSheet(<?= (int)$sh['id'] ?>)" style="cursor:pointer;" title="اضغط لفتح المحضر" data-status="<?= e($sh['status']) ?>" data-search="<?= e(mb_strtolower($searchStr)) ?>">
@@ -1747,7 +1747,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '</tr></thead><tbody>';
                 d.codes.forEach(c => {
                     const isSearched = c.code === code;
-                    const rowBg = isSearched ? 'background:#fdf6e3;' : '';
+                    const rowBg = isSearched ? 'background:var(--warn-soft);' : '';
                     const typeBadge = c.is_base
                         ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--pos);background:var(--pos-soft);">أساسي</span>'
                         : '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--ink-700);background:var(--line-soft);">فرعي</span>';

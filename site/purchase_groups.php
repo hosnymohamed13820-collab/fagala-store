@@ -275,7 +275,7 @@ require_once __DIR__ . '/includes/header.php';
     .pg-sec-count { font-size:12.5px; font-weight:700; color:var(--accent-text); background:var(--accent-soft); padding:3px 10px; border-radius:12px; }
     .pg-branches-bar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
 
-    .pg-warn-banner { background:var(--warn-soft); color:var(--warn); border:1px solid #e8dcc0;
+    .pg-warn-banner { background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn);
                       border-radius:10px; padding:10px 14px; font-size:13px; font-weight:600;
                       margin-bottom:14px; display:flex; align-items:center; gap:8px; }
 

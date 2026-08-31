@@ -1027,11 +1027,11 @@ $leaveLabels = ['annual'=>'سنوية','sick'=>'مرضية','unpaid'=>'بدون 
 $statusBadge = function($st) {
     $m = ['pending'=>['معلّق','var(--warn)','var(--warn-soft)'],'deducted'=>['مخصوم','var(--pos)','var(--pos-soft)'],
           'approved'=>['معتمد','var(--pos)','var(--pos-soft)'],'rejected'=>['مرفوض','var(--neg)','var(--neg-soft)'],
-          'paid'=>['مدفوع','var(--pos)','var(--pos-soft)'],'draft'=>['مسودة','#666','#eee'],
+          'paid'=>['مدفوع','var(--pos)','var(--pos-soft)'],'draft'=>['مسودة','var(--ink-500)','var(--line)'],
           'recovered'=>['مسترد','var(--pos)','var(--pos-soft)'],
           'submitted'=>['مستلم','var(--accent)','var(--accent-soft)'],
           'resubmitted'=>['معاد إرسال','var(--warn)','var(--warn-soft)']];
-    return $m[$st] ?? [$st ?: '—','#666','#eee'];
+    return $m[$st] ?? [$st ?: '—','var(--ink-500)','var(--line)'];
 };
 ?>
 
@@ -1803,7 +1803,7 @@ $statusBadge = function($st) {
             <tbody>
             <?php
                 $statusMap = ['present'=>['حاضر','var(--pos)','var(--pos-soft)'],'absent'=>['غائب','var(--neg)','var(--neg-soft)'],
-                              'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','#666','#eee']];
+                              'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','var(--ink-500)','var(--line)']];
                 // خلية مكان البصمة: رابط خريطة + تنبيه لو برّة النطاق
                 $locCell = function($lat, $lng, $dist, $outside, $label, $acc) {
                     if ($lat === null || $lng === null || $lat === '' || $lng === '') return '';
@@ -1824,12 +1824,12 @@ $statusBadge = function($st) {
                          . $label . ' ' . $txt . '</a>';
                 };
                 foreach ($attRows as $a):
-                    $sb = $statusMap[$a['status']] ?? ['—','#666','#eee'];
+                    $sb = $statusMap[$a['status']] ?? ['—','var(--ink-500)','var(--line)'];
                     $inLoc  = $locCell($a['check_in_lat'] ?? null,  $a['check_in_lng'] ?? null,  $a['check_in_dist'] ?? null,  !empty($a['check_in_outside']),  'دخول:', $a['check_in_acc'] ?? null);
                     $outLoc = $locCell($a['check_out_lat'] ?? null, $a['check_out_lng'] ?? null, $a['check_out_dist'] ?? null, !empty($a['check_out_outside']), 'خروج:', $a['check_out_acc'] ?? null);
                     $rowFlagged = !empty($a['check_in_outside']) || !empty($a['check_out_outside']);
             ?>
-                <tr<?= $rowFlagged ? ' style="background:#fff6f6;"' : '' ?>>
+                <tr<?= $rowFlagged ? ' style="background:var(--surface);"' : '' ?>>
                     <td><?= e($a['att_date']) ?></td>
                     <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
                     <td><?= e($a['check_in'] ? substr($a['check_in'],0,5) : '—') ?></td>

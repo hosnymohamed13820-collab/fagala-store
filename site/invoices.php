@@ -1564,7 +1564,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-body { overflow-y:auto; padding:12px 18px 18px; }
 
     .ilk-inv { border:1.5px solid var(--line); border-radius:11px; padding:12px 14px; margin-bottom:10px; }
-    .ilk-inv.ilk-ret { border-color:#f0c9c9; background:#fffafa; }
+    .ilk-inv.ilk-ret { border-color:var(--neg); background:var(--surface); }
     .ilk-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .ilk-tag { padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; background:var(--accent); }
     .ilk-tag.ret { background:var(--neg-fill); }
@@ -1572,7 +1572,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-chip { background:var(--bg); border:1px solid var(--line); border-radius:8px;
         padding:4px 10px; font-size:12.5px; }
     .ilk-chip b { color:var(--accent-hover,var(--accent)); }
-    .ilk-chip.store { background:#fff8e8; border-color:#f0dcb0; }
+    .ilk-chip.store { background:var(--line-soft); border-color:var(--warn); }
     .ilk-none { color:var(--ink-500); font-size:12.5px; margin-top:8px; }
 </style>
 
@@ -1773,7 +1773,7 @@ require_once __DIR__ . '/includes/header.php';
     .inv-table .branch-head.collapsed .bh-caret { transform:rotate(-90deg); }
     /* رأس فرعي داخل الفرع: فاتورة شراء / مردود شراء */
     .inv-table .subtype-head td {
-        background:var(--bg-soft, #f6f7fb); color:var(--ink-700, #4a4a68);
+        background:var(--bg-soft, var(--surface)); color:var(--ink-700, var(--accent-text));
         font-weight:600; font-size:13px; text-align:right; padding:8px 14px 8px 28px;
         border-bottom:1px solid var(--line);
     }
@@ -1783,7 +1783,7 @@ require_once __DIR__ . '/includes/header.php';
     .inv-table .subtype-head.collapsed .st-caret { transform:rotate(-90deg); }
     .inv-table .subtype-head .bh-count {
         float:left; font-weight:400; font-size:11px; opacity:0.8;
-        background:var(--line); color:var(--ink-700,#4a4a68); padding:1px 9px; border-radius:20px;
+        background:var(--line); color:var(--ink-700,var(--accent-text)); padding:1px 9px; border-radius:20px;
     }
     .inv-table .subtype-head.subtype-refund .bh-count { background:var(--neg-soft); color:var(--neg); }
     .inv-table .branch-head .bh-sub {
@@ -1823,7 +1823,7 @@ require_once __DIR__ . '/includes/header.php';
         font-size:12.5px; color:var(--ink-500); margin-bottom:6px; }
     .notes-state { font-size:11.5px; color:var(--ink-400); }
     .notes-state.saving { color:var(--accent-text); }
-    .notes-state.saved  { color:#1c9e5a; }
+    .notes-state.saved  { color:var(--pos); }
     .notes-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 10px;
         font-family:inherit; font-size:13px; color:var(--ink-900); resize:vertical;
         background:var(--surface); line-height:1.6; }
@@ -1831,7 +1831,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* الملاحظات في قائمة الفواتير — النص نفسه بيبان تحت رقم الفاتورة */
     .inv-note-text { display:block; font-size:11.5px; color:var(--ink-600);
-        background:#fffdf2; border:1px solid #f0e2b6; border-right:3px solid #e8c752;
+        background:var(--surface); border:1px solid var(--warn); border-right:3px solid var(--warn);
         border-radius:6px; padding:3px 8px; margin-top:5px; line-height:1.55;
         font-weight:400; white-space:normal; word-break:break-word; max-width:340px; }
     .store-v.has { color:var(--warn); } .store-v.zero { color:var(--pos); }
@@ -1864,7 +1864,7 @@ require_once __DIR__ . '/includes/header.php';
     .lookup-box { background:var(--surface); border-radius:14px; width:100%; max-width:640px;
                   box-shadow:0 18px 50px rgba(40,30,90,.25); overflow:hidden; }
     .lookup-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
-                   padding:14px 18px; border-bottom:1px solid #eeecf8; font-weight:700; color:var(--ink-800); }
+                   padding:14px 18px; border-bottom:1px solid var(--ink-400); font-weight:700; color:var(--ink-800); }
     .lookup-x { background:none; border:none; font-size:26px; line-height:1; color:var(--ink-400); cursor:pointer; }
     .lookup-form { padding:16px 18px; }
     .lk-row { display:flex; gap:8px; align-items:stretch; width:100%; }
@@ -1880,7 +1880,7 @@ require_once __DIR__ . '/includes/header.php';
     .lk-alert-warning { background:var(--warn-soft); color:var(--warn); }
     .lk-table { width:100%; border-collapse:collapse; }
     .lk-table th { background:var(--line-soft); padding:9px 14px; font-size:12px; color:var(--ink-500); text-align:right; }
-    .lk-table td { padding:9px 14px; border-top:1px solid #f0eefa; font-size:14px; }
+    .lk-table td { padding:9px 14px; border-top:1px solid var(--ink-400); font-size:14px; }
 
     /* ===== بوب أب سحب أعداد الفروع من الحجوزات ===== */
     .btn-res-pull { background:var(--accent); color:#fff; }
@@ -1905,7 +1905,7 @@ require_once __DIR__ . '/includes/header.php';
     .lines-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 10px;
         text-align:center; white-space:nowrap; border-bottom:2px solid var(--line); position:sticky; top:0; }
     .lines-table tbody td { padding:8px 10px; text-align:center; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
-    .lines-table tbody tr:hover { background:#fafaff; }
+    .lines-table tbody tr:hover { background:var(--surface); }
     .lines-table .c-code { font-family:monospace; color:var(--ink-500); white-space:nowrap; }
     .lines-table .c-name { text-align:right; font-weight:500; color:var(--ink-900); min-width:160px; }
     .lines-table .c-qty { font-weight:700; color:var(--accent-text); }
@@ -1915,17 +1915,17 @@ require_once __DIR__ . '/includes/header.php';
     /* ===================== علامات الأصناف ===================== */
     /* ألوان التمييز: خلفيات فاتحة عن قصد — النص لازم يفضل مقروء.
        شريطة جانبية غامقة عشان اللون يبان حتى لو الصف طويل ومسحوب. */
-    .lines-table tbody tr.hl-red    { background:#fbeceb; box-shadow:inset -4px 0 0 #9d3b38; }
+    .lines-table tbody tr.hl-red    { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--neg); }
     .lines-table tbody tr.hl-green,
-    .lines-table tbody tr.hl-done   { background:#e9f2ed; box-shadow:inset -4px 0 0 #2c6e52; }
-    .lines-table tbody tr.hl-yellow { background:#faf3dd; box-shadow:inset -4px 0 0 #b08d2a; }
-    .lines-table tbody tr.hl-orange { background:#fbeedf; box-shadow:inset -4px 0 0 #b46a1e; }
+    .lines-table tbody tr.hl-done   { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--pos); }
+    .lines-table tbody tr.hl-yellow { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
+    .lines-table tbody tr.hl-orange { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
     /* الهوفر مايلغيش اللون */
-    .lines-table tbody tr.hl-red:hover    { background:#f8e2e0; }
+    .lines-table tbody tr.hl-red:hover    { background:var(--line-soft); }
     .lines-table tbody tr.hl-green:hover,
-    .lines-table tbody tr.hl-done:hover   { background:#dfece5; }
-    .lines-table tbody tr.hl-yellow:hover { background:#f6ecca; }
-    .lines-table tbody tr.hl-orange:hover { background:#f8e5d0; }
+    .lines-table tbody tr.hl-done:hover   { background:var(--line); }
+    .lines-table tbody tr.hl-yellow:hover { background:var(--warn-soft); }
+    .lines-table tbody tr.hl-orange:hover { background:var(--warn-soft); }
 
     .ifl-codewrap { display:inline-flex; align-items:center; gap:5px; }
     .ifl-gear { background:none; border:none; cursor:pointer; padding:2px; line-height:1;
@@ -1950,7 +1950,7 @@ require_once __DIR__ . '/includes/header.php';
     .inote-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:11px; }
 
     .ifl-skipnote { display:flex; gap:9px; align-items:flex-start; margin-bottom:14px;
-        background:var(--neg-soft); border:1px solid #e6c9c7; border-radius:var(--r);
+        background:var(--neg-soft); border:1px solid var(--neg); border-radius:var(--r);
         padding:10px 13px; font-size:12.5px; color:var(--ink-700); line-height:1.8; }
     .ifl-skipnote i { color:var(--neg); font-size:16px; margin-top:2px; }
     .ifl-skiplist { font-family:monospace; font-size:11.5px; color:var(--ink-500); }
@@ -1983,10 +1983,10 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-sw button { width:42px; height:34px; border-radius:9px; cursor:pointer;
         border:2px solid var(--line); background:var(--surface); position:relative; }
     .ifl-sw button.on { border-color:var(--ink-900); box-shadow:0 0 0 3px var(--accent-ring); }
-    .ifl-sw button[data-c="red"]    { background:#fbeceb; border-color:#e0b8b6; }
-    .ifl-sw button[data-c="green"]  { background:#e9f2ed; border-color:#b3cdc0; }
-    .ifl-sw button[data-c="yellow"] { background:#faf3dd; border-color:#ddc98c; }
-    .ifl-sw button[data-c="orange"] { background:#fbeedf; border-color:#e0bf95; }
+    .ifl-sw button[data-c="red"]    { background:var(--line-soft); border-color:var(--neg); }
+    .ifl-sw button[data-c="green"]  { background:var(--line-soft); border-color:var(--pos); }
+    .ifl-sw button[data-c="yellow"] { background:var(--warn-soft); border-color:var(--warn); }
+    .ifl-sw button[data-c="orange"] { background:var(--warn-soft); border-color:var(--warn); }
     .ifl-sw button[data-c=""]::after { content:'✕'; color:var(--ink-400); font-size:13px; }
     .ifl-sw button.on[data-c="red"], .ifl-sw button.on[data-c="green"],
     .ifl-sw button.on[data-c="yellow"], .ifl-sw button.on[data-c="orange"] { border-color:var(--ink-900); }
@@ -2077,7 +2077,7 @@ require_once __DIR__ . '/includes/header.php';
     .grp-type.full  { background:var(--accent-soft); color:var(--accent-text); }
     .grp-type.items { background:var(--warn-soft);   color:var(--warn); }
     .grp-itemsnote { display:flex; gap:9px; align-items:flex-start; margin-top:12px;
-        background:var(--warn-soft); border:1px solid #e8dcc0; border-radius:var(--r);
+        background:var(--warn-soft); border:1px solid var(--warn); border-radius:var(--r);
         padding:10px 13px; font-size:12.5px; color:var(--ink-700); line-height:1.8; }
     .grp-itemsnote i { color:var(--warn); font-size:16px; margin-top:2px; }
 
@@ -2457,7 +2457,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -2520,7 +2520,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -2940,7 +2940,7 @@ require_once __DIR__ . '/includes/header.php';
                                 if ($bbal === null) {
                                     echo '<span class="bal-na">—</span>';
                                 } else {
-                                    $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                    $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                     echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                 }
                             ?></td>

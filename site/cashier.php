@@ -491,18 +491,18 @@ require_once __DIR__ . '/includes/header.php';
 <style>
   .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:var(--surface); color:#5b5878;
+      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
       text-decoration:none; font-size:14px; border:1.5px solid var(--line);
       transition:.15s;
   }
-  .branch-tabs .btab:hover  { border-color:#a99ff0; }
-  .branch-tabs .btab.active { background:#6c5ce7; color:#fff; border-color:#6c5ce7; }
+  .branch-tabs .btab:hover  { border-color:var(--accent); }
+  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
 </style>
 <?php endif; ?>
 
 <?php if (empty($allowedBranches)): ?>
 <!-- المستخدم مش مربوط بفرع ومعملش أي تقفيل قبل كده -->
-<div style="background:var(--warn-soft);color:#8a6d00;border-radius:10px;padding:14px 18px;
+<div style="background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:14px 18px;
             margin-bottom:16px;font-size:14px;">
     مش مربوط بأي فرع. اضغط «إضافة تقفيل»، اختار الفرع، وابعت للمراجعة —
     وبعدها هتشوف بيانات الفرع ده هنا.
@@ -736,7 +736,7 @@ require_once __DIR__ . '/includes/header.php';
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
                 $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; $diff=(float)$s['difference'];
-                $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee'];
+                $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
         ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
@@ -800,7 +800,7 @@ require_once __DIR__ . '/includes/header.php';
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
                 $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta;
-                $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee'];
+                $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>

@@ -777,7 +777,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); color:var(--neg); }
     .btn-success { background:var(--pos-fill); color:#fff; }
-    .btn-success:hover { background:#245942; color:#fff; }
+    .btn-success:hover { background:var(--pos-fill); color:#fff; }
 
     /* الكروت والتبويبات والجداول */
     .att-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:20px; margin-bottom:20px; box-shadow:var(--shadow-sm); }

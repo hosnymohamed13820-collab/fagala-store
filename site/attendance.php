@@ -202,15 +202,15 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .act-col { text-align:center; }
     .act-col .l { color:var(--ink-700); font-size:13px; margin-bottom:4px; }
     .act-col .v { color:var(--ink-900); font-size:26px; font-weight:700; }
-    .act-col .v.empty { color:#d0cce5; }
+    .act-col .v.empty { color:var(--accent); }
     .worked { text-align:center; margin-bottom:22px; }
     .worked .l { color:var(--ink-500); font-size:14px; letter-spacing:1px; }
     .worked .v { color:var(--pos); font-size:32px; font-weight:800; }
     .clock-btn { width:100%; padding:18px; border:none; border-radius:14px; font-size:18px;
         font-weight:700; font-family:inherit; cursor:pointer; color:#fff; margin-bottom:12px;
         display:flex; align-items:center; justify-content:center; gap:10px; }
-    .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:#15835f; }
-    .btn-out { background:var(--neg-fill); } .btn-out:hover { background:#c93f3e; }
+    .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:var(--pos-fill); }
+    .btn-out { background:var(--neg-fill); } .btn-out:hover { background:var(--neg-fill); }
     .btn-done { background:var(--line-soft); color:var(--ink-500); cursor:default; }
     .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:var(--surface); color:var(--accent-text);
         border-radius:14px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; }

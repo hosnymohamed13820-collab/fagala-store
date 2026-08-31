@@ -294,7 +294,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا توجد تقفيلات في هذه الفترة.</div>
         <?php else: ?>
             <?php foreach ($periodShifts as $s): ?>
-                <?php $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee']; ?>
+                <?php $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)']; ?>
                 <div class="shift-item">
                     <span><?= e($s['cashier_name']) ?> — <?= e($s['branch_name']) ?></span>
                     <span class="badge" style="color:<?=$sl[1]?>;background:<?=$sl[2]?>;"><?= e($sl[0]) ?></span>

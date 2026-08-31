@@ -50,7 +50,7 @@ function book_tabs_bar(string $active): string
         .bk-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
         .bk-tab { display:inline-flex; align-items:center; gap:7px; padding:11px 20px;
                   border:1.5px solid var(--line); border-radius:11px; background:var(--surface);
-                  color:var(--ink-700,#4a4a68); font-size:14px; font-weight:600;
+                  color:var(--ink-700,var(--accent-text)); font-size:14px; font-weight:600;
                   text-decoration:none; transition:all .15s; }
         .bk-tab:hover { border-color:var(--accent-text); color:var(--accent-text); }
         .bk-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }

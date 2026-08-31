@@ -148,7 +148,7 @@ $active_module = 'tasks';
 require_once __DIR__ . '/includes/header.php';
 
 $prioBadge = function($p) {
-    $map = ['normal'=>['عادي','#666','#eef'], 'important'=>['مهم','var(--warn)','var(--warn-soft)'], 'urgent'=>['عاجل','var(--neg)','var(--neg-soft)']];
+    $map = ['normal'=>['عادي','var(--ink-500)','var(--accent-soft)'], 'important'=>['مهم','var(--warn)','var(--warn-soft)'], 'urgent'=>['عاجل','var(--neg)','var(--neg-soft)']];
     $b = $map[$p] ?? $map['normal'];
     return '<span style="padding:2px 10px;border-radius:20px;font-size:12px;color:'.$b[1].';background:'.$b[2].';">'.$b[0].'</span>';
 };
@@ -163,7 +163,7 @@ $prioBadge = function($p) {
     .t-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); font-weight:600; }
     .card { background:var(--surface); border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
     .task-item { display:block; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; text-decoration:none; color:inherit; transition:.15s; }
-    .task-item:hover { border-color:#c9c2f5; background:var(--line-soft); }
+    .task-item:hover { border-color:var(--accent); background:var(--line-soft); }
     .task-item.pending { border-right:4px solid var(--accent); }
     .task-item.done { opacity:.6; }
     .ti-title { font-weight:600; color:var(--ink-900); font-size:15px; }
