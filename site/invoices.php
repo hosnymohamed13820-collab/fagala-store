@@ -2387,6 +2387,24 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد أصناف في هذه الفاتورة.</div>
             <?php endif; ?>
         <?php else: ?>
+            <?php
+                $naCount = 0;
+                foreach ($items as $it) {
+                    $iid = (int) ($it['item_id'] ?? 0);
+                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                        $naCount++;
+                    }
+                }
+            ?>
+            <?php if ($naCount > 0): ?>
+                <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                    <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
+                    <div>
+                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — التوزيع متقفل عليهم.
+                        شغّل وكيل مزامنة الإدارة.
+                    </div>
+                </div>
+            <?php endif; ?>
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
@@ -2427,6 +2445,7 @@ require_once __DIR__ . '/includes/header.php';
                         $iid   = (int) ($it['item_id'] ?? 0);
                         $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
                         $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                        $hqNA  = ($hqB === null);   // رصيد الإدارة مش واصل = التوزيع متقفل
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>
@@ -2447,6 +2466,7 @@ require_once __DIR__ . '/includes/header.php';
                                                data-qty="<?= $qty ?>"
                                                data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
+                                               <?= $hqNA ? 'readonly title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2495,7 +2515,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?><?php if ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php else: ?>
                             <?php foreach ($activeBranches as $b): ?>
@@ -2511,6 +2531,7 @@ require_once __DIR__ . '/includes/header.php';
                                                data-qty="<?= $qty ?>"
                                                data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
+                                               <?= $hqNA ? 'readonly title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2555,7 +2576,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?><?php if ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php endif; ?>
                     </tr>
@@ -5068,20 +5089,24 @@ require_once __DIR__ . '/includes/header.php';
         const row = input.closest('tr');
         const itemQty = parseFloat(input.dataset.qty) || 0;
 
-        /* السقف = الأقل بين كمية الفاتورة ورصيد الإدارة.
-           الفاتورة ممكن ١٢ والواصل فعلاً ١٠ (والباقي مردود)، فتوزيع ١٢
-           بيطلّع بضاعة مش موجودة والفرق يظهر بعدين كعجز على الفرع.
-
-           🔴 `data-hqbal` فاضية معناها **مفيش سقف** مش صفر — الصنف مش
-              معروف أو وكيل الإدارة ما زامنش. من غير الفرق ده التوزيع
-              بيتقفل على كل صنف مش معروف.
-           🔴 وده للراحة بس — الحماية الحقيقية في السيرفر جوّه
-              `set_branch_distribution()`، لأن الكمية اللي بتتبعت في
-              الـPOST ممكن تتزوّر. */
         const rawBal = input.dataset.hqbal;
         const hasBal = rawBal !== undefined && rawBal !== '';
-        const hqBal  = hasBal ? Math.max(0, parseFloat(rawBal) || 0) : null;
-        const cap    = (hqBal !== null) ? Math.min(itemQty, hqBal) : itemQty;
+
+        /* السقف = الأقل بين كمية الفاتورة ورصيد الإدارة. الفاتورة ممكن
+           ١٢ والواصل فعلاً ١٠ (والباقي مردود)، فتوزيع ١٢ بيطلّع بضاعة
+           مش موجودة والفرق يظهر بعدين كعجز على الفرع.
+
+           🔴 والرصيد مش واصل = التوزيع متقفل. الخانة `readonly` أصلاً،
+              وده حزام أمان تاني لو حد فك الـreadonly من أدوات المطوّر.
+              الحماية الحقيقية في السيرفر جوّه set_branch_distribution(). */
+        if (!hasBal) {
+            input.value = parseFloat(input.dataset.saved) > 0 ? input.dataset.saved : '';
+            setInd(input, '✗ الرصيد مش واصل', 'var(--neg)');
+            return;
+        }
+
+        const hqBal = Math.max(0, parseFloat(rawBal) || 0);
+        const cap   = Math.min(itemQty, hqBal);
 
         const inputs = row.querySelectorAll('.dist-input');
 
