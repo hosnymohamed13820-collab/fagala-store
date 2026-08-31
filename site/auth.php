@@ -111,10 +111,6 @@ function module_parts(): array
             'salaries'   => 'الرواتب',
             'attendance' => 'الحضور والانصراف',
             'requests'   => 'طلبات التصحيح',
-            // 🔴 مفتاح لوحده مقصود: رفع الشيت بيغيّر ساعات كل الموظفين دفعة
-            //    واحدة، والساعات هي اللي بتحدد المرتبات. مش جزء من 'attendance'.
-            //    وده **مش تاب** — شوف HR_NON_TAB_PARTS في hr.php.
-            'attendance_import' => 'رفع شيت الحضور',
         ],
         'reports' => [
             'sales'      => 'المبيعات',

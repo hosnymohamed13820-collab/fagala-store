@@ -18,8 +18,9 @@ $flash = ''; $flashType = 'success';
 // قراءة التابات المسموحة للمستخدم بناءً على أجزاء مديول الموارد البشرية
 $hrParts = module_parts()['hr'] ?? [];
 // أجزاء صلاحيات مش تابات — دي مفاتيح لصفحات منفصلة بتتفتح بزرار من جوّه التاب.
-// لو اتشالت من هنا هتطلع تابات فاضية بترندر سجل الحضور بالغلط.
-const HR_NON_TAB_PARTS = ['attendance_import'];
+// فاضية دلوقتي بعد ما اتشالت صفحة رفع شيت الحضور. سيبها موجودة:
+// أي مفتاح جديد مش تاب لازم ينزل هنا وإلا هيطلع تاب فاضي بيرندر الحضور بالغلط.
+const HR_NON_TAB_PARTS = [];
 
 $allowedTabs = [];
 foreach ($hrParts as $tabKey => $tabLabel) {
@@ -1199,7 +1200,6 @@ $statusBadge = function($st) {
         <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة (<?= count($monthlyAdvances) ?> سلف الشهر · <?= count($standingAdvances) ?> مستديمة)</span>
         <div style="display:flex;gap:8px;align-items:center;">
             <?php if (is_owner()): ?>
-                <a href="advances_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> استيراد شيت السلف</a>
                 <button type="button" class="btn btn-ghost" onclick="document.getElementById('openingBalanceModal').classList.add('open')"><i class="ti ti-wallet"></i> تسجيل رصيد افتتاحي</button>
             <?php endif; ?>
             <button class="btn" onclick="document.getElementById('advanceModal').classList.add('open')"><i class="ti ti-plus"></i> تسجيل سلفة قديمة</button>
@@ -1894,12 +1894,9 @@ $statusBadge = function($st) {
 <?php else: // attendance ?>
     <div class="card">
         <div class="section-title">سجل الحضور والانصراف</div>
-        <?php if (can('hr:attendance_import')): ?>
-            <div class="toolbar" style="margin-bottom:14px;">
-                <span style="color:var(--ink-500);font-size:14px;">الحضور بيتسجّل بالبصمة، وتقدر ترفع شيت كروينجو لشهر كامل.</span>
-                <a href="attendance_import.php" class="btn btn-ghost"><i class="ti ti-file-spreadsheet"></i> رفع شيت الحضور</a>
-            </div>
-        <?php endif; ?>
+        <div class="toolbar" style="margin-bottom:14px;">
+            <span style="color:var(--ink-500);font-size:14px;">الحضور بيتسجّل بالبصمة، والتصحيح بيبقى من تاب «طلبات التصحيح».</span>
+        </div>
         <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
             <input type="hidden" name="tab" value="attendance">
             <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>
