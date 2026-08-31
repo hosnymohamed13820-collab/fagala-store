@@ -147,14 +147,14 @@ require_once __DIR__ . '/includes/header.php';
                   border-radius:20px; padding:4px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
                   transition:all .15s; font-family:inherit; }
     .btn-branch:hover { background:var(--line-soft); color:var(--ink-700); }
-    .btn-branch.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .btn-branch.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .btn-branch.active:hover { filter:brightness(0.94); color:#fff; }
 
     /* كروت المجموعات */
     .grp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
     .grp-card { display:block; background:var(--surface); border:1.5px solid var(--line); border-radius:14px;
         padding:16px 18px; text-decoration:none; color:inherit; transition:all .15s; }
-    .grp-card:hover { border-color:var(--accent); transform:translateY(-2px);
+    .grp-card:hover { border-color:var(--accent-text); transform:translateY(-2px);
         box-shadow:0 8px 22px var(--accent-ring); }
     .gc-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
     .gc-title { font-weight:700; color:var(--ink-900); font-size:15px; }
@@ -176,7 +176,7 @@ require_once __DIR__ . '/includes/header.php';
     .keep-card { background:var(--surface); border:1.5px solid var(--line); border-radius:16px; box-shadow:var(--shadow-sm); padding:20px 22px; position:relative; }
     .keep-header { display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1.5px solid var(--line-soft); padding-bottom:14px; margin-bottom:12px; }
     .keep-title-input { flex:1; border:none; background:transparent; font-size:18px; font-weight:700; color:var(--ink-900); font-family:inherit; padding:4px 0; outline:none; border-bottom:2px solid transparent; transition:border-color .15s; }
-    .keep-title-input:focus { border-bottom-color:var(--accent); }
+    .keep-title-input:focus { border-bottom-color:var(--accent-text); }
 
     .keep-menu-wrap { position:relative; }
     .keep-menu-btn { background:none; border:none; font-size:22px; line-height:1; font-weight:700; color:var(--ink-600); cursor:pointer; padding:6px 10px; border-radius:8px; font-family:inherit; transition:all .15s; }
@@ -206,8 +206,8 @@ require_once __DIR__ . '/includes/header.php';
     .keep-cb-wrap { position:relative; display:inline-flex; align-items:center; cursor:pointer; user-select:none; }
     .keep-cb-input { position:absolute; opacity:0; width:0; height:0; }
     .keep-cb-box { width:20px; height:20px; border:2px solid var(--ink-400); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; color:transparent; background:var(--surface); }
-    .keep-cb-wrap:hover .keep-cb-box { border-color:var(--accent); }
-    .keep-cb-input:checked + .keep-cb-box { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .keep-cb-wrap:hover .keep-cb-box { border-color:var(--accent-text); }
+    .keep-cb-input:checked + .keep-cb-box { background:var(--accent); border-color:var(--accent-text); color:#fff; }
     .keep-cb-box i { font-size:13px; font-weight:bold; }
 
     /* اسم الصنف والكمية */
@@ -236,9 +236,9 @@ require_once __DIR__ . '/includes/header.php';
     .keep-src-inner { display:flex; flex-direction:column; gap:9px; font-size:13px; }
     .keep-src-branch-block { display:flex; flex-direction:column; gap:4px; }
     .keep-src-branch-title { display:flex; align-items:center; gap:6px; font-weight:700; color:var(--ink-800); }
-    .keep-src-icon { color:var(--accent); font-size:14px; }
+    .keep-src-icon { color:var(--accent-text); font-size:14px; }
     .keep-src-arrow { color:var(--ink-400); font-size:12px; margin:0 2px; }
-    .keep-src-val { color:var(--accent); font-weight:700; }
+    .keep-src-val { color:var(--accent-text); font-weight:700; }
     .keep-src-sub-list { display:flex; flex-direction:column; gap:3px; margin-right:16px; }
     .keep-src-sub-item { display:flex; align-items:center; gap:6px; color:var(--ink-700); font-size:12.5px; }
     .keep-tree-char { color:var(--ink-400); font-family:monospace; font-weight:bold; }
@@ -251,7 +251,7 @@ require_once __DIR__ . '/includes/header.php';
     .pg-table { width:100%; border-collapse:collapse; }
     .pg-table th, .pg-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; }
-    .pg-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .pg-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .pg-table .nm { text-align:right; font-weight:500; min-width:200px; }
     .pg-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
 
@@ -272,7 +272,7 @@ require_once __DIR__ . '/includes/header.php';
     .pg-sec { margin-bottom:20px; border:1px solid var(--line); border-radius:12px; padding:14px; background:var(--surface); }
     .pg-sec-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
     .pg-sec-title { font-size:14.5px; font-weight:700; color:var(--ink-900); display:flex; align-items:center; gap:7px; }
-    .pg-sec-count { font-size:12.5px; font-weight:700; color:var(--accent); background:var(--accent-soft); padding:3px 10px; border-radius:12px; }
+    .pg-sec-count { font-size:12.5px; font-weight:700; color:var(--accent-text); background:var(--accent-soft); padding:3px 10px; border-radius:12px; }
     .pg-branches-bar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
 
     .pg-warn-banner { background:var(--warn-soft); color:var(--warn); border:1px solid #e8dcc0;
@@ -283,7 +283,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .pill { display:inline-block; padding:4px 13px; border-radius:20px; font-size:12.5px;
             font-weight:700; white-space:nowrap; }
-    .pill.st-open { background:var(--accent-soft); color:var(--accent); }
+    .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
     .pill.st-closed { background:var(--pos-soft); color:var(--pos); }
 </style>
 

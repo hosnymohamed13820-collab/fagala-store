@@ -96,7 +96,7 @@ require_once __DIR__ . '/includes/header.php';
               flex-wrap:wrap; }
     .bo-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .bo-bar input.main:focus { outline:none; border-color:var(--accent); }
+    .bo-bar input.main:focus { outline:none; border-color:var(--accent-text); }
     .bo-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
@@ -112,7 +112,7 @@ require_once __DIR__ . '/includes/header.php';
     .bo-table { width:100%; border-collapse:collapse; }
     .bo-table th, .bo-table td { padding:9px 10px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; white-space:nowrap; }
-    .bo-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .bo-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .bo-table th.sup-e, .bo-table td.sup-e { border-left:2px solid var(--line); }
     .bo-table .nm { text-align:right; font-weight:500; min-width:210px; white-space:normal; }
     .bo-table .nm .pub { display:block; font-size:11.5px; color:var(--ink-500); font-weight:400; }

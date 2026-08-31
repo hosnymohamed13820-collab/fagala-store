@@ -1042,7 +1042,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .rep-tabs { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
-    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:var(--surface);
+    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
         font-size:14px; font-weight:500; }
     .rep-tab.active { background:var(--accent); color:#fff; }
     .rep-tab:not(.active):hover { background:var(--bg); }
@@ -1064,13 +1064,13 @@ require_once __DIR__ . '/includes/header.php';
     .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
     .sc-value.neg { color:var(--neg); }
     .sc-value.pos { color:var(--pos); }
-    .sum-cards.filtered .sum-card { border-color:var(--accent); background:var(--accent-soft); }
-    .sc-note { font-size:11px; color:var(--accent-hover); margin-top:4px; }
+    .sum-cards.filtered .sum-card { border-color:var(--accent-text); background:var(--accent-soft); }
+    .sc-note { font-size:11px; color:var(--accent-text); margin-top:4px; }
     /* أكورديون تفاصيل القيد */
     tr.acc-row { cursor:pointer; }
     tr.acc-row:hover { background:var(--bg); }
     tr.acc-row.open { background:var(--accent-soft); font-weight:600; }
-    .acc-caret { display:inline-block; color:var(--accent); font-size:11px;
+    .acc-caret { display:inline-block; color:var(--accent-text); font-size:11px;
         transition:transform .15s; }
     tr.acc-row.open .acc-caret { transform:rotate(-90deg); }
     tr.acc-body > td { background:var(--line-soft); padding:0; }
@@ -1083,8 +1083,8 @@ require_once __DIR__ . '/includes/header.php';
     .br-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
     .br-tab { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
         color:var(--ink-700); font-size:13px; text-decoration:none; }
-    .br-tab:hover { border-color:var(--accent); }
-    .br-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+    .br-tab:hover { border-color:var(--accent-text); }
+    .br-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; font-weight:600; }
     .rep-period { font-size:13px; color:var(--ink-500); margin-bottom:16px; }
     /* عمود الملاحظات — نص طويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل (مش من الخلية). */
@@ -1355,7 +1355,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= e($l['unit'] ?? '—') ?></td>
                         <td><?= $fmt($base) ?></td>
                         <td><?= $fmt($rev) ?></td>
-                        <td style="font-weight:600;color:var(--accent);"><?= $fmt($fin) ?></td>
+                        <td style="font-weight:600;color:var(--accent-text);"><?= $fmt($fin) ?></td>
                         <td><?= $fmt($sys) ?></td>
                         <td style="color:<?= $diff!==null&&$diff<0?'var(--neg)':($diff>0?'var(--pos)':'#666') ?>;"><?= $fmt($diff) ?></td>
                         <td><?= $cost!==null?number_format($cost,2):'—' ?></td>
@@ -1398,7 +1398,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-table td.np-name { white-space:normal; min-width:180px; }
     .np-table input { padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         font-family:inherit; font-size:13px; width:100px; text-align:left; direction:ltr; }
-    .np-table input:focus { outline:none; border-color:var(--accent); }
+    .np-table input:focus { outline:none; border-color:var(--accent-text); }
     .np-table input.np-dirty { border-color:var(--pos); background:#f2fdf8; }
     .np-table tr.np-nocost td { background:#fff9ec; }
     .np-x { background:none; border:none; cursor:pointer; color:var(--neg); font-size:16px; padding:2px 6px; }
@@ -1420,7 +1420,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-row label { flex:1; cursor:pointer; display:flex; gap:10px; align-items:center; }
     .np-muted { color:var(--ink-500); font-size:12px; }
     .btn[disabled] { opacity:.5; cursor:not-allowed; }
-    .btn-ghost { background:var(--surface); color:var(--accent-hover); border:1.5px solid var(--line); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
     .btn-ghost:hover { background:var(--bg); }
     .np-note { font-size:12px; color:var(--ink-500); margin-top:10px; line-height:1.7; }
 </style>

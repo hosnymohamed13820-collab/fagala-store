@@ -1541,7 +1541,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-wrap { position:relative; flex:1; }
     .ilk-wrap input { width:100%; box-sizing:border-box; padding:9px 11px;
         border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px; }
-    .ilk-wrap input:focus { outline:none; border-color:var(--accent); }
+    .ilk-wrap input:focus { outline:none; border-color:var(--accent-text); }
     .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
         background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:330px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.13); display:none; }
@@ -1720,7 +1720,7 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
-    .inv-link { color:var(--accent); font-weight:600; text-decoration:none; }
+    .inv-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     .inv-link:hover { text-decoration:underline; }
     /* جدول الفواتير - الصف كله قابل للضغط */
     /* ===== شريط أدوات القائمة ===== */
@@ -1749,23 +1749,23 @@ require_once __DIR__ . '/includes/header.php';
     .no-match { padding:26px; text-align:center; color:var(--ink-400); }
 
     .inv-table { width:100%; border-collapse:collapse; }
-    .inv-table thead th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
+    .inv-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
     .inv-table tbody td { padding:11px 12px; text-align:center; border-bottom:1px solid var(--line-soft); }
     .inv-table .inv-row { cursor:pointer; transition:background 0.12s; }
     .inv-table .inv-row:hover { background:var(--accent-soft); }
-    .inv-table .inv-no { font-weight:700; color:var(--accent); }
+    .inv-table .inv-no { font-weight:700; color:var(--accent-text); }
     /* بادج نوع المستند (مردود شراء) جنب رقم الفاتورة */
     .doc-badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px;
                  border-radius:20px; margin-right:6px; white-space:nowrap; vertical-align:middle; }
     .doc-badge.refund { background:var(--neg-soft); color:var(--neg); }
     /* رأس الفرع داخل قائمة الفواتير */
     .inv-table .branch-head td {
-        background:var(--accent-soft); color:var(--accent-hover); font-weight:700;
+        background:var(--accent-soft); color:var(--accent-text); font-weight:700;
         font-size:14px; text-align:right; padding:12px 14px; border-top:2px solid var(--accent);
         border-bottom:1px solid var(--line); position:sticky; top:0;
     }
     .inv-table .branch-head.branch-admin td {
-        background:var(--accent); color:#fff; border-top-color:var(--accent-hover);
+        background:var(--accent); color:#fff; border-top-color:var(--accent-text);
     }
     .inv-table .branch-head i { margin-left:6px; }
     .inv-table .branch-head { cursor:pointer; user-select:none; }
@@ -1813,7 +1813,7 @@ require_once __DIR__ . '/includes/header.php';
     .inv-status-sel { font-family:inherit; font-size:12.5px; font-weight:600; padding:3px 8px;
         border:1.5px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-900);
         cursor:pointer; }
-    .inv-status-sel:focus { outline:none; border-color:var(--accent); }
+    .inv-status-sel:focus { outline:none; border-color:var(--accent-text); }
     .inv-lock { font-size:12px; margin-right:4px; }
 
     /* بار الملاحظات */
@@ -1822,12 +1822,12 @@ require_once __DIR__ . '/includes/header.php';
     .notes-head { display:flex; justify-content:space-between; align-items:center;
         font-size:12.5px; color:var(--ink-500); margin-bottom:6px; }
     .notes-state { font-size:11.5px; color:var(--ink-400); }
-    .notes-state.saving { color:var(--accent); }
+    .notes-state.saving { color:var(--accent-text); }
     .notes-state.saved  { color:#1c9e5a; }
     .notes-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 10px;
         font-family:inherit; font-size:13px; color:var(--ink-900); resize:vertical;
         background:var(--surface); line-height:1.6; }
-    .notes-input:focus { outline:none; border-color:var(--accent); }
+    .notes-input:focus { outline:none; border-color:var(--accent-text); }
 
     /* الملاحظات في قائمة الفواتير — النص نفسه بيبان تحت رقم الفاتورة */
     .inv-note-text { display:block; font-size:11.5px; color:var(--ink-600);
@@ -1849,7 +1849,7 @@ require_once __DIR__ . '/includes/header.php';
                background:var(--surface); color:var(--ink-500); border:1.5px solid var(--line); text-decoration:none;
                font-size:14px; font-weight:600; transition:.15s; }
     .tab-btn:hover { border-color:var(--line); color:var(--ink-700); }
-    .tab-btn.active { background:var(--accent-hover); color:#fff; border-color:var(--accent-hover); }
+    .tab-btn.active { background:var(--accent-hover); color:#fff; border-color:var(--accent-text); }
     .st-new   { background:var(--line-soft); color:var(--ink-500); }
     .st-split { background:var(--warn-soft); color:var(--warn); }
     .st-done  { background:var(--pos-soft); color:var(--pos); }
@@ -1873,7 +1873,7 @@ require_once __DIR__ . '/includes/header.php';
     .lk-input { flex:1 1 auto; min-width:0; width:auto; padding:10px 14px;
                 border:1.5px solid var(--line); border-radius:9px;
                 font-size:14px; font-family:inherit; }
-    .lk-input:focus { outline:none; border-color:var(--accent); }
+    .lk-input:focus { outline:none; border-color:var(--accent-text); }
     .lk-muted { color:var(--ink-400); font-size:14px; margin:14px 0 0; }
     .lk-alert { padding:12px 14px; border-radius:9px; margin:16px 0 12px; font-size:14px; }
     .lk-alert-info { background:var(--accent-soft); color:var(--ink-800); }
@@ -1894,21 +1894,21 @@ require_once __DIR__ . '/includes/header.php';
     .res-table th { background:var(--bg); color:var(--ink-700); padding:7px 10px; text-align:right; font-weight:600; border-bottom:1.5px solid var(--line); }
     .res-table td { padding:7px 10px; border-bottom:1px solid var(--line-soft); color:var(--ink-900); }
     .res-alloc-inp { width:75px; padding:4px 8px; border:1.5px solid var(--line); border-radius:6px; font-family:inherit; font-size:13px; font-weight:600; }
-    .res-alloc-inp:focus { outline:none; border-color:var(--accent); }
+    .res-alloc-inp:focus { outline:none; border-color:var(--accent-text); }
     .res-alloc-inp.invalid { border-color:var(--neg); background:var(--neg-soft); }
-    .res-branch-sum { font-size:12.5px; color:var(--accent); font-weight:600; padding:6px 10px; background:var(--accent-soft); border-radius:8px; margin-bottom:8px; }
+    .res-branch-sum { font-size:12.5px; color:var(--accent-text); font-weight:600; padding:6px 10px; background:var(--accent-soft); border-radius:8px; margin-bottom:8px; }
     .res-card-foot { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-size:12.5px; color:var(--ink-700); padding-top:6px; }
     .res-card-foot b { color:var(--ink-900); }
     .res-empty-msg { padding:35px 20px; text-align:center; color:var(--ink-500); font-size:14px; }
 
     .lines-table { width:100%; border-collapse:collapse; font-size:13px; min-width:700px; }
-    .lines-table thead th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; padding:11px 10px;
+    .lines-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 10px;
         text-align:center; white-space:nowrap; border-bottom:2px solid var(--line); position:sticky; top:0; }
     .lines-table tbody td { padding:8px 10px; text-align:center; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
     .lines-table tbody tr:hover { background:#fafaff; }
     .lines-table .c-code { font-family:monospace; color:var(--ink-500); white-space:nowrap; }
     .lines-table .c-name { text-align:right; font-weight:500; color:var(--ink-900); min-width:160px; }
-    .lines-table .c-qty { font-weight:700; color:var(--accent); }
+    .lines-table .c-qty { font-weight:700; color:var(--accent-text); }
     .lines-table .c-cost { color:var(--ink-500); white-space:nowrap; }
     .lines-table .c-after { font-weight:700; color:var(--pos); white-space:nowrap; }
 
@@ -1930,7 +1930,7 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-codewrap { display:inline-flex; align-items:center; gap:5px; }
     .ifl-gear { background:none; border:none; cursor:pointer; padding:2px; line-height:1;
         color:var(--ink-400); font-size:15px; border-radius:6px; }
-    .ifl-gear:hover { color:var(--accent); background:var(--accent-soft); }
+    .ifl-gear:hover { color:var(--accent-text); background:var(--accent-soft); }
     .ifl-noexp { color:var(--neg); font-size:14px; position:relative; }
     /* شخطة على أيقونة التنزيل = مابينزلش في ملف الفرع */
     .ifl-noexp::after { content:''; position:absolute; inset:0; margin:auto;
@@ -1945,7 +1945,7 @@ require_once __DIR__ . '/includes/header.php';
     .inote-input { width:100%; box-sizing:border-box; padding:5px 8px; font-size:12.5px;
         font-family:inherit; border:1px solid var(--line); border-radius:8px;
         background:var(--surface); color:var(--ink-900); }
-    .inote-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+    .inote-input:focus { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .inote-input::placeholder { color:var(--ink-300); }
     .inote-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:11px; }
 
@@ -1961,7 +1961,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:9px 13px; margin-bottom:12px; }
     .ifl-bar .ifl-lbl { font-weight:600; color:var(--ink-700); font-size:13px; white-space:nowrap; }
     .ifl-bar .btn { background:var(--surface); color:var(--ink-700); border:1px solid var(--line); }
-    .ifl-bar .btn:hover { border-color:var(--accent); color:var(--accent); }
+    .ifl-bar .btn:hover { border-color:var(--accent-text); color:var(--accent-text); }
     .ifl-hint { color:var(--ink-500); font-size:12px; }
 
     /* ===== بوب أب إعدادات الصنف ===== */
@@ -2001,7 +2001,7 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-donehint { color:var(--ink-500); font-size:11.5px; line-height:1.7; margin-top:7px; }
     .ifl-note-in { width:100%; box-sizing:border-box; padding:9px 11px; font-family:inherit;
         font-size:13px; border:1.5px solid var(--line); border-radius:var(--r-sm); resize:vertical; }
-    .ifl-note-in:focus { outline:none; border-color:var(--accent); }
+    .ifl-note-in:focus { outline:none; border-color:var(--accent-text); }
     .ifl-foot { padding:12px 18px; display:flex; justify-content:space-between;
         align-items:center; gap:10px; background:var(--line-soft); }
     .ifl-state { font-size:12px; color:var(--ink-500); }
@@ -2012,12 +2012,12 @@ require_once __DIR__ . '/includes/header.php';
         border:1px solid var(--line); border-radius:8px; font-size:13px;
         font-family:inherit; background:var(--surface); color:var(--ink-900);
     }
-    .disc-pct-inp:focus { outline:none; border-color:var(--accent);
+    .disc-pct-inp:focus { outline:none; border-color:var(--accent-text);
         box-shadow:0 0 0 3px rgba(99,102,241,.12); }
     .disc-pct-inp::placeholder { color:var(--ink-300); }
     .lines-table tr.disc-locked { background:rgba(99,102,241,.05); }
     .lines-table tr.disc-locked .disc-pct-inp {
-        border-color:var(--accent); font-weight:700; color:var(--accent); }
+        border-color:var(--accent-text); font-weight:700; color:var(--accent-text); }
     /* ===== بوب أب اختيار الفاتورة ===== */
     .picker-overlay { display:none; position:fixed; inset:0; background:rgba(22,35,61,.5);
         z-index:950; align-items:flex-start; justify-content:center; padding:50px 16px; }
@@ -2049,7 +2049,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:11px 20px; text-decoration:none; color:var(--ink-800); font-size:13.5px;
         border-bottom:1px solid var(--line-soft); transition:background .12s; }
     .picker-row:hover { background:var(--accent-soft); }
-    .pk-no { font-weight:700; color:var(--accent); }
+    .pk-no { font-weight:700; color:var(--accent-text); }
     .pk-sup { color:var(--ink-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pk-date { color:var(--ink-500); font-size:12.5px; }
     .pk-amt { font-weight:600; text-align:left; }
@@ -2059,7 +2059,7 @@ require_once __DIR__ . '/includes/header.php';
     .grp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
     .grp-card { display:block; background:var(--surface); border:1.5px solid var(--line); border-radius:14px;
         padding:16px 18px; text-decoration:none; color:inherit; transition:all .15s; }
-    .grp-card:hover { border-color:var(--accent); transform:translateY(-2px);
+    .grp-card:hover { border-color:var(--accent-text); transform:translateY(-2px);
         box-shadow:0 8px 22px rgba(124,111,247,.13); }
     .gc-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
     .gc-title { font-weight:700; color:var(--ink-900); font-size:15px; }
@@ -2074,7 +2074,7 @@ require_once __DIR__ . '/includes/header.php';
     /* ===== أنواع المجموعات + بوب أب تحديد الأصناف ===== */
     .grp-type { display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
         border-radius:20px; font-size:11.5px; font-weight:700; vertical-align:middle; }
-    .grp-type.full  { background:var(--accent-soft); color:var(--accent); }
+    .grp-type.full  { background:var(--accent-soft); color:var(--accent-text); }
     .grp-type.items { background:var(--warn-soft);   color:var(--warn); }
     .grp-itemsnote { display:flex; gap:9px; align-items:flex-start; margin-top:12px;
         background:var(--warn-soft); border:1px solid #e8dcc0; border-radius:var(--r);
@@ -2082,7 +2082,7 @@ require_once __DIR__ . '/includes/header.php';
     .grp-itemsnote i { color:var(--warn); font-size:16px; margin-top:2px; }
 
     /* × شيل فاتورة من شريحة المجموعة */
-    .grp-xbtn { border:0; background:none; cursor:pointer; color:var(--accent);
+    .grp-xbtn { border:0; background:none; cursor:pointer; color:var(--accent-text);
         font-size:17px; line-height:1; padding:0 1px; opacity:.5;
         border-radius:50%; width:18px; height:18px; font-family:inherit; }
     .grp-xbtn:hover { opacity:1; background:var(--neg-fill); color:#fff; }
@@ -2097,8 +2097,8 @@ require_once __DIR__ . '/includes/header.php';
         font-family:inherit; font-size:13.5px; font-weight:600; color:var(--ink-500);
         border-bottom:3px solid transparent; display:flex; align-items:center;
         justify-content:center; gap:6px; }
-    .gm-btn:hover { color:var(--accent); background:var(--line-soft); }
-    .gm-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .gm-btn:hover { color:var(--accent-text); background:var(--line-soft); }
+    .gm-btn.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
     .grp-lockmsg { display:flex; gap:8px; align-items:flex-start; padding:11px 16px;
         background:var(--warn-soft); color:var(--ink-700); font-size:12.5px; line-height:1.8;
         border-bottom:1px solid var(--line); }
@@ -2122,7 +2122,7 @@ require_once __DIR__ . '/includes/header.php';
         color:#fff; background:var(--accent); }
     .gi-doc.ret { background:var(--neg-fill); }
     .gi-doc.unp { background:var(--warn-fill); }
-    .gi-add { border:1.5px solid var(--accent); background:var(--surface); color:var(--accent);
+    .gi-add { border:1.5px solid var(--accent); background:var(--surface); color:var(--accent-text);
         border-radius:8px; padding:6px 13px; font-family:inherit; font-size:12.5px;
         font-weight:600; cursor:pointer; white-space:nowrap; }
     .gi-add.on { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
@@ -2132,8 +2132,8 @@ require_once __DIR__ . '/includes/header.php';
     .giw-btn { flex:1; padding:8px 10px; border:1.5px solid var(--line); background:var(--surface);
         border-radius:9px; cursor:pointer; font-family:inherit; font-size:12.5px; font-weight:600;
         color:var(--ink-500); display:flex; align-items:center; justify-content:center; gap:6px; }
-    .giw-btn:hover { border-color:var(--accent); color:var(--accent); }
-    .giw-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .giw-btn:hover { border-color:var(--accent-text); color:var(--accent-text); }
+    .giw-btn.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }
     #grpInvFilter { width:100%; padding:11px 14px; font-size:14px; }
 
     .gi-crumb { display:flex; align-items:center; gap:10px; padding:9px 16px;
@@ -2141,13 +2141,13 @@ require_once __DIR__ . '/includes/header.php';
     .gi-crumb b { flex:1; font-size:13px; color:var(--ink-900); overflow:hidden;
         text-overflow:ellipsis; white-space:nowrap; }
     .gi-back, .gi-all { border:1.5px solid var(--accent); background:var(--surface);
-        color:var(--accent); border-radius:8px; padding:5px 11px; font-family:inherit;
+        color:var(--accent-text); border-radius:8px; padding:5px 11px; font-family:inherit;
         font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
     .gi-all { border-color:var(--pos); color:var(--pos); }
 
     .grp-admtog { display:flex; align-items:center; gap:8px; margin-top:9px;
         font-size:12.5px; color:var(--ink-700); cursor:pointer; flex-wrap:wrap; }
-    .grp-admtog input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+    .grp-admtog input { width:16px; height:16px; accent-color:var(--accent-text); cursor:pointer; }
     .grp-admtip { color:var(--ink-500); font-size:11.5px; }
 
     .picker-row.gi-grprow { grid-template-columns:60px 1fr 90px 70px; cursor:pointer; }
@@ -2179,7 +2179,7 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
     /* عمود زيادة للـ checkbox قدام أعمدة الفاتورة الأربعة */
     .picker-row.grp-row { grid-template-columns:26px 110px 1fr 100px 110px; cursor:pointer; }
-    .picker-row.grp-row input[type=checkbox] { width:18px; height:18px; cursor:pointer; accent-color:var(--accent); }
+    .picker-row.grp-row input[type=checkbox] { width:18px; height:18px; cursor:pointer; accent-color:var(--accent-text); }
     .picker-row.grp-row:has(input:checked) { background:var(--accent-soft); }
     @media (max-width:640px){
         .picker-row.grp-row { grid-template-columns:26px 1fr 1fr; }
@@ -2199,7 +2199,7 @@ require_once __DIR__ . '/includes/header.php';
     .unlock-btn { background:none; border:1px solid var(--line); border-radius:6px;
         padding:3px 7px; margin-right:6px; cursor:pointer; color:var(--ink-500);
         font-size:14px; line-height:1; transition:all .15s; vertical-align:middle; }
-    .unlock-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+    .unlock-btn:hover { border-color:var(--accent-text); color:var(--accent-text); background:var(--accent-soft); }
     .unlock-btn.is-open { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
     .item-row.editing { background:var(--warn-soft) !important; }
     .lines-table .c-bal { white-space:nowrap; font-weight:700; color:var(--ink-800);
@@ -2212,7 +2212,7 @@ require_once __DIR__ . '/includes/header.php';
     .sale-input { width:88px; padding:6px 8px; border:1px solid var(--line); border-radius:7px;
         font-size:13px; font-family:inherit; text-align:center; background:var(--surface);
         transition:border-color .15s, box-shadow .15s; }
-    .sale-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+    .sale-input:focus { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .sale-input.dirty { border-color:var(--warn); background:var(--warn-soft); }
     .sale-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:12px; }
     .sale-ind.ok { color:var(--pos); }
@@ -2226,7 +2226,7 @@ require_once __DIR__ . '/includes/header.php';
     .mrk-input { width:82px; padding:6px 3px; border:1px dashed var(--line); border-radius:7px;
         font-size:11.5px; font-family:inherit; text-align:center; background:var(--surface);
         color:var(--ink-900); transition:border-color .15s, box-shadow .15s; }
-    .mrk-input:focus { outline:none; border-style:solid; border-color:var(--accent);
+    .mrk-input:focus { outline:none; border-style:solid; border-color:var(--accent-text);
         box-shadow:0 0 0 3px var(--accent-ring); }
     /* النسبة المحسوبة بتبان باهتة جوه الخانة (placeholder) — مش قيمة متخزّنة */
     .mrk-input::placeholder { color:var(--ink-400); opacity:1; }
@@ -2237,14 +2237,14 @@ require_once __DIR__ . '/includes/header.php';
     .mrk-bulk input { width:96px; padding:7px 10px; border:1px solid var(--line);
         border-radius:7px; font-size:13.5px; font-family:inherit; text-align:center;
         background:var(--surface); }
-    .mrk-bulk input:focus { outline:none; border-color:var(--accent);
+    .mrk-bulk input:focus { outline:none; border-color:var(--accent-text);
         box-shadow:0 0 0 3px var(--accent-ring); }
     .mrk-bulk .mrk-lbl { font-size:13px; color:var(--ink-700); font-weight:600; }
     .mrk-bulk .mrk-hint { font-size:12px; color:var(--ink-500); }
     .lines-table .c-store .store-v.has { color:var(--warn); font-weight:600; }
     .lines-table .dist-input { width:64px; padding:6px 4px; border:1.5px solid var(--line); border-radius:7px;
         font-size:13px; text-align:center; font-family:inherit; }
-    .lines-table .dist-input:focus { border-color:var(--accent); outline:none; }
+    .lines-table .dist-input:focus { border-color:var(--accent-text); outline:none; }
     .lines-table .dist-input:disabled { background:var(--line-soft); color:var(--ink-400); }
     .lines-table .prev-val { color:var(--pos); font-size:12px; }
     .lines-table .dist-remain { display:block; font-size:11px; margin-top:2px; }
@@ -2747,7 +2747,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;">
                         <?php $grpCanRemove = count($grpInvoices) > 1; ?>
                         <?php foreach ($grpInvoices as $gi): ?>
-                            <span style="background:var(--accent-soft);color:var(--accent);border-radius:20px;
+                            <span style="background:var(--accent-soft);color:var(--accent-text);border-radius:20px;
                                          padding:4px 12px;font-size:12.5px;display:inline-flex;
                                          align-items:center;gap:6px;">
                                 <?= e($gi['invoice_no']) ?>
@@ -3247,7 +3247,7 @@ require_once __DIR__ . '/includes/header.php';
                                    onkeydown="if(isEnterKey(event)){event.preventDefault();this.blur();}">
                         </td>
                         <td class="c-after js-after"><?= disc_price_txt((float)$r['price_after']) ?><?php
-                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent);font-size:11px;"> ★</span>';
+                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>';
                             elseif (!empty($r['adjusted'])) echo '<span class="disc-dot" title="اتعدّل بأقل وحدة ممكنة لضبط الإجمالي" style="color:var(--warn);font-size:11px;"> ●</span>';
                         ?></td>
                         <td class="c-cost js-total"><?= number_format($r['total_after'],2) ?></td>
@@ -3516,7 +3516,7 @@ require_once __DIR__ . '/includes/header.php';
 
         tr.classList.toggle('disc-locked', hasPct);
         afterCell.innerHTML = _fmtAfter(after) +
-            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent);font-size:11px;"> ★</span>' : '');
+            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>' : '');
         totalCell.textContent = _fmt2(total);
         return total;
     }

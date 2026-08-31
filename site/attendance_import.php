@@ -813,8 +813,8 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; white-space:nowrap; font-weight:500; }
     .btn:hover { background:var(--accent-hover); color:#fff; }
     .btn-sm { padding:6px 12px; font-size:12.5px; border-radius:6px; }
-    .btn-ghost { background:var(--surface); color:var(--accent); border:1.5px solid var(--line); }
-    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
+    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent-text); color:var(--accent-text); }
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); color:var(--neg); }
     .btn-success { background:var(--pos-fill); color:#fff; }
@@ -825,7 +825,7 @@ require_once __DIR__ . '/includes/header.php';
     .att-h { font-size:16px; font-weight:600; color:var(--ink-900); margin-bottom:14px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
     .tabs { display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid var(--line); padding-bottom:10px; }
     .tab { padding:8px 16px; border-radius:8px; text-decoration:none; color:var(--ink-600); font-weight:500; font-size:14px; transition:all .15s; display:inline-flex; align-items:center; gap:6px; }
-    .tab:hover { background:var(--accent-soft); color:var(--accent); }
+    .tab:hover { background:var(--accent-soft); color:var(--accent-text); }
     .tab.active { background:var(--accent); color:#fff; }
 
     .att-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; margin-bottom:20px; }
@@ -850,7 +850,7 @@ require_once __DIR__ . '/includes/header.php';
     .alert-warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(138,101,36,.2); }
 
     .upload-zone { border:2px dashed var(--line); border-radius:var(--r); padding:30px; text-align:center; background:var(--bg); transition:border-color .2s; }
-    .upload-zone:hover { border-color:var(--accent); }
+    .upload-zone:hover { border-color:var(--accent-text); }
     .select-emp { padding:7px 10px; border:1px solid var(--line); border-radius:6px; font-size:13.5px; font-family:inherit; background:var(--surface); min-width:220px; }
 </style>
 
@@ -888,7 +888,7 @@ require_once __DIR__ . '/includes/header.php';
             <form method="post" enctype="multipart/form-data" class="upload-zone">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="upload_file">
-                <i class="ti ti-file-spreadsheet" style="font-size:42px;color:var(--accent);display:block;margin-bottom:12px;"></i>
+                <i class="ti ti-file-spreadsheet" style="font-size:42px;color:var(--accent-text);display:block;margin-bottom:12px;"></i>
                 <div style="font-weight:600;color:var(--ink-800);margin-bottom:8px;">اختر ملف الحضور من جهازك</div>
                 <div style="margin-bottom:16px;">
                     <input type="file" name="attendance_file" accept=".xls,.xlsx" required style="font-size:13.5px;color:var(--ink-700);">
@@ -903,7 +903,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="att-card" style="border:2px solid var(--accent);">
             <div class="att-h">
                 <span>
-                    <i class="ti ti-eye" style="color:var(--accent);margin-left:6px;"></i>
+                    <i class="ti ti-eye" style="color:var(--accent-text);margin-left:6px;"></i>
                     معاينة ملف: <b><?= e($previewData['file_name']) ?></b>
                 </span>
                 <form method="post" style="display:inline;">
@@ -1208,7 +1208,7 @@ require_once __DIR__ . '/includes/header.php';
             <form method="post" enctype="multipart/form-data" class="upload-zone" style="margin-bottom:24px;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="upload_file">
-                <i class="ti ti-upload" style="font-size:36px;color:var(--accent);display:block;margin-bottom:10px;"></i>
+                <i class="ti ti-upload" style="font-size:36px;color:var(--accent-text);display:block;margin-bottom:10px;"></i>
                 <div style="font-weight:600;margin-bottom:8px;">ارفع ملف كروينجو لاستخراج معرّفات الموظفين</div>
                 <input type="file" name="attendance_file" accept=".xls,.xlsx" required style="font-size:13px;margin-bottom:12px;">
                 <br>

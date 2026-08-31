@@ -107,7 +107,7 @@ require_once __DIR__ . '/includes/header.php';
               flex-wrap:wrap; }
     .sq-bar input.main { flex:1; min-width:260px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .sq-bar input.main:focus { outline:none; border-color:var(--accent); }
+    .sq-bar input.main:focus { outline:none; border-color:var(--accent-text); }
     .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
@@ -123,8 +123,8 @@ require_once __DIR__ . '/includes/header.php';
     .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
                  background:var(--surface); color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
-    .sq-filter:hover { border-color:var(--accent); color:var(--accent); }
-    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
+    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .sq-sub { display:none; align-items:center; gap:6px; }
     .sq-sub.show { display:inline-flex; }
     .sq-sub select, .sq-sub input { padding:8px 12px; border:1.5px solid var(--line); border-radius:9px;
@@ -134,7 +134,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table { width:100%; border-collapse:collapse; }
     .sq-table th, .sq-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                   text-align:center; font-size:13px; white-space:nowrap; }
-    .sq-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .sq-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .sq-table th.admin, .sq-table td.admin { background:var(--accent-soft); font-weight:700; }
     .sq-table th.req, .sq-table td.req { background:rgba(34,197,94,0.07); }
     .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
@@ -174,8 +174,8 @@ require_once __DIR__ . '/includes/header.php';
     .shr-src-btn { flex:1; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
                    background:var(--surface); color:var(--ink-700); font-size:13.5px; font-weight:600;
                    cursor:pointer; font-family:inherit; transition:all 0.15s; }
-    .shr-src-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--line-soft); }
-    .shr-src-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .shr-src-btn:hover { border-color:var(--accent-text); color:var(--accent-text); background:var(--line-soft); }
+    .shr-src-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .shr-src-btn.active:hover { background:var(--accent-hover); color:#fff; }
     .shr-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
     .shr-err { color:var(--neg); font-size:13px; min-height:18px; margin-top:8px; }

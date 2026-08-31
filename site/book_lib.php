@@ -52,8 +52,8 @@ function book_tabs_bar(string $active): string
                   border:1.5px solid var(--line); border-radius:11px; background:var(--surface);
                   color:var(--ink-700,#4a4a68); font-size:14px; font-weight:600;
                   text-decoration:none; transition:all .15s; }
-        .bk-tab:hover { border-color:var(--accent); color:var(--accent); }
-        .bk-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+        .bk-tab:hover { border-color:var(--accent-text); color:var(--accent-text); }
+        .bk-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }
         .bk-tab i { font-size:17px; }
     </style>';
 

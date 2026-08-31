@@ -135,8 +135,8 @@ require_once __DIR__ . '/includes/header.php';
 <style>
     .period-bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
     .period-btn { background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
-        font-size:14px; color:var(--accent-hover); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
-    .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+        font-size:14px; color:var(--accent-text); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
+    .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .period-custom { display:flex; gap:8px; align-items:center; }
     .period-custom input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .period-custom button { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 14px; cursor:pointer; font-family:inherit; }
@@ -173,14 +173,14 @@ require_once __DIR__ . '/includes/header.php';
 
     .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
     .tre-box .tre-val { font-size:26px; font-weight:800; color:var(--ink-900); }
-    .tre-box.main .tre-val { color:var(--accent); }
+    .tre-box.main .tre-val { color:var(--accent-text); }
     .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
     .sum-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .sum-box .l { font-size:13px; color:var(--ink-500); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
     .sum-box .v { font-size:28px; font-weight:800; }
     .sum-box .u { font-size:12px; color:var(--ink-400); margin-top:2px; }
-    .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent); }
+    .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent-text); }
     .bars-card, .shifts-card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:880px){ .bottom-grid { grid-template-columns:1fr; } }
@@ -200,7 +200,7 @@ require_once __DIR__ . '/includes/header.php';
     .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .quick-actions { display:flex; gap:8px; margin-top:14px; }
     .qa-btn { padding:9px 16px; border-radius:9px; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
-    .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-hover); }
+    .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-text); }
     /* موبايل: الكروت تبقى أعمدة مرنة من غير عرض ثابت يطلّع الصفحة عريضة */
     @media (max-width:760px){
         .summary-grid { grid-template-columns:repeat(2,1fr); }

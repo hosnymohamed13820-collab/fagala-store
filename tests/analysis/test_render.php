@@ -232,7 +232,11 @@ $css = preg_replace('!/\*.*?\*/!s', '', $css);   // شيل التعليقات
 preg_match_all('/(?:border|inset|margin|padding)-(?:inline|block)[\w-]*\s*:/', $css, $lg);
 chk('مفيش خاصية CSS منطقية في الجدول', count($lg[0]) === 0, implode(' · ', $lg[0]));
 
-chk('البوردر على يمين كل خلية', str_contains($css, 'border-right:1px solid #000'));
+// اللون بقى `var(--ink-300)` بدل `#000` (٣١ أغسطس ٢٠٢٦): الأسود الصريح
+// كان بيختفي على أرضية الوضع الليلي فالجدول يفضل بلا شبكة. الفحص هنا
+// بيحرس حاجتين: إن الخاصية **فيزيائية** (`right` مش `inline-start`)،
+// وإن اللون **توكن** بيقلب مع الوضع مش قيمة صريحة.
+chk('البوردر على يمين كل خلية', str_contains($css, 'border-right:1px solid var(--ink-300)'));
 chk('العمود الثابت متثبّت يمين', str_contains($css, 'right:0') && str_contains($css, 'right:118px'));
 
 

@@ -160,7 +160,7 @@ $prioBadge = function($p) {
     .flash.error { background:var(--neg-soft); color:var(--neg); }
     .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid var(--line); margin-bottom:20px; flex-wrap:wrap; }
     .t-tab { padding:10px 18px; text-decoration:none; color:var(--ink-500); font-size:14px; border-bottom:2px solid transparent; }
-    .t-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+    .t-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); font-weight:600; }
     .card { background:var(--surface); border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
     .task-item { display:block; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; text-decoration:none; color:inherit; transition:.15s; }
     .task-item:hover { border-color:#c9c2f5; background:var(--line-soft); }
@@ -175,16 +175,16 @@ $prioBadge = function($p) {
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
     .btn-sm { padding:7px 14px; font-size:13px; }
     .btn-done { background:var(--pos-fill); }
-    .btn-ghost { background:var(--accent-soft); color:var(--accent); }
+    .btn-ghost { background:var(--accent-soft); color:var(--accent-text); }
     .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
-    .scope-opt.active { border-color:var(--accent); background:var(--bg); color:var(--accent); font-weight:600; }
+    .scope-opt.active { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
     .checklist { max-height:260px; overflow-y:auto; border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .checklist label { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:14px; cursor:pointer; border-radius:6px; }
     .checklist label:hover { background:var(--line-soft); }
     .checklist input { width:auto; }
     .comment { padding:10px 14px; background:var(--line-soft); border-radius:10px; margin-bottom:8px; }
-    .comment .who { font-size:12px; color:var(--accent); font-weight:600; margin-bottom:3px; }
+    .comment .who { font-size:12px; color:var(--accent-text); font-weight:600; margin-bottom:3px; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; }
     .tgt-chip { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; margin:3px; }
     .tgt-chip.done { background:var(--pos-soft); color:var(--pos); }
@@ -195,7 +195,7 @@ $prioBadge = function($p) {
 
 <?php if ($openTask): ?>
     <!-- ===== تفاصيل مهمة ===== -->
-    <a href="tasks.php" style="color:var(--accent);text-decoration:none;font-size:14px;">→ رجوع للمهام</a>
+    <a href="tasks.php" style="color:var(--accent-text);text-decoration:none;font-size:14px;">→ رجوع للمهام</a>
     <div class="card" style="margin-top:14px;">
         <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:10px;">
             <div>
@@ -275,7 +275,7 @@ $prioBadge = function($p) {
             <a href="task_file.php?id=<?= (int)$a['id'] ?>" target="_blank"
                style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;text-decoration:none;color:inherit;">
                 <i class="ti <?= strpos((string)$a['mime'], 'pdf') !== false ? 'ti-file-type-pdf' : 'ti-photo' ?>"
-                   style="font-size:22px;color:var(--accent);"></i>
+                   style="font-size:22px;color:var(--accent-text);"></i>
                 <span style="flex:1;min-width:0;">
                     <span style="display:block;font-size:14px;font-weight:500;color:var(--ink-900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= e($a['orig_name']) ?></span>
                     <span style="font-size:12px;color:var(--ink-500);">
@@ -340,7 +340,7 @@ $prioBadge = function($p) {
                     <div class="ti-meta">
                         من: <?= e($t['creator'] ?? '—') ?>
                         <?php if ($t['due_date']): ?> · موعد: <?= e($t['due_date']) ?><?php endif; ?>
-                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent);">⏳ مطلوبة</span>' ?>
+                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent-text);">⏳ مطلوبة</span>' ?>
                     </div>
                 </a>
             <?php endforeach; endif; ?>

@@ -283,7 +283,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
                         <td><?= e($ex['expense_date']) ?></td>
-                        <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-hover);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                        <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= e($ex['description']) ?></td>
                         <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                         <td>

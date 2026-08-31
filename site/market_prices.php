@@ -156,7 +156,7 @@ require_once __DIR__ . '/includes/header.php';
     .mk-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
     .mk-f { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
         color:var(--ink-700,#4a4a68); font-size:13px; text-decoration:none; }
-    .mk-f.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .mk-f.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
     .mk-card { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:10px;
         box-shadow:0 1px 6px rgba(124,111,247,0.06); }
     .mk-our { font-size:14px; font-weight:600; color:var(--ink-900); }

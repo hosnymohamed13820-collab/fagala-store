@@ -427,7 +427,7 @@ require_once __DIR__ . '/includes/header.php';
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
     .tab {
         padding:10px 20px; border-radius:10px; text-decoration:none;
-        color:var(--accent-hover); background:var(--surface); font-size:14px; font-weight:500;
+        color:var(--accent-text); background:var(--surface); font-size:14px; font-weight:500;
         border:1.5px solid transparent;
     }
     .tab.active { background:var(--accent); color:#fff; }
@@ -438,7 +438,7 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:12px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
@@ -468,7 +468,7 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input, .form-row select {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
@@ -624,7 +624,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($emp['job_title'] ?? '—') ?></td>
                     <td>
                         <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
-                            <span class="badge" style="color:var(--accent);background:var(--accent-soft);">مرتب ثابت</span>
+                            <span class="badge" style="color:var(--accent-text);background:var(--accent-soft);">مرتب ثابت</span>
                         <?php else: ?>
                             <span style="color:var(--ink-700);font-size:13px;">على الساعات</span>
                         <?php endif; ?>

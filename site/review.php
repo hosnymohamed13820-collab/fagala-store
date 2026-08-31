@@ -106,7 +106,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-tabs { display:flex; gap:18px; border-bottom:2px solid var(--line); margin-bottom:20px; }
     .rv-tab { padding:10px 4px; cursor:pointer; color:var(--ink-500); font-weight:600; font-size:15px;
         border-bottom:3px solid transparent; margin-bottom:-2px; background:none; border-top:none; border-left:none; border-right:none; font-family:inherit; }
-    .rv-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .rv-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
     .rv-pane { display:none; } .rv-pane.active { display:block; }
     /* كروت الورديات */
     .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
@@ -115,7 +115,7 @@ function shift_cashier_amounts(array $s): array {
     .shift-card.rej { border-right-color:var(--neg); }
     .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
     .sc-title { font-size:16px; color:var(--ink-900); }
-    .sc-title b { color:var(--accent); }
+    .sc-title b { color:var(--accent-text); }
     .sc-sub { color:var(--ink-500); font-size:13px; }
     .sc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
     .sc-stat { background:var(--line-soft); border-radius:10px; padding:12px; text-align:center; }
@@ -137,7 +137,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-sys input { width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:15px; }
     .rv-ptabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:2px solid var(--line); margin-bottom:16px; }
     .rv-ptab { padding:8px 12px; cursor:pointer; color:var(--ink-500); font-size:13px; font-weight:500; border:none; background:none; border-bottom:2px solid transparent; margin-bottom:-2px; font-family:inherit; }
-    .rv-ptab.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .rv-ptab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
     .rv-ppane { display:none; } .rv-ppane.active { display:block; }
     /* تاب الكاش (شكل قديم: قائمة + بوكس إجمالي) */
     .rv-cash-layout { display:grid; grid-template-columns:1fr 0.9fr; gap:14px; align-items:start; }
@@ -148,10 +148,10 @@ function shift_cashier_amounts(array $s): array {
     .denom-row .sub { width:90px; color:var(--ink-500); font-size:13px; }
     .rv-cash-box { background:var(--bg); border-radius:12px; padding:16px; }
     .rv-cash-box .l { font-size:13px; color:var(--ink-500); }
-    .rv-cash-box .v { font-size:24px; font-weight:700; color:var(--accent); margin-top:2px; }
+    .rv-cash-box .v { font-size:24px; font-weight:700; color:var(--accent-text); margin-top:2px; }
     .pay-row { display:grid; grid-template-columns:1fr 100px 1fr 36px; gap:8px; margin-bottom:6px; align-items:center; }
     .pay-row input { padding:6px 8px; border:1.5px solid var(--line); border-radius:7px; font-family:inherit; font-size:13px; }
-    .rv-total { background:var(--line-soft); border-radius:9px; padding:10px 14px; font-weight:600; color:var(--accent); text-align:center; margin-top:8px; }
+    .rv-total { background:var(--line-soft); border-radius:9px; padding:10px 14px; font-weight:600; color:var(--accent-text); text-align:center; margin-top:8px; }
     .cmp-table { width:100%; border-collapse:collapse; }
     .cmp-table th, .cmp-table td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--line-soft); font-size:14px; }
     .cmp-table th { background:var(--line-soft); color:var(--ink-500); }

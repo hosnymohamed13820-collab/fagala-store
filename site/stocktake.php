@@ -499,7 +499,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn-sm { padding:7px 13px; font-size:13px; }
     .btn-green { background:var(--pos-fill); } .btn-green:hover { background:#15835f; }
     .btn-red { background:var(--neg-fill); } .btn-red:hover { background:#c93f3e; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
@@ -527,15 +527,15 @@ require_once __DIR__ . '/includes/header.php';
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
-    .sheet-link { color:var(--accent); font-weight:600; text-decoration:none; }
+    .sheet-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
     .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
     .status-chip:hover { border-color:#c9c2f5; }
-    .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+    .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent-text); font-weight:600; }
     .tree-section { border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
     .tree-head { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; background:var(--line-soft); user-select:none; }
     .tree-head:hover { background:var(--accent-soft); }
-    .tree-caret { color:var(--accent); font-size:13px; transition:transform .15s; display:inline-block; }
+    .tree-caret { color:var(--accent-text); font-size:13px; transition:transform .15s; display:inline-block; }
     .tree-section.open .tree-caret { transform:rotate(90deg); }
     .tree-name { font-weight:600; color:var(--ink-900); font-size:15px; flex:1; }
     .tree-count { font-size:12px; color:var(--ink-500); background:#eceafb; padding:3px 10px; border-radius:20px; }
@@ -1049,9 +1049,9 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="number" aria-label="الكمية بالمراجعة" step="0.001" min="0" value="<?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?>"
                                    data-line="<?= (int)$cl['id'] ?>"
                                    enterkeyhint="done" onkeydown="if(isEnterKey(event)){event.preventDefault();saveReviewQty(this);}"
-                                   style="width:90px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;color:var(--accent);">
+                                   style="width:90px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;color:var(--accent-text);">
                         <?php else: ?>
-                            <span style="font-weight:700;color:var(--accent);"><?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?></span>
+                            <span style="font-weight:700;color:var(--accent-text);"><?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -1258,7 +1258,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td style="white-space:normal;"><?= e($ln['item_name']) ?></td>
                     <td><?= e($ln['unit'] ?? '—') ?></td>
                     <td><?= rtrim(rtrim(number_format((float)$ln['count_qty'],3),'0'),'.') ?></td>
-                    <td style="font-weight:600;color:var(--accent);"><?= rtrim(rtrim(number_format($base,3),'0'),'.') ?></td>
+                    <td style="font-weight:600;color:var(--accent-text);"><?= rtrim(rtrim(number_format($base,3),'0'),'.') ?></td>
                     <td><?= $sys!==null ? rtrim(rtrim(number_format($sys,3),'0'),'.') : '—' ?></td>
                     <td class="<?= $diffCls ?>"><?= $diff!==null ? rtrim(rtrim(number_format($diff,3),'0'),'.') : '—' ?></td>
                     <td><?= $cost!==null ? number_format($cost,2) : '—' ?></td>
@@ -1349,7 +1349,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= e($sr['entered_code']) ?></td>
                         <td style="white-space:normal;font-weight:500;"><?= e($sr['item_name']) ?></td>
                         <td><?= e($sr['unit'] ?? '—') ?></td>
-                        <td style="font-weight:600;color:var(--accent);"><?= $qOut ?></td>
+                        <td style="font-weight:600;color:var(--accent-text);"><?= $qOut ?></td>
                         <td>#<?= (int)$sr['sheet_no'] ?><?= $sr['place_note'] ? ' — '.e($sr['place_note']) : '' ?></td>
                         <td><?= e($sr['counter_name'] ?? '—') ?></td>
                         <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;color:<?=$bb[1]?>;background:<?=$bb[2]?>;"><?= e($bb[0]) ?></span></td>
@@ -1389,7 +1389,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="status-chip" data-status="open" onclick="filterByStatus(this)">مفتوح</button>
             <button type="button" class="status-chip" data-status="reviewing" onclick="filterByStatus(this)">مراجعة</button>
             <button type="button" class="status-chip" data-status="done" onclick="filterByStatus(this)">منتهي</button>
-            <span id="sheetsCount" style="margin-inline-start:auto;font-size:13px;color:var(--accent);font-weight:600;background:var(--accent-soft);padding:5px 12px;border-radius:20px;"></span>
+            <span id="sheetsCount" style="margin-inline-start:auto;font-size:13px;color:var(--accent-text);font-weight:600;background:var(--accent-soft);padding:5px 12px;border-radius:20px;"></span>
         </div>
         <div id="sheetsTree">
         <?php foreach ($sheetGroups as $section => $groupSheets): ?>
@@ -1532,7 +1532,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="place_note" placeholder="مثلاً: مخزن أول، رف 3..." aria-label="ملاحظة المكان" <?= $owner?'':'required' ?>>
                     <?php if ($owner): ?>
                         <p style="font-size:12px;color:var(--ink-500);margin-top:6px;">
-                            <a href="stocktake_places.php" style="color:var(--accent);">عرّف أقسام وأرفف ثابتة</a> عشان تظهر كقائمة للجميع.
+                            <a href="stocktake_places.php" style="color:var(--accent-text);">عرّف أقسام وأرفف ثابتة</a> عشان تظهر كقائمة للجميع.
                         </p>
                     <?php endif; ?>
                 <?php endif; ?>
@@ -1754,7 +1754,7 @@ require_once __DIR__ . '/includes/header.php';
                     const priceTxt = c.price !== null && c.price !== undefined ? Number(c.price).toFixed(2) + ' ج.م' : '—';
                     const unitTxt = rtrimZeros(Number(c.unit));
                     html += '<tr style="' + rowBg + 'border-bottom:1px solid var(--line);">'
-                        + '<td style="padding:9px 10px;font-weight:600;color:var(--accent);">' + escapeHtml(c.code)
+                        + '<td style="padding:9px 10px;font-weight:600;color:var(--accent-text);">' + escapeHtml(c.code)
                         + (isSearched ? ' <span style="font-size:11px;color:var(--warn);">(اللي ضربته)</span>' : '') + '</td>'
                         + '<td style="padding:9px 10px;">' + unitTxt + '</td>'
                         + '<td style="padding:9px 10px;">' + typeBadge + '</td>'

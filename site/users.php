@@ -385,8 +385,8 @@ require_once __DIR__ . '/includes/header.php';
     }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
-    .btn-ghost:hover { background:var(--line); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:13px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -396,10 +396,10 @@ require_once __DIR__ . '/includes/header.php';
     }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
     .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
-    .badge.owner { background:#ede9ff; color:var(--accent-hover); }
+    .badge.owner { background:#ede9ff; color:var(--accent-text); }
     .perm-chips { display:flex; flex-wrap:wrap; gap:4px; }
-    .perm-chip { background:var(--bg); color:var(--accent-hover); padding:2px 8px; border-radius:6px; font-size:11px; }
-    .perm-all { color:var(--accent); font-weight:600; font-size:12px; }
+    .perm-chip { background:var(--bg); color:var(--accent-text); padding:2px 8px; border-radius:6px; font-size:11px; }
+    .perm-all { color:var(--accent-text); font-weight:600; font-size:12px; }
 
     /* ===== Modal ===== */
     .modal-bg {
@@ -417,7 +417,7 @@ require_once __DIR__ . '/includes/header.php';
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft);
     }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .perms-box {
         border:1.5px solid var(--line); border-radius:10px; padding:14px;

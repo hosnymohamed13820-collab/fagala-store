@@ -356,7 +356,7 @@ $typeIcons = [
 function je_code_cell(array $row): string {
     if (!empty($row['entry_code_name'])) {
         return '<span class="je-code" style="padding:2px 9px;border-radius:20px;font-size:12px;'
-             . 'color:var(--accent-hover);background:var(--bg);">'
+             . 'color:var(--accent-text);background:var(--bg);">'
              . e($row['entry_code_name']) . '</span>';
     }
     return '<span class="je-code" style="color:var(--ink-300);">—</span>';
@@ -415,11 +415,11 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         box-shadow:0 2px 10px rgba(124,111,247,0.06); text-decoration:none; display:block;
     }
     .treasury-card:hover { transform:translateY(-2px); }
-    .treasury-card.selected { border-color:var(--accent); }
+    .treasury-card.selected { border-color:var(--accent-text); }
     .treasury-card .tc-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
     .treasury-card .tc-icon {
         width:40px; height:40px; background:var(--bg); border-radius:10px;
-        display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:21px;
+        display:flex; align-items:center; justify-content:center; color:var(--accent-text); font-size:21px;
     }
     .treasury-card .tc-name { font-size:15px; font-weight:600; color:var(--ink-900); }
     .treasury-card .tc-type { font-size:12px; color:var(--ink-500); }
@@ -439,7 +439,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .filter-bar label { font-size:13px; color:var(--ink-700); font-weight:500; }
     .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); }
-    .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent); }
+    .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent-text); }
     .btn-filter { padding:8px 16px; font-size:13px; }
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
     .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:12px 16px; }
@@ -457,7 +457,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .form-row input, .form-row select, .form-row textarea {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
@@ -469,7 +469,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         color:var(--ink-700); font-size:13px; }
     .je-edit { background:none; border:none; cursor:pointer; color:var(--ink-400);
         padding:3px 5px; border-radius:6px; font-size:15px; vertical-align:middle; }
-    .je-edit:hover { background:var(--bg); color:var(--accent); }
+    .je-edit:hover { background:var(--bg); color:var(--accent-text); }
     .je-edited { font-size:11px; color:var(--ink-400); background:var(--line-soft);
         padding:1px 7px; border-radius:20px; margin-right:4px; vertical-align:middle; }
     .je-locked { font-size:12px; color:var(--ink-500); background:var(--line-soft);
@@ -1206,7 +1206,7 @@ $today = date('Y-m-d');
             if (d.entry_code) {
                 span.textContent = d.entry_code;
                 span.style.cssText = 'padding:2px 9px;border-radius:20px;font-size:12px;'
-                                   + 'color:var(--accent-hover);background:var(--bg);';
+                                   + 'color:var(--accent-text);background:var(--bg);';
             } else {
                 span.textContent = '—';
                 span.style.cssText = 'color:var(--ink-300);';

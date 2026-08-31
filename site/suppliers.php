@@ -114,7 +114,7 @@ require_once __DIR__ . '/includes/header.php';
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
-    .tab { padding:10px 20px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:var(--surface);
+    .tab { padding:10px 20px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
         font-size:14px; font-weight:500; }
     .tab.active { background:var(--accent); color:#fff; }
     .tab:not(.active):hover { background:var(--bg); }
@@ -123,14 +123,14 @@ require_once __DIR__ . '/includes/header.php';
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 11px; border-radius:20px; font-size:12px; font-weight:500; }
-    .inv-link { color:var(--accent); font-weight:600; text-decoration:none; }
+    .inv-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     .inv-link:hover { text-decoration:underline; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
@@ -142,13 +142,13 @@ require_once __DIR__ . '/includes/header.php';
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .pay-type-row { display:flex; gap:10px; }
     .pay-opt { flex:1; }
     .pay-opt input { display:none; }
     .pay-opt label { display:block; text-align:center; padding:11px; border:1.5px solid var(--line);
         border-radius:9px; cursor:pointer; font-size:14px; color:var(--ink-700); }
-    .pay-opt input:checked + label { border-color:var(--accent); background:var(--bg); color:var(--accent-hover); font-weight:600; }
+    .pay-opt input:checked + label { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }

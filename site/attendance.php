@@ -197,7 +197,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .exp-row { display:flex; justify-content:space-around; margin-bottom:18px; }
     .exp-col { text-align:center; }
     .exp-col .l { color:var(--ink-500); font-size:13px; margin-bottom:4px; }
-    .exp-col .v { color:var(--accent); font-size:22px; font-weight:700; }
+    .exp-col .v { color:var(--accent-text); font-size:22px; font-weight:700; }
     .act-row { display:flex; justify-content:space-around; padding:18px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:18px; }
     .act-col { text-align:center; }
     .act-col .l { color:var(--ink-700); font-size:13px; margin-bottom:4px; }
@@ -212,7 +212,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:#15835f; }
     .btn-out { background:var(--neg-fill); } .btn-out:hover { background:#c93f3e; }
     .btn-done { background:var(--line-soft); color:var(--ink-500); cursor:default; }
-    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:var(--surface); color:var(--accent);
+    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:var(--surface); color:var(--accent-text);
         border-radius:14px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; }
     .btn-request:hover { background:var(--bg); }
     .no-emp { text-align:center; color:var(--ink-500); padding:40px; }
@@ -462,7 +462,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-text);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
         </div>
         <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام سجّلت فيها حضور وانصراف</div>

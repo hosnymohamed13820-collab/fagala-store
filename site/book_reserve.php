@@ -93,13 +93,13 @@ require_once __DIR__ . '/includes/header.php';
                     font-weight:600; }
     .rs-fld input, .rs-fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
-    .rs-fld input:focus, .rs-fld select:focus { outline:none; border-color:var(--accent); }
+    .rs-fld input:focus, .rs-fld select:focus { outline:none; border-color:var(--accent-text); }
 
     .rs-bar { display:flex; gap:10px; align-items:center; margin:6px 0 12px; position:relative;
               flex-wrap:wrap; }
     .rs-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .rs-bar input.main:focus { outline:none; border-color:var(--accent); }
+    .rs-bar input.main:focus { outline:none; border-color:var(--accent-text); }
     .rs-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
@@ -112,7 +112,7 @@ require_once __DIR__ . '/includes/header.php';
     .rs-table { width:100%; border-collapse:collapse; }
     .rs-table th, .rs-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; }
-    .rs-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .rs-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .rs-table .nm { text-align:right; font-weight:500; min-width:210px; }
     .rs-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
     .rs-table td .rm { color:var(--neg); cursor:pointer; opacity:.5; }
@@ -122,7 +122,7 @@ require_once __DIR__ . '/includes/header.php';
             font-weight:700; white-space:nowrap; }
     .pill.yes { background:rgba(34,197,94,.13); color:var(--pos); }
     .pill.no  { background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
-    .pill.st-open { background:var(--accent-soft); color:var(--accent); }
+    .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
     .pill.st-delivered { background:rgba(34,197,94,.13); color:var(--pos); }
     .pill.st-cancelled { background:var(--line-soft); color:var(--ink-500); }
 
@@ -135,7 +135,7 @@ require_once __DIR__ . '/includes/header.php';
     .rs-list-row { display:flex; justify-content:space-between; align-items:center; gap:12px;
                    flex-wrap:wrap; padding:12px 16px; border:1px solid var(--line-soft);
                    border-radius:11px; margin-bottom:8px; text-decoration:none; color:inherit; }
-    .rs-list-row:hover { border-color:var(--accent); background:var(--accent-soft); }
+    .rs-list-row:hover { border-color:var(--accent-text); background:var(--accent-soft); }
     .rs-warn { padding:12px 18px; background:var(--warn-soft,#fff7e6); border-radius:10px;
                border:1.5px solid var(--warn,#d97706); color:var(--warn,#d97706);
                font-size:13.5px; margin-bottom:16px; line-height:1.8; }

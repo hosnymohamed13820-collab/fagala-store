@@ -1043,7 +1043,7 @@ $statusBadge = function($st) {
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
-    .tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:var(--surface);
+    .tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
         font-size:14px; font-weight:500; position:relative; }
     .tab.active { background:var(--accent); color:#fff; }
     .tab:not(.active):hover { background:var(--bg); }
@@ -1054,7 +1054,7 @@ $statusBadge = function($st) {
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; }
     .btn-approve { background:var(--pos-fill); } .btn-reject { background:var(--neg-fill); }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
@@ -1169,7 +1169,7 @@ $statusBadge = function($st) {
                     <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
                     <td>
                         <?php if ($monthlyDed > 0): ?>
-                            <span style="font-weight:600;color:var(--accent-hover);"><?= number_format($monthlyDed, 2) ?></span>
+                            <span style="font-weight:600;color:var(--accent-text);"><?= number_format($monthlyDed, 2) ?></span>
                         <?php else: ?>
                             <span style="color:var(--ink-500);">بالكامل</span>
                         <?php endif; ?>
@@ -1234,7 +1234,7 @@ $statusBadge = function($st) {
                     <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
                     <td>
                         <?php if ($monthlyDed > 0): ?>
-                            <span style="font-weight:600;color:var(--accent-hover);"><?= number_format($monthlyDed, 2) ?></span>
+                            <span style="font-weight:600;color:var(--accent-text);"><?= number_format($monthlyDed, 2) ?></span>
                         <?php else: ?>
                             <span style="color:var(--ink-500);">بالكامل</span>
                         <?php endif; ?>
@@ -1275,7 +1275,7 @@ $statusBadge = function($st) {
     </div>
 
     <p style="color:var(--ink-500);font-size:13px;text-align:center;margin:14px 0 20px;">
-        الأرصدة الافتتاحية بتظهر في <a href="employee_statement.php" style="color:var(--accent);text-decoration:none;font-weight:600;"><i class="ti ti-file-invoice"></i> كشف حساب الموظف</a> مش هنا.
+        الأرصدة الافتتاحية بتظهر في <a href="employee_statement.php" style="color:var(--accent-text);text-decoration:none;font-weight:600;"><i class="ti ti-file-invoice"></i> كشف حساب الموظف</a> مش هنا.
     </p>
 
 <?php elseif ($tab === 'bonuses'): ?>
@@ -1311,7 +1311,7 @@ $statusBadge = function($st) {
     </div>
     <div style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
         العتبة الحالية <strong><?= number_format($tolerance, 2) ?> ج</strong> — أي عجز أو زيادة أقل من كده مش بيظهر هنا.
-        <a href="settings.php" style="color:var(--accent);">غيّرها من الإعدادات</a>
+        <a href="settings.php" style="color:var(--accent-text);">غيّرها من الإعدادات</a>
     </div>
     <div class="card">
         <?php if (empty($penalties)): ?>
@@ -1505,7 +1505,7 @@ $statusBadge = function($st) {
                                 <span class="badge" style="font-size:11px;color:var(--pos);background:var(--pos-soft);margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
                             <?php endif; ?>
                             <?php if ($p['is_fixed']): ?>
-                                <span class="badge" style="font-size:11px;color:var(--accent);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
+                                <span class="badge" style="font-size:11px;color:var(--accent-text);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
                             <?php elseif ($p['no_expected']): ?>
                                 <div style="font-size:11px;color:var(--warn);font-weight:600;margin-top:2px;">
                                     <i class="ti ti-alert-triangle"></i> الساعات المنتظرة مش محددة — المرتب مش هيتحسب
@@ -1553,7 +1553,7 @@ $statusBadge = function($st) {
                                 </span>
                             <?php elseif ($p['bonus_cnt'] > 1): ?>
                                 <span style="color:var(--pos);font-weight:600;">+<?= number_format($p['total_bonuses'], 2) ?></span>
-                                <a href="hr.php?tab=bonuses" style="display:block;font-size:11px;color:var(--accent);text-decoration:none;" title="يوجد أكثر من مكافأة معلّقة — عدلها من تاب المكافآت">تفاصيل (<?= $p['bonus_cnt'] ?>)</a>
+                                <a href="hr.php?tab=bonuses" style="display:block;font-size:11px;color:var(--accent-text);text-decoration:none;" title="يوجد أكثر من مكافأة معلّقة — عدلها من تاب المكافآت">تفاصيل (<?= $p['bonus_cnt'] ?>)</a>
                             <?php elseif ($p['bonus_cnt'] === 1): ?>
                                 <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
                                        value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"

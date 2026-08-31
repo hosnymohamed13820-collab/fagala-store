@@ -772,8 +772,8 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; white-space:nowrap; font-weight:500; }
     .btn:hover { background:var(--accent-hover); color:#fff; }
     .btn-sm { padding:6px 12px; font-size:12.5px; border-radius:6px; }
-    .btn-ghost { background:var(--surface); color:var(--accent); border:1.5px solid var(--line); }
-    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
+    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent-text); color:var(--accent-text); }
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); color:var(--neg); }
     .btn-success { background:var(--pos-fill); color:#fff; }
@@ -806,7 +806,7 @@ require_once __DIR__ . '/includes/header.php';
     .alert-warn { background:var(--warn-soft); color:var(--warn); border:1px solid rgba(138,101,36,.2); }
 
     .upload-zone { border:2px dashed var(--line); border-radius:var(--r); padding:35px 20px; text-align:center; background:var(--bg); transition:border-color .2s; }
-    .upload-zone:hover { border-color:var(--accent); }
+    .upload-zone:hover { border-color:var(--accent-text); }
     .select-emp { padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:13.5px; font-family:inherit; background:var(--surface); width:100%; min-width:190px; }
     .row-amount-input { width:110px; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-family:'IBM Plex Mono', monospace; font-size:13.5px; text-align:center; background:var(--surface); }
     .row-amount-input.is-negative { border-color:var(--neg); color:var(--neg); background:var(--neg-soft); font-weight:600; }
@@ -832,7 +832,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (!$previewData): ?>
     <div class="att-card">
         <div class="att-h">
-            <span><i class="ti ti-file-spreadsheet" style="color:var(--accent);margin-left:6px;"></i> رفع شيت إكسيل بأرصدة السلف المستديمة</span>
+            <span><i class="ti ti-file-spreadsheet" style="color:var(--accent-text);margin-left:6px;"></i> رفع شيت إكسيل بأرصدة السلف المستديمة</span>
         </div>
         <p style="font-size:13.5px;color:var(--ink-600);margin-bottom:18px;line-height:1.6;">
             ارفع ملف إكسيل (.xlsx) الذي يحتوي على أسماء الموظفين واجمالي المتبقي من أرصدة السلف المستديمة المستحقة عليهم.
@@ -843,7 +843,7 @@ require_once __DIR__ . '/includes/header.php';
         <form method="post" enctype="multipart/form-data" class="upload-zone">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="upload_file">
-            <i class="ti ti-file-spreadsheet" style="font-size:46px;color:var(--accent);display:block;margin-bottom:12px;"></i>
+            <i class="ti ti-file-spreadsheet" style="font-size:46px;color:var(--accent-text);display:block;margin-bottom:12px;"></i>
             <div style="font-weight:600;color:var(--ink-800);margin-bottom:8px;font-size:15px;">اختر ملف الإكسيل (.xlsx) من جهازك</div>
             <div style="margin-bottom:18px;">
                 <input type="file" name="advances_file" accept=".xlsx" required style="font-size:13.5px;color:var(--ink-700);">
@@ -858,7 +858,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="att-card" style="border:2px solid var(--accent);">
         <div class="att-h">
             <span>
-                <i class="ti ti-eye" style="color:var(--accent);margin-left:6px;"></i>
+                <i class="ti ti-eye" style="color:var(--accent-text);margin-left:6px;"></i>
                 معاينة ملف: <b><?= e($previewData['file_name']) ?></b> (<?= number_format(count($previewData['rows'])) ?> صف معروض<?= $previewData['empty_name_count'] > 0 ? ' · اتخطى ' . number_format($previewData['empty_name_count']) . ' صف فاضي' : '' ?>)
             </span>
             <form method="post" style="display:inline;">
@@ -875,7 +875,7 @@ require_once __DIR__ . '/includes/header.php';
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:18px;">
             <form method="get" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                 <div style="font-weight:600;color:var(--ink-800);display:flex;align-items:center;gap:6px;">
-                    <i class="ti ti-adjustments" style="color:var(--accent);"></i> إعدادات قراءة الشيتة:
+                    <i class="ti ti-adjustments" style="color:var(--accent-text);"></i> إعدادات قراءة الشيتة:
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <label style="font-size:13px;color:var(--ink-700);font-weight:500;">صف العناوين:</label>
@@ -924,7 +924,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="stat-lbl">محدد للرفع</div>
             </div>
             <div class="stat-box">
-                <div class="stat-val" id="statNew" style="color:var(--accent);">
+                <div class="stat-val" id="statNew" style="color:var(--accent-text);">
                     <?= number_format($previewData['new_count']) ?>
                 </div>
                 <div class="stat-lbl">سلف مستديمة جديدة مقترحة</div>
@@ -973,7 +973,7 @@ require_once __DIR__ . '/includes/header.php';
         <div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                 <label style="font-size:13.5px;color:var(--ink-800);font-weight:600;">
-                    <i class="ti ti-cash" style="color:var(--accent);"></i> القسط الشهري الافتراضي:
+                    <i class="ti ti-cash" style="color:var(--accent-text);"></i> القسط الشهري الافتراضي:
                 </label>
                 <input type="number" step="0.01" min="0" id="globalMonthlyDed" value="500.00" style="width:110px;padding:6px 10px;border:1.5px solid var(--line);border-radius:6px;font-family:'IBM Plex Mono', monospace;font-size:13.5px;text-align:center;">
                 <button type="button" class="btn btn-sm btn-ghost" id="btnApplyGlobalDed">
@@ -1058,7 +1058,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <span style="font-weight:600;color:var(--ink-800);"><?= number_format($curBal, 2) ?> ج</span>
                                     <?php else: ?>
                                         <span class="badge badge-neg">أكثر من سلفة مستديمة (<?= $advInfo['pending_count'] ?>)</span>
-                                        <a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:2px;">عرض في تاب السلف</a>
+                                        <a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent-text);display:block;margin-top:2px;">عرض في تاب السلف</a>
                                     <?php endif; ?>
                                 </td>
                                 <td>
@@ -1153,7 +1153,7 @@ require_once __DIR__ . '/includes/header.php';
                     curBalCell.innerHTML = '<span style="font-weight:600;color:var(--ink-800);">' + empInfo.current_balance.toFixed(2) + ' ج</span>';
                 } else {
                     curBalCell.innerHTML = '<span class="badge badge-neg">أكثر من سلفة مستديمة (' + empInfo.pending_count + ')</span>'
-                                         + '<a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:2px;">عرض في تاب السلف</a>';
+                                         + '<a href="hr.php?tab=advances" target="_blank" style="font-size:11px;color:var(--accent-text);display:block;margin-top:2px;">عرض في تاب السلف</a>';
                 }
             }
 

@@ -61,14 +61,14 @@ require_once __DIR__ . '/includes/header.php';
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
     .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
-    .scope-opt.active { border-color:var(--accent); background:var(--bg); color:var(--accent); font-weight:600; }
+    .scope-opt.active { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
     .checklist { max-height:260px; overflow-y:auto; border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .checklist label { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:14px; cursor:pointer; border-radius:6px; }
     .checklist label:hover { background:var(--line-soft); }
     .checklist input { width:auto; }
     .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid var(--line); margin-bottom:20px; flex-wrap:wrap; }
     .t-tab { padding:10px 18px; text-decoration:none; color:var(--ink-500); font-size:14px; border-bottom:2px solid transparent; }
-    .t-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+    .t-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); font-weight:600; }
 </style>
 
 <div class="t-tabs">

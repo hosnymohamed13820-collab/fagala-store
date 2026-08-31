@@ -336,20 +336,20 @@ require_once __DIR__ . '/includes/header.php';
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .fld input, .fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .denom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
     .denom-cell { background:var(--line-soft); border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .denom-cell .dlabel { font-size:13px; color:var(--ink-500); margin-bottom:5px; }
     .denom-cell input { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:7px;
         font-size:14px; text-align:center; font-family:inherit; }
-    .denom-cell .dsub { font-size:12px; color:var(--accent); margin-top:4px; font-weight:600; }
+    .denom-cell .dsub { font-size:12px; color:var(--accent-text); margin-top:4px; font-weight:600; }
     .pay-method { margin-bottom:16px; }
     .pay-method h4 { font-size:14px; color:var(--ink-700); margin-bottom:8px; }
     .pay-rows { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
@@ -371,8 +371,8 @@ require_once __DIR__ . '/includes/header.php';
     .ct-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 16px; border-bottom:2px solid var(--line); }
     .ct-tab { padding:9px 18px; border:none; background:transparent; color:var(--ink-500); font-family:inherit;
         font-size:14px; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; font-weight:600; }
-    .ct-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
-    .ct-tab:hover:not(.active) { color:var(--accent-hover); }
+    .ct-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
+    .ct-tab:hover:not(.active) { color:var(--accent-text); }
     .ct-pane { display:none; }
     .ct-pane.active { display:block; }
     .pay-table { width:100%; border-collapse:collapse; }
@@ -418,7 +418,7 @@ require_once __DIR__ . '/includes/header.php';
     @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
     .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
-    .stat-card .value { font-size:17px; font-weight:700; color:var(--accent); }
+    .stat-card .value { font-size:17px; font-weight:700; color:var(--accent-text); }
     .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
     .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
@@ -431,7 +431,7 @@ require_once __DIR__ . '/includes/header.php';
     .side-summary .sum-detail td { padding:6px 2px; font-size:14px; }
     .side-summary .sum-detail td.k { color:var(--ink-500); }
     .side-summary .sum-detail td.v { text-align:left; color:var(--ink-900); font-weight:600; }
-    .side-summary .sum-detail tr.grand td { border-top:1.5px solid var(--line); padding-top:10px; font-weight:700; color:var(--accent); }
+    .side-summary .sum-detail tr.grand td { border-top:1.5px solid var(--line); padding-top:10px; font-weight:700; color:var(--accent-text); }
     /* تاب الكاش (شكل المشروع القديم: قائمة يسار + بوكس إجمالي يمين) */
     .cash-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
     @media (max-width:640px){ .cash-layout { grid-template-columns:1fr; } }
@@ -439,12 +439,12 @@ require_once __DIR__ . '/includes/header.php';
     .denom-line .dn { font-size:13px; color:var(--ink-500); min-width:62px; }
     .denom-line input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         text-align:center; font-family:inherit; font-size:14px; background:var(--line-soft); }
-    .denom-line input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+    .denom-line input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .denom-line .mul { font-size:13px; color:var(--ink-300); }
-    .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent); }
+    .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent-text); }
     .cash-total-box { background:var(--bg); border-radius:12px; padding:18px; height:fit-content; }
     .cash-total-box .ctl { font-size:13px; color:var(--ink-500); }
-    .cash-total-box .ctv { font-size:26px; font-weight:700; color:var(--accent); margin-top:2px; }
+    .cash-total-box .ctv { font-size:26px; font-weight:700; color:var(--accent-text); margin-top:2px; }
     .cash-total-box .cbreak { font-size:11px; color:var(--ink-500); margin-top:12px; line-height:1.9; }
     /* تاب الملخص (جدول تفاصيل يسار + بوكس الفرق يمين) */
     .sum-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
@@ -705,7 +705,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total']; ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
                 <td><?= e($s['branch_name']) ?></td>
                 <td><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
@@ -742,7 +742,7 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
@@ -806,7 +806,7 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>

@@ -244,8 +244,8 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--surface); color:var(--accent); border:1.5px solid var(--line); }
-    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
+    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent-text); }
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); }
 
@@ -255,7 +255,7 @@ require_once __DIR__ . '/includes/header.php';
         border:1.5px solid var(--line); color:var(--ink-600); font-size:13.5px;
         text-decoration:none; display:inline-flex; align-items:center; gap:7px; }
     .an-tab:hover { border-color:var(--ink-300); color:var(--ink-800); }
-    .an-tab.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .an-tab.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
 
     /* ===== الكروت والنماذج ===== */
     .an-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
@@ -270,7 +270,7 @@ require_once __DIR__ . '/includes/header.php';
         font-family:inherit; font-size:13.5px; color:var(--ink-800); background:var(--surface);
         min-height:42px; }
     .an-fld input:focus, .an-fld select:focus {
-        outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+        outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .an-hint { font-size:11.5px; color:var(--ink-400); margin-top:9px; line-height:1.7; }
 
     /* شريط أدوات التقرير — الحقول شمال والأفعال يمين */
@@ -284,7 +284,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:13px 15px; border:1.5px solid var(--line); border-radius:var(--r);
         text-decoration:none; color:inherit; }
     .an-b:hover { border-color:var(--ink-300); background:var(--bg); }
-    .an-b.on { border-color:var(--accent); background:var(--accent-soft); }
+    .an-b.on { border-color:var(--accent-text); background:var(--accent-soft); }
     .an-b b { font-size:13.5px; color:var(--ink-900); }
     .an-b span { font-size:12px; color:var(--ink-500); }
 
@@ -306,7 +306,7 @@ require_once __DIR__ . '/includes/header.php';
     .an-c.k-naqes { border-top-color:var(--neg); }
     .an-c.k-raked { border-top-color:var(--warn); }
     .an-c.k-tamam { border-top-color:var(--pos); }
-    .an-c.k-nazar { border-top-color:var(--accent); }
+    .an-c.k-nazar { border-top-color:var(--accent-text); }
 
     /* ===== الشارات — هادية زي باقي النظام ===== */
     .an-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
@@ -314,7 +314,7 @@ require_once __DIR__ . '/includes/header.php';
     .b-naqes  { background:var(--neg-soft);    color:var(--neg); }
     .b-raked  { background:var(--warn-soft);   color:var(--warn); }
     .b-rakedf { background:var(--warn-fill);        color:#fff; }
-    .b-nazar  { background:var(--accent-soft); color:var(--accent); }
+    .b-nazar  { background:var(--accent-soft); color:var(--accent-text); }
     .b-tamam  { background:var(--pos-soft);    color:var(--pos); }
 
     /* =================================================================
@@ -339,12 +339,16 @@ require_once __DIR__ . '/includes/header.php';
           «-16» مش «16-»). فكانت بترسم البوردر على شمالها بدل يمينها،
           والنتيجة إن الحد بين «القسم» و«مبيعات الفجالة» — وبين
           «الحالة» و«الأولوية» — يطلع فاضي. */
+    /* 🔴 كان `#000` صريح. في الوضع الليلي خط أسود على أرضية سودا =
+       شبكة مختفية والجدول بيبقى كتلة أرقام من غير حدود. `--ink-300`
+       بيقلب مع الوضع: رمادي فاتح على الأبيض، ورمادي غامق على الأسود —
+       فالشبكة بتفضل ظاهرة في الاتنين. */
     .an-tbl th, .an-tbl td {
-        border-bottom:1px solid #000;
-        border-right:1px solid #000; }
+        border-bottom:1px solid var(--ink-300);
+        border-right:1px solid var(--ink-300); }
     .an-tbl th:last-child, .an-tbl td:last-child {
-        border-left:1px solid #000; }
-    .an-tbl thead tr:first-child th { border-top:1px solid #000; }
+        border-left:1px solid var(--ink-300); }
+    .an-tbl thead tr:first-child th { border-top:1px solid var(--ink-300); }
 
     .an-tbl thead th { background:var(--bg); color:var(--ink-600);
         font-size:11px; font-weight:600; padding:7px 9px; text-align:center;

@@ -205,7 +205,7 @@ require_once __DIR__ . '/includes/header.php';
     }
     .msg-icon {
         font-size: 44px;
-        color: var(--accent);
+        color:var(--accent-text);
         margin-bottom: 14px;
     }
     .msg-title {
@@ -376,7 +376,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div style="text-align: center; margin-top: 16px;">
-            <a href="employee_statement.php" style="font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+            <a href="employee_statement.php" style="font-size: 13px; color:var(--accent-text); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
                 <i class="ti ti-file-invoice"></i> كشف حسابك
             </a>
         </div>

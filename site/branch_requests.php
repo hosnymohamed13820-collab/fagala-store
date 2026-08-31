@@ -75,14 +75,14 @@ require_once __DIR__ . '/includes/header.php';
     .br-table { width:100%; border-collapse:collapse; }
     .br-table th, .br-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; }
-    .br-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .br-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .br-table .nm { text-align:right; font-weight:500; min-width:200px; }
     .br-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
 
     .pill { display:inline-block; padding:4px 13px; border-radius:20px; font-size:12.5px;
             font-weight:700; white-space:nowrap; }
-    .pill.st-open { background:var(--accent-soft); color:var(--accent); }
-    .pill.st-reserved { background:var(--accent-soft); color:var(--accent); }
+    .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
+    .pill.st-reserved { background:var(--accent-soft); color:var(--accent-text); }
     .pill.st-grouped { background:var(--warn-soft); color:var(--warn); }
     .pill.st-purchased { background:var(--pos-soft); color:var(--pos); }
     .pill.st-part { background:var(--warn-soft); color:var(--warn); }

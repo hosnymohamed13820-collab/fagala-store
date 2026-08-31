@@ -80,6 +80,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             --accent-hover: #185a9c;
             --accent-soft:  #e8f1fb;
             --accent-ring:  rgba(30,111,191,.20);
+            --accent-text: #1e6fbf;
             --bg:        #f5f6f8;
             --surface:   #ffffff;
             --line:      #e3e7ed;
@@ -116,6 +117,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
 
             --accent-soft: #14263c;
             --accent-ring: rgba(122,184,240,.22);
+            --accent-text: #7ab8f0;
 
             --neg:      #ff8a80;
             --neg-soft: #3a1a18;
@@ -300,7 +302,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
 
         <!-- زر تثبيت التطبيق (يظهر لما المتصفح يسمح) -->
         <button id="installBtn" type="button"
-                style="display:none;width:100%;margin-top:14px;padding:12px;background:var(--surface);color:var(--accent);
+                style="display:none;width:100%;margin-top:14px;padding:12px;background:var(--surface);color:var(--accent-text);
                        border:1.5px solid var(--accent);border-radius:10px;font-family:inherit;font-size:15px;
                        font-weight:600;cursor:pointer;">
             <i class="ti ti-device-mobile"></i> نزّل التطبيق على جهازك

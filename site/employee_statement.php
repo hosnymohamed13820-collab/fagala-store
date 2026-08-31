@@ -184,7 +184,7 @@ require_once __DIR__ . '/includes/header.php';
     }
     .msg-icon {
         font-size: 44px;
-        color: var(--accent);
+        color:var(--accent-text);
         margin-bottom: 14px;
     }
     .msg-title {
@@ -223,11 +223,11 @@ require_once __DIR__ . '/includes/header.php';
     }
     .btn-ghost {
         background: transparent;
-        color: var(--accent);
+        color:var(--accent-text);
     }
     .btn-ghost:hover {
         background: var(--accent-soft);
-        color: var(--accent);
+        color:var(--accent-text);
     }
     .empty {
         text-align: center;
