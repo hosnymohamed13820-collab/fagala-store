@@ -18,6 +18,7 @@ $editable = [
     'print_header'              => ['عنوان الطباعة (أعلى التقارير)', 'text'],
     'print_footer'              => ['تذييل الطباعة', 'text'],
     'custody_deficit_tolerance' => ['عتبة التسامح لعجز العهدة (بالجنيه)', 'number'],
+    'cashier_deficit_carry'     => ['رحّل باقي عجز الكاشير لسلفة مستديمة تلقائياً', 'bool'],
     'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
     'currency'                  => ['العملة', 'text'],
     'shortage_supervisor_id'    => ['مسؤول متابعة طلبات النواقص (بيوصله إشعار مع الأونر)', 'user'],
@@ -56,6 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($editable as $key => $meta) {
             if (isset($_POST[$key])) {
                 $val = trim($_POST[$key]);
+                if ($meta[1] === 'bool') {
+                    $val = ($val === '1' || $val === 'on') ? '1' : '0';
+                }
                 // التحقق من عتبة العجز إنها رقم موجب
                 if ($key === 'custody_deficit_tolerance') {
                     $val = (string) max(0, (float) $val);
@@ -145,6 +149,33 @@ require_once __DIR__ . '/includes/header.php';
     .nav-link { padding:9px 16px; background:var(--surface); border-radius:9px; text-decoration:none;
         color:var(--accent-text); font-size:14px; }
     .nav-link:hover { background:var(--bg); }
+
+    /* سلايدر نوع bool (مبني على تصميم الوضع الليلي في fagala.css) */
+    .toggle-wrap { display:inline-flex; align-items:center; }
+    .toggle-wrap input[type="checkbox"] { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
+    .toggle-wrap .tt-track {
+        display:inline-block; position:relative;
+        width:46px; height:26px; border-radius:99px;
+        background:var(--line-soft); border:1.5px solid var(--line);
+        transition:background .2s, border-color .2s;
+        cursor:pointer;
+    }
+    .toggle-wrap .tt-knob {
+        position:absolute; top:2px; right:2px;
+        width:18px; height:18px; border-radius:50%;
+        background:var(--surface); box-shadow:var(--shadow-sm);
+        transition:transform .2s;
+    }
+    .toggle-wrap input[type="checkbox"]:checked + .tt-track {
+        background:var(--accent); border-color:var(--accent);
+    }
+    .toggle-wrap input[type="checkbox"]:checked + .tt-track .tt-knob {
+        transform:translateX(-20px);
+    }
+    .form-row.is-locked .toggle-wrap label.tt-track {
+        cursor:default; opacity:0.65; pointer-events:none;
+    }
+    .fld-hint { font-size:12px; color:var(--ink-500); margin-top:6px; line-height:1.5; }
 </style>
 
 <?php if (is_owner()): ?>
@@ -175,6 +206,19 @@ require_once __DIR__ . '/includes/header.php';
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                    <?php elseif ($type === 'bool'): ?>
+                        <div class="toggle-wrap">
+                            <input type="hidden" name="<?= e($key) ?>" value="0">
+                            <input type="checkbox"
+                                   id="fld_<?= e($key) ?>"
+                                   name="<?= e($key) ?>"
+                                   value="1"
+                                   <?= ($current[$key] ?? '1') === '1' ? 'checked' : '' ?>
+                                   disabled>
+                            <label for="fld_<?= e($key) ?>" class="tt-track">
+                                <span class="tt-knob"></span>
+                            </label>
+                        </div>
                     <?php else: ?>
                         <input type="<?= e($type) ?>"
                                id="fld_<?= e($key) ?>"
@@ -185,6 +229,11 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endif; ?>
                     <button type="button" class="fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
                 </div>
+                <?php if ($key === 'cashier_deficit_carry'): ?>
+                    <div class="fld-hint">
+                        مقفول = الباقي من عجز الكاشير مابينزلش سلفة على الموظف، وبيتساب من غير تحصيل. شغّله تاني بعد ما بيانات الورديات تتراجع وتتظبط.
+                    </div>
+                <?php endif; ?>
             </div>
         <?php endforeach; ?>
         <button type="submit" class="btn">حفظ الإعدادات</button>
@@ -200,22 +249,30 @@ require_once __DIR__ . '/includes/header.php';
     if (!form) return;
 
     form.querySelectorAll('.form-row').forEach(function (row) {
-        var fld = row.querySelector('input, select');
+        var fld = row.querySelector('input:not([type=hidden]), select');
         var btn = row.querySelector('.fld-edit');
         if (!fld || !btn) return;
 
-        var original = (fld.tagName === 'SELECT') ? fld.value : fld.value;
+        var isCheckbox = (fld.type === 'checkbox');
+        var original = isCheckbox ? fld.checked : fld.value;
 
         btn.addEventListener('click', function () {
             if (row.classList.contains('is-open')) {
                 // إلغاء: رجّع القيمة الأصلية واقفل تاني
-                fld.value = original;
+                if (isCheckbox) {
+                    fld.checked = original;
+                } else {
+                    fld.value = original;
+                }
                 lock();
             } else {
                 row.classList.remove('is-locked');
                 row.classList.add('is-open');
-                if (fld.tagName === 'SELECT') { fld.disabled = false; }
-                else { fld.removeAttribute('readonly'); }
+                if (fld.tagName === 'SELECT' || isCheckbox) {
+                    fld.disabled = false;
+                } else {
+                    fld.removeAttribute('readonly');
+                }
                 btn.textContent = 'إلغاء';
                 btn.title = 'رجّع القيمة زي ما كانت';
                 fld.focus();
@@ -225,17 +282,21 @@ require_once __DIR__ . '/includes/header.php';
         function lock() {
             row.classList.remove('is-open');
             row.classList.add('is-locked');
-            if (fld.tagName === 'SELECT') { fld.disabled = true; }
-            else { fld.setAttribute('readonly', 'readonly'); }
+            if (fld.tagName === 'SELECT' || isCheckbox) {
+                fld.disabled = true;
+            } else {
+                fld.setAttribute('readonly', 'readonly');
+            }
             btn.textContent = 'تعديل';
             btn.title = 'اضغط عشان تعدّل القيمة دي';
         }
     });
 
-    // 🔴 الـselect المقفول (disabled) مابيتبعتش مع الفورم — فبنفك القفل عن
+    // 🔴 الـselect والـcheckbox المقفولين (disabled) مابيتبعتوش مع الفورم — فبنفك القفل عن
     // كل الحقول لحظة الإرسال عشان القيم كلها توصل زي ما هي.
+    // 🔴 الحقل المخفي (hidden) عمره ما بياخد disabled عشان يتبعت دايماً.
     form.addEventListener('submit', function () {
-        form.querySelectorAll('input, select').forEach(function (f) {
+        form.querySelectorAll('input:not([type=hidden]), select').forEach(function (f) {
             f.disabled = false;
             f.removeAttribute('readonly');
         });

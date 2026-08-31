@@ -993,7 +993,17 @@ if ($tab === 'salaries') {
 
         $totalDeductions = round($advApplied + $penApplied + $defApplied + $cashierApplied, 2);
         $net             = $noExpected ? 0.0 : max(0.0, round($pot, 2));
-        $carryToAdvance  = round(($penFull - $penApplied) + ($defFull - $defApplied) + ($cashierDefCalc - $cashierApplied), 2);
+
+        // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
+        //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
+        //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
+        $cashierCarry = cashier_deficit_carry_enabled()
+            ? ($cashierDefCalc - $cashierApplied)
+            : 0.0;
+
+        $carryToAdvance  = round(($penFull - $penApplied)
+                               + ($defFull - $defApplied)
+                               + $cashierCarry, 2);
         $carryToAdvance  = max(0.0, $carryToAdvance);
         $isPaid          = isset($paidMonthMap[$empId]);
 
@@ -1551,7 +1561,7 @@ $statusBadge = function($st) {
                 </div>
             </div>
             <div style="overflow-x:auto;">
-            <table class="sal-tbl">
+            <table class="sal-tbl" data-cashier-deficit-carry="<?= cashier_deficit_carry_enabled() ? '1' : '0' ?>">
                 <thead>
                     <tr>
                         <th class="c-pick" style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
@@ -2462,7 +2472,11 @@ $statusBadge = function($st) {
 
         var net = Math.max(0, pot);
 
-        var carryToAdvance = (penalties - penaltiesApplied) + (deficits - deficitsApplied) + (cashierDefCalc - cashierApplied);
+        var tableEl = tr.closest('table.sal-tbl');
+        var cashierCarryEnabled = !tableEl || tableEl.dataset.cashierDeficitCarry !== '0';
+        var cashierCarry = cashierCarryEnabled ? (cashierDefCalc - cashierApplied) : 0;
+
+        var carryToAdvance = (penalties - penaltiesApplied) + (deficits - deficitsApplied) + cashierCarry;
         carryToAdvance = Math.max(0, carryToAdvance);
 
         var totalDeductions = advApplied + penaltiesApplied + deficitsApplied + cashierApplied;

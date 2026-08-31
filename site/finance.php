@@ -1973,6 +1973,21 @@ function business_day_start_hour(): int
 }
 
 /**
+ * هل نرحّل باقي عجز الكاشير لسلفة مستديمة؟
+ *
+ * 🔴 الافتراضي **أيوه** (`'1'`) عشان السلوك مايتغيّرش لوحده لو المفتاح
+ *    مش موجود في `settings` لسه. اللي يقفله محمد من الإعدادات بإيده.
+ *
+ * السبب اللي المفتاح ده اتعمل عشانه (٣١ أغسطس ٢٠٢٦): ورديات كتير
+ * اتسجّلت غلط من الفروع، فالنظام كان بيحوّل فروق وهمية لدين حقيقي —
+ * موظفة عليها ٢,٠٠٠ ج في النظام وهي فعلياً عندها زيادة ٢ ج.
+ */
+function cashier_deficit_carry_enabled(): bool
+{
+    return (string) setting('cashier_deficit_carry', '1') === '1';
+}
+
+/**
  * حساب صافي مرتب موظف لشهر معيّن وفترة حضور محددة (مع المكافآت والخصومات).
  *
  * القواعد المعتمدة من المالك:
@@ -2209,7 +2224,16 @@ function compute_salary(
 
     $netSalary = $noExpected ? 0.0 : max(0.0, round($pot, 2));
 
-    $carryToAdvance = round(($penaltiesFull - $penApplied) + ($deficitsFull - $defApplied) + ($cashierDefCalc - $cashierApplied), 2);
+    // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
+    //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
+    //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
+    $cashierCarry = cashier_deficit_carry_enabled()
+        ? ($cashierDefCalc - $cashierApplied)
+        : 0.0;
+
+    $carryToAdvance = round(($penaltiesFull - $penApplied)
+                          + ($deficitsFull  - $defApplied)
+                          + $cashierCarry, 2);
     $carryToAdvance = max(0.0, $carryToAdvance);
 
     return [
@@ -2462,7 +2486,17 @@ function pay_salary(
 
         $netSalary = max(0.0, round($pot, 2));
 
-        $carryToAdvance = round(($penaltiesFull - $penApplied) + ($deficitsFull - $defApplied) + ($cashierCalcTotal - $cashierApplied), 2);
+        // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
+        //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
+        //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
+        //    ⚠️ المتغيّر هنا اسمه $cashierCalcTotal (مش $cashierDefCalc زي compute_salary).
+        $cashierCarry = cashier_deficit_carry_enabled()
+            ? ($cashierCalcTotal - $cashierApplied)
+            : 0.0;
+
+        $carryToAdvance = round(($penaltiesFull - $penApplied)
+                              + ($deficitsFull  - $defApplied)
+                              + $cashierCarry, 2);
         $carryToAdvance = max(0.0, $carryToAdvance);
 
         $empName = $pdo->prepare('SELECT full_name FROM employees WHERE id=?');
