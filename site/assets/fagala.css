@@ -213,6 +213,12 @@
         @keyframes ic-tune  { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 60%{transform:translateX(5px);} }
         /* الإعدادات: الترس بيلف */
         @keyframes ic-gear  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
+        /* سكانر الكمبيوتر: اهتزاز خفيف — الموبايل بيرن */
+        @keyframes ic-ring  { 0%,100%{transform:rotate(0) scale(1);} 20%{transform:rotate(-12deg) scale(1.08);} 40%{transform:rotate(12deg) scale(1.08);} 60%{transform:rotate(-8deg) scale(1.04);} 80%{transform:rotate(8deg) scale(1.04);} }
+        /* طلب نواقص: دحرجة لقدّام ورجوع */
+        @keyframes ic-cart  { 0%,100%{transform:translateX(0) rotate(0);} 35%{transform:translateX(-6px) rotate(-5deg);} 70%{transform:translateX(2px) rotate(2deg);} }
+        /* تحليل الموسم: نبضة + ميلة بسيطة */
+        @keyframes ic-calc  { 0%,100%{transform:scale(1) rotate(0);} 40%{transform:scale(1.22) rotate(-8deg);} 70%{transform:scale(1.05) rotate(4deg);} }
 
         .nav-item i::before { display: inline-block !important; transform-origin: center; will-change: transform; }
 
@@ -232,6 +238,9 @@
         .nav-item:hover i.ti-chart-bar::before        { animation: ic-bars .8s ease infinite; }
         .nav-item:hover i.ti-adjustments::before      { animation: ic-tune .9s ease infinite; }
         .nav-item:hover i.ti-settings::before         { animation: ic-gear 1.4s linear infinite; }
+        .nav-item:hover i.ti-device-mobile::before   { animation: ic-ring .7s ease infinite; }
+        .nav-item:hover i.ti-shopping-cart::before   { animation: ic-cart .8s ease infinite; }
+        .nav-item:hover i.ti-calculator::before      { animation: ic-calc .8s ease infinite; }
 
         /* ===== حركات دورية للعنصر النشط =====
            الحركة بتحصل في أول ربع الدورة والباقي سكون — يعني نبضة
@@ -251,6 +260,9 @@
         @keyframes icp-bars  { 0%,25%,100%{transform:scaleY(1);} 12%{transform:scaleY(1.5);} }
         @keyframes icp-tune  { 0%,25%,100%{transform:translateX(0);} 7%{transform:translateX(-5px);} 16%{transform:translateX(5px);} }
         @keyframes icp-gear  { 0%{transform:rotate(0);} 45%,100%{transform:rotate(360deg);} }
+        @keyframes icp-ring  { 0%,25%,100%{transform:rotate(0) scale(1);} 6%{transform:rotate(-12deg) scale(1.08);} 12%{transform:rotate(12deg) scale(1.08);} 18%{transform:rotate(-8deg) scale(1.04);} 22%{transform:rotate(8deg) scale(1.04);} }
+        @keyframes icp-cart  { 0%,25%,100%{transform:translateX(0) rotate(0);} 9%{transform:translateX(-6px) rotate(-5deg);} 18%{transform:translateX(2px) rotate(2deg);} }
+        @keyframes icp-calc  { 0%,25%,100%{transform:scale(1) rotate(0);} 10%{transform:scale(1.22) rotate(-8deg);} 18%{transform:scale(1.05) rotate(4deg);} }
 
         .nav-item.active i.ti-layout-dashboard::before { animation: icp-pulse 3s ease infinite; }
         .nav-item.active i.ti-scan::before             { animation: icp-scan  3s ease-in-out infinite; }
@@ -268,10 +280,13 @@
         .nav-item.active i.ti-chart-bar::before        { animation: icp-bars  3s ease infinite; }
         .nav-item.active i.ti-adjustments::before      { animation: icp-tune  3s ease infinite; }
         .nav-item.active i.ti-settings::before         { animation: icp-gear  3s ease-in-out infinite; }
+        .nav-item.active i.ti-device-mobile::before   { animation: icp-ring 3s ease infinite; }
+        .nav-item.active i.ti-shopping-cart::before   { animation: icp-cart 3s ease infinite; }
+        .nav-item.active i.ti-calculator::before      { animation: icp-calc 3s ease infinite; }
 
-        /* احترام تفضيل تقليل الحركة */
+        /* احترام تفضيل تقليل الحركة — تسكت الأيقونات لو المستخدم مقفل الحركات في نظامه */
         @media (prefers-reduced-motion: reduce) {
-            .nav-item i::before { animation: none !important; }
+            .nav-item i::before, .nav-item.active i::before { animation: none !important; }
         }
 
         /* نقطة ذهبية صغيرة على العنصر النشط */

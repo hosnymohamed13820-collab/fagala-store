@@ -229,7 +229,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
 </style>
 
 <?php if ($flash): ?>
@@ -417,13 +417,15 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     $periodTotalHours = 0.0;
     $completeDays     = 0;   // أيام فيها حضور وانصراف
     $missingDays      = 0;   // أيام تسجيلها ناقص (واحد بس من الاتنين)
+    $noneDays         = 0;   // مفيش دخول ولا خروج (باستثناء الإجازات والعطلات)
     foreach ($myPeriodAtt as $a) {
         $periodTotalHours += (float) ($a['work_hours'] ?? 0);
+        $st     = $a['status'] ?? '';
         $hasIn  = !empty($a['check_in']);
         $hasOut = !empty($a['check_out']);
         if ($hasIn && $hasOut)      { $completeDays++; }
         elseif ($hasIn || $hasOut)  { $missingDays++;  }
-        // الصف اللي مالوش دخول ولا خروج مايتحسبش في ولا واحد فيهم
+        elseif ($st !== 'leave' && $st !== 'holiday') { $noneDays++; }
     }
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
@@ -452,6 +454,11 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام تسجيلها ناقص</div>
             <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $missingDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
         </div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+             title="أيام مالكش فيها تسجيل خالص — لو فيها شغل اطلب تصحيح">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام مفيش تسجيل خالص</div>
+            <div style="font-size:18px;font-weight:700;color:var(--neg);"><?= $noneDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
     </div>
 
     <?php if (empty($myPeriodAtt)): ?>
@@ -465,17 +472,27 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             <?php endforeach; ?>
         </tr></thead>
         <tbody>
-        <?php
-            $sm = ['present'=>['حاضر','var(--pos)','var(--pos-soft)'],'absent'=>['غائب','var(--neg)','var(--neg-soft)'],
-                   'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','#666','#eee']];
-            foreach ($myPeriodAtt as $a): $sb = $sm[$a['status']] ?? ['—','#666','#eee'];
-        ?>
+        <?php foreach ($myPeriodAtt as $a): ?>
             <?php
+                $st         = $a['status'] ?? '';
                 $inOutside  = !empty($a['check_in_outside']);
                 $outOutside = !empty($a['check_out_outside']);
                 $rowHasIn   = !empty($a['check_in']);
                 $rowHasOut  = !empty($a['check_out']);
                 $rowMissing = ($rowHasIn || $rowHasOut) && !($rowHasIn && $rowHasOut);
+
+                // تحديد الحالة المعروضة والشارة بالترتيب: الإجازة والعطلة ليهم الأولوية
+                if ($st === 'leave') {
+                    $sb = ['إجازة', 'var(--warn)', 'var(--warn-soft)'];
+                } elseif ($st === 'holiday') {
+                    $sb = ['عطلة', 'var(--ink-500)', 'var(--line-soft)'];
+                } elseif ($rowHasIn && $rowHasOut) {
+                    $sb = ['حاضر', 'var(--pos)', 'var(--pos-soft)'];
+                } elseif ($rowHasIn || $rowHasOut) {
+                    $sb = ['تسجيل ناقص', 'var(--warn)', 'var(--warn-soft)'];
+                } else {
+                    $sb = ['مفيش تسجيل', 'var(--neg)', 'var(--neg-soft)'];
+                }
             ?>
             <tr<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= e($a['att_date']) ?></td>
