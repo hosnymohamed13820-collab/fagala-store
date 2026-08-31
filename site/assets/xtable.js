@@ -175,7 +175,17 @@
         for (var r = 0; r < body.rows.length; r++) {
             if (rowKind(body.rows[r], cols) === 'data') n++;
         }
-        return n >= CFG.minRows;
+        // `data-xt-min` بتخلّي الجدول يتجاوز الحد الافتراضي.
+        // السبب: جداول التقارير للقراءة والتحليل، والترتيب وزرار Σ
+        // مفيدين فيها حتى في صف واحد. الحد الافتراضي معمول لجداول
+        // الإدخال في الشاشات التانية.
+        var minRows = CFG.minRows;
+        var attrMin = t.getAttribute('data-xt-min');
+        if (attrMin !== null && attrMin !== '') {
+            var v = parseInt(attrMin, 10);
+            if (!isNaN(v) && v >= 1) minRows = v;
+        }
+        return n >= minRows;
     }
 
     /* ================================================================

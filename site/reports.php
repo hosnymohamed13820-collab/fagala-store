@@ -2275,7 +2275,7 @@ require_once __DIR__ . '/includes/header.php';
     // مباشرةً فمابيتأثرش بالقص ده.
     $noteCol = $report['notes_col'] ?? -1;
     ?>
-    <table>
+    <table data-xt-min="1">
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>
