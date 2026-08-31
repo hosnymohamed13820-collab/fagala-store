@@ -284,52 +284,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                // جلب الموظفين النشطين لتجهيز التحديث المجمّع
-                $allEmps = $pdo->query('SELECT id, full_name, external_id FROM employees WHERE is_active = 1')->fetchAll();
-                $cases = [];
-                $params = [];
-                $targetIds = [];
-                $changedCount = 0;
+                // الربط المطلوب من الفورم: [رقم الموظف => معرّف كروينجو]
+                $desired = [];
+                foreach ($mappings as $extId => $empIdVal) {
+                    $empIdVal = trim((string) $empIdVal);
+                    if ($empIdVal !== '') $desired[(int) $empIdVal] = (string) $extId;
+                }
+                // المعرّفات اللي الشاشة دي بتتكلم عنها
+                $formExtIds = array_map('strval', array_keys($mappings));
 
-                foreach ($allEmps as $emp) {
-                    $empId = (int) $emp['id'];
-                    $currentExt = $emp['external_id'] !== null ? (string) $emp['external_id'] : '';
-                    $desiredExt = null;
+                // =========================================================
+                //  🔴 خطوتين مش خطوة — والسبب مش تنظيم، ده بق حصل فعلاً:
+                //
+                //  الفهرس الفريد `uq_emp_external_id` بيتفحص **صف صف** وقت
+                //  التحديث، مش في آخر الاستعلام. فلو نقلنا معرّف من موظف
+                //  لموظف في `UPDATE ... CASE` واحد، ممكن الصف الجديد ياخد
+                //  المعرّف **قبل** ما الصف القديم يسيبه — فالاتنين ماسكينه
+                //  في نفس اللحظة والقاعدة ترمي:
+                //      Duplicate entry '20362' for key 'uq_emp_external_id'
+                //  وده اللي كان بيحصل لما محمد يصلّح ربط اتعمل غلط.
+                //
+                //  فبنفكّ الأول في استعلام لوحده، وبنعيّن بعدين.
+                //  وكله جوه معاملة عشان مايحصلش إن الفك ينجح والتعيين يقع
+                //  فيفضل الموظفين من غير ربط خالص.
+                // =========================================================
+                $pdo->beginTransaction();
+                try {
+                    // (١) مين ماسك المعرّفات دي دلوقتي؟
+                    //     🔴 من غير `is_active = 1` بقصد — لو موظف موقوف
+                    //     ماسك المعرّف، الشاشة مابتعرضهوش فمكانش فيه أي
+                    //     طريقة تفكّه، والحفظ كان بيفضل يقع للأبد.
+                    $holders = [];
+                    if ($formExtIds) {
+                        $ph  = implode(',', array_fill(0, count($formExtIds), '?'));
+                        $sel = $pdo->prepare(
+                            "SELECT id, full_name, external_id, is_active
+                               FROM employees WHERE external_id IN ($ph)"
+                        );
+                        $sel->execute($formExtIds);
+                        $holders = $sel->fetchAll();
+                    }
 
-                    // هل الموظف محدد له empId في الفورم؟
-                    foreach ($mappings as $extId => $empIdVal) {
-                        if ((int) $empIdVal === $empId) {
-                            $desiredExt = (string) $extId;
-                            break;
+                    $releaseIds = [];
+                    $stolenFrom = [];   // أسامي اتفك عنهم الربط — نقولها لمحمد
+                    foreach ($holders as $h) {
+                        $hid  = (int) $h['id'];
+                        $keep = $desired[$hid] ?? null;
+                        // ماسك معرّف مش المفروض يفضل معاه؟ يتفك.
+                        if ($keep !== (string) $h['external_id']) {
+                            $releaseIds[] = $hid;
+                            $stolenFrom[] = (string) $h['full_name']
+                                . (((int) $h['is_active'] === 0) ? ' (موقوف)' : '');
                         }
                     }
 
-                    // إذا كان الموظف مربوطاً سابقاً بـ empId موجود بالفورم ولكن تم إلغاء ربطه
-                    if ($desiredExt === null && $currentExt !== '' && isset($mappings[$currentExt])) {
-                        $desiredExt = null;
-                    } elseif ($desiredExt === null) {
-                        // لم يتم تغييره بالفورم — نتركه كما هو
-                        $desiredExt = $currentExt !== '' ? $currentExt : null;
+                    if ($releaseIds) {
+                        $ph = implode(',', array_fill(0, count($releaseIds), '?'));
+                        $pdo->prepare("UPDATE employees SET external_id = NULL WHERE id IN ($ph)")
+                            ->execute($releaseIds);
                     }
 
-                    $currentNormalized = $currentExt !== '' ? $currentExt : null;
-                    if ($desiredExt !== $currentNormalized) {
-                        $cases[] = 'WHEN id = ? THEN ?';
-                        $params[] = $empId;
-                        $params[] = $desiredExt;
-                        $targetIds[] = $empId;
-                        $changedCount++;
+                    // (٢) التعيين — دلوقتي مفيش أي صف ماسك المعرّفات دي،
+                    //     فاستعلام واحد مجمّع بيعدّي من غير تصادم.
+                    $assigned = 0;
+                    if ($desired) {
+                        $cases = []; $params = []; $ids = [];
+                        foreach ($desired as $eid => $ext) {
+                            $cases[]  = 'WHEN id = ? THEN ?';
+                            $params[] = $eid;
+                            $params[] = $ext;
+                            $ids[]    = $eid;
+                        }
+                        $ph = implode(',', array_fill(0, count($ids), '?'));
+                        $pdo->prepare(
+                            'UPDATE employees SET external_id = CASE ' . implode(' ', $cases)
+                            . ' ELSE external_id END WHERE id IN (' . $ph . ')'
+                        )->execute(array_merge($params, $ids));
+                        $assigned = count($desired);
                     }
+
+                    $pdo->commit();
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
                 }
 
-                if (!empty($targetIds)) {
-                    $inPlaceholders = implode(',', array_fill(0, count($targetIds), '?'));
-                    $sql = 'UPDATE employees SET external_id = CASE ' . implode(' ', $cases) . ' ELSE external_id END WHERE id IN (' . $inPlaceholders . ')';
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute(array_merge($params, $targetIds));
+                $msg = 'اتحفظ الربط — ' . $assigned . ' موظف مربوط.';
+                if ($stolenFrom) {
+                    $msg .= ' واتفك الربط عن: ' . implode(' · ', $stolenFrom) . '.';
                 }
-
-                $_SESSION['flash'] = 'تم حفظ ربط الموظفين بنجاح (' . $changedCount . ' تعديل في الربط).';
+                $_SESSION['flash'] = $msg;
                 $_SESSION['flash_type'] = 'success';
                 header('Location: attendance_import.php?tab=mapping');
                 exit;
