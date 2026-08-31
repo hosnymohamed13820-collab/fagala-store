@@ -109,7 +109,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
     .rv-pane { display:none; } .rv-pane.active { display:block; }
     /* كروت الورديات */
-    .shift-card { background:#fff; border-radius:14px; padding:18px 20px; margin-bottom:16px;
+    .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid #f0a500; }
     .shift-card.done { border-right-color:var(--pos); }
     .shift-card.rej { border-right-color:var(--neg); }
@@ -126,8 +126,8 @@ function shift_cashier_amounts(array $s): array {
     /* بوب أب */
     .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:9999; align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
     .rv-modal.open { display:flex; }
-    .rv-box { background:#fff; border-radius:16px; width:100%; max-width:620px; margin:auto; box-shadow:0 18px 50px rgba(0,0,0,0.25); }
-    .rv-mhead { display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:#fff; border-radius:16px 16px 0 0; }
+    .rv-box { background:var(--surface); border-radius:16px; width:100%; max-width:620px; margin:auto; box-shadow:0 18px 50px rgba(0,0,0,0.25); }
+    .rv-mhead { display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; }
     .rv-mhead .t { font-size:16px; color:var(--ink-900); font-weight:700; }
     .rv-x { background:none; border:none; font-size:26px; color:var(--ink-400); cursor:pointer; }
     .rv-mbody { padding:18px 22px; }
@@ -157,8 +157,8 @@ function shift_cashier_amounts(array $s): array {
     .cmp-table th { background:var(--line-soft); color:var(--ink-500); }
     .cmp-ok { color:var(--pos); } .cmp-bad { color:var(--neg); }
     .rv-actions { display:flex; gap:8px; margin-top:14px; }
-    .btn-approve { background:var(--pos); color:#fff; flex:1; }
-    .btn-reject  { background:var(--neg); color:#fff; flex:1; }
+    .btn-approve { background:var(--pos-fill); color:#fff; flex:1; }
+    .btn-reject  { background:var(--neg-fill); color:#fff; flex:1; }
     @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } }
 </style>
 

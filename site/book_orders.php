@@ -97,7 +97,7 @@ require_once __DIR__ . '/includes/header.php';
     .bo-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
     .bo-bar input.main:focus { outline:none; border-color:var(--accent); }
-    .bo-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .bo-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
     .bo-sug.show { display:block; }
@@ -129,7 +129,7 @@ require_once __DIR__ . '/includes/header.php';
     .tag-no { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px;
               font-weight:700; background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
 
-    .bo-empty { text-align:center; color:#bbb; padding:40px 20px; font-size:15px; }
+    .bo-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .bo-status { font-size:13px; min-height:20px; margin-bottom:10px; }
     .bo-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
                 background:var(--ink-900,#16233d); color:#fff; padding:13px 24px; border-radius:12px;
@@ -173,7 +173,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;
                 flex-wrap:wrap;margin-top:14px;">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
-        <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+        <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
             <i class="ti ti-trash"></i> تفريغ الشاشة
         </button>
     </div>
@@ -192,7 +192,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="bo-copybar">
         <?php foreach ($suppliers as $s): ?>
             <button type="button" class="btn cpy" data-sup="<?= (int)$s['id'] ?>" disabled
-                    style="background:var(--pos);"
+                    style="background:var(--pos-fill);"
                     onclick="copyOrder(<?= (int)$s['id'] ?>, this)">
                 <i class="ti ti-copy"></i> طلبية <?= e($s['name']) ?>
                 <span class="cnt" data-sup="<?= (int)$s['id'] ?>" style="opacity:.8;font-size:12px;">(0)</span>

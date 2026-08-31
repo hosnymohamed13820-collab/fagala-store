@@ -134,7 +134,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .period-bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
-    .period-btn { background:#fff; border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
+    .period-btn { background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
         font-size:14px; color:var(--accent-hover); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
     .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
     .period-custom { display:flex; gap:8px; align-items:center; }
@@ -144,7 +144,7 @@ require_once __DIR__ . '/includes/header.php';
     /* الكارت المجمّع سطر كامل، والخزائن تحته تتوزّع بالتساوي على العرض. */
     .treasury-grid { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:22px; }
     .treasury-grid > .tre-box { flex:1 1 0; min-width:150px; }
-    .tre-box { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
 
     .tre-box.main {
         flex:1 1 58%;   /* كان 100% — ضاق عشان كارت الكاش الفعلي يقف جنبه */
@@ -176,12 +176,12 @@ require_once __DIR__ . '/includes/header.php';
     .tre-box.main .tre-val { color:var(--accent); }
     .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
-    .sum-box { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .sum-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .sum-box .l { font-size:13px; color:var(--ink-500); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
     .sum-box .v { font-size:28px; font-weight:800; }
     .sum-box .u { font-size:12px; color:var(--ink-400); margin-top:2px; }
     .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent); }
-    .bars-card, .shifts-card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .bars-card, .shifts-card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:880px){ .bottom-grid { grid-template-columns:1fr; } }
     .bar-row { margin-bottom:16px; }
@@ -190,14 +190,14 @@ require_once __DIR__ . '/includes/header.php';
     .bar-head .bv { color:var(--ink-500); font-size:13px; }
     .bar-track { height:12px; background:var(--line); border-radius:8px; overflow:hidden; border:1px solid var(--line); }
     .bar-fill { height:100%; border-radius:8px; transition:width .3s; }
-    .bar-fill.green { background:var(--pos); }
-    .bar-fill.orange { background:var(--warn); }
-    .bar-fill.red { background:var(--neg); }
+    .bar-fill.green { background:var(--pos-fill); }
+    .bar-fill.orange { background:var(--warn-fill); }
+    .bar-fill.red { background:var(--neg-fill); }
     .bar-fill.empty { background:transparent; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .shift-item { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
     .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .quick-actions { display:flex; gap:8px; margin-top:14px; }
     .qa-btn { padding:9px 16px; border-radius:9px; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
     .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-hover); }

@@ -49,7 +49,7 @@ function book_tabs_bar(string $active): string
     $css = '<style>
         .bk-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
         .bk-tab { display:inline-flex; align-items:center; gap:7px; padding:11px 20px;
-                  border:1.5px solid var(--line); border-radius:11px; background:#fff;
+                  border:1.5px solid var(--line); border-radius:11px; background:var(--surface);
                   color:var(--ink-700,#4a4a68); font-size:14px; font-weight:600;
                   text-decoration:none; transition:all .15s; }
         .bk-tab:hover { border-color:var(--accent); color:var(--accent); }

@@ -191,7 +191,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .att-wrap { max-width:480px; margin:0 auto; }
-    .att-card { background:#fff; border-radius:16px; padding:26px; box-shadow:0 2px 12px rgba(124,111,247,0.08); margin-bottom:18px; }
+    .att-card { background:var(--surface); border-radius:16px; padding:26px; box-shadow:0 2px 12px rgba(124,111,247,0.08); margin-bottom:18px; }
     .att-date { text-align:center; color:var(--ink-500); font-size:14px; margin-bottom:6px; }
     .att-name { text-align:center; color:var(--ink-900); font-size:20px; font-weight:700; margin-bottom:22px; }
     .exp-row { display:flex; justify-content:space-around; margin-bottom:18px; }
@@ -209,10 +209,10 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .clock-btn { width:100%; padding:18px; border:none; border-radius:14px; font-size:18px;
         font-weight:700; font-family:inherit; cursor:pointer; color:#fff; margin-bottom:12px;
         display:flex; align-items:center; justify-content:center; gap:10px; }
-    .btn-in  { background:var(--pos); } .btn-in:hover { background:#15835f; }
-    .btn-out { background:var(--neg); } .btn-out:hover { background:#c93f3e; }
+    .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:#15835f; }
+    .btn-out { background:var(--neg-fill); } .btn-out:hover { background:#c93f3e; }
     .btn-done { background:var(--line-soft); color:var(--ink-500); cursor:default; }
-    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:#fff; color:var(--accent);
+    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:var(--surface); color:var(--accent);
         border-radius:14px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; }
     .btn-request:hover { background:var(--bg); }
     .no-emp { text-align:center; color:var(--ink-500); padding:40px; }
@@ -220,7 +220,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:420px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:420px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
@@ -447,7 +447,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         }
     }
 ?>
-<div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
+<div class="card" style="background:var(--surface);border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
     <form method="get" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من:</label>
@@ -481,7 +481,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     </div>
 
     <?php if (empty($myPeriodAtt)): ?>
-        <div style="text-align:center;color:#bbb;padding:24px;">لا يوجد سجل لهذه الفترة.</div>
+        <div style="text-align:center;color:var(--ink-400);padding:24px;">لا يوجد سجل لهذه الفترة.</div>
     <?php else: ?>
     <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">

@@ -68,7 +68,7 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:#e6f7ed; color:#1a7f4b; }
     .flash.error   { background:#fde8e8; color:#c0392b; }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:#1E1B4B; font-weight:600; margin-bottom:14px; }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid #f0eef9; }
@@ -80,7 +80,7 @@ require_once __DIR__ . '/includes/header.php';
     .recon-input { width:120px; padding:8px 10px; border:1.5px solid #e3e0f5; border-radius:8px;
         font-size:14px; text-align:center; font-family:inherit; }
     .diff-pos { color:#1a7f4b; font-weight:600; } .diff-neg { color:#c0392b; font-weight:600; } .diff-zero { color:#8884a8; }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .hint { color:#8884a8; font-size:13px; margin-bottom:14px; }
 </style>
 

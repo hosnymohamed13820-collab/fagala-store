@@ -427,7 +427,7 @@ require_once __DIR__ . '/includes/header.php';
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
     .tab {
         padding:10px 20px; border-radius:10px; text-decoration:none;
-        color:var(--accent-hover); background:#fff; font-size:14px; font-weight:500;
+        color:var(--accent-hover); background:var(--surface); font-size:14px; font-weight:500;
         border:1.5px solid transparent;
     }
     .tab.active { background:var(--accent); color:#fff; }
@@ -446,11 +446,11 @@ require_once __DIR__ . '/includes/header.php';
     td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
-    .badge.inactive { background:var(--line-soft); color:#999; }
+    .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:480px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:480px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .tag-on { display:inline-block; padding:2px 8px; margin:1px 2px; border-radius:5px;
@@ -468,11 +468,11 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input, .form-row select {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
-    .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
 </style>
 
 <?php if ($flash): ?>
@@ -764,14 +764,14 @@ require_once __DIR__ . '/includes/header.php';
                     <td><span class="badge <?= $t['is_active']?'active':'inactive' ?>"><?= $t['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <?php if ($isCustody): ?>
-                            <span style="color:#bbb;font-size:13px;">—</span>
+                            <span style="color:var(--ink-400);font-size:13px;">—</span>
                         <?php else: ?>
                             <span class="badge <?= ($t['show_in_receipts'] ?? 1)?'active':'inactive' ?>"><?= ($t['show_in_receipts'] ?? 1)?'يظهر في الإيصالات':'مخفي من الإيصالات' ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?php if ($isCustody): ?>
-                            <span style="color:#bbb;font-size:13px;">تُدار مع الفرع</span>
+                            <span style="color:var(--ink-400);font-size:13px;">تُدار مع الفرع</span>
                         <?php else: ?>
                             <button class="btn btn-sm btn-ghost"
                                 onclick='openTre(<?= json_encode(["id"=>$t["id"],"name"=>$t["name"]], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>

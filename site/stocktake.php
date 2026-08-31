@@ -491,20 +491,20 @@ require_once __DIR__ . '/includes/header.php';
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .flash.merged  { background:var(--warn-soft); color:var(--warn); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; }
-    .btn-green { background:var(--pos); } .btn-green:hover { background:#15835f; }
-    .btn-red { background:var(--neg); } .btn-red:hover { background:#c93f3e; }
+    .btn-green { background:var(--pos-fill); } .btn-green:hover { background:#15835f; }
+    .btn-red { background:var(--neg-fill); } .btn-red:hover { background:#c93f3e; }
     .btn-ghost { background:var(--bg); color:var(--accent-hover); }
     .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
     .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px; }
-    .dot.on { background:var(--pos); } .dot.off { background:#bbb; }
+    .dot.on { background:var(--pos-fill); } .dot.off { background:var(--ink-300); }
     .hdr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-bottom:8px; }
     .hdr-item .l { font-size:12px; color:var(--ink-500); } .hdr-item .v { font-size:15px; color:var(--ink-900); font-weight:600; }
     table { width:100%; border-collapse:collapse; }
@@ -512,24 +512,24 @@ require_once __DIR__ . '/includes/header.php';
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
     .diff-neg { color:var(--neg); font-weight:600; } .diff-pos { color:var(--pos); font-weight:600; } .diff-zero { color:var(--ink-500); }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px; }
     .form-inline .fld { display:flex; flex-direction:column; gap:4px; }
     .form-inline label { font-size:12px; color:var(--ink-500); }
     .form-inline input, .form-inline select { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45); z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
     .sheet-link { color:var(--accent); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
-    .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:#fff; border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
+    .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
     .status-chip:hover { border-color:#c9c2f5; }
     .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
     .tree-section { border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
@@ -551,8 +551,8 @@ require_once __DIR__ . '/includes/header.php';
         z-index: 9999; padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 500;
         box-shadow: 0 6px 24px rgba(0,0,0,0.18); max-width: 90%; text-align: center;
         animation: toastIn 0.25s ease; }
-    .stk-toast.success { background: var(--pos); color: #fff; }
-    .stk-toast.error { background: var(--neg); color: #fff; }
+    .stk-toast.success { background:var(--pos-fill); color: #fff; }
+    .stk-toast.error { background:var(--neg-fill); color: #fff; }
     @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
 </style>
 
@@ -586,7 +586,7 @@ require_once __DIR__ . '/includes/header.php';
                 <form method="post" style="display:inline;" onsubmit="return confirm('إعادة فتح آخر جرد مقفول؟ كل المحاضر هترجع زي ما هي.')">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_session">
-                    <button class="btn" style="background:var(--warn);"><i class="ti ti-rotate"></i> إعادة فتح آخر جرد</button>
+                    <button class="btn" style="background:var(--warn-fill);"><i class="ti ti-rotate"></i> إعادة فتح آخر جرد</button>
                 </form>
             <?php endif; ?>
             <?php if ($session): ?>
@@ -620,7 +620,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="delete_sheet">
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
-                <button type="submit" class="btn btn-sm" style="background:var(--neg);"><i class="ti ti-trash"></i> مسح المحضر</button>
+                <button type="submit" class="btn btn-sm" style="background:var(--neg-fill);"><i class="ti ti-trash"></i> مسح المحضر</button>
             </form>
         <?php endif; ?>
     </div>
@@ -704,7 +704,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="text" id="nameSearch" autocomplete="off" placeholder="اكتب جزء من اسم الصنف..." aria-label="بحث باسم الصنف"
                    oninput="searchByName(this.value)"
                    style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
-            <div id="searchResults" style="display:none;position:absolute;z-index:50;background:#fff;border:1.5px solid var(--line);
+            <div id="searchResults" style="display:none;position:absolute;z-index:50;background:var(--surface);border:1.5px solid var(--line);
                  border-radius:9px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:4px;"></div>
         </div>
         <form method="post" class="form-inline" id="addLineForm" onsubmit="return validateScan(this)">
@@ -822,7 +822,7 @@ require_once __DIR__ . '/includes/header.php';
                 fetch('stocktake.php?search=' + encodeURIComponent(term))
                     .then(r => r.json())
                     .then(items => {
-                        if (!items.length) { box.innerHTML='<div style="padding:10px;color:#bbb;">مفيش نتائج</div>'; box.style.display='block'; return; }
+                        if (!items.length) { box.innerHTML='<div style="padding:10px;color:var(--ink-400);">مفيش نتائج</div>'; box.style.display='block'; return; }
                         box.innerHTML = items.map(it => {
                             var prices = '';
                             if (it.sale != null) prices += '<span style="color:var(--pos);">بيع: '+it.sale+'</span> ';
@@ -882,7 +882,7 @@ require_once __DIR__ . '/includes/header.php';
         function showStkPopup(title, html) {
             var ov = document.createElement('div');
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(30,27,75,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
+            ov.innerHTML = '<div style="background:var(--surface);border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
                 + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> ' + title + '</h3>'
                 + '<p style="color:#444;font-size:14px;line-height:1.8;">' + html + '</p>'
                 + '<button style="margin-top:16px;padding:9px 28px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;">تمام</button></div>';
@@ -939,7 +939,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_review">
                     <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
-                    <button class="btn" style="background:var(--warn);"><i class="ti ti-rotate"></i> إرجاع للمراجعة</button>
+                    <button class="btn" style="background:var(--warn-fill);"><i class="ti ti-rotate"></i> إرجاع للمراجعة</button>
                 </form>
                 <?php endif; ?>
             <?php endif; ?>
@@ -1424,7 +1424,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td onclick="event.stopPropagation();">
                                     <?php if ($sh['status'] === 'done'): ?>
                                         <a href="stocktake_export.php?sheet=<?= (int)$sh['id'] ?>" class="btn btn-sm" style="text-decoration:none;font-size:12px;padding:4px 10px;">تقرير</a>
-                                    <?php else: ?><span style="color:#ccc;">—</span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-300);">—</span><?php endif; ?>
                                 </td>
                                 <?php if ($owner): ?>
                                 <td onclick="event.stopPropagation();">
@@ -1435,7 +1435,7 @@ require_once __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="sheet_id" value="<?= (int)$sh['id'] ?>">
                                             <button type="submit" style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12px;">حذف</button>
                                         </form>
-                                    <?php else: ?><span style="color:#ccc;" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-300);" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
                                 </td>
                                 <?php endif; ?>
                             </tr>
@@ -1554,10 +1554,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['notfound'])): ?>
 <div id="notfoundModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
         <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">الكود غير موجود</h3>
-        <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
+        <p style="color:var(--ink-600);font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكود <strong style="color:var(--ink-900);"><?= e($_GET['notfound']) ?></strong> مش موجود في قاعدة بيانات الأصناف.
             راجع الكود وحاول تاني.
         </p>
@@ -1581,10 +1581,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['badqty'])): ?>
 <div id="badqtyModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+    <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
         <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-ban"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">كمية غير منطقية</h3>
-        <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
+        <p style="color:var(--ink-600);font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكمية <strong style="color:var(--neg);"><?= e($_GET['badqty']) ?></strong> كبيرة جداً ومش منطقية.
             غالباً السكانر ضرب الكود في خانة الكمية بالغلط. الصنف <strong>ما اتسجّلش</strong>. حاول تاني.
         </p>

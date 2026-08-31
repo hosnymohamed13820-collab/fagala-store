@@ -395,7 +395,7 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500;
     }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
-    .badge.inactive { background:var(--line-soft); color:#999; }
+    .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
     .badge.owner { background:#ede9ff; color:var(--accent-hover); }
     .perm-chips { display:flex; flex-wrap:wrap; gap:4px; }
     .perm-chip { background:var(--bg); color:var(--accent-hover); padding:2px 8px; border-radius:6px; font-size:11px; }
@@ -408,7 +408,7 @@ require_once __DIR__ . '/includes/header.php';
     }
     .modal-bg.open { display:flex; }
     .modal {
-        background:#fff; border-radius:16px; width:100%; max-width:560px; padding:26px;
+        background:var(--surface); border-radius:16px; width:100%; max-width:560px; padding:26px;
     }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:15px; }
@@ -417,7 +417,7 @@ require_once __DIR__ . '/includes/header.php';
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft);
     }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .perms-box {
         border:1.5px solid var(--line); border-radius:10px; padding:14px;
@@ -452,8 +452,8 @@ require_once __DIR__ . '/includes/header.php';
         color: var(--ink-400);
     }
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
-    .btn-cancel:hover { background:#e8e5f3; color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
+    .btn-cancel:hover { background:#e8e5f3; color:var(--ink-500); }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
     @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
 </style>
@@ -503,7 +503,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php if ($usr['is_owner']): ?>
                             <span class="perm-all">كل الصلاحيات</span>
                         <?php elseif (empty($uperms)): ?>
-                            <span style="color:#bbb;font-size:12px;">لا يوجد</span>
+                            <span style="color:var(--ink-400);font-size:12px;">لا يوجد</span>
                         <?php else: ?>
                             <?php $chips = format_user_perm_chips($uperms, $modules, $moduleParts); ?>
                             <div class="perm-chips">
@@ -548,7 +548,7 @@ require_once __DIR__ . '/includes/header.php';
                                 </button>
                             </form>
                         <?php else: ?>
-                            <span style="color:#ccc;font-size:13px;">—</span>
+                            <span style="color:var(--ink-300);font-size:13px;">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>

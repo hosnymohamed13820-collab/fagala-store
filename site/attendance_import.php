@@ -817,7 +817,7 @@ require_once __DIR__ . '/includes/header.php';
     .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); color:var(--neg); }
-    .btn-success { background:var(--pos); color:#fff; }
+    .btn-success { background:var(--pos-fill); color:#fff; }
     .btn-success:hover { background:#245942; color:#fff; }
 
     /* الكروت والتبويبات والجداول */

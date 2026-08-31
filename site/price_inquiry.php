@@ -41,7 +41,7 @@ require_once __DIR__ . '/includes/header.php';
     .barcode-row { display:flex; gap:10px; margin-bottom:14px; }
     .barcode-row input { flex:1 1 auto; min-width:0; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px;
         font-size:17px; font-family:inherit; background:var(--line-soft); text-align:center; letter-spacing:1px; }
-    .barcode-row input:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .barcode-row input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .btn-scan { flex:0 0 auto; background:var(--accent); color:#fff; border:none; border-radius:var(--r); padding:0 16px;
         font-size:22px; cursor:pointer; display:flex; align-items:center; }
     .btn-scan:hover { background:var(--accent-hover); }

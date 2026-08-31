@@ -410,7 +410,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .btn-white:hover { background:rgba(255,255,255,0.28); }
     .treasuries-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:24px; }
     .treasury-card {
-        background:#fff; border-radius:14px; padding:18px; cursor:pointer;
+        background:var(--surface); border-radius:14px; padding:18px; cursor:pointer;
         border:2px solid transparent; transition:border-color .15s, transform .1s;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); text-decoration:none; display:block;
     }
@@ -432,13 +432,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     td { color:var(--ink-800); }
     .amt-debit  { color:var(--neg); font-weight:500; }
     .amt-credit { color:var(--pos); font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
     .section-title { font-size:17px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     /* شريط الفلتر وكروت الإجماليات لكشف الحساب */
     .filter-bar { background:var(--line-soft); border-radius:12px; padding:12px 16px; margin-bottom:16px;
         display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .filter-bar label { font-size:13px; color:var(--ink-700); font-weight:500; }
-    .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:#fff; }
+    .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); }
     .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent); }
     .btn-filter { padding:8px 16px; font-size:13px; }
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
@@ -450,16 +450,16 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .form-row input, .form-row select, .form-row textarea {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
     /* عمود الملاحظات: النص الطويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل من الداتا مش من الخلية. */

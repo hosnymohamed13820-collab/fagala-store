@@ -247,6 +247,11 @@ $DEFINED = [
     'line','line-soft','muted','neg','neg-soft','pos','pos-soft',
     'purple','purple-dark','r','r-lg','r-sm','shadow','shadow-lg','shadow-sm',
     'sidebar','sidebar-hover','surface','text','warn','warn-soft',
+    // الوضع الليلي (٣١ أغسطس ٢٠٢٦): لون واحد مايقدرش يبقى مقروء ككتابة على
+    // خلفية غامقة ويقبل كتابة بيضا فوقه في نفس الوقت. فالدلالية اتقسمت دورين:
+    // `--pos`/`--neg`/`--warn` بيقلبوا فاتحين (دور الكتابة)، و`--*-fill`
+    // بيفضلوا غامقين (دور الخلفية). و`--accent-text` نفس الحكاية للأزرق.
+    'pos-fill','neg-fill','warn-fill','accent-text',
 ];
 preg_match_all('/var\(\s*--([a-z0-9-]+)\s*\)/i', $css, $vm);
 $used    = array_unique($vm[1] ?? []);

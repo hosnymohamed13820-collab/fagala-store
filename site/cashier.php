@@ -330,7 +330,7 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
@@ -343,7 +343,7 @@ require_once __DIR__ . '/includes/header.php';
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .fld input, .fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .denom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
     .denom-cell { background:var(--line-soft); border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .denom-cell .dlabel { font-size:13px; color:var(--ink-500); margin-bottom:5px; }
@@ -365,7 +365,7 @@ require_once __DIR__ . '/includes/header.php';
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 11px; border-radius:20px; font-size:12px; font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .reject-reason { background:var(--neg-soft); color:var(--neg); padding:8px 12px; border-radius:8px; font-size:13px; margin-top:4px; }
     /* تبويبات التقفيل */
     .ct-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 16px; border-bottom:2px solid var(--line); }
@@ -390,10 +390,10 @@ require_once __DIR__ . '/includes/header.php';
     .shift-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5);
         z-index:9999; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .shift-modal.open { display:flex; }
-    .shift-modal-box { background:#fff; border-radius:16px; width:100%; max-width:780px;
+    .shift-modal-box { background:var(--surface); border-radius:16px; width:100%; max-width:780px;
         box-shadow:0 18px 50px rgba(0,0,0,0.25); margin:auto; }
     .shift-modal-head { display:flex; justify-content:space-between; align-items:center;
-        padding:18px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:#fff; border-radius:16px 16px 0 0; z-index:2; }
+        padding:18px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; z-index:2; }
     .shift-modal-body { padding:20px 22px; }
     .modal-x { background:none; border:none; font-size:28px; color:var(--ink-400); cursor:pointer; line-height:1; padding:0 6px; }
     .modal-x:hover { color:var(--neg); }
@@ -416,11 +416,11 @@ require_once __DIR__ . '/includes/header.php';
     .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
     @media (max-width:900px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
     @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
-    .stat-card { background:#fff; border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
     .stat-card .value { font-size:17px; font-weight:700; color:var(--accent); }
     .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
-    .stat-card .sub { font-size:11px; color:#bbb; margin-top:2px; }
+    .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
     .pay-with-summary .pay-method { min-width:0; }
@@ -439,7 +439,7 @@ require_once __DIR__ . '/includes/header.php';
     .denom-line .dn { font-size:13px; color:var(--ink-500); min-width:62px; }
     .denom-line input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         text-align:center; font-family:inherit; font-size:14px; background:var(--line-soft); }
-    .denom-line input:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .denom-line input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .denom-line .mul { font-size:13px; color:var(--ink-300); }
     .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent); }
     .cash-total-box { background:var(--bg); border-radius:12px; padding:18px; height:fit-content; }
@@ -491,7 +491,7 @@ require_once __DIR__ . '/includes/header.php';
 <style>
   .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:#fff; color:#5b5878;
+      padding:7px 16px; border-radius:9px; background:var(--surface); color:#5b5878;
       text-decoration:none; font-size:14px; border:1.5px solid var(--line);
       transition:.15s;
   }

@@ -100,7 +100,7 @@ require_once __DIR__ . '/includes/header.php';
     .rs-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
     .rs-bar input.main:focus { outline:none; border-color:var(--accent); }
-    .rs-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .rs-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
     .rs-sug.show { display:block; }
@@ -130,7 +130,7 @@ require_once __DIR__ . '/includes/header.php';
              font-size:14px; font-family:inherit; text-align:center; }
     .q-inp:focus { outline:none; border-color:var(--pos); }
 
-    .rs-empty { text-align:center; color:#bbb; padding:36px 20px; font-size:14.5px; }
+    .rs-empty { text-align:center; color:var(--ink-400); padding:36px 20px; font-size:14.5px; }
     .rs-status { font-size:13px; min-height:20px; margin-bottom:8px; }
     .rs-list-row { display:flex; justify-content:space-between; align-items:center; gap:12px;
                    flex-wrap:wrap; padding:12px 16px; border:1px solid var(--line-soft);
@@ -285,10 +285,10 @@ require_once __DIR__ . '/includes/header.php';
                     flex-wrap:wrap;margin-top:16px;">
             <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
             <span style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+                <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                     <i class="ti ti-trash"></i> تفريغ
                 </button>
-                <button type="button" class="btn" id="saveBtn" style="background:var(--pos);" onclick="saveRes()">
+                <button type="button" class="btn" id="saveBtn" style="background:var(--pos-fill);" onclick="saveRes()">
                     <i class="ti ti-bookmark"></i> احفظ الحجز
                 </button>
             </span>

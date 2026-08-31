@@ -158,10 +158,10 @@ $prioBadge = function($p) {
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error { background:var(--neg-soft); color:var(--neg); }
-    .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid #eee; margin-bottom:20px; flex-wrap:wrap; }
+    .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid var(--line); margin-bottom:20px; flex-wrap:wrap; }
     .t-tab { padding:10px 18px; text-decoration:none; color:var(--ink-500); font-size:14px; border-bottom:2px solid transparent; }
     .t-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
-    .card { background:#fff; border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
     .task-item { display:block; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; text-decoration:none; color:inherit; transition:.15s; }
     .task-item:hover { border-color:#c9c2f5; background:var(--line-soft); }
     .task-item.pending { border-right:4px solid var(--accent); }
@@ -174,12 +174,12 @@ $prioBadge = function($p) {
     .fld textarea { min-height:90px; resize:vertical; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
     .btn-sm { padding:7px 14px; font-size:13px; }
-    .btn-done { background:var(--pos); }
+    .btn-done { background:var(--pos-fill); }
     .btn-ghost { background:var(--accent-soft); color:var(--accent); }
     .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
     .scope-opt.active { border-color:var(--accent); background:var(--bg); color:var(--accent); font-weight:600; }
-    .checklist { max-height:260px; overflow-y:auto; border:1.5px solid #eee; border-radius:10px; padding:10px; }
+    .checklist { max-height:260px; overflow-y:auto; border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .checklist label { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:14px; cursor:pointer; border-radius:6px; }
     .checklist label:hover { background:var(--line-soft); }
     .checklist input { width:auto; }

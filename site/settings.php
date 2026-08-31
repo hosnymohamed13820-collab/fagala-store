@@ -120,7 +120,7 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input {
         width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus { outline:none; border-color:var(--accent); background:var(--surface); }
     .form-row select {
         width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
@@ -133,7 +133,7 @@ require_once __DIR__ . '/includes/header.php';
         background:var(--line-soft); color:var(--ink-500); cursor:default; }
     .fld-edit {
         flex:none; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
-        background:#fff; color:var(--accent); font-family:inherit; font-size:13px;
+        background:var(--surface); color:var(--accent); font-family:inherit; font-size:13px;
         font-weight:600; cursor:pointer; }
     .fld-edit:hover { background:var(--accent-soft); color:var(--accent-hover); }
     .form-row.is-open .fld-edit { border-color:var(--neg); color:var(--neg); }
@@ -142,7 +142,7 @@ require_once __DIR__ . '/includes/header.php';
         font-size:15px; font-family:inherit; cursor:pointer; font-weight:600; }
     .btn:hover { background:var(--accent-hover); }
     .nav-links { margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap; }
-    .nav-link { padding:9px 16px; background:#fff; border-radius:9px; text-decoration:none;
+    .nav-link { padding:9px 16px; background:var(--surface); border-radius:9px; text-decoration:none;
         color:var(--accent-hover); font-size:14px; }
     .nav-link:hover { background:var(--bg); }
 </style>

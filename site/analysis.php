@@ -313,7 +313,7 @@ require_once __DIR__ . '/includes/header.php';
         white-space:nowrap; display:inline-block; }
     .b-naqes  { background:var(--neg-soft);    color:var(--neg); }
     .b-raked  { background:var(--warn-soft);   color:var(--warn); }
-    .b-rakedf { background:var(--warn);        color:#fff; }
+    .b-rakedf { background:var(--warn-fill);        color:#fff; }
     .b-nazar  { background:var(--accent-soft); color:var(--accent); }
     .b-tamam  { background:var(--pos-soft);    color:var(--pos); }
 

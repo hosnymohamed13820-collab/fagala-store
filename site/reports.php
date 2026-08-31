@@ -1042,18 +1042,18 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .rep-tabs { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
-    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:#fff;
+    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:var(--surface);
         font-size:14px; font-weight:500; }
     .rep-tab.active { background:var(--accent); color:#fff; }
     .rep-tab:not(.active):hover { background:var(--bg); }
-    .filter-bar { background:#fff; border-radius:12px; padding:16px; margin-bottom:18px;
+    .filter-bar { background:var(--surface); border-radius:12px; padding:16px; margin-bottom:18px;
         display:flex; gap:10px; align-items:center; flex-wrap:wrap; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .filter-bar label { font-size:13px; color:var(--ink-500); }
     .filter-bar input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 18px; cursor:pointer; font-family:inherit; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
     .btn:hover { background:var(--accent-hover); }
-    .btn-csv { background:var(--pos); } .btn-csv:hover { background:#15835f; }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:#15835f; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .rep-title { font-size:17px; color:var(--ink-900); font-weight:700; margin-bottom:4px; }
     /* كروت الإجماليات — بتتحسب من الصفوف الظاهرة في الجدول */
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
@@ -1075,13 +1075,13 @@ require_once __DIR__ . '/includes/header.php';
     tr.acc-row.open .acc-caret { transform:rotate(-90deg); }
     tr.acc-body > td { background:var(--line-soft); padding:0; }
     .acc-inner { padding:12px 16px; }
-    .acc-inner table { width:100%; background:#fff; border-radius:9px; overflow:hidden; }
+    .acc-inner table { width:100%; background:var(--surface); border-radius:9px; overflow:hidden; }
     .acc-inner th { background:var(--line-soft); font-size:12px; }
     .acc-inner td, .acc-inner th { padding:7px 10px; font-size:12.5px; }
     .acc-msg { padding:14px; text-align:center; color:var(--ink-400); font-size:13px; }
     /* أزرار الفروع في تقرير العهدة */
     .br-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-    .br-tab { padding:8px 15px; border-radius:9px; background:#fff; border:1.5px solid var(--line);
+    .br-tab { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
         color:var(--ink-700); font-size:13px; text-decoration:none; }
     .br-tab:hover { border-color:var(--accent); }
     .br-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
@@ -1094,7 +1094,7 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:10px 12px; text-align:right; font-size:13px; border-bottom:1px solid var(--line); white-space:nowrap; }
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
-    .empty { text-align:center; color:#bbb; padding:40px; font-size:15px; }
+    .empty { text-align:center; color:var(--ink-400); padding:40px; font-size:15px; }
 </style>
 
 <div class="rep-tabs">
@@ -1267,7 +1267,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <!-- البوب أب -->
                 <div id="sheetsModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;align-items:center;justify-content:center;">
-                    <div style="background:#fff;border-radius:16px;padding:24px;max-width:560px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+                    <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:560px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
                         <h3 style="color:var(--ink-900);font-size:17px;margin-bottom:14px;">اختر المحاضر</h3>
                         <div style="display:flex;gap:8px;margin-bottom:12px;">
                             <button type="button" class="btn btn-sm" onclick="toggleAllSheets(true)">اختيار الكل</button>
@@ -1378,7 +1378,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php else: ?>
 
 <style>
-    .np-bar { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:14px;
+    .np-bar { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:14px;
         display:flex; gap:10px; align-items:center; flex-wrap:wrap;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .np-bar input[type=text], .np-bar input[type=number] {
@@ -1387,7 +1387,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-search-wrap { position:relative; flex:1 1 280px; min-width:220px; }
     .np-search-wrap input { width:100%; box-sizing:border-box; }
     .np-sugg { position:absolute; top:calc(100% + 4px); right:0; left:0; z-index:40;
-        background:#fff; border:1.5px solid var(--line); border-radius:10px;
+        background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:300px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,0.12); display:none; }
     .np-sugg div { padding:9px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line-soft); }
     .np-sugg div:last-child { border-bottom:none; }
@@ -1406,7 +1406,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-modal { position:fixed; inset:0; background:rgba(20,16,50,0.55); z-index:200;
         display:none; align-items:center; justify-content:center; padding:16px; }
     .np-modal.on { display:flex; }
-    .np-box { background:#fff; border-radius:14px; width:min(820px,100%); max-height:88vh;
+    .np-box { background:var(--surface); border-radius:14px; width:min(820px,100%); max-height:88vh;
         display:flex; flex-direction:column; overflow:hidden; }
     .np-box header { padding:14px 18px; border-bottom:1px solid var(--line);
         display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -1420,7 +1420,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-row label { flex:1; cursor:pointer; display:flex; gap:10px; align-items:center; }
     .np-muted { color:var(--ink-500); font-size:12px; }
     .btn[disabled] { opacity:.5; cursor:not-allowed; }
-    .btn-ghost { background:#fff; color:var(--accent-hover); border:1.5px solid var(--line); }
+    .btn-ghost { background:var(--surface); color:var(--accent-hover); border:1.5px solid var(--line); }
     .btn-ghost:hover { background:var(--bg); }
     .np-note { font-size:12px; color:var(--ink-500); margin-top:10px; line-height:1.7; }
 </style>

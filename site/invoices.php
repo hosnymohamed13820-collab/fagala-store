@@ -1534,7 +1534,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <style>
-    .ilk-bar { background:#fff; border-radius:12px; padding:11px 15px; margin-bottom:16px;
+    .ilk-bar { background:var(--surface); border-radius:12px; padding:11px 15px; margin-bottom:16px;
         display:flex; gap:10px; align-items:center;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .ilk-bar > i { color:var(--ink-500); font-size:18px; }
@@ -1543,7 +1543,7 @@ require_once __DIR__ . '/includes/header.php';
         border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px; }
     .ilk-wrap input:focus { outline:none; border-color:var(--accent); }
     .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
-        background:#fff; border:1.5px solid var(--line); border-radius:10px;
+        background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:330px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.13); display:none; }
     .ilk-sugg div.ilk-s { padding:9px 12px; cursor:pointer; border-bottom:1px solid var(--line-soft); font-size:13px; }
     .ilk-sugg div.ilk-s:last-child { border-bottom:none; }
@@ -1553,7 +1553,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-modal { position:fixed; inset:0; background:rgba(20,16,50,0.55); z-index:300;
         display:none; align-items:center; justify-content:center; padding:16px; }
     .ilk-modal.on { display:flex; }
-    .ilk-box { background:#fff; border-radius:14px; width:min(900px,100%); max-height:88vh;
+    .ilk-box { background:var(--surface); border-radius:14px; width:min(900px,100%); max-height:88vh;
         display:flex; flex-direction:column; overflow:hidden; }
     .ilk-box header { padding:14px 18px; border-bottom:1px solid var(--line);
         display:flex; gap:10px; align-items:flex-start; }
@@ -1567,7 +1567,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-inv.ilk-ret { border-color:#f0c9c9; background:#fffafa; }
     .ilk-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .ilk-tag { padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; background:var(--accent); }
-    .ilk-tag.ret { background:var(--neg); }
+    .ilk-tag.ret { background:var(--neg-fill); }
     .ilk-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
     .ilk-chip { background:var(--bg); border:1px solid var(--line); border-radius:8px;
         padding:4px 10px; font-size:12.5px; }
@@ -1707,7 +1707,7 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .sqlsrv-warn { background:var(--warn-soft); color:var(--warn); padding:16px; border-radius:12px; font-size:14px; line-height:1.7; }
     /* تحذير: الفاتورة موجودة محلي بس بنودها ماوصلتش من المزامنة */
@@ -1811,7 +1811,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* اختيار الحالة يدوي */
     .inv-status-sel { font-family:inherit; font-size:12.5px; font-weight:600; padding:3px 8px;
-        border:1.5px solid var(--line); border-radius:8px; background:#fff; color:var(--ink-900);
+        border:1.5px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-900);
         cursor:pointer; }
     .inv-status-sel:focus { outline:none; border-color:var(--accent); }
     .inv-lock { font-size:12px; margin-right:4px; }
@@ -1826,7 +1826,7 @@ require_once __DIR__ . '/includes/header.php';
     .notes-state.saved  { color:#1c9e5a; }
     .notes-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 10px;
         font-family:inherit; font-size:13px; color:var(--ink-900); resize:vertical;
-        background:#fff; line-height:1.6; }
+        background:var(--surface); line-height:1.6; }
     .notes-input:focus { outline:none; border-color:var(--accent); }
 
     /* الملاحظات في قائمة الفواتير — النص نفسه بيبان تحت رقم الفاتورة */
@@ -1846,7 +1846,7 @@ require_once __DIR__ . '/includes/header.php';
     /* ===== التابين + حالة الفاتورة ===== */
     .inv-tabs { display:flex; gap:8px; margin-bottom:14px; align-items:center; flex-wrap:wrap; }
     .tab-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:10px;
-               background:#fff; color:var(--ink-500); border:1.5px solid var(--line); text-decoration:none;
+               background:var(--surface); color:var(--ink-500); border:1.5px solid var(--line); text-decoration:none;
                font-size:14px; font-weight:600; transition:.15s; }
     .tab-btn:hover { border-color:var(--line); color:var(--ink-700); }
     .tab-btn.active { background:var(--accent-hover); color:#fff; border-color:var(--accent-hover); }
@@ -1861,7 +1861,7 @@ require_once __DIR__ . '/includes/header.php';
     .lookup-overlay { display:none; position:fixed; inset:0; background:rgba(30,25,70,.45);
                       z-index:900; align-items:flex-start; justify-content:center; padding:60px 16px; }
     .lookup-overlay.open { display:flex; }
-    .lookup-box { background:#fff; border-radius:14px; width:100%; max-width:640px;
+    .lookup-box { background:var(--surface); border-radius:14px; width:100%; max-width:640px;
                   box-shadow:0 18px 50px rgba(40,30,90,.25); overflow:hidden; }
     .lookup-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
                    padding:14px 18px; border-bottom:1px solid #eeecf8; font-weight:700; color:var(--ink-800); }
@@ -1885,7 +1885,7 @@ require_once __DIR__ . '/includes/header.php';
     /* ===== بوب أب سحب أعداد الفروع من الحجوزات ===== */
     .btn-res-pull { background:var(--accent); color:#fff; }
     .btn-res-pull:hover { background:var(--accent-hover); color:#fff; }
-    .res-card { background:#fff; border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+    .res-card { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
     .res-card-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--line-soft); }
     .res-card-title { font-size:14px; font-weight:700; color:var(--ink-900); }
     .res-card-meta { display:flex; gap:12px; font-size:12.5px; color:var(--ink-500); flex-wrap:wrap; }
@@ -1934,7 +1934,7 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-noexp { color:var(--neg); font-size:14px; position:relative; }
     /* شخطة على أيقونة التنزيل = مابينزلش في ملف الفرع */
     .ifl-noexp::after { content:''; position:absolute; inset:0; margin:auto;
-        width:17px; height:1.8px; background:var(--neg); transform:rotate(-45deg); border-radius:2px; }
+        width:17px; height:1.8px; background:var(--neg-fill); transform:rotate(-45deg); border-radius:2px; }
     /* أيقونة الملاحظة: تولتيب بس — مافيش ضغط عليها */
     .ifl-noteic { color:var(--ink-300); font-size:14px; cursor:help; vertical-align:-1px; }
     .ifl-noteic.has { color:var(--warn); }
@@ -1996,7 +1996,7 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-donebtn { width:100%; padding:11px; border-radius:var(--r); border:2px solid var(--pos);
         background:var(--surface); color:var(--pos); font-family:inherit; font-weight:600;
         font-size:13.5px; cursor:pointer; margin-top:14px; }
-    .ifl-donebtn.on { background:var(--pos); color:#fff; }
+    .ifl-donebtn.on { background:var(--pos-fill); color:#fff; }
     .ifl-donebtn:disabled { opacity:.6; cursor:default; }
     .ifl-donehint { color:var(--ink-500); font-size:11.5px; line-height:1.7; margin-top:7px; }
     .ifl-note-in { width:100%; box-sizing:border-box; padding:9px 11px; font-family:inherit;
@@ -2057,7 +2057,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* ===== كروت المجموعات ===== */
     .grp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
-    .grp-card { display:block; background:#fff; border:1.5px solid var(--line); border-radius:14px;
+    .grp-card { display:block; background:var(--surface); border:1.5px solid var(--line); border-radius:14px;
         padding:16px 18px; text-decoration:none; color:inherit; transition:all .15s; }
     .grp-card:hover { border-color:var(--accent); transform:translateY(-2px);
         box-shadow:0 8px 22px rgba(124,111,247,.13); }
@@ -2085,12 +2085,12 @@ require_once __DIR__ . '/includes/header.php';
     .grp-xbtn { border:0; background:none; cursor:pointer; color:var(--accent);
         font-size:17px; line-height:1; padding:0 1px; opacity:.5;
         border-radius:50%; width:18px; height:18px; font-family:inherit; }
-    .grp-xbtn:hover { opacity:1; background:var(--neg); color:#fff; }
+    .grp-xbtn:hover { opacity:1; background:var(--neg-fill); color:#fff; }
     /* شيل صنف من صف الجدول */
     .grp-itemx { border:0; background:none; cursor:pointer; color:var(--ink-300);
         font-size:16px; line-height:1; padding:2px 5px; border-radius:5px;
         font-family:inherit; }
-    .grp-itemx:hover { color:#fff; background:var(--neg); }
+    .grp-itemx:hover { color:#fff; background:var(--neg-fill); }
 
     .grp-modes { display:flex; gap:0; border-bottom:1px solid var(--line); }
     .gm-btn { flex:1; padding:12px 10px; background:none; border:none; cursor:pointer;
@@ -2120,12 +2120,12 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
     .gi-doc { padding:1.5px 8px; border-radius:20px; font-size:10.5px; font-weight:700;
         color:#fff; background:var(--accent); }
-    .gi-doc.ret { background:var(--neg); }
-    .gi-doc.unp { background:var(--warn); }
+    .gi-doc.ret { background:var(--neg-fill); }
+    .gi-doc.unp { background:var(--warn-fill); }
     .gi-add { border:1.5px solid var(--accent); background:var(--surface); color:var(--accent);
         border-radius:8px; padding:6px 13px; font-family:inherit; font-size:12.5px;
         font-weight:600; cursor:pointer; white-space:nowrap; }
-    .gi-add.on { background:var(--pos); border-color:var(--pos); color:#fff; }
+    .gi-add.on { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
     .gi-add:disabled { border-color:var(--line); color:var(--ink-400); cursor:default; }
 
     .gi-ways { display:flex; gap:6px; margin-bottom:9px; }
@@ -2200,7 +2200,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:3px 7px; margin-right:6px; cursor:pointer; color:var(--ink-500);
         font-size:14px; line-height:1; transition:all .15s; vertical-align:middle; }
     .unlock-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
-    .unlock-btn.is-open { background:var(--pos); border-color:var(--pos); color:#fff; }
+    .unlock-btn.is-open { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
     .item-row.editing { background:var(--warn-soft) !important; }
     .lines-table .c-bal { white-space:nowrap; font-weight:700; color:var(--ink-800);
         background:var(--line-soft); }
@@ -2245,7 +2245,7 @@ require_once __DIR__ . '/includes/header.php';
     .lines-table .dist-input { width:64px; padding:6px 4px; border:1.5px solid var(--line); border-radius:7px;
         font-size:13px; text-align:center; font-family:inherit; }
     .lines-table .dist-input:focus { border-color:var(--accent); outline:none; }
-    .lines-table .dist-input:disabled { background:var(--line-soft); color:#bbb; }
+    .lines-table .dist-input:disabled { background:var(--line-soft); color:var(--ink-400); }
     .lines-table .prev-val { color:var(--pos); font-size:12px; }
     .lines-table .dist-remain { display:block; font-size:11px; margin-top:2px; }
     .lines-table .dist-btn { padding:6px 14px; font-size:12px; white-space:nowrap; }
@@ -2564,7 +2564,7 @@ require_once __DIR__ . '/includes/header.php';
             ملف إكسيل (.xlsx) فيه كل بيانات الفاتورة: الهيدر، الأصناف، التوزيع على الفروع،
             أرصدة الفروع، أسعار البيع، والمتبقي بالمخزن.
         </p>
-        <a class="btn" style="background:var(--pos);"
+        <a class="btn" style="background:var(--pos-fill);"
            href="invoice_full_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
             <i class="ti ti-file-spreadsheet"></i> تصدير الفاتورة كاملة (Excel)
         </a>
@@ -2603,7 +2603,7 @@ require_once __DIR__ . '/includes/header.php';
         <?= ifl_skip_note($skipMap) ?>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <?php foreach ($activeBranches as $b): $btotal = (float)($branchTotals[(int)$b['id']] ?? 0); ?>
-                <a class="btn branch-dl" style="background:var(--pos);<?= $btotal>0?'':'display:none;' ?>"
+                <a class="btn branch-dl" style="background:var(--pos-fill);<?= $btotal>0?'':'display:none;' ?>"
                    data-branch="<?= (int)$b['id'] ?>"
                    href="branch_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&branch=<?= (int)$b['id'] ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                     <i class="ti ti-download"></i> <?= e($b['name']) ?>
@@ -2612,7 +2612,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
 
             <?php if ($tab === 'unposted'): ?>
-                <a class="btn" style="background:var(--pos);"
+                <a class="btn" style="background:var(--pos-fill);"
                    href="invoices_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                     <i class="ti ti-file-spreadsheet"></i> تصدير إكسيل
                 </a>
@@ -2635,7 +2635,7 @@ require_once __DIR__ . '/includes/header.php';
         <a class="tab-btn <?= $tab==='group'?'active':'' ?>" href="invoices.php?tab=group">
             <i class="ti ti-stack-2"></i> فواتير مجمّعة
             <?php $grpOpenCount = count(group_list()); if ($grpOpenCount > 0): ?>
-                <span style="background:var(--pos);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
+                <span style="background:var(--pos-fill);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
                     <?= $grpOpenCount ?>
                 </span>
             <?php endif; ?>
@@ -2774,7 +2774,7 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="group_delete">
                         <input type="hidden" name="group_id" value="<?= (int)$grpCurrent['id'] ?>">
-                        <button class="btn" style="background:var(--neg);">
+                        <button class="btn" style="background:var(--neg-fill);">
                             <i class="ti ti-trash"></i> امسح المجموعة
                         </button>
                     </form>
@@ -2991,7 +2991,7 @@ require_once __DIR__ . '/includes/header.php';
                 المصدر (الصنف جاي من أنهي فاتورة وبكام)، التوزيع على الفروع، أرصدة الفروع،
                 أسعار البيع، والمتبقي بالمخزن.
             </p>
-            <a class="btn" style="background:var(--pos);"
+            <a class="btn" style="background:var(--pos-fill);"
                href="group_full_export.php?group=<?= (int)$grpCurrent['id'] ?>">
                 <i class="ti ti-file-spreadsheet"></i> تصدير المجموعة كاملة (Excel)
                 <span style="opacity:.8;font-size:12px;">(<?= count($grpItems) ?> صنف)</span>
@@ -3050,7 +3050,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php foreach ($activeBranches as $b): ?>
                         <?php $gt = (float)($grpBranchTotals[(int)$b['id']] ?? 0); ?>
                         <a class="btn grp-combo" data-branch="<?= (int)$b['id'] ?>"
-                           style="background:var(--pos);padding:9px 16px;font-size:13.5px;<?= $gt > 0 ? '' : 'display:none;' ?>"
+                           style="background:var(--pos-fill);padding:9px 16px;font-size:13.5px;<?= $gt > 0 ? '' : 'display:none;' ?>"
                            href="group_export.php?group=<?= (int)$grpCurrent['id'] ?>&branch=<?= (int)$b['id'] ?>">
                             <i class="ti ti-download"></i> <?= e($b['name']) ?>
                             <span class="dl-count" style="opacity:.8;font-size:12px;">(<?= number_format($gt,0) ?>)</span>
@@ -3095,7 +3095,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div style="display:flex;flex-wrap:wrap;gap:8px;" data-invwrap="<?= (int)$sth ?>">
                         <?php foreach ($activeBranches as $b): ?>
                             <?php $tot = (float)($bt[(int)$b['id']] ?? 0); ?>
-                            <a class="btn grp-dl" style="background:var(--pos);padding:8px 14px;font-size:13px;<?= $tot > 0 ? '' : 'display:none;' ?>"
+                            <a class="btn grp-dl" style="background:var(--pos-fill);padding:8px 14px;font-size:13px;<?= $tot > 0 ? '' : 'display:none;' ?>"
                                data-sth="<?= (int)$sth ?>" data-branch="<?= (int)$b['id'] ?>"
                                href="branch_export.php?invoice=<?= e((string)$sth) ?>&branch=<?= (int)$b['id'] ?>&suffix=<?= e((string)$gi['suffix']) ?>&group=<?= (int)$grpCurrent['id'] ?>">
                                 <i class="ti ti-download"></i> <?= e($b['name']) ?>

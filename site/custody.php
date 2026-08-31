@@ -156,27 +156,27 @@ require_once __DIR__ . '/includes/header.php';
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .top-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
     .branch-select select { padding:10px 14px; border:1.5px solid var(--line); border-radius:10px;
-        font-size:14px; font-family:inherit; background:#fff; }
+        font-size:14px; font-family:inherit; background:var(--surface); }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 18px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
     .btn:hover { background:var(--accent-hover); }
-    .btn-danger { background:var(--neg); } .btn-danger:hover { background:#c93f3e; }
+    .btn-danger { background:var(--neg-fill); } .btn-danger:hover { background:#c93f3e; }
     .btn-sm { padding:7px 13px; font-size:13px; }
     .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
-    .stat { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .stat { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat .label { font-size:13px; color:var(--ink-500); margin-bottom:6px; }
     .stat .value { font-size:24px; font-weight:700; color:var(--ink-900); }
     .stat.accent { background:var(--accent); color:#fff; }
     .stat.accent .label { color:rgba(255,255,255,0.85); } .stat.accent .value { color:#fff; }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:820px){ .grid2 { grid-template-columns:1fr; } }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:10px 12px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
     .form-inline .fld { flex:1; min-width:120px; }
     .form-inline label { display:block; font-size:12px; color:var(--ink-500); margin-bottom:4px; }
@@ -194,14 +194,14 @@ require_once __DIR__ . '/includes/header.php';
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
 </style>
 

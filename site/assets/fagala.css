@@ -449,7 +449,10 @@
         .notif-empty { text-align: center; color: var(--ink-400); padding: 30px; font-size: 14px; }
 
         /* ===== سلايدر الوضع الليلي ===== */
-        .theme-toggle { background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; }
+        /* 🔴 النافبار `justify-content: space-between` وعنده تلات عناصر
+           (العنوان · السلايدر · الجرس). من غير الهامش التلقائي ده السلايدر
+           بيقع في **نص** الشريط بدل ما يبقى جنب الجرس. */
+        .theme-toggle { background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; margin-inline-start:auto; margin-inline-end:12px; }
         .tt-track {
             display:block; position:relative;
             width:46px; height:26px; border-radius:99px;

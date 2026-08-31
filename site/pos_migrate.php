@@ -288,7 +288,7 @@ $shifts = $pdo->query(
   .danger{background:#fef2f2;border:2px solid var(--neg);border-radius:10px;
           padding:15px 18px;margin-bottom:20px;color:#991b1b}
   .danger b{display:block;margin-bottom:6px;font-size:15px}
-  .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;
+  .card{background:var(--surface);border-radius:12px;padding:20px;margin-bottom:16px;
         box-shadow:0 1px 6px rgba(0,0,0,.06)}
   .card h2{font-size:16px;margin:0 0 14px;color:#374151}
   table{width:100%;border-collapse:collapse;font-size:14px}
@@ -296,7 +296,7 @@ $shifts = $pdo->query(
   th{background:#f9fafb;color:var(--ink-500)}
   .btn{background:#6366f1;color:#fff;padding:9px 18px;border-radius:8px;
        text-decoration:none;font-size:14px;border:0;cursor:pointer;font-family:inherit}
-  .btn-red{background:var(--neg)}
+  .btn-red{background:var(--neg-fill)}
   .btn:disabled{background:#d1d5db;cursor:not-allowed}
   .err{background:#fef2f2;border:2px solid var(--neg);color:#991b1b;
        padding:14px;border-radius:10px;margin-bottom:16px}

@@ -81,7 +81,7 @@ require_once __DIR__ . '/includes/header.php';
                          border-radius:10px; font-size:15px; font-family:inherit; }
     .sq-bar input.main:focus { outline:none; border-color:var(--accent); }
     /* نتائج البحث المنسدلة */
-    .sq-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
     .sq-sug.show { display:block; }
@@ -94,7 +94,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
                   padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
-                 background:#fff; color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
+                 background:var(--surface); color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
     .sq-filter:hover { border-color:var(--accent); color:var(--accent); }
     .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -119,7 +119,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table td .rm:hover { opacity:1; }
 
     .sq-status { font-size:13px; min-height:20px; margin-bottom:10px; }
-    .sq-empty { text-align:center; color:#bbb; padding:40px 20px; font-size:15px; }
+    .sq-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .sq-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;
                gap:12px; margin-bottom:12px; }
     .sq-meta .tools { display:flex; gap:10px; }
@@ -172,7 +172,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn" style="background:var(--ink-800);" onclick="exportCsv()">
                 <i class="ti ti-download"></i> تصدير
             </button>
-            <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+            <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
         </span>

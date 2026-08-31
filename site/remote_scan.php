@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
            margin:0 auto 14px; }
     .top a { color:var(--steel); text-decoration:none; font-size:14px; }
     .top b { color:var(--navy); font-size:17px; }
-    .card { background:#fff; border-radius:16px; padding:20px; max-width:480px; margin:0 auto;
+    .card { background:var(--surface); border-radius:16px; padding:20px; max-width:480px; margin:0 auto;
             box-shadow:0 4px 18px rgba(22,35,61,0.08); }
     .hint { color:var(--mut); font-size:13px; line-height:1.8; margin-bottom:16px; }
     .sess { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     .dev:active { background:#eef1f7; }
     .dev.off { opacity:0.55; }
     .dev .dot { width:12px; height:12px; border-radius:50%; background:#b9b6cc; flex-shrink:0; }
-    .dev.on .dot { background:var(--pos); box-shadow:0 0 0 4px rgba(26,158,92,0.15); }
+    .dev.on .dot { background:var(--pos-fill); box-shadow:0 0 0 4px rgba(26,158,92,0.15); }
     .dev .dinfo { flex:1; min-width:0; }
     .dev .dname { font-weight:700; color:var(--navy); font-size:16px; }
     .dev .dsub { font-size:12px; color:var(--mut); }

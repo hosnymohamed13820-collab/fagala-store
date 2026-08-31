@@ -143,7 +143,7 @@ require_once __DIR__ . '/includes/header.php';
         padding: 10px 0 30px;
     }
     .statement-card {
-        background: #fff;
+        background:var(--surface);
         border-radius: var(--r-lg, 16px);
         padding: 24px;
         box-shadow: var(--shadow, 0 2px 12px rgba(124,111,247,0.08));
@@ -174,7 +174,7 @@ require_once __DIR__ . '/includes/header.php';
         font-weight: 700;
     }
     .msg-card {
-        background: #fff;
+        background:var(--surface);
         border-radius: var(--r-lg, 16px);
         padding: 40px 24px;
         text-align: center;
