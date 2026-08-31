@@ -1566,6 +1566,7 @@ $statusBadge = function($st) {
                     <tr>
                         <th class="c-pick" style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
                         <th class="c-emp">الموظف</th>
+                        <th>الفرع</th>
                         <th>ساعات العمل</th>
                         <th>أيام العمل</th>
                         <th>أيام الإجازة</th>
@@ -1609,9 +1610,6 @@ $statusBadge = function($st) {
                         </td>
                         <td class="c-emp" style="font-weight:500;">
                             <?= e($p['full_name']) ?>
-                            <?php if ($p['branch_name']): ?>
-                                <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
-                            <?php endif; ?>
                             <?php if ($p['ledger_balance'] < -0.005): ?>
                                 <span class="badge" style="font-size:11px;color:var(--pos);background:var(--pos-soft);margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
                             <?php endif; ?>
@@ -1623,6 +1621,7 @@ $statusBadge = function($st) {
                                 </div>
                             <?php endif; ?>
                         </td>
+                        <td><?= $p['branch_name'] ? e($p['branch_name']) : '<span style="color:var(--ink-400);">—</span>' ?></td>
                         <td><?= $p['is_fixed'] ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['work_hours'], 2) ?></td>
                         <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . number_format($p['work_days'], 2) . '</span>') ?></td>
                         <td>
