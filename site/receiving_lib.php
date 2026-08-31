@@ -624,13 +624,32 @@ function set_branch_distribution(
         $st->execute([$distributionId, $itemCode, $branchId]);
         $othersTotal = (float) $st->fetchColumn();
 
-        // المتاح للفرع ده = الكمية − توزيع باقي الفروع
-        $available = $itemQty - $othersTotal;
+        // 🔴 السقف الحقيقي = الأقل بين كمية الفاتورة ورصيد الإدارة.
+        //    الفاتورة ممكن تبقى ١٢ والواصل فعلاً ١٠ (والباقي اتعمله
+        //    مردود)، فرصيد الإدارة ١٠. توزيع ١٢ بيطلّع بضاعة مش موجودة.
+        //
+        // 🔴 وبيتحسب **هنا في السيرفر** بقصد. `$itemQty` جاي من
+        //    `$_POST['item_qty']` في المتصفح، يعني ممكن يتزوّر — كان
+        //    ينفع حد يبعت item_qty=99999 ويوزّع أي كمية يعوزها.
+        //    رصيد الإدارة بيتقري من القاعدة فمالوش دعوة بالعميل.
+        $hqBal = hq_admin_balance_for_code($itemCode);
+        $cap   = $itemQty;
+        if ($hqBal !== null) {
+            $cap = min($itemQty, max(0.0, $hqBal));   // الرصيد السالب = صفر
+        }
+
+        // المتاح للفرع ده = السقف − توزيع باقي الفروع
+        $available = $cap - $othersTotal;
         if ($qty > $available + 0.0001) {
-            throw new RuntimeException(
-                'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
-                number_format($available, 2) . ').'
-            );
+            $msg = 'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
+                   number_format(max(0.0, $available), 2) . ')';
+            // لو السبب رصيد الإدارة مش كمية الفاتورة، قولها صريحة —
+            // من غير كده الرسالة بتبان غلط في النظام مش حماية مقصودة
+            if ($hqBal !== null && $cap < $itemQty - 0.0001) {
+                $msg .= ' — رصيد الإدارة ' . number_format(max(0.0, $hqBal), 2)
+                      . ' والفاتورة ' . number_format($itemQty, 2);
+            }
+            throw new RuntimeException($msg . '.');
         }
 
         // استبدال سطور الفرع للصنف ده بسطر واحد بالقيمة الجديدة
@@ -1532,6 +1551,46 @@ function calc_invoice_discount(
  * من غير الفلتر بنجيب رصيد مخزن عشوائي.
  */
 const ADMIN_STO_ID = 1;
+
+/**
+ * رصيد الإدارة لصنف واحد بالباركود — للاستعمال **كسقف للتوزيع**.
+ *
+ * ليه موجودة: الفاتورة ممكن تبقى ١٢ قلم والواصل فعلاً ١٠ (والباقي
+ * اتعمله مردود)، فرصيد الإدارة بقى ١٠. توزيع ١٢ بيطلّع بضاعة مش
+ * موجودة، والفرق بيظهر بعدين كعجز على الفرع.
+ *
+ * 🔴 بترجّع `null` معناها **مفيش سقف** — مش صفر. حالتين:
+ *      • النسخة المحلية لسه فاضية (وكيل الإدارة ما اشتغلش)
+ *      • الباركود مش موجود في `hq_codes`
+ *    الفرق ده مش تفصيلة: لو رجّعنا صفر في الحالتين دول، التوزيع
+ *    بيتقفل على **كل** الأصناف المش معروفة، والموقع كله يقف لـ٤٩
+ *    موظف في ٥ فروع أول ما الوكيل يتأخر ساعة.
+ *
+ * 🔴 ودي **لصنف واحد وقت الحفظ بس**. متنادهاش في حلقة رندر —
+ *    الفاتورة فيها مئات الأصناف، والأرصدة بتتجاب مجمّعة بـ
+ *    `sqlsrv_fetch_item_balances_all()` قبل الحلقة.
+ */
+function hq_admin_balance_for_code(string $itemCode): ?float
+{
+    $code = trim($itemCode);
+    if ($code === '' || !hq_balances_ready()) return null;
+
+    try {
+        $st = db()->prepare(
+            'SELECT b.balance
+               FROM hq_codes c
+               JOIN ' . bal_table() . ' b
+                 ON b.item_id = c.item_id AND b.sto_id = ' . ADMIN_STO_ID . '
+              WHERE c.code = ? LIMIT 1'
+        );
+        $st->execute([$code]);
+        $row = $st->fetch();
+        if ($row === false) return null;      // الباركود مش معروف = مفيش سقف
+        return (float) $row['balance'];
+    } catch (Throwable $ex) {
+        return null;                          // أي مشكلة = مفيش سقف، مش قفل
+    }
+}
 
 /**
  * جلب أرصدة مجموعة أصناف من مخزن الإدارة.
