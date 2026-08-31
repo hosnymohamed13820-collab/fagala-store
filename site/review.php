@@ -31,8 +31,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             //   من غيرها الفرق بيتحسب على أساس صفر، والقيود تدخل الخزائن غلط.
             //   (عند الرفض مش إجباري — ممكن يرفض عشان الأرقام ناقصة أصلًا.)
             $rawSys = trim((string)($_POST['acc_system'] ?? ''));
-            if ($decision === 'approved' && ($rawSys === '' || !is_numeric($rawSys))) {
-                throw new RuntimeException('اكتب قيمة السيستم قبل الاعتماد.');
+            if ($decision === 'approved') {
+                if ($rawSys === '' || !is_numeric($rawSys)) {
+                    throw new RuntimeException('اكتب قيمة السيستم قبل الاعتماد.');
+                }
+                // 🔴 الصفر ممنوع: `is_numeric('0')` بترجّع true، والصفر معناه
+                //    الفرق = المحصّل كله = عجز وهمي بحجم الوردية.
+                //    نفس شرط التقفيل بالظبط (cashier.php:54).
+                if ((float) $rawSys <= 0) {
+                    throw new RuntimeException('قيمة السيستم لازم تكون أكبر من صفر.');
+                }
             }
 
             $amounts = [

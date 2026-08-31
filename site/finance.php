@@ -1286,10 +1286,30 @@ function save_shift_review(
         ]);
         $reviewId = (int) $pdo->lastInsertId();
 
+        // 🔴 فرق المحاسب هو الفرق المعتمد — والموظف بيتخصم منه.
+        //    قبل كده `shifts.difference` كان بيفضل رقم **الكاشير** للأبد،
+        //    وتصحيح المحاسب كان بيروح للخزينة بس. يعني كاشير يدخّل رقم
+        //    غلط → عجز وهمي → المحاسب يصحّحه → والموظف بيتخصم منه على
+        //    الرقم الغلط برضو. ده كان هيخصم ٧٠٠٠ ج على موظفين.
+        //    نفس معادلة الكاشير بالظبط (cashier.php:102): المحصّل − السيستم.
+        $accSystem     = (float) ($accountantAmounts['system'] ?? 0);
+        $accDifference = round($accTotal - $accSystem, 2);
+
         // تحديث حالة الوردية
         $pdo->prepare(
-            'UPDATE shifts SET status=?, reject_reason=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?'
-        )->execute([$decision, $decision === 'rejected' ? $reason : null, $userId, $shiftId]);
+            'UPDATE shifts
+                SET status=?, reject_reason=?, reviewed_by=?, reviewed_at=NOW(),
+                    cash_total=?, visa_total=?, instapay_total=?,
+                    system_total=?, difference=?
+              WHERE id=?'
+        )->execute([
+            $decision, $decision === 'rejected' ? $reason : null, $userId,
+            (float)($accountantAmounts['cash'] ?? 0),
+            (float)($accountantAmounts['visa'] ?? 0),
+            (float)($accountantAmounts['instapay'] ?? 0),
+            $accSystem, $accDifference,
+            $shiftId,
+        ]);
 
         $pdo->commit();
         return $reviewId;
