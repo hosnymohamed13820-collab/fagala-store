@@ -528,19 +528,22 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
-        <div class="sum-cards">
+        <div class="sum-cards st-cards">
             <div class="sum-card">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
             </div>
+        </div>
+        <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
+            <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
         </div>
 
         <?php if ($totalCount > 300): ?>
@@ -603,19 +606,22 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
-        <div class="sum-cards">
+        <div class="sum-cards st-cards">
             <div class="sum-card">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
             </div>
+        </div>
+        <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
+            <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
         </div>
 
         <?php if ($totalCount > 200): ?>
@@ -1244,6 +1250,94 @@ $today = date('Y-m-d');
         tr.style.backgroundColor = 'var(--pos-soft)';
         setTimeout(() => { tr.style.backgroundColor = ''; }, 900);
     }
+</script>
+
+<script>
+/* =====================================================================
+   كروت الكشف تمشي مع الفلتر — RULES.md قسم ٦
+   ---------------------------------------------------------------------
+   الصفوف الظاهرة ← الجدول ← الكروت. الكارت بيجمع من الـDOM، فمستحيل
+   يقول رقم والجدول اللي تحته يقول تاني.
+
+   🔴 بس فيه تفصيلة هنا مش موجودة في أي شاشة تانية:
+      الجدول ده **مقصوص** — بيعرض آخر ٣٠٠ حركة بس، والكروت من السيرفر
+      محسوبة على **الفترة كلها** (وفيه رسالة تحت بتقول كده).
+      فلو جمعنا الظاهر على طول، الشاشة هتفتح من غير أي فلتر وتقول
+      إجمالي ٣٠٠ حركة بدل الشهر كله — وده أوحش من المشكلة الأصلية.
+
+      عشان كده: فيه فلتر شغّال ← اجمع الظاهر ووري السطر التحذيري.
+                 مفيش فلتر     ← رجّع رقم السيرفر واخفي السطر.
+   ===================================================================== */
+(function () {
+    function num(txt) {
+        var v = parseFloat(String(txt).replace(/,/g, '').replace(/[^\d.\-]/g, ''));
+        return isNaN(v) ? 0 : v;
+    }
+    function fmt(v) {
+        return v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+    /* بنكتب في العقدة النصية الأولى بس عشان <span>جنيه</span> مايتمسحش */
+    function setVal(el, v) {
+        if (el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = fmt(v) + ' ';
+        else el.textContent = fmt(v);
+    }
+
+    /* الكروت متكررة (كل الخزائن / خزينة محددة) — بنربط كل بلوك
+       بالجدول اللي بعده، عشان الاتنين يشتغلوا من غير id مكرر. */
+    var blocks = document.querySelectorAll('.st-cards');
+    for (var b = 0; b < blocks.length; b++) {
+        (function (box) {
+            var note = box.parentNode.querySelector('.st-filter-note');
+            var table = null, n = box.nextElementSibling;
+            while (n) { if (n.tagName === 'TABLE') { table = n; break; }
+                        table = n.querySelector && n.querySelector('table');
+                        if (table) break; n = n.nextElementSibling; }
+            if (!table) return;
+
+            var cells = {};
+            var scs = box.querySelectorAll('[data-sc]');
+            for (var i = 0; i < scs.length; i++) cells[scs[i].dataset.sc] = scs[i];
+
+            /* أرقام الأعمدة بالاسم مش بالعد */
+            var dIdx = -1, cIdx = -1, ths = table.querySelectorAll('thead th');
+            for (var t = 0; t < ths.length; t++) {
+                var h = ths[t].textContent.trim();
+                if (h === 'مدين') dIdx = t;
+                if (h === 'دائن') cIdx = t;
+            }
+            if (dIdx < 0 || cIdx < 0) return;
+
+            document.addEventListener('xtable:filter', function (ev) {
+                /* 🔴 الحدث بيطلع لفوق والصفحة فيها أكتر من جدول */
+                if (!ev.detail || ev.detail.table !== table) return;
+
+                if (!ev.detail.active) {
+                    /* الفلتر اتقفل — رجّع رقم السيرفر (الفترة كلها) */
+                    for (var k in cells) if (cells.hasOwnProperty(k)) {
+                        setVal(cells[k], parseFloat(cells[k].dataset.server) || 0);
+                    }
+                    if (note) note.style.display = 'none';
+                    return;
+                }
+
+                var d = 0, c = 0, rows = ev.detail.rows;
+                for (var r = 0; r < rows.length; r++) {
+                    d += num(rows[r].cells[dIdx] ? rows[r].cells[dIdx].textContent : '');
+                    c += num(rows[r].cells[cIdx] ? rows[r].cells[cIdx].textContent : '');
+                }
+                if (cells.debit)  setVal(cells.debit, d);
+                if (cells.credit) setVal(cells.credit, c);
+                if (cells.net)    setVal(cells.net, d - c);
+
+                if (note) {
+                    var fc = note.querySelector('.st-fc');
+                    if (fc) fc.textContent = ev.detail.shown + ' من ' + ev.detail.total;
+                    note.style.display = '';
+                }
+            });
+        })(blocks[b]);
+    }
+})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -1080,6 +1080,40 @@ $statusBadge = function($st) {
     .payroll-num::-webkit-outer-spin-button,
     .payroll-num::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
     .payroll-num.is-days { width:55px; }
+
+    /* ===== كارت إجمالي الصافي =====
+       الكلاسات دي معرّفة هنا مش في fagala.css — قاعدة ٥ في CLAUDE.md. */
+    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+        gap:12px; margin-bottom:14px; }
+    .sum-card { background:var(--surface); border:1.5px solid var(--line);
+        border-radius:12px; padding:14px 16px; }
+    .sc-label { font-size:13px; color:var(--ink-500); margin-bottom:6px; }
+    .sc-value { font-size:24px; font-weight:700; color:var(--pos); font-variant-numeric:tabular-nums; }
+    .sc-cur   { font-size:13px; font-weight:500; color:var(--ink-400); }
+    .sc-sub   { font-size:12px; color:var(--ink-500); margin-top:4px; }
+
+    /* ===== عمود الموظف بيفضل ثابت وانت بتلف يمين =====
+       الجدول ٢٠ عمود، فوانت رايح للصافي بتنسى انت في صف مين.
+       نفس نمط `.an-tbl .c-name` في analysis.php.
+
+       🔴 الخلفية **صريحة وإجبارية**: من غيرها الخلية شفافة والأعمدة
+          بتعدّي من وراها وانت بتلف = عجينة مش مقروءة. ودي أكتر حاجة
+          بتتنسي في position:sticky.
+       🔴 والصفوف الزوجية والـhover ليهم خلفية مختلفة، فلازم تتعاد على
+          الخلية الثابتة كمان وإلا اللي تحتها يبان من خلالها. */
+    .sal-tbl .c-pick, .sal-tbl .c-emp {
+        position:sticky; z-index:2; background:var(--surface); text-align:right;
+    }
+    .sal-tbl .c-pick { right:0;    width:34px;  min-width:34px; }
+    .sal-tbl .c-emp  { right:34px; width:200px; min-width:200px; }
+    /* رأس العمود الثابت لازم يبقى فوق خلايا الجسم الثابتة */
+    .sal-tbl thead .c-pick, .sal-tbl thead .c-emp { z-index:3; background:var(--bg); }
+    .sal-tbl tbody tr:nth-child(even) .c-pick,
+    .sal-tbl tbody tr:nth-child(even) .c-emp { background:var(--surface); }
+    .sal-tbl tbody tr:hover .c-pick,
+    .sal-tbl tbody tr:hover .c-emp { background:var(--accent-soft); }
+    /* خط فاصل بيوضّح إن اللي بعده بيلف */
+    .sal-tbl .c-emp { border-left:1.5px solid var(--line); }
 </style>
 
 <?php if ($flash): ?>
@@ -1449,12 +1483,30 @@ $statusBadge = function($st) {
             <?php if (empty($payrollData)): ?>
                 <div class="empty">لا يوجد موظفون نشطون.</div>
             <?php else: ?>
+            <?php
+                // إجمالي الصافي — بيتحسب من `$payrollData` اللي في الذاكرة خلاص.
+                // 🔴 مفيش استعلام جديد: لو حسبناه باستعلام تاني هيبقى فيه
+                //    احتمال يختلف عن اللي الجدول تحته بيعرضه.
+                $salTotalNet = 0.0; $salTotalCount = 0;
+                foreach ($payrollData as $p) {
+                    if ($p['no_expected'] && !$p['is_fixed']) continue;   // مايتحسبش ومايتصرفش
+                    $salTotalNet += (float) $p['net_salary'];
+                    $salTotalCount++;
+                }
+            ?>
+            <div class="sum-cards" id="salSumCards">
+                <div class="sum-card">
+                    <div class="sc-label">إجمالي الصافي</div>
+                    <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">جنيه</span></div>
+                    <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف</div>
+                </div>
+            </div>
             <div style="overflow-x:auto;">
-            <table>
+            <table class="sal-tbl">
                 <thead>
                     <tr>
-                        <th style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
-                        <th>الموظف</th>
+                        <th class="c-pick" style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
+                        <th class="c-emp">الموظف</th>
                         <th>ساعات العمل</th>
                         <th>أيام العمل</th>
                         <th>أيام الإجازة</th>
@@ -1493,10 +1545,10 @@ $statusBadge = function($st) {
                         data-deficits="<?= $p['deficits_full'] ?>"
                         data-carry="<?= $p['carry_to_advance'] ?>"
                         data-deductions="<?= $p['total_deductions'] ?>">
-                        <td>
+                        <td class="c-pick">
                             <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || (!$p['is_fixed'] && $p['no_expected'])) ? 'disabled' : '' ?>>
                         </td>
-                        <td style="font-weight:500;">
+                        <td class="c-emp" style="font-weight:500;">
                             <?= e($p['full_name']) ?>
                             <?php if ($p['branch_name']): ?>
                                 <span style="font-size:12px;color:var(--ink-500);">(<?= e($p['branch_name']) ?>)</span>
@@ -2386,7 +2438,67 @@ $statusBadge = function($st) {
                 ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
                 : '';
         }
+
+        // 🔴 الكارت فوق لازم يتحدّث مع أي تعديل — من غير كده محمد يعدّل
+        //    خصم ويبص على الكارت يلاقيه ما اتغيّرش، ويصرف رقم غلط.
+        //    والحارس مهم: الدالة مابتتعرّفش لو الجدول مش موجود (تاب تاني)،
+        //    ومن غيره التعديل كان هيرمي ReferenceError ويوقف إعادة الحساب.
+        if (window.salRefreshTotal) window.salRefreshTotal();
     });
+
+    /* =====================================================================
+       كارت «إجمالي الصافي» — RULES.md قسم ٦
+       ---------------------------------------------------------------------
+       الصفوف الظاهرة ← الجدول ← الكارت.
+       بيتحدّث من **تلات مصادر**: أول تحميل · فلترة xtable · التعديل اللحظي.
+       ولو الجافاسكربت وقع، رقم السيرفر اللي في الـHTML يفضل ظاهر.
+       ===================================================================== */
+    (function () {
+        var table = document.querySelector('table.sal-tbl');
+        var valEl = document.getElementById('salTotalNet');
+        var cntEl = document.getElementById('salTotalCount');
+        if (!table || !valEl || !cntEl) return;
+
+        // رقم عمود «الصافي» بيتلاقى بالاسم مش بالعد — الجدول ٢٠ عمود
+        // وبيتزاد فيه، وأي رقم ثابت هنا كان هيبوظ في أول تعديل.
+        var netIdx = -1;
+        var ths = table.querySelectorAll('thead th');
+        for (var i = 0; i < ths.length; i++) {
+            if (ths[i].textContent.trim() === 'الصافي') { netIdx = i; break; }
+        }
+        if (netIdx < 0) return;
+
+        function num(txt) {
+            var v = parseFloat(String(txt).replace(/,/g, '').replace(/[^\d.\-]/g, ''));
+            return isNaN(v) ? 0 : v;
+        }
+
+        window.salRefreshTotal = function () {
+            var total = 0, count = 0;
+            var trs = table.tBodies[0] ? table.tBodies[0].rows : [];
+            for (var r = 0; r < trs.length; r++) {
+                var tr = trs[r];
+                // xtable بيخفي الصفوف بكلاس مش بحذفها
+                if (tr.classList.contains('xt-out')) continue;
+                var cell = tr.cells[netIdx];
+                if (!cell) continue;
+                // «غير محدد» = موظف من غير ساعات منتظرة، مايتحسبش ومايتصرفش
+                if (cell.textContent.indexOf('غير محدد') !== -1) continue;
+                total += num(cell.textContent);
+                count++;
+            }
+            valEl.firstChild.nodeValue =
+                total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ';
+            cntEl.textContent = count;
+        };
+
+        // 🔴 شرط الجدول الصح — الحدث بيطلع لفوق، و`hr.php` فيه ١٠ جداول.
+        //    من غيره الكارت بيتحدّث لما حد يفلتر جدول السلف أو الجزاءات.
+        document.addEventListener('xtable:filter', function (ev) {
+            if (!ev.detail || ev.detail.table !== table) return;
+            salRefreshTotal();
+        });
+    })();
 
     var salMasterCb = document.getElementById('salMasterCb');
     if (salMasterCb) {
