@@ -2855,10 +2855,16 @@ function reverse_salary(
 
         // ٩. تحديث سجل المرتب بالبيانات وسبب الإرجاع
         $pdo->prepare(
+            /* 🔴 `reversal_seq = id` مش تفصيلة — ده اللي بيخلّي إعادة
+               الصرف ممكنة. الفهرس الفريد بقى على
+               (employee_id, salary_month, reversal_seq): الشغّال دايماً
+               صفر فبيفضل واحد بس، والمرجّع بياخد رقمه فبيخرج من الحساب.
+               من غير السطر ده الصرف تاني بيقع بـ#1062. */
             'UPDATE salaries
              SET reversed_at = NOW(),
                  reversed_by = ?,
-                 reverse_reason = ?
+                 reverse_reason = ?,
+                 reversal_seq = id
              WHERE id = ?'
         )->execute([$userId, $trimmedReason, $salaryId]);
 
