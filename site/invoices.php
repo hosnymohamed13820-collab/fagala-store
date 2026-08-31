@@ -2894,6 +2894,24 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($grpItems)): ?>
                 <div class="empty">مفيش أصناف في فواتير المجموعة.</div>
             <?php else: ?>
+            <?php
+                $naCount = 0;
+                foreach ($grpItems as $it) {
+                    $iid = (int) ($it['item_id'] ?? 0);
+                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                        $naCount++;
+                    }
+                }
+            ?>
+            <?php if ($naCount > 0): ?>
+                <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                    <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
+                    <div>
+                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
+                        شغّل وكيل مزامنة الإدارة.
+                    </div>
+                </div>
+            <?php endif; ?>
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
@@ -2931,6 +2949,10 @@ require_once __DIR__ . '/includes/header.php';
                         }
                         $iFlags = $itemFlags[$code] ?? [];
                         $iSkip  = isset($skipMap[$code]);
+                        $iid   = (int) ($it['item_id'] ?? 0);
+                        $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
+                        $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                        $hqNA  = ($hqB === null);
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>
@@ -2952,7 +2974,9 @@ require_once __DIR__ . '/includes/header.php';
                                            data-branch="<?= (int)$b['id'] ?>"
                                            data-code="<?= e($code) ?>"
                                            data-qty="<?= $qty ?>"
+                                           data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                            data-saved="<?= $prev ?>"
+                                           <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                            oninput="onDistInput(this)"
                                            onblur="grpSave(this)">
                                     <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2992,10 +3016,10 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                         <?= mrk_cell($code, mrk_cost($it), $salePrices[$code] ?? null) ?>
                         <td class="c-bal"><?php
-                            $bal = $itemBalances[(int)$it['item_id']] ?? null;
+                            $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                             echo $bal === null ? '<span class="bal-na">—</span>'
                                 : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                        ?></td>
+                        ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                         <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php if ($gIsItems): ?>
                             <td style="text-align:center;">

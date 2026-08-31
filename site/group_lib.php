@@ -1013,12 +1013,46 @@ function group_set_distribution(
         $st->execute(array_merge($distIds, [$itemCode, $branchId]));
         $othersTotal = (float) $st->fetchColumn();
 
-        $available = $totalQty - $othersTotal;
-        if ($qty > $available + 0.0001) {
-            throw new RuntimeException(
-                'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
-                number_format($available, 2) . ').'
+        // 🔴 السقف الحقيقي = الأقل بين كمية المجموعة ورصيد الإدارة.
+        //    الفاتورة ممكن تبقى ١٢ والواصل فعلاً ١٠ (والباقي اتعمله
+        //    مردود)، فتوزيع ١٢ بيطلّع بضاعة مش موجودة والفرق بيظهر
+        //    بعدين كعجز على الفرع.
+        //    نفس القاعدة بالحرف اللي في set_branch_distribution()
+        //    بتاعة الفاتورة المفردة — شوف receiving_lib.php.
+        $hqBal = hq_admin_balance_for_code($itemCode);
+
+        if ($hqBal === null) {
+            // 🔴 الرصيد مش واصل: **ممنوع تزوّد، مسموح تقلّل**.
+            //    منع الصنف خالص اتجرّب واتشال: اتقفل ٥٤ صنف من ٧٥ في
+            //    فاتورة واحدة، بما فيهم أصناف متوزّعة خلاص. طول ما
+            //    الكمية مابتزيدش عن المحفوظ، مفيش بضاعة زيادة بتطلع.
+            $ownSt = $pdo->prepare(
+                "SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
+                 WHERE distribution_id IN ($ph) AND notes = ? AND branch_id = ? FOR UPDATE"
             );
+            $ownSt->execute(array_merge($distIds, [$itemCode, $branchId]));
+            $ownCurrent = (float) $ownSt->fetchColumn();
+
+            if ($qty > $ownCurrent + 0.0001) {
+                throw new RuntimeException(
+                    'رصيد الإدارة للصنف ده مش واصل، فمش هينفع تزوّد الكمية. '
+                    . 'تقدر تقلّلها أو تصفّرها. شغّل وكيل مزامنة الإدارة عشان توزّع أكتر.'
+                );
+            }
+            $cap = min($totalQty, $othersTotal + $ownCurrent);
+        } else {
+            $cap = min($totalQty, max(0.0, $hqBal));   // الرصيد السالب = صفر
+        }
+
+        $available = $cap - $othersTotal;
+        if ($qty > $available + 0.0001) {
+            $msg = 'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
+                   number_format(max(0.0, $available), 2) . ')';
+            if ($hqBal !== null && $cap < $totalQty - 0.0001) {
+                $msg .= ' — رصيد الإدارة ' . number_format(max(0.0, $hqBal), 2)
+                      . ' وكمية المجموعة ' . number_format($totalQty, 2);
+            }
+            throw new RuntimeException($msg . '.');
         }
 
         // امسح توزيع الفرع ده للصنف ده من كل فواتير المجموعة
