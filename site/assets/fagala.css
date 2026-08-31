@@ -21,10 +21,13 @@
             --ink-200: #e2e7ee;
 
             /* ===== التفاعل: أزرق فولاذي هادي ===== */
-            --accent:       #2f5d8a;
-            --accent-hover: #254a6f;
-            --accent-soft:  #eaf1f8;
-            --accent-ring:  rgba(47,93,138,.16);
+            /* اتنقّحت الألوان يوم ٣١ أغسطس ٢٠٢٦ عشان الدلالية كانت غامقة (إضاءة ٣٠-٤٢٪) فبتقرا طيني بدل ما تبقى إشارة.
+               كل القيم دي اتفحص تباينها ومعدّية معيار AA: كل لون على الأبيض ≥ ٤.٥، وكل لون على خلفيته الناعمة ≥ ٤.٥.
+               أي تعديل فيها لازم يتفحص تباينه تاني قبل ما يتحط. */
+            --accent:       #1e6fbf;
+            --accent-hover: #185a9c;
+            --accent-soft:  #e8f1fb;
+            --accent-ring:  rgba(30,111,191,.20);
 
             /* ===== الأسطح ===== */
             --bg:        #f5f6f8;   /* رمادي فاتح محايد */
@@ -33,21 +36,21 @@
             --line-soft: #eff2f6;
 
             /* ===== دلالات الأرقام — مهدّاة مش فاقعة ===== */
-            --pos:       #2c6e52;
-            --pos-soft:  #e8f1ec;
-            --neg:       #9d3b38;
-            --neg-soft:  #f7eceb;
-            --warn:      #8a6524;
-            --warn-soft: #f7f0e2;
+            --pos:       #0b7a52;
+            --pos-soft:  #e6f6ee;
+            --neg:       #c0332e;
+            --neg-soft:  #fdeceb;
+            --warn:      #946105;
+            --warn-soft: #fdf4e3;
 
             /* ===== الخطوط ===== */
             --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 
             /* ===== الإيقاع ===== */
             --r-sm: 8px;  --r: 10px;  --r-lg: 14px;
-            --shadow-sm: 0 1px 2px rgba(22,35,61,.05);
-            --shadow:    0 2px 10px rgba(22,35,61,.07);
-            --shadow-lg: 0 16px 40px rgba(22,35,61,.15);
+            --shadow-sm: 0 1px 2px rgba(20,33,61,.07);
+            --shadow:    0 2px 4px rgba(20,33,61,.06), 0 8px 20px rgba(20,33,61,.07);
+            --shadow-lg: 0 18px 44px rgba(20,33,61,.20);
 
             /* توافق مع الكود القديم */
             --purple: var(--accent);
@@ -170,7 +173,7 @@
             border-right-color: #5d96d0;
         }
         .nav-item.active i {
-            background: linear-gradient(160deg, #4a80b8 0%, #2f5d8a 100%);
+            background: linear-gradient(160deg, #3d8ad4 0%, #1e6fbf 100%);
             color: #fff;
             box-shadow: 0 6px 18px rgba(60,120,190,.45), 0 0 0 1px rgba(255,255,255,.10) inset;
         }
