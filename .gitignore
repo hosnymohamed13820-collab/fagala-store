@@ -42,3 +42,11 @@ public_html/
 .specify/
 .claude/skills/speckit-*/
 tests/__pycache__/
+
+# نسخ القاعدة **بالبيانات** — فيها مرتبات وتليفونات وهاشات باسوردات.
+# 🔴 حطّها في local/db/ وبس. local/ نفسه بيتعمله commit، فأي دَمب
+#    بره المجلد ده بيدخل git من غير ما حد ياخد باله.
+#    (local/schema_live.sql استثناء مقصود — بنية بس من غير بيانات.)
+local/db/
+*.sql.gz
+*.sql.zip
