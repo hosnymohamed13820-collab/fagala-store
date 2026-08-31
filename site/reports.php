@@ -1539,7 +1539,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="type" value="stocktake">
             <div>
                 <label style="display:block;font-size:13px;color:var(--ink-500);margin-bottom:4px;">اختر جلسة الجرد</label>
-                <select name="session" onchange="this.form.submit()" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:280px;">
+                <select name="session" onchange="formSubmit(this.form)" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:280px;">
                     <option value="">— اختر —</option>
                     <?php foreach ($stkSessions as $s): ?>
                         <option value="<?= (int)$s['id'] ?>" <?= $stkSelSession===(int)$s['id']?'selected':'' ?>>

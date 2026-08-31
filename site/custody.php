@@ -213,7 +213,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="branch-select">
         <?php if (empty($u['branch_id']) && $allBranches): ?>
             <form method="get" style="display:inline;">
-                <select name="branch" onchange="this.form.submit()">
+                <select name="branch" onchange="formSubmit(this.form)">
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $branchId===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>

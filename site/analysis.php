@@ -621,7 +621,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="tab" value="report">
             <div class="an-fld">
                 <label>الرفعة</label>
-                <select name="batch" onchange="this.form.submit()">
+                <select name="batch" onchange="formSubmit(this.form)">
                     <?php foreach ($batches as $b): ?>
                         <option value="<?= (int) $b['id'] ?>" <?= (int) $b['id'] === $curBatch ? 'selected' : '' ?>>
                             <?= e($b['label'] ?: ('#' . $b['id'])) ?>

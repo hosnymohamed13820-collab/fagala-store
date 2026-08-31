@@ -1484,17 +1484,17 @@ $statusBadge = function($st) {
             <input type="hidden" name="tab" value="salaries">
             <div style="display:flex;align-items:center;gap:6px;">
                 <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من تاريخ:</label>
-                <input type="date" name="from" value="<?= e($salFrom) ?>" onchange="this.form.submit()"
+                <input type="date" name="from" value="<?= e($salFrom) ?>" onchange="formSubmit(this.form)"
                        style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
                 <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى تاريخ:</label>
-                <input type="date" name="to" value="<?= e($salTo) ?>" onchange="this.form.submit()"
+                <input type="date" name="to" value="<?= e($salTo) ?>" onchange="formSubmit(this.form)"
                        style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
                 <label style="font-size:13px;color:var(--ink-700);font-weight:500;">شهر المرتب:</label>
-                <input type="month" name="month" value="<?= e($salMonth) ?>" onchange="this.form.submit()"
+                <input type="month" name="month" value="<?= e($salMonth) ?>" onchange="formSubmit(this.form)"
                        style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
             </div>
             <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
@@ -1899,7 +1899,7 @@ $statusBadge = function($st) {
         <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
             <input type="hidden" name="tab" value="attendance">
             <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>
-            <input type="month" name="month" value="<?= e($attMonth) ?>" onchange="this.form.submit()"
+            <input type="month" name="month" value="<?= e($attMonth) ?>" onchange="formSubmit(this.form)"
                    style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
         </form>
         <?php if (empty($attRows)): ?>

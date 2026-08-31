@@ -451,10 +451,10 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
     <form method="get" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من:</label>
-        <input type="date" name="from" value="<?= e($attFrom) ?>" onchange="this.form.submit()"
+        <input type="date" name="from" value="<?= e($attFrom) ?>" onchange="formSubmit(this.form)"
                style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
         <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى:</label>
-        <input type="date" name="to" value="<?= e($attTo) ?>" onchange="this.form.submit()"
+        <input type="date" name="to" value="<?= e($attTo) ?>" onchange="formSubmit(this.form)"
                style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
         <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
