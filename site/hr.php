@@ -121,6 +121,85 @@ function apply_payroll_financial_adjustments(PDO $pdo, string $month, string $da
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'payroll_autosave') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!is_owner()) {
+            throw new RuntimeException('غير مصرّح لك بتعديل الرواتب.');
+        }
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $empId = (int)($_POST['employee_id'] ?? 0);
+        $month = trim((string)($_POST['salary_month'] ?? ''));
+        $field = trim((string)($_POST['field'] ?? ''));
+        $raw   = isset($_POST['value']) ? trim((string)$_POST['value']) : '';
+
+        if ($empId <= 0 || !preg_match('/^\d{4}-\d{2}$/', $month)) {
+            throw new RuntimeException('بيانات غير صحيحة.');
+        }
+
+        $allowedFields = [
+            'leave_days',
+            'due_days',
+            'monthly_take',
+            'standing_take',
+            'cashier_take',
+            'bonuses',
+        ];
+        if (!in_array($field, $allowedFields, true)) {
+            throw new RuntimeException('حقل غير مسموح بتعديله.');
+        }
+
+        // موظف مرتبه اتصرف خلاص — مفيش حفظ
+        $chkPaid = $pdo->prepare('SELECT id FROM salaries WHERE employee_id = ? AND salary_month = ?');
+        $chkPaid->execute([$empId, $month]);
+        if ($chkPaid->fetch()) {
+            throw new RuntimeException('لا يمكن تعديل راتب تم صرفه بالفعل.');
+        }
+
+        $val = null;
+        if ($raw !== '') {
+            if (!is_numeric($raw)) {
+                throw new RuntimeException('قيمة غير صالحة.');
+            }
+            if ($field === 'leave_days') {
+                $val = max(0, (int)$raw);
+            } elseif ($field === 'due_days') {
+                $val = max(0.0, round((float)$raw, 2));
+            } else {
+                $val = max(0.0, round((float)$raw, 2));
+            }
+        }
+
+        // 🔴 المكافآت مسار تاني خالص: دي صفوف حقيقية في `employee_bonuses`
+        //    مش مسوّدة. بتعدي على نفس الدالة اللي كان زرار «حفظ التعديلات»
+        //    بينده عليها، فالسلوك هو هو بالظبط — بس لموظف واحد.
+        //    وخانة فاضية بتتجاهل (الدالة بتعمل `continue`) زي ما كانت.
+        if ($field === 'bonuses') {
+            $pdo->beginTransaction();
+            try {
+                apply_payroll_financial_adjustments($pdo, $month, date('Y-m-d'), [$empId => $raw]);
+                $pdo->commit();
+            } catch (Throwable $ex) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $ex;
+            }
+            echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $sql = "INSERT INTO `payroll_adjustments` (`employee_id`, `month`, `{$field}`, `updated_by`)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE `{$field}` = VALUES(`{$field}`), `updated_by` = VALUES(`updated_by`)";
+        $pdo->prepare($sql)->execute([$empId, $month, $val, $uid]);
+
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -1675,9 +1754,6 @@ $statusBadge = function($st) {
                     <button type="button" class="btn btn-sm btn-ghost" id="btnSalDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء التحديد</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <?php if (is_owner()): ?>
-                        <button type="submit" name="action" value="save_payroll_adjustments" formnovalidate class="btn btn-sm btn-ghost" style="border:1.5px solid var(--line);"><i class="ti ti-device-floppy"></i> حفظ التعديلات</button>
-                    <?php endif; ?>
                     <select name="treasury_id" required style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
                         <option value="">— اختر خزينة الصرف —</option>
                         <?php foreach ($payTreasuries as $t): ?>
@@ -1781,11 +1857,18 @@ $statusBadge = function($st) {
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
                                 <span style="color:var(--ink-400);">—</span>
                             <?php elseif (is_owner() && !$p['is_paid']): ?>
-                                <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
-                                       value="<?= (int)$p['leave_days'] ?>"
-                                       class="leave-days-input payroll-num is-days"
-                                       data-calc="<?= (int)$p['leave_days_calc'] ?>"
-                                       style="font-weight:600;">
+                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                    <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
+                                           value="<?= (int)$p['leave_days'] ?>"
+                                           class="leave-days-input payroll-num is-days"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="leave_days"
+                                           data-saved="<?= (int)$p['leave_days'] ?>"
+                                           data-calc="<?= (int)$p['leave_days_calc'] ?>"
+                                           onblur="salAutoSave(this)"
+                                           style="font-weight:600;">
+                                    <span class="save-ind"></span>
+                                </div>
                             <?php else: ?>
                                 <span style="font-weight:600;"><?= (int)$p['leave_days'] ?></span>
                             <?php endif; ?>
@@ -1798,9 +1881,14 @@ $statusBadge = function($st) {
                                     <input type="number" min="0" max="60" step="0.01" name="due_days[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
                                            class="due-days-input payroll-num"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="due_days"
+                                           data-saved="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['work_days'] + $p['leave_days'], 2, '.', '') ?>"
+                                           onblur="salAutoSave(this)"
                                            style="font-weight:600;">
-                                    <span class="due-days-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب (أيام العمل + الإجازة)">معدّلة</span>
+                                    <span class="due-days-edited-badge" style="<?= (abs((float)$p['due_days_calc'] - round((float)$p['work_days'] + (int)$p['leave_days'], 2)) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب (أيام العمل + الإجازة)">معدّلة</span>
+                                    <span class="save-ind"></span>
                                 </div>
                             <?php else: ?>
                                 <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= number_format($p['due_days_calc'], 2) ?></span>
@@ -1818,18 +1906,32 @@ $statusBadge = function($st) {
                                 <span style="color:var(--pos);font-weight:600;">+<?= number_format($p['total_bonuses'], 2) ?></span>
                                 <a href="hr.php?tab=bonuses" style="display:block;font-size:11px;color:var(--accent-text);text-decoration:none;" title="يوجد أكثر من مكافأة معلّقة — عدلها من تاب المكافآت">تفاصيل (<?= $p['bonus_cnt'] ?>)</a>
                             <?php elseif ($p['bonus_cnt'] === 1): ?>
-                                <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
-                                       value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
-                                       class="bonus-input payroll-num"
-                                       data-orig="<?= $p['total_bonuses'] ?>"
-                                       style="color:var(--pos);font-weight:600;">
+                                <span style="display:inline-flex;align-items:center;gap:4px;">
+                                    <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
+                                           value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
+                                           class="bonus-input payroll-num"
+                                           data-orig="<?= $p['total_bonuses'] ?>"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="bonuses"
+                                           data-saved="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
+                                           onblur="salAutoSave(this)"
+                                           style="color:var(--pos);font-weight:600;">
+                                    <span class="save-ind"></span>
+                                </span>
                             <?php else: ?>
-                                <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
-                                       value=""
-                                       placeholder="0.00"
-                                       class="bonus-input payroll-num"
-                                       data-orig="0.00"
-                                       style="color:var(--pos);font-weight:600;">
+                                <span style="display:inline-flex;align-items:center;gap:4px;">
+                                    <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
+                                           value=""
+                                           placeholder="0.00"
+                                           class="bonus-input payroll-num"
+                                           data-orig="0.00"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="bonuses"
+                                           data-saved=""
+                                           onblur="salAutoSave(this)"
+                                           style="color:var(--pos);font-weight:600;">
+                                    <span class="save-ind"></span>
+                                </span>
                             <?php endif; ?>
                         </td>
                         <td>
@@ -1847,9 +1949,14 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="monthly_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
                                            class="monthly-take-input payroll-num"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="monthly_take"
+                                           data-saved="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['monthly_adv_take_calc'], 2, '.', '') ?>"
+                                           onblur="salAutoSave(this)"
                                            style="color:var(--neg);font-weight:500;">
-                                    <span class="monthly-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="monthly-take-edited-badge" style="<?= (abs((float)$p['monthly_adv_take'] - (float)$p['monthly_adv_take_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="save-ind"></span>
                                 </div>
                             <?php endif; ?>
                         </td>
@@ -1868,9 +1975,14 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="standing_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
                                            class="standing-take-input payroll-num"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="standing_take"
+                                           data-saved="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['standing_adv_take_calc'], 2, '.', '') ?>"
+                                           onblur="salAutoSave(this)"
                                            style="color:var(--neg);font-weight:500;">
-                                    <span class="standing-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="standing-take-edited-badge" style="<?= (abs((float)$p['standing_adv_take'] - (float)$p['standing_adv_take_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="save-ind"></span>
                                 </div>
                             <?php endif; ?>
                         </td>
@@ -1889,9 +2001,14 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="cashier_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
                                            class="cashier-take-input payroll-num"
+                                           data-emp="<?= (int)$p['id'] ?>"
+                                           data-field="cashier_take"
+                                           data-saved="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['cashier_deficit_calc'], 2, '.', '') ?>"
+                                           onblur="salAutoSave(this)"
                                            style="color:var(--neg);font-weight:500;">
-                                    <span class="cashier-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="cashier-take-edited-badge" style="<?= (abs((float)$p['cashier_deficit'] - (float)$p['cashier_deficit_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
+                                    <span class="save-ind"></span>
                                 </div>
                             <?php endif; ?>
                         </td>
@@ -2752,6 +2869,87 @@ $statusBadge = function($st) {
             document.querySelectorAll('.batch-emp-cb').forEach(function(cb) { cb.checked = false; });
         });
     }
+
+    function salIsEqual(a, b) {
+        a = (a !== undefined && a !== null) ? String(a).trim() : '';
+        b = (b !== undefined && b !== null) ? String(b).trim() : '';
+        if (a === b) return true;
+        if (a === '' || b === '') return false;
+        var na = parseFloat(a), nb = parseFloat(b);
+        if (!isNaN(na) && !isNaN(nb)) {
+            return Math.abs(na - nb) < 0.0001;
+        }
+        return false;
+    }
+
+    function setInd(input, txt, color) {
+        var ind = input.parentElement ? input.parentElement.querySelector('.save-ind') : null;
+        if (ind) { ind.textContent = txt; ind.style.color = color; }
+    }
+
+    function salAutoSave(input) {
+        var val = input.value.trim();
+        var saved = (input.dataset.saved !== undefined ? input.dataset.saved : '').trim();
+        if (salIsEqual(val, saved)) return;
+
+        setInd(input, '⏳', 'var(--warn)');
+        var monthInput = document.querySelector('#batchPayrollForm input[name="salary_month"]');
+        var csrfInput = document.querySelector('#batchPayrollForm input[name="csrf"]');
+        var salMonthVal = monthInput ? monthInput.value : '';
+        var csrfVal = csrfInput ? csrfInput.value : '';
+
+        var body = new URLSearchParams({
+            action: 'payroll_autosave',
+            csrf: csrfVal,
+            employee_id: input.dataset.emp || '',
+            salary_month: salMonthVal,
+            field: input.dataset.field || '',
+            value: val
+        });
+
+        fetch('hr.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString(),
+            /* 🔴 من غير `keepalive` المتصفح بيلغي الطلب لو الصفحة بتتقفل —
+               يعني آخر خانة المستخدم كتب فيها وقفل التاب على طول تضيع
+               وهو فاكرها اتحفظت. الحفظ على `blur` بيغطي الحالة العادية،
+               وده بيغطي حالة القفل الفوري. */
+            keepalive: true
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.ok) {
+                input.value = saved;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                setInd(input, '✗', 'var(--neg)');
+                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                return;
+            }
+            if (val === '') {
+                input.value = input.dataset.calc !== undefined ? input.dataset.calc : '';
+                input.dataset.saved = input.value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            } else {
+                input.dataset.saved = val;
+            }
+            setInd(input, '✓', 'var(--pos)');
+            setTimeout(function() { setInd(input, '', ''); }, 1800);
+        })
+        .catch(function() {
+            input.value = saved;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            setInd(input, '✗ اتصال', 'var(--neg)');
+        });
+    }
+
+    window.addEventListener('beforeunload', function () {
+        document.querySelectorAll('.bonus-input, .leave-days-input, .due-days-input, .monthly-take-input, .standing-take-input, .cashier-take-input').forEach(function (inp) {
+            if (!salIsEqual(inp.value, inp.dataset.saved)) {
+                salAutoSave(inp);
+            }
+        });
+    });
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
