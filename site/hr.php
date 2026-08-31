@@ -152,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'payro
         }
 
         // موظف مرتبه اتصرف خلاص — مفيش حفظ
-        $chkPaid = $pdo->prepare('SELECT id FROM salaries WHERE employee_id = ? AND salary_month = ?');
+        $chkPaid = $pdo->prepare('SELECT id FROM salaries WHERE employee_id = ? AND salary_month = ? AND reversed_at IS NULL');
         $chkPaid->execute([$empId, $month]);
         if ($chkPaid->fetch()) {
             throw new RuntimeException('لا يمكن تعديل راتب تم صرفه بالفعل.');
@@ -220,6 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'save_payroll_adjustments' => 'salaries',
             'pay_salary'               => 'salaries',
             'pay_salary_batch'         => 'salaries',
+            'reverse_salary'           => 'salaries',
             'approve_request'          => 'requests',
             'reject_request'           => 'requests',
             'update_request_time'      => 'requests',
@@ -704,6 +705,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $tab = 'salaries';
             }
+            elseif ($action === 'reverse_salary') {
+                if (!is_owner()) {
+                    throw new RuntimeException('غير مصرّح لك بإرجاع صرف المرتب. هذه العملية للأونر فقط.');
+                }
+                $salaryId = (int)($_POST['salary_id'] ?? 0);
+                $reason = trim((string)($_POST['reason'] ?? ''));
+                if ($salaryId <= 0 || $reason === '') {
+                    throw new RuntimeException('يجب تحديد المرتب وكتابة سبب الإرجاع.');
+                }
+                $manualNotices = reverse_salary($salaryId, $reason, $uid, $pdo);
+                if (!empty($manualNotices)) {
+                    $flash = 'تم إرجاع صرف المرتب بنجاح مع تنبيهات: ' . implode(' | ', $manualNotices);
+                } else {
+                    $flash = 'تم إرجاع صرف المرتب وإلغاء القيود بنجاح.';
+                }
+                $tab = 'salaries';
+            }
             elseif ($action === 'approve_request') {
                 approve_attendance_request((int)($_POST['request_id'] ?? 0), $uid);
                 $flash = 'تم اعتماد الطلب وتطبيقه على الحضور.'; $tab='requests';
@@ -935,10 +953,77 @@ if ($tab === 'leaves') {
     )->fetchAll();
 }
 $salaries = [];
+$confirmRevSalary = null;
+$confirmRevJe = null;
+$confirmRevBonuses = [];
+$confirmRevPenalties = [];
+$confirmRevAdvances = [];
+$confirmRevDeficits = [];
+$confirmRevCarryAdv = null;
+$confirmRevManual = [];
+
 if ($tab === 'salaries') {
     $salaries = $pdo->query(
         "SELECT s.*, e.full_name FROM salaries s JOIN employees e ON e.id=s.employee_id ORDER BY s.id DESC LIMIT 100"
     )->fetchAll();
+
+    if (isset($_GET['confirm_reverse']) && is_owner()) {
+        $cRevId = (int)$_GET['confirm_reverse'];
+        $revSalStmt = $pdo->prepare(
+            "SELECT s.*, e.full_name
+             FROM salaries s
+             JOIN employees e ON e.id = s.employee_id
+             WHERE s.id = ? AND s.reversed_at IS NULL"
+        );
+        $revSalStmt->execute([$cRevId]);
+        $confirmRevSalary = $revSalStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($confirmRevSalary) {
+            $revJeStmt = $pdo->prepare(
+                "SELECT je.treasury_id, t.name AS treasury_name, je.debit
+                 FROM journal_entries je
+                 JOIN treasuries t ON t.id = je.treasury_id
+                 WHERE je.ref_type = 'salary' AND je.ref_id = ?"
+            );
+            $revJeStmt->execute([$cRevId]);
+            $confirmRevJe = $revJeStmt->fetch(PDO::FETCH_ASSOC);
+
+            $revBonStmt = $pdo->prepare("SELECT id, amount, reason FROM employee_bonuses WHERE paid_in_salary_id = ?");
+            $revBonStmt->execute([$cRevId]);
+            $confirmRevBonuses = $revBonStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($confirmRevBonuses) && (float)$confirmRevSalary['total_bonuses'] > 0.005) {
+                $confirmRevManual[] = 'مكافآت بقيمة ' . number_format((float)$confirmRevSalary['total_bonuses'], 2) . ' ج اتصرفت بدون ربط مباشر (مرتب قديم) — لن تعود تلقائياً.';
+            }
+
+            $revPenStmt = $pdo->prepare("SELECT id, amount, reason FROM employee_penalties WHERE deducted_in_salary_id = ?");
+            $revPenStmt->execute([$cRevId]);
+            $confirmRevPenalties = $revPenStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($confirmRevPenalties) && (float)$confirmRevSalary['total_penalties'] > 0.005) {
+                $confirmRevManual[] = 'جزاءات بقيمة ' . number_format((float)$confirmRevSalary['total_penalties'], 2) . ' ج اتخصمت بدون ربط مباشر (مرتب قديم) — لن تعود تلقائياً.';
+            }
+
+            $revAdvStmt = $pdo->prepare(
+                "SELECT sar.amount, sar.advance_id, ea.notes
+                 FROM salary_advance_recoveries sar
+                 JOIN employee_advances ea ON ea.id = sar.advance_id
+                 WHERE sar.salary_id = ?"
+            );
+            $revAdvStmt->execute([$cRevId]);
+            $confirmRevAdvances = $revAdvStmt->fetchAll(PDO::FETCH_ASSOC);
+            if (empty($confirmRevAdvances) && (float)$confirmRevSalary['total_advances'] > 0.005) {
+                $confirmRevManual[] = 'سلف بقيمة ' . number_format((float)$confirmRevSalary['total_advances'], 2) . ' ج اتخصمت بدون ربط مباشر (مرتب قديم) — لن تعود تلقائياً.';
+            }
+
+            $revDefStmt = $pdo->prepare("SELECT id, amount, description FROM custody_deficits WHERE recovered_in_salary_id = ?");
+            $revDefStmt->execute([$cRevId]);
+            $confirmRevDeficits = $revDefStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $cAdvNote = 'باقي خصومات من مرتب شهر ' . $confirmRevSalary['salary_month'];
+            $revCarryStmt = $pdo->prepare("SELECT id, amount, remaining, status FROM employee_advances WHERE employee_id = ? AND notes = ?");
+            $revCarryStmt->execute([(int)$confirmRevSalary['employee_id'], $cAdvNote]);
+            $confirmRevCarryAdv = $revCarryStmt->fetch(PDO::FETCH_ASSOC);
+        }
+    }
 }
 $requests = [];
 $pendingReqCount = 0;
@@ -1085,7 +1170,7 @@ if ($tab === 'salaries') {
     }
 
     // 7) المرتبات المصروفة للشهر المختار (استعلام واحد لمعرفة حالة الصرف)
-    $stPaid = $pdo->prepare("SELECT employee_id, id FROM salaries WHERE salary_month = ?");
+    $stPaid = $pdo->prepare("SELECT employee_id, id FROM salaries WHERE salary_month = ? AND reversed_at IS NULL");
     $stPaid->execute([$salMonth]);
     $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
 
@@ -2048,6 +2133,84 @@ $statusBadge = function($st) {
     </div>
 
     <!-- سجل الرواتب المصروفة سابقاً -->
+    <?php if ($confirmRevSalary): ?>
+    <div class="card" style="border:2px solid var(--neg);background:var(--surface);margin-bottom:20px;">
+        <div class="section-title" style="color:var(--neg);display:flex;align-items:center;gap:8px;">
+            <i class="ti ti-alert-triangle"></i>
+            تأكيد إرجاع صرف مرتب: <?= e($confirmRevSalary['full_name']) ?> (شهر <?= e($confirmRevSalary['salary_month']) ?>)
+        </div>
+        <p style="font-size:13.5px;color:var(--ink-700);margin-bottom:14px;line-height:1.7;">
+            سيتم عكس قيد الصرف بقيد استلام في الخزينة، وإعادة المستحقات والسلف والجزاءات لحالتها المعلّقة، مع إلغاء السلفة المرحّلة إن وُجدت.
+        </p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-bottom:16px;">
+            <div style="background:var(--line-soft);padding:10px 14px;border-radius:8px;">
+                <div style="font-size:12px;color:var(--ink-500);">الصافي المسترد</div>
+                <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= number_format((float)$confirmRevSalary['net_salary'], 2) ?> ج</div>
+            </div>
+            <div style="background:var(--line-soft);padding:10px 14px;border-radius:8px;">
+                <div style="font-size:12px;color:var(--ink-500);">الخزينة المسترد إليها</div>
+                <div style="font-size:14px;font-weight:600;color:var(--ink-900);">
+                    <?= $confirmRevJe ? (e($confirmRevJe['treasury_name']) . ' (استلام ' . number_format((float)$confirmRevJe['debit'], 2) . ' ج)') : 'لا يوجد قيد مالي بالخزينة (الصافي صفر)' ?>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-bottom:16px;font-size:13px;line-height:1.8;">
+            <div style="font-weight:600;margin-bottom:4px;color:var(--ink-900);">ما سيتم إرجاعه تلقائياً:</div>
+            <ul style="margin:0;padding-right:20px;color:var(--ink-700);">
+                <?php if (!empty($confirmRevBonuses)): ?>
+                    <li>المكافآت: <?= count($confirmRevBonuses) ?> مكافأة بإجمالي <?= number_format(array_sum(array_column($confirmRevBonuses, 'amount')), 2) ?> ج تعود معلّقة.</li>
+                <?php endif; ?>
+                <?php if (!empty($confirmRevPenalties)): ?>
+                    <li>الجزاءات: <?= count($confirmRevPenalties) ?> جزاء بإجمالي <?= number_format(array_sum(array_column($confirmRevPenalties, 'amount')), 2) ?> ج تعود معلّقة.</li>
+                <?php endif; ?>
+                <?php if (!empty($confirmRevAdvances)): ?>
+                    <li>السلف: استرجاع <?= count($confirmRevAdvances) ?> قسط سلفة بإجمالي <?= number_format(array_sum(array_column($confirmRevAdvances, 'amount')), 2) ?> ج للرصيد المتبقي.</li>
+                <?php endif; ?>
+                <?php if (!empty($confirmRevDeficits)): ?>
+                    <li>عجز العهدة: <?= count($confirmRevDeficits) ?> عجز بإجمالي <?= number_format(array_sum(array_column($confirmRevDeficits, 'amount')), 2) ?> ج يعود معلّقاً.</li>
+                <?php endif; ?>
+                <?php if ($confirmRevCarryAdv): ?>
+                    <li>السلفة المرحّلة: سلفة باقي الخصومات بمبلغ <?= number_format((float)$confirmRevCarryAdv['amount'], 2) ?> ج سيتم إلغاؤها وقيد عكسي في السجل.</li>
+                <?php endif; ?>
+                <?php if (empty($confirmRevBonuses) && empty($confirmRevPenalties) && empty($confirmRevAdvances) && empty($confirmRevDeficits) && !$confirmRevCarryAdv): ?>
+                    <li>لا توجد استقطاعات أو إضافات فرعية مرتبطة بهذا المرتب.</li>
+                <?php endif; ?>
+            </ul>
+        </div>
+
+        <?php if (!empty($confirmRevManual)): ?>
+            <div style="background:var(--warn-soft);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;margin-bottom:16px;">
+                <div style="font-weight:700;color:var(--warn);font-size:13px;margin-bottom:4px;">
+                    <i class="ti ti-alert-triangle"></i> بنود تحتاج مراجعة وتظبيط يدوي (مرتب قديم بدون ربط مباشر):
+                </div>
+                <ul style="margin:0;padding-right:20px;color:var(--ink-900);font-size:12.5px;">
+                    <?php foreach ($confirmRevManual as $mItem): ?>
+                        <li><?= e($mItem) ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endif; ?>
+
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="reverse_salary">
+            <input type="hidden" name="salary_id" value="<?= (int)$confirmRevSalary['id'] ?>">
+
+            <div class="form-row" style="margin-bottom:14px;">
+                <label style="font-weight:600;color:var(--ink-900);">سبب الإرجاع (إجباري):</label>
+                <input type="text" name="reason" required placeholder="مثال: تم الصرف للموظف الخطأ / تعديل الحضور" aria-label="سبب الإرجاع" style="max-width:500px;">
+            </div>
+
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="btn btn-reject"><i class="ti ti-rotate"></i> تأكيد إرجاع الصرف</button>
+                <a href="hr.php?tab=salaries" class="btn btn-cancel">إلغاء</a>
+            </div>
+        </form>
+    </div>
+    <?php endif; ?>
+
     <div class="card">
         <div class="section-title">سجل الرواتب المصروفة (<?= count($salaries) ?>)</div>
         <?php if (empty($salaries)): ?>
@@ -2070,6 +2233,7 @@ $statusBadge = function($st) {
                     <th>عجز كاشير</th>
                     <th>الصافي</th>
                     <th>الحالة</th>
+                    <th>إجراء</th>
                 </tr>
             </thead>
             <tbody>
@@ -2100,7 +2264,21 @@ $statusBadge = function($st) {
                     <td style="color:var(--neg);"><?= number_format((float)$s['total_deficits'],2) ?></td>
                     <td style="color:var(--neg);"><?= isset($s['total_cashier_deficits']) ? number_format((float)$s['total_cashier_deficits'],2) : '0.00' ?></td>
                     <td style="font-weight:700;color:var(--pos);"><?= number_format((float)$s['net_salary'],2) ?></td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td>
+                        <?php if ($s['reversed_at'] !== null): ?>
+                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);" title="<?= e('سبب الإرجاع: ' . ($s['reverse_reason'] ?? '—')) ?>">مرجّع</span>
+                            <div style="font-size:11px;color:var(--ink-500);margin-top:2px;" title="<?= e($s['reverse_reason'] ?? '') ?>"><?= e($s['reverse_reason'] ?? '—') ?></div>
+                        <?php else: ?>
+                            <span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if ($s['reversed_at'] === null && is_owner()): ?>
+                            <a href="hr.php?tab=salaries&confirm_reverse=<?= (int)$s['id'] ?>" class="btn btn-sm btn-reject" title="إرجاع صرف المرتب"><i class="ti ti-rotate"></i> إرجاع</a>
+                        <?php else: ?>
+                            <span style="color:var(--ink-300);font-size:12px;">—</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>

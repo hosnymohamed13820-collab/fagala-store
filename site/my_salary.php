@@ -56,7 +56,7 @@ $expiredOrNoSalary = false;
 if ($employee && $targetEmpId > 0) {
     $salStmt = $pdo->prepare(
         'SELECT * FROM salaries
-         WHERE employee_id = ? AND status = "paid"
+         WHERE employee_id = ? AND status = "paid" AND reversed_at IS NULL
          ORDER BY paid_at DESC, id DESC
          LIMIT 1'
     );

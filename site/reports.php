@@ -838,6 +838,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                  LEFT JOIN journal_entries je ON je.ref_type = 'salary' AND je.ref_id = s.id
                  LEFT JOIN treasuries t ON t.id = je.treasury_id
                  WHERE s.paid_at >= ? AND s.paid_at < DATE_ADD(?, INTERVAL 1 DAY)
+                   AND s.reversed_at IS NULL
                  GROUP BY s.id
                  ORDER BY s.id DESC"
             );

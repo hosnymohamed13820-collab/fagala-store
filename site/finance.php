@@ -2316,7 +2316,7 @@ function pay_salary(
     $pdo->beginTransaction();
     try {
         // تأكد إن المرتب مش مصروف قبل كده للشهر ده
-        $chk = $pdo->prepare('SELECT id FROM salaries WHERE employee_id=? AND salary_month=?');
+        $chk = $pdo->prepare('SELECT id FROM salaries WHERE employee_id=? AND salary_month=? AND reversed_at IS NULL');
         $chk->execute([$employeeId, $month]);
         if ($chk->fetchColumn()) {
             throw new RuntimeException('مرتب هذا الشهر مسجّل بالفعل.');
@@ -2433,6 +2433,7 @@ function pay_salary(
         );
 
         $advApplied = 0.0;
+        $advRecoveries = [];
         foreach ($pendingAdvances as $advRow) {
             $advId = (int) $advRow['id'];
             $origAmount = (float) $advRow['amount'];
@@ -2455,6 +2456,7 @@ function pay_salary(
             }
 
             $advApplied += $take;
+            $advRecoveries[] = ['advance_id' => $advId, 'amount' => $take];
             $newRemaining = round($outstanding - $take, 2);
 
             if ($newRemaining <= 0.00001) {
@@ -2539,6 +2541,20 @@ function pay_salary(
         ]);
         $salaryId = (int) $pdo->lastInsertId();
 
+        // ربط السلف المستردة بالمرتب في salary_advance_recoveries (استعلام واحد مجمّع)
+        if (!empty($advRecoveries)) {
+            $sarPlaceholders = [];
+            $sarValues = [];
+            foreach ($advRecoveries as $rec) {
+                $sarPlaceholders[] = '(?, ?, ?)';
+                $sarValues[] = $salaryId;
+                $sarValues[] = $rec['advance_id'];
+                $sarValues[] = $rec['amount'];
+            }
+            $sqlSar = 'INSERT INTO salary_advance_recoveries (salary_id, advance_id, amount) VALUES ' . implode(', ', $sarPlaceholders);
+            $pdo->prepare($sqlSar)->execute($sarValues);
+        }
+
         // صرف الصافي من الخزينة (لو موجب)
         if ($netSalary > 0) {
             post_journal($treasuryId, $netSalary, 0,
@@ -2546,12 +2562,12 @@ function pay_salary(
                 'salary', $salaryId, $userId, $pdo);
         }
 
-        // إقفال المستحقات والخصومات المعلّقة
-        $pdo->prepare('UPDATE employee_bonuses SET status="paid" WHERE employee_id=? AND status="pending"')
-            ->execute([$employeeId]);
+        // إقفال المستحقات والخصومات المعلّقة مع تسجيل ربط المرتب
+        $pdo->prepare('UPDATE employee_bonuses SET status="paid", paid_in_salary_id=? WHERE employee_id=? AND status="pending"')
+            ->execute([$salaryId, $employeeId]);
 
-        $pdo->prepare('UPDATE employee_penalties SET status="deducted" WHERE employee_id=? AND status="pending"')
-            ->execute([$employeeId]);
+        $pdo->prepare('UPDATE employee_penalties SET status="deducted", deducted_in_salary_id=? WHERE employee_id=? AND status="pending"')
+            ->execute([$salaryId, $employeeId]);
         $pdo->prepare('UPDATE custody_deficits SET status="recovered", recovered_in_salary_id=? WHERE employee_id=? AND status="pending"')
             ->execute([$salaryId, $employeeId]);
 
@@ -2603,6 +2619,259 @@ function pay_salary(
         return $salaryId;
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
+/**
+ * إرجاع صرف مرتب اتصرف بالخطأ.
+ * - بقيد عكسي في اليومية (استلام = دائن بالصافي على نفس الخزينة بنفس التاريخ الحالي).
+ * - استرجاع مبالغ السلف المستقطعة لحالة pending وزيادة remaining باستعلام مجمّع.
+ * - إعادة المكافآت والجزاءات المرتبطة بهذا المرتب فقط لحالة pending.
+ * - إعادة عجز العهدة لحالة pending وتصفير recovered_in_salary_id.
+ * - حذف سجلات الورديات المفحوصة من salary_shift_deficits.
+ * - إلغاء السلفة المرحّلة (إن وُجدت) مع قيد عكسي credit في سجل الموظف.
+ * - تسجيل قيود عكسية في employee_ledger لكل خصم سلفة تم استرجاعه.
+ * - تحديث سجل المرتب ببيانات الإرجاع (reversed_at = NOW(), reversed_by, reverse_reason).
+ *
+ * @param int      $salaryId معرف المرتب المراد إرجاعه
+ * @param string   $reason   سبب الإرجاع
+ * @param int|null $userId   معرف المستخدم القائم بالإرجاع
+ * @param PDO|null $pdo      كائن PDO اختياري
+ * @return array قائمة التنبيهات والبنود التي لم يتم إرجاعها تلقائياً لعدم وجود ربط
+ */
+function reverse_salary(
+    int $salaryId,
+    string $reason,
+    ?int $userId = null,
+    ?PDO $pdo = null
+): array {
+    $ownTransaction = false;
+    if ($pdo === null) {
+        $pdo = db();
+        $pdo->beginTransaction();
+        $ownTransaction = true;
+    }
+
+    try {
+        // ١. قفل سجل المرتب والتأكد من عدم إرجاعه مسبقاً
+        $st = $pdo->prepare(
+            'SELECT s.*, e.full_name
+             FROM salaries s
+             JOIN employees e ON e.id = s.employee_id
+             WHERE s.id = ? FOR UPDATE'
+        );
+        $st->execute([$salaryId]);
+        $sal = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$sal) {
+            throw new RuntimeException('سجل المرتب غير موجود.');
+        }
+        if (!empty($sal['reversed_at'])) {
+            throw new RuntimeException('المرتب ده اترجّع قبل كده.');
+        }
+
+        $trimmedReason = trim($reason);
+        if ($trimmedReason === '') {
+            throw new RuntimeException('يجب إدخال سبب إرجاع المرتب.');
+        }
+
+        $employeeId  = (int) $sal['employee_id'];
+        $empName     = $sal['full_name'] ?? ('الموظف #' . $employeeId);
+        $month       = $sal['salary_month'];
+        $today       = date('Y-m-d');
+        $manualItems = [];
+
+        // ٢. القيد العكسي في اليومية (استلام = دائن بنفس المبلغ وعلى نفس الخزينة)
+        $jeStmt = $pdo->prepare(
+            'SELECT treasury_id, debit, credit
+             FROM journal_entries
+             WHERE ref_type = "salary" AND ref_id = ?
+             ORDER BY id ASC'
+        );
+        $jeStmt->execute([$salaryId]);
+        $jeRow = $jeStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($jeRow && (float)$jeRow['debit'] > 0.00001) {
+            $treasuryId = (int) $jeRow['treasury_id'];
+            $amount     = (float) $jeRow['debit'];
+            post_journal(
+                $treasuryId,
+                0,
+                $amount,
+                'إرجاع صرف مرتب: ' . $empName . ' (' . $month . ')',
+                $today,
+                'salary_reverse',
+                $salaryId,
+                $userId,
+                $pdo
+            );
+        }
+
+        // ٣. السلف: استرجاع مبالغ الأقساط من salary_advance_recoveries
+        $sarStmt = $pdo->prepare(
+            'SELECT advance_id, amount
+             FROM salary_advance_recoveries
+             WHERE salary_id = ?'
+        );
+        $sarStmt->execute([$salaryId]);
+        $sarRows = $sarStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (!empty($sarRows)) {
+            $advIds = [];
+            $cases  = [];
+            $params = [];
+            foreach ($sarRows as $sr) {
+                $advId    = (int) $sr['advance_id'];
+                $amt      = (float) $sr['amount'];
+                $advIds[] = $advId;
+                $cases[]  = 'WHEN id = ? THEN ?';
+                $params[] = $advId;
+                $params[] = $amt;
+            }
+            $inPlaceholders = implode(',', array_fill(0, count($advIds), '?'));
+            $sqlAdv = 'UPDATE employee_advances
+                       SET remaining = COALESCE(remaining, 0) + CASE ' . implode(' ', $cases) . ' ELSE 0 END,
+                           status = "pending"
+                       WHERE id IN (' . $inPlaceholders . ')';
+            $advUpdateParams = array_merge($params, $advIds);
+            $pdo->prepare($sqlAdv)->execute($advUpdateParams);
+
+            // ٨-أ. قيود عكسية في سجل الموظف لكل قسط سلفة تم استرجاعه
+            foreach ($sarRows as $sr) {
+                emp_ledger_add(
+                    $employeeId,
+                    'debit',
+                    (float) $sr['amount'],
+                    $today,
+                    'salary_deduction',
+                    'إلغاء خصم سلفة لإرجاع مرتب شهر ' . $month,
+                    null,
+                    'advance',
+                    (int) $sr['advance_id'],
+                    $userId,
+                    $pdo
+                );
+            }
+        } elseif ((float)$sal['total_advances'] > 0.005) {
+            $manualItems[] = 'السلف: تم خصم ' . number_format((float)$sal['total_advances'], 2) . ' ج في هذا المرتب بدون ربط مباشر (مرتب قديم) — يرجى مراجعة أرصدة السلف يدوياً.';
+        }
+
+        // ٤. المكافآت والجزاءات بالربط المباشر فقط
+        $bonUpd = $pdo->prepare('UPDATE employee_bonuses SET status = "pending", paid_in_salary_id = NULL WHERE paid_in_salary_id = ?');
+        $bonUpd->execute([$salaryId]);
+        $bonCount = $bonUpd->rowCount();
+        if ($bonCount === 0 && (float)$sal['total_bonuses'] > 0.005) {
+            $manualItems[] = 'المكافآت: صرف مكافآت بقيمة ' . number_format((float)$sal['total_bonuses'], 2) . ' ج بدون ربط مباشر (مرتب قديم) — يرجى مراجعة حالة المكافآت يدوياً.';
+        }
+
+        $penUpd = $pdo->prepare('UPDATE employee_penalties SET status = "pending", deducted_in_salary_id = NULL WHERE deducted_in_salary_id = ?');
+        $penUpd->execute([$salaryId]);
+        $penCount = $penUpd->rowCount();
+        if ($penCount === 0 && (float)$sal['total_penalties'] > 0.005) {
+            $manualItems[] = 'الجزاءات: خصم جزاءات بقيمة ' . number_format((float)$sal['total_penalties'], 2) . ' ج بدون ربط مباشر (مرتب قديم) — يرجى مراجعة حالة الجزاءات يدوياً.';
+        }
+
+        // ٥. عجز العهدة: الربط موجود (recovered_in_salary_id)
+        $pdo->prepare('UPDATE custody_deficits SET status = "pending", recovered_in_salary_id = NULL WHERE recovered_in_salary_id = ?')
+            ->execute([$salaryId]);
+
+        // ٦. مسح الورديات المفحوصة في هذا المرتب (ليس سجلاً مالياً)
+        $pdo->prepare('DELETE FROM salary_shift_deficits WHERE salary_id = ?')
+            ->execute([$salaryId]);
+
+        // ٧. السلفة المرحّلة (إن وجدت): إلغاؤها وقيد عكسي في السجل
+        $advNote = 'باقي خصومات من مرتب شهر ' . $month;
+        $carryAdvStmt = $pdo->prepare(
+            'SELECT id, amount, remaining, status, notes
+             FROM employee_advances
+             WHERE employee_id = ? AND notes = ?
+             ORDER BY id DESC LIMIT 1'
+        );
+        $carryAdvStmt->execute([$employeeId, $advNote]);
+        $carryAdv = $carryAdvStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($carryAdv) {
+            $carryAdvId = (int) $carryAdv['id'];
+            $carryAmt   = (float) $carryAdv['amount'];
+
+            // التحقق من وجود حالة cancelled في enum عمود status
+            $colStmt = $pdo->prepare(
+                "SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employee_advances' AND COLUMN_NAME = 'status'"
+            );
+            $colStmt->execute();
+            $colType = (string) $colStmt->fetchColumn();
+            $hasCancelledEnum = (strpos($colType, "'cancelled'") !== false);
+
+            if ($hasCancelledEnum) {
+                $pdo->prepare('UPDATE employee_advances SET status = "cancelled", remaining = 0 WHERE id = ?')
+                    ->execute([$carryAdvId]);
+            } else {
+                $cancelNote = ($carryAdv['notes'] ? $carryAdv['notes'] . "\n" : '') . 'تم الإلغاء لإرجاع مرتب شهر ' . $month . ' بتاريخ ' . $today;
+                $pdo->prepare('UPDATE employee_advances SET remaining = 0, notes = ? WHERE id = ?')
+                    ->execute([$cancelNote, $carryAdvId]);
+                $manualItems[] = 'السلفة المرحّلة: السلفة رقم #' . $carryAdvId . ' (باقي خصومات بقيمة ' . number_format($carryAmt, 2) . ' ج) تم تصفير متبقيها — يُرجى مراجعتها يدوياً لعدم وجود حالة cancelled في جدول السلف.';
+            }
+
+            // ٨-ب. قيد عكسي credit في سجل حساب الموظف لإلغاء السلفة المرحّلة
+            emp_ledger_add(
+                $employeeId,
+                'credit',
+                $carryAmt,
+                $today,
+                'cancel',
+                'إلغاء سلفة مرحّلة لإرجاع مرتب شهر ' . $month,
+                null,
+                'advance',
+                $carryAdvId,
+                $userId,
+                $pdo
+            );
+        }
+
+        // ٨-ج. أي قيود أخرى في سجل الموظف مرتبطة مباشرة بهذا المرتب (ref_type = 'salary')
+        $salLedStmt = $pdo->prepare(
+            'SELECT id, direction, amount, move_type
+             FROM employee_ledger
+             WHERE employee_id = ? AND ref_type = "salary" AND ref_id = ?'
+        );
+        $salLedStmt->execute([$employeeId, $salaryId]);
+        foreach ($salLedStmt->fetchAll(PDO::FETCH_ASSOC) as $sle) {
+            $revDir = ($sle['direction'] === 'debit') ? 'credit' : 'debit';
+            emp_ledger_add(
+                $employeeId,
+                $revDir,
+                (float) $sle['amount'],
+                $today,
+                $sle['move_type'],
+                'قيد عكسي لإرجاع مرتب شهر ' . $month,
+                null,
+                'salary',
+                $salaryId,
+                $userId,
+                $pdo
+            );
+        }
+
+        // ٩. تحديث سجل المرتب بالبيانات وسبب الإرجاع
+        $pdo->prepare(
+            'UPDATE salaries
+             SET reversed_at = NOW(),
+                 reversed_by = ?,
+                 reverse_reason = ?
+             WHERE id = ?'
+        )->execute([$userId, $trimmedReason, $salaryId]);
+
+        if ($ownTransaction) {
+            $pdo->commit();
+        }
+
+        return $manualItems;
+
+    } catch (Throwable $ex) {
+        if ($ownTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         throw $ex;
     }
 }
