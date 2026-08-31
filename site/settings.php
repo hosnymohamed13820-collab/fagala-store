@@ -151,7 +151,7 @@ require_once __DIR__ . '/includes/header.php';
     .nav-link:hover { background:var(--bg); }
 
     /* سلايدر نوع bool (مبني على تصميم الوضع الليلي في fagala.css) */
-    .toggle-wrap { display:inline-flex; align-items:center; }
+    .toggle-wrap { display:inline-flex; align-items:center; gap:10px; }
     .toggle-wrap input[type="checkbox"] { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
     .toggle-wrap .tt-track {
         display:inline-block; position:relative;
@@ -172,9 +172,8 @@ require_once __DIR__ . '/includes/header.php';
     .toggle-wrap input[type="checkbox"]:checked + .tt-track .tt-knob {
         transform:translateX(-20px);
     }
-    .form-row.is-locked .toggle-wrap label.tt-track {
-        cursor:default; opacity:0.65; pointer-events:none;
-    }
+    .toggle-status { font-size:13px; color:var(--ink-700); user-select:none; }
+    .toggle-notice { font-size:12px; color:var(--neg); margin-top:6px; line-height:1.5; }
     .fld-hint { font-size:12px; color:var(--ink-500); margin-top:6px; line-height:1.5; }
 </style>
 
@@ -194,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <?php foreach ($editable as $key => $meta): ?>
             <?php [$label, $type] = $meta; ?>
-            <div class="form-row is-locked">
+            <div class="form-row<?= $type !== 'bool' ? ' is-locked' : '' ?>">
                 <label for="fld_<?= e($key) ?>"><?= e($label) ?></label>
                 <div class="fld-line">
                     <?php if ($type === 'user'): ?>
@@ -207,17 +206,20 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </select>
                     <?php elseif ($type === 'bool'): ?>
+                        <?php $isBoolOn = ($current[$key] ?? '1') === '1'; ?>
                         <div class="toggle-wrap">
                             <input type="hidden" name="<?= e($key) ?>" value="0">
                             <input type="checkbox"
                                    id="fld_<?= e($key) ?>"
                                    name="<?= e($key) ?>"
                                    value="1"
-                                   <?= ($current[$key] ?? '1') === '1' ? 'checked' : '' ?>
-                                   disabled>
+                                   <?= $isBoolOn ? 'checked' : '' ?>>
                             <label for="fld_<?= e($key) ?>" class="tt-track">
                                 <span class="tt-knob"></span>
                             </label>
+                            <span class="toggle-status">
+                                <?= $isBoolOn ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب' ?>
+                            </span>
                         </div>
                     <?php else: ?>
                         <input type="<?= e($type) ?>"
@@ -227,8 +229,15 @@ require_once __DIR__ . '/includes/header.php';
                                value="<?= e($current[$key] ?? '') ?>"
                                readonly>
                     <?php endif; ?>
-                    <button type="button" class="fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
+                    <?php if ($type !== 'bool'): ?>
+                        <button type="button" class="fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
+                    <?php endif; ?>
                 </div>
+                <?php if ($type === 'bool'): ?>
+                    <div class="toggle-notice" style="display:none;">
+                        اضغط «حفظ الإعدادات» تحت عشان يتطبّق.
+                    </div>
+                <?php endif; ?>
                 <?php if ($key === 'cashier_deficit_carry'): ?>
                     <div class="fld-hint">
                         مقفول = الباقي من عجز الكاشير مابينزلش سلفة على الموظف، وبيتساب من غير تحصيل. شغّله تاني بعد ما بيانات الورديات تتراجع وتتظبط.
@@ -241,9 +250,16 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <script>
-// الحقول مقفولة افتراضياً وكل واحد جنبه زرار «تعديل».
+// حقول **الكتابة** مقفولة افتراضياً وكل واحد جنبه زرار «تعديل».
 // السبب: تعديل بالغلط في إعداد زي «حساب إيراد المبيعات» أو مفتاح الإشعارات
 // ممكن يوقّع حاجات من غير ما حد ياخد باله. فالقفل هو الوضع الطبيعي.
+//
+// 🔴 السلايدرات (نوع `bool`) **مستثناة** — بتشتغل بدوسة واحدة.
+//    السبب: الدوس على سلايدر قرار مقصود بطبيعته، مفيش حد بيقلبه بالغلط.
+//    ولما كان مقفول، الدوسة مكانتش بتعمل حاجة والمستخدم يفتكر الموقع باظ
+//    (`<label for>` على عنصر disabled بيتجاهله المتصفح خالص).
+//    فصف الـbool مالوش زرار «تعديل»، والحلقة تحت بتتخطاه لوحدها
+//    لأن `btn` بيطلع null.
 (function () {
     var form = document.querySelector('.settings-form');
     if (!form) return;
@@ -290,6 +306,22 @@ require_once __DIR__ . '/includes/header.php';
             btn.textContent = 'تعديل';
             btn.title = 'اضغط عشان تعدّل القيمة دي';
         }
+    });
+
+    // تحديث نص السلايدر وإظهار تنبيه الحفظ عند التغيير
+    form.querySelectorAll('.toggle-wrap input[type="checkbox"]').forEach(function (chk) {
+        var row = chk.closest('.form-row');
+        var statusSpan = row ? row.querySelector('.toggle-status') : null;
+        var notice = row ? row.querySelector('.toggle-notice') : null;
+
+        chk.addEventListener('change', function () {
+            if (statusSpan) {
+                statusSpan.textContent = chk.checked ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب';
+            }
+            if (notice) {
+                notice.style.display = 'block';
+            }
+        });
     });
 
     // 🔴 الـselect والـcheckbox المقفولين (disabled) مابيتبعتوش مع الفورم — فبنفك القفل عن
