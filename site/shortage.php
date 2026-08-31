@@ -17,6 +17,10 @@ require_once __DIR__ . '/shortage_lib.php';
 // book_lib بيوفّر شريط التابات المشترك (طلب نواقص / طلبيات الكتب / حجز الكتب)
 require_once __DIR__ . '/book_lib.php';
 
+// 🔴 طلب النواقص بيقرا من مرآة الوكلاء بس. الجسر واقف وكل نداء عليه
+//    بيستنى الاتصال يفشل، والشاشة دي بتبحث بالباركود عشرات المرات.
+stock_mirror_only(true);
+
 $uid = (int) current_user()['id'];
 
 // ===== AJAX =====
@@ -30,7 +34,7 @@ if ($ajax !== '') {
                 $row = stock_item_by_code((string) ($_GET['code'] ?? ''));
                 echo json_encode($row
                     ? ['ok' => true, 'row' => $row]
-                    : ['ok' => false, 'not_found' => true], JSON_UNESCAPED_UNICODE);
+                    : ['ok' => false, 'not_found' => true, 'local_ready' => stock_local_ready()], JSON_UNESCAPED_UNICODE);
                 break;
 
             // اقتراحات البحث بالاسم (منسدلة)
@@ -378,7 +382,11 @@ require_once __DIR__ . '/includes/header.php';
                     pushRow(j.row);
                     if (navigator.vibrate) navigator.vibrate(50);
                 } else if (j.not_found) {
-                    setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
+                    if (j.local_ready === false) {
+                        setStatus('✗ الصنف ده مش في مرآة الإدارة. شغّل وكيل مزامنة الإدارة وجرّب تاني.', 'var(--neg)');
+                    } else {
+                        setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
+                    }
                 } else {
                     setStatus('✗ ' + (j.error || 'خطأ'), 'var(--neg)');
                 }
