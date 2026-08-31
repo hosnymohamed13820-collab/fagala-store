@@ -59,6 +59,18 @@
                خلفية الزراير في كل مكان (الأبيض فوقه ٥.١٤). */
             --accent-text: #1e6fbf;
 
+            /* ===== السطح القوي (الزرار المختار · الزرار الثانوي) =====
+               ١٢ موضع في المشروع بيستعملوا `--ink-900`/`--ink-800`
+               **كخلفية** بكتابة بيضا. وسلّم الحبر **بيتعكس** في الوضع
+               الليلي — يعني الخلفية كانت هتطلع **بيضا والكتابة بيضا**.
+               🔴 دي كانت مكسورة فعلاً في شريط فلاتر الفواتير.
+               الحل: الدور ده بقى ليه توكن بيتقلب مع الوضع — غامق بكتابة
+               بيضا في الفاتح، وفاتح بكتابة غامقة في الليلي. الاتنين
+               تباينهم ١٢.٦ فما فوق. */
+            --fill-strong:      var(--ink-900);
+            --fill-strong-fg:   #ffffff;
+            --fill-strong-veil: rgba(255,255,255,.18);
+
             color-scheme: light;
 
             /* ===== الخطوط ===== */
@@ -138,6 +150,14 @@
             --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
             --shadow:    0 2px 4px rgba(0,0,0,.35), 0 8px 20px rgba(0,0,0,.45);
             --shadow-lg: 0 18px 44px rgba(0,0,0,.60);
+
+            /* السطح القوي بينعكس: في الفاتح غامق بكتابة بيضا، وهنا
+               فاتح بكتابة غامقة. 🔴 مكتوب بلون صريح مش `var(--ink-900)`
+               عشان سلّم الحبر اتعكس — لو ساب `var(--ink-900)` كان هيبقى
+               نفس القيمة بس الكتابة تفضل بيضا = زرار مختفي. */
+            --fill-strong:      #dbe3ee;
+            --fill-strong-fg:   #0f1826;
+            --fill-strong-veil: rgba(0,0,0,.13);
 
             color-scheme: dark;
         }
@@ -548,6 +568,11 @@
             border: none !important;
             color: #fff;
         }
+        /* 🔴 الكارت ده **مش** بياخد `--fill-strong` زي الزراير. ده كارت
+           كبير، ولو بقى فاتح في الوضع الليلي هيبقى بلوك وهج في نص الشاشة.
+           فبياخد الأزرق بدل ما ينعكس — بيفضل «أهم رقم في الشاشة» من غير
+           ما يعمي، والكتابة البيضا اللي تحت لسه معدّية AA (٥.١٤). */
+        :root[data-theme="dark"] .tre-box.main { background: var(--accent) !important; }
         .tre-box.main .tre-top { color: rgba(255,255,255,.62) !important; }
         .tre-box.main .tre-val { color: #fff !important; font-size: 34px !important; }
         .tre-box.main .tre-cur { color: rgba(255,255,255,.5) !important; }
@@ -576,9 +601,9 @@
         }
         .period-btn:hover { border-color: var(--ink-300) !important; }
         .period-btn.active {
-            background: var(--ink-900) !important;
-            border-color: var(--ink-900) !important;
-            color: #fff !important;
+            background: var(--fill-strong) !important;
+            border-color: var(--fill-strong) !important;
+            color: var(--fill-strong-fg) !important;
         }
 
         /* الشارات: خفيفة ومقروءة */

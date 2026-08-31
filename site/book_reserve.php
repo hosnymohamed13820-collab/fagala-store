@@ -185,7 +185,7 @@ require_once __DIR__ . '/includes/header.php';
                         </form>
                     <?php endforeach; ?>
                 <?php endif; ?>
-                <a class="btn" style="background:var(--ink-800);padding:9px 16px;font-size:13px;"
+                <a class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:9px 16px;font-size:13px;"
                    href="book_reserve.php"><i class="ti ti-plus"></i> حجز جديد</a>
             </div>
         </div>
@@ -259,7 +259,7 @@ require_once __DIR__ . '/includes/header.php';
                    enterkeyhint="search"
                    oninput="onType()"
                    onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-            <button type="button" class="btn" style="background:var(--ink-800);padding:11px 16px;"
+            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
                     onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
                 <i class="ti ti-camera" style="font-size:18px;"></i>
             </button>

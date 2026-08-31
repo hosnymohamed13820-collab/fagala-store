@@ -1744,8 +1744,8 @@ require_once __DIR__ . '/includes/header.php';
     .sf-btn:hover { border-color:var(--ink-300); color:var(--ink-800); }
     .sf-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
         background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
-    .sf-btn.active { background:var(--ink-900); border-color:var(--ink-900); color:#fff; }
-    .sf-btn.active span { background:rgba(255,255,255,.18); color:#fff; }
+    .sf-btn.active { background:var(--fill-strong); border-color:var(--fill-strong); color:var(--fill-strong-fg); }
+    .sf-btn.active span { background:var(--fill-strong-veil); color:var(--fill-strong-fg); }
     .no-match { padding:26px; text-align:center; color:var(--ink-400); }
 
     .inv-table { width:100%; border-collapse:collapse; }
@@ -2579,7 +2579,7 @@ require_once __DIR__ . '/includes/header.php';
             التصدير بيطلع ملف نصي: كود الصنف + Tab + السعر.
         </p>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-            <a class="btn" id="pricesExportBtn" style="background:var(--ink-800);"
+            <a class="btn" id="pricesExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                href="prices_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                 <i class="ti ti-download"></i> تصدير ملف الأسعار
             </a>
@@ -3008,7 +3008,7 @@ require_once __DIR__ . '/includes/header.php';
                 والتحديث من السيستم بيكتب فوق أي تعديل يدوي (قاعدة الشركة مابتتكتبش أبدًا).
             </p>
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-                <a class="btn" id="pricesExportBtn" style="background:var(--ink-800);"
+                <a class="btn" id="pricesExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                    href="group_prices_export.php?group=<?= (int)$grpCurrent['id'] ?>">
                     <i class="ti ti-download"></i> تصدير ملف الأسعار المجمّع
                     <span style="opacity:.8;font-size:12px;">(<?= count($grpItems) ?> صنف)</span>
@@ -3312,7 +3312,7 @@ require_once __DIR__ . '/includes/header.php';
                 ملف نصي: كود الصنف + Tab + الكمية + Tab + السعر بعد الخصم
                 (لغاية <?= DISC_PRICE_DP ?> خانات عشرية — زي ما نظام الشركة بيخزّن).
             </p>
-            <a class="btn" id="discExportBtn" style="background:var(--ink-800);"
+            <a class="btn" id="discExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                data-base="discount_export.php?invoice=<?= e(rawurlencode((string)$discInvId)) ?>&suffix=<?= e(rawurlencode((string)($discSuffix ?? ''))) ?><?= $discNetOverride !== null ? '&dnet=' . e(rawurlencode((string)$discNetOverride)) : '' ?>"
                href="discount_export.php?invoice=<?= e((string)$discInvId) ?>&suffix=<?= e((string)($discSuffix ?? '')) ?><?= $discNetOverride !== null ? '&dnet=' . e((string)$discNetOverride) : '' ?><?= $dpctRaw !== '' ? '&dpct=' . e(rawurlencode($dpctRaw)) : '' ?>">
                 <i class="ti ti-download"></i> تصدير ملف الخصم

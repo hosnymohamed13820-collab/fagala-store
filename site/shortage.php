@@ -193,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
                enterkeyhint="search"
                oninput="onType()"
                onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-        <button type="button" class="btn" style="background:var(--ink-800);padding:11px 16px;"
+        <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
                 onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
             <i class="ti ti-camera" style="font-size:18px;"></i>
         </button>
@@ -230,7 +230,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn" id="reqBtn" style="background:var(--pos-fill);" onclick="openRequest()">
                 <i class="ti ti-shopping-cart"></i> طلب نواقص
             </button>
-            <button type="button" class="btn" style="background:var(--ink-800);" onclick="exportCsv()">
+            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);" onclick="exportCsv()">
                 <i class="ti ti-download"></i> تصدير
             </button>
             <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">

@@ -256,6 +256,7 @@ $DEFINED = [
     // `--pos`/`--neg`/`--warn` بيقلبوا فاتحين (دور الكتابة)، و`--*-fill`
     // بيفضلوا غامقين (دور الخلفية). و`--accent-text` نفس الحكاية للأزرق.
     'pos-fill','neg-fill','warn-fill','accent-text',
+    'fill-strong','fill-strong-fg','fill-strong-veil',
 ];
 preg_match_all('/var\(\s*--([a-z0-9-]+)\s*\)/i', $css, $vm);
 $used    = array_unique($vm[1] ?? []);
