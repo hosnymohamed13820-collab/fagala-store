@@ -236,8 +236,11 @@
 
         buildBar(st);
         buildHeads(st);
-        apply(st);
+        /* (١١) لو فيه فلتر محفوظ، tryRestore بتطبّقه وبتنادي apply بنفسها.
+               لو ما فيش، نادي apply العادي عشان العدّاد والحدث يشتغلوا. */
+        if (!tryRestore(st)) apply(st);
     }
+
 
     /* ---- الشريط العلوي ---------------------------------------- */
     function buildBar(st) {
@@ -744,6 +747,18 @@
     /* ================================================================
        10) الإقلاع
        ================================================================ */
+
+    /* ── ترتيب الجداول في الصفحة ─────────────────────────────────────
+       بنحتاج رقم الجدول (ترتيبه وسط الجداول المؤهّلة في الصفحة) عشان
+       نحفظه ونرجّعه. بنحسبه من table.xt-on اللي اتبنوا بالفعل. */
+    function tableIndex(table) {
+        var all = document.querySelectorAll('table.xt-on');
+        for (var i = 0; i < all.length; i++) {
+            if (all[i] === table) return i;
+        }
+        return -1;
+    }
+
     function scan(root) {
         var list = (root || document).querySelectorAll('table');
         for (var i = 0; i < list.length; i++) {
@@ -771,6 +786,7 @@
 
     function init() {
         injectCSS();
+        attachSubmitSave();   // (١١) ربط الحفظ عند الـsubmit
         watching = true;
         try { scan(document); } finally { watching = false; }
         watch();
@@ -784,4 +800,130 @@
 
     // للجداول اللي بتتبني بجافاسكربت بعد التحميل
     window.xtableScan = function (root) { injectCSS(); scan(root); };
+
+    /* ================================================================
+       11) حفظ الفلتر عند الـsubmit واسترجاعه مرة واحدة
+       ─────────────────────────────────────────────────────────────────
+       المبدأ الأصلي (السطر 18 فوق) لازم يفضل صح:
+         «مفيش حفظ للفلتر بين الصفحات — تفتح الشاشة تلاقيها كاملة دايماً.»
+
+       الاستثناء الوحيد: المستخدم دوس زرار/فورم جوّا نفس الشاشة والصفحة
+       رجعت لنفس المسار. في الحالة دي مابساش الشاشة — بس POST/redirect
+       بيخلي الصفحة تتحمّل من الأول.
+
+       الحل:
+         (١) وقت الـsubmit: لو فيه فلتر شغّال → اخزّنه في sessionStorage.
+         (٢) وقت بناء الجدول: لو لقينا مفتاح → امسحه فوراً ← طبّق الفلتر.
+         النتيجة: رجع للصفحة مرة → فلتر. F5 أو فتح من جديد → كاملة.
+
+       ── تفاصيل تقنية ────────────────────────────────────────────────
+       • المفتاح: 'xt-restore:' + location.pathname (بدون search/hash)
+         لأن الـredirect بعد POST ممكن يغيّر الكويري (?tab=attendance وكده).
+       • sessionStorage مش storage الدايمة — يموت مع التاب.
+       • كل نداء على sessionStorage ملفوف في try/catch — التصفح الخاص
+         بيرمي استثناء فعلي مش بيرجّع null، والمكتبة لازم تفضل شغالة.
+       • المسح قبل التطبيق — لو التطبيق رمى استثناء والمفتاح لسه موجود،
+         الفلتر هيرجع في كل تحميل للأبد وده أوحش من المشكلة الأصلية.
+       ================================================================ */
+
+    /* المفتاح: pathname بس من غير search — الـredirect بيغيّر الكويري */
+    function restoreKey() {
+        return 'xt-restore:' + location.pathname;
+    }
+
+    /* (١) الحفظ — بيتنادى مرة واحدة من init() */
+    function attachSubmitSave() {
+        /* 🔴 مرحلة الفقاعة (bubble) مش الالتقاط، وبنتخطى لو الفورم اتلغى.
+           السبب: فورمات المسح عندها onsubmit="return confirm(...)".
+           في مرحلة الالتقاط كنا بنسبق التأكيد، فلو المستخدم دوس «إلغاء»
+           الفلتر بيتخزّن وهو أصلاً ماعملش حاجة — ويرجع له بعدين من غير
+           سبب. الحدث بيوصل لـdocument في الحالتين (preventDefault
+           مابيوقفش الانتشار)، فالفرق الوحيد هو defaultPrevented. */
+        document.addEventListener('submit', function (e) {
+            if (e.defaultPrevented) return;   /* المستخدم لغى — مفيش تنقّل */
+            try {
+                var tables = document.querySelectorAll('table.xt-on');
+                var snapshot = [];
+                var hasActive = false;
+
+                for (var i = 0; i < tables.length; i++) {
+                    var st = tables[i].__xt;
+                    if (!st) continue;
+                    var picksKeys = Object.keys(st.picks);
+                    if (!st.q && picksKeys.length === 0) continue;
+                    hasActive = true;
+                    snapshot.push({
+                        idx:   i,           /* ترتيب الجدول وسط جداول الصفحة */
+                        cols:  st.cols,     /* عدد الأعمدة — للتحقق عند الاسترجاع */
+                        q:     st.q,
+                        picks: st.picks
+                    });
+                }
+
+                if (!hasActive) return;     /* مفيش فلاتر — مفيش حاجة تتحفظ */
+                sessionStorage.setItem(restoreKey(), JSON.stringify(snapshot));
+            } catch (e) { /* sessionStorage ممكن يرمي في التصفح الخاص */ }
+        });
+    }
+
+    /* (٢) الاسترجاع — بيتنادى من build() بعد ما الجدول يتبنى */
+    function tryRestore(st) {
+        var key = restoreKey();
+        var raw;
+        try { raw = sessionStorage.getItem(key); } catch (e) { return; }
+        if (!raw) return;
+
+        var snapshot;
+        try { snapshot = JSON.parse(raw); } catch (e) {
+            /* JSON تالف — امسح عشان مانفضّلش عالقين */
+            try { sessionStorage.removeItem(key); } catch (e2) {}
+            return;
+        }
+
+        /* رقم هذا الجدول في الصفحة دلوقتي */
+        var myIdx = tableIndex(st.table);
+        if (myIdx < 0) return;
+
+        /* دوّر على صنبشوت الجدول ده بالتحديد */
+        var entry = null;
+        for (var i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].idx === myIdx) { entry = snapshot[i]; break; }
+        }
+        if (!entry) return;
+
+        /* ────────────────────────────────────────────────────────────
+           🔴 امسح المفتاح الأول — قبل أي تطبيق.
+           لو التطبيق رمى استثناء بعد كده المفتاح بيبقى ماشي وده سليم.
+           لو تركناه ورمى استثناء، الفلتر هيرجع في كل تحميل للأبد.
+           ──────────────────────────────────────────────────────────── */
+        try { sessionStorage.removeItem(key); } catch (e) {}
+
+        /* لو عدد الأعمدة اتغيّر → الصفحة اترندرت مختلفة → تجاهل خالص */
+        if (entry.cols !== st.cols) return;
+
+        /* طبّق البحث العام */
+        if (entry.q) {
+            st.q = entry.q;
+            var inp = st.bar && st.bar.querySelector('input');
+            if (inp) inp.value = entry.q;
+        }
+
+        /* طبّق picks لكل عمود */
+        var picks = entry.picks || {};
+        var pickKeys = Object.keys(picks);
+        for (var j = 0; j < pickKeys.length; j++) {
+            var ci = pickKeys[j];
+            if (picks[ci] && Object.keys(picks[ci]).length > 0) {
+                st.picks[ci] = picks[ci];
+                /* لوّن رأس العمود عشان المستخدم يشوف الفلتر شغّال */
+                if (st.hrow && st.hrow.cells[Number(ci)]) {
+                    st.hrow.cells[Number(ci)].classList.add('xt-active');
+                }
+            }
+        }
+
+        /* نادِ apply عشان الصفوف تتفلتر والعدّاد يتحدّث وحدث xtable:filter يتبعت */
+        apply(st);
+        return true;   /* علامة للـbuild() إن الفلتر اتطبّق */
+    }
 })();
