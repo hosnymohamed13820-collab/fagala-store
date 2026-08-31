@@ -1124,7 +1124,26 @@ if ($export && $type !== 'stocktake') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $type . '_' . $from . '_' . $to . '.csv"');
     echo "\xEF\xBB\xBF"; // BOM للعربي في إكسل
+    // 🔴 إكسل على ويندوز العربي فاصل القوايم عنده **فاصلة منقوطة** مش
+    //    فاصلة، فملف الـCSV كان بينزل **كله في عمود واحد**. السطر ده
+    //    توجيه بيفهمه إكسل وبيقوله الفاصل إيه — وبيتجاهله أي برنامج تاني.
+    echo "sep=,\r\n";
     $out = fopen('php://output', 'w');
+
+    /**
+     * 🔴 الأرقام في `rows` مترندرة بـ`number_format` عشان العرض —
+     *    يعني «2,100.00» بفاصلة الآلاف. وإكسل بيقراها **نص** مش رقم،
+     *    فمش بتتجمع ولا بتترتب، وشكلها بيطلع غريب.
+     *    هنا بنشيل فاصلة الآلاف من الخلايا اللي **كلها رقم** بس.
+     *    أي نص فيه فاصلة (زي الملاحظات) بيعدّي زي ما هو.
+     */
+    $csvCell = static function ($v) {
+        $s = (string) $v;
+        return preg_match('/^-?\d{1,3}(,\d{3})+(\.\d+)?$/', $s)
+            ? str_replace(',', '', $s)
+            : $s;
+    };
+
     fputcsv($out, $report['headers']);
     $descCol = ($type === 'treasury') ? 2 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 1 : -1);
     foreach ($report['rows'] as $ri => $row) {
@@ -1133,7 +1152,7 @@ if ($export && $type !== 'stocktake') {
                 ? ($row[$descCol] . ' — ' . $report['row_paths'][$ri])
                 : $report['row_paths'][$ri];
         }
-        fputcsv($out, $row);
+        fputcsv($out, array_map($csvCell, $row));
     }
     if (!empty($report['totals'])) fputcsv($out, $report['totals']);
     fclose($out);

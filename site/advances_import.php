@@ -375,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             MIN(id) AS single_id,
                             COALESCE(SUM(COALESCE(remaining, amount)), 0) AS current_balance
                      FROM employee_advances
-                     WHERE status = 'pending' AND adv_type = 'standing'
+                     WHERE status = 'pending' AND adv_type = 'monthly'
                      GROUP BY employee_id"
                 );
                 $pendingAdvMap = [];
@@ -477,10 +477,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $insAdv = $pdo->prepare(
                         'INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes, monthly_deduction, remaining, adv_type)
-                         VALUES (?, ?, ?, "pending", ?, ?, ?, "standing")'
+                         VALUES (?, ?, ?, "pending", ?, ?, ?, "monthly")'
                     );
                     $updAdv = $pdo->prepare(
-                        'UPDATE employee_advances SET remaining = ?, monthly_deduction = ? WHERE id = ? AND status = "pending" AND adv_type = \'standing\''
+                        'UPDATE employee_advances SET remaining = ?, monthly_deduction = ? WHERE id = ? AND status = "pending" AND adv_type = \'monthly\''
                     );
 
                     $today = date('Y-m-d');
@@ -650,7 +650,7 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
                     MIN(id) AS single_id,
                     COALESCE(SUM(COALESCE(remaining, amount)), 0) AS current_balance
              FROM employee_advances
-             WHERE status = 'pending' AND adv_type = 'standing'
+             WHERE status = 'pending' AND adv_type = 'monthly'
              GROUP BY employee_id"
         );
         $pendingAdvMap = [];
