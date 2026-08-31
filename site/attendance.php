@@ -418,14 +418,33 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     $completeDays     = 0;   // أيام فيها حضور وانصراف
     $missingDays      = 0;   // أيام تسجيلها ناقص (واحد بس من الاتنين)
     $noneDays         = 0;   // مفيش دخول ولا خروج (باستثناء الإجازات والعطلات)
+    $seenDates        = [];  // الأيام اللي ليها صف في الجدول
     foreach ($myPeriodAtt as $a) {
         $periodTotalHours += (float) ($a['work_hours'] ?? 0);
+        $seenDates[(string) $a['att_date']] = true;
         $st     = $a['status'] ?? '';
         $hasIn  = !empty($a['check_in']);
         $hasOut = !empty($a['check_out']);
         if ($hasIn && $hasOut)      { $completeDays++; }
         elseif ($hasIn || $hasOut)  { $missingDays++;  }
         elseif ($st !== 'leave' && $st !== 'holiday') { $noneDays++; }
+    }
+
+    // -----------------------------------------------------------------
+    //  الأيام اللي **مالهاش صف خالص** في الجدول بتتعد كأيام بدون تسجيل.
+    //
+    //  مابنعملش صفوف فاضية في `attendance` لكل يوم في الشهر — ده الجدول
+    //  اللي المرتبات بتتحسب منه، وكتابة يومية فيه مقابل حاجة نقدر نحسبها
+    //  هنا مخاطرة مالهاش داعي. الحساب بيدّي نفس النتيجة بالظبط.
+    //
+    //  🔴 وبنعد لحد النهاردة بس — أيام الفترة اللي لسه ما جاتش ماتتحسبش،
+    //  وإلا الموظف يوم ١ هيلاقي ٣٠ يوم «مفيش فيها تسجيل».
+    // -----------------------------------------------------------------
+    $countUntil = min($attTo, $today);
+    for ($d = strtotime($attFrom); $d <= strtotime($countUntil); $d = strtotime('+1 day', $d)) {
+        if (!isset($seenDates[date('Y-m-d', $d)])) {
+            $noneDays++;
+        }
     }
 ?>
 <div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
