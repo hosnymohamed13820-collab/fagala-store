@@ -354,13 +354,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!strtotime($date)) {
                     $date = date('Y-m-d');
                 }
-                $bonusesPost = (array)($_POST['bonuses'] ?? []);
+                $bonusesPost        = (array)($_POST['bonuses'] ?? []);
+                $leaveDaysArr       = (array)($_POST['leave_days'] ?? []);
+                $dueDaysArr         = (array)($_POST['due_days'] ?? []);
+                $monthlyTakeArr     = (array)($_POST['monthly_take'] ?? []);
+                $standingTakeArr    = (array)($_POST['standing_take'] ?? []);
+                $cashierTakeArr     = (array)($_POST['cashier_take'] ?? []);
 
                 $pdo->beginTransaction();
                 try {
                     apply_payroll_financial_adjustments($pdo, $month, $date, $bonusesPost);
+
+                    $allEmpKeys = array_unique(array_merge(
+                        array_keys($leaveDaysArr),
+                        array_keys($dueDaysArr),
+                        array_keys($monthlyTakeArr),
+                        array_keys($standingTakeArr),
+                        array_keys($cashierTakeArr)
+                    ));
+                    $targetEmpIds = [];
+                    foreach ($allEmpKeys as $k) {
+                        $id = (int)$k;
+                        if ($id > 0) {
+                            $targetEmpIds[$id] = $id;
+                        }
+                    }
+
+                    if (!empty($targetEmpIds)) {
+                        $rowPlaceholders = [];
+                        $params = [];
+                        foreach ($targetEmpIds as $empId) {
+                            $leaveDaysVal = null;
+                            if (isset($leaveDaysArr[$empId])) {
+                                $raw = trim((string)$leaveDaysArr[$empId]);
+                                if ($raw !== '' && is_numeric($raw)) {
+                                    $leaveDaysVal = (int)$raw;
+                                }
+                            }
+
+                            $dueDaysVal = null;
+                            if (isset($dueDaysArr[$empId])) {
+                                $raw = trim((string)$dueDaysArr[$empId]);
+                                if ($raw !== '' && is_numeric($raw)) {
+                                    $dueDaysVal = (float)$raw;
+                                }
+                            }
+
+                            $monthlyTakeVal = null;
+                            if (isset($monthlyTakeArr[$empId])) {
+                                $raw = trim((string)$monthlyTakeArr[$empId]);
+                                if ($raw !== '' && is_numeric($raw)) {
+                                    $monthlyTakeVal = max(0.0, (float)$raw);
+                                }
+                            }
+
+                            $standingTakeVal = null;
+                            if (isset($standingTakeArr[$empId])) {
+                                $raw = trim((string)$standingTakeArr[$empId]);
+                                if ($raw !== '' && is_numeric($raw)) {
+                                    $standingTakeVal = max(0.0, (float)$raw);
+                                }
+                            }
+
+                            $cashierTakeVal = null;
+                            if (isset($cashierTakeArr[$empId])) {
+                                $raw = trim((string)$cashierTakeArr[$empId]);
+                                if ($raw !== '' && is_numeric($raw)) {
+                                    $cashierTakeVal = max(0.0, (float)$raw);
+                                }
+                            }
+
+                            $rowPlaceholders[] = '(?, ?, ?, ?, ?, ?, ?, ?)';
+                            $params[] = $empId;
+                            $params[] = $month;
+                            $params[] = $leaveDaysVal;
+                            $params[] = $dueDaysVal;
+                            $params[] = $monthlyTakeVal;
+                            $params[] = $standingTakeVal;
+                            $params[] = $cashierTakeVal;
+                            $params[] = $uid;
+                        }
+
+                        $sql = 'INSERT INTO `payroll_adjustments`
+                                    (`employee_id`, `month`, `leave_days`, `due_days`, `monthly_take`, `standing_take`, `cashier_take`, `updated_by`)
+                                VALUES ' . implode(', ', $rowPlaceholders) . '
+                                ON DUPLICATE KEY UPDATE
+                                    `leave_days`    = VALUES(`leave_days`),
+                                    `due_days`      = VALUES(`due_days`),
+                                    `monthly_take`  = VALUES(`monthly_take`),
+                                    `standing_take` = VALUES(`standing_take`),
+                                    `cashier_take`  = VALUES(`cashier_take`),
+                                    `updated_by`    = VALUES(`updated_by`)';
+                        $pdo->prepare($sql)->execute($params);
+                    }
+
                     $pdo->commit();
-                    $flash = 'تم حفظ تعديلات المكافآت بنجاح.';
+                    $flash = 'تم حفظ التعديلات بنجاح.';
                     $flashType = 'success';
                 } catch (Throwable $ex) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
@@ -414,6 +503,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $cashierTakeOverride = max(0.0, (float)$_POST['cashier_take']);
                 }
                 pay_salary($empId, $month, $treasuryId, $date, $uid, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierTakeOverride);
+                if ($empId > 0) {
+                    $delStmt = $pdo->prepare('DELETE FROM payroll_adjustments WHERE month = ? AND employee_id = ?');
+                    $delStmt->execute([$month, $empId]);
+                }
                 notify_salaries_paid([$empId], $month);
                 $flash = 'تم صرف المرتب وخصم المستحقات.'; $tab='salaries';
             }
@@ -513,6 +606,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (!empty($paidEmpIds)) {
+                    $inPlaceholders = implode(',', array_fill(0, count($paidEmpIds), '?'));
+                    $delStmt = $pdo->prepare("DELETE FROM payroll_adjustments WHERE month = ? AND employee_id IN ($inPlaceholders)");
+                    $delStmt->execute(array_merge([$month], $paidEmpIds));
+
                     notify_salaries_paid($paidEmpIds, $month);
                 }
 
@@ -913,6 +1010,18 @@ if ($tab === 'salaries') {
     $stPaid->execute([$salMonth]);
     $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
 
+    // 8) تعديلات الرواتب المحفوظة (المسوّدة) للشهر المختار (استعلام واحد مجمّع)
+    $stAdj = $pdo->prepare(
+        "SELECT employee_id, leave_days, due_days, monthly_take, standing_take, cashier_take
+           FROM payroll_adjustments
+          WHERE month = ?"
+    );
+    $stAdj->execute([$salMonth]);
+    $adjustmentsMap = [];
+    foreach ($stAdj->fetchAll(PDO::FETCH_ASSOC) as $adjRow) {
+        $adjustmentsMap[(int)$adjRow['employee_id']] = $adjRow;
+    }
+
     // الحسابات في PHP بدون أي استعلام داخل الحلقة
     foreach ($empList as $e) {
         $empId           = (int) $e['id'];
@@ -921,24 +1030,44 @@ if ($tab === 'salaries') {
         $base            = (float) $e['base_salary'];
         $expectedHours   = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
         $empLedgerBal    = $ledgerBalancesMap[$empId] ?? 0.0;
+        $isPaid          = isset($paidMonthMap[$empId]);
+        $adj             = (!$isPaid && isset($adjustmentsMap[$empId])) ? $adjustmentsMap[$empId] : null;
 
         if ($isFixed) {
-            $hours       = 0.0;
-            $noExpected  = false;
-            $workDays    = 0.0;
-            $leaveDays   = 0;
-            $dueDaysCalc = 0.0;
-            $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross       = $base;
+            $hours          = 0.0;
+            $noExpected     = false;
+            $workDays       = 0.0;
+            $leaveDaysCalc  = 0;
+            $leaveDays      = 0;
+            $dueDaysRawCalc = 0.0;
+            $dueDaysCalc    = 0.0;
+            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
+            $gross          = $base;
         } else {
-            $hours       = (float) ($empHours[$empId] ?? 0);
-            $salDays     = salary_days_from_hours($hours, $expectedHours);
-            $noExpected  = !empty($salDays['no_expected']);
-            $workDays    = $salDays['work_days'];
-            $leaveDays   = $salDays['leave_days'];
-            $dueDaysCalc = $salDays['due_days'];
-            $dayRate     = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross       = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
+            $hours          = (float) ($empHours[$empId] ?? 0);
+            $salDays        = salary_days_from_hours($hours, $expectedHours);
+            $noExpected     = !empty($salDays['no_expected']);
+            $workDays       = $salDays['work_days'];
+            $leaveDaysCalc  = $salDays['leave_days'];
+            $leaveDays      = $leaveDaysCalc;
+            $dueDaysRawCalc = $salDays['due_days'];
+            $dueDaysCalc    = $dueDaysRawCalc;
+
+            if ($adj !== null && !$noExpected) {
+                if ($adj['leave_days'] !== null && is_numeric($adj['leave_days']) && (int)$adj['leave_days'] >= 0) {
+                    $leaveDays = (int)$adj['leave_days'];
+                    $dueDaysCalc = round($workDays + $leaveDays, 2);
+                }
+                if ($adj['due_days'] !== null && is_numeric($adj['due_days'])) {
+                    $dueOverride = (float)$adj['due_days'];
+                    if (abs($dueOverride - $dueDaysCalc) > 0.005) {
+                        $dueDaysCalc = round($dueOverride, 2);
+                    }
+                }
+            }
+
+            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
+            $gross          = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
         }
 
         $bonInfo         = $bonPendingMap[$empId] ?? ['cnt' => 0, 'single_id' => null, 'total_amount' => 0.0];
@@ -947,15 +1076,15 @@ if ($tab === 'salaries') {
 
         // حساب السلف بالترتيب (id تصاعدي) وسقف رصيد السجل والوعاء
         // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-        $pot             = $noExpected ? 0.0 : ($gross + $bon);
+        $pot             = ($noExpected && !$isFixed) ? 0.0 : ($gross + $bon);
 
-        $empAdvRows      = $advRowsByEmp[$empId] ?? [];
-        $maxLedgerCap    = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
-        $remCap          = min($maxLedgerCap, $pot);
-        $monthlyAdvOwed  = 0.0;
-        $monthlyAdvTake  = 0.0;
-        $standingAdvOwed = 0.0;
-        $standingAdvTake = 0.0;
+        $empAdvRows          = $advRowsByEmp[$empId] ?? [];
+        $maxLedgerCap        = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
+        $remCap              = min($maxLedgerCap, $pot);
+        $monthlyAdvOwed      = 0.0;
+        $monthlyAdvTakeCalc  = 0.0;
+        $standingAdvOwed     = 0.0;
+        $standingAdvTakeCalc = 0.0;
 
         foreach ($empAdvRows as $advR) {
             $advOutstanding = $advR['remaining'] !== null ? (float) $advR['remaining'] : (float) $advR['amount'];
@@ -965,14 +1094,28 @@ if ($tab === 'salaries') {
             $remCap        -= $advTake;
 
             if (($advR['adv_type'] ?? 'monthly') === 'standing') {
-                $standingAdvTake += $advTake;
-                $standingAdvOwed += $advOutstanding;
+                $standingAdvTakeCalc += $advTake;
+                $standingAdvOwed     += $advOutstanding;
             } else {
-                $monthlyAdvTake += $advTake;
-                $monthlyAdvOwed += $advOutstanding;
+                $monthlyAdvTakeCalc  += $advTake;
+                $monthlyAdvOwed      += $advOutstanding;
             }
         }
-        $advApplied      = round($monthlyAdvTake + $standingAdvTake, 2);
+
+        $monthlyAdvTake = $monthlyAdvTakeCalc;
+        if ($adj !== null && $adj['monthly_take'] !== null && is_numeric($adj['monthly_take'])) {
+            $monthlyAdvTake = max(0.0, (float)$adj['monthly_take']);
+        }
+
+        $standingAdvTake = $standingAdvTakeCalc;
+        if ($adj !== null && $adj['standing_take'] !== null && is_numeric($adj['standing_take'])) {
+            $standingAdvTake = max(0.0, (float)$adj['standing_take']);
+        }
+
+        $totalAdvances   = $monthlyAdvTake + $standingAdvTake;
+        $totalAdvances   = min($totalAdvances, $maxLedgerCap);
+        $advApplied      = min($totalAdvances, $pot);
+        $advApplied      = max(0.0, round($advApplied, 2));
         $pot            -= $advApplied;
 
         $penFull         = (float) ($penMap[$empId] ?? 0);
@@ -988,12 +1131,18 @@ if ($tab === 'salaries') {
         $cDefInfo        = $cashierDeficitMap[$empId] ?? ['exceeded_total' => 0.0, 'shift_cnt' => 0];
         $cashierDefCalc  = (float) $cDefInfo['exceeded_total'];
         $cashierShiftCnt = (int) $cDefInfo['shift_cnt'];
-        $cashierApplied  = min($cashierDefCalc, $pot);
+
+        $cashierTake = $cashierDefCalc;
+        if ($adj !== null && $adj['cashier_take'] !== null && is_numeric($adj['cashier_take'])) {
+            $cashierTake = max(0.0, (float)$adj['cashier_take']);
+        }
+
+        $cashierApplied  = min($cashierTake, $pot);
         $cashierApplied  = max(0.0, round($cashierApplied, 2));
         $pot            -= $cashierApplied;
 
         $totalDeductions = round($advApplied + $penApplied + $defApplied + $cashierApplied, 2);
-        $net             = $noExpected ? 0.0 : max(0.0, round($pot, 2));
+        $net             = ($noExpected && !$isFixed) ? 0.0 : max(0.0, round($pot, 2));
 
         // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
         //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
@@ -1006,44 +1155,48 @@ if ($tab === 'salaries') {
                                + ($defFull - $defApplied)
                                + $cashierCarry, 2);
         $carryToAdvance  = max(0.0, $carryToAdvance);
-        $isPaid          = isset($paidMonthMap[$empId]);
 
         $payrollData[] = [
-            'id'                     => $empId,
-            'full_name'              => $e['full_name'],
-            'salary_mode'            => $salaryMode,
-            'is_fixed'               => $isFixed,
-            'branch_name'            => $e['branch_name'] ?? '',
-            'base_salary'            => $base,
-            'expected_monthly_hours' => $expectedHours,
-            'no_expected'            => $noExpected,
-            'day_hours'              => $salDays['day_hours'] ?? 0.0,
-            'work_hours'             => $hours,
-            'work_days'              => $workDays,
-            'leave_days'             => $leaveDays,
-            'due_days_calc'          => $dueDaysCalc,
-            'day_rate'               => $dayRate,
-            'gross_salary'           => $gross,
-            'bonuses'                => $bon,
-            'bonus_cnt'              => $bonCnt,
-            'total_bonuses'          => $bon,
-            'advances'               => $advApplied,
-            'ledger_balance'         => $empLedgerBal,
-            'monthly_adv_owed'       => $monthlyAdvOwed,
-            'monthly_adv_take'       => $monthlyAdvTake,
-            'standing_adv_owed'      => $standingAdvOwed,
-            'standing_adv_take'      => $standingAdvTake,
-            'cashier_deficit'        => $cashierApplied,
-            'cashier_deficit_calc'   => $cashierDefCalc,
-            'cashier_shift_cnt'      => $cashierShiftCnt,
-            'penalties'              => $penApplied,
-            'penalties_full'         => $penFull,
-            'deficits'               => $defApplied,
-            'deficits_full'          => $defFull,
-            'carry_to_advance'       => $carryToAdvance,
-            'total_deductions'       => $totalDeductions,
-            'net_salary'             => $net,
-            'is_paid'                => $isPaid,
+            'id'                        => $empId,
+            'full_name'                 => $e['full_name'],
+            'salary_mode'               => $salaryMode,
+            'is_fixed'                  => $isFixed,
+            'branch_name'               => $e['branch_name'] ?? '',
+            'base_salary'               => $base,
+            'expected_monthly_hours'    => $expectedHours,
+            'no_expected'               => $noExpected,
+            'day_hours'                 => $salDays['day_hours'] ?? 0.0,
+            'work_hours'                => $hours,
+            'work_days'                 => $workDays,
+            'leave_days'                => $leaveDays,
+            'leave_days_calc'           => $leaveDaysCalc,
+            'due_days_calc'             => $dueDaysCalc,
+            'due_days_raw_calc'         => $dueDaysRawCalc,
+            'day_rate'                  => $dayRate,
+            'gross_salary'              => $gross,
+            'bonuses'                   => $bon,
+            'bonus_cnt'                 => $bonCnt,
+            'total_bonuses'             => $bon,
+            'advances'                  => $advApplied,
+            'ledger_balance'            => $empLedgerBal,
+            'monthly_adv_owed'          => $monthlyAdvOwed,
+            'monthly_adv_take'          => $monthlyAdvTake,
+            'monthly_adv_take_calc'     => $monthlyAdvTakeCalc,
+            'standing_adv_owed'         => $standingAdvOwed,
+            'standing_adv_take'         => $standingAdvTake,
+            'standing_adv_take_calc'    => $standingAdvTakeCalc,
+            'cashier_deficit'           => $cashierApplied,
+            'cashier_deficit_calc'      => $cashierDefCalc,
+            'cashier_deficit_take_calc' => $cashierDefCalc,
+            'cashier_shift_cnt'         => $cashierShiftCnt,
+            'penalties'                 => $penApplied,
+            'penalties_full'            => $penFull,
+            'deficits'                  => $defApplied,
+            'deficits_full'             => $defFull,
+            'carry_to_advance'          => $carryToAdvance,
+            'total_deductions'          => $totalDeductions,
+            'net_salary'                => $net,
+            'is_paid'                   => $isPaid,
         ];
     }
 }
@@ -1631,7 +1784,7 @@ $statusBadge = function($st) {
                                 <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
                                        value="<?= (int)$p['leave_days'] ?>"
                                        class="leave-days-input payroll-num is-days"
-                                       data-calc="<?= (int)$p['leave_days'] ?>"
+                                       data-calc="<?= (int)$p['leave_days_calc'] ?>"
                                        style="font-weight:600;">
                             <?php else: ?>
                                 <span style="font-weight:600;"><?= (int)$p['leave_days'] ?></span>
@@ -1645,7 +1798,7 @@ $statusBadge = function($st) {
                                     <input type="number" min="0" max="60" step="0.01" name="due_days[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
                                            class="due-days-input payroll-num"
-                                           data-calc="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
+                                           data-calc="<?= number_format($p['work_days'] + $p['leave_days'], 2, '.', '') ?>"
                                            style="font-weight:600;">
                                     <span class="due-days-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب (أيام العمل + الإجازة)">معدّلة</span>
                                 </div>
@@ -1694,7 +1847,7 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="monthly_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
                                            class="monthly-take-input payroll-num"
-                                           data-calc="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
+                                           data-calc="<?= number_format($p['monthly_adv_take_calc'], 2, '.', '') ?>"
                                            style="color:var(--neg);font-weight:500;">
                                     <span class="monthly-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                 </div>
@@ -1715,7 +1868,7 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="standing_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
                                            class="standing-take-input payroll-num"
-                                           data-calc="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
+                                           data-calc="<?= number_format($p['standing_adv_take_calc'], 2, '.', '') ?>"
                                            style="color:var(--neg);font-weight:500;">
                                     <span class="standing-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                 </div>
@@ -1736,7 +1889,7 @@ $statusBadge = function($st) {
                                     <input type="number" step="0.01" min="0" name="cashier_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
                                            class="cashier-take-input payroll-num"
-                                           data-calc="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
+                                           data-calc="<?= number_format($p['cashier_deficit_calc'], 2, '.', '') ?>"
                                            style="color:var(--neg);font-weight:500;">
                                     <span class="cashier-take-edited-badge" style="display:none;font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                 </div>
