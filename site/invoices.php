@@ -2400,7 +2400,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
                     <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
                     <div>
-                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — التوزيع متقفل عليهم.
+                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
                         شغّل وكيل مزامنة الإدارة.
                     </div>
                 </div>
@@ -2466,7 +2466,7 @@ require_once __DIR__ . '/includes/header.php';
                                                data-qty="<?= $qty ?>"
                                                data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
-                                               <?= $hqNA ? 'readonly title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة"' : '' ?>
+                                               <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2515,7 +2515,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php else: ?>
                             <?php foreach ($activeBranches as $b): ?>
@@ -2531,7 +2531,7 @@ require_once __DIR__ . '/includes/header.php';
                                                data-qty="<?= $qty ?>"
                                                data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
-                                               <?= $hqNA ? 'readonly title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة"' : '' ?>
+                                               <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2576,7 +2576,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل للصنف ده — شغّل وكيل مزامنة الإدارة">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php endif; ?>
                     </tr>
@@ -5100,8 +5100,20 @@ require_once __DIR__ . '/includes/header.php';
               وده حزام أمان تاني لو حد فك الـreadonly من أدوات المطوّر.
               الحماية الحقيقية في السيرفر جوّه set_branch_distribution(). */
         if (!hasBal) {
-            input.value = parseFloat(input.dataset.saved) > 0 ? input.dataset.saved : '';
-            setInd(input, '✗ الرصيد مش واصل', 'var(--neg)');
+            /* 🔴 ممنوع تزوّد، مسموح تقلّل — نفس قاعدة السيرفر بالظبط. */
+            const savedNA = parseFloat(input.dataset.saved) || 0;
+            if ((parseFloat(input.value) || 0) > savedNA + 0.0001) {
+                input.value = savedNA > 0 ? input.dataset.saved : '';
+                setInd(input, '✗ الرصيد مش واصل — تقدر تقلّل بس', 'var(--neg)');
+                return;
+            }
+            /* تقليل أو تصفير: عدّي للحفظ زي أي تعديل عادي */
+            const kNA = input.dataset.code + ':' + input.dataset.branch;
+            clearTimeout(saveTimers[kNA]);
+            saveTimers[kNA] = setTimeout(
+                () => (input.classList.contains('grp-input') ? grpSave(input) : autoSave(input)),
+                800
+            );
             return;
         }
 

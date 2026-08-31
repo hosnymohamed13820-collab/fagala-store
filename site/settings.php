@@ -153,23 +153,28 @@ require_once __DIR__ . '/includes/header.php';
     /* سلايدر نوع bool (مبني على تصميم الوضع الليلي في fagala.css) */
     .toggle-wrap { display:inline-flex; align-items:center; gap:10px; }
     .toggle-wrap input[type="checkbox"] { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
-    .toggle-wrap .tt-track {
+    /* 🔴 الأسماء دي متفردة بقصد. سلايدر الوضع الليلي في fagala.css بيستعمل
+       `.tt-track`/`.tt-knob`، وفيه قاعدة `:root[data-theme="dark"] .tt-track`
+       بتلوّن أي عنصر بالاسم ده أزرق **من غير أي علاقة بالشيك بوكس**.
+       فلو رجّعت الأسماء دي هنا، السلايدر هيتجمّد على «مفتوح» في الوضع
+       الليلي تاني. */
+    .toggle-wrap .st-track {
         display:inline-block; position:relative;
         width:46px; height:26px; border-radius:99px;
         background:var(--line-soft); border:1.5px solid var(--line);
         transition:background .2s, border-color .2s;
         cursor:pointer;
     }
-    .toggle-wrap .tt-knob {
+    .toggle-wrap .st-knob {
         position:absolute; top:2px; right:2px;
         width:18px; height:18px; border-radius:50%;
         background:var(--surface); box-shadow:var(--shadow-sm);
         transition:transform .2s;
     }
-    .toggle-wrap input[type="checkbox"]:checked + .tt-track {
+    .toggle-wrap input[type="checkbox"]:checked + .st-track {
         background:var(--accent); border-color:var(--accent);
     }
-    .toggle-wrap input[type="checkbox"]:checked + .tt-track .tt-knob {
+    .toggle-wrap input[type="checkbox"]:checked + .st-track .st-knob {
         transform:translateX(-20px);
     }
     .toggle-status { font-size:13px; color:var(--ink-700); user-select:none; }
@@ -214,8 +219,8 @@ require_once __DIR__ . '/includes/header.php';
                                    name="<?= e($key) ?>"
                                    value="1"
                                    <?= $isBoolOn ? 'checked' : '' ?>>
-                            <label for="fld_<?= e($key) ?>" class="tt-track">
-                                <span class="tt-knob"></span>
+                            <label for="fld_<?= e($key) ?>" class="st-track">
+                                <span class="st-knob"></span>
                             </label>
                             <span class="toggle-status">
                                 <?= $isBoolOn ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب' ?>
