@@ -116,9 +116,12 @@ function adv_parse_amount(?string $v): ?float
 }
 
 /**
- * اكتشاف صف العناوين تلقائياً بالبحث في أول 10 صفوف
- * عن أول صف يحتوي على خلية تطابق أي عنوان متوقع
- * يعيد رقم الصف الحقيقي (1-based row number)
+ * بترجّع رقم صف العناوين، أو **`-1`** لو الشيت مالوش عناوين أصلاً.
+ *
+ * 🔴 الفرق ده مهم: قبل كده كانت بترجّع 0 لما مالاقيش، فأول صف داتا
+ *    كان بيتاكل على إنه عناوين وموظف بيضيع في صمت.
+ *    علامة «مفيش عناوين»: أول صف خليته التانية رقم — عنوان عمود
+ *    عمره ما يبقى رقم.
  */
 function adv_detect_header_row(array $sheetRows): int
 {
@@ -162,8 +165,8 @@ function adv_detect_header_row(array $sheetRows): int
         }
     }
 
-    // احتياطي: أول صف
-    return (int)($sheetRows[0]['row'] ?? 1);
+    // الشيت مالوش عناوين
+    return -1;
 }
 
 /**
@@ -579,22 +582,36 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             ? (int) $_REQUEST['header_row']
             : $detectedHeaderRow;
 
-        // إيجاد فهرس صف العناوين داخل مصفوفة $sheetRows
-        $headerRowIndex = 0;
-        $foundHeaderRow = false;
-        foreach ($sheetRows as $idx => $sr) {
-            if ((int)$sr['row'] === $headerRow) {
-                $headerRowIndex = $idx;
-                $foundHeaderRow = true;
-                break;
+        $hasHeader = ($headerRow !== -1);
+        $headerRowIndex = -1;
+        if ($hasHeader) {
+            // إيجاد فهرس صف العناوين داخل مصفوفة $sheetRows
+            foreach ($sheetRows as $idx => $sr) {
+                if ((int)$sr['row'] === $headerRow) {
+                    $headerRowIndex = $idx;
+                    break;
+                }
             }
-        }
-        if (!$foundHeaderRow) {
-            $headerRowIndex = 0;
-            $headerRow = (int)($sheetRows[0]['row'] ?? 1);
+            if ($headerRowIndex === -1) {
+                $headerRowIndex = 0;
+                $headerRow = (int)($sheetRows[0]['row'] ?? 1);
+            }
+            $headers = $sheetRows[$headerRowIndex]['cells'];
+            $startRowIdx = $headerRowIndex + 1;
+        } else {
+            // الشيت مالوش صف عناوين — نعمل عناوين وهمية بعدد الأعمدة
+            $colCount = 0;
+            foreach ($sheetRows as $sr) {
+                $colCount = max($colCount, count($sr['cells'] ?? []));
+            }
+            $colCount = max(2, $colCount);
+            $headers = [];
+            for ($c = 0; $c < $colCount; $c++) {
+                $headers[$c] = 'عمود ' . ($c + 1);
+            }
+            $startRowIdx = 0;
         }
 
-        $headers = $sheetRows[$headerRowIndex]['cells'];
         $detectedCols = adv_detect_columns($headers);
 
         $nameCol = isset($_REQUEST['name_col']) && is_numeric($_REQUEST['name_col']) && (int)$_REQUEST['name_col'] >= 0 && (int)$_REQUEST['name_col'] < count($headers)
@@ -655,8 +672,8 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
         $updateCount = 0;
         $emptyNameCount = 0;
 
-        // قراءة صفوف البيانات ابتداءً من الصف الذي يلي صف العناوين مباشرة
-        for ($rIdx = $headerRowIndex + 1; $rIdx < count($sheetRows); $rIdx++) {
+        // قراءة صفوف البيانات ابتداءً من الصف الأول لو مفيش عناوين، أو الصف بعد العناوين
+        for ($rIdx = $startRowIdx; $rIdx < count($sheetRows); $rIdx++) {
             $rowNum = $sheetRows[$rIdx]['row'];
             $cells = $sheetRows[$rIdx]['cells'];
 
@@ -736,8 +753,9 @@ if ($activeFilePath !== '' && file_exists($activeFilePath)) {
             'file_name'            => $activeFileName,
             'headers'              => $headers,
             'header_row'           => $headerRow,
+            'has_header'           => $hasHeader,
             'total_sheet_rows'     => count($sheetRows),
-            'total_data_rows'      => count($sheetRows) - ($headerRowIndex + 1),
+            'total_data_rows'      => count($sheetRows) - $startRowIdx,
             'name_col'             => $nameCol,
             'amount_col'           => $amountCol,
             'rows'                 => $parsedRows,
@@ -871,6 +889,13 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
 
+        <?php if (!$previewData['has_header']): ?>
+            <div class="alert alert-pos" style="margin-bottom:14px;">
+                <i class="ti ti-circle-check" style="font-size:18px;margin-top:2px;"></i>
+                <div>الشيت ده مالوش صف عناوين — كل الصفوف اتقرت كبيانات.</div>
+            </div>
+        <?php endif; ?>
+
         <?php // خطوة ٢: تحديد صف العناوين والأعمدة وتحديث المعاينة ?>
         <div style="background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:18px;">
             <form method="get" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
@@ -879,7 +904,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <label style="font-size:13px;color:var(--ink-700);font-weight:500;">صف العناوين:</label>
-                    <input type="number" name="header_row" min="1" max="<?= count($sheetRows) ?>" value="<?= (int)$previewData['header_row'] ?>" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-family:'IBM Plex Mono', monospace;font-size:13px;text-align:center;background:var(--surface);">
+                    <input type="number" name="header_row" min="-1" max="<?= count($sheetRows) ?>" value="<?= (int)$previewData['header_row'] ?>" style="width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-family:'IBM Plex Mono', monospace;font-size:13px;text-align:center;background:var(--surface);">
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <label style="font-size:13px;color:var(--ink-700);font-weight:500;">عمود الاسم:</label>

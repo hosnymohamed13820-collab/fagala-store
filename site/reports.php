@@ -939,6 +939,128 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'total_net'  => $tNet,
             ];
 
+        case 'advances':
+            $st = $pdo->prepare(
+                "SELECT a.id, a.employee_id, a.amount, a.advance_date, a.status,
+                        a.notes, a.monthly_deduction,
+                        COALESCE(a.remaining, a.amount) AS remaining_amount,
+                        a.adv_type,
+                        e.full_name,
+                        b.name AS branch_name
+                 FROM employee_advances a
+                 JOIN employees e ON e.id = a.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 WHERE a.advance_date BETWEEN ? AND ?
+                 ORDER BY e.full_name ASC, a.advance_date DESC, a.id DESC"
+            );
+            $st->execute([$from, $to]);
+
+            $typeMap = [
+                'monthly'  => 'سلفة شهر',
+                'standing' => 'مستديمة',
+            ];
+            $statusMap = [
+                'pending'   => 'معلّقة',
+                'deducted'  => 'اتخصمت',
+                'cancelled' => 'ملغاة',
+            ];
+
+            $rows = [];
+            $employees = [];
+            $branchesList = [];
+            $tAmount = 0;
+            $tRemaining = 0;
+
+            foreach ($st as $r) {
+                $empId = (int)$r['employee_id'];
+                $amount = (float)$r['amount'];
+                $remaining = (float)$r['remaining_amount'];
+                $monthlyDed = (float)$r['monthly_deduction'];
+                $bName = $r['branch_name'] ? $r['branch_name'] : '—';
+                $tName = $typeMap[$r['adv_type']] ?? $r['adv_type'];
+                $sName = $statusMap[$r['status']] ?? $r['status'];
+
+                // 🔴 المتبقي بيتجمع من **المعلّقة بس**. السلفة اللي اتخصمت
+                //    أو اتلغت مالهاش متبقي على الموظف — لو جمعناها، التقرير
+                //    هيقول إن موظف سدّد سلفته بالكامل لسه عليه فلوس.
+                //    (`remaining` بتفضل بقيمتها في الصفوف الملغاة.)
+                $isOwed = ($r['status'] === 'pending');
+
+                $tAmount += $amount;
+                if ($isOwed) $tRemaining += $remaining;
+
+                if ($bName !== '—' && !in_array($bName, $branchesList, true)) {
+                    $branchesList[] = $bName;
+                }
+
+                // صف التصدير لـ CSV
+                $rows[] = [
+                    $r['advance_date'],
+                    $r['full_name'],
+                    $bName,
+                    $tName,
+                    number_format($amount, 2),
+                    number_format($remaining, 2),
+                    number_format($monthlyDed, 2),
+                    $sName,
+                    (string)($r['notes'] ?? ''),
+                ];
+
+                if (!isset($employees[$empId])) {
+                    $employees[$empId] = [
+                        'id'                  => $empId,
+                        'full_name'           => $r['full_name'],
+                        'branch_name'         => $bName,
+                        'total_remaining'     => 0.0,
+                        'total_remaining_fmt' => '0.00',
+                        'pending_count'       => 0,
+                        'advances'            => [],
+                    ];
+                }
+
+                // نفس القاعدة: المعلّقة بس هي اللي عليه
+                if ($isOwed) {
+                    $employees[$empId]['total_remaining'] += $remaining;
+                    $employees[$empId]['pending_count']++;
+                }
+
+                $employees[$empId]['advances'][] = [
+                    'id'                    => (int)$r['id'],
+                    'advance_date'          => $r['advance_date'],
+                    'adv_type'              => $r['adv_type'],
+                    'type_label'            => $tName,
+                    'amount'                => $amount,
+                    'amount_fmt'            => number_format($amount, 2),
+                    'remaining'             => $remaining,
+                    'remaining_fmt'         => number_format($remaining, 2),
+                    'monthly_deduction'     => $monthlyDed,
+                    'monthly_deduction_fmt' => number_format($monthlyDed, 2),
+                    'status'                => $r['status'],
+                    'status_label'          => $sName,
+                    'notes'                 => (string)($r['notes'] ?? ''),
+                ];
+            }
+
+            foreach ($employees as &$emp) {
+                $emp['total_remaining_fmt'] = number_format($emp['total_remaining'], 2);
+            }
+            unset($emp);
+
+            $details = array_values($employees);
+
+            return [
+                'title'           => 'تقرير السلف',
+                'layout'          => 'master_detail',
+                'report_subtype'  => 'advances',
+                'headers'         => ['التاريخ', 'الموظف', 'الفرع', 'النوع', 'المبلغ الأصلي', 'المتبقي', 'القسط الشهري', 'الحالة', 'الملاحظات'],
+                'rows'            => $rows,
+                'totals'          => ['إجمالي:', '', '', '', number_format($tAmount, 2), number_format($tRemaining, 2), '', '', ''],
+                'details'         => $details,
+                'branches'        => $branchesList,
+                'count'           => count($details),
+                'total_remaining' => $tRemaining,
+            ];
+
         case 'attendance':
             $st = $pdo->prepare(
                 "SELECT a.att_date, e.full_name, a.check_in, a.check_out, a.work_hours, a.status
@@ -1021,7 +1143,7 @@ if ($export && $type !== 'stocktake') {
 $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
-    'suppliers'=>'الموردين','salaries'=>'الرواتب','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
+    'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع',
 ];
 
@@ -1974,6 +2096,323 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <?php if (($report['layout'] ?? '') === 'master_detail'): ?>
+        <?php if (($report['report_subtype'] ?? '') === 'advances'): ?>
+            <?php if (empty($report['details'])): ?>
+                <div class="empty">لا توجد بيانات في هذه الفترة.</div>
+            <?php else: ?>
+                <div class="sum-cards sal-sum-cards" id="advSummaryCards">
+                    <div class="sum-card">
+                        <div class="sc-label">عدد الموظفين</div>
+                        <div class="sc-value" id="advCountCard"><?= number_format($report['count']) ?></div>
+                    </div>
+                    <div class="sum-card">
+                        <div class="sc-label">إجمالي المتبقي</div>
+                        <div class="sc-value" id="advRemainingCard" style="color:var(--ink-900);"><?= number_format($report['total_remaining'], 2) ?></div>
+                    </div>
+                </div>
+
+                <div class="sal-filter-bar">
+                    <input type="text" id="advSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                    <select id="advBranchFilter" class="sal-select">
+                        <option value="">كل الفروع</option>
+                        <?php foreach ($report['branches'] as $br): ?>
+                            <option value="<?= e($br) ?>"><?= e($br) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select id="advTypeFilter" class="sal-select">
+                        <option value="">كل الأنواع</option>
+                        <option value="monthly">سلفة شهر</option>
+                        <option value="standing">مستديمة</option>
+                    </select>
+                    <select id="advStatusFilter" class="sal-select">
+                        <option value="">كل الحالات</option>
+                        <option value="pending">معلّقة</option>
+                        <option value="deducted">اتخصمت</option>
+                        <option value="cancelled">ملغاة</option>
+                    </select>
+                </div>
+
+                <div class="sal-master-detail">
+                    <!-- القائمة (يمين) -->
+                    <div class="sal-master-list" id="advMasterList">
+                        <?php foreach ($report['details'] as $idx => $d): ?>
+                            <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                                 data-id="<?= $d['id'] ?>"
+                                 data-name="<?= e($d['full_name']) ?>"
+                                 data-branch="<?= e($d['branch_name']) ?>"
+                                 data-remaining="<?= $d['total_remaining'] ?>"
+                                 data-pending="<?= $d['pending_count'] ?>"
+                                 tabindex="0"
+                                 role="button"
+                                 aria-pressed="<?= $idx === 0 ? 'true' : 'false' ?>">
+                                <div class="sal-card-header">
+                                    <div class="sal-card-name"><?= e($d['full_name']) ?></div>
+                                    <?php if ($d['pending_count'] > 0): ?>
+                                        <span class="badge" style="background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:6px;font-size:11.5px;font-weight:600;">
+                                            <?= $d['pending_count'] ?> معلّقة
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge" style="background:var(--pos-soft);color:var(--pos);padding:2px 8px;border-radius:6px;font-size:11.5px;font-weight:600;">
+                                            لا توجد معلّقة
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="sal-card-net" style="font-size:17px;font-weight:700;color:var(--ink-900);margin-bottom:4px;">
+                                    <span class="adv-card-emp-rem"><?= e($d['total_remaining_fmt']) ?></span> <span class="sal-curr">ج.م</span>
+                                </div>
+                                <?php if ($d['branch_name'] !== '—'): ?>
+                                    <div class="sal-card-sub">
+                                        <?= e($d['branch_name']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                        <div id="advEmptyList" class="empty" style="display:none;padding:24px 12px;">
+                            مفيش موظف مطابق للفلتر.
+                        </div>
+                    </div>
+
+                    <!-- التفصيل (شمال) -->
+                    <div class="sal-detail-panel" id="advDetailPanel">
+                        <?php foreach ($report['details'] as $idx => $d): ?>
+                            <div class="sal-detail-card" id="advDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                                <div class="sal-detail-header">
+                                    <div class="sal-detail-name-row">
+                                        <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
+                                        <?php if ($d['branch_name'] !== '—'): ?>
+                                            <span class="badge" style="background:var(--line-soft);color:var(--ink-700);padding:4px 10px;border-radius:6px;font-size:12.5px;">
+                                                <?= e($d['branch_name']) ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="sal-detail-sub">
+                                        عدد السلف: <?= count($d['advances']) ?> · المعلّقة: <?= $d['pending_count'] ?>
+                                    </div>
+                                </div>
+
+                                <div style="overflow-x:auto;">
+                                    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
+                                        <thead>
+                                            <tr style="background:var(--line-soft);">
+                                                <th style="padding:8px 10px;text-align:right;">التاريخ</th>
+                                                <th style="padding:8px 10px;text-align:right;">النوع</th>
+                                                <th style="padding:8px 10px;text-align:right;">الأصل</th>
+                                                <th style="padding:8px 10px;text-align:right;">المتبقي</th>
+                                                <th style="padding:8px 10px;text-align:right;">القسط الشهري</th>
+                                                <th style="padding:8px 10px;text-align:right;">الحالة</th>
+                                                <th style="padding:8px 10px;text-align:right;">الملاحظات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($d['advances'] as $adv): ?>
+                                                <tr class="adv-item-row"
+                                                    data-type="<?= e($adv['adv_type']) ?>"
+                                                    data-status="<?= e($adv['status']) ?>"
+                                                    data-remaining="<?= $adv['remaining'] ?>">
+                                                    <td style="padding:9px 10px;"><?= e($adv['advance_date']) ?></td>
+                                                    <td style="padding:9px 10px;">
+                                                        <span class="badge" style="background:<?= $adv['adv_type'] === 'monthly' ? 'var(--accent-soft)' : 'var(--line-soft)' ?>;color:<?= $adv['adv_type'] === 'monthly' ? 'var(--accent-text)' : 'var(--ink-700)' ?>;">
+                                                            <?= e($adv['type_label']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['amount_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;font-weight:600;direction:ltr;text-align:right;color:var(--ink-900);"><?= e($adv['remaining_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['monthly_deduction_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;">
+                                                        <?php if ($adv['status'] === 'pending'): ?>
+                                                            <span class="badge" style="background:var(--warn-soft);color:var(--warn);">معلّقة</span>
+                                                        <?php elseif ($adv['status'] === 'deducted'): ?>
+                                                            <span class="badge" style="background:var(--pos-soft);color:var(--pos);">اتخصمت</span>
+                                                        <?php else: ?>
+                                                            <span class="badge" style="background:var(--bg);color:var(--ink-400);border:1px solid var(--line);">ملغاة</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td style="padding:9px 10px;color:var(--ink-600);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= e($adv['notes']) ?>">
+                                                        <?= e($adv['notes'] ?: '—') ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="sal-divider-solid"></div>
+
+                                <div class="sal-line sal-net-row" style="margin-top:8px;">
+                                    <span class="sal-line-label" style="font-size:15px;">إجمالي المتبقي</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val sal-net-val" style="color:var(--ink-900);font-size:18px;">
+                                        <span class="adv-detail-total-rem"><?= e($d['total_remaining_fmt']) ?></span> <span class="sal-curr">ج.م</span>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+
+                        <div id="advDetailEmpty" class="sal-detail-card" hidden>
+                            <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                (function () {
+                    var masterList = document.getElementById('advMasterList');
+                    if (!masterList) return;
+                    var cards = Array.from(masterList.querySelectorAll('.sal-card'));
+                    var searchInput = document.getElementById('advSearch');
+                    var branchSelect = document.getElementById('advBranchFilter');
+                    var typeSelect = document.getElementById('advTypeFilter');
+                    var statusSelect = document.getElementById('advStatusFilter');
+                    var countEl = document.getElementById('advCountCard');
+                    var remEl = document.getElementById('advRemainingCard');
+                    var summaryBox = document.getElementById('advSummaryCards');
+                    var emptyListEl = document.getElementById('advEmptyList');
+                    var emptyDetailEl = document.getElementById('advDetailEmpty');
+                    var detailPanel = document.getElementById('advDetailPanel');
+
+                    function norm(str) {
+                        return String(str || '').toLowerCase()
+                            .replace(/[أإآ]/g, 'ا')
+                            .replace(/ة/g, 'ه')
+                            .replace(/ى/g, 'ي')
+                            .replace(/[\u064B-\u065F]/g, '')
+                            .trim();
+                    }
+
+                    function selectCard(card) {
+                        cards.forEach(function (c) {
+                            c.classList.remove('active');
+                            c.setAttribute('aria-pressed', 'false');
+                        });
+                        if (detailPanel) {
+                            var allDetails = detailPanel.querySelectorAll('.sal-detail-card');
+                            allDetails.forEach(function (d) { d.hidden = true; });
+                        }
+
+                        if (!card) {
+                            if (emptyDetailEl) emptyDetailEl.hidden = false;
+                            return;
+                        }
+
+                        card.classList.add('active');
+                        card.setAttribute('aria-pressed', 'true');
+                        var targetId = 'advDetail_' + card.dataset.id;
+                        var targetDetail = document.getElementById(targetId);
+                        if (targetDetail) {
+                            targetDetail.hidden = false;
+                        }
+                        if (emptyDetailEl) emptyDetailEl.hidden = true;
+                    }
+
+                    function applyFilter() {
+                        var q = searchInput ? norm(searchInput.value) : '';
+                        var br = branchSelect ? (branchSelect.value || '').trim() : '';
+                        var tp = typeSelect ? (typeSelect.value || '').trim() : '';
+                        var st = statusSelect ? (statusSelect.value || '').trim() : '';
+
+                        var visibleCount = 0;
+                        var visibleRemaining = 0;
+                        var firstVisible = null;
+                        var activeVisible = false;
+
+                        cards.forEach(function (card) {
+                            var cardName = norm(card.dataset.name);
+                            var cardBr = card.dataset.branch || '';
+
+                            var matchName = !q || cardName.indexOf(q) !== -1;
+                            var matchBr = !br || cardBr === br;
+
+                            // فلترة بنود السلف لهذا الموظف
+                            var targetId = 'advDetail_' + card.dataset.id;
+                            var targetDetail = document.getElementById(targetId);
+                            var empMatchingRem = 0;
+                            var empMatchingCount = 0;
+
+                            if (targetDetail) {
+                                var itemRows = targetDetail.querySelectorAll('.adv-item-row');
+                                itemRows.forEach(function (row) {
+                                    var rowType = row.dataset.type || '';
+                                    var rowStatus = row.dataset.status || '';
+                                    var rowRem = parseFloat(row.dataset.remaining || '0');
+
+                                    var matchType = !tp || rowType === tp;
+                                    var matchStatus = !st || rowStatus === st;
+
+                                    if (matchType && matchStatus) {
+                                        row.hidden = false;
+                                        empMatchingCount++;
+                                        empMatchingRem += rowRem;
+                                    } else {
+                                        row.hidden = true;
+                                    }
+                                });
+
+                                var detailRemEl = targetDetail.querySelector('.adv-detail-total-rem');
+                                if (detailRemEl) {
+                                    detailRemEl.textContent = empMatchingRem.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                            }
+
+                            // الموظف يظهر لو طابق الاسم والفرع وعنده سلف مطابقة لفلتر النوع والحالة
+                            var match = matchName && matchBr && empMatchingCount > 0;
+                            card.hidden = !match;
+
+                            if (match) {
+                                visibleCount++;
+                                visibleRemaining += empMatchingRem;
+                                var cardRemEl = card.querySelector('.adv-card-emp-rem');
+                                if (cardRemEl) {
+                                    cardRemEl.textContent = empMatchingRem.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                                if (!firstVisible) firstVisible = card;
+                                if (card.classList.contains('active')) activeVisible = true;
+                            }
+                        });
+
+                        if (countEl) countEl.textContent = visibleCount.toLocaleString('en-US');
+                        if (remEl) remEl.textContent = visibleRemaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                        var isFiltered = Boolean(q || br || tp || st);
+                        if (summaryBox) {
+                            if (isFiltered) summaryBox.classList.add('filtered');
+                            else summaryBox.classList.remove('filtered');
+                        }
+
+                        if (visibleCount === 0) {
+                            if (emptyListEl) emptyListEl.style.display = 'block';
+                            selectCard(null);
+                        } else {
+                            if (emptyListEl) emptyListEl.style.display = 'none';
+                            if (!activeVisible && firstVisible) {
+                                selectCard(firstVisible);
+                            }
+                        }
+                    }
+
+                    masterList.addEventListener('click', function (e) {
+                        var card = e.target.closest('.sal-card');
+                        if (!card || card.hidden) return;
+                        selectCard(card);
+                    });
+
+                    masterList.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            var card = e.target.closest('.sal-card');
+                            if (card && !card.hidden) {
+                                e.preventDefault();
+                                selectCard(card);
+                            }
+                        }
+                    });
+
+                    if (searchInput) searchInput.addEventListener('input', applyFilter);
+                    if (branchSelect) branchSelect.addEventListener('change', applyFilter);
+                    if (typeSelect) typeSelect.addEventListener('change', applyFilter);
+                    if (statusSelect) statusSelect.addEventListener('change', applyFilter);
+                })();
+                </script>
+            <?php endif; ?>
+        <?php else: ?>
         <?php if (empty($report['details'])): ?>
             <div class="empty">لا توجد بيانات في هذه الفترة.</div>
         <?php else: ?>
@@ -2231,6 +2670,7 @@ require_once __DIR__ . '/includes/header.php';
             })();
             </script>
         <?php endif; ?>
+    <?php endif; ?>
     <?php else: ?>
     <?php if (!empty($report['sum_cards']) && !empty($report['rows'])): ?>
         <?php /* الكروت بتتحسب في المتصفح من الصفوف الظاهرة في الجدول.

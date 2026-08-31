@@ -125,6 +125,7 @@ function module_parts(): array
             'deficits'   => 'العجوزات',
             'suppliers'  => 'الموردين',
             'salaries'   => 'الرواتب',
+            'advances'   => 'السلف',
             'attendance'        => 'الحضور',
             'attendance_totals' => 'إجمالي الحضور',
             'stocktake'  => 'الجرد',
