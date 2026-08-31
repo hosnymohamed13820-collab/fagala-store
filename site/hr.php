@@ -595,10 +595,28 @@ if ($tab === 'employees' || $tab === 'salaries') {
 }
 
 $advances = [];
+$owedToEmps = [];
 if ($tab === 'advances') {
     $advances = $pdo->query(
         "SELECT a.*, e.full_name FROM employee_advances a JOIN employees e ON e.id=a.employee_id ORDER BY a.id DESC LIMIT 100"
     )->fetchAll();
+
+    // الموظفين اللي **الشركة مدينة لهم** — عكس السلفة بالظبط.
+    // ده مش بيتقري من `employee_advances` خالص، ده رصيد دائن في
+    // `employee_ledger` (زي أ/حسني اللي قبض جمعية وحطها في الشغل).
+    // كان بيبان في تاب الرواتب بس، فالأونر يفتح السلف ويلاقي ٨ صفوف
+    // ومايعرفش إن فيه حد ليه فلوس عند الشركة.
+    // 🔴 قسم منفصل بقصد — لو اندمج في جداول السلف كان هيتقري غلط
+    //    على إنه سلفة، والسلفة عكسه تماماً.
+    $advEmps = $pdo->query('SELECT id, full_name FROM employees WHERE is_active = 1')->fetchAll();
+    $advBals = emp_ledger_balances(array_column($advEmps, 'id'), $pdo);   // استعلام واحد مجمّع
+    foreach ($advEmps as $ae) {
+        $bal = (float) ($advBals[(int) $ae['id']] ?? 0);
+        if ($bal < -0.005) {                       // سالب = دائن = الشركة مدينة له
+            $owedToEmps[] = ['id' => (int) $ae['id'], 'full_name' => $ae['full_name'], 'owed' => abs($bal)];
+        }
+    }
+    usort($owedToEmps, fn($a, $b) => $b['owed'] <=> $a['owed']);
 }
 
 $bonuses = [];
@@ -1307,6 +1325,37 @@ $statusBadge = function($st) {
         </div>
         <?php endif; ?>
     </div>
+
+    <?php if (!empty($owedToEmps)): ?>
+    <div class="card" style="border-right:4px solid var(--pos);">
+        <div class="section-title" style="color:var(--pos);">
+            <i class="ti ti-arrow-down-left"></i> الشركة مدينة لهم (<?= count($owedToEmps) ?>)
+        </div>
+        <p style="font-size:13px;color:var(--ink-500);margin:-6px 0 12px;">
+            🔴 دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
+            (رصيد دائن في سجل حسابه). مابتتخصمش من المرتب، وبتتصرفله لما ترجّعهاله.
+        </p>
+        <div style="overflow-x:auto;">
+        <table>
+            <thead><tr><th>الموظف</th><th>الشركة مدينة له</th><th>إجراء</th></tr></thead>
+            <tbody>
+            <?php foreach ($owedToEmps as $o): ?>
+                <tr>
+                    <td style="font-weight:500;"><?= e($o['full_name']) ?></td>
+                    <td style="font-weight:700;color:var(--pos);"><?= number_format($o['owed'], 2) ?></td>
+                    <td>
+                        <a class="btn btn-sm" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
+                           href="employee_statement.php?emp=<?= $o['id'] ?>">
+                            <i class="ti ti-file-invoice"></i> كشف الحساب
+                        </a>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <p style="color:var(--ink-500);font-size:13px;text-align:center;margin:14px 0 20px;">
         الأرصدة الافتتاحية بتظهر في <a href="employee_statement.php" style="color:var(--accent-text);text-decoration:none;font-weight:600;"><i class="ti ti-file-invoice"></i> كشف حساب الموظف</a> مش هنا.
