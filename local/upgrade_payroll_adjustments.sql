@@ -20,7 +20,7 @@
 --    #1109 - Unknown table 'salaries' in information_schema
 USE `u834909335_fagala`;
 
-CREATE TABLE IF NOT EXISTS `payroll_adjustments` (
+CREATE TABLE IF NOT EXISTS `u834909335_fagala`.`payroll_adjustments` (
   `id`            INT NOT NULL AUTO_INCREMENT,
   `employee_id`   INT NOT NULL,
   `month`         CHAR(7) NOT NULL COMMENT 'YYYY-MM',
@@ -43,4 +43,4 @@ CREATE TABLE IF NOT EXISTS `payroll_adjustments` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- الفحص — لازم يرجّع الجدول بأعمدته
-SHOW COLUMNS FROM `payroll_adjustments`;
+SHOW COLUMNS FROM `u834909335_fagala`.`payroll_adjustments`;

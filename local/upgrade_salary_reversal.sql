@@ -16,32 +16,34 @@
 --  مافيش عمود بيتشال ولا داتا بتتمسح. كله إضافة.
 -- =====================================================================
 
--- 🔴 اختيار القاعدة صراحةً — من غير السطر ده phpMyAdmin ممكن يشغّل
---    الأوامر على `information_schema` وترجع:
---    #1109 - Unknown table 'salaries' in information_schema
+-- 🔴 اسم القاعدة مكتوب على كل جدول تحت، و`USE` دي حزام زيادة.
+--    السبب: phpMyAdmin بيعيد تشغيل آخر SELECT بنفسه (وبيضيف LIMIT)
+--    على القاعدة المختارة **في الواجهة** مش اللي في الملف — فكان
+--    بيرجّع #1109 Unknown table 'salaries' in information_schema
+--    مهما حطينا USE. الاسم الكامل بيلغي الاعتماد على السياق خالص.
 USE `u834909335_fagala`;
 
 -- (١) المرتب المرجّع — عمود بدل ما نلمس الـENUM
 --     🔴 سبب استخدام عمود جديد مش قيمة جديدة في `status`: توسيع ENUM
 --        بيقفل الجدول ولازم نعرف قيمه الحالية بالظبط. العمود الفاضي
 --        أأمن، ومعناه واضح: `reversed_at IS NULL` = مرتب شغّال.
-ALTER TABLE `salaries`
+ALTER TABLE `u834909335_fagala`.`salaries`
   ADD COLUMN IF NOT EXISTS `reversed_at`    DATETIME     NULL AFTER `paid_at`,
   ADD COLUMN IF NOT EXISTS `reversed_by`    INT          NULL AFTER `reversed_at`,
   ADD COLUMN IF NOT EXISTS `reverse_reason` VARCHAR(255) NULL AFTER `reversed_by`;
 
 -- (٢) ربط المكافأة والجزاء بالمرتب اللي قفلهم
-ALTER TABLE `employee_bonuses`
+ALTER TABLE `u834909335_fagala`.`employee_bonuses`
   ADD COLUMN IF NOT EXISTS `paid_in_salary_id` BIGINT UNSIGNED NULL,
   ADD KEY IF NOT EXISTS `ix_bonus_salary` (`paid_in_salary_id`);
 
-ALTER TABLE `employee_penalties`
+ALTER TABLE `u834909335_fagala`.`employee_penalties`
   ADD COLUMN IF NOT EXISTS `deducted_in_salary_id` BIGINT UNSIGNED NULL,
   ADD KEY IF NOT EXISTS `ix_pen_salary` (`deducted_in_salary_id`);
 
 -- (٣) السلف: المرتب بيخصم من أكتر من سلفة، وكل واحدة بمبلغ مختلف.
 --     `salaries.total_advances` فيه الإجمالي بس — مش كفاية للإرجاع.
-CREATE TABLE IF NOT EXISTS `salary_advance_recoveries` (
+CREATE TABLE IF NOT EXISTS `u834909335_fagala`.`salary_advance_recoveries` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `salary_id`  BIGINT UNSIGNED NOT NULL,
   `advance_id` BIGINT UNSIGNED NOT NULL,
@@ -69,6 +71,6 @@ SELECT 'employee_penalties', COUNT(*) FROM information_schema.COLUMNS
 
 -- المرتبات اللي اتصرفت **قبل** الترقية — دي اللي إرجاعها هيبقى ناقص
 SELECT s.id, e.full_name, s.salary_month, s.net_salary, s.paid_at
-  FROM salaries s JOIN employees e ON e.id = s.employee_id
+  FROM `u834909335_fagala`.`salaries` s JOIN `u834909335_fagala`.`employees` e ON e.id = s.employee_id
  WHERE s.reversed_at IS NULL
  ORDER BY s.id DESC;
