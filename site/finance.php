@@ -1097,6 +1097,17 @@ function close_custody(
         $difference = $countedCash - $expected;            // موجب=زيادة، سالب=عجز
         $tolerance = custody_tolerance();
 
+        // حارس: لو فيه عجز أكبر من العتبة والموظف المسؤول مش محدد، نرفض قبل أي قيد أو كتابة
+        if ($difference < 0) {
+            $deficit = abs($difference);
+            if ($deficit > $tolerance && ($employeeId === null || $employeeId <= 0)) {
+                throw new RuntimeException(
+                    'العجز ' . number_format($deficit, 2) . ' ج أكبر من الحد المسموح (' .
+                    number_format($tolerance, 0) . ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.'
+                );
+            }
+        }
+
         // الرصيد الحالي لخزينة العهدة (المفروض = $expected نظرياً)
         $balStmt = $pdo->prepare('SELECT balance FROM treasuries WHERE id=? FOR UPDATE');
         $balStmt->execute([$custodyTreasuryId]);
@@ -1129,14 +1140,14 @@ function close_custody(
                          $date, 'custody_deficit', $custodyId, $userId, $pdo);
 
             // هل يتحمّله الموظف؟
-            if ($deficit > $tolerance) {
-                $onEmployee = true;
+            if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
                 $pdo->prepare(
                     'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
                      VALUES (?, ?, ?, ?, "pending", ?)'
                 )->execute([$custodyId, $employeeId, (int)$custody['branch_id'], $deficit,
                             'عجز عند إقفال العهدة - يُخصم من المرتب']);
                 $deficitId = (int) $pdo->lastInsertId();
+                $onEmployee = true;
             }
             // لو أقل من العتبة: المحل يتحمله، مفيش ذمة على الموظف (الحركة فوق كفّت التصفير)
         }

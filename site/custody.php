@@ -360,7 +360,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-inline" style="margin-top:16px;">
                 <?php if ($branchEmployees): ?>
                 <div class="fld" style="max-width:220px;">
-                    <label>الموظف المسؤول (لو فيه عجز فوق <?= number_format($tolerance,0) ?>ج)</label>
+                    <label>الموظف المسؤول (إجباري لو فيه عجز فوق <?= number_format($tolerance,0) ?> ج)</label>
                     <select name="employee_id">
                         <option value="">— بدون —</option>
                         <?php foreach ($branchEmployees as $emp): ?>
@@ -373,8 +373,7 @@ require_once __DIR__ . '/includes/header.php';
                     <label>تاريخ الإقفال</label>
                     <input type="date" name="date" value="<?= date('Y-m-d') ?>">
                 </div>
-                <button type="submit" class="btn btn-danger"
-                        onclick="return confirm('تأكيد إقفال العهدة واستلام الباقي؟ لا يمكن التراجع.')">
+                <button type="submit" class="btn btn-danger">
                     <i class="ti ti-lock"></i> إقفال واستلام
                 </button>
             </div>
@@ -423,6 +422,7 @@ require_once __DIR__ . '/includes/header.php';
 
     const expected = <?= json_encode($custody ? (float)$custody['closing_balance'] : 0) ?>;
     const tolerance = <?= json_encode($tolerance) ?>;
+    let currentDiff = 0;
 
     function recalc() {
         let total = 0;
@@ -436,6 +436,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('countedCash').value = total.toFixed(2);
 
         const diff = total - expected;
+        currentDiff = diff;
         const box = document.getElementById('countResult');
         box.style.display = 'block';
         if (Math.abs(diff) < 0.001) {
@@ -443,7 +444,7 @@ require_once __DIR__ . '/includes/header.php';
             box.textContent = 'الفعلي ' + total.toFixed(2) + ' = المفروض. مفيش فرق ✓';
         } else if (diff < 0) {
             const def = Math.abs(diff);
-            const who = def >= tolerance ? ' (يُسجّل على الموظف)' : ' (يتحمّله المحل)';
+            const who = def > tolerance ? ' (يُسجّل على الموظف)' : ' (يتحمّله المحل)';
             box.className = 'count-result def';
             box.textContent = 'عجز ' + def.toFixed(2) + ' جنيه' + who;
         } else {
@@ -452,6 +453,25 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
     recalc();
+
+    const closeForm = document.getElementById('closeForm');
+    if (closeForm) {
+        closeForm.addEventListener('submit', function (e) {
+            if (currentDiff < 0 && Math.abs(currentDiff) > tolerance) {
+                const empSelect = closeForm.querySelector('select[name="employee_id"]');
+                if (!empSelect || !empSelect.value) {
+                    e.preventDefault();
+                    alert('العجز ' + Math.abs(currentDiff).toFixed(2) + ' ج أكبر من الحد المسموح (' + tolerance + ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.');
+                    if (empSelect) empSelect.focus();
+                    return false;
+                }
+            }
+            if (!confirm('تأكيد إقفال العهدة واستلام الباقي؟ لا يمكن التراجع.')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

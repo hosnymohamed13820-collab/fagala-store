@@ -163,7 +163,7 @@ try {
         $bal  = (float) ($r['balance'] ?? 0);
         $sid  = (int) ($r['store_id'] ?? 1);
 
-        if ($mode === 'partial' && $bal == 0.0) {
+        if ($mode === 'partial' && abs($bal) < 0.0001) {
             // رصيد صفر في الوضع الجزئي = الصنف خلص عندهم
             $del->execute([$bc]);
             $removed++;

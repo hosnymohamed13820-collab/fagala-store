@@ -693,7 +693,7 @@ function stk_report_sheet(int $sheetId): string
         // الكمية: النهائية ثم المراجع ثم الجرد الأصلي
         $qty = $r['final_qty'] !== null ? (float)$r['final_qty']
              : ($r['review_qty'] !== null ? (float)$r['review_qty'] : (float)$r['base_qty']);
-        if ($qty == 0) continue; // تجاهل الصفر
+        if (abs($qty) < 0.0001) continue; // تجاهل الصفر
         $qtyOut = rtrim(rtrim(number_format($qty, 3, '.', ''), '0'), '.');
         if ($qtyOut === '') $qtyOut = '0';
         // سعر التكلفة: لو مفقود (صنف دخّله المراجع) نجيبه من SQL Server بالكود
@@ -757,7 +757,7 @@ function stk_report_session(int $sessionId): string
 
     $lines = [];
     foreach ($totals as $code => $qty) {
-        if ($qty == 0) continue;
+        if (abs($qty) < 0.0001) continue;
         $qtyOut = rtrim(rtrim(number_format($qty, 3, '.', ''), '0'), '.');
         if ($qtyOut === '') $qtyOut = '0';
         // التكلفة: المحفوظة، وإلا من SQL Server بالكود
