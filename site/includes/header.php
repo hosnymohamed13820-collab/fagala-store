@@ -90,6 +90,18 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="stylesheet" href="assets/fagala.css?v=8">
 </head>
 <body>
+<?php /* 🔴 شريط الأرشيف — بيبان على النسخة المحلية **بس**.
+         السبب: بعد التصفير، النسخة المحلية بتفضل بالبيانات القديمة
+         كأرشيف. والتابين شكلهم واحد، فسهل جداً تفتكر إنك على الموقع
+         الحقيقي وانت بتتفرج على داتا مأرشفة — أو العكس وهو الأخطر.
+         `APP_ENV` معرّفة في `config.php` وقيمتها 'hosting' على السيرفر،
+         فالشريط ده عمره ما هيبان لأي مستخدم. */ ?>
+<?php if (defined('APP_ENV') && APP_ENV === 'local'): ?>
+    <div style="background:#946105;color:#fff;text-align:center;padding:5px 10px;
+                font-size:13px;font-weight:600;letter-spacing:.2px;">
+        نسخة محلية — أرشيف. أي تعديل هنا مابيوصلش للموقع الحقيقي.
+    </div>
+<?php endif; ?>
 <div class="layout">
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
