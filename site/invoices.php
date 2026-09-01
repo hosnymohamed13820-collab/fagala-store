@@ -1193,11 +1193,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         //  "لسه ماتوزّعش منها حاجة" لحد ما المستخدم يعمل ريفريش.)
         $groupTotals   = [];
         $invoiceTotals = [];
+        $q = $pdo->prepare(
+            'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
+             WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
+        );
         foreach ($g['dist_ids'] as $sth => $did) {
-            $q = $pdo->prepare(
-                'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
-                 WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
-            );
             $q->execute([(int) $did]);
             foreach ($q->fetchAll() as $r) {
                 $bid = (int) $r['branch_id'];

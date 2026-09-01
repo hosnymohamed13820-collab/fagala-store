@@ -70,6 +70,57 @@ function group_list(): array
         return [];
     }
 
+    if (empty($groups)) {
+        return [];
+    }
+
+    $stItemsTotPosted = db()->prepare(
+        "SELECT COALESCE(SUM(l.quantity),0)
+         FROM invoice_group_lines gl
+         JOIN hq_invoice_lines l
+           ON l.sth_id = gl.sth_id AND l.suffix = gl.suffix AND l.item_code = gl.item_code
+         WHERE gl.group_id = ?"
+    );
+    $stItemsTotUnposted = db()->prepare(
+        "SELECT COALESCE(SUM(u.quantity),0)
+         FROM invoice_group_lines gl
+         JOIN hq_unposted_lines u
+           ON u.sth_id = gl.sth_id AND u.item_code = gl.item_code
+         WHERE gl.group_id = ? AND gl.suffix = 'YY_MM'"
+    );
+    $stFullTotPosted = db()->prepare(
+        "SELECT COALESCE(SUM(l.quantity),0)
+         FROM invoice_group_items i
+         JOIN hq_invoice_lines l ON l.sth_id = i.sth_id AND l.suffix = i.suffix
+         WHERE i.group_id = ?"
+    );
+    $stFullTotUnposted = db()->prepare(
+        "SELECT COALESCE(SUM(l.quantity),0)
+         FROM invoice_group_items i
+         JOIN hq_unposted_lines l ON l.sth_id = i.sth_id
+         WHERE i.group_id = ? AND i.suffix = 'YY_MM'"
+    );
+    $stItemsDone = db()->prepare(
+        "SELECT COALESCE(SUM(dl.amount),0) AS q,
+                COUNT(DISTINCT dl.branch_id) AS b
+         FROM invoice_group_items i
+         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+         JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
+         JOIN invoice_group_lines gl
+           ON gl.group_id = i.group_id AND gl.sth_id = i.sth_id
+          AND gl.suffix = i.suffix AND gl.item_code = dl.notes
+         WHERE i.group_id = ?"
+    );
+    $stFullDone = db()->prepare(
+        "SELECT COALESCE(SUM(dl.amount),0) AS q,
+                COUNT(DISTINCT dl.branch_id) AS b
+         FROM invoice_group_items i
+         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+         JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
+         WHERE i.group_id = ?"
+    );
+    $stSelCount = db()->prepare('SELECT COUNT(DISTINCT item_code) FROM invoice_group_lines WHERE group_id = ?');
+
     foreach ($groups as &$g) {
         $gid = (int) $g['id'];
 
@@ -84,43 +135,17 @@ function group_list(): array
         $tot = 0.0;
         try {
             if ($isItems) {
-                $st = db()->prepare(
-                    "SELECT COALESCE(SUM(l.quantity),0)
-                     FROM invoice_group_lines gl
-                     JOIN hq_invoice_lines l
-                       ON l.sth_id = gl.sth_id AND l.suffix = gl.suffix AND l.item_code = gl.item_code
-                     WHERE gl.group_id = ?"
-                );
-                $st->execute([$gid]);
-                $tot += (float) $st->fetchColumn();
+                $stItemsTotPosted->execute([$gid]);
+                $tot += (float) $stItemsTotPosted->fetchColumn();
 
-                $st2 = db()->prepare(
-                    "SELECT COALESCE(SUM(u.quantity),0)
-                     FROM invoice_group_lines gl
-                     JOIN hq_unposted_lines u
-                       ON u.sth_id = gl.sth_id AND u.item_code = gl.item_code
-                     WHERE gl.group_id = ? AND gl.suffix = 'YY_MM'"
-                );
-                $st2->execute([$gid]);
-                $tot += (float) $st2->fetchColumn();
+                $stItemsTotUnposted->execute([$gid]);
+                $tot += (float) $stItemsTotUnposted->fetchColumn();
             } else {
-                $st = db()->prepare(
-                    "SELECT COALESCE(SUM(l.quantity),0)
-                     FROM invoice_group_items i
-                     JOIN hq_invoice_lines l ON l.sth_id = i.sth_id AND l.suffix = i.suffix
-                     WHERE i.group_id = ?"
-                );
-                $st->execute([$gid]);
-                $tot += (float) $st->fetchColumn();
+                $stFullTotPosted->execute([$gid]);
+                $tot += (float) $stFullTotPosted->fetchColumn();
 
-                $st2 = db()->prepare(
-                    "SELECT COALESCE(SUM(l.quantity),0)
-                     FROM invoice_group_items i
-                     JOIN hq_unposted_lines l ON l.sth_id = i.sth_id
-                     WHERE i.group_id = ? AND i.suffix = 'YY_MM'"
-                );
-                $st2->execute([$gid]);
-                $tot += (float) $st2->fetchColumn();
+                $stFullTotUnposted->execute([$gid]);
+                $tot += (float) $stFullTotUnposted->fetchColumn();
             }
         } catch (Throwable $ex) { /* المرآة لسه مش جاهزة */ }
 
@@ -129,29 +154,12 @@ function group_list(): array
         try {
             if ($isItems) {
                 // بنعد التوزيع بتاع الأصناف المختارة بس
-                $st = db()->prepare(
-                    "SELECT COALESCE(SUM(dl.amount),0) AS q,
-                            COUNT(DISTINCT dl.branch_id) AS b
-                     FROM invoice_group_items i
-                     JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
-                     JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
-                     JOIN invoice_group_lines gl
-                       ON gl.group_id = i.group_id AND gl.sth_id = i.sth_id
-                      AND gl.suffix = i.suffix AND gl.item_code = dl.notes
-                     WHERE i.group_id = ?"
-                );
+                $stItemsDone->execute([$gid]);
+                $r = $stItemsDone->fetch();
             } else {
-                $st = db()->prepare(
-                    "SELECT COALESCE(SUM(dl.amount),0) AS q,
-                            COUNT(DISTINCT dl.branch_id) AS b
-                     FROM invoice_group_items i
-                     JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
-                     JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
-                     WHERE i.group_id = ?"
-                );
+                $stFullDone->execute([$gid]);
+                $r = $stFullDone->fetch();
             }
-            $st->execute([$gid]);
-            $r = $st->fetch();
             $done     = (float) ($r['q'] ?? 0);
             $branches = (int) ($r['b'] ?? 0);
         } catch (Throwable $ex) { /* تجاهل */ }
@@ -160,9 +168,8 @@ function group_list(): array
         $g['sel_count'] = 0;
         if ($isItems) {
             try {
-                $sc = db()->prepare('SELECT COUNT(DISTINCT item_code) FROM invoice_group_lines WHERE group_id = ?');
-                $sc->execute([$gid]);
-                $g['sel_count'] = (int) $sc->fetchColumn();
+                $stSelCount->execute([$gid]);
+                $g['sel_count'] = (int) $stSelCount->fetchColumn();
             } catch (Throwable $ex) { /* تجاهل */ }
         }
 
@@ -1067,6 +1074,10 @@ function group_set_distribution(
             'INSERT INTO invoice_distribution_lines (distribution_id, branch_id, amount, notes)
              VALUES (?, ?, ?, ?)'
         );
+        $q = $pdo->prepare(
+            'SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
+             WHERE distribution_id = ? AND notes = ? AND branch_id <> ?'
+        );
         $left  = $qty;
         $split = [];
         foreach ($sources as $s) {
@@ -1075,10 +1086,6 @@ function group_set_distribution(
             $distId  = (int) $s['dist_id'];
 
             // المتاح في الفاتورة دي = كميتها − اللي اتوزّع منها لفروع تانية
-            $q = $pdo->prepare(
-                'SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
-                 WHERE distribution_id = ? AND notes = ? AND branch_id <> ?'
-            );
             $q->execute([$distId, $itemCode, $branchId]);
             $usedHere = (float) $q->fetchColumn();
 

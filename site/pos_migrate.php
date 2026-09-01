@@ -121,6 +121,33 @@ if ($shiftId > 0 && $doRun) {
         /* ---------- 5. الترحيل: فاتورة فاتورة ---------- */
         $ok = 0; $fail = 0;
 
+        $stLines = $pdo->prepare(
+            'SELECT * FROM pos_invoice_lines WHERE invoice_id = ? ORDER BY line_no'
+        );
+        $stUpdateSuccess = $pdo->prepare(
+            "UPDATE pos_invoices SET
+                status = 'migrated', sql_sth_id = ?, sql_sth_id_ref = ?,
+                sql_ath_id = ?, sql_doc_no = ?, sql_ps_id = ?,
+                migrated_at = NOW(), migrate_error = NULL
+             WHERE id = ?"
+        );
+        $stLogSuccess = $pdo->prepare(
+            "INSERT INTO pos_migration_log
+                (shift_id, invoice_id, branch_id, mode, result,
+                 sth_id, sth_id_ref, ath_id, stil_id, atg_id, doc_no, ps_id,
+                 sql_dump, duration_ms, created_by)
+             VALUES (?,?,?,'live','success',?,?,?,?,?,?,?,?,?,?)"
+        );
+        $stUpdateFail = $pdo->prepare(
+            "UPDATE pos_invoices SET status='failed', migrate_error=? WHERE id=?"
+        );
+        $stLogFail = $pdo->prepare(
+            "INSERT INTO pos_migration_log
+                (shift_id, invoice_id, branch_id, mode, result,
+                 sql_dump, error_msg, created_by)
+             VALUES (?,?,?,'live','failed',?,?,?)"
+        );
+
         foreach ($invoices as $idx => $inv) {
 
             // ★★ العدادات بتتقري من جديد قبل كل فاتورة ★★
@@ -136,11 +163,8 @@ if ($shiftId > 0 && $doRun) {
                 $read, $ym, (int)$cfg['branch_id'], $saleDay, $px
             );
 
-            $ln = $pdo->prepare(
-                'SELECT * FROM pos_invoice_lines WHERE invoice_id = ? ORDER BY line_no'
-            );
-            $ln->execute([(int)$inv['id']]);
-            $lines = $ln->fetchAll();
+            $stLines->execute([(int)$inv['id']]);
+            $lines = $stLines->fetchAll();
 
             if (!$lines) {
                 $results[] = [
@@ -172,26 +196,14 @@ if ($shiftId > 0 && $doRun) {
                 $ms  = (int)round((microtime(true) - $t0) * 1000);
 
                 // تحديث الفاتورة عندنا
-                $pdo->prepare(
-                    "UPDATE pos_invoices SET
-                        status = 'migrated', sql_sth_id = ?, sql_sth_id_ref = ?,
-                        sql_ath_id = ?, sql_doc_no = ?, sql_ps_id = ?,
-                        migrated_at = NOW(), migrate_error = NULL
-                     WHERE id = ?"
-                )->execute([
+                $stUpdateSuccess->execute([
                     $built['ids']['sth_id'], $built['ids']['sth_id_ref'],
                     $built['ids']['ath_id'], $built['ids']['doc_no'],
                     $built['ids']['ps_id'], (int)$inv['id'],
                 ]);
 
                 // السجل
-                $pdo->prepare(
-                    "INSERT INTO pos_migration_log
-                        (shift_id, invoice_id, branch_id, mode, result,
-                         sth_id, sth_id_ref, ath_id, stil_id, atg_id, doc_no, ps_id,
-                         sql_dump, duration_ms, created_by)
-                     VALUES (?,?,?,'live','success',?,?,?,?,?,?,?,?,?,?)"
-                )->execute([
+                $stLogSuccess->execute([
                     $shiftId, (int)$inv['id'], (int)$cfg['branch_id'],
                     $built['ids']['sth_id'], $built['ids']['sth_id_ref'],
                     $built['ids']['ath_id'], $built['ids']['stil_id'],
@@ -213,16 +225,9 @@ if ($shiftId > 0 && $doRun) {
             } catch (Throwable $e) {
                 $fail++;
 
-                $pdo->prepare(
-                    "UPDATE pos_invoices SET status='failed', migrate_error=? WHERE id=?"
-                )->execute([$e->getMessage(), (int)$inv['id']]);
+                $stUpdateFail->execute([$e->getMessage(), (int)$inv['id']]);
 
-                $pdo->prepare(
-                    "INSERT INTO pos_migration_log
-                        (shift_id, invoice_id, branch_id, mode, result,
-                         sql_dump, error_msg, created_by)
-                     VALUES (?,?,?,'live','failed',?,?,?)"
-                )->execute([
+                $stLogFail->execute([
                     $shiftId, (int)$inv['id'], (int)$cfg['branch_id'],
                     implode(";\n", $all), $e->getMessage(),
                     (int)current_user()['id'],

@@ -53,6 +53,13 @@ $distIds    = [];
 //    الفلتر ده الملف هيطلع بأصناف الفاتورة كلها بدل أصناف المجموعة.
 $grpIsItems = group_is_items($groupId);
 
+$q = $pdo->prepare(
+    'SELECT notes AS item_code, SUM(amount) AS qty
+     FROM invoice_distribution_lines
+     WHERE distribution_id = ? AND branch_id = ?
+     GROUP BY notes HAVING SUM(amount) > 0'
+);
+
 foreach ($invoices as $inv) {
     $sth    = (int) $inv['sth_id'];
     $suffix = (string) $inv['suffix'];
@@ -68,12 +75,6 @@ foreach ($invoices as $inv) {
     $allow = $grpIsItems ? group_invoice_codes($groupId, $sth, $suffix) : [];
 
     // كميات الفرع في الفاتورة دي
-    $q = $pdo->prepare(
-        'SELECT notes AS item_code, SUM(amount) AS qty
-         FROM invoice_distribution_lines
-         WHERE distribution_id = ? AND branch_id = ?
-         GROUP BY notes HAVING SUM(amount) > 0'
-    );
     $q->execute([$distId, $branchId]);
     foreach ($q as $row) {
         $code = (string) $row['item_code'];
