@@ -166,7 +166,9 @@ function shift_cashier_amounts(array $s): array {
     .cmp-ok { color:var(--pos); } .cmp-bad { color:var(--neg); }
     .rv-actions { display:flex; gap:8px; margin-top:14px; }
     .btn-approve { background:var(--pos-fill); color:#fff; flex:1; }
+    .btn-approve:hover { background:var(--pos-fill); color:#fff; }
     .btn-reject  { background:var(--neg-fill); color:#fff; flex:1; }
+    .btn-reject:hover { background:var(--neg-fill); color:#fff; }
     @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } }
 </style>
 

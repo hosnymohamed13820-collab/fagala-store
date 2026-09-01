@@ -173,9 +173,11 @@ $prioBadge = function($p) {
     .fld input, .fld select, .fld textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
     .fld textarea { min-height:90px; resize:vertical; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
+    .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 14px; font-size:13px; }
     .btn-done { background:var(--pos-fill); }
     .btn-ghost { background:var(--accent-soft); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
     .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
     .scope-opt.active { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
