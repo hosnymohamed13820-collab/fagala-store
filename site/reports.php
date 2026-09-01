@@ -5,7 +5,7 @@
  *
  * تقارير: المبيعات | الخزينة | العهد | الموردين | الرواتب | الحضور
  * - كل تقرير بفلتر فترة (من/إلى).
- * - تصدير CSV لأي تقرير.
+ * - تصدير إكسل (.xlsx) لأي تقرير — الجرد له تصدير CSV خاص بيه.
  */
 require_once __DIR__ . '/auth.php';
 require_module_access('reports');
@@ -865,7 +865,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $bName = $r['branch_name'] ?: '—';
                 $statusLabel = ($r['status'] === 'paid') ? 'مدفوع' : 'مسودة';
 
-                // صف التصدير لـ CSV (يحتوي على عمود الخزينة وباقي الحسابات)
+                // صف التصدير لإكسل (يحتوي على عمود الخزينة وباقي الحسابات)
                 $rows[] = [
                     $r['salary_month'] ?? '—',
                     $r['full_name'],
@@ -994,7 +994,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     $branchesList[] = $bName;
                 }
 
-                // صف التصدير لـ CSV
+                // صف التصدير لإكسل
                 $rows[] = [
                     $r['advance_date'],
                     $r['full_name'],
@@ -1120,32 +1120,42 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
 $report = build_report($pdo, $type, $from, $to);
 
-// تصدير CSV (للتقارير العادية — الجرد له تصدير خاص بيه تحت)
+// تصدير إكسل (للتقارير العادية — الجرد له تصدير خاص بيه تحت)
+//
+// 🔴 كان CSV واتغيّر لـ.xlsx حقيقي — والسبب إن الـCSV مايقدرش يحل
+//    التلات مشاكل مع بعض:
+//      · العربي: محتاج BOM عشان إكسل يقراه UTF-8.
+//      · الأعمدة: إكسل على ويندوز العربي فاصل قوايمه **فاصلة منقوطة**،
+//        فالملف كان بينزل كله في عمود واحد.
+//      · الأرقام: مترندرة بـ`number_format` يعني «2,100.00» — وإكسل
+//        بيقراها نص فمش بتتجمع.
+//    والحل اللي جرّبناه (`sep=,`) ظبّط الأعمدة **وكسر العربي**: إكسل
+//    لما بيشوف `sep=` بيتجاهل الـBOM ويقرا بترميز ويندوز، فالعربي
+//    بيطلع طلاسم. حل واحد منهم بيكسر التاني — فمفيش CSV يظبط.
+//
+//    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
+//    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
+//    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
 if ($export && $type !== 'stocktake') {
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $type . '_' . $from . '_' . $to . '.csv"');
-    echo "\xEF\xBB\xBF"; // BOM للعربي في إكسل
-    // 🔴 إكسل على ويندوز العربي فاصل القوايم عنده **فاصلة منقوطة** مش
-    //    فاصلة، فملف الـCSV كان بينزل **كله في عمود واحد**. السطر ده
-    //    توجيه بيفهمه إكسل وبيقوله الفاصل إيه — وبيتجاهله أي برنامج تاني.
-    echo "sep=,\r\n";
-    $out = fopen('php://output', 'w');
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx(mb_substr((string)($report['title'] ?? 'تقرير'), 0, 30));
 
     /**
-     * 🔴 الأرقام في `rows` مترندرة بـ`number_format` عشان العرض —
-     *    يعني «2,100.00» بفاصلة الآلاف. وإكسل بيقراها **نص** مش رقم،
-     *    فمش بتتجمع ولا بتترتب، وشكلها بيطلع غريب.
-     *    هنا بنشيل فاصلة الآلاف من الخلايا اللي **كلها رقم** بس.
-     *    أي نص فيه فاصلة (زي الملاحظات) بيعدّي زي ما هو.
+     * الأرقام في `rows` مترندرة للعرض — «2,100.00». هنا بنرجّعها رقم
+     * حقيقي عشان تدخل الخلية كرقم، فتتجمع وتترتب في إكسل.
+     * أي نص فيه فاصلة (زي الملاحظات) بيعدّي زي ما هو.
      */
-    $csvCell = static function ($v) {
-        $s = (string) $v;
-        return preg_match('/^-?\d{1,3}(,\d{3})+(\.\d+)?$/', $s)
-            ? str_replace(',', '', $s)
-            : $s;
+    $xlCell = static function ($v) {
+        $s = trim((string) $v);
+        if ($s === '' || $s === '—') return $s;
+        if (preg_match('/^-?\d{1,3}(,\d{3})*(\.\d+)?$/', $s)) {
+            return (float) str_replace(',', '', $s);
+        }
+        return $s;
     };
 
-    fputcsv($out, $report['headers']);
+    $x->addRow($report['headers'], true);
+
     $descCol = ($type === 'treasury') ? 2 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 1 : -1);
     foreach ($report['rows'] as $ri => $row) {
         if ($descCol >= 0 && !empty($report['row_paths'][$ri])) {
@@ -1153,10 +1163,11 @@ if ($export && $type !== 'stocktake') {
                 ? ($row[$descCol] . ' — ' . $report['row_paths'][$ri])
                 : $report['row_paths'][$ri];
         }
-        fputcsv($out, array_map($csvCell, $row));
+        $x->addRow(array_map($xlCell, $row));
     }
-    if (!empty($report['totals'])) fputcsv($out, $report['totals']);
-    fclose($out);
+    if (!empty($report['totals'])) $x->addRow(array_map($xlCell, $report['totals']), true);
+
+    $x->download($type . '_' . $from . '_' . $to . '.xlsx');
     exit;
 }
 
@@ -1484,7 +1495,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
     <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
-        <i class="ti ti-download"></i> تصدير CSV
+        <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
 
@@ -1628,7 +1639,7 @@ require_once __DIR__ . '/includes/header.php';
                        . '&sheet_ids=' . implode(',', array_map('intval', $stkSelSheets));
             ?>
             <div style="display:flex;gap:8px;">
-                <a href="?<?= $expQs ?>&fmt=csv" class="btn btn-csv"><i class="ti ti-download"></i> تصدير CSV</a>
+                <a href="?<?= $expQs ?>&fmt=csv" class="btn btn-csv"><i class="ti ti-download"></i> تصدير إكسل</a>
                 <a href="?<?= $expQs ?>&fmt=xlsx" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
             </div>
         </div>
