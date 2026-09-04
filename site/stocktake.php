@@ -827,9 +827,9 @@ require_once __DIR__ . '/includes/header.php';
                             var prices = '';
                             if (it.sale != null) prices += '<span style="color:var(--pos);">بيع: '+it.sale+'</span> ';
                             if (it.cost != null) prices += '<span style="color:var(--warn);">تكلفة: '+it.cost+'</span>';
-                            return '<div onclick="pickItem(\''+it.code+'\')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line-soft);font-size:14px;" '+
+                            return '<div onclick="pickItem(\''+escapeHtml(it.code)+'\')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line-soft);font-size:14px;" '+
                             'onmouseover="this.style.background=\'var(--accent-soft)\'" onmouseout="this.style.background=\'\'">'+
-                            '<div><strong>'+it.code+'</strong> — '+it.name+'</div>'+
+                            '<div><strong>'+escapeHtml(it.code)+'</strong> — '+escapeHtml(it.name)+'</div>'+
                             (prices ? '<div style="font-size:12px;margin-top:3px;">'+prices+'</div>' : '')+
                             '</div>';
                         }).join('');
@@ -1092,7 +1092,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<input type="hidden" name="line_id" value="'+lineId+'">'
                     + '<input type="hidden" name="sheet_id" value="'+sheetId+'">'
                     + '<input type="hidden" name="from_review" value="1">';
-                document.body.appendChild(f); f.submit();
+                document.body.appendChild(f); formSubmit(f);
             }
         </script>
         <?php endif; ?>
@@ -1193,7 +1193,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<input type="hidden" name="line_id" value="'+lineId+'">'
                     + '<input type="hidden" name="sheet_id" value="'+sheetId+'">'
                     + '<input type="hidden" name="from_review" value="1">';
-                document.body.appendChild(f); f.submit();
+                document.body.appendChild(f); formSubmit(f);
             }
         </script>
         <?php endif; ?>

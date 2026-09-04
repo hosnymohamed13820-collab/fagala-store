@@ -3815,7 +3815,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('grpDropSth').value  = fields.sth  || '';
         document.getElementById('grpDropSuf').value  = fields.suf  || '';
         document.getElementById('grpDropCode').value = fields.code || '';
-        f.submit();
+        formSubmit(f);
     }
 
     document.addEventListener('click', function (ev) {
@@ -4750,7 +4750,7 @@ require_once __DIR__ . '/includes/header.php';
                 found = true;
                 const name = (tr.dataset.name || '').trim();
                 const qty  = tr.querySelector('.c-qty') ? tr.querySelector('.c-qty').textContent.trim() : '';
-                let html = `<div class="lk-alert lk-alert-info"><strong>${name}</strong> — كود: ${rowCode} — إجمالي: ${qty}</div>
+                let html = `<div class="lk-alert lk-alert-info"><strong>${escRes(name)}</strong> — كود: ${escRes(rowCode)} — إجمالي: ${escRes(qty)}</div>
                             <table class="lk-table"><thead><tr><th>الفرع</th><th>الكمية</th></tr></thead><tbody>`;
 
                 // الكميات: من الخانات (لو لسه بيتوزّع) أو من النص (لو خلص التوزيع)

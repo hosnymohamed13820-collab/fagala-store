@@ -158,6 +158,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     const CSRF = '<?= e(csrf_token()) ?>';
     let sent = 0, busy = false;
 
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
     // آخر كود جهاز استخدمه — عشان "افتح التاب وامسح على طول"
     const savedS = localStorage.getItem('rs_session');
     const sInp = document.getElementById('rsSession');
@@ -185,10 +189,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
                 const name = d.hostname ? d.hostname : d.session_code;
                 const sub = on ? 'متصل الآن' : 'آخر ظهور ' + agoText(d.ago);
                 return '<div class="dev ' + (on ? 'on' : 'off') + '" role="button" tabindex="0" ' +
-                       'onclick="pickDevice(\'' + d.session_code + '\',' + (on?1:0) + ')">' +
+                       'onclick="pickDevice(\'' + escapeHtml(d.session_code) + '\',' + (on?1:0) + ')">' +
                        '<span class="dot"></span>' +
-                       '<span class="dinfo"><span class="dname">' + name + '</span><br>' +
-                       '<span class="dsub">' + d.session_code + ' · ' + sub + '</span></span>' +
+                       '<span class="dinfo"><span class="dname">' + escapeHtml(name) + '</span><br>' +
+                       '<span class="dsub">' + escapeHtml(d.session_code) + ' · ' + sub + '</span></span>' +
                        '<span class="dgo"><i class="ti ' + (on ? 'ti-camera' : 'ti-zzz') + '"></i></span></div>';
             }).join('');
         }).catch(() => {});

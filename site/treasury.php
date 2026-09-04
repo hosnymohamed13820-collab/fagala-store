@@ -880,7 +880,7 @@ $today = date('Y-m-d');
                     متأكد إن المبلغ ده هيتخصم من الخزينة دي؟
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn" onclick="confirmDisburse()">تأكيد الصرف</button>
+                    <button type="button" class="btn" id="disbConfirmBtn" onclick="confirmDisburse()">تأكيد الصرف</button>
                     <button type="button" class="btn btn-cancel" onclick="cancelDisburseConfirm()">إلغاء</button>
                 </div>
             </div>
@@ -975,6 +975,7 @@ $today = date('Y-m-d');
 
     // تأكيد صرف النقدية قبل الإرسال
     let disbConfirmed = false;
+    let disbSending = false;
     function handleDisburseSubmit(e){
         if (!disbConfirmed) {
             e.preventDefault();
@@ -1000,17 +1001,30 @@ $today = date('Y-m-d');
             return false;
         }
     }
+    /* 🔴 حارس الإرسال المزدوج — دي شاشة صرف فلوس. دوستين بسرعة =
+       إرسالين = صرفين. `formSubmit` بيبعت الحدث بس، مابيمنعش التكرار. */
+    function setDisbSending(sending){
+        disbSending = sending;
+        const btn = document.getElementById('disbConfirmBtn');
+        if (!btn) return;
+        btn.disabled = sending;
+        btn.textContent = sending ? 'جاري الصرف…' : 'تأكيد الصرف';
+    }
     function confirmDisburse(){
+        if (disbSending) return;
         disbConfirmed = true;
-        document.getElementById('disburseForm').submit();
+        setDisbSending(true);
+        formSubmit(document.getElementById('disburseForm'));
     }
     function cancelDisburseConfirm(){
         disbConfirmed = false;
+        setDisbSending(false);
         document.getElementById('disbConfirmBox').style.display = 'none';
         document.getElementById('disbFormBody').style.display = 'block';
     }
     function resetDisburseModal(){
         disbConfirmed = false;
+        setDisbSending(false);
         const confirmBox = document.getElementById('disbConfirmBox');
         const formBody = document.getElementById('disbFormBody');
         if (confirmBox) confirmBox.style.display = 'none';
