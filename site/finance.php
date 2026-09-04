@@ -845,6 +845,22 @@ function open_custody_for_branch(int $branchId): ?array
 }
 
 /**
+ * العهدة الحالية للفرع أياً كانت حالتها طول ما هي مش مقفولة.
+ * (open / pending_review / rejected)
+ */
+function current_custody_for_branch(int $branchId): ?array
+{
+    $st = db()->prepare(
+        "SELECT * FROM branch_custody
+         WHERE branch_id = ? AND status IN ('open','pending_review','rejected')
+         ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([$branchId]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+/**
  * إصدار إذن صرف: الكاش الرئيسي → خزينة عهدة الفرع.
  * - بيسجل الإذن في disbursement_orders.
  * - بيحرّك الفلوس (مدين الكاش، دائن العهدة) عبر post_journal.
@@ -870,6 +886,14 @@ function issue_disbursement_order(
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        // حارس: لو الفرع عنده عهدة معلقة للمراجعة أو مرفوضة، نرفض قبل أي حركة مالية
+        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE branch_id=? AND status IN ('pending_review','rejected') ORDER BY id DESC LIMIT 1");
+        $chk->execute([$branchId]);
+        $pendingStatus = $chk->fetchColumn();
+        if ($pendingStatus) {
+            throw new RuntimeException('عهدة الفرع مقدّمة للمراجعة لسه. لازم المحاسب يعتمدها أو يرفضها قبل إذن صرف جديد.');
+        }
+
         // تسجيل الإذن
         $pdo->prepare(
             'INSERT INTO disbursement_orders (branch_id, custody_treasury_id, amount, order_date, notes, created_by)
@@ -915,7 +939,7 @@ function issue_disbursement_order(
 }
 
 /**
- * إضافة مصروف على العهدة المفتوحة.
+ * إضافة مصروف على العهدة المفتوحة أو المرفوضة (راجعة للكاشير).
  * بيقلّل آخر المدة (closing_balance) ويطلّع الفلوس فعلياً من خزينة العهدة
  * (مدين على خزينة العهدة) عشان رصيد الخزينة يفضل مطابق للواقع دايماً.
  */
@@ -933,12 +957,12 @@ function add_custody_expense(
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        // تأكد إن العهدة مفتوحة واقرأ خزينتها
+        // تأكد إن العهدة مفتوحة أو مرفوضة واقرأ خزينتها
         $st = $pdo->prepare("SELECT status, custody_treasury_id FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
         $row = $st->fetch();
-        if (!$row || $row['status'] !== 'open') {
-            throw new RuntimeException('لا يمكن إضافة مصروف لعهدة غير مفتوحة.');
+        if (!$row || !in_array($row['status'], ['open', 'rejected'], true)) {
+            throw new RuntimeException('مينفعش تضيف مصروف لعهدة مقفولة أو مقدّمة للمراجعة.');
         }
         $custodyTreasuryId = (int) $row['custody_treasury_id'];
 
@@ -984,8 +1008,8 @@ function add_custody_expense(
  *    اللي بيتمسح فعلاً هو سطر المصروف من custody_lines بس، عشان
  *    يختفي من شاشة الفرع ومايتحسبش في الإجماليات.
  *
- * الشروط: العهدة لازم تكون مفتوحة. العهدة المقفولة اتعمل عليها
- * تسوية وقفل، فتعديلها بأثر رجعي بيبوّظ الإقفال.
+ * الشروط: العهدة لازم تكون مفتوحة أو مرفوضة (راجعة للكاشير). العهدة المقفولة
+ * اتعمل عليها تسوية وقفل، والمقدّمة مستنية قرار المحاسب.
  */
 function delete_custody_expense(int $lineId, ?int $userId = null): void
 {
@@ -1002,8 +1026,8 @@ function delete_custody_expense(int $lineId, ?int $userId = null): void
         $st->execute([$lineId]);
         $line = $st->fetch();
         if (!$line) throw new RuntimeException('المصروف مش موجود (يمكن اتمسح قبل كده).');
-        if ($line['status'] !== 'open') {
-            throw new RuntimeException('مينفعش تمسح مصروف من عهدة مقفولة. لو فيه غلط، كلّم المحاسب.');
+        if (!in_array($line['status'], ['open', 'rejected'], true)) {
+            throw new RuntimeException('مينفعش تمسح مصروف من عهدة مقفولة أو مقدّمة للمراجعة.');
         }
 
         $custodyId = (int) $line['custody_id'];
@@ -1039,32 +1063,38 @@ function delete_custody_expense(int $lineId, ?int $userId = null): void
 }
 
 /**
- * إقفال العهدة الشهري (أهم دالة).
+ * إقفال العهدة الشهري على مرحلتين (كاشير ← محاسب).
  *
- * المنطق المتفق عليه:
- *  - $countedCash = الباقي الفعلي المعدود بالفئات.
- *  - الاستلام: الفعلي يخرج من خزينة العهدة (مدين) ويدخل الكاش الرئيسي (دائن).
- *  - الفرق = الفعلي − آخر المدة المفروض:
- *      • عجز (الفرق سالب): يتسجل في كشف الحساب على خزينة العهدة (مدين) لتصفيرها،
- *        وبيتحدد لو يتحمّله الموظف:
- *          - |العجز| >  العتبة → ذمة على الموظف (custody_deficits, status=pending).
- *          - |العجز| <= العتبة → المحل يتحمله (مفيش ذمة على الموظف).
- *      • زيادة (الفرق موجب): تدخل الكاش الرئيسي (دائن) وتطلع من العهدة... لكن العهدة
- *        أصلاً فيها أقل من الفعلي؟ لا — الزيادة معناها الفعلي أكبر من المفروض،
- *        يبقى خزينة العهدة (اللي رصيدها = آخر المدة المفروض) محتاجة credit بالزيادة
- *        عشان توصل للفعلي قبل ما الاستلام يصفّرها. التفصيل في الكود.
- *  - في كل الأحوال: خزينة العهدة تنتهي بصفر، والعهدة status=closed.
- *  - بعد الإقفال الفرع يبدأ فريش (مفيش عهدة مفتوحة) لحد أول إذن صرف جديد.
+ * المرحلة ١: الكاشير بيعدّ الكاش ويقدّم (submit_custody_count).
+ *   - 🔴 صفر قيود — الفلوس مش بتتحرّك هنا خالص.
+ *   - بيسجّل العدّ الفعلي ($countedCash) ويحسب الفرق المتوقع.
+ *   - بيثبّت الموظف المسؤول لو فيه عجز فوق العتبة.
+ *   - حالة العهدة بتتحوّل لـ pending_review.
  *
- * @param int   $custodyId    العهدة المفتوحة
- * @param float $countedCash  الباقي الفعلي المعدود
- * @param string $date        تاريخ الإقفال
- * @param int|null $employeeId الموظف المسؤول (لتسجيل العجز عليه)
- * @param int|null $userId     منفّذ الإقفال
- *
- * @return array ['difference'=>float,'on_employee'=>bool,'deficit_id'=>?int]
+ * المرحلة ٢: المحاسب بيراجع ويعتمد أو يرفض (save_custody_review).
+ *   - عند الرفض: العهدة بترجع rejected مع تسجيل سبب الرفض وصف في custody_reviews.
+ *     🔴 مفيش أي قيد بيتعمل في مسار الرفض.
+ *   - عند الاعتماد: 🔴 هنا وهنا بس الفلوس بتتحرّك برقم المحاسب ($accountantCounted).
+ *       • زيادة (الفعلي > رصيد العهدة) → قيد custody_surplus.
+ *       • استلام باقي العهدة → قيد custody_settlement (من العهدة للكاش الرئيسي).
+ *       • عجز (الفعلي < المفروض) → قيد custody_deficit لتصفير العهدة + صف في custody_deficits
+ *         لو تعدّى العتبة على الموظف المسؤول اللي اتحدد وقت التقديم.
+ *       • حالة العهدة بتتحوّل لـ closed.
  */
-function close_custody(
+
+/**
+ * تقديم جرد العهدة من الكاشير (المرحلة ١).
+ * 🔴 صفر قيود مالية.
+ *
+ * @param int      $custodyId
+ * @param float    $countedCash  الباقي الفعلي المعدود
+ * @param string   $date         تاريخ الإقفال
+ * @param int|null $employeeId   الموظف المسؤول
+ * @param int|null $userId       منفّذ التقديم (الكاشير)
+ *
+ * @return array ['difference' => float, 'expected' => float]
+ */
+function submit_custody_count(
     int $custodyId,
     float $countedCash,
     string $date,
@@ -1074,30 +1104,25 @@ function close_custody(
     if ($countedCash < 0) {
         throw new InvalidArgumentException('الباقي الفعلي لا يمكن أن يكون سالباً.');
     }
-    // باقي العهدة بيرجع للرئيسية — نفس الخزينة اللي الإذن طلع منها،
-    // عشان الدورة تقفل على نفس الخزينة.
-    $cashId = require_main_treasury();
 
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        // اقفل صف العهدة واقرأه محدّثاً
         $st = $pdo->prepare("SELECT * FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
         $custody = $st->fetch();
         if (!$custody) {
             throw new RuntimeException('العهدة غير موجودة.');
         }
-        if ($custody['status'] !== 'open') {
-            throw new RuntimeException('العهدة مقفلة بالفعل.');
+        if (!in_array($custody['status'], ['open', 'rejected'], true)) {
+            throw new RuntimeException('العهدة دي مش في حالة تسمح بالتقديم.');
         }
 
-        $custodyTreasuryId = (int) $custody['custody_treasury_id'];
-        $expected = (float) $custody['closing_balance'];   // آخر المدة المفروض
-        $difference = $countedCash - $expected;            // موجب=زيادة، سالب=عجز
-        $tolerance = custody_tolerance();
+        $expected   = (float) $custody['closing_balance'];
+        $difference = $countedCash - $expected;
+        $tolerance  = custody_tolerance();
 
-        // حارس: لو فيه عجز أكبر من العتبة والموظف المسؤول مش محدد، نرفض قبل أي قيد أو كتابة
+        // حارس: لو فيه عجز أكبر من العتبة والموظف المسؤول مش محدد، نرفض قبل أي تعديل
         if ($difference < 0) {
             $deficit = abs($difference);
             if ($deficit > $tolerance && ($employeeId === null || $employeeId <= 0)) {
@@ -1108,38 +1133,152 @@ function close_custody(
             }
         }
 
-        // الرصيد الحالي لخزينة العهدة (المفروض = $expected نظرياً)
+        $stUp = $pdo->prepare(
+            "UPDATE branch_custody
+                SET counted_cash=?, difference=?, responsible_employee_id=?,
+                    period_end=?, status='pending_review',
+                    submitted_by=?, submitted_at=NOW(),
+                    reject_reason=NULL
+              WHERE id=?"
+        );
+        $stUp->execute([
+            $countedCash,
+            $difference,
+            ($employeeId !== null && $employeeId > 0) ? $employeeId : null,
+            $date,
+            $userId,
+            $custodyId,
+        ]);
+
+        $pdo->commit();
+        return ['difference' => $difference, 'expected' => $expected];
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
+/**
+ * حفظ مراجعة المحاسب للعهدة + اعتماد أو رفض (المرحلة ٢).
+ * 🔴 هنا وهنا بس الفلوس بتتحرّك (في مسار approved بس).
+ *
+ * @param int         $custodyId
+ * @param float       $accountantCounted المبلغ الفعلي اللي استلمه المحاسب
+ * @param string      $decision          'approved' | 'rejected'
+ * @param string|null $reason            سبب الرفض (إجباري عند الرفض)
+ * @param int|null    $userId            المحاسب المراجع
+ *
+ * @return array ['variance' => float, 'on_employee' => bool, 'deficit_id' => ?int]
+ */
+function save_custody_review(
+    int $custodyId,
+    float $accountantCounted,
+    string $decision,
+    ?string $reason = null,
+    ?int $userId = null
+): array {
+    if (!in_array($decision, ['approved', 'rejected'], true)) {
+        throw new InvalidArgumentException('قرار المراجعة غير صحيح.');
+    }
+    if ($decision === 'rejected' && (!$reason || trim($reason) === '')) {
+        throw new InvalidArgumentException('سبب الرفض مطلوب.');
+    }
+    if ($accountantCounted < 0) {
+        throw new InvalidArgumentException('المبلغ المعدود لا يمكن أن يكون سالباً.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare("SELECT * FROM branch_custody WHERE id=? FOR UPDATE");
+        $st->execute([$custodyId]);
+        $custody = $st->fetch();
+        if (!$custody) {
+            throw new RuntimeException('العهدة غير موجودة.');
+        }
+        if ($custody['status'] !== 'pending_review') {
+            throw new RuntimeException('العهدة دي مش مقدّمة للمراجعة.');
+        }
+
+        $expected   = (float) $custody['closing_balance'];
+        $variance   = $accountantCounted - $expected;
+        $tolerance  = custody_tolerance();
+        $date       = !empty($custody['period_end']) ? $custody['period_end'] : date('Y-m-d');
+        $employeeId = $custody['responsible_employee_id'] !== null ? (int) $custody['responsible_employee_id'] : null;
+
+        // تسجيل صف في custody_reviews في الحالتين (اعتماد أو رفض)
+        $revStmt = $pdo->prepare(
+            'INSERT INTO custody_reviews (custody_id, expected, cashier_counted, accountant_counted, variance, decision, reason, reviewed_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $revStmt->execute([
+            $custodyId,
+            $expected,
+            (float) ($custody['counted_cash'] ?? 0),
+            $accountantCounted,
+            $variance,
+            $decision,
+            $reason ?: null,
+            $userId,
+        ]);
+
+        if ($decision === 'rejected') {
+            // مسار الرفض: تحديث الحالة فقط. 🔴 مفيش أي post_journal هنا خالص.
+            $upRej = $pdo->prepare(
+                "UPDATE branch_custody
+                    SET status='rejected', reject_reason=?, reviewed_by=?, reviewed_at=NOW()
+                  WHERE id=?"
+            );
+            $upRej->execute([$reason, $userId, $custodyId]);
+
+            $pdo->commit();
+            return ['variance' => $variance, 'on_employee' => false, 'deficit_id' => null];
+        }
+
+        // مسار الاعتماد: الفلوس بتتحرك دلوقتي
+        // حارس العتبة: لو فيه عجز أكبر من العتبة والموظف المسؤول مش محدد، نرفض قبل أي قيد
+        if ($variance < 0) {
+            $deficit = abs($variance);
+            if ($deficit > $tolerance && ($employeeId === null || $employeeId <= 0)) {
+                throw new RuntimeException(
+                    'العجز ' . number_format($deficit, 2) . ' ج أكبر من الحد المسموح (' .
+                    number_format($tolerance, 0) . ' ج) — لازم تحديد الموظف المسؤول قبل الاعتماد.'
+                );
+            }
+        }
+
+        $cashId = require_main_treasury();
+        $custodyTreasuryId = (int) $custody['custody_treasury_id'];
+
+        // الرصيد الحالي لخزينة العهدة
         $balStmt = $pdo->prepare('SELECT balance FROM treasuries WHERE id=? FOR UPDATE');
         $balStmt->execute([$custodyTreasuryId]);
         $custodyBalance = (float) $balStmt->fetchColumn();
 
-        // الخطوة 1: لو فيه زيادة (الفعلي أكبر من رصيد العهدة)، نزوّد العهدة بالزيادة
-        // عشان نقدر نستلم الفعلي كامل. الزيادة دائن على العهدة (مصدرها المحل/الفرع).
-        if ($countedCash > $custodyBalance) {
-            $surplus = $countedCash - $custodyBalance;
+        // 1. لو فيه زيادة (الفعلي أكبر من رصيد العهدة)، نزوّد العهدة بالزيادة
+        if ($accountantCounted > $custodyBalance) {
+            $surplus = $accountantCounted - $custodyBalance;
             post_journal($custodyTreasuryId, 0, $surplus, 'زيادة عهدة عند الإقفال',
                          $date, 'custody_surplus', $custodyId, $userId, $pdo);
         }
 
-        // الخطوة 2: الاستلام الفعلي — يخرج من العهدة (مدين) ويدخل الكاش (دائن)
-        if ($countedCash > 0) {
-            post_journal($custodyTreasuryId, $countedCash, 0, 'استلام باقي العهدة عند الإقفال',
+        // 2. الاستلام الفعلي: يخرج من العهدة (مدين) ويدخل الكاش الرئيسي (دائن)
+        if ($accountantCounted > 0) {
+            post_journal($custodyTreasuryId, $accountantCounted, 0, 'استلام باقي العهدة عند الإقفال',
                          $date, 'custody_settlement', $custodyId, $userId, $pdo);
-            post_journal($cashId, 0, $countedCash, 'استلام باقي عهدة الفرع',
+            post_journal($cashId, 0, $accountantCounted, 'استلام باقي عهدة الفرع',
                          $date, 'custody_settlement', $custodyId, $userId, $pdo);
         }
 
-        // الخطوة 3: معالجة العجز (لو الفعلي أقل من المفروض)
+        // 3. معالجة العجز (لو الفعلي أقل من المفروض)
         $onEmployee = false;
         $deficitId = null;
-        if ($difference < 0) {
-            $deficit = abs($difference);
+        if ($variance < 0) {
+            $deficit = abs($variance);
             // تصفير خزينة العهدة من العجز (مدين على العهدة)
-            // بعد الاستلام، العهدة لسه فيها قيمة العجز — نشيلها
             post_journal($custodyTreasuryId, $deficit, 0, 'عجز عهدة عند الإقفال',
                          $date, 'custody_deficit', $custodyId, $userId, $pdo);
 
-            // هل يتحمّله الموظف؟
             if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
                 $pdo->prepare(
                     'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
@@ -1149,19 +1288,27 @@ function close_custody(
                 $deficitId = (int) $pdo->lastInsertId();
                 $onEmployee = true;
             }
-            // لو أقل من العتبة: المحل يتحمله، مفيش ذمة على الموظف (الحركة فوق كفّت التصفير)
         }
 
-        // الخطوة 4: تحديث وإقفال العهدة
-        $pdo->prepare(
-            'UPDATE branch_custody
-             SET counted_cash = ?, difference = ?, settled_amount = ?,
-                 period_end = ?, status = "closed", closed_by = ?, closed_at = NOW()
-             WHERE id = ?'
-        )->execute([$countedCash, $difference, $countedCash, $date, $userId, $custodyId]);
+        // 4. تحديث وإقفال العهدة
+        $upApp = $pdo->prepare(
+            "UPDATE branch_custody
+                SET accountant_counted=?, difference=?, settled_amount=?,
+                    status='closed', closed_by=?, closed_at=NOW(),
+                    reviewed_by=?, reviewed_at=NOW(), reject_reason=NULL
+              WHERE id=?"
+        );
+        $upApp->execute([
+            $accountantCounted,
+            $variance,
+            $accountantCounted,
+            $userId,
+            $userId,
+            $custodyId,
+        ]);
 
         $pdo->commit();
-        return ['difference' => $difference, 'on_employee' => $onEmployee, 'deficit_id' => $deficitId];
+        return ['variance' => $variance, 'on_employee' => $onEmployee, 'deficit_id' => $deficitId];
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $ex;

@@ -727,7 +727,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $collectionStatus = $stMap[$r['record_status']] ?? ($r['record_status'] ?: '—');
 
                 if ($r['source_type'] === 'custody_deficit') {
-                    // صفوف العهدة: معمولة بعد تطبيق العتبة في close_custody()
+                    // صفوف العهدة: معمولة بعد تطبيق العتبة في save_custody_review()
                     // فحالتها دايماً «تجاوز العتبة» والمتجاوز = المبلغ نفسه.
                     // متطبّقش العتبة عليها تاني هنا.
                     // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها

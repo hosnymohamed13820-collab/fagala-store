@@ -81,16 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $counted    = (float) ($_POST['counted_cash'] ?? 0);
                 $date       = $_POST['date'] ?? date('Y-m-d');
                 $employeeId = ($_POST['employee_id'] ?? '') !== '' ? (int) $_POST['employee_id'] : null;
-                $res = close_custody($custodyId, $counted, $date, $employeeId, $uid);
+                $res = submit_custody_count($custodyId, $counted, $date, $employeeId, $uid);
                 $diff = $res['difference'];
                 if ($diff < 0) {
-                    $flash = $res['on_employee']
-                        ? 'تم إقفال العهدة. عجز ' . number_format(abs($diff),2) . ' جنيه سُجّل على الموظف.'
-                        : 'تم إقفال العهدة. عجز ' . number_format(abs($diff),2) . ' جنيه تحمّله المحل (تحت الحد).';
+                    $flash = 'تم إقفال العهدة وإرسالها لمراجعة المحاسب (عجز متوقع: ' . number_format(abs($diff),2) . ' ج). الفلوس هتدخل الخزينة بعد الاعتماد.';
                 } elseif ($diff > 0) {
-                    $flash = 'تم إقفال العهدة. زيادة ' . number_format($diff,2) . ' جنيه دخلت الخزينة.';
+                    $flash = 'تم إقفال العهدة وإرسالها لمراجعة المحاسب (زيادة متوقعة: ' . number_format($diff,2) . ' ج). الفلوس هتدخل الخزينة بعد الاعتماد.';
                 } else {
-                    $flash = 'تم إقفال العهدة بدون فرق. ممتاز.';
+                    $flash = 'تم إقفال العهدة وإرسالها لمراجعة المحاسب. الفلوس هتدخل الخزينة بعد الاعتماد.';
                 }
             }
         } catch (Throwable $ex) {
@@ -117,7 +115,7 @@ $branchName = '';
 $custody = null; $expenses = []; $orders = [];
 if ($branchId) {
     foreach ($allBranches as $b) if ((int)$b['id'] === $branchId) $branchName = $b['name'];
-    $custody = open_custody_for_branch($branchId);
+    $custody = current_custody_for_branch($branchId);
     if ($custody) {
         $cid = (int) $custody['id'];
         $e = $pdo->prepare(
@@ -144,6 +142,15 @@ if ($branchId) {
 
 $denominations = [200, 100, 50, 20, 10, 5, 1];
 $tolerance = custody_tolerance();
+
+// حالة العهدة بتحكم الشاشة كلها:
+//  open/rejected → الكاشير شغّال: بيسجّل مصاريف ويعدّ ويقدّم.
+//  pending_review → مقفولة عليه: مستنية المحاسب، والفلوس مادخلتش الخزينة لسه.
+// 🔴 الإخفاء ده **مش** حماية — الحارس الحقيقي جوّه submit_custody_count()
+//    و add_custody_expense() في finance.php. ده تنظيم شكل بس.
+$custodyStatus = $custody['status'] ?? '';
+$canEditCustody = in_array($custodyStatus, ['open', 'rejected'], true);
+$isPendingReview = $custodyStatus === 'pending_review';
 
 $page_title    = 'عهدة الفرع';
 $active_module = 'custody';
@@ -200,6 +207,13 @@ require_once __DIR__ . '/includes/header.php';
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
+    /* شريط حالة العهدة — لونه بيقول للكاشير هو في أنهي مرحلة */
+    .status-bar { display:flex; gap:11px; align-items:flex-start; padding:14px 16px;
+        border-radius:12px; margin-bottom:18px; font-size:14px; line-height:1.65; }
+    .status-bar i { font-size:19px; flex-shrink:0; margin-top:1px; }
+    .status-bar .sb-sub { display:block; font-size:13px; opacity:0.85; margin-top:2px; }
+    .status-bar.pending  { background:var(--warn-soft); color:var(--warn); }
+    .status-bar.rejected { background:var(--neg-soft);  color:var(--neg); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .btn-cancel:hover { background:var(--line); }
@@ -242,6 +256,27 @@ require_once __DIR__ . '/includes/header.php';
         // آخر المدة = أول المدة − المصروفات (حساب لحظي مضمون، مش من قاعدة البيانات)
         $closing = $opening - $totalExp;
     ?>
+    <?php if ($isPendingReview): ?>
+        <div class="status-bar pending">
+            <i class="ti ti-clock"></i>
+            <div>
+                <strong>مقدّمة لمراجعة المحاسب.</strong>
+                الفلوس <u>مادخلتش الخزينة لسه</u> — هتدخل أول ما المحاسب يعتمد.
+                <?php if (!empty($custody['submitted_at'])): ?>
+                    <span class="sb-sub">اتقدّمت <?= e($custody['submitted_at']) ?></span>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php elseif ($custodyStatus === 'rejected'): ?>
+        <div class="status-bar rejected">
+            <i class="ti ti-alert-triangle"></i>
+            <div>
+                <strong>المحاسب رفض الإقفال:</strong> <?= e($custody['reject_reason'] ?? '—') ?>
+                <span class="sb-sub">ظبّط المصاريف أو العدّ وقدّم تاني.</span>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <div class="stats" style="display:flex;gap:14px;flex-wrap:wrap;">
         <div class="stat" style="flex:1;min-width:160px;">
             <div class="label">رصيد أول المدة</div>
@@ -261,6 +296,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- المصروفات -->
         <div class="card">
             <div class="section-title">المصروفات</div>
+            <?php if ($canEditCustody): ?>
             <form method="post" class="form-inline" style="margin-bottom:16px;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="add_expense">
@@ -274,11 +310,12 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="fld" style="max-width:140px;"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
                 <button type="submit" class="btn btn-sm">إضافة</button>
             </form>
+            <?php endif; ?>
             <?php if (empty($expenses)): ?>
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
             <table>
-                <thead><tr><th>التاريخ</th><th>القيد</th><th>البيان</th><th>المبلغ</th><th style="width:52px;"></th></tr></thead>
+                <thead><tr><th>التاريخ</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
@@ -286,6 +323,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= e($ex['description']) ?></td>
                         <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
+                        <?php if ($canEditCustody): ?>
                         <td>
                             <form method="post" style="margin:0;"
                                   onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة العهدة، وهيتسجّل قيد إلغاء في كشف الحساب.');">
@@ -299,6 +337,7 @@ require_once __DIR__ . '/includes/header.php';
                                 </button>
                             </form>
                         </td>
+                        <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -331,9 +370,35 @@ require_once __DIR__ . '/includes/header.php';
     <!-- محضر جرد الكاش والإقفال -->
     <div class="card">
         <div class="section-title">محضر جرد العهدة والإقفال الشهري</div>
+
+    <?php if ($isPendingReview): ?>
+        <?php
+            $subCounted = (float) ($custody['counted_cash'] ?? 0);
+            $subDiff    = $subCounted - $closing;
+        ?>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
+            الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
+        </p>
+        <table style="max-width:420px;">
+            <tbody>
+                <tr><td>آخر المدة المفروض</td>
+                    <td style="font-weight:600;"><?= number_format($closing,2) ?></td></tr>
+                <tr><td>اللي اتعدّ فعلاً</td>
+                    <td style="font-weight:600;"><?= number_format($subCounted,2) ?></td></tr>
+                <tr><td>الفرق المتوقع</td>
+                    <td style="font-weight:700;color:<?= $subDiff < 0 ? 'var(--neg)' : ($subDiff > 0 ? 'var(--warn)' : 'var(--pos)') ?>;">
+                        <?= number_format($subDiff,2) ?>
+                    </td></tr>
+            </tbody>
+        </table>
+        <p style="color:var(--ink-400);font-size:12px;margin-top:12px;">
+            الفرق ده متوقع بس — الرقم النهائي هو اللي المحاسب هيستلمه فعلاً.
+        </p>
+    <?php else: ?>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
             عُدّ الكاش الموجود فعلاً بالفئات. النظام هيحسب الفرق مع آخر المدة المفروض
-            (<?= number_format($closing,2) ?> جنيه)، وعند الاستلام يصفّر العهدة ويبدأ فترة جديدة.
+            (<?= number_format($closing,2) ?> جنيه). بعد ما تبعت، المحاسب بيراجع —
+            <strong>والفلوس بتدخل الخزينة وقت اعتماده هو، مش دلوقتي.</strong>
         </p>
         <form method="post" id="closeForm">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -374,10 +439,11 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="date" name="date" value="<?= date('Y-m-d') ?>">
                 </div>
                 <button type="submit" class="btn btn-danger">
-                    <i class="ti ti-lock"></i> إقفال واستلام
+                    <i class="ti ti-lock"></i> إقفال وإرسال للمراجعة
                 </button>
             </div>
         </form>
+    <?php endif; ?>
     </div>
 <?php endif; ?>
 
@@ -425,6 +491,10 @@ require_once __DIR__ . '/includes/header.php';
     let currentDiff = 0;
 
     function recalc() {
+        // 🔴 وقت المراجعة الفورم مختفي خالص — من غير الحارس ده
+        //    getElementById('countedCash') بترجّع null والسكربت كله بيقع.
+        const hidden = document.getElementById('countedCash');
+        if (!hidden) return;
         let total = 0;
         document.querySelectorAll('.denom-count').forEach(inp => {
             const d = parseFloat(inp.dataset.denom);
@@ -433,7 +503,7 @@ require_once __DIR__ . '/includes/header.php';
             total += sub;
             document.getElementById('sub_' + d).textContent = sub.toFixed(2);
         });
-        document.getElementById('countedCash').value = total.toFixed(2);
+        hidden.value = total.toFixed(2);
 
         const diff = total - expected;
         currentDiff = diff;
@@ -449,7 +519,7 @@ require_once __DIR__ . '/includes/header.php';
             box.textContent = 'عجز ' + def.toFixed(2) + ' جنيه' + who;
         } else {
             box.className = 'count-result sur';
-            box.textContent = 'زيادة ' + diff.toFixed(2) + ' جنيه (تدخل الخزينة)';
+            box.textContent = 'زيادة ' + diff.toFixed(2) + ' جنيه (تدخل الخزينة بعد اعتماد المحاسب)';
         }
     }
     recalc();
@@ -466,7 +536,9 @@ require_once __DIR__ . '/includes/header.php';
                     return false;
                 }
             }
-            if (!confirm('تأكيد إقفال العهدة واستلام الباقي؟ لا يمكن التراجع.')) {
+            if (!confirm('تأكيد إقفال العهدة وإرسالها لمراجعة المحاسب؟
+
+الفلوس مش هتدخل الخزينة دلوقتي — هتدخل بعد ما المحاسب يعتمد.')) {
                 e.preventDefault();
                 return false;
             }

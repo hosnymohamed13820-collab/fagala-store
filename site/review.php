@@ -23,6 +23,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashType = 'error';
     } else {
         try {
+            // 🔴 الصفحة فيها فورمين دلوقتي: مراجعة وردية ومراجعة عهدة.
+            //    من غير التفريع ده، مراجعة العهدة كانت هتروح لـsave_shift_review()
+            //    وتتعامل مع custody_id على إنه shift_id — يعني تعتمد وردية
+            //    مالهاش دعوة وتحرّك فلوسها.
+            if (($_POST['kind'] ?? 'shift') === 'custody') {
+                $custodyId  = (int) ($_POST['custody_id'] ?? 0);
+                $cDecision  = $_POST['decision'] ?? '';
+                $cReason    = trim($_POST['reason'] ?? '');
+                $rawCounted = trim((string) ($_POST['acc_counted'] ?? ''));
+
+                if ($cDecision === 'approved') {
+                    // ★ الصفر **مسموح** هنا — يعني العهدة رجعت فاضية، ودي حالة
+                    //   حقيقية. الوردية بتمنع الصفر لأن مبيعات بصفر معناها
+                    //   الفرق = المحصّل كله، وده منطق تاني خالص.
+                    if ($rawCounted === '' || !is_numeric($rawCounted) || (float) $rawCounted < 0) {
+                        throw new RuntimeException('اكتب المبلغ اللي استلمته قبل الاعتماد.');
+                    }
+                } elseif ($cDecision === 'rejected') {
+                    if ($cReason === '') {
+                        throw new RuntimeException('اكتب سبب الرفض.');
+                    }
+                } else {
+                    throw new RuntimeException('قرار المراجعة غير صحيح.');
+                }
+
+                save_custody_review(
+                    $custodyId,
+                    $cDecision === 'approved' ? (float) $rawCounted : 0.0,
+                    $cDecision,
+                    $cReason ?: null,
+                    $uid
+                );
+                // 🔴 مش زي الوردية: رفض العهدة **مفيش فيه أي حركة مالية**.
+                $flash = $cDecision === 'approved'
+                    ? 'تم اعتماد العهدة والفلوس دخلت الخزينة.'
+                    : 'تم رفض العهدة ورجعت للكاشير. مفيش فلوس اتحرّكت.';
+            }
+            else {
+
             $shiftId  = (int) ($_POST['shift_id'] ?? 0);
             $decision = $_POST['decision'] ?? '';
             $reason   = trim($_POST['reason'] ?? '');
@@ -53,6 +92,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash = $decision === 'approved'
                 ? 'تم اعتماد الوردية ودخلت الأرقام الخزائن.'
                 : 'تم رفض الوردية وأُعيدت للكاشير. الأرقام دخلت الخزائن.';
+
+            } // نهاية مسار الوردية
         } catch (Throwable $ex) {
             $flash = 'خطأ: ' . $ex->getMessage();
             $flashType = 'error';
@@ -90,6 +131,30 @@ $history = $pdo->query(
      JOIN branches b ON b.id = s.branch_id
      WHERE s.status IN ('approved','rejected')
      ORDER BY s.id DESC LIMIT 50"
+)->fetchAll();
+
+// ===== عهد الفروع المقدّمة للمراجعة =====
+// استعلام واحد جايب اسم الفرع واسم اللي قدّم — مفيش prepare جوّه أي حلقة.
+$pendingCustody = $pdo->query(
+    "SELECT bc.*, b.name AS branch_name, u.full_name AS submitted_by_name
+       FROM branch_custody bc
+       JOIN branches b ON b.id = bc.branch_id
+       LEFT JOIN users u ON u.id = bc.submitted_by
+      WHERE bc.status = 'pending_review'
+      ORDER BY bc.id DESC"
+)->fetchAll();
+
+// 🔴 `reviewed_at IS NOT NULL` مش زيادة — هي أهم شرط في الاستعلام ده.
+//    العهد اللي اتقفلت **قبل** الترقية حالتها `closed` و`reviewed_at` فيها
+//    NULL. من غير الشرط ده هتظهر في السجل كأن حد راجعها، وهي أصلاً اتقفلت
+//    بالنظام القديم اللي كان بيقفل ويعمل القيد بضغطة واحدة.
+$custodyHistory = $pdo->query(
+    "SELECT bc.*, b.name AS branch_name, u.full_name AS reviewer_name
+       FROM branch_custody bc
+       JOIN branches b ON b.id = bc.branch_id
+       LEFT JOIN users u ON u.id = bc.reviewed_by
+      WHERE bc.status IN ('closed','rejected') AND bc.reviewed_at IS NOT NULL
+      ORDER BY bc.reviewed_at DESC LIMIT 50"
 )->fetchAll();
 
 $page_title    = 'مراجعة المحاسب';
@@ -169,7 +234,10 @@ function shift_cashier_amounts(array $s): array {
     .btn-approve:hover { background:var(--pos-fill); color:#fff; }
     .btn-reject  { background:var(--neg-fill); color:#fff; flex:1; }
     .btn-reject:hover { background:var(--neg-fill); color:#fff; }
-    @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } }
+    /* قسم عهد الفروع */
+    .cst-row { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-bottom:4px; }
+    .section-head { font-size:15px; font-weight:600; color:var(--ink-700); margin:26px 0 12px; }
+    @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } .cst-row { grid-template-columns:1fr; } }
 </style>
 
 <?php if ($flash): ?>
@@ -178,6 +246,7 @@ function shift_cashier_amounts(array $s): array {
 
 <div class="rv-tabs">
     <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<?= count($pending) ?>)</button>
+    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">عهد الفروع (<?= count($pendingCustody) ?>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
 </div>
 
@@ -204,6 +273,112 @@ function shift_cashier_amounts(array $s): array {
                     <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
                     <div class="sc-stat"><div class="l">فيزا + إنستا باي</div><div class="v"><?= number_format($amt['visa']+$amt['instapay'],2) ?></div></div>
                     <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= number_format($diff,2) ?></div></div>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<!-- عهد الفروع -->
+<div class="rv-pane" id="pane_custody">
+    <?php if (empty($pendingCustody)): ?>
+        <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش عهد في انتظار المراجعة.</div>
+    <?php else: ?>
+        <?php foreach ($pendingCustody as $c):
+            $cOpening  = (float) $c['opening_balance'];
+            $cExpenses = (float) $c['total_expenses'];
+            $cExpected = (float) $c['closing_balance'];
+            $cCounted  = (float) ($c['counted_cash'] ?? 0);
+            $cDiff     = $cCounted - $cExpected;
+        ?>
+            <div class="shift-card">
+                <div class="sc-head">
+                    <div class="sc-title">
+                        <b><?= e($c['branch_name']) ?></b> — عهدة
+                        <span class="sc-sub">
+                            قدّمها <?= e($c['submitted_by_name'] ?? '—') ?>
+                            <?= !empty($c['submitted_at']) ? ' · ' . e($c['submitted_at']) : '' ?>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="sc-stats">
+                    <div class="sc-stat"><div class="l">أول المدة</div><div class="v"><?= number_format($cOpening,2) ?></div></div>
+                    <div class="sc-stat"><div class="l">المصروفات</div><div class="v"><?= number_format($cExpenses,2) ?></div></div>
+                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format($cExpected,2) ?></div></div>
+                    <div class="sc-stat">
+                        <div class="l">الكاشير عدّ</div>
+                        <div class="v <?= abs($cDiff)>=0.01?'red':'' ?>"><?= number_format($cCounted,2) ?></div>
+                    </div>
+                </div>
+
+                <form method="post" style="margin-top:14px;"
+                      onsubmit="return cstConfirm(this);">
+                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="kind" value="custody">
+                    <input type="hidden" name="custody_id" value="<?= (int)$c['id'] ?>">
+                    <input type="hidden" name="decision" value="">
+                    <input type="hidden" name="branch_label" value="<?= e($c['branch_name']) ?>">
+
+                    <div class="cst-row">
+                        <div class="rv-sys" style="margin-bottom:0;">
+                            <label>اللي استلمته فعلاً</label>
+                            <input type="number" step="0.01" min="0" name="acc_counted"
+                                   value="<?= number_format($cCounted,2,'.','') ?>"
+                                   aria-label="المبلغ اللي استلمته فعلاً">
+                        </div>
+                        <div class="rv-sys" style="margin-bottom:0;">
+                            <label>السبب (إجباري عند الرفض)</label>
+                            <input type="text" name="reason" aria-label="سبب الرفض">
+                        </div>
+                    </div>
+
+                    <div class="rv-actions">
+                        <button type="submit" class="btn-review btn-approve"
+                                onclick="this.form.decision.value='approved'">
+                            <i class="ti ti-check"></i> اعتماد
+                        </button>
+                        <button type="submit" class="btn-review btn-reject"
+                                onclick="this.form.decision.value='rejected'">
+                            <i class="ti ti-x"></i> رفض
+                        </button>
+                    </div>
+                </form>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+
+    <?php if ($custodyHistory): ?>
+        <div class="section-head">آخر العهد اللي اتراجعت</div>
+        <?php foreach ($custodyHistory as $c):
+            $isDone = $c['status'] === 'closed';
+        ?>
+            <div class="shift-card <?= $isDone?'done':'rej' ?>">
+                <div class="sc-head">
+                    <div class="sc-title">
+                        <b><?= e($c['branch_name']) ?></b> — عهدة
+                        <span class="sc-sub">
+                            راجعها <?= e($c['reviewer_name'] ?? '—') ?> · <?= e($c['reviewed_at']) ?>
+                        </span>
+                    </div>
+                    <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;">
+                        <?= $isDone?'معتمدة':'مرفوضة' ?>
+                    </span>
+                </div>
+                <div class="sc-stats">
+                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format((float)$c['closing_balance'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">الكاشير عدّ</div><div class="v"><?= number_format((float)($c['counted_cash'] ?? 0),2) ?></div></div>
+                    <div class="sc-stat">
+                        <div class="l">المحاسب استلم</div>
+                        <div class="v"><?= $isDone ? number_format((float)($c['accountant_counted'] ?? 0),2) : '—' ?></div>
+                    </div>
+                    <div class="sc-stat">
+                        <div class="l"><?= $isDone ? 'الفرق' : 'سبب الرفض' ?></div>
+                        <div class="v <?= $isDone && abs((float)$c['difference'])>=0.01 ? 'red' : '' ?>"
+                             style="<?= $isDone ? '' : 'font-size:13px;font-weight:500;' ?>">
+                            <?= $isDone ? number_format((float)$c['difference'],2) : e($c['reject_reason'] ?? '—') ?>
+                        </div>
+                    </div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -241,6 +416,7 @@ function shift_cashier_amounts(array $s): array {
     </div>
     <div class="rv-mbody">
         <form method="post" id="rvForm">
+            <input type="hidden" name="kind" value="shift">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="shift_id" id="rv_shift_id" value="">
             <input type="hidden" name="decision" id="rv_decision" value="">
@@ -560,6 +736,33 @@ function shift_cashier_amounts(array $s): array {
     // ملاحظة: الجداول (فيزا/إنستا) ليها listener خاص فوق بيضيف
     // صف جديد لو إحنا في آخر صف. الـlistener ده بيشتغل الأول (على الـtbody)
     // وبيعمل preventDefault، فمش هيتعارض مع اللي تحت.
+    /* تأكيد قرار العهدة. الاعتماد بيحرّك فلوس فعلاً، فالتأكيد إجباري.
+       بنقرا decision من الحقل المخفي اللي زرار الإرسال ملاه في onclick. */
+    function cstConfirm(form) {
+        var decision = form.decision.value;
+        var branch   = form.branch_label.value;
+        if (decision === 'rejected') {
+            if (!form.reason.value.trim()) {
+                alert('اكتب سبب الرفض.');
+                form.reason.focus();
+                return false;
+            }
+            return confirm('رفض عهدة ' + branch + '؟
+
+هترجع للكاشير يظبّطها. مفيش فلوس هتتحرّك.');
+        }
+        var amt = form.acc_counted.value;
+        if (amt === '' || isNaN(parseFloat(amt))) {
+            alert('اكتب المبلغ اللي استلمته قبل الاعتماد.');
+            form.acc_counted.focus();
+            return false;
+        }
+        return confirm('اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟
+
+'
+            + 'الفلوس هتدخل الخزينة فعلاً والقيود هتتعمل. مفيش تراجع.');
+    }
+
     (function(){
         var form = document.getElementById('rvForm');
         if (!form) return;
