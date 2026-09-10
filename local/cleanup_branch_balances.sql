@@ -50,9 +50,15 @@ WHERE NOT (
    OR (`agent_key` = 'bonjour' AND `sto_id` = 3)
    OR (`agent_key` = 'degla'   AND `sto_id` = 5)
    OR (`agent_key` = 'abc'     AND `sto_id` = 6)
+   OR (`agent_key` = 'hq'      AND `sto_id` = 1)
 );
+
+-- ⚠️ مخزن ٤ «موبايل» مش في القايمة **عن قصد** — ده فرع اتقفل، فصفوفه
+--    بتتمسح ومابترجعش. لو رجع يشتغل، ضيفه هنا وفي `hq_own_sto_ids`.
 
 -- بعد المسح لازم كل وكيل يبقى ليه مخزن واحد بس:
 --   SELECT agent_key, sto_id, COUNT(*) FROM hq_branch_balances
 --   GROUP BY agent_key, sto_id;
--- المفروض ٤ صفوف بالظبط: zahraa/2 · bonjour/3 · degla/5 · abc/6
+-- المفروض ٥ صفوف بالظبط:
+--   hq/1 · zahraa/2 · bonjour/3 · degla/5 · abc/6
+-- (صف hq/1 مايظهرش غير بعد ما وكيل الإدارة يعمل جولة بالكود الجديد)

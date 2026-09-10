@@ -223,12 +223,38 @@ try {
              ON DUPLICATE KEY UPDATE
                 balance = VALUES(balance), batch = VALUES(batch)'
         );
+
+        // ★ عكس مخزن الإدارة في جدول الفروع كمان.
+        //   وكلاء الفروع بيبعتوا مخزن كل واحد فيهم، ومخزن الإدارة
+        //   مالوش وكيل فرع — فمن غير العكس ده مخزون الإدارة بيختفي
+        //   من الموقع أول ما balance_source يبقى 'branch'.
+        //   الوكيل أصلاً بيبعت الصفوف دي هنا، فمفيش ولا طلب زيادة.
+        $hqStores = array_values(array_filter(array_map(
+            'intval',
+            explode(',', (string) setting('hq_own_sto_ids', '1'))
+        ), fn($x) => $x > 0));
+
+        // 🔴 مجهّز بره الحلقة — ممنوع prepare جوه foreach
+        $insBr = $hqStores ? $pdo->prepare(
+            'INSERT INTO hq_branch_balances (agent_key, item_id, sto_id, balance, batch)
+             VALUES (\'hq\', ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                agent_key  = VALUES(agent_key),
+                balance    = VALUES(balance),
+                batch      = VALUES(batch),
+                updated_at = NOW()'
+        ) : null;
+
         foreach ($rows as $r) {
             if (!is_array($r)) { $skipped++; continue; }
             $iid = (int) ($r['item_id'] ?? 0);
             $sid = (int) ($r['sto_id'] ?? 0);
             if ($iid <= 0 || $sid <= 0) { $skipped++; continue; }
-            $ins->execute([$iid, $sid, (float) ($r['balance'] ?? 0), $batch]);
+            $bal = (float) ($r['balance'] ?? 0);
+            $ins->execute([$iid, $sid, $bal, $batch]);
+            if ($insBr !== null && in_array($sid, $hqStores, true)) {
+                $insBr->execute([$iid, $sid, $bal, $batch]);
+            }
             $stored++;
         }
     } elseif ($kind === 'balances_commit') {
@@ -242,6 +268,17 @@ try {
         $st = $pdo->prepare('DELETE FROM hq_balances WHERE batch <> ? OR batch IS NULL');
         $st->execute([$batch]);
         $stored = $st->rowCount();
+
+        // ونفس التنضيف لصفوف الإدارة المعكوسة في جدول الفروع — الصنف
+        // اللي اتشال من مخزن الإدارة خالص لازم يمشي من هنا كمان.
+        // 🔴 مقصور على agent_key='hq' وبس. وكلاء الفروع مابيبعتوش ختم
+        //    (صفوفهم batch = NULL) فلو شيلنا الشرط ده هنمسح أرصدة
+        //    الفروع الأربعة كلها كل جولة.
+        $stBr = $pdo->prepare(
+            'DELETE FROM hq_branch_balances
+              WHERE agent_key = \'hq\' AND (batch <> ? OR batch IS NULL)'
+        );
+        $stBr->execute([$batch]);
     } elseif ($kind === 'unposted_reset') {
         // ⚠️ الطريقة القديمة — سايبينها للتوافق بس (شوف balances_reset)
         $pdo->exec('DELETE FROM hq_unposted');
