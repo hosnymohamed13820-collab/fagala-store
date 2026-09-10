@@ -9,7 +9,7 @@
  *   - إشعارات مختلفة: للفرع المنفّذ / للأونر / لمسؤول المتابعة
  *   - الفرع المنفّذ بيجهّز ويرفع إثبات الفاتورة كمرفق على المهمة
  *
- * مسؤول المتابعة بيتحدد من الإعدادات (shortage_supervisor_id).
+ * مسؤولو المتابعة والمشتريات بيتحددوا من الإعدادات.
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/push_lib.php';
@@ -24,6 +24,12 @@ function shortage_supervisor_id(): int
 function purchase_supervisor_id(): int
 {
     return (int) setting('purchase_supervisor_id', 0);
+}
+
+/** مسؤول المشتريات التاني من الإعدادات (0 = مش متحدد) */
+function purchase_supervisor_2_id(): int
+{
+    return (int) setting('purchase_supervisor_2_id', 0);
 }
 
 /** كل الأونرز النشطين @return int[] */
@@ -131,10 +137,12 @@ function create_shortage_request(
         $fromName = (string) $b['name'];
         $toName   = '';
 
-        // المستهدفين = مسؤول المشتريات + كل الأونرز (من غير الطالب نفسه)
+        // المستهدفين = مسؤولو المشتريات + كل الأونرز (من غير الطالب نفسه)
         $targets = shortage_owner_ids();
         $psup = purchase_supervisor_id();
         if ($psup > 0) $targets[] = $psup;
+        $psup2 = purchase_supervisor_2_id();
+        if ($psup2 > 0) $targets[] = $psup2;
         $targets = array_values(array_diff(array_unique($targets), [$userId]));
         if (empty($targets)) {
             throw new RuntimeException('مفيش مسؤول مشتريات متحدد ولا أونر نشط — ظبّط «مسؤول المشتريات» من الإعدادات الأول.');
@@ -307,6 +315,7 @@ function can_view_task(int $taskId, int $userId): bool
     if ((int) $t['created_by'] === $userId) return true;
     if (($t['ref_type'] ?? '') === 'shortage' && (
         $userId === shortage_supervisor_id() || $userId === purchase_supervisor_id()
+        || $userId === purchase_supervisor_2_id()
     )) return true;
 
     $chk = db()->prepare('SELECT 1 FROM task_targets WHERE task_id = ? AND user_id = ? LIMIT 1');

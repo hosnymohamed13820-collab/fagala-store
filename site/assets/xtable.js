@@ -340,7 +340,7 @@
        5) لوحة الفلتر
        fixed مش absolute — عشان ماتتقصّش لو الجدول جوه حاوية بـoverflow.
        ================================================================ */
-    var openBox = null;
+    var openBox = null, openWidth = 0;
 
     function closePanel() {
         if (openBox) { openBox.remove(); openBox = null; }
@@ -351,10 +351,13 @@
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') closePanel();
     });
-    window.addEventListener('resize', closePanel);
+    window.addEventListener('resize', function () {
+        if (openBox && window.innerWidth !== openWidth) closePanel();
+    });
 
     function openPanel(st, idx, anchor) {
         closePanel();
+        openWidth = window.innerWidth;
 
         // القيم الفريدة — بتتحسب عند الفتح بس (lazy)
         var map = {}, order = [];
@@ -482,7 +485,7 @@
         if (top + 340 > window.innerHeight) top = Math.max(8, r.top - 346);
         box.style.left = left + 'px';
         box.style.top  = top + 'px';
-        box.querySelector('.xt-p-q').focus();
+        if (!window.matchMedia('(pointer: coarse)').matches) { box.querySelector('.xt-p-q').focus(); }
     }
 
     /* ================================================================
