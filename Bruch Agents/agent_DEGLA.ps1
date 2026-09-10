@@ -46,6 +46,17 @@ $AgentKey    = 'degla'
 $SqlServer   = 'localhost'
 $SqlDatabase = 'Anzmah_DeglaStore'
 
+# This branch's own store id in the company system (COM_STO_ITEMS.STO_ID).
+# WHY THIS FILTER EXISTS - do not remove it:
+#   Every branch database holds ALL six stores, not just its own (~14,827
+#   items x 6 = ~89k rows). Without the filter each agent uploads all six
+#   and the four agents overwrite each other on the website: the key of
+#   hq_branch_balances is (item_id, sto_id) with NO branch column, so the
+#   last agent to write wins. With the filter every store is written by
+#   the ONE branch that actually owns it - and the upload drops ~6x.
+#   Store map: 1 Main | 2 Fagala-Zahraa | 3 Bonjour | 4 Mobile | 5 Degla | 6 ABC
+$MyStoId     = 5
+
 # Authentication: $true = Windows Auth (no user/pass), $false = SQL login
 $UseWindowsAuth = $true
 $SqlUser     = 'sa'
@@ -230,6 +241,7 @@ SET NOCOUNT ON;
 SELECT ITEM_ID AS item_id, STO_ID AS sto_id,
        CAST(CSI_CURRENT_BALANCE AS DECIMAL(16,3)) AS balance
 FROM COM_STO_ITEMS
+WHERE STO_ID = $MyStoId
 ORDER BY ITEM_ID, STO_ID;
 "@
 
