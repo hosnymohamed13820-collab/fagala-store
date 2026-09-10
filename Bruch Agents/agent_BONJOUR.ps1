@@ -348,29 +348,392 @@ if ($send.Count -eq 0) {
     }
 }
 
-# ---------------------------------------------------------------------
-#  SAVE STATE - only if everything landed.
+# =====================================================================
+#  BRANCH INVOICES & LINES (Monthly partitioned tables)
 #
-#  If any chunk failed we keep the OLD state, so the next run resends
-#  those rows. Saving on a partial success is how balances silently
-#  drift out of sync and nobody notices.
-# ---------------------------------------------------------------------
-if ($ok) {
+#  Sales (SSTT_TYPE = 3) and sale returns (SSTT_TYPE = 6).
+#  Filter uses STO_SYS_TRANS_TYPES.SSTT_TYPE IN (3, 6) via JOIN so any
+#  new sales transaction type added to the ERP is caught automatically.
+#  Purchases (SSTT_TYPE = 2, 5) are excluded - HQ agent handles them.
+# =====================================================================
+
+function Get-Fingerprint {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $balObj = @{}
-        foreach ($k in $cur.Keys) { $balObj[$k] = $cur[$k] }
-        $nextCount = if ($forceFull) { 0 } else { $runCount + 1 }
-        @{ runCount = $nextCount; savedAt = (Get-Date -Format 'o'); bal = $balObj } |
-            ConvertTo-Json -Depth 4 -Compress | Set-Content $StateFile -Encoding UTF8
-    } catch {
-        Write-Log "Could not save state: $($_.Exception.Message)"
+        $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text))
+        return [System.BitConverter]::ToString($bytes).Replace('-', '').Substring(0, 32)
+    } finally {
+        $sha.Dispose()
     }
-} else {
-    Write-Log "Upload incomplete - keeping old state so next run retries."
 }
 
-if ($ok) { Stop-Run -Rows $sent -ErrorText '' -Code 0 }
-else     { Stop-Run -Rows $sent -ErrorText 'balance upload failed' -Code 1 }
+function Test-Changed {
+    param([string]$Key, [string]$Text)
+    $fp = Get-Fingerprint $Text
+    return -not ($State.ContainsKey($Key) -and $State[$Key] -eq $fp)
+}
+
+function Set-Sent {
+    param([string]$Key, [string]$Text)
+    $State[$Key] = Get-Fingerprint $Text
+}
+
+$watermarks = @{}
+$State = @{}
+if ($st) {
+    if ($st.watermarks) {
+        foreach ($p in $st.watermarks.PSObject.Properties) {
+            $watermarks[$p.Name] = [string]$p.Value
+        }
+    }
+    if ($st.fingerprints) {
+        foreach ($p in $st.fingerprints.PSObject.Properties) {
+            $State[$p.Name] = [string]$p.Value
+        }
+    }
+}
+
+$okInvoices = $true
+$sentInvoices = 0
+$sentInvoiceLines = 0
+
+$StartYear  = 2026
+$StartMonth = 6
+
+$now = Get-Date
+$suffixes = @()
+$y = $StartYear; $m = $StartMonth
+while (($y -lt $now.Year) -or ($y -eq $now.Year -and $m -le $now.Month)) {
+    $suffixes += ('{0:00}_{1:00}' -f ($y % 100), $m)
+    $m++; if ($m -gt 12) { $m = 1; $y++ }
+}
+
+foreach ($suffix in $suffixes) {
+    $headTable = "STO_TRANS_HEADER_$suffix"
+
+    $existsSql = "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '$headTable'"
+    try {
+        $exists = (Invoke-Sql $existsSql).Rows[0]['c']
+    } catch {
+        Write-Log "[$suffix] existence check failed: $($_.Exception.Message)"
+        $okInvoices = $false
+        continue
+    }
+    if ($exists -eq 0) { continue }
+
+    $wm = $watermarks[$suffix]
+    $wmClause = ''
+    if ($wm) { $wmClause = "AND COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE) > '$wm'" }
+
+    $headSql = @"
+SET NOCOUNT ON;
+SELECT h.STH_ID AS sth_id, '$suffix' AS suffix,
+       LTRIM(RTRIM(h.STH_DOC_NO)) AS doc_no, h.SSTT_ID AS doc_type,
+       h.SUPP_ID AS supplier_id,
+       LTRIM(RTRIM(s.SUPP_CODE)) AS supplier_code,
+       LTRIM(RTRIM(s.SUPP_NAME1)) AS supplier_name,
+       h.STH_NET_VALUE AS net_amount, h.STH_TOT_VALUE AS total_amount,
+       h.STH_DOC_DATE AS invoice_date, h.BRCH_ID AS company_branch,
+       COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE) AS last_modify
+FROM STO_TRANS_HEADER_$suffix h
+LEFT JOIN SUPPLIERS s ON s.SUPP_ID = h.SUPP_ID
+JOIN STO_SYS_TRANS_TYPES t ON t.SSTT_ID = h.SSTT_ID
+WHERE t.SSTT_TYPE IN (3, 6) $wmClause
+ORDER BY COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE);
+"@
+
+    try {
+        $headRows = Invoke-Sql $headSql
+    } catch {
+        Write-Log "[$suffix] header query failed: $($_.Exception.Message)"
+        $okInvoices = $false
+        continue
+    }
+
+    if ($headRows.Rows.Count -eq 0) { continue }
+
+    $ids = @()
+    $maxModify = $wm
+    $hdrOut = New-Object System.Collections.ArrayList
+    foreach ($r in $headRows.Rows) {
+        $ids += [int64]$r['sth_id']
+        $lm = $r['last_modify']
+        if ($lm -isnot [DBNull]) {
+            $lmStr = ([datetime]$lm).ToString('yyyy-MM-dd HH:mm:ss.fff')
+            if (-not $maxModify -or $lmStr -gt $maxModify) { $maxModify = $lmStr }
+        }
+        $null = $hdrOut.Add([ordered]@{
+            sth_id         = [int64]$r['sth_id']
+            suffix         = $suffix
+            doc_no         = [string]$r['doc_no']
+            doc_type       = [int]$r['doc_type']
+            supplier_id    = if ($r['supplier_id'] -is [DBNull]) { $null } else { [int]$r['supplier_id'] }
+            supplier_code  = [string]$r['supplier_code']
+            supplier_name  = [string]$r['supplier_name']
+            net_amount     = [double]$r['net_amount']
+            total_amount   = [double]$r['total_amount']
+            invoice_date   = if ($r['invoice_date'] -is [DBNull]) { $null } else { ([datetime]$r['invoice_date']).ToString('yyyy-MM-dd HH:mm:ss') }
+            company_branch = if ($r['company_branch'] -is [DBNull]) { $null } else { [int]$r['company_branch'] }
+            last_modify    = if ($r['last_modify'] -is [DBNull]) { $null } else { ([datetime]$r['last_modify']).ToString('yyyy-MM-dd HH:mm:ss') }
+        })
+    }
+
+    Write-Log "[$suffix] $($hdrOut.Count) changed invoice(s)."
+
+    $hdrFinger = @{ kind = 'invoices'; suffix = $suffix; rows = $hdrOut } | ConvertTo-Json -Depth 5 -Compress
+    if (-not (Test-Changed "invoices_$suffix" $hdrFinger)) {
+        Write-Log "[$suffix] unchanged - nothing to send."
+        continue
+    }
+
+    $monthOk = $true
+
+    $chunkSize = 500
+    for ($i = 0; $i -lt $hdrOut.Count; $i += $chunkSize) {
+        $hChunk = @($hdrOut[$i..([math]::Min($i + $chunkSize - 1, $hdrOut.Count - 1))])
+        $p = @{ agent = $AgentKey; kind = 'invoices'; rows = $hChunk } | ConvertTo-Json -Depth 5 -Compress
+        if (Send-Payload $p) {
+            $sentInvoices += $hChunk.Count
+        } else {
+            $monthOk = $false
+            $okInvoices = $false
+            break
+        }
+    }
+    if (-not $monthOk) { continue }
+
+    $idChunks = @()
+    for ($i = 0; $i -lt $ids.Count; $i += 500) {
+        $idChunks += ,($ids[$i..([math]::Min($i + 499, $ids.Count - 1))])
+    }
+
+    foreach ($chunk in $idChunks) {
+        $idList = ($chunk -join ',')
+        $lineSql = @"
+SET NOCOUNT ON;
+SELECT l.STH_ID AS sth_id, l.STL_LINE_NO AS line_no, l.ITEM_ID AS item_id,
+       LTRIM(RTRIM(ic.IC_CODE)) AS item_code,
+       LTRIM(RTRIM(ic.IC_NAME1)) AS item_name,
+       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price
+FROM STO_TRANS_LINES_$suffix l
+LEFT JOIN ITEM_CODES ic ON ic.IC_ID = l.IC_ID
+WHERE l.STH_ID IN ($idList)
+ORDER BY l.STH_ID, l.STL_LINE_NO;
+"@
+        try {
+            $lineRows = Invoke-Sql $lineSql
+        } catch {
+            Write-Log "[$suffix] lines query failed: $($_.Exception.Message)"
+            $okInvoices = $false
+            $monthOk = $false
+            break
+        }
+
+        $lnOut = New-Object System.Collections.ArrayList
+        foreach ($r in $lineRows.Rows) {
+            $null = $lnOut.Add([ordered]@{
+                sth_id     = [int64]$r['sth_id']
+                suffix     = $suffix
+                line_no    = [int]$r['line_no']
+                item_id    = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
+                item_code  = [string]$r['item_code']
+                item_name  = [string]$r['item_name']
+                quantity   = [double]$r['quantity']
+                unit_price = [double]$r['unit_price']
+                cost_price = [double]$r['cost_price']
+            })
+        }
+
+        if ($lnOut.Count -gt 0) {
+            for ($j = 0; $j -lt $lnOut.Count; $j += 500) {
+                $lnChunk = @($lnOut[$j..([math]::Min($j + 499, $lnOut.Count - 1))])
+                $lnPayload = @{ agent = $AgentKey; kind = 'invoice_lines'; rows = $lnChunk } | ConvertTo-Json -Depth 5 -Compress
+                if (Send-Payload $lnPayload) {
+                    $sentInvoiceLines += $lnChunk.Count
+                } else {
+                    $okInvoices = $false
+                    $monthOk = $false
+                    break
+                }
+            }
+        }
+        if (-not $monthOk) { break }
+    }
+
+    if ($monthOk) {
+        Set-Sent "invoices_$suffix" $hdrFinger
+        if ($maxModify) { $watermarks[$suffix] = $maxModify }
+    }
+}
+
+# =====================================================================
+#  UNPOSTED INVOICES & LINES (STO_TRANS_HEADER_YY_MM, STH_STATUS=0)
+#
+#  Unposted sales invoices and their lines.
+#  Fingerprinted over headers + lines so unchanged data sends zero requests.
+# =====================================================================
+$okUnposted = $true
+$sentUnposted = 0
+$sentUnpostedLines = 0
+
+try {
+    $unpExistsSql = "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'STO_TRANS_HEADER_YY_MM'"
+    $unpExists = 0
+    try {
+        $unpExists = (Invoke-Sql $unpExistsSql).Rows[0]['c']
+    } catch { }
+
+    if ($unpExists -gt 0) {
+        $unpSql = @"
+SET NOCOUNT ON;
+SELECT h.STH_ID AS sth_id, LTRIM(RTRIM(h.STH_DOC_NO)) AS doc_no, h.SSTT_ID AS doc_type,
+       h.SUPP_ID AS supplier_id, LTRIM(RTRIM(s.SUPP_CODE)) AS supplier_code,
+       LTRIM(RTRIM(s.SUPP_NAME1)) AS supplier_name,
+       h.STH_NET_VALUE AS net_amount, h.STH_TOT_VALUE AS total_amount,
+       h.STH_DOC_DATE AS invoice_date, h.BRCH_ID AS company_branch,
+       LTRIM(RTRIM(h.STH_HEAD_REMARK1)) AS remark
+FROM STO_TRANS_HEADER_YY_MM h
+LEFT JOIN SUPPLIERS s ON s.SUPP_ID = h.SUPP_ID
+JOIN STO_SYS_TRANS_TYPES t ON t.SSTT_ID = h.SSTT_ID
+WHERE t.SSTT_TYPE IN (3, 6) AND h.STH_STATUS = 0
+ORDER BY h.STH_DOC_DATE DESC;
+"@
+        $unpTable = Invoke-Sql $unpSql
+        Write-Log "Read $($unpTable.Rows.Count) unposted invoice(s)."
+
+        $unpIds = @()
+        $unpOut = New-Object System.Collections.ArrayList
+        foreach ($r in $unpTable.Rows) {
+            $unpIds += [int64]$r['sth_id']
+            $null = $unpOut.Add([ordered]@{
+                sth_id         = [int64]$r['sth_id']
+                doc_no         = [string]$r['doc_no']
+                doc_type       = [int]$r['doc_type']
+                supplier_id    = if ($r['supplier_id'] -is [DBNull]) { $null } else { [int]$r['supplier_id'] }
+                supplier_code  = [string]$r['supplier_code']
+                supplier_name  = [string]$r['supplier_name']
+                net_amount     = [double]$r['net_amount']
+                total_amount   = [double]$r['total_amount']
+                invoice_date   = if ($r['invoice_date'] -is [DBNull]) { $null } else { ([datetime]$r['invoice_date']).ToString('yyyy-MM-dd HH:mm:ss') }
+                company_branch = if ($r['company_branch'] -is [DBNull]) { $null } else { [int]$r['company_branch'] }
+                remark         = [string]$r['remark']
+            })
+        }
+
+        $unpLnOut = New-Object System.Collections.ArrayList
+        if ($unpIds.Count -gt 0) {
+            $unpIdChunks = @()
+            for ($i = 0; $i -lt $unpIds.Count; $i += 500) {
+                $unpIdChunks += ,($unpIds[$i..([math]::Min($i + 499, $unpIds.Count - 1))])
+            }
+            foreach ($chunk in $unpIdChunks) {
+                $idList = ($chunk -join ',')
+                $unpLineSql = @"
+SET NOCOUNT ON;
+SELECT l.STH_ID AS sth_id, l.STL_LINE_NO AS line_no, l.ITEM_ID AS item_id,
+       LTRIM(RTRIM(ic.IC_CODE)) AS item_code, LTRIM(RTRIM(ic.IC_NAME1)) AS item_name,
+       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price
+FROM STO_TRANS_LINES_YY_MM l
+LEFT JOIN ITEM_CODES ic ON ic.IC_ID = l.IC_ID
+WHERE l.STH_ID IN ($idList)
+ORDER BY l.STH_ID, l.STL_LINE_NO;
+"@
+                $unpLineTable = Invoke-Sql $unpLineSql
+                foreach ($r in $unpLineTable.Rows) {
+                    $null = $unpLnOut.Add([ordered]@{
+                        sth_id     = [int64]$r['sth_id']
+                        line_no    = [int]$r['line_no']
+                        item_id    = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
+                        item_code  = [string]$r['item_code']
+                        item_name  = [string]$r['item_name']
+                        quantity   = [double]$r['quantity']
+                        unit_price = [double]$r['unit_price']
+                        cost_price = [double]$r['cost_price']
+                    })
+                }
+            }
+        }
+
+        $unpFinger = @{ kind = 'unposted'; heads = $unpOut; lines = $unpLnOut } | ConvertTo-Json -Depth 5 -Compress
+
+        if (-not (Test-Changed 'unposted' $unpFinger)) {
+            Write-Log "[unposted] unchanged - nothing to send."
+        } else {
+            if ($unpOut.Count -gt 0) {
+                for ($i = 0; $i -lt $unpOut.Count; $i += 500) {
+                    $uChunk = @($unpOut[$i..([math]::Min($i + 499, $unpOut.Count - 1))])
+                    $unpPayload = @{ agent = $AgentKey; kind = 'unposted'; rows = $uChunk } | ConvertTo-Json -Depth 5 -Compress
+                    if (Send-Payload $unpPayload) {
+                        $sentUnposted += $uChunk.Count
+                    } else {
+                        $okUnposted = $false
+                        break
+                    }
+                }
+
+                if ($okUnposted -and $unpLnOut.Count -gt 0) {
+                    for ($j = 0; $j -lt $unpLnOut.Count; $j += 500) {
+                        $lnChunk = @($unpLnOut[$j..([math]::Min($j + 499, $unpLnOut.Count - 1))])
+                        $unpLnPayload = @{ agent = $AgentKey; kind = 'unposted_lines'; rows = $lnChunk } | ConvertTo-Json -Depth 5 -Compress
+                        if (Send-Payload $unpLnPayload) {
+                            $sentUnpostedLines += $lnChunk.Count
+                        } else {
+                            $okUnposted = $false
+                            break
+                        }
+                    }
+                }
+            }
+            if ($okUnposted) {
+                Set-Sent 'unposted' $unpFinger
+            }
+        }
+    }
+} catch {
+    Write-Log "Unposted query failed: $($_.Exception.Message)"
+    $okUnposted = $false
+}
+
+# ---------------------------------------------------------------------
+#  SAVE STATE - balances + watermarks + fingerprints
+#
+#  If any chunk failed we keep the OLD state for that section, so the
+#  next run retries.
+# ---------------------------------------------------------------------
+$allOk = ($ok -and $okInvoices -and $okUnposted)
+
+try {
+    $balObj = @{}
+    if ($ok) {
+        foreach ($k in $cur.Keys) { $balObj[$k] = $cur[$k] }
+    } else {
+        foreach ($k in $prev.Keys) { $balObj[$k] = $prev[$k] }
+    }
+    $nextCount = if ($forceFull) { 0 } else { $runCount + 1 }
+    $stateObj = @{
+        runCount     = if ($ok) { $nextCount } else { $runCount }
+        savedAt      = (Get-Date -Format 'o')
+        bal          = $balObj
+        watermarks   = $watermarks
+        fingerprints = $State
+    }
+    $stateObj | ConvertTo-Json -Depth 5 -Compress | Set-Content $StateFile -Encoding UTF8
+} catch {
+    Write-Log "Could not save state: $($_.Exception.Message)"
+}
+
+$totalSent = $sent + $sentInvoices + $sentInvoiceLines + $sentUnposted + $sentUnpostedLines
+
+if ($allOk) {
+    Stop-Run -Rows $totalSent -ErrorText '' -Code 0
+} else {
+    $errParts = @()
+    if (-not $ok)         { $errParts += 'balances' }
+    if (-not $okInvoices) { $errParts += 'invoices' }
+    if (-not $okUnposted) { $errParts += 'unposted' }
+    Stop-Run -Rows $totalSent -ErrorText ("sync failed: " + ($errParts -join ', ')) -Code 1
+}
 
 
 # =====================================================================
