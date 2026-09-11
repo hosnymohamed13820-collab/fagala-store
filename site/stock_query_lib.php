@@ -114,12 +114,16 @@ function stock_extra_stores(array $known): array
     if (stock_local_ready()) {
         try {
             $rows = db()->query(
-                'SELECT b.sto_id, s.name
+                // ⚠️ النص ده كان بعلامات **مفردة**، فـ" . bal_table() . "
+                //    كان بينزل في الـSQL كنص حرفي بدل اسم الجدول —
+                //    الاستعلام كان بيرمي استثناء كل مرة والـcatch تحت
+                //    بيبلعه في صمت، فالمخازن الزيادة عمرها ما ظهرت.
+                "SELECT b.sto_id, s.name
                  FROM " . bal_table() . " b
                  LEFT JOIN hq_stores s ON s.sto_id = b.sto_id
                  GROUP BY b.sto_id, s.name
                  HAVING SUM(b.balance) > 0.0001
-                 ORDER BY b.sto_id'
+                 ORDER BY b.sto_id"
             )->fetchAll();
 
             $out = [];
