@@ -685,6 +685,214 @@ function an_import(int $batchId, int $stoId, array $rows, array $map): array
     return ['stored' => $stored, 'skipped' => $skipped, 'dupes' => $dupes];
 }
 
+/**
+ * استيراد تلقائي من الداتا الحيّة (ERP) لفترة محددة.
+ * بيمسح الدفعة دي الأول، وبيسحب الأرصدة والمبيعات للفروع والإدارة،
+ * وبيربط الباركود من hq_codes والاسم من hq_items.
+ *
+ * @return array{stored:int,skipped:int,stores:int}
+ */
+function an_import_erp(int $batchId, string $from, string $to): array
+{
+    $pdo = db();
+
+    // ١) خريطة الفرع ← المخزن من الداتا نفسها (مش مكتوبة في الكود)
+    $stMap = $pdo->query('SELECT agent_key, sto_id FROM hq_branch_balances GROUP BY agent_key, sto_id');
+    $agentToStore = [];
+    foreach ($stMap as $r) {
+        $ak = trim((string) ($r['agent_key'] ?? ''));
+        if ($ak !== '') {
+            $agentToStore[$ak] = (int) $r['sto_id'];
+        }
+    }
+
+    // المخازن المستهدفة: الفروع + الإدارة
+    $targetStores = array_values(array_unique(array_merge(an_branch_stores(), [an_hq_store()])));
+    if (!$targetStores) {
+        $targetStores = [1, 2, 3, 5, 6];
+    }
+
+    // ٢) الأرصدة الحالية — لقطة دلوقتي:
+    // الرصيد بيتاخد وقت التنفيذ مش بتاريخ الفترة — ده قرار محمد، مقصود ومتأكد منه.
+    // hq_branch_balances لقطة حالية مفيهاش تاريخ أصلاً.
+    $inStores = implode(',', array_fill(0, count($targetStores), '?'));
+    $stBal = $pdo->prepare(
+        "SELECT b.sto_id, b.item_id, b.balance
+         FROM hq_branch_balances b
+         WHERE b.sto_id IN ($inStores)"
+    );
+    $stBal->execute($targetStores);
+
+    $balances   = [];  // [store_id => [item_id => float]]
+    $storeItems = [];  // [store_id => [item_id => true]]
+    foreach ($stBal as $r) {
+        $sid = (int) $r['sto_id'];
+        $iid = (int) $r['item_id'];
+        $bal = (float) $r['balance'];
+        $balances[$sid][$iid] = $bal;
+        if ($bal != 0.0) {
+            $storeItems[$sid][$iid] = true;
+        }
+    }
+
+    // ٣) المبيعات والمردودات:
+    // أنواع المردود بتتقري من إعداد مش من الكود
+    $returnTypes = array_values(array_filter(array_map(
+        'intval',
+        explode(',', (string) setting('analysis_sales_return_types', '7,17'))
+    ), static fn($x) => $x > 0));
+
+    // لو التاريخ من غير وقت (YYYY-MM-DD)، بنخلّي نهاية الفترة حصراً لليوم اللي بعده عشان آخر يوم يدخل كامل
+    $toParam = (strlen(trim($to)) === 10) ? date('Y-m-d', strtotime($to . ' +1 day')) : $to;
+
+    // استعلام المبيعات — المفتاح مركّب (agent_key, sth_id, suffix) التلاتة لازم يدخلوا في الـJOIN
+    $stSales = $pdo->prepare(
+        'SELECT h.agent_key, l.item_id, h.doc_type, SUM(l.quantity) AS qty
+         FROM br_invoice_lines l
+         JOIN br_invoices h
+           ON  h.agent_key = l.agent_key
+           AND h.sth_id    = l.sth_id
+           AND h.suffix    = l.suffix
+         WHERE h.invoice_date >= ? AND h.invoice_date < ?
+         GROUP BY h.agent_key, l.item_id, h.doc_type'
+    );
+    $stSales->execute([$from, $toParam]);
+
+    $salesByStore = []; // [store_id => [item_id => float]]
+    foreach ($stSales as $r) {
+        $ak = (string) $r['agent_key'];
+        $stoId = $agentToStore[$ak] ?? null;
+        if ($stoId === null || !in_array($stoId, $targetStores, true)) {
+            continue;
+        }
+        $iid = (int) $r['item_id'];
+        $q   = (float) $r['qty'];
+        if (in_array((int) $r['doc_type'], $returnTypes, true)) {
+            $salesByStore[$stoId][$iid] = ($salesByStore[$stoId][$iid] ?? 0.0) - $q;
+        } else {
+            $salesByStore[$stoId][$iid] = ($salesByStore[$stoId][$iid] ?? 0.0) + $q;
+        }
+    }
+
+    // إضافة الأصناف اللي ليها مبيعات في المخزن
+    foreach ($salesByStore as $sid => $items) {
+        foreach ($items as $iid => $netSales) {
+            if ($netSales != 0.0) {
+                $storeItems[$sid][$iid] = true;
+            }
+        }
+    }
+
+    // ٤) الباركود من hq_codes — استعلام واحد مجمّع قبل أي حلقة
+    $stCodes = $pdo->query('SELECT item_id, code FROM hq_codes');
+    $codeMap = [];
+    foreach ($stCodes as $r) {
+        $iid  = (int) $r['item_id'];
+        $code = trim((string) ($r['code'] ?? ''));
+        if ($code !== '' && !isset($codeMap[$iid])) {
+            $codeMap[$iid] = $code;
+        }
+    }
+
+    // ٥) أسماء الأصناف من hq_items لو موجودة
+    $itemNames = [];
+    $itemNamesByCode = [];
+    try {
+        $stNames = $pdo->query('SELECT item_id, barcode, name FROM hq_items');
+        foreach ($stNames as $r) {
+            $iid = (int) ($r['item_id'] ?? 0);
+            $bc  = trim((string) ($r['barcode'] ?? ''));
+            $nm  = trim((string) ($r['name'] ?? ''));
+            if ($nm !== '') {
+                if ($iid > 0 && !isset($itemNames[$iid])) $itemNames[$iid] = $nm;
+                if ($bc !== '' && !isset($itemNamesByCode[$bc])) $itemNamesByCode[$bc] = $nm;
+            }
+        }
+    } catch (Throwable $e) {
+        // لو جدول hq_items مش موجود
+    }
+
+    // ٦) الكتابة في shortage_lines
+    $pdo->beginTransaction();
+    try {
+        // مسح مخازن الدفعة دي الأول زي an_import() بالظبط
+        $pdo->prepare('DELETE FROM shortage_lines WHERE batch_id = ?')->execute([$batchId]);
+
+        $stored = 0;
+        $skipped = 0;
+        $usedStores = [];
+        $buf = [];
+
+        $flush = static function (array &$buf) use ($pdo) {
+            if (!$buf) return;
+            $ph  = implode(',', array_fill(0, count($buf), '(?,?,?,?,?,?,?,?,?)'));
+            $sql = 'INSERT INTO shortage_lines
+                        (batch_id, store_id, barcode, item_name, balance, in_qty, in_cost, in_sale, out_qty)
+                    VALUES ' . $ph . '
+                    ON DUPLICATE KEY UPDATE
+                        item_name = VALUES(item_name), balance = VALUES(balance),
+                        in_qty = VALUES(in_qty), in_cost = VALUES(in_cost),
+                        in_sale = VALUES(in_sale), out_qty = VALUES(out_qty)';
+            $flat = [];
+            foreach ($buf as $r) foreach ($r as $v) $flat[] = $v;
+            $pdo->prepare($sql)->execute($flat);
+            $buf = [];
+        };
+
+        foreach ($targetStores as $stoId) {
+            $itemsForStore = $storeItems[$stoId] ?? [];
+            foreach (array_keys($itemsForStore) as $itemId) {
+                $code = $codeMap[$itemId] ?? '';
+                if ($code === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                $bal   = (float) ($balances[$stoId][$itemId] ?? 0.0);
+                $sales = (float) ($salesByStore[$stoId][$itemId] ?? 0.0);
+                $name  = $itemNames[$itemId] ?? $itemNamesByCode[$code] ?? null;
+
+                $buf[] = [
+                    $batchId,
+                    $stoId,
+                    mb_substr($code, 0, 64),
+                    $name !== null && $name !== '' ? mb_substr($name, 0, 255) : null,
+                    $bal,
+                    0.0,
+                    0.0,
+                    0.0,
+                    $sales,
+                ];
+                $stored++;
+                $usedStores[$stoId] = true;
+
+                if (count($buf) >= 500) {
+                    $flush($buf);
+                }
+            }
+        }
+        $flush($buf);
+
+        // تحديث مصدر الدفعة والفترة لـ erp
+        $pdo->prepare("UPDATE shortage_batches SET source = 'erp', period_from = ?, period_to = ? WHERE id = ?")
+            ->execute([$from, $to, $batchId]);
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    an_batch_recount($batchId);
+    return [
+        'stored'  => $stored,
+        'skipped' => $skipped,
+        'stores'  => count($usedStores),
+    ];
+}
+
 // =====================================================================
 //  (٨) التصنيف — ترجمة حرفية لماكرو «تحليل_الاصناف»
 // =====================================================================

@@ -103,6 +103,27 @@ if ($ready && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
+            // ===== بناء من الداتا الحيّة (ERP) =====
+            if ($action === 'build_erp') {
+                $bid  = (int) ($_POST['batch_id'] ?? 0);
+                $from = trim((string) ($_POST['period_from'] ?? ''));
+                $to   = trim((string) ($_POST['period_to'] ?? ''));
+                if ($bid <= 0 || !an_batch($bid)) throw new RuntimeException('الرفعة مش موجودة.');
+                if ($from === '' || $to === '')   throw new RuntimeException('اختار فترة البداية والنهاية.');
+                if ($from > $to)                  throw new RuntimeException('تاريخ البداية بعد النهاية.');
+
+                $res = an_import_erp($bid, $from, $to);
+
+                $_SESSION['flash'] = sprintf(
+                    'اتخزن %s صنف في %d مخازن من الداتا الحيّة%s.',
+                    number_format($res['stored']),
+                    $res['stores'],
+                    $res['skipped'] ? (' — واتتجاهل ' . number_format($res['skipped']) . ' صنف من غير باركود') : ''
+                );
+                header('Location: analysis.php?tab=batches&batch=' . $bid);
+                exit;
+            }
+
             // ===== رفع ملف فرع =====
             if ($action === 'upload') {
                 $bid   = (int) ($_POST['batch_id'] ?? 0);
@@ -219,6 +240,7 @@ $batches   = $ready ? an_batches() : [];
 $curBatch  = (int) ($_GET['batch'] ?? ($batches[0]['id'] ?? 0));
 $stores    = $ready ? an_stores() : [];
 $uploaded  = ($ready && $curBatch) ? an_batch_stores($curBatch) : [];
+$curBatchObj = ($ready && $curBatch) ? an_batch($curBatch) : null;
 
 $report = null; $summary = null; $cats = [];
 if ($ready && $tab === 'report' && $curBatch) {
@@ -568,6 +590,21 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                 <?php endforeach; ?>
             </div>
+
+            <form method="post" class="an-row" style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line-soft);">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="build_erp">
+                <input type="hidden" name="batch_id" value="<?= $curBatch ?>">
+                <div class="an-fld">
+                    <label>من تاريخ</label>
+                    <input type="date" name="period_from" value="<?= e($curBatchObj['period_from'] ?? '') ?>" required>
+                </div>
+                <div class="an-fld">
+                    <label>لـ تاريخ</label>
+                    <input type="date" name="period_to" value="<?= e($curBatchObj['period_to'] ?? '') ?>" required>
+                </div>
+                <button class="btn" type="submit"><i class="ti ti-refresh"></i> ابنِ من الداتا الحيّة</button>
+            </form>
 
             <form method="post" enctype="multipart/form-data" class="an-row" style="margin-top:14px;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
