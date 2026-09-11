@@ -120,7 +120,19 @@ def check(path):
 
 
 def exit_paths(path):
-    """كل exit في الكود الفعلي لازم يكون جوه Stop-Agent أو نداء ليها."""
+    """
+    كل exit في الكود الفعلي لازم تكون النبضة اتبعتت على المسار بتاعه.
+
+    القاعدة كانت مكتوبة باسم دالة (`function Stop-Agent`) بدل ما تكون
+    بالمعنى، فوكلاء الفروع اللي دالتهم اسمها `Stop-Run` طلعوا إنذارات
+    كاذبة (١١ سبتمبر ٢٠٢٦). دلوقتي بنشوف **النبضة نفسها**، فأي اسم
+    للدالة بيعدّي.
+
+    ومسموح كمان بـ`# no-beat:` جنب الـexit للحالات اللي السكوت فيها
+    **مقصود** — زي الخروج لما فيه جولة تانية شغالة: هي اللي هتبعت
+    النبضة، ولو بعتنا واحدة كمان يبقى النظام بيشوف نبضتين لجولة واحدة.
+    الماركر لازم يتكتب بإيد ومعاه السبب، فمش هيتحط بالغلط.
+    """
     src = open(path, encoding='utf-8').read()
     code, _ = strip_code(src)
     lines = code.split('\n')
@@ -128,9 +140,15 @@ def exit_paths(path):
     bad = []
     for i, ln in enumerate(lines, 1):
         if re.search(r'\bexit\b', ln):
-            # مسموح: جوه دالة Stop-Agent
+            # مسموح (١): النبضة اتبعتت في نفس المسار قبل الـexit
             ctx = '\n'.join(lines[max(0, i - 25):i])
-            if 'function Stop-Agent' in ctx:
+            if 'Send-Beat' in ctx or 'function Stop-Agent' in ctx:
+                continue
+            # مسموح (٢): سكوت مقصود ومعلّم بإيد
+            # نافذة ٦ سطور: الوسم بيتكتب فوق الـWrite-Log اللي قبل
+            # الـexit، والسبب بيكمّل على سطر أو اتنين تحته.
+            near = '\n'.join(raw[max(0, i - 6):i])
+            if 'no-beat:' in near:
                 continue
             bad.append((i, raw[i - 1].strip()))
     return bad

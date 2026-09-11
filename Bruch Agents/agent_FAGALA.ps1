@@ -114,6 +114,8 @@ try {
             try { $alive = $null -ne (Get-Process -Id $lockPid -ErrorAction Stop) } catch { $alive = $false }
         }
         if ($alive -and $lockAge.TotalMinutes -lt 30) {
+            # no-beat: the run that holds the lock sends the heartbeat. A second
+            #          beat here would report two runs for one cycle.
             Write-Log "Another run is still going (pid $lockPid) - exiting."
             exit 0
         }
@@ -123,6 +125,9 @@ try {
     Set-Content -Path $LockFile -Value $PID -Encoding ASCII
     $LockMine = $true
 } catch {
+    # no-beat: cannot even take the lock - the disk or the folder is the
+    #          problem. Going silent is correct: the dashboard SHOULD show
+    #          this agent as stalled instead of "alive but idle".
     Write-Log "Could not take the lock: $($_.Exception.Message)"
     exit 1
 }

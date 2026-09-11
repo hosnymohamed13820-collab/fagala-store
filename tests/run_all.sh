@@ -58,8 +58,18 @@ fi
 
 echo
 echo "== بنية PowerShell =="
-if compgen -G "local/*.ps1" > /dev/null; then
-    python3 tests/check_ps1.py local/*.ps1 || FAIL=1
+# 🔴 الوكلاء في **مكانين** مش مكان واحد:
+#      local/          = وكيل الإدارة وإشراقة والسكانر
+#      Bruch Agents/   = وكلاء الفروع الأربعة الشغّالة
+#    الفحص كان بيشوف local/ بس، فوكلاء الفروع كانوا بيعدّوا من غير
+#    أي فحص بنية — وده بان يوم ١١ سبتمبر ٢٠٢٦ لما اتعدّلوا الأربعة
+#    في رن واحد. (_وكلاء_على_هولد/ مقصود إنها بره الفحص — شغل موقوف.)
+PS1_FILES=()
+for f in local/*.ps1 "Bruch Agents"/*.ps1; do
+    [ -f "$f" ] && PS1_FILES+=("$f")
+done
+if [ ${#PS1_FILES[@]} -gt 0 ]; then
+    python3 tests/check_ps1.py "${PS1_FILES[@]}" || FAIL=1
 fi
 
 echo
@@ -80,7 +90,7 @@ echo "== ترميز ملفات باورشيل =="
 #   عربي + BOM      = تمام (وكلاء السكانر شغّالين كده)
 #   عربي بدون BOM   = الحروف بتتكسر
 #   ASCII بدون BOM  = تمام
-for f in local/*.ps1; do
+for f in "${PS1_FILES[@]}"; do
     [ -f "$f" ] || continue
     if LC_ALL=C grep -q '[^ -~	]' "$f"; then
         if head -c3 "$f" | grep -q $'\xef\xbb\xbf'; then

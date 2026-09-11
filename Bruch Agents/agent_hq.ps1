@@ -88,6 +88,8 @@ try {
         }
 
         if ($alive -and $lockAge.TotalMinutes -lt 30) {
+            # no-beat: the run holding the lock sends the heartbeat for this cycle.
+            #          A second beat would report two runs for one cycle.
             Write-Log "Another run is still going (PID $lockPid, started $([int]$lockAge.TotalMinutes) min ago) - skipping this one."
             exit 0
         }
@@ -365,8 +367,14 @@ try {
     $itemsTable = Invoke-Sql $itemsSql
     Write-Log "Read $($itemsTable.Rows.Count) item rows."
 } catch {
-    Write-Log "Items query failed: $($_.Exception.Message)"
+    $itemsErr = "items query failed: $($_.Exception.Message)"
+    Write-Log $itemsErr
     if ($LockMine) { Remove-Item $LockFile -Force -ErrorAction SilentlyContinue }
+    # This path used to exit WITHOUT a heartbeat, which made a failed
+    # items query look exactly like a dead PC on the agents board - the
+    # one thing the heartbeat exists to rule out. See the comment at the
+    # bottom of this file: "Heartbeat LAST, and on both paths."
+    Send-Beat -Rows 0 -ErrorText $itemsErr
     exit 1
 }
 
