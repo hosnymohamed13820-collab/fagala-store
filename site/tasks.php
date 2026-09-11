@@ -75,12 +75,19 @@ if (isset($_SESSION['flash'])) {
 
 // ===== تحميل البيانات =====
 // المهام الواردة لي (أنا مستهدف فيها)
+// 🔴 المهمة المقفولة **مابتظهرش هنا خالص**. أول ما حد من المستهدفين
+//    يعلّمها «تمت»، بتتقفل للكل وتختفي من قايمة كل واحد فيهم.
+//    قبل كده ماكانش فيه أي كود بيقفل مهمة، فالقايمة كانت بتتخم بحاجات
+//    خلصت من شهور — وموظف اتنقل لفرع تاني كان بيفضل شايف مهام فرعه
+//    القديم للأبد.
+//    السجل مابيضيعش: اللي عمل المهمة بيفضل شايفها في قايمة «اللي
+//    أصدرتها» تحت بحالتها.
 $inbox = $pdo->prepare(
     "SELECT t.*, tt.status AS my_status, tt.done_at, u.full_name AS creator
      FROM task_targets tt
      JOIN tasks t ON t.id = tt.task_id
      LEFT JOIN users u ON u.id = t.created_by
-     WHERE tt.user_id = ?
+     WHERE tt.user_id = ? AND t.status <> 'closed'
      ORDER BY (tt.status='pending') DESC, FIELD(t.priority,'urgent','important','normal'), t.id DESC
      LIMIT 200"
 );

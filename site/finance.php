@@ -3342,12 +3342,49 @@ function resolve_task_targets(string $scope, array $branchIds, array $userIds): 
     return array_values(array_filter(array_map('intval', $userIds), fn($x)=>$x>0));
 }
 
-/** تعليم مهمة "تمت" من مستخدم مستهدف. */
+/**
+ * تعليم مهمة "تمت" من مستخدم مستهدف — **وقفل المهمة للكل**.
+ *
+ * 🔴 المهمة بتتقفل بأول واحد يخلّصها، ومابتفضلش مفتوحة لباقي
+ *    المستهدفين. السبب: طلب نواقص بيتبعت لكل موظفي الفرع، فأول ما
+ *    واحد يجهّزه الباقي مالهمش لازمة يفضلوا شايفينه «مطلوب».
+ *
+ * 🔴 قبل ١١ سبتمبر ٢٠٢٦ ماكانش فيه **ولا سطر** في المشروع كله بيكتب
+ *    `tasks.status = 'closed'` (`grep -rn "UPDATE tasks" site/` كان
+ *    بيرجّع ولا حاجة). يعني كل مهمة اتعملت من أول يوم فضلت `open`
+ *    للأبد، وكانت بتفضل في قايمة الناس لشهور. ده كان بيبان كإنه بق
+ *    في الصلاحيات وهو مجرد حاجة ماتعملتش.
+ */
 function mark_task_done(int $taskId, int $userId): void
 {
-    db()->prepare(
-        'UPDATE task_targets SET status="done", done_at=NOW() WHERE task_id=? AND user_id=?'
-    )->execute([$taskId, $userId]);
+    if ($taskId <= 0) return;
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // ١) اللي دوس — بيتسجّل باسمه وبوقته هو
+        $pdo->prepare(
+            'UPDATE task_targets SET status="done", done_at=NOW()
+              WHERE task_id=? AND user_id=?'
+        )->execute([$taskId, $userId]);
+
+        // ٢) باقي المستهدفين — المهمة خلصت، مايفضلوش شايفينها مطلوبة.
+        //    COALESCE عشان اللي خلّص قبل كده يفضل وقته الأصلي.
+        $pdo->prepare(
+            'UPDATE task_targets SET status="done", done_at=COALESCE(done_at, NOW())
+              WHERE task_id=? AND status <> "done"'
+        )->execute([$taskId]);
+
+        // ٣) المهمة نفسها
+        $pdo->prepare(
+            'UPDATE tasks SET status="closed" WHERE id=? AND status <> "closed"'
+        )->execute([$taskId]);
+
+        $pdo->commit();
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
 }
 
 /** إضافة تعليق/رد على مهمة. */
