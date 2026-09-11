@@ -187,7 +187,11 @@ function Invoke-Sql {
         $ad = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
         $dt = New-Object System.Data.DataTable
         $null = $ad.Fill($dt)
-        return $dt
+        # NOTE: the comma is load-bearing. "return $dt" makes PowerShell unroll
+        #       the DataTable into a DataRow array, and then $table.Rows yields
+        #       objects whose columns read back empty - every row ships as
+        #       item_id=0 and the website rejects the lot. Do not remove it.
+        return ,$dt
     } finally {
         $conn.Close()
         $conn.Dispose()
