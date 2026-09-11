@@ -406,9 +406,9 @@ function purchase_group_get(int $groupId): ?array
 
         // (٣) مصادر كل السطور في المجموعة باستعلام واحد مجمّع
         $stSources = $pdo->prepare(
-            'SELECT s.id, s.line_id, s.src_type, s.src_line_id, s.src_head_id, s.branch_id, s.qty,
+            'SELECT s.id, s.line_id, s.src_type, s.src_line_id, s.src_head_id, s.branch_id, s.qty, s.is_checked,
                     COALESCE(b.name, \'—\') AS branch_name,
-                    r.customer_name, r.customer_phone
+                    r.customer_name, r.customer_phone, r.created_at AS reserved_at
              FROM purchase_group_sources s
              JOIN purchase_group_lines l ON l.id = s.line_id
              LEFT JOIN branches b ON b.id = s.branch_id
@@ -480,13 +480,17 @@ function purchase_group_toggle_line(int $groupId, int $lineId, bool $checked, in
 
         $newChecked = $checked ? 1 : 0;
 
-        // ١) تحديث سطر المجموعة
+        // ١) تحديث سطر المجموعة ومصادره
         if ($newChecked === 1) {
             $stLine = $pdo->prepare('UPDATE purchase_group_lines SET is_checked = 1, checked_at = NOW(), checked_by = ? WHERE id = ?');
             $stLine->execute([$userId > 0 ? $userId : null, $lineId]);
+            $stSrcUp = $pdo->prepare('UPDATE purchase_group_sources SET is_checked = 1, checked_at = NOW(), checked_by = ? WHERE line_id = ?');
+            $stSrcUp->execute([$userId > 0 ? $userId : null, $lineId]);
         } else {
             $stLine = $pdo->prepare('UPDATE purchase_group_lines SET is_checked = 0, checked_at = NULL, checked_by = NULL WHERE id = ?');
             $stLine->execute([$lineId]);
+            $stSrcUp = $pdo->prepare('UPDATE purchase_group_sources SET is_checked = 0, checked_at = NULL, checked_by = NULL WHERE line_id = ?');
+            $stSrcUp->execute([$lineId]);
         }
 
         // ٢) جلب مصادر السطر
@@ -528,6 +532,127 @@ function purchase_group_toggle_line(int $groupId, int $lineId, bool $checked, in
         return [
             'ok'         => true,
             'is_checked' => $newChecked,
+        ];
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $ex;
+    }
+}
+
+/**
+ * تبديل حالة تشييك مصدر فردي في مجموعة الشراء (حجز لفرع أو طلب نواقص).
+ *
+ * 🔴 قواعد صارمة:
+ *   - التشييك (is_checked = 1):
+ *       مصدر الحجز: book_reservation_lines.stage = 'purchased'
+ *       مصدر النواقص: shortage_request_lines.status = 'purchased'
+ *   - شيل التشييك (is_checked = 0):
+ *       مصدر الحجز: book_reservation_lines.stage = 'grouped'
+ *       مصدر النواقص: shortage_request_lines.status = 'grouped'
+ *   - book_reservations.status ممنوع يتلمس (بيفضل open).
+ *   - allocated_qty ممنوع يتلمس (ده في الاستلام بس).
+ *   - حارس أمان إجباري: التأكد إن المصدر تابع للمجموعة دي قبل أي كتابة.
+ *   - تحديث تشييك السطر نفسه: purchase_group_lines.is_checked = 1 لو كل مصادر السطر متشيّكة و 0 لو واحد على الأقل لأ.
+ *   - استعلام واحد مجمّع بدون أي حلقة.
+ *
+ * @param int  $groupId
+ * @param int  $sourceId
+ * @param bool $checked
+ * @param int  $userId
+ * @return array
+ */
+function purchase_group_toggle_source(int $groupId, int $sourceId, bool $checked, int $userId): array
+{
+    if ($groupId <= 0 || $sourceId <= 0) {
+        throw new RuntimeException('بيانات غير صالحة.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // حارس أمان إجباري: التأكد إن المصدر تابع للمجموعة دي
+        $stChk = $pdo->prepare(
+            'SELECT s.id, s.line_id, s.src_type, s.src_line_id, s.is_checked
+             FROM purchase_group_sources s
+             JOIN purchase_group_lines l ON l.id = s.line_id
+             WHERE s.id = ? AND l.group_id = ? LIMIT 1'
+        );
+        $stChk->execute([$sourceId, $groupId]);
+        $source = $stChk->fetch();
+        if (!$source) {
+            throw new RuntimeException('المصدر ده مش تابع للمجموعة دي.');
+        }
+
+        $lineId     = (int) $source['line_id'];
+        $srcType    = (string) $source['src_type'];
+        $srcLineId  = (int) $source['src_line_id'];
+        $newChecked = $checked ? 1 : 0;
+
+        // ١) تحديث حالة المصدر في purchase_group_sources
+        if ($newChecked === 1) {
+            $stSrc = $pdo->prepare(
+                'UPDATE purchase_group_sources
+                 SET is_checked = 1, checked_at = NOW(), checked_by = ?
+                 WHERE id = ?'
+            );
+            $stSrc->execute([$userId > 0 ? $userId : null, $sourceId]);
+        } else {
+            $stSrc = $pdo->prepare(
+                'UPDATE purchase_group_sources
+                 SET is_checked = 0, checked_at = NULL, checked_by = NULL
+                 WHERE id = ?'
+            );
+            $stSrc->execute([$sourceId]);
+        }
+
+        // ٢) تحديث مرحلة المصدر الأصلي
+        if ($srcType === 'reservation' && $srcLineId > 0) {
+            $targetStage = ($newChecked === 1) ? 'purchased' : 'grouped';
+            $stRes = $pdo->prepare('UPDATE book_reservation_lines SET stage = ? WHERE id = ?');
+            $stRes->execute([$targetStage, $srcLineId]);
+        } elseif ($srcType === 'shortage' && $srcLineId > 0) {
+            $targetStatus = ($newChecked === 1) ? 'purchased' : 'grouped';
+            $stShort = $pdo->prepare('UPDATE shortage_request_lines SET status = ? WHERE id = ?');
+            $stShort->execute([$targetStatus, $srcLineId]);
+        }
+
+        // ٣) إعادة حساب is_checked بتاعة السطر (١ لو كل مصادر السطر متشيّكة و٠ لو واحد على الأقل لأ)
+        $stLineCalc = $pdo->prepare(
+            'SELECT IF(COUNT(*) > 0 AND MIN(is_checked) = 1, 1, 0) AS all_checked
+             FROM purchase_group_sources
+             WHERE line_id = ?'
+        );
+        $stLineCalc->execute([$lineId]);
+        $lineAllChecked = (int) $stLineCalc->fetchColumn();
+
+        if ($lineAllChecked === 1) {
+            $stLineUp = $pdo->prepare(
+                'UPDATE purchase_group_lines
+                 SET is_checked = 1,
+                     checked_at = COALESCE(checked_at, NOW()),
+                     checked_by = COALESCE(checked_by, ?)
+                 WHERE id = ?'
+            );
+            $stLineUp->execute([$userId > 0 ? $userId : null, $lineId]);
+        } else {
+            $stLineUp = $pdo->prepare(
+                'UPDATE purchase_group_lines
+                 SET is_checked = 0,
+                     checked_at = NULL,
+                     checked_by = NULL
+                 WHERE id = ?'
+            );
+            $stLineUp->execute([$lineId]);
+        }
+
+        $pdo->commit();
+        return [
+            'ok'              => true,
+            'is_checked'      => $newChecked,
+            'line_id'         => $lineId,
+            'line_is_checked' => $lineAllChecked,
         ];
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) {

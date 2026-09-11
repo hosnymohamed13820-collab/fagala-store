@@ -64,6 +64,15 @@ if ($ajax !== '') {
                 echo json_encode($res, JSON_UNESCAPED_UNICODE);
                 break;
 
+            // تشييك / شيل تشييك على مصدر
+            case 'toggle_source':
+                $groupId   = (int) ($body['group_id'] ?? 0);
+                $sourceId  = (int) ($body['source_id'] ?? 0);
+                $isChecked = !empty($body['is_checked']);
+                $res = purchase_group_toggle_source($groupId, $sourceId, $isChecked, $uid);
+                echo json_encode($res, JSON_UNESCAPED_UNICODE);
+                break;
+
             // مسح سطر من المجموعة
             case 'remove':
                 $groupId = (int) ($body['group_id'] ?? 0);
@@ -246,6 +255,15 @@ require_once __DIR__ . '/includes/header.php';
     .keep-src-sub-qty { color:var(--ink-900); }
     .keep-src-empty { color:var(--ink-400); font-style:italic; }
     .keep-empty-msg { text-align:center; color:var(--ink-400); padding:24px 12px; font-size:14px; }
+    .keep-src-cb-wrap { position:relative; display:inline-flex; align-items:center; cursor:pointer; user-select:none; }
+    .keep-src-cb-input { position:absolute; opacity:0; width:0; height:0; }
+    .keep-src-cb-box { width:16px; height:16px; border:1.5px solid var(--ink-400); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; color:transparent; background:var(--surface); }
+    .keep-src-cb-wrap:hover .keep-src-cb-box { border-color:var(--accent-text); }
+    .keep-src-cb-input:checked + .keep-src-cb-box { background:var(--accent); border-color:var(--accent-text); color:#fff; }
+    .keep-src-cb-box i { font-size:10px; font-weight:bold; }
+    .keep-src-date { font-size:11.5px; color:var(--ink-500); margin-right:4px; }
+    .keep-src-sub-item.is-checked { text-decoration:line-through; color:var(--ink-400); }
+    .keep-src-sub-item.is-checked .keep-src-sub-qty { color:var(--ink-400); }
 
     /* بوب أب التجميع */
     .pg-table { width:100%; border-collapse:collapse; }
@@ -363,7 +381,16 @@ require_once __DIR__ . '/includes/header.php';
                                     $isSingleShortage = (count($sb['items']) === 1 && $sb['items'][0]['src_type'] === 'shortage');
                                 ?>
                                 <?php if ($isSingleShortage): ?>
-                                    <div class="keep-src-branch-title">
+                                    <?php
+                                        $sSingle = $sb['items'][0];
+                                        $sSingleChecked = ((int)($sSingle['is_checked'] ?? 0) === 1);
+                                        $sSingleId = (int)$sSingle['id'];
+                                    ?>
+                                    <div class="keep-src-branch-title" id="src-item-<?= $sSingleId ?>">
+                                        <label class="keep-src-cb-wrap">
+                                            <input type="checkbox" class="keep-src-cb-input" data-line-id="<?= $id ?>" data-source-id="<?= $sSingleId ?>" <?= $sSingleChecked ? 'checked' : '' ?> onchange="onSourceToggle(<?= $id ?>, <?= $sSingleId ?>, this.checked)">
+                                            <span class="keep-src-cb-box"><i class="ti ti-check"></i></span>
+                                        </label>
                                         <span class="keep-src-icon"><i class="ti ti-shopping-cart"></i></span>
                                         <span>نواقص · <?= e($sb['branch_name']) ?></span>
                                         <span class="keep-src-arrow">→</span>
@@ -384,11 +411,17 @@ require_once __DIR__ . '/includes/header.php';
                                                 $isLast = ($sIdx === $itemCount - 1);
                                                 $treeChar = $isLast ? '└' : '├';
                                                 $itemQty = rtrim(rtrim(number_format((float)$sItem['qty'], 2, '.', ''), '0'), '.');
+                                                $isSrcChecked = ((int)($sItem['is_checked'] ?? 0) === 1);
+                                                $sId = (int)$sItem['id'];
                                             ?>
-                                                <div class="keep-src-sub-item">
+                                                <div class="keep-src-sub-item <?= $isSrcChecked ? 'is-checked' : '' ?>" id="src-item-<?= $sId ?>">
                                                     <span class="keep-tree-char"><?= $treeChar ?></span>
+                                                    <label class="keep-src-cb-wrap">
+                                                        <input type="checkbox" class="keep-src-cb-input" data-line-id="<?= $id ?>" data-source-id="<?= $sId ?>" <?= $isSrcChecked ? 'checked' : '' ?> onchange="onSourceToggle(<?= $id ?>, <?= $sId ?>, this.checked)">
+                                                        <span class="keep-src-cb-box"><i class="ti ti-check"></i></span>
+                                                    </label>
                                                     <?php if ($sItem['src_type'] === 'reservation'): ?>
-                                                        <span>حجز <?= e($sItem['customer_name'] ?: 'عميل') ?></span>
+                                                        <span>حجز <?= e($sItem['customer_name'] ?: 'عميل') ?><?php if (!empty($sItem['reserved_at'])): ?> <span class="keep-src-date"><?= e(date('Y-m-d', strtotime((string)$sItem['reserved_at']))) ?></span><?php endif; ?></span>
                                                         <span class="keep-src-dash">—</span>
                                                         <strong class="keep-src-sub-qty"><?= $itemQty ?></strong>
                                                     <?php else: ?>
@@ -502,6 +535,12 @@ require_once __DIR__ . '/includes/header.php';
                 activeList.appendChild(row);
             }
 
+            // تحديث تشيك بوكسات المصادر داخل السطر
+            const srcCbs = row.querySelectorAll('.keep-src-cb-input');
+            srcCbs.forEach(cb => { cb.checked = isChecked; });
+            const srcItems = row.querySelectorAll('.keep-src-sub-item');
+            srcItems.forEach(item => { item.classList.toggle('is-checked', isChecked); });
+
             updateCheckedCounters();
 
             fetch('purchase_groups.php?ajax=toggle', {
@@ -520,6 +559,65 @@ require_once __DIR__ . '/includes/header.php';
                     alert(data.error || 'حصل خطأ أثناء تحديث السطر.');
                     location.reload();
                 }
+            })
+            .catch(err => {
+                alert('فشل الاتصال بالسيرفر.');
+                location.reload();
+            });
+        }
+
+        // ===== تشييك / شيل تشييك مصدر =====
+        function onSourceToggle(lineId, sourceId, isChecked) {
+            const srcItem = document.getElementById(`src-item-${sourceId}`);
+            if (srcItem) {
+                srcItem.classList.toggle('is-checked', isChecked);
+            }
+
+            fetch('purchase_groups.php?ajax=toggle_source', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                body: JSON.stringify({
+                    csrf: CSRF_TOKEN,
+                    group_id: GROUP_ID,
+                    source_id: sourceId,
+                    is_checked: isChecked ? 1 : 0
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert(data.error || 'حصل خطأ أثناء تحديث المصدر.');
+                    location.reload();
+                    return;
+                }
+
+                showIndicator('✓ اتحفظ', true);
+
+                // تحديث حالة السطر بناءً على line_is_checked
+                const row = document.getElementById(`line-${lineId}`);
+                if (!row) return;
+
+                const lineCb = row.querySelector('.keep-row-main .keep-cb-input');
+                const activeList  = document.getElementById('activeList');
+                const checkedList = document.getElementById('checkedList');
+
+                if (data.line_is_checked === 1) {
+                    row.classList.add('is-checked');
+                    row.setAttribute('draggable', 'false');
+                    if (lineCb) lineCb.checked = true;
+                    if (checkedList && row.parentElement !== checkedList) {
+                        checkedList.appendChild(row);
+                    }
+                } else {
+                    row.classList.remove('is-checked');
+                    row.setAttribute('draggable', 'true');
+                    if (lineCb) lineCb.checked = false;
+                    if (activeList && row.parentElement !== activeList) {
+                        activeList.appendChild(row);
+                    }
+                }
+
+                updateCheckedCounters();
             })
             .catch(err => {
                 alert('فشل الاتصال بالسيرفر.');
@@ -579,6 +677,10 @@ require_once __DIR__ . '/includes/header.php';
                 row.setAttribute('draggable', 'true');
                 const cb = row.querySelector('.keep-cb-input');
                 if (cb) cb.checked = false;
+                const srcCbs = row.querySelectorAll('.keep-src-cb-input');
+                srcCbs.forEach(scb => { scb.checked = false; });
+                const srcItems = row.querySelectorAll('.keep-src-sub-item');
+                srcItems.forEach(item => { item.classList.remove('is-checked'); });
                 activeList.appendChild(row);
             });
 
