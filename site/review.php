@@ -870,6 +870,16 @@ function shift_cashier_amounts(array $s): array {
         var summaryText = summaryParts.join(' · ');
         var summaryHtml = summaryText ? '<div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">' + summaryText + '</div>' : '';
 
+        // الكاشير مش بيسجّل سيريالات، فالعمودين بيفضلوا «—» وبياخدوا نص
+        // عرض الجدول على الفاضي. لو مفيش ولا سيريال عند أي طرف نخفيهم.
+        // 🔴 ده إخفاء **عرض** بس — المطابقة فوق لسه بتستعمل السيريال
+        //    لما يكون موجود، والأولوية بتاعته زي ما هي.
+        var hasAnyRef = false;
+        for (var r = 0; r < matches.length; r++) {
+            if (String(matches[r].empRef || '').trim() !== '' ||
+                String(matches[r].accRef || '').trim() !== '') { hasAnyRef = true; break; }
+        }
+
         var rowsHtml = '';
         for (var k = 0; k < displayMatches.length; k++) {
             var item = displayMatches[k], isOk = (item.status === '✓ مطابق'), stCls = isOk ? 'cmp-ok' : 'cmp-bad';
@@ -881,16 +891,21 @@ function shift_cashier_amounts(array $s): array {
 
             rowsHtml += '<tr>'
                       + '<td class="' + stCls + '">' + item.status + '</td>'
-                      + '<td>' + rvEsc(empRefDisplay) + '</td>'
+                      + (hasAnyRef ? '<td>' + rvEsc(empRefDisplay) + '</td>' : '')
                       + '<td>' + empAmtDisplay + '</td>'
-                      + '<td>' + rvEsc(accRefDisplay) + '</td>'
+                      + (hasAnyRef ? '<td>' + rvEsc(accRefDisplay) + '</td>' : '')
                       + '<td>' + accAmtDisplay + '</td>'
                       + '<td class="' + stCls + '">' + diffStr + '</td>'
                       + '</tr>';
         }
 
+        // 🔴 الرؤوس لازم تتغيّر مع الخانات — ٤ خانات تحت ٦ رؤوس = جدول مكسور
         var body = summaryHtml + '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
-                 + '<th>الحالة</th><th>سيريال الموظف</th><th>مبلغ الموظف</th><th>سيريال المحاسب</th><th>مبلغ المحاسب</th><th>الفرق</th>'
+                 + '<th>الحالة</th>'
+                 + (hasAnyRef ? '<th>سيريال الموظف</th>' : '')
+                 + '<th>مبلغ الموظف</th>'
+                 + (hasAnyRef ? '<th>سيريال المحاسب</th>' : '')
+                 + '<th>مبلغ المحاسب</th><th>الفرق</th>'
                  + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
 
         return '<tr class="cmp-detail"><td colspan="4">' + body + '</td></tr>';

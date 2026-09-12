@@ -375,9 +375,20 @@ require_once __DIR__ . '/includes/header.php';
     .ct-tab:hover:not(.active) { color:var(--accent-text); }
     .ct-pane { display:none; }
     .ct-pane.active { display:block; }
-    .pay-table { width:100%; border-collapse:collapse; }
+    /* 🔴 table-layout:fixed مش رفاهية — من غيرها المتصفح بيسأل كل <input>
+       عايز عرض قد إيه، والـinput بيرد «٢٠ حرف» (~175px) حتى وهو فاضي.
+       الجدول بيطلع عايز ~446px والمتاح ليه ~438px، فخانة المبلغ كانت
+       بتتزنق بره ويظهر سكرول أفقي.
+       ⚠️ `min-width:0` اللي تحت في قسم الموبايل ماحلّتش دي — الـmin-width
+          مالهاش تأثير على حساب أعمدة الجدول في وضع auto. */
+    .pay-table { width:100%; border-collapse:collapse; table-layout:fixed; }
     .pay-table td { padding:4px; border:none; }
-    .pay-table td:first-child { width:34px; }
+    /* مع fixed العرض بيتقرا من أول صف = <thead>، فلازم يتحط على th و td
+       مع بعض. على td لوحده مابيشتغلش. */
+    .pay-table td:first-child, .pay-table th:first-child { width:34px; }
+    /* المبلغ: أطول رقم واقعي 55057.75 محتاج ~87px، و110 فيها هامش.
+       السيريال مالوش عرض — بياخد الباقي لوحده. */
+    .pay-table td:last-child, .pay-table th:last-child { width:110px; }
     .pay-table th { padding:4px 6px 8px; text-align:right; font-size:12px; color:var(--ink-500); font-weight:600; border:none; }
     .pay-table input { width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; box-sizing:border-box; }
     .totals-row td { font-weight:700; background:var(--accent-soft); color:var(--ink-900); }
@@ -411,6 +422,9 @@ require_once __DIR__ . '/includes/header.php';
         .side-summary { margin-top:14px; }
         .cash-total-box, .side-summary .sum-detail { padding:12px; }
         .denom-line input { width:70px; }
+        /* الشاشة ضيقة — نضيّق المبلغ شوية عشان السيريال ياخد مساحة مقروءة */
+        .pay-table td:last-child, .pay-table th:last-child { width:88px; }
+        .pay-table input { padding:7px 8px; font-size:13px; }
     }
     /* بطاقات ملخص اليوم */
     .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
