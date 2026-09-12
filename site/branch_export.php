@@ -9,7 +9,15 @@
  * المدخلات: ?invoice=STH_ID&branch=BRANCH_ID
  */
 require_once __DIR__ . '/auth.php';
-require_permission('invoices');
+
+// عاشور معاه invoices:ashraqa بس — يسحب ملف إشراقة وبس.
+// من غير القيد ده كان يقدر يغيّر ?branch ويسحب ملف أي فرع تاني.
+if (!can('invoices') && can('invoices:ashraqa')) {
+    $ashraqaOnly = true;
+} else {
+    require_permission('invoices');
+    $ashraqaOnly = false;
+}
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';   // الأصناف الممنوعة من ملف الفرع
 require_once __DIR__ . '/group_lib.php';        // فلتر مجموعة الأصناف
@@ -30,6 +38,11 @@ if ($invoiceId === null || $branchId <= 0) {
     die('بيانات غير مكتملة.');
 }
 
+if ($ashraqaOnly && $branchId !== 5) { // branch 403
+    http_response_code(403);
+    die('غير مصرح.');
+}
+
 $pdo = db();
 
 // سجل التوزيع (الهيدر في MySQL) لهذه الفاتورة
@@ -40,6 +53,19 @@ if (!$invHeader) {
 }
 $dist = ensure_distribution_record($invHeader);
 $distId = (int) $dist['id'];
+
+if ($ashraqaOnly) {
+    $stCheck = $pdo->prepare(
+        'SELECT 1 FROM invoice_distribution_lines
+          WHERE distribution_id = ? AND branch_id = 5 AND amount > 0
+          LIMIT 1'
+    );
+    $stCheck->execute([$distId]);
+    if (!$stCheck->fetchColumn()) {
+        http_response_code(403);
+        die('غير مصرح.');
+    }
+}
 
 // اسم الفرع (لاسم الملف)
 $bStmt = $pdo->prepare('SELECT name FROM branches WHERE id = ?');

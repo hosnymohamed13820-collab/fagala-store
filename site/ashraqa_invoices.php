@@ -78,6 +78,58 @@ function ash_mrk_round(float $v): float
     return round($v / ASH_MRK_ROUND_STEP) * ASH_MRK_ROUND_STEP;
 }
 
+// معالج حفظ الأسعار بالجملة لفرع إشراقة (AJAX)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_prices_bulk') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $d = (int) ($_POST['distribution_id'] ?? 0);
+        $rawPrices = (string) ($_POST['prices'] ?? '');
+        $map = json_decode($rawPrices, true);
+
+        if ($d <= 0 || !is_array($map) || empty($map)) {
+            throw new RuntimeException('بيانات ناقصة.');
+        }
+        if (count($map) > 5000) {
+            throw new RuntimeException('عدد الأصناف كبير جداً.');
+        }
+
+        // حارس أمان: التحقق من أن الفاتورة فيها توزيع لإشراقة
+        if (!in_array($d, $ashraqaDocNos, true)) {
+            http_response_code(403);
+            throw new RuntimeException('غير مصرح لك بتسعير هذه الفاتورة.');
+        }
+
+        $n = 0;
+        $pdo->beginTransaction();
+        try {
+            foreach ($map as $code => $price) {
+                $code = trim((string) $code);
+                $price = (float) $price;
+                if ($code === '' || $price < 0) continue;
+                ashraqa_save_price($d, $code, ash_mrk_round($price), $uid);
+                $n++;
+            }
+            $pdo->commit();
+        } catch (Throwable $ex) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $ex;
+        }
+
+        echo json_encode(['ok' => true, 'count' => $n], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        if (http_response_code() === 200) {
+            http_response_code(400);
+        }
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 function ash_mrk_cost(array $item): float
 {
     $c = (float) ($item['unit_price'] ?? 0);
@@ -336,6 +388,53 @@ require_once __DIR__ . '/includes/header.php';
         opacity: 0.5;
         background: var(--bg);
     }
+    .inv-row {
+        cursor: pointer;
+        transition: background 0.12s;
+    }
+    .inv-row:hover, .inv-row:focus {
+        background: var(--accent-soft);
+        outline: none;
+    }
+    .ash-mrk-bulk {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+    }
+    .ash-mrk-lbl {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--ink-800);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    #ashMrkBulk {
+        width: 90px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        font-family: inherit;
+        font-size: 13.5px;
+        background: var(--surface);
+        color: var(--ink-900);
+        box-sizing: border-box;
+    }
+    #ashMrkBulk:focus {
+        outline: none;
+        border-color: var(--accent-text);
+        box-shadow: 0 0 0 3px var(--accent-ring);
+    }
+    .ash-mrk-hint {
+        font-size: 12.5px;
+        color: var(--ink-500);
+    }
 </style>
 
 <?php if ($openInvoice === null): ?>
@@ -365,12 +464,15 @@ require_once __DIR__ . '/includes/header.php';
                         <th>رقم الفاتورة</th>
                         <th>التاريخ</th>
                         <th>الحالة</th>
-                        <th style="width:110px;">الإجراء</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($invoices as $idx => $inv): ?>
-                        <tr>
+                    <?php foreach ($invoices as $idx => $inv):
+                        $invUrl = 'ashraqa_invoices.php?invoice=' . urlencode((string)$inv['inv_id']) . '&suffix=' . urlencode((string)($inv['suffix'] ?? ''));
+                    ?>
+                        <tr class="inv-row" tabindex="0" role="link"
+                            onclick="location.href='<?= $invUrl ?>'"
+                            onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); location.href='<?= $invUrl ?>'; }">
                             <td><?= $idx + 1 ?></td>
                             <td style="font-weight:600;color:var(--ink-900);">
                                 <?= htmlspecialchars((string)($inv['inv_no'] ?? '—'), ENT_QUOTES, 'UTF-8') ?>
@@ -380,12 +482,6 @@ require_once __DIR__ . '/includes/header.php';
                             </td>
                             <td>
                                 <span class="st-badge">جديدة</span>
-                            </td>
-                            <td>
-                                <a href="ashraqa_invoices.php?invoice=<?= urlencode((string)$inv['inv_id']) ?>&suffix=<?= urlencode((string)($inv['suffix'] ?? '')) ?>"
-                                   class="btn btn-outline btn-sm" title="فتح أصناف الفاتورة">
-                                    عرض الأصناف <i class="ti ti-chevron-left"></i>
-                                </a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -407,12 +503,28 @@ require_once __DIR__ . '/includes/header.php';
                 </h1>
                 <span class="st-badge">جديدة</span>
             </div>
-            <div style="font-size:13px;color:var(--ink-600);">
-                تاريخ الفاتورة: <?= !empty($openInvoice['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$openInvoice['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <a href="branch_export.php?invoice=<?= urlencode((string)$openId) ?>&branch=5&suffix=<?= urlencode((string)($openSuf ?? '')) ?>"
+                   class="btn btn-outline btn-sm" title="تحميل ملف توزيع الفرع تكست">
+                    <i class="ti ti-download"></i> تحميل تكست
+                </a>
+                <a href="ashraqa_prices_export.php?invoice=<?= urlencode((string)$openId) ?>&suffix=<?= urlencode((string)($openSuf ?? '')) ?>"
+                   class="btn btn-outline btn-sm" title="تقرير أسعار إشراقة">
+                    <i class="ti ti-file-invoice"></i> تقرير الأسعار
+                </a>
+                <a href="ashraqa_invoice_export.php?invoice=<?= urlencode((string)$openId) ?>&suffix=<?= urlencode((string)($openSuf ?? '')) ?>"
+                   class="btn btn-outline btn-sm" title="تحميل إكسيل لأصناف إشراقة">
+                    <i class="ti ti-file-spreadsheet"></i> تحميل إكسيل
+                </a>
             </div>
         </div>
-        <div style="font-size:12.5px;color:var(--ink-500);border-top:1px solid var(--line-soft);padding-top:8px;">
-            <i class="ti ti-clock"></i> آخر تحديث أرصدة إشراقة: <?= $lastSync ? htmlspecialchars($lastSync, ENT_QUOTES, 'UTF-8') : 'لا يوجد مزامنة سابقة' ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:12.5px;color:var(--ink-500);border-top:1px solid var(--line-soft);padding-top:8px;">
+            <div>
+                تاريخ الفاتورة: <?= !empty($openInvoice['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$openInvoice['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
+            </div>
+            <div>
+                <i class="ti ti-clock"></i> آخر تحديث أرصدة إشراقة: <?= $lastSync ? htmlspecialchars($lastSync, ENT_QUOTES, 'UTF-8') : 'لا يوجد مزامنة سابقة' ?>
+            </div>
         </div>
     </div>
 
@@ -421,6 +533,18 @@ require_once __DIR__ . '/includes/header.php';
             لا توجد أصناف موزعة لفرع إشراقة في هذه الفاتورة.
         </div>
     <?php else: ?>
+        <div class="ash-mrk-bulk">
+            <span class="ash-mrk-lbl"><i class="ti ti-percentage"></i> نسبة التسعير لكل الأصناف</span>
+            <input type="number" step="0.5" id="ashMrkBulk" placeholder="مثال: 50"
+                   aria-label="نسبة تسعير لكل الأصناف" autocomplete="off"
+                   onkeydown="ashMrkBulkKey(event)">
+            <button type="button" class="btn btn-sm btn-primary" onclick="applyAshBulkMrk()">
+                <i class="ti ti-check"></i> طبّق
+            </button>
+            <span class="ash-mrk-hint">بتسعّر كل الأصناف مرة واحدة (بتأكيد قبلها).</span>
+            <span id="ashMrkBulkNote" style="display:none;font-size:13px;"></span>
+        </div>
+
         <div class="ash-table-wrap">
             <table class="ash-table">
                 <thead>
@@ -594,6 +718,83 @@ require_once __DIR__ . '/includes/header.php';
                 .catch(() => {
                     if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; }
                 });
+            }
+
+            function ashMrkBulkKey(ev) {
+                const k = ev.key || '';
+                const isEnter = k === 'Enter' || k === 'Go' || k === 'Done' || k === 'Next'
+                             || ev.keyCode === 13 || ev.which === 13;
+                if (!isEnter) return;
+                ev.preventDefault();
+                applyAshBulkMrk();
+            }
+
+            function applyAshBulkMrk() {
+                const box  = document.getElementById('ashMrkBulk');
+                const note = document.getElementById('ashMrkBulkNote');
+                const setNote = (txt, color) => {
+                    if (!note) return;
+                    note.textContent = txt; note.style.color = color; note.style.display = 'inline';
+                    clearTimeout(window.__ashMrkNoteT);
+                    window.__ashMrkNoteT = setTimeout(() => { note.style.display = 'none'; }, 6000);
+                };
+                if (!box) return;
+
+                const raw = (box.value || '').trim();
+                if (raw === '') { box.focus(); return; }
+                const p = parseFloat(raw);
+                if (isNaN(p) || p <= -100) { setNote('✗ اكتب نسبة صحيحة', 'var(--neg)'); return; }
+
+                const prices = {};
+                const rows = [];
+                let noCost = 0;
+                document.querySelectorAll('tr.item-row').forEach(row => {
+                    const m = row.querySelector('.mrk-input');
+                    const s = row.querySelector('.sale-input');
+                    if (!m || !s) return;
+                    const cost = parseFloat(m.dataset.cost || '0') || 0;
+                    if (cost <= 0) { noCost++; return; }
+                    const val = ashMrkRound(cost * (1 + p / 100));
+                    prices[s.dataset.code] = val;
+                    rows.push({ input: s, row: row, val: val });
+                });
+
+                const n = rows.length;
+                if (!n) { setNote('✗ مفيش أصناف ليها تكلفة', 'var(--neg)'); return; }
+
+                const extra = noCost > 0 ? '\n(' + noCost + ' صنف من غير تكلفة هيتساب زي ما هو)' : '';
+                if (!confirm('هيتسعّر ' + n + ' صنف بنسبة ' + p + '%\n\n'
+                           + '⚠️ أي سعر بيع موجود دلوقتي هيتكتب فوقه.' + extra + '\n\nتمام؟')) return;
+
+                setNote('بيحفظ ' + n + ' صنف…', 'var(--ink-500)');
+                box.disabled = true;
+
+                const body = {
+                    action: 'save_prices_bulk',
+                    csrf: CSRF,
+                    distribution_id: DIST_ID,
+                    prices: JSON.stringify(prices)
+                };
+
+                fetch('ashraqa_invoices.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams(body).toString()
+                })
+                .then(r => r.json())
+                .then(j => {
+                    if (!j.ok) throw new Error(j.error || 'تعذّر الحفظ');
+                    rows.forEach(r => {
+                        r.input.value = String(r.val);
+                        r.input.dataset.saved = String(r.val);
+                        r.input.classList.remove('dirty');
+                        refreshAshMrk(r.row);
+                    });
+                    box.value = '';
+                    setNote('✓ اتسعّر ' + n + ' صنف بنسبة ' + p + '%', 'var(--pos)');
+                })
+                .catch(err => setNote('✗ ' + (err.message || 'تعذّر الحفظ'), 'var(--neg)'))
+                .finally(() => { box.disabled = false; });
             }
         </script>
     <?php endif; ?>
