@@ -35,6 +35,128 @@ foreach ($rows as $r) {
     $ashraqaDocNos[(string)$r['invoice_no']] = (int)$r['dist_id'];
 }
 
+// ===== حالة مراجعة إشراقة — استعلام واحد لكل الفواتير =====
+// 🔴 جدول منفصل تماماً عن invoice_distribution.status.
+//    العمود المشترك ده (new/split/done) بتاع المشتريات ومعناه «الفاتورة
+//    اتوزّعت ولا لأ». «تم الإدخال» هنا معناها عاشور خلّص إدخالها عندهم —
+//    معنى تاني خالص، والخلط بينهم بيخلّي فاتورة موزّعة تبان جديدة للمشتريات.
+// 🔴 غياب الصف = 'new'. مفيش backfill ولا لمس لأي فاتورة قديمة.
+$ashraqaStatus = [];   // [dist_id => 'new'|'entered']
+try {
+    foreach ($pdo->query('SELECT distribution_id, status FROM ashraqa_invoice_status') as $r) {
+        $ashraqaStatus[(int) $r['distribution_id']] = (string) $r['status'];
+    }
+} catch (Throwable $ex) {
+    // الجدول لسه ما اتعملش — كل الفواتير تبان «جديدة» والصفحة تفضل شغّالة
+    error_log('ashraqa_invoice_status: ' . $ex->getMessage());
+}
+
+// ===== بحث الصنف (AJAX) — «الصنف ده نزل في أنهي فاتورة؟» =====
+// نفس نمط invoices.php:30، بس **مفلتر على إشراقة**.
+$ilkAjax = $_GET['ilk'] ?? '';
+if ($ilkAjax !== '') {
+    header('Content-Type: application/json; charset=utf-8');
+    require_once __DIR__ . '/item_lookup_lib.php';
+    try {
+        if (!ilk_ready()) throw new RuntimeException('المزامنة لسه ما وصلتش — استنى شوية وجرّب تاني.');
+
+        if ($ilkAjax === 'search') {
+            echo json_encode([
+                'ok'   => true,
+                'rows' => ilk_search((string) ($_GET['term'] ?? ''), 15),
+            ], JSON_UNESCAPED_UNICODE);
+
+        } elseif ($ilkAjax === 'history') {
+            $res = ilk_item_history((string) ($_GET['code'] ?? ''), (int) ($_GET['item_id'] ?? 0));
+
+            // 🔴🔴 الفلترة دي **في السيرفر قبل json_encode** — مش إخفاء في
+            //     الجافاسكربت. ilk_item_history بترجّع كل الفواتير ومعاها
+            //     توزيع كل الفروع واسم المورد، وعاشور مالوش شوف ده.
+            $rows = [];
+            foreach ($res['rows'] ?? [] as $row) {
+                $docNo = (string) ($row['doc_no'] ?? $row['inv_no'] ?? '');
+                if (!isset($ashraqaDocNos[$docNo])) continue;   // فاتورة مالهاش إشراقة
+
+                // ⚠️ `dist` قايمة [['branch_id','name','qty'], …] مش خريطة
+                //    بمفتاح رقم الفرع — لازم ندوّر فيها، مش $dist[5].
+                $ashQty = 0.0;
+                foreach (($row['dist'] ?? []) as $b) {
+                    if ((int) ($b['branch_id'] ?? 0) === ASHRAQA_BRANCH_ID) {
+                        $ashQty = (float) ($b['qty'] ?? 0);
+                        break;
+                    }
+                }
+                if ($ashQty <= 0) continue;
+
+                // الحقول دي بس هي اللي بتوصل المتصفح — مفيش مورد ولا فرع تاني
+                // ولا in_store ولا dist_total (دول بيوروا توزيع الباقي بالطرح).
+                $rows[] = [
+                    'doc_no'    => $docNo,
+                    'sth_id'    => (int) ($row['sth_id'] ?? 0),
+                    'suffix'    => (string) ($row['suffix'] ?? ''),
+                    'date'      => (string) ($row['date'] ?? ''),
+                    'is_return' => !empty($row['is_return']),
+                    'qty'       => (float) ($row['qty'] ?? 0),
+                    'ash_qty'   => $ashQty,
+                ];
+            }
+
+            $item = $res['item'] ?? null;
+            echo json_encode([
+                'ok'    => true,
+                'item'  => $item ? [
+                    'code' => (string) ($item['code'] ?? ''),
+                    'name' => (string) ($item['name'] ?? ''),
+                ] : null,
+                'rows'  => $rows,
+            ], JSON_UNESCAPED_UNICODE);
+
+        } else {
+            throw new RuntimeException('عملية غير معروفة.');
+        }
+    } catch (Throwable $ex) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
+// ===== تغيير حالة المراجعة (AJAX) — بيتحفظ على الضغط، مفيش زرار حفظ =====
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $d  = (int) ($_POST['distribution_id'] ?? 0);
+        $st = (string) ($_POST['status'] ?? '');
+
+        if (!in_array($st, ['new', 'entered'], true)) {
+            throw new RuntimeException('حالة غير معروفة.');
+        }
+        // نفس حارس save_price — الفاتورة لازم تكون فيها توزيع لإشراقة
+        if ($d <= 0 || !in_array($d, $ashraqaDocNos, true)) {
+            http_response_code(403);
+            throw new RuntimeException('غير مصرح لك بتغيير حالة الفاتورة دي.');
+        }
+
+        $up = $pdo->prepare(
+            'INSERT INTO ashraqa_invoice_status (distribution_id, status, updated_by)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE status = VALUES(status), updated_by = VALUES(updated_by)'
+        );
+        $up->execute([$d, $st, $uid]);
+
+        echo json_encode(['ok' => true, 'status' => $st], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        if (http_response_code() === 200) {
+            http_response_code(400);
+        }
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // معالج حفظ السعر لفرع إشراقة (AJAX على blur)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_price') {
     header('Content-Type: application/json; charset=utf-8');
@@ -296,6 +418,56 @@ require_once __DIR__ . '/includes/header.php';
         background: var(--accent-soft);
         color: var(--accent-text);
     }
+    /* «تم الإدخال» — أخضر عشان يبان من «جديدة» بنظرة */
+    .st-badge.st-entered { background: var(--pos-soft); color: var(--pos); }
+
+    /* ===== فلتر الحالات — منقول بالحرف من invoices.php:1739 ===== */
+    .status-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .sf-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
+        border:1px solid var(--line); border-radius:20px; background:var(--surface);
+        color:var(--ink-600); font-family:inherit; font-size:13px; font-weight:500;
+        cursor:pointer; transition:all .15s; }
+    .sf-btn:hover { border-color:var(--ink-300); color:var(--ink-800); }
+    .sf-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
+        background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
+    .sf-btn.active { background:var(--fill-strong); border-color:var(--fill-strong); color:var(--fill-strong-fg); }
+    .sf-btn.active span { background:var(--fill-strong-veil); color:var(--fill-strong-fg); }
+    .no-match { padding:26px; text-align:center; color:var(--ink-400); }
+    /* الفلترة بتستعمل tr.hidden — القاعدة دي تأمين صريح لو حد ضاف
+       display على الصفوف بعدين، عشان الصف المخفي مايفضلش ظاهر بصمت */
+    .ash-table tr[hidden] { display:none; }
+
+    /* ===== بار البحث — نفس مقاسات invoices.php:1554 ===== */
+    .ilk-bar { background:var(--surface); border-radius:12px; padding:11px 15px; margin-bottom:16px;
+        display:flex; align-items:center; gap:11px; box-shadow:var(--shadow-sm); }
+    .ilk-bar > i { color:var(--ink-500); font-size:18px; }
+    .ilk-wrap { position:relative; flex:1; }
+    .ilk-wrap input { width:100%; box-sizing:border-box; padding:9px 11px;
+        border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px;
+        background:var(--surface); color:var(--ink-900); }
+    .ilk-wrap input:focus { outline:none; border-color:var(--accent-text); }
+    .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
+        background:var(--surface); border:1px solid var(--line); border-radius:10px;
+        box-shadow:var(--shadow-lg); max-height:300px; overflow-y:auto; display:none; }
+    .ilk-sugg div.ilk-s { padding:9px 12px; cursor:pointer; border-bottom:1px solid var(--line-soft); font-size:13px; }
+    .ilk-sugg div.ilk-s:last-child { border-bottom:none; }
+    .ilk-sugg div.ilk-s:hover, .ilk-sugg div.ilk-s.on { background:var(--accent-soft); }
+    .ilk-sugg .ilk-c { color:var(--ink-500); font-size:12px; }
+
+    /* فلتر رقم الفاتورة */
+    .inv-filter { width:100%; box-sizing:border-box; padding:9px 12px; margin-bottom:14px;
+        border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px;
+        background:var(--surface); color:var(--ink-900); }
+    .inv-filter:focus { outline:none; border-color:var(--accent-text); }
+
+    /* ===== سلايدر الحالة (جوّه الفاتورة) ===== */
+    .st-slider { display:inline-flex; border:1px solid var(--line); border-radius:20px;
+        overflow:hidden; background:var(--surface); }
+    .st-slider button { border:none; background:none; font-family:inherit; font-size:12.5px;
+        font-weight:600; padding:5px 14px; cursor:pointer; color:var(--ink-500); transition:all .15s; }
+    .st-slider button:hover:not(.on) { color:var(--ink-800); background:var(--line-soft); }
+    .st-slider button.on { background:var(--fill-strong); color:var(--fill-strong-fg); }
+    .st-slider button:disabled { opacity:.6; cursor:default; }
     .ash-table-wrap {
         overflow-x: auto;
         border: 1px solid var(--line);
@@ -450,14 +622,49 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <!-- بار «الصنف ده نزل في أنهي فاتورة؟» -->
+    <div class="ilk-bar">
+        <i class="ti ti-search"></i>
+        <div class="ilk-wrap">
+            <input type="text" id="ilkInput" autocomplete="off" inputmode="search"
+                   aria-label="بحث عن صنف"
+                   placeholder="دوّر على صنف بالكود أو الاسم — يوريك نزل في أنهي فواتير إشراقة…">
+            <div class="ilk-sugg" id="ilkSugg"></div>
+        </div>
+    </div>
+
     <?php if (empty($invoices)): ?>
         <div class="card" style="text-align:center;padding:36px;color:var(--ink-500);">
             <i class="ti ti-package" style="font-size:32px;display:block;margin-bottom:8px;"></i>
             لا توجد فواتير موزعة لفرع إشراقة حالياً.
         </div>
     <?php else: ?>
+        <?php
+            // عدّادات الفلتر — بتتحسب هنا مرة واحدة
+            $cntNew = 0; $cntEntered = 0;
+            foreach ($invoices as $inv) {
+                $s = $ashraqaStatus[(int) $inv['dist_id']] ?? 'new';
+                if ($s === 'entered') $cntEntered++; else $cntNew++;
+            }
+        ?>
+        <div class="status-filters">
+            <button type="button" class="sf-btn active" data-f="all" onclick="ashFilter(this)">
+                الكل <span><?= count($invoices) ?></span>
+            </button>
+            <button type="button" class="sf-btn" data-f="new" onclick="ashFilter(this)">
+                جديدة <span><?= $cntNew ?></span>
+            </button>
+            <button type="button" class="sf-btn" data-f="entered" onclick="ashFilter(this)">
+                تم الإدخال <span><?= $cntEntered ?></span>
+            </button>
+        </div>
+
+        <input type="text" class="inv-filter" id="invFilter" autocomplete="off" inputmode="search"
+               aria-label="فلتر برقم الفاتورة" placeholder="فلتر: رقم الفاتورة…"
+               oninput="ashApply()">
+
         <div class="ash-table-wrap">
-            <table class="ash-table">
+            <table class="ash-table" data-xt-off>
                 <thead>
                     <tr>
                         <th style="width:50px;">#</th>
@@ -466,14 +673,18 @@ require_once __DIR__ . '/includes/header.php';
                         <th>الحالة</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="invBody">
                     <?php foreach ($invoices as $idx => $inv):
                         $invUrl = 'ashraqa_invoices.php?invoice=' . urlencode((string)$inv['inv_id']) . '&suffix=' . urlencode((string)($inv['suffix'] ?? ''));
+                        $st     = $ashraqaStatus[(int) $inv['dist_id']] ?? 'new';
+                        $stLbl  = $st === 'entered' ? 'تم الإدخال' : 'جديدة';
                     ?>
                         <tr class="inv-row" tabindex="0" role="link"
+                            data-st="<?= $st ?>"
+                            data-no="<?= htmlspecialchars((string)($inv['inv_no'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
                             onclick="location.href='<?= $invUrl ?>'"
                             onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); location.href='<?= $invUrl ?>'; }">
-                            <td><?= $idx + 1 ?></td>
+                            <td class="rownum"><?= $idx + 1 ?></td>
                             <td style="font-weight:600;color:var(--ink-900);">
                                 <?= htmlspecialchars((string)($inv['inv_no'] ?? '—'), ENT_QUOTES, 'UTF-8') ?>
                             </td>
@@ -481,14 +692,138 @@ require_once __DIR__ . '/includes/header.php';
                                 <?= !empty($inv['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$inv['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
                             </td>
                             <td>
-                                <span class="st-badge">جديدة</span>
+                                <span class="st-badge<?= $st === 'entered' ? ' st-entered' : '' ?>"><?= $stLbl ?></span>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <div class="no-match" id="noMatch" style="display:none;">
+                مفيش فاتورة مطابقة للفلتر ده.
+            </div>
         </div>
     <?php endif; ?>
+
+    <script>
+        // ===== الفلتر + البحث =====
+        // 🔴 الاتنين بيشتغلوا **مع بعض** — الفلتر مابيلغيش البحث والعكس.
+        //    الحالة متخزّنة في متغيّر بره عشان ماتضيعش لما الواحد يتحدّث.
+        let ashF = 'all';
+
+        function ashFilter(btn) {
+            document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            ashF = btn.dataset.f;
+            ashApply();
+        }
+
+        function ashApply() {
+            const q = (document.getElementById('invFilter')?.value || '').trim().toLowerCase();
+            let shown = 0;
+
+            document.querySelectorAll('#invBody tr.inv-row').forEach(tr => {
+                const okSt = (ashF === 'all') || (tr.dataset.st === ashF);
+                const okQ  = (q === '') || (tr.dataset.no || '').toLowerCase().includes(q);
+                const on   = okSt && okQ;       // ← الشرطين مع بعض
+                tr.hidden = !on;
+                if (on) { shown++; tr.querySelector('.rownum').textContent = shown; }
+            });
+
+            const nm = document.getElementById('noMatch');
+            if (nm) nm.style.display = shown === 0 ? '' : 'none';
+        }
+
+        // ===== بار «الصنف ده نزل في أنهي فاتورة؟» =====
+        (function () {
+            const inp  = document.getElementById('ilkInput');
+            const sugg = document.getElementById('ilkSugg');
+            if (!inp || !sugg) return;
+
+            let t = null, lastTerm = '';
+
+            const hide = () => { sugg.style.display = 'none'; sugg.innerHTML = ''; };
+            const esc  = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                                       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+            function note(msg) {
+                sugg.innerHTML = '<div class="ilk-s" style="cursor:default;color:var(--ink-500);">'
+                               + esc(msg) + '</div>';
+                sugg.style.display = '';
+            }
+
+            inp.addEventListener('input', function () {
+                const term = inp.value.trim();
+                clearTimeout(t);
+                if (term.length < 2) { hide(); return; }
+                // تأخير بسيط — من غيره بنبعت نداء مع كل حرف
+                t = setTimeout(() => { search(term); }, 250);
+            });
+
+            function search(term) {
+                if (term === lastTerm) return;
+                lastTerm = term;
+                fetch('ashraqa_invoices.php?ilk=search&term=' + encodeURIComponent(term))
+                    .then(r => r.json())
+                    .then(j => {
+                        if (!j.ok) throw new Error(j.error || 'خطأ');
+                        if (!j.rows || !j.rows.length) { note('مفيش صنف بالاسم أو الكود ده.'); return; }
+                        sugg.innerHTML = j.rows.map(r =>
+                            '<div class="ilk-s" data-code="' + esc(r.code) + '">'
+                          + esc(r.name || '—')
+                          + ' <span class="ilk-c">' + esc(r.code) + '</span></div>'
+                        ).join('');
+                        sugg.style.display = '';
+                    })
+                    .catch(e => note(e.message || 'تعذّر البحث'));
+            }
+
+            sugg.addEventListener('click', function (e) {
+                const d = e.target.closest('.ilk-s');
+                if (!d || !d.dataset.code) return;
+                history(d.dataset.code);
+            });
+
+            function history(code) {
+                note('بيدوّر…');
+                fetch('ashraqa_invoices.php?ilk=history&code=' + encodeURIComponent(code))
+                    .then(r => r.json())
+                    .then(j => {
+                        if (!j.ok) throw new Error(j.error || 'خطأ');
+                        if (!j.rows || !j.rows.length) {
+                            note('الصنف ده ما نزلش في أي فاتورة فيها توزيع لإشراقة.');
+                            return;
+                        }
+                        const nm = j.item ? (j.item.name || code) : code;
+                        sugg.innerHTML =
+                            '<div class="ilk-s" style="cursor:default;background:var(--line-soft);font-weight:600;">'
+                          + esc(nm) + ' <span class="ilk-c">' + esc(code) + '</span></div>'
+                          + j.rows.map(r => {
+                                const url = 'ashraqa_invoices.php?invoice=' + encodeURIComponent(r.sth_id)
+                                          + '&suffix=' + encodeURIComponent(r.suffix || '');
+                                const ret = r.is_return ? ' · مردود' : '';
+                                return '<div class="ilk-s" data-url="' + esc(url) + '">'
+                                     + 'فاتورة ' + esc(r.doc_no)
+                                     + ' <span class="ilk-c">' + esc((r.date || '').substring(0, 10)) + ret + '</span>'
+                                     + '<div class="ilk-c">كمية الفاتورة ' + r.qty
+                                     + ' · راح لإشراقة ' + r.ash_qty + '</div>'
+                                     + '</div>';
+                            }).join('');
+                        sugg.style.display = '';
+                    })
+                    .catch(e => note(e.message || 'تعذّر الجلب'));
+            }
+
+            sugg.addEventListener('click', function (e) {
+                const d = e.target.closest('.ilk-s');
+                if (d && d.dataset.url) location.href = d.dataset.url;
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('.ilk-bar')) hide();
+            });
+            inp.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
+        })();
+    </script>
 
 <?php else: ?>
     <!-- ================= الشاشة الثانية: فاتورة واحدة ================= -->
@@ -501,7 +836,17 @@ require_once __DIR__ . '/includes/header.php';
                 <h1 style="font-size:18px;margin:0;color:var(--ink-900);">
                     فاتورة رقم <?= htmlspecialchars((string)$openInvoice['inv_no'], ENT_QUOTES, 'UTF-8') ?>
                 </h1>
-                <span class="st-badge">جديدة</span>
+                <?php $curSt = $ashraqaStatus[(int) $distId] ?? 'new'; ?>
+                <span style="font-size:12.5px;color:var(--ink-500);">الحالة:</span>
+                <div class="st-slider" id="stSlider" role="group" aria-label="حالة مراجعة الفاتورة">
+                    <button type="button" data-v="new"
+                            class="<?= $curSt === 'new' ? 'on' : '' ?>"
+                            onclick="ashSetStatus('new')">جديدة</button>
+                    <button type="button" data-v="entered"
+                            class="<?= $curSt === 'entered' ? 'on' : '' ?>"
+                            onclick="ashSetStatus('entered')">تم الإدخال</button>
+                </div>
+                <span id="stNote" style="font-size:12px;"></span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <a href="branch_export.php?invoice=<?= urlencode((string)$openId) ?>&branch=5&suffix=<?= urlencode((string)($openSuf ?? '')) ?>"
@@ -527,6 +872,51 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
     </div>
+
+    <script>
+        // سلايدر الحالة — بيتحفظ على الضغط، مفيش زرار حفظ (قرار نهائي في المشروع).
+        // بره بلوك الأصناف عشان يفضل شغّال حتى لو الفاتورة مالهاش أصناف.
+        const ST_CSRF = '<?= csrf_token() ?>';
+        const ST_DIST = <?= (int) $distId ?>;
+
+        function ashSetStatus(v) {
+            const box  = document.getElementById('stSlider');
+            const note = document.getElementById('stNote');
+            if (!box) return;
+
+            const btns = box.querySelectorAll('button');
+            const cur  = box.querySelector('button.on');
+            if (cur && cur.dataset.v === v) return;      // نفس الحالة — مفيش نداء
+
+            const prev = cur ? cur.dataset.v : 'new';
+            btns.forEach(b => { b.classList.toggle('on', b.dataset.v === v); b.disabled = true; });
+            note.textContent = 'بيحفظ…';
+            note.style.color = 'var(--ink-500)';
+
+            fetch('ashraqa_invoices.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({
+                    action: 'set_status', csrf: ST_CSRF,
+                    distribution_id: ST_DIST, status: v
+                }).toString()
+            })
+            .then(r => r.json())
+            .then(j => {
+                if (!j.ok) throw new Error(j.error || 'تعذّر الحفظ');
+                note.textContent = '✓ اتحفظ';
+                note.style.color = 'var(--pos)';
+                setTimeout(() => { note.textContent = ''; }, 2000);
+            })
+            .catch(err => {
+                // رجّع الشكل للحالة القديمة — مايبانش إنه اتحفظ وهو ما اتحفظش
+                btns.forEach(b => b.classList.toggle('on', b.dataset.v === prev));
+                note.textContent = '✗ ' + (err.message || 'تعذّر الحفظ');
+                note.style.color = 'var(--neg)';
+            })
+            .finally(() => { btns.forEach(b => { b.disabled = false; }); });
+        }
+    </script>
 
     <?php if (empty($ashraqaItems)): ?>
         <div class="card" style="text-align:center;padding:36px;color:var(--ink-500);">
