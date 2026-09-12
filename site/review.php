@@ -540,7 +540,7 @@ function shift_cashier_amounts(array $s): array {
                      padding:22px;text-align:center;color:var(--ink-500);font-size:14px;">
                     <i class="ti ti-lock"></i> أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
                 </div>
-                <table class="cmp-table" id="cmp_table" style="display:none;">
+                <table class="cmp-table" id="cmp_table" data-xt-off style="display:none;">
                     <thead><tr><th>البند</th><th>الموظف</th><th>المحاسب</th><th>الفرق</th></tr></thead>
                     <tbody id="cmp_body"></tbody>
                 </table>
@@ -774,7 +774,6 @@ function shift_cashier_amounts(array $s): array {
 
     function rvRenderLinesDetail(method) {
         var empLines = (rvEmp.empLines && rvEmp.empLines[method]) ? rvEmp.empLines[method] : [];
-
         var amtInputs = document.querySelectorAll('.rv-' + method);
         var refInputs = document.querySelectorAll('.rv-' + method + '-ref'); // rv-visa-ref / rv-instapay-ref
 
@@ -788,50 +787,110 @@ function shift_cashier_amounts(array $s): array {
             }
         }
 
-        var total = Math.max(empLines.length, accLines.length);
-        if (total === 0) {
+        if (empLines.length === 0 && accLines.length === 0) {
             return '<tr class="cmp-detail"><td colspan="4"><div style="padding:10px;text-align:center;color:var(--ink-500);font-size:13px;">مفيش سطور متسجّلة.</div></td></tr>';
         }
 
+        // السيريال بيتقارن كنص بعد .trim() وغير حساس لحالة الأحرف.
+        // 🔴 التطبيع ده للمقارنة بس — اللي بيتعرض هو النص الخام بعد rvEsc().
+        var normRef = function(ref) { return String(ref || '').trim().toLowerCase(); };
+        var empUsed = [], accUsed = [], matches = [];
+
+        // مرحلة ١ — بالسيريال (الطرفين سيريالهم مش فاضي ومتطابق)
+        for (var e = 0; e < empLines.length; e++) {
+            var eRefNorm = normRef(empLines[e].ref);
+            if (eRefNorm === '') continue;
+            for (var a = 0; a < accLines.length; a++) {
+                if (accUsed[a]) continue;
+                var aRefNorm = normRef(accLines[a].ref);
+                if (aRefNorm === '' || eRefNorm !== aRefNorm) continue;
+
+                empUsed[e] = true; accUsed[a] = true;
+                var eAmt = parseFloat(empLines[e].amt || 0), aAmt = parseFloat(accLines[a].amt || 0), df = aAmt - eAmt;
+                matches.push({
+                    status: Math.abs(df) < 0.01 ? '✓ مطابق' : 'المبلغ مختلف',
+                    empRef: empLines[e].ref, empAmt: eAmt,
+                    accRef: accLines[a].ref, accAmt: aAmt, diff: df
+                });
+                break;
+            }
+        }
+
+        // مرحلة ٢ — بالمبلغ (الباقي من الطرفين اللي مبلغهم واحد)
+        for (var e = 0; e < empLines.length; e++) {
+            if (empUsed[e]) continue;
+            var eAmt = parseFloat(empLines[e].amt || 0), eKey = eAmt.toFixed(2);
+            for (var a = 0; a < accLines.length; a++) {
+                if (accUsed[a]) continue;
+                var aAmt = parseFloat(accLines[a].amt || 0);
+                if (aAmt.toFixed(2) === eKey) {
+                    empUsed[e] = true; accUsed[a] = true;
+                    matches.push({
+                        status: '✓ مطابق',
+                        empRef: empLines[e].ref, empAmt: eAmt,
+                        accRef: accLines[a].ref, accAmt: aAmt, diff: aAmt - eAmt
+                    });
+                    break;
+                }
+            }
+        }
+
+        // مرحلة ٣ — الباقي (اللي مالقاش شريك)
+        for (var e = 0; e < empLines.length; e++) {
+            if (empUsed[e]) continue;
+            var eAmt = parseFloat(empLines[e].amt || 0);
+            matches.push({ status: 'عند الموظف بس', empRef: empLines[e].ref, empAmt: eAmt, accRef: null, accAmt: null, diff: -eAmt });
+        }
+        for (var a = 0; a < accLines.length; a++) {
+            if (accUsed[a]) continue;
+            var aAmt = parseFloat(accLines[a].amt || 0);
+            matches.push({ status: 'عند المحاسب بس', empRef: null, empAmt: null, accRef: accLines[a].ref, accAmt: aAmt, diff: aAmt });
+        }
+
+        // الترتيب في العرض: المشاكل الأول، المطابق تحت
+        var badMatches = [], okMatches = [];
+        for (var m = 0; m < matches.length; m++) {
+            if (matches[m].status === '✓ مطابق') okMatches.push(matches[m]);
+            else badMatches.push(matches[m]);
+        }
+        var displayMatches = badMatches.concat(okMatches);
+
+        // سطر الملخص فوق الجدول
+        var countOk = okMatches.length, countDiff = 0, countEmpOnly = 0, countAccOnly = 0;
+        for (var b = 0; b < badMatches.length; b++) {
+            if (badMatches[b].status === 'المبلغ مختلف') countDiff++;
+            else if (badMatches[b].status === 'عند الموظف بس') countEmpOnly++;
+            else if (badMatches[b].status === 'عند المحاسب بس') countAccOnly++;
+        }
+        var summaryParts = [];
+        if (countOk > 0) summaryParts.push(countOk + ' مطابق');
+        if (countDiff > 0) summaryParts.push(countDiff + ' المبلغ مختلف');
+        if (countEmpOnly > 0) summaryParts.push(countEmpOnly + ' عند الموظف بس');
+        if (countAccOnly > 0) summaryParts.push(countAccOnly + ' عند المحاسب بس');
+        var summaryText = summaryParts.join(' · ');
+        var summaryHtml = summaryText ? '<div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">' + summaryText + '</div>' : '';
+
         var rowsHtml = '';
-        for (var j = 0; j < total; j++) {
-            var lineNo = j + 1;
-            var hasEmp = (j < empLines.length);
-            var hasAcc = (j < accLines.length);
-
-            var empRef = hasEmp ? String(empLines[j].ref || '') : null;
-            var empAmt = hasEmp ? parseFloat(empLines[j].amt || 0) : null;
-
-            var accRef = hasAcc ? String(accLines[j].ref || '') : null;
-            var accAmt = hasAcc ? parseFloat(accLines[j].amt || 0) : null;
-
-            var empRefDisplay = hasEmp ? (empRef !== '' ? empRef : '—') : '—';
-            var empAmtDisplay = hasEmp ? empAmt.toFixed(2) : '—';
-
-            var accRefDisplay = hasAcc ? (accRef !== '' ? accRef : '—') : '—';
-            var accAmtDisplay = hasAcc ? accAmt.toFixed(2) : '—';
-
-            // مقارنة السيريال: كنص بعد .trim()، وغير حساسة لحالة الأحرف
-            var isRefMatch = (hasEmp && hasAcc && empRef.trim().toLowerCase() === accRef.trim().toLowerCase());
-            var refCls = isRefMatch ? 'cmp-ok' : 'cmp-bad';
-
-            var df = (hasAcc ? accAmt : 0) - (hasEmp ? empAmt : 0);
-            var isAmtMatch = (hasEmp && hasAcc && Math.abs(df) < 0.01);
-            var diffStr = isAmtMatch ? '0.00' : ((df > 0 ? '+' : '') + df.toFixed(2));
-            var diffCls = isAmtMatch ? 'cmp-ok' : 'cmp-bad';
+        for (var k = 0; k < displayMatches.length; k++) {
+            var item = displayMatches[k], isOk = (item.status === '✓ مطابق'), stCls = isOk ? 'cmp-ok' : 'cmp-bad';
+            var empRefDisplay = (item.empRef !== null && String(item.empRef).trim() !== '') ? String(item.empRef) : '—';
+            var empAmtDisplay = (item.empAmt !== null) ? item.empAmt.toFixed(2) : '—';
+            var accRefDisplay = (item.accRef !== null && String(item.accRef).trim() !== '') ? String(item.accRef) : '—';
+            var accAmtDisplay = (item.accAmt !== null) ? item.accAmt.toFixed(2) : '—';
+            var diffStr = isOk ? '0.00' : (Math.abs(item.diff) < 0.01 ? '0.00' : ((item.diff > 0 ? '+' : '') + item.diff.toFixed(2)));
 
             rowsHtml += '<tr>'
-                      + '<td>' + lineNo + '</td>'
-                      + '<td class="' + (hasEmp ? (hasAcc ? refCls : 'cmp-bad') : '') + '">' + rvEsc(empRefDisplay) + '</td>'
+                      + '<td class="' + stCls + '">' + item.status + '</td>'
+                      + '<td>' + rvEsc(empRefDisplay) + '</td>'
                       + '<td>' + empAmtDisplay + '</td>'
-                      + '<td class="' + (hasAcc ? (hasEmp ? refCls : 'cmp-bad') : '') + '">' + rvEsc(accRefDisplay) + '</td>'
+                      + '<td>' + rvEsc(accRefDisplay) + '</td>'
                       + '<td>' + accAmtDisplay + '</td>'
-                      + '<td class="' + diffCls + '">' + diffStr + '</td>'
+                      + '<td class="' + stCls + '">' + diffStr + '</td>'
                       + '</tr>';
         }
 
-        var body = '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
-                 + '<th>#</th><th>سيريال الموظف</th><th>مبلغ الموظف</th><th>سيريال المحاسب</th><th>مبلغ المحاسب</th><th>الفرق</th>'
+        var body = summaryHtml + '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
+                 + '<th>الحالة</th><th>سيريال الموظف</th><th>مبلغ الموظف</th><th>سيريال المحاسب</th><th>مبلغ المحاسب</th><th>الفرق</th>'
                  + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
 
         return '<tr class="cmp-detail"><td colspan="4">' + body + '</td></tr>';
