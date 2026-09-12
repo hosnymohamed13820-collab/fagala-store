@@ -26,6 +26,12 @@ if (!$invHeader) {
     http_response_code(404);
     die('الفاتورة غير موجودة.');
 }
+// 🔴 المردودات مابتظهرش لعاشور (doc_type 6 = مردود شراء). الشاشة بتمنعها،
+//    والمنع هنا كمان عشان مايبقاش فيه باب جانبي بلينك متكتب بالإيد.
+if ((int) ($invHeader['doc_type'] ?? 0) === 6) {
+    http_response_code(403);
+    die('غير مصرح.');
+}
 
 $pdo = db();
 $dist = ensure_distribution_record($invHeader, current_user()['id'] ?? null);

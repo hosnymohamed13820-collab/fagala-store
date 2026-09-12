@@ -22,6 +22,13 @@ $pdo           = db();
 // فرع إشراقة الثابت
 const ASHRAQA_BRANCH_ID = 5;
 
+// نوع المستند في نظام الشركة: 2 = فاتورة شراء · 6 = مردود شراء.
+// 🔴 عاشور بيراجع المشتريات بس — المردودات مابتظهرش ليه خالص
+//    (قرار محمد ١٣ سبتمبر ٢٠٢٦). الفلتر مطبّق في تلات أماكن:
+//    القايمة · حارس فتح الفاتورة · بحث الصنف — عشان مايبقاش فيه
+//    باب جانبي يوصّل لمردود.
+const ASH_DOC_RETURN = 6;
+
 // ١) أرقام الفواتير اللي فيها توزيع لإشراقة — استعلام واحد مجمّع
 //
 // 🔴 الشرط `SUM(amount) > 0` مش `amount > 0`:
@@ -104,6 +111,7 @@ if ($ilkAjax !== '') {
             foreach ($res['rows'] ?? [] as $row) {
                 $docNo = (string) ($row['doc_no'] ?? $row['inv_no'] ?? '');
                 if (!isset($ashraqaDocNos[$docNo])) continue;   // فاتورة مالهاش إشراقة
+                if (!empty($row['is_return'])) continue;        // مردود — مايظهرش لعاشور
 
                 // ⚠️ `dist` قايمة [['branch_id','name','qty'], …] مش خريطة
                 //    بمفتاح رقم الفرع — لازم ندوّر فيها، مش $dist[5].
@@ -123,7 +131,6 @@ if ($ilkAjax !== '') {
                     'sth_id'    => (int) ($row['sth_id'] ?? 0),
                     'suffix'    => (string) ($row['suffix'] ?? ''),
                     'date'      => (string) ($row['date'] ?? ''),
-                    'is_return' => !empty($row['is_return']),
                     'qty'       => (float) ($row['qty'] ?? 0),
                     'ash_qty'   => $ashQty,
                 ];
@@ -326,8 +333,11 @@ $distId = null;
 if ($openId !== null && $openId !== '') {
     $header = sqlsrv_fetch_invoice_header($openId, $openSuf);
     $docNo = $header ? (string)($header['inv_no'] ?? '') : '';
-    // حارس إجباري: التحقق من أن الفاتورة فعلاً فيها توزيع لإشراقة
-    if (!$header || !isset($ashraqaDocNos[$docNo])) {
+    $isRet = $header && (int)($header['doc_type'] ?? 0) === ASH_DOC_RETURN;
+    // حارس إجباري: الفاتورة فيها توزيع لإشراقة؟ ومش مردود؟
+    // 🔴 شرط المردود هنا مش بس في القايمة — من غيره حد يكتب رقم مردود
+    //    في اللينك ويفتحه عادي.
+    if (!$header || $isRet || !isset($ashraqaDocNos[$docNo])) {
         http_response_code(403);
         require_once __DIR__ . '/includes/header.php';
         ?>
@@ -355,6 +365,8 @@ if ($openInvoice === null) {
     foreach ($all as $inv) {
         $no = (string) $inv['inv_no'];
         if (!isset($ashraqaDocNos[$no])) continue;
+        // المردودات مابتظهرش لعاشور — مشتريات بس
+        if ((int) ($inv['doc_type'] ?? 0) === ASH_DOC_RETURN) continue;
         $inv['dist_id'] = $ashraqaDocNos[$no];
         $invoices[] = $inv;
     }
@@ -828,10 +840,9 @@ require_once __DIR__ . '/includes/header.php';
                           + j.rows.map(r => {
                                 const url = 'ashraqa_invoices.php?invoice=' + encodeURIComponent(r.sth_id)
                                           + '&suffix=' + encodeURIComponent(r.suffix || '');
-                                const ret = r.is_return ? ' · مردود' : '';
                                 return '<div class="ilk-s" data-url="' + esc(url) + '">'
                                      + 'فاتورة ' + esc(r.doc_no)
-                                     + ' <span class="ilk-c">' + esc((r.date || '').substring(0, 10)) + ret + '</span>'
+                                     + ' <span class="ilk-c">' + esc((r.date || '').substring(0, 10)) + '</span>'
                                      + '<div class="ilk-c">كمية الفاتورة ' + r.qty
                                      + ' · راح لإشراقة ' + r.ash_qty + '</div>'
                                      + '</div>';

@@ -55,6 +55,12 @@ $dist = ensure_distribution_record($invHeader);
 $distId = (int) $dist['id'];
 
 if ($ashraqaOnly) {
+    // 🔴 المردودات مابتظهرش لعاشور (doc_type 6). الشرط جوّه $ashraqaOnly
+    //    بس — باقي الفروع بتصدّر المردودات عادي زي ما هي.
+    if ((int) ($invHeader['doc_type'] ?? 0) === 6) {
+        http_response_code(403);
+        die('غير مصرح.');
+    }
     $stCheck = $pdo->prepare(
         'SELECT 1 FROM invoice_distribution_lines
           WHERE distribution_id = ? AND branch_id = 5 AND amount > 0
