@@ -123,6 +123,40 @@ $pending = $pdo->query(
      ORDER BY s.id DESC"
 )->fetchAll();
 
+// ===== تفاصيل الورديات المنتظرة — للمقارنة التفصيلية في البوب أب =====
+// 🔴 استعلامين مجمّعين بس. أي prepare جوّه foreach هنا = غلط (RULES §٠/١).
+$empCash  = [];   // [shift_id][denomination] => count
+$empLines = [];   // [shift_id][method][] => ['no'=>..,'ref'=>..,'amt'=>..]
+if ($pending) {
+    $ids = array_column($pending, 'id');
+    $in  = implode(',', array_fill(0, count($ids), '?'));
+
+    $q = $pdo->prepare(
+        "SELECT shift_id, denomination, `count`
+           FROM shift_cash
+          WHERE shift_id IN ($in)"
+    );
+    $q->execute($ids);
+    foreach ($q as $r) {
+        $empCash[(int)$r['shift_id']][(string)(float)$r['denomination']] = (int)$r['count'];
+    }
+
+    $q = $pdo->prepare(
+        "SELECT shift_id, method, line_no, reference, amount
+           FROM shift_payment_lines
+          WHERE shift_id IN ($in)
+          ORDER BY shift_id, method, line_no"
+    );
+    $q->execute($ids);
+    foreach ($q as $r) {
+        $empLines[(int)$r['shift_id']][$r['method']][] = [
+            'no'  => (int)$r['line_no'],
+            'ref' => (string)($r['reference'] ?? ''),
+            'amt' => (float)$r['amount'],
+        ];
+    }
+}
+
 // السجل (آخر 50 وردية تمت مراجعتها)
 $history = $pdo->query(
     "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
@@ -229,6 +263,14 @@ function shift_cashier_amounts(array $s): array {
     .cmp-table th, .cmp-table td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--line-soft); font-size:14px; }
     .cmp-table th { background:var(--line-soft); color:var(--ink-500); }
     .cmp-ok { color:var(--pos); } .cmp-bad { color:var(--neg); }
+    .cmp-expandable { cursor:pointer; user-select:none; }
+    .cmp-arrow { display:inline-block; transition:transform 0.2s ease; margin-inline-start:6px; font-size:13px; vertical-align:middle; }
+    .cmp-expandable.open .cmp-arrow { transform:rotate(180deg); }
+    .cmp-detail td { padding:0 !important; border-bottom:1px solid var(--line-soft); background:var(--bg); }
+    .cmp-sub-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .cmp-sub-table th, .cmp-sub-table td { padding:6px 10px; text-align:center; border-bottom:1px solid var(--line-soft); }
+    .cmp-sub-table th { background:var(--line-soft); color:var(--ink-500); font-weight:600; }
+    .cmp-sub-table td { color:var(--ink-700); }
     .rv-actions { display:flex; gap:8px; margin-top:14px; }
     .btn-approve { background:var(--pos-fill); color:#fff; flex:1; }
     .btn-approve:hover { background:var(--pos-fill); color:#fff; }
@@ -266,7 +308,9 @@ function shift_cashier_amounts(array $s): array {
                         "date"=>$s["business_date"],
                         "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
                         "system"=>$amt["system"],
-                    ], JSON_UNESCAPED_UNICODE) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
+                        "empCash"  => $empCash[(int)$s["id"]]  ?? (object)[],
+                        "empLines" => $empLines[(int)$s["id"]] ?? (object)[],
+                    ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
@@ -471,7 +515,7 @@ function shift_cashier_amounts(array $s): array {
                     <?php for ($i=1;$i<=10;$i++): ?>
                         <tr>
                             <td style="padding:4px;color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
-                            <td style="padding:4px;"><input type="text" placeholder="رقم السيريال" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" aria-label="رقم السيريال"></td>
+                            <td style="padding:4px;"><input type="text" class="rv-<?= $mk ?>-ref" placeholder="رقم السيريال" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" aria-label="رقم السيريال"></td><!-- rv-visa-ref / rv-instapay-ref -->
                             <td style="padding:4px;"><input type="number" aria-label="المبلغ" step="0.01" min="0" class="rv-<?= $mk ?>" value="" placeholder="0.00" oninput="rvCalc()" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;text-align:center;"></td>
                         </tr>
                     <?php endfor; ?>
@@ -518,6 +562,7 @@ function shift_cashier_amounts(array $s): array {
 <script>
     var rvEmp = {};       // أرقام الموظف (الكاشير)
     var rvRevealed = false;  // اتكشفت أرقام الموظف؟ (بعد ما يدوس «قارن»)
+    var rvOpen = { 'كاش': false, 'فيزا': false, 'إنستا باي': false };
 
     // ─────────────────────────────────────────────────────────────────
     //  «قارن» — المرحلة التانية
@@ -561,6 +606,7 @@ function shift_cashier_amounts(array $s): array {
 
         // تصفير الحالة — كل وردية بتبدأ مقفولة
         rvRevealed = false;
+        rvOpen = { 'كاش': false, 'فيزا': false, 'إنستا باي': false };
         document.getElementById('cmp_locked').style.display  = '';
         document.getElementById('cmp_table').style.display   = 'none';
         document.getElementById('cmp_msg').style.display     = 'none';
@@ -639,8 +685,26 @@ function shift_cashier_amounts(array $s): array {
             }
 
             if (r[0] !== 'السيستم' && !ok) allMatch = false;
-            html += '<tr><td>'+r[0]+'</td><td>'+emp.toFixed(2)+'</td><td>'+acc.toFixed(2)+'</td>'+
-                    '<td class="'+(ok?'cmp-ok':'cmp-bad')+'">'+(ok?'✓ مطابق':df.toFixed(2))+'</td></tr>';
+
+            var isExp = rvOpen.hasOwnProperty(r[0]);
+            var isOpen = isExp && rvOpen[r[0]];
+
+            if (isExp) {
+                html += '<tr class="cmp-expandable' + (isOpen ? ' open' : '') + '" style="cursor:pointer;" onclick="rvToggle(\'' + r[0] + '\')">'
+                      + '<td>' + r[0] + ' <i class="ti ti-chevron-down cmp-arrow"></i></td>'
+                      + '<td>' + emp.toFixed(2) + '</td>'
+                      + '<td>' + acc.toFixed(2) + '</td>'
+                      + '<td class="' + (ok ? 'cmp-ok' : 'cmp-bad') + '">' + (ok ? '✓ مطابق' : df.toFixed(2)) + '</td>'
+                      + '</tr>';
+                if (isOpen) {
+                    if (r[0] === 'كاش') html += rvRenderCashDetail();
+                    else if (r[0] === 'فيزا') html += rvRenderLinesDetail('visa');
+                    else if (r[0] === 'إنستا باي') html += rvRenderLinesDetail('instapay');
+                }
+            } else {
+                html += '<tr><td>' + r[0] + '</td><td>' + emp.toFixed(2) + '</td><td>' + acc.toFixed(2) + '</td>'
+                      + '<td class="' + (ok ? 'cmp-ok' : 'cmp-bad') + '">' + (ok ? '✓ مطابق' : df.toFixed(2)) + '</td></tr>';
+            }
         });
         // مايكشفش أرقام الموظف قبل ما يدوس «قارن»
         if (!rvRevealed) return;
@@ -648,6 +712,129 @@ function shift_cashier_amounts(array $s): array {
         var msg = document.getElementById('cmp_msg');
         if (allMatch) { msg.textContent = '✓ أرقامك مطابقة تماماً — يمكنك الاعتماد'; msg.style.background='var(--pos-soft)'; msg.style.color='var(--pos)'; }
         else { msg.textContent = '⚠ فيه فروقات بين أرقامك وأرقام الموظف — راجع قبل القرار'; msg.style.background='var(--warn-soft)'; msg.style.color='var(--warn)'; }
+    }
+
+    function rvToggle(item) {
+        if (rvOpen.hasOwnProperty(item)) {
+            rvOpen[item] = !rvOpen[item];
+            rvCalc();
+        }
+    }
+
+    function rvRenderCashDetail() {
+        var denoms = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
+        var rowsHtml = '';
+        var empCash = rvEmp.empCash || {};
+
+        denoms.forEach(function(d){
+            var empCount = 0;
+            var k1 = d, k2 = String(d), k3 = d.toFixed(2);
+            if (empCash[k1] !== undefined) empCount = parseInt(empCash[k1], 10) || 0;
+            else if (empCash[k2] !== undefined) empCount = parseInt(empCash[k2], 10) || 0;
+            else if (empCash[k3] !== undefined) empCount = parseInt(empCash[k3], 10) || 0;
+
+            var inp = document.querySelector('.rv-denom[data-d="' + d + '"]');
+            var accCount = inp ? (parseInt(inp.value, 10) || 0) : 0;
+
+            // وري الفئات اللي فيها رقم عند أي طرف بس. لو التنين صفر، الصف يتشال.
+            if (empCount === 0 && accCount === 0) return;
+
+            var diffCount = accCount - empCount;
+            var diffVal   = diffCount * d;
+
+            var diffCountStr = (diffCount === 0) ? '0' : ((diffCount > 0 ? '+' : '') + diffCount);
+            var diffValStr   = (Math.abs(diffVal) < 0.001) ? '0.00' : ((diffVal > 0 ? '+' : '') + diffVal.toFixed(2));
+
+            var countOk = (diffCount === 0);
+            var valOk   = (Math.abs(diffVal) < 0.001);
+
+            rowsHtml += '<tr>'
+                      + '<td>' + d + ' ج.م</td>'
+                      + '<td>' + empCount + '</td>'
+                      + '<td>' + accCount + '</td>'
+                      + '<td class="' + (countOk ? 'cmp-ok' : 'cmp-bad') + '">' + diffCountStr + '</td>'
+                      + '<td class="' + (valOk ? 'cmp-ok' : 'cmp-bad') + '">' + diffValStr + '</td>'
+                      + '</tr>';
+        });
+
+        var body = rowsHtml
+            ? '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
+              + '<th>الفئة</th><th>عدد الموظف</th><th>عدد المحاسب</th><th>فرق العدد</th><th>فرق القيمة</th>'
+              + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
+            : '<div style="padding:10px;text-align:center;color:var(--ink-500);font-size:13px;">مفيش تفاصيل فئات متسجّلة.</div>';
+
+        return '<tr class="cmp-detail"><td colspan="4">' + body + '</td></tr>';
+    }
+
+    // السيريال نص حر بيكتبه الكاشير — لازم يتهرّب قبل ما يدخل innerHTML.
+    function rvEsc(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function rvRenderLinesDetail(method) {
+        var empLines = (rvEmp.empLines && rvEmp.empLines[method]) ? rvEmp.empLines[method] : [];
+
+        var amtInputs = document.querySelectorAll('.rv-' + method);
+        var refInputs = document.querySelectorAll('.rv-' + method + '-ref'); // rv-visa-ref / rv-instapay-ref
+
+        var accLines = [];
+        for (var i = 0; i < amtInputs.length; i++) {
+            var refVal = (refInputs[i] ? refInputs[i].value : '').trim();
+            var amtRaw = amtInputs[i] ? amtInputs[i].value.trim() : '';
+            if (refVal !== '' || amtRaw !== '') {
+                var amtVal = (amtRaw !== '' && !isNaN(parseFloat(amtRaw))) ? parseFloat(amtRaw) : 0;
+                accLines.push({ ref: refVal, amt: amtVal });
+            }
+        }
+
+        var total = Math.max(empLines.length, accLines.length);
+        if (total === 0) {
+            return '<tr class="cmp-detail"><td colspan="4"><div style="padding:10px;text-align:center;color:var(--ink-500);font-size:13px;">مفيش سطور متسجّلة.</div></td></tr>';
+        }
+
+        var rowsHtml = '';
+        for (var j = 0; j < total; j++) {
+            var lineNo = j + 1;
+            var hasEmp = (j < empLines.length);
+            var hasAcc = (j < accLines.length);
+
+            var empRef = hasEmp ? String(empLines[j].ref || '') : null;
+            var empAmt = hasEmp ? parseFloat(empLines[j].amt || 0) : null;
+
+            var accRef = hasAcc ? String(accLines[j].ref || '') : null;
+            var accAmt = hasAcc ? parseFloat(accLines[j].amt || 0) : null;
+
+            var empRefDisplay = hasEmp ? (empRef !== '' ? empRef : '—') : '—';
+            var empAmtDisplay = hasEmp ? empAmt.toFixed(2) : '—';
+
+            var accRefDisplay = hasAcc ? (accRef !== '' ? accRef : '—') : '—';
+            var accAmtDisplay = hasAcc ? accAmt.toFixed(2) : '—';
+
+            // مقارنة السيريال: كنص بعد .trim()، وغير حساسة لحالة الأحرف
+            var isRefMatch = (hasEmp && hasAcc && empRef.trim().toLowerCase() === accRef.trim().toLowerCase());
+            var refCls = isRefMatch ? 'cmp-ok' : 'cmp-bad';
+
+            var df = (hasAcc ? accAmt : 0) - (hasEmp ? empAmt : 0);
+            var isAmtMatch = (hasEmp && hasAcc && Math.abs(df) < 0.01);
+            var diffStr = isAmtMatch ? '0.00' : ((df > 0 ? '+' : '') + df.toFixed(2));
+            var diffCls = isAmtMatch ? 'cmp-ok' : 'cmp-bad';
+
+            rowsHtml += '<tr>'
+                      + '<td>' + lineNo + '</td>'
+                      + '<td class="' + (hasEmp ? (hasAcc ? refCls : 'cmp-bad') : '') + '">' + rvEsc(empRefDisplay) + '</td>'
+                      + '<td>' + empAmtDisplay + '</td>'
+                      + '<td class="' + (hasAcc ? (hasEmp ? refCls : 'cmp-bad') : '') + '">' + rvEsc(accRefDisplay) + '</td>'
+                      + '<td>' + accAmtDisplay + '</td>'
+                      + '<td class="' + diffCls + '">' + diffStr + '</td>'
+                      + '</tr>';
+        }
+
+        var body = '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
+                 + '<th>#</th><th>سيريال الموظف</th><th>مبلغ الموظف</th><th>سيريال المحاسب</th><th>مبلغ المحاسب</th><th>الفرق</th>'
+                 + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>';
+
+        return '<tr class="cmp-detail"><td colspan="4">' + body + '</td></tr>';
     }
     function rvDecide(decision) {
         if (!rvRevealed) { alert('اضغط «قارن» الأول.'); return false; }
@@ -689,7 +876,7 @@ function shift_cashier_amounts(array $s): array {
 
         var c2 = tr.insertCell();
         c2.style.padding = '4px';
-        c2.innerHTML = '<input type="text" placeholder="رقم السيريال" '
+        c2.innerHTML = '<input type="text" class="rv-' + mk + '-ref" placeholder="رقم السيريال" ' // rv-visa-ref / rv-instapay-ref
                      + 'style="width:100%;padding:6px 8px;border:1.5px solid var(--line);'
                      + 'border-radius:7px;font-family:inherit;font-size:13px;" aria-label="رقم السيريال">';
 
@@ -747,9 +934,7 @@ function shift_cashier_amounts(array $s): array {
                 form.reason.focus();
                 return false;
             }
-            return confirm('رفض عهدة ' + branch + '؟
-
-هترجع للكاشير يظبّطها. مفيش فلوس هتتحرّك.');
+            return confirm('رفض عهدة ' + branch + '؟\n\nهترجع للكاشير يظبّطها. مفيش فلوس هتتحرّك.');
         }
         var amt = form.acc_counted.value;
         if (amt === '' || isNaN(parseFloat(amt))) {
@@ -757,9 +942,7 @@ function shift_cashier_amounts(array $s): array {
             form.acc_counted.focus();
             return false;
         }
-        return confirm('اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟
-
-'
+        return confirm('اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟\n\n'
             + 'الفلوس هتدخل الخزينة فعلاً والقيود هتتعمل. مفيش تراجع.');
     }
 

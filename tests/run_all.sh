@@ -84,6 +84,20 @@ else
 fi
 
 echo
+echo "== الجافاسكربت اللي جوّه صفحات PHP =="
+# 🔴 الفحص اللي فوق بيشوف ملفات .js بس. الجافاسكربت المكتوب جوّه بلوك
+#    <script> في صفحة PHP كان بيعدّي من غير أي فحص — ويوم ١٢ سبتمبر ٢٠٢٦
+#    ده وقّع صفحتين كاملتين (`review.php` و`custody.php`): سطر جديد خام
+#    جوّه سترنج بعلامة مفردة = SyntaxError = **بلوك <script> كله ميت**،
+#    والزراير مابتعملش حاجة من غير ولا رسالة خطأ.
+if command -v node > /dev/null 2>&1; then
+    node tests/check_inline_js.mjs site/*.php site/includes/*.php \
+                                   ashraqa/*.php ashraqa/includes/*.php || FAIL=1
+else
+    echo "  (node مش متاح — اتخطى)"
+fi
+
+echo
 echo "== ترميز ملفات باورشيل =="
 # القاعدة مش «ASCII خالص» — دي كانت تقريب غلط أول مرة.
 # باورشيل بيقرا الملف كـANSI لو مفيش BOM. يعني:
