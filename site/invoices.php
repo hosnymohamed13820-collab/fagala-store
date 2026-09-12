@@ -12,6 +12,12 @@
  * - الهيدر بيتزامن مع الموردين تلقائياً (ensure_distribution_record).
  */
 require_once __DIR__ . '/auth.php';
+// مين معاه جزء إشراقة بس (مش الموديول كامل) بيتحوّل لصفحته.
+// من غير ده القايمة بتوريله «الاستلامات» والصفحة بتصده — لينك ميت.
+if (!can('invoices') && can('invoices:ashraqa')) {
+    header('Location: ashraqa_invoices.php');
+    exit;
+}
 require_permission('invoices');
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';       // الفواتير المجمّعة

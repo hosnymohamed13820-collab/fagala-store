@@ -128,6 +128,9 @@ function module_parts(): array
             'noprice'    => 'أصناف بدون سعر بيع',
             'stock'      => 'استعلام أرصدة الأصناف',
         ],
+        'invoices' => [
+            'ashraqa' => 'فواتير إشراقة',
+        ],
     ];
 }
 
