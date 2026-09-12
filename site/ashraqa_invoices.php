@@ -46,7 +46,7 @@ const ASH_DOC_RETURN = 6;
 //    `hi.sth_id IS NULL` والشرط بيعدّي الفاتورة بدل ما يخفيها —
 //    إخفاء فاتورة ليها توزيع حقيقي أوحش بكتير من عرض واحدة زيادة.
 $rows = $pdo->prepare(
-    'SELECT d.invoice_no, d.id AS dist_id
+    'SELECT d.invoice_no, d.id AS dist_id, l.item_code
        FROM invoice_distribution d
        JOIN (
               SELECT distribution_id, notes AS item_code
@@ -54,20 +54,15 @@ $rows = $pdo->prepare(
                WHERE branch_id = ?
                GROUP BY distribution_id, notes
               HAVING SUM(amount) > 0
-            ) l ON l.distribution_id = d.id
-       LEFT JOIN hq_invoices hi
-              ON hi.doc_no = d.invoice_no
-       LEFT JOIN hq_invoice_lines il
-              ON il.sth_id = hi.sth_id
-             AND il.suffix = hi.suffix
-             AND il.item_code = l.item_code
-      GROUP BY d.invoice_no, d.id
-     HAVING COUNT(il.item_code) > 0 OR COUNT(hi.sth_id) = 0'
+            ) l ON l.distribution_id = d.id'
 );
 $rows->execute([ASHRAQA_BRANCH_ID]);
 $ashraqaDocNos = [];   // [doc_no => dist_id]
+$ashraqaCodesByDoc = [];   // [doc_no => [code => true]]
 foreach ($rows as $r) {
-    $ashraqaDocNos[(string)$r['invoice_no']] = (int)$r['dist_id'];
+    $no = (string) $r['invoice_no'];
+    $ashraqaDocNos[$no] = (int) $r['dist_id'];
+    $ashraqaCodesByDoc[$no][(string) $r['item_code']] = true;
 }
 
 // ===== حالة مراجعة إشراقة — استعلام واحد لكل الفواتير =====
@@ -362,13 +357,53 @@ if ($openId !== null && $openId !== '') {
 $invoices = [];
 if ($openInvoice === null) {
     $all = sqlsrv_fetch_invoices();
+    $cand = [];
     foreach ($all as $inv) {
         $no = (string) $inv['inv_no'];
         if (!isset($ashraqaDocNos[$no])) continue;
         // المردودات مابتظهرش لعاشور — مشتريات بس
         if ((int) ($inv['doc_type'] ?? 0) === ASH_DOC_RETURN) continue;
         $inv['dist_id'] = $ashraqaDocNos[$no];
-        $invoices[] = $inv;
+        $cand[] = $inv;
+    }
+
+    // ===== استبعاد الفواتير اللي مش هتفتح على أي صنف =====
+    // 🔴 الربط لازم يبقى على (sth_id + suffix) مش على doc_no:
+    //    `doc_no` **مش فريد** بين الشهور، والربط بيه كان بيوصّل لفاتورة
+    //    شهر تاني فسطورها مافيهاش أكوادنا — فكانت فواتير سليمة تختفي.
+    //    ودي بالظبط نفس الأعمدة اللي `sqlsrv_fetch_invoice_items()`
+    //    بتقرا منها، فالقايمة والشاشة بيشوفوا نفس الحاجة.
+    $sthIds = array_values(array_unique(array_map(
+        fn($i) => (int) $i['inv_id'], $cand
+    )));
+    $lineCodes = [];   // ["sth|suffix" => [code => true]]
+    if ($sthIds) {
+        $ph = implode(',', array_fill(0, count($sthIds), '?'));
+        $q  = $pdo->prepare(
+            "SELECT sth_id, suffix, item_code, item_id
+               FROM hq_invoice_lines WHERE sth_id IN ($ph)"
+        );
+        $q->execute($sthIds);
+        foreach ($q as $r) {
+            $k = (int) $r['sth_id'] . '|' . (string) $r['suffix'];
+            $c = trim((string) ($r['item_code'] ?? ''));
+            // ⚠️ merge_invoice_items() بتحط '#'.item_id للصنف اللي مالوش
+            //    باركود — لازم نقبل الشكلين وإلا الصنف ده مايتلاقاش أبداً.
+            if ($c === '') $c = '#' . (int) ($r['item_id'] ?? 0);
+            $lineCodes[$k][$c] = true;
+        }
+    }
+
+    foreach ($cand as $inv) {
+        $k = (int) $inv['inv_id'] . '|' . (string) ($inv['suffix'] ?? '');
+        // ⚠️ المرآة مالهاش سطور للفاتورة دي (الجسر لسه ماجابهاش) →
+        //    نوريها. إخفاء فاتورة ليها توزيع حقيقي أوحش من عرض واحدة زيادة.
+        if (!isset($lineCodes[$k])) { $invoices[] = $inv; continue; }
+
+        $codes = $ashraqaCodesByDoc[(string) $inv['inv_no']] ?? [];
+        if (array_intersect_key($codes, $lineCodes[$k])) {
+            $invoices[] = $inv;
+        }
     }
 } else {
     // جلب أصناف الفاتورة ودمج المتكرر
