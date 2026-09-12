@@ -22,12 +22,40 @@ $pdo           = db();
 // فرع إشراقة الثابت
 const ASHRAQA_BRANCH_ID = 5;
 
-// ١) أرقام الفواتير التي فيها توزيع لإشراقة — استعلام واحد مجمّع
+// ١) أرقام الفواتير اللي فيها توزيع لإشراقة — استعلام واحد مجمّع
+//
+// 🔴 الشرط `SUM(amount) > 0` مش `amount > 0`:
+//    `distribute_item()` بتضيف سطور تراكمية، فالصنف ممكن يبقى ليه أكتر
+//    من سطر. الفلترة على السطر الواحد كانت بتطلّع فواتير مجموعها صفر.
+//
+// 🔴 والـJOIN على `hq_invoice_lines` مش زيادة:
+//    الفاتورة ممكن يكون ليها سطر توزيع لإشراقة بكود صنف **مابقاش موجود
+//    في الفاتورة** (اتعدّلت في نظام الشركة بعد التوزيع). ساعتها القايمة
+//    كانت بتوريها وهي بتفتح **فاضية خالص** — وده اللي محمد شافه.
+//    شاشة الفاتورة بتفلتر الأصناف على اللي موجود فعلاً، فالقايمة لازم
+//    تسأل **نفس السؤال** وإلا الاتنين بيختلفوا.
+//
+// ⚠️ والمرآة ممكن تكون فاضية (الجسر لسه ماجابش السطور). ساعتها
+//    `hi.sth_id IS NULL` والشرط بيعدّي الفاتورة بدل ما يخفيها —
+//    إخفاء فاتورة ليها توزيع حقيقي أوحش بكتير من عرض واحدة زيادة.
 $rows = $pdo->prepare(
-    'SELECT DISTINCT d.invoice_no, d.id AS dist_id
+    'SELECT d.invoice_no, d.id AS dist_id
        FROM invoice_distribution d
-       JOIN invoice_distribution_lines l ON l.distribution_id = d.id
-      WHERE l.branch_id = ? AND l.amount > 0'
+       JOIN (
+              SELECT distribution_id, notes AS item_code
+                FROM invoice_distribution_lines
+               WHERE branch_id = ?
+               GROUP BY distribution_id, notes
+              HAVING SUM(amount) > 0
+            ) l ON l.distribution_id = d.id
+       LEFT JOIN hq_invoices hi
+              ON hi.doc_no = d.invoice_no
+       LEFT JOIN hq_invoice_lines il
+              ON il.sth_id = hi.sth_id
+             AND il.suffix = hi.suffix
+             AND il.item_code = l.item_code
+      GROUP BY d.invoice_no, d.id
+     HAVING COUNT(il.item_code) > 0 OR COUNT(hi.sth_id) = 0'
 );
 $rows->execute([ASHRAQA_BRANCH_ID]);
 $ashraqaDocNos = [];   // [doc_no => dist_id]
