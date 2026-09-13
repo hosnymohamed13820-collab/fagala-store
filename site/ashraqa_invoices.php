@@ -167,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
         // نفس حارس save_price — الفاتورة لازم تكون فيها توزيع لإشراقة
         if ($d <= 0 || !in_array($d, $ashraqaDocNos, true)) {
             http_response_code(403);
-            throw new RuntimeException('غير مصرح لك بتغيير حالة الفاتورة دي.');
+            throw new RuntimeException('مالكش صلاحية تغيّر حالة الفاتورة دي.');
         }
 
         $up = $pdo->prepare(
@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         // حارس أمان: التحقق من أن الفاتورة فيها توزيع لإشراقة
         if (!in_array($d, $ashraqaDocNos, true)) {
             http_response_code(403);
-            throw new RuntimeException('غير مصرح لك بتسعير هذه الفاتورة.');
+            throw new RuntimeException('مالكش صلاحية تسعّر الفاتورة دي.');
         }
 
         ashraqa_save_price($d, $c, $p, $uid);
@@ -251,7 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         // حارس أمان: التحقق من أن الفاتورة فيها توزيع لإشراقة
         if (!in_array($d, $ashraqaDocNos, true)) {
             http_response_code(403);
-            throw new RuntimeException('غير مصرح لك بتسعير هذه الفاتورة.');
+            throw new RuntimeException('مالكش صلاحية تسعّر الفاتورة دي.');
         }
 
         $n = 0;
@@ -337,9 +337,9 @@ if ($openId !== null && $openId !== '') {
         require_once __DIR__ . '/includes/header.php';
         ?>
         <div class="card" style="margin:20px 0;text-align:center;padding:40px;">
-            <h2 style="color:var(--neg);margin-bottom:12px;">403 — غير مصرح بعرض هذه الفاتورة</h2>
+            <h2 style="color:var(--neg);margin-bottom:12px;">403 — الفاتورة دي مش ليك</h2>
             <p style="color:var(--ink-500);font-size:14px;margin-bottom:20px;">
-                الفاتورة المطلوبة غير مخصصة لفرع إشراقة أو لا تحتوي على كميات موزعة للفرع.
+                الفاتورة دي مافيهاش أي كمية اتوزّعت لإشراقة، أو مش من فواتير الفرع.
             </p>
             <a href="ashraqa_invoices.php" class="btn btn-primary">
                 <i class="ti ti-arrow-right"></i> رجوع لفواتير إشراقة
@@ -434,8 +434,55 @@ if ($openInvoice === null) {
         $ashraqaCodes[] = $c;
     }
 
-    // الأرصدة والأسعار باستعلام واحد لكل منها
-    $balances   = ashraqa_fetch_balances($ashraqaCodes);
+    // ===== رصيد إشراقة — بكل باركودات الصنف مش بكود الفاتورة بس =====
+    // 🔴 `ashraqa_balances` مفتاحه **الباركود الحقيقي** الجاي من نظامهم
+    //    (Redux). وكود الصنف في الفاتورة ساعات بيبقى كود داخلي قصير
+    //    (37 · 256) مش باركود — فالبحث بيه بيرجّع فاضي، والعمود كله
+    //    كان بيطلع شُرَط.
+    //    `hq_codes` بتربط كل باركودات الصنف بنفس `item_id`، فبنجيبهم
+    //    كلهم وندوّر بيهم.
+    //
+    // 🔴 وبناخد الباركودات اللي `unit_factor = 1` بس:
+    //    رصيدهم متخزّن بالوحدة الأساسية، والباركود اللي معامله 12
+    //    (علبة مثلاً) رصيده برقم تاني خالص — عرضه كأنه رصيد الوحدة
+    //    بيدّي رقم غلط، وده عمود بيتبني عليه قرار شراء.
+    $itemIds = [];
+    foreach ($ashraqaItems as $it) {
+        $iid = (int) ($it['item_id'] ?? 0);
+        if ($iid > 0) $itemIds[$iid] = true;
+    }
+
+    $codesByItemId = [];   // [item_id => [barcode, …]]
+    if ($itemIds) {
+        $ids = array_keys($itemIds);
+        $ph  = implode(',', array_fill(0, count($ids), '?'));
+        $qc  = $pdo->prepare(
+            "SELECT code, item_id FROM hq_codes
+              WHERE item_id IN ($ph) AND unit_factor = 1"
+        );
+        $qc->execute($ids);
+        foreach ($qc as $r) {
+            $codesByItemId[(int) $r['item_id']][] = (string) $r['code'];
+        }
+    }
+
+    // كل الباركودات المحتملة مرة واحدة — استعلام واحد
+    $lookup = $ashraqaCodes;
+    foreach ($codesByItemId as $list) {
+        foreach ($list as $bc) $lookup[] = $bc;
+    }
+    $rawBalances = ashraqa_fetch_balances($lookup);
+
+    // لكل صنف: كود الفاتورة الأول، وبعدين باركوداته
+    $balances = [];
+    foreach ($ashraqaItems as $it) {
+        $c = (string) ($it['item_code'] ?? '');
+        if (isset($rawBalances[$c])) { $balances[$c] = $rawBalances[$c]; continue; }
+        foreach ($codesByItemId[(int) ($it['item_id'] ?? 0)] ?? [] as $bc) {
+            if (isset($rawBalances[$bc])) { $balances[$c] = $rawBalances[$bc]; break; }
+        }
+    }
+
     $salePrices = ashraqa_get_prices($distId);
     $lastSync   = ashraqa_last_sync();
 }
@@ -691,7 +738,7 @@ require_once __DIR__ . '/includes/header.php';
             <div>
                 <h1 style="font-size:18px;margin:0 0 4px 0;color:var(--ink-900);">فواتير إشراقة</h1>
                 <div style="font-size:13px;color:var(--ink-500);">
-                    الفواتير التي تحتوي على كميات موزعة لفرع إشراقة (<?= count($invoices) ?> فاتورة)
+                    الفواتير اللي اتوزّع منها كميات لإشراقة (<?= count($invoices) ?> فاتورة)
                 </div>
             </div>
         </div>
@@ -711,7 +758,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($invoices)): ?>
         <div class="card" style="text-align:center;padding:36px;color:var(--ink-500);">
             <i class="ti ti-package" style="font-size:32px;display:block;margin-bottom:8px;"></i>
-            لا توجد فواتير موزعة لفرع إشراقة حالياً.
+            مفيش فواتير اتوزّع منها حاجة لإشراقة لحد دلوقتي.
         </div>
     <?php else: ?>
         <?php
@@ -905,7 +952,7 @@ require_once __DIR__ . '/includes/header.php';
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                 <a href="ashraqa_invoices.php" class="btn btn-outline btn-sm">
-                    <i class="ti ti-arrow-right"></i> رجوع لقائمة الفواتير
+                    <i class="ti ti-arrow-right"></i> رجوع للفواتير
                 </a>
                 <h1 style="font-size:18px;margin:0;color:var(--ink-900);">
                     فاتورة رقم <?= htmlspecialchars((string)$openInvoice['inv_no'], ENT_QUOTES, 'UTF-8') ?>
@@ -942,7 +989,7 @@ require_once __DIR__ . '/includes/header.php';
                 تاريخ الفاتورة: <?= !empty($openInvoice['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$openInvoice['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
             </div>
             <div>
-                <i class="ti ti-clock"></i> آخر تحديث أرصدة إشراقة: <?= $lastSync ? htmlspecialchars($lastSync, ENT_QUOTES, 'UTF-8') : 'لا يوجد مزامنة سابقة' ?>
+                <i class="ti ti-clock"></i> آخر تحديث أرصدة إشراقة: <?= $lastSync ? htmlspecialchars($lastSync, ENT_QUOTES, 'UTF-8') : 'لسه مافيش مزامنة' ?>
             </div>
         </div>
     </div>
@@ -994,7 +1041,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (empty($ashraqaItems)): ?>
         <div class="card" style="text-align:center;padding:36px;color:var(--ink-500);">
-            لا توجد أصناف موزعة لفرع إشراقة في هذه الفاتورة.
+            مفيش أصناف اتوزّعت لإشراقة في الفاتورة دي.
         </div>
     <?php else: ?>
         <div class="ash-mrk-bulk">
@@ -1057,7 +1104,9 @@ require_once __DIR__ . '/includes/header.php';
                                     <input type="number" step="0.01" min="0"
                                            class="sale-input" aria-label="سعر البيع"
                                            value="<?= $hasPrice ? rtrim(rtrim(number_format($sPrice, 5, '.', ''), '0'), '.') : '' ?>"
-                                           placeholder="0"
+                                           <?php /* 🔴 مش "0" — الصفر شكله سعر متسجّل بصفر، وده غير
+                                                    "لسه ما اتسعّرش". الفرق ده بيبان في تقرير الأسعار. */ ?>
+                                           placeholder="—"
                                            data-code="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>"
                                            data-saved="<?= $hasPrice ? htmlspecialchars((string)$sPrice, ENT_QUOTES, 'UTF-8') : '' ?>"
                                            oninput="ashOnSaleInput(this)"
