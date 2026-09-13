@@ -531,6 +531,15 @@ require_once __DIR__ . '/includes/header.php';
         padding: 5px 11px;
         font-size: 12.5px;
     }
+    .btn:disabled {
+        opacity: .5;
+        cursor: not-allowed;
+    }
+    .btn-outline:disabled:hover {
+        background: var(--surface);
+        color: var(--ink-700);
+        border-color: var(--line);
+    }
     .st-badge {
         display: inline-block;
         padding: 3px 9px;
@@ -542,6 +551,36 @@ require_once __DIR__ . '/includes/header.php';
     }
     /* «تم الإدخال» — أخضر عشان يبان من «جديدة» بنظرة */
     .st-badge.st-entered { background: var(--pos-soft); color: var(--pos); }
+
+    /* الصف الباهت للفواتير المدخلة في القائمة — لا ينطبق عند فلترة «تم الإدخال» */
+    .ash-table:not([data-filter="entered"]) tr[data-st="entered"] {
+        opacity: .6;
+    }
+    body:has(.sf-btn.active[data-f="entered"]) .ash-table tr[data-st="entered"] {
+        opacity: 1;
+    }
+    .inv-no {
+        font-weight: 700;
+        color: var(--accent-text);
+    }
+    .ash-list-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+    .ash-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 12px 10px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+    }
+    .ash-page-info {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink-700);
+    }
 
     /* ===== فلتر الحالات — منقول بالحرف من invoices.php:1739 ===== */
     .status-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
@@ -738,7 +777,7 @@ require_once __DIR__ . '/includes/header.php';
             <div>
                 <h1 style="font-size:18px;margin:0 0 4px 0;color:var(--ink-900);">فواتير إشراقة</h1>
                 <div style="font-size:13px;color:var(--ink-500);">
-                    الفواتير اللي اتوزّع منها كميات لإشراقة (<?= count($invoices) ?> فاتورة)
+                    الفواتير اللي اتوزّع منها كميات لإشراقة
                 </div>
             </div>
         </div>
@@ -769,59 +808,73 @@ require_once __DIR__ . '/includes/header.php';
                 if ($s === 'entered') $cntEntered++; else $cntNew++;
             }
         ?>
-        <div class="status-filters">
-            <button type="button" class="sf-btn active" data-f="all" onclick="ashFilter(this)">
-                الكل <span><?= count($invoices) ?></span>
-            </button>
-            <button type="button" class="sf-btn" data-f="new" onclick="ashFilter(this)">
-                جديدة <span><?= $cntNew ?></span>
-            </button>
-            <button type="button" class="sf-btn" data-f="entered" onclick="ashFilter(this)">
-                تم الإدخال <span><?= $cntEntered ?></span>
-            </button>
-        </div>
+        <div class="ash-list-container">
+            <div class="status-filters">
+                <button type="button" class="sf-btn active" data-f="all" onclick="ashFilter(this)">
+                    الكل <span><?= count($invoices) ?></span>
+                </button>
+                <button type="button" class="sf-btn" data-f="new" onclick="ashFilter(this)">
+                    جديدة <span><?= $cntNew ?></span>
+                </button>
+                <button type="button" class="sf-btn" data-f="entered" onclick="ashFilter(this)">
+                    تم الإدخال <span><?= $cntEntered ?></span>
+                </button>
+            </div>
 
-        <input type="text" class="inv-filter" id="invFilter" autocomplete="off" inputmode="search"
-               aria-label="فلتر برقم الفاتورة" placeholder="فلتر: رقم الفاتورة…"
-               oninput="ashApply()">
+            <input type="text" class="inv-filter" id="invFilter" autocomplete="off" inputmode="search"
+                   aria-label="فلتر برقم الفاتورة" placeholder="فلتر: رقم الفاتورة…"
+                   oninput="ashApply(true)">
 
-        <div class="ash-table-wrap">
-            <table class="ash-table" data-xt-off>
-                <thead>
-                    <tr>
-                        <th style="width:50px;">#</th>
-                        <th>رقم الفاتورة</th>
-                        <th>التاريخ</th>
-                        <th>الحالة</th>
-                    </tr>
-                </thead>
-                <tbody id="invBody">
-                    <?php foreach ($invoices as $idx => $inv):
-                        $invUrl = 'ashraqa_invoices.php?invoice=' . urlencode((string)$inv['inv_id']) . '&suffix=' . urlencode((string)($inv['suffix'] ?? ''));
-                        $st     = $ashraqaStatus[(int) $inv['dist_id']] ?? 'new';
-                        $stLbl  = $st === 'entered' ? 'تم الإدخال' : 'جديدة';
-                    ?>
-                        <tr class="inv-row" tabindex="0" role="link"
-                            data-st="<?= $st ?>"
-                            data-no="<?= htmlspecialchars((string)($inv['inv_no'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                            onclick="location.href='<?= $invUrl ?>'"
-                            onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); location.href='<?= $invUrl ?>'; }">
-                            <td class="rownum"><?= $idx + 1 ?></td>
-                            <td style="font-weight:600;color:var(--ink-900);">
-                                <?= htmlspecialchars((string)($inv['inv_no'] ?? '—'), ENT_QUOTES, 'UTF-8') ?>
-                            </td>
-                            <td style="color:var(--ink-600);font-size:13px;">
-                                <?= !empty($inv['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$inv['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
-                            </td>
-                            <td>
-                                <span class="st-badge<?= $st === 'entered' ? ' st-entered' : '' ?>"><?= $stLbl ?></span>
-                            </td>
+            <div class="ash-table-wrap">
+                <table class="ash-table" id="invTable" data-xt-off data-filter="all">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;">#</th>
+                            <th>رقم الفاتورة</th>
+                            <th>التاريخ</th>
+                            <th>أصناف إشراقة</th>
+                            <th>الحالة</th>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-            <div class="no-match" id="noMatch" style="display:none;">
-                مفيش فاتورة مطابقة للفلتر ده.
+                    </thead>
+                    <tbody id="invBody">
+                        <?php foreach ($invoices as $idx => $inv):
+                            $invUrl     = 'ashraqa_invoices.php?invoice=' . urlencode((string)$inv['inv_id']) . '&suffix=' . urlencode((string)($inv['suffix'] ?? ''));
+                            $st         = $ashraqaStatus[(int) $inv['dist_id']] ?? 'new';
+                            $stLbl      = $st === 'entered' ? 'تم الإدخال' : 'جديدة';
+                            $docNo      = (string)($inv['inv_no'] ?? '');
+                            $itemsCount = count($ashraqaCodesByDoc[$docNo] ?? []);
+                        ?>
+                            <tr class="inv-row" tabindex="0" role="link"
+                                data-st="<?= $st ?>"
+                                data-no="<?= htmlspecialchars($docNo, ENT_QUOTES, 'UTF-8') ?>"
+                                onclick="location.href='<?= $invUrl ?>'"
+                                onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); location.href='<?= $invUrl ?>'; }">
+                                <td class="rownum"><?= $idx + 1 ?></td>
+                                <td class="inv-no">
+                                    <?= htmlspecialchars($docNo !== '' ? $docNo : '—', ENT_QUOTES, 'UTF-8') ?>
+                                </td>
+                                <td style="color:var(--ink-600);font-size:13px;">
+                                    <?= !empty($inv['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$inv['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
+                                </td>
+                                <td style="font-weight:600;color:var(--ink-700);">
+                                    <?= $itemsCount ?>
+                                </td>
+                                <td>
+                                    <span class="st-badge<?= $st === 'entered' ? ' st-entered' : '' ?>"><?= $stLbl ?></span>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <div class="no-match" id="noMatch" style="display:none;">
+                    مفيش فاتورة مطابقة للفلتر ده.
+                </div>
+            </div>
+
+            <div class="ash-pagination" id="ashPagination" style="display:none;">
+                <button type="button" class="btn btn-outline btn-sm" id="ashPrev" onclick="ashChangePage(-1)">السابق</button>
+                <span class="ash-page-info" id="ashPageInfo"></span>
+                <button type="button" class="btn btn-outline btn-sm" id="ashNext" onclick="ashChangePage(1)">التالي</button>
             </div>
         </div>
     <?php endif; ?>
@@ -831,29 +884,80 @@ require_once __DIR__ . '/includes/header.php';
         // 🔴 الاتنين بيشتغلوا **مع بعض** — الفلتر مابيلغيش البحث والعكس.
         //    الحالة متخزّنة في متغيّر بره عشان ماتضيعش لما الواحد يتحدّث.
         let ashF = 'all';
+        let ashPage = 1;
+        const ASH_PER_PAGE = 50;
 
         function ashFilter(btn) {
             document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             ashF = btn.dataset.f;
+            const tbl = document.getElementById('invTable');
+            if (tbl) tbl.dataset.filter = ashF;
+            ashPage = 1;
             ashApply();
         }
 
-        function ashApply() {
-            const q = (document.getElementById('invFilter')?.value || '').trim().toLowerCase();
-            let shown = 0;
+        function ashChangePage(delta) {
+            ashPage += delta;
+            ashApply();
+        }
 
+        function ashApply(resetPage = false) {
+            if (resetPage) ashPage = 1;
+
+            const q = (document.getElementById('invFilter')?.value || '').trim().toLowerCase();
+            const tbl = document.getElementById('invTable');
+            if (tbl) tbl.dataset.filter = ashF;
+
+            // جمع الصفوف المطابقة وحساب ترتيبها الحقيقي
+            const matches = [];
             document.querySelectorAll('#invBody tr.inv-row').forEach(tr => {
                 const okSt = (ashF === 'all') || (tr.dataset.st === ashF);
                 const okQ  = (q === '') || (tr.dataset.no || '').toLowerCase().includes(q);
                 const on   = okSt && okQ;       // ← الشرطين مع بعض
-                tr.hidden = !on;
-                if (on) { shown++; tr.querySelector('.rownum').textContent = shown; }
+                if (on) {
+                    matches.push(tr);
+                    tr.querySelector('.rownum').textContent = matches.length;
+                } else {
+                    tr.hidden = true;
+                }
+            });
+
+            const total = matches.length;
+            const totalPages = Math.ceil(total / ASH_PER_PAGE) || 1;
+
+            if (ashPage > totalPages) ashPage = 1;
+            if (ashPage < 1) ashPage = 1;
+
+            // إظهار صفوف الصفحة الحالية فقط
+            const start = (ashPage - 1) * ASH_PER_PAGE;
+            const end   = start + ASH_PER_PAGE;
+            matches.forEach((tr, idx) => {
+                tr.hidden = (idx < start || idx >= end);
             });
 
             const nm = document.getElementById('noMatch');
-            if (nm) nm.style.display = shown === 0 ? '' : 'none';
+            if (nm) nm.style.display = total === 0 ? '' : 'none';
+
+            // شريط الترقيم
+            const pWrap   = document.getElementById('ashPagination');
+            const pInfo   = document.getElementById('ashPageInfo');
+            const btnPrev = document.getElementById('ashPrev');
+            const btnNext = document.getElementById('ashNext');
+
+            if (pWrap) {
+                if (totalPages <= 1) {
+                    pWrap.style.display = 'none';
+                } else {
+                    pWrap.style.display = 'flex';
+                    if (pInfo) pInfo.textContent = 'صفحة ' + ashPage + ' من ' + totalPages;
+                    if (btnPrev) btnPrev.disabled = (ashPage <= 1);
+                    if (btnNext) btnNext.disabled = (ashPage >= totalPages);
+                }
+            }
         }
+
+        ashApply();
 
         // ===== بار «الصنف ده نزل في أنهي فاتورة؟» =====
         (function () {
