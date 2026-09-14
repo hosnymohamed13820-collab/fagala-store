@@ -965,55 +965,91 @@ require_once __DIR__ . '/includes/header.php';
             const sugg = document.getElementById('ilkSugg');
             if (!inp || !sugg) return;
 
-            let t = null, lastTerm = '';
+            // seq: كل نداء ليه رقم، والرد القديم اللي يوصل متأخر بيتجاهل.
+            // من غيره: تكتب بسرعة فرد «12» يوصل بعد رد «123» ويدوس عليه.
+            let t = null, seq = 0;
 
-            const hide = () => { sugg.style.display = 'none'; sugg.innerHTML = ''; };
+            // 🔴 'block' مش '' — الـCSS بتاع .ilk-sugg فيه display:none،
+            //    و style.display = '' بيمسح الستايل المكتوب فيرجع للـCSS
+            //    = مخفي. البحث كان شغال والنتايج بتيجي من السيرفر، بس
+            //    عمرها ما بانت. (invoices.php الأصلي كاتبها 'block' صح.)
+            const show = () => { sugg.style.display = 'block'; };
+            const hide = () => { sugg.style.display = 'none'; sugg.innerHTML = ''; delete sugg.dataset.term; };
             const esc  = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
                                        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
             function note(msg) {
                 sugg.innerHTML = '<div class="ilk-s" style="cursor:default;color:var(--ink-500);">'
                                + esc(msg) + '</div>';
-                sugg.style.display = '';
+                show();
             }
 
             inp.addEventListener('input', function () {
                 const term = inp.value.trim();
                 clearTimeout(t);
-                if (term.length < 2) { hide(); return; }
+                if (term.length < 2) { seq++; hide(); return; }
                 // تأخير بسيط — من غيره بنبعت نداء مع كل حرف
                 t = setTimeout(() => { search(term); }, 250);
             });
 
+            // Enter = دوّر على طول.
+            // 🔴 ده أهم سطر للسكانر: السكانر بيكتب الكود كله في لحظة ويبعت
+            //    Enter **قبل** ما التأخير (250ms) يخلص والاقتراحات تيجي.
+            //    فلو فيه اقتراحات **للكلمة دي بالظبط** ناخد أولها، وإلا
+            //    ندوّر بالكود المكتوب نفسه (الباركود المضروب كود كامل).
+            inp.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') { hide(); return; }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const term = inp.value.trim();
+                if (!term) return;
+                clearTimeout(t);
+                const first = sugg.dataset.term === term ? sugg.querySelector('[data-code]') : null;
+                if (first) history(first.dataset.code, parseInt(first.dataset.item, 10) || 0);
+                else       history(term, 0);
+            });
+
             function search(term) {
-                if (term === lastTerm) return;
-                lastTerm = term;
+                const my = ++seq;
                 fetch('ashraqa_invoices.php?ilk=search&term=' + encodeURIComponent(term))
                     .then(r => r.json())
                     .then(j => {
+                        if (my !== seq) return;              // رد قديم — اتجاهله
                         if (!j.ok) throw new Error(j.error || 'خطأ');
                         if (!j.rows || !j.rows.length) { note('مفيش صنف بالاسم أو الكود ده.'); return; }
                         sugg.innerHTML = j.rows.map(r =>
-                            '<div class="ilk-s" data-code="' + esc(r.code) + '">'
+                            '<div class="ilk-s" data-code="' + esc(r.code) + '" data-item="' + (parseInt(r.item_id, 10) || 0) + '">'
                           + esc(r.name || '—')
                           + ' <span class="ilk-c">' + esc(r.code) + '</span></div>'
                         ).join('');
-                        sugg.style.display = '';
+                        sugg.dataset.term = term;   // الاقتراحات دي تبع الكلمة دي بالظبط
+                        show();
                     })
-                    .catch(e => note(e.message || 'تعذّر البحث'));
+                    .catch(e => { if (my === seq) note(e.message || 'تعذّر البحث'); });
             }
 
+            // دوسة واحدة بتتعامل مع النوعين: اقتراح صنف، أو فاتورة من النتايج.
+            // 🔴 stopPropagation: من غيرها الـinnerHTML بيتغيّر والعنصر اللي
+            //    اتداس عليه بيتشال من الصفحة، فمستمع الـdocument يلاقيه «بره
+            //    البار» ويقفل القايمة — كانت بتترعش وتختفي.
             sugg.addEventListener('click', function (e) {
+                e.stopPropagation();
                 const d = e.target.closest('.ilk-s');
-                if (!d || !d.dataset.code) return;
-                history(d.dataset.code);
+                if (!d) return;
+                if (d.dataset.url)  { location.href = d.dataset.url; return; }
+                if (d.dataset.code) { history(d.dataset.code, parseInt(d.dataset.item, 10) || 0); }
             });
 
-            function history(code) {
+            function history(code, itemId) {
+                const my = ++seq;
+                delete sugg.dataset.term;
                 note('بيدوّر…');
-                fetch('ashraqa_invoices.php?ilk=history&code=' + encodeURIComponent(code))
+                // item_id بيغطّي كل باركودات الصنف — لو معروف ابعته
+                fetch('ashraqa_invoices.php?ilk=history&code=' + encodeURIComponent(code)
+                      + (itemId ? '&item_id=' + itemId : ''))
                     .then(r => r.json())
                     .then(j => {
+                        if (my !== seq) return;
                         if (!j.ok) throw new Error(j.error || 'خطأ');
                         if (!j.rows || !j.rows.length) {
                             note('الصنف ده ما نزلش في أي فاتورة فيها توزيع لإشراقة.');
@@ -1033,20 +1069,14 @@ require_once __DIR__ . '/includes/header.php';
                                      + ' · راح لإشراقة ' + r.ash_qty + '</div>'
                                      + '</div>';
                             }).join('');
-                        sugg.style.display = '';
+                        show();
                     })
-                    .catch(e => note(e.message || 'تعذّر الجلب'));
+                    .catch(e => { if (my === seq) note(e.message || 'تعذّر الجلب'); });
             }
-
-            sugg.addEventListener('click', function (e) {
-                const d = e.target.closest('.ilk-s');
-                if (d && d.dataset.url) location.href = d.dataset.url;
-            });
 
             document.addEventListener('click', function (e) {
                 if (!e.target.closest('.ilk-bar')) hide();
             });
-            inp.addEventListener('keydown', e => { if (e.key === 'Escape') hide(); });
         })();
     </script>
 
