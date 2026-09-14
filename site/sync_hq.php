@@ -15,6 +15,10 @@
  */
 declare(strict_types=1);
 
+// سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
+
 // ===== التوكن السري — غيّره لقيمة طويلة عشوائية =====
 // ونفس القيمة بالظبط في agent_hq.ps1 عند جهاز الإدارة
 const HQ_SYNC_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';

@@ -16,6 +16,10 @@
  */
 declare(strict_types=1);
 
+// سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
+
 // ===== التوكن السري — غيّره لقيمة طويلة عشوائية =====
 // ونفس القيمة بالظبط تتحط في agent_ashraqa.ps1 عند اشراقة
 const ASHRAQA_SYNC_TOKEN = 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS';

@@ -7,6 +7,9 @@
  */
 declare(strict_types=1);
 
+// سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
 require_once __DIR__ . '/push_lib.php';   // فيه PUSH_WORKER_TOKEN
 
 header('Content-Type: application/json; charset=utf-8');
