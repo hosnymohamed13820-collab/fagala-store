@@ -100,7 +100,10 @@ fi
 echo "  ✅ كل الفحوصات عدّت"
 
 # ---------- ٣) سكربت WinSCP ----------
-winpath() { cygpath -w "$1"; }
+# 🔴 -a (مسار كامل) مش اختياري: WinSCP.com مابيشتغلش من فولدر الريبو،
+#    فالمسار النسبي «site\x.php» مابيتلاقاش. أول رفع حقيقي (١٥ سبتمبر
+#    ٢٠٢٦) وقف بـ«does not exist» عند أول ملف — ومفيش حاجة اترفعت.
+winpath() { cygpath -wa "$1"; }
 SCRIPT="$(mktemp -t deploy_XXXX.txt)"
 {
     echo "option batch abort"
