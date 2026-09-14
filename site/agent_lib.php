@@ -15,6 +15,9 @@
  * =====================================================================
  */
 
+// سجل الأخطاء — endpoints الوكلاء (sync_beat · sync_branch) مابتعملش require لـauth.php
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
 require_once __DIR__ . '/config.php';
 
 const AGENT_OK    = 'ok';

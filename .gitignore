@@ -50,3 +50,7 @@ tests/__pycache__/
 local/db/
 *.sql.gz
 *.sql.zip
+
+# سجل الأخطاء — بيتكتب على السيرفر ويتنزّل مع الميرورينج (مش شغل)
+site/logs/
+logs/

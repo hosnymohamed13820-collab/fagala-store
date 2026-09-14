@@ -12,6 +12,10 @@
  * الأونر (role is_owner = 1) بياخد كل الصلاحيات تلقائياً.
  */
 
+// سجل الأخطاء — **قبل** config.php عشان يمسك أخطاء config نفسه.
+// بيتفرّج بس ومابيغيّرش سلوك أي صفحة (شوف القواعد في errlog_lib.php).
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
 require_once __DIR__ . '/config.php';
 
 // ===== بدء الجلسة بإعدادات آمنة =====
@@ -85,6 +89,7 @@ function all_modules(): array
         'reports'       => ['label' => 'التقارير',          'icon' => 'ti-chart-bar',        'url' => 'reports.php'],
         'definitions'   => ['label' => 'التعريفات',         'icon' => 'ti-adjustments',     'url' => 'definitions.php'],
         'settings'      => ['label' => 'الإعدادات',         'icon' => 'ti-settings',         'url' => 'settings.php'],
+        'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
     ];
 }
 

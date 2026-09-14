@@ -42,6 +42,9 @@ while IFS= read -r f; do
         echo "  ↻ $rel"
         n=$((n + 1))
     fi
-done < <(git ls-files site/)
+done < <(git ls-files --cached --others --exclude-standard site/)
+#        ↑ --others: الملفات الجديدة اللي لسه ماتعملهاش commit (من غيرها
+#          صفحة جديدة مابتتنسخش والاختبار بيتعمل على ولا حاجة).
+#          --exclude-standard: بيحترم .gitignore — فـconfig.php برّه برضه.
 
 echo "✅ $n ملف اتحدّث · config.php ما اتلمسش ($(wc -c < "$DST/config.php") بايت)"

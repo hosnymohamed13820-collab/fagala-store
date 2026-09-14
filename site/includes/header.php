@@ -28,6 +28,46 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
+    <script>
+        // ===== سجل أخطاء الجافاسكربت =====
+        // 🔴 لازم يفضل **أول سكربت في الصفحة**: الـSyntaxError في أي بلوك
+        //    <script> بعده بيتمسك بس لو المستمع ده اتسجّل قبله. (صفحة
+        //    المراجعة فضلت واقفة أيام بسبب غلطة زي دي ومحدش عرف.)
+        // 🔴 RULES §٢: حد أقصى ٣ تقارير في الصفحة، ومن غير أي إعادة محاولة.
+        //    والسيرفر عليه حد تاني (٢٠ كل ١٠ دقايق للجلسة).
+        // inline عن قصد مش في assets/ — header.php مابيتكاشش، فمفيش ?v=
+        //    ولا VERSION في sw.js محتاجين يتغيّروا.
+        (function () {
+            var sent = 0, seen = {};
+            function report(m, s, l, c, k) {
+                try {
+                    m = String(m || '');
+                    if (!m || m === 'Script error.' || sent >= 3 || !navigator.sendBeacon) return;
+                    s = String(s || '');
+                    if (s && s.indexOf(location.origin) !== 0) return;   // إضافات المتصفح
+                    var key = m + '|' + s + '|' + l;
+                    if (seen[key]) return;
+                    seen[key] = 1; sent++;
+                    var f = new FormData();
+                    f.append('m', m.slice(0, 500));
+                    f.append('s', s.slice(0, 300));
+                    f.append('l', String(l || 0));
+                    f.append('c', String(c || 0));
+                    f.append('k', String(k || '').slice(0, 1500));
+                    f.append('p', (location.pathname + location.search).slice(0, 300));
+                    navigator.sendBeacon('errors.php?report=js', f);
+                } catch (x) {}
+            }
+            window.addEventListener('error', function (e) {
+                if (e.target && e.target !== window) return;          // صورة أو ملف مش لاقيه — مش غلطة كود
+                report(e.message, e.filename, e.lineno, e.colno, e.error && e.error.stack);
+            }, true);
+            window.addEventListener('unhandledrejection', function (e) {
+                var r = e.reason;
+                report('Unhandled promise: ' + ((r && r.message) || r), location.href, 0, 0, r && r.stack);
+            });
+        })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= e($storeName) ?></title>
     <!-- PWA -->
