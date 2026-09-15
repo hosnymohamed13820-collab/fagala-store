@@ -36,6 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
         try {
             if ($action === 'clock_in' || $action === 'clock_out') {
                 $geo = evaluate_geofence($employee, $lat, $lng, $acc);
+                if ($reason = geofence_block_reason($employee, $lat, $lng, $geo)) {
+                    throw new RuntimeException($reason);
+                }
                 $geo['lat'] = $lat; $geo['lng'] = $lng; $geo['acc'] = $acc;
                 $act = $action === 'clock_in' ? 'in' : 'out';
 
@@ -64,11 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
 
                 $res = clock_attendance((int)$employee['id'], $act, null, $forceDate, $geo);
                 $where = '';
+                // بقت مستحيلة من بريف ٣ (١٥ سبتمبر) — البرّه بيترفض قبل ما يوصل هنا
                 if (!empty($res['outside'])) {
                     $where = ' (تنبيه: كنت خارج نطاق الفرع بمسافة ' . (int)$res['dist'] . ' متر — تم إبلاغ الموارد البشرية)';
                     $flashType = 'error';
                 } elseif (!empty($res['uncertain'])) {
-                    $where = ' (اتسجّل. الموقع اللي وصلنا مش دقيق (±' . (int)$acc . ' م) — لو انت جوّه الفرع مفيش مشكلة.)';
+                    $grace = (int)setting('geofence_uncertain_grace', '3');
+                    $prev = geofence_consecutive_uncertain((int)$employee['id'], (int)($geo['radius'] ?: 50));
+                    $rem = max(0, $grace - ($prev + 1));
+                    $where = ' (اتسجّل، بس موقعك مش دقيق (±' . (int)$acc . ' م). فاضل ' . $rem . ' مرة وبعدها مش هيتسجّل — افتح إعدادات المتصفح وخلّي الموقع «دقيق».)';
                     $flashType = 'warning';
                 }
                 if ($action === 'clock_in') {
@@ -385,7 +392,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                     if (accEl) accEl.value = '';
                     btn.disabled = false;
                     btn.innerHTML = origHtml;
-                    showHint('تعذّر تحديد الموقع — سيتم التسجيل بدون تحديد المكان', 'var(--neg)');
+                    showHint('تعذّر تحديد الموقع — بنبعت عشان نتأكد', 'var(--neg)');
                 }
                 
                 submitting = true;

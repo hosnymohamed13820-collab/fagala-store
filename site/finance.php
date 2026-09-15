@@ -3556,9 +3556,10 @@ function gps_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): flo
 
 /**
  * تقييم موقع البصمة مقابل نطاق فرع الموظف.
- * بيرجّع: ['dist'=>int|null, 'outside'=>0|1, 'uncertain'=>0|1, 'checked'=>bool]
+ * بيرجّع: ['dist'=>int|null, 'outside'=>0|1, 'uncertain'=>0|1, 'checked'=>bool, 'enforced'=>bool, 'radius'=>int|null]
  *  - checked=false: مفيش تقييم (الموظف مسموحله من أي مكان، أو الفرع مش مفعّل نطاق،
  *    أو مفيش إحداثيات للفرع، أو الموظف مبعتش موقعه).
+ *  - enforced=true: الموظف مش allow_anywhere وفرعه عنده نطاق مفعّل بإحداثيات.
  *  - outside=1: برّه النطاق **فعلاً** (المسافة المؤكدة أكبر من الراديوس).
  *  - uncertain=1: المسافة الخام أكبر من الراديوس لكن الدقة ضعيفة فمش متأكدين.
  *
@@ -3567,13 +3568,10 @@ function gps_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): flo
  */
 function evaluate_geofence(array $employee, ?float $lat, ?float $lng, ?float $acc = null): array
 {
-    $out = ['dist' => null, 'outside' => 0, 'uncertain' => 0, 'checked' => false];
+    $out = ['dist' => null, 'outside' => 0, 'uncertain' => 0, 'checked' => false, 'enforced' => false, 'radius' => null];
 
     // الموظف مسموحله يبصم من أي مكان → مفيش تقييم
     if (!empty($employee['allow_anywhere'])) return $out;
-
-    // مفيش موقع من الموظف → مفيش تقييم (بس بنسجّل إنه مبعتش)
-    if ($lat === null || $lng === null) return $out;
 
     $branchId = (int)($employee['branch_id'] ?? 0);
     if ($branchId <= 0) return $out;
@@ -3588,8 +3586,14 @@ function evaluate_geofence(array $employee, ?float $lat, ?float $lng, ?float $ac
         return $out;
     }
 
-    $dist = gps_distance_m((float)$b['latitude'], (float)$b['longitude'], $lat, $lng);
     $radius = (int)($b['geofence_radius'] ?: 50);
+    $out['enforced'] = true;
+    $out['radius']   = $radius;
+
+    // مفيش موقع من الموظف → مفيش تقييم (بس بنسجّل إنه مبعتش)
+    if ($lat === null || $lng === null) return $out;
+
+    $dist = gps_distance_m((float)$b['latitude'], (float)$b['longitude'], $lat, $lng);
 
     $out['dist']    = (int)round($dist);
     $out['checked'] = true;
@@ -3611,6 +3615,94 @@ function evaluate_geofence(array $employee, ?float $lat, ?float $lng, ?float $ac
     }
 
     return $out;
+}
+
+/**
+ * عدّ مرات البصمة «مش دقيقة» المتتالية للموظف من آخر بصمة دقيقة جوّه النطاق.
+ * البصمة مش دقيقة لو: dist > radius و outside = 0 و acc مش NULL.
+ * البصمة دقيقة جوّه لو: dist <= radius.
+ * بنمشي من الأحدث للأقدم (الانصراف قبل الحضور في نفس اليوم).
+ */
+function geofence_consecutive_uncertain(int $employeeId, int $radius): int
+{
+    static $cache = [];
+    $cacheKey = $employeeId . ':' . $radius;
+    if (isset($cache[$cacheKey])) {
+        return $cache[$cacheKey];
+    }
+
+    $st = db()->prepare(
+        'SELECT check_in, check_in_dist, check_in_outside, check_in_acc,
+                check_out, check_out_dist, check_out_outside, check_out_acc
+         FROM attendance
+         WHERE employee_id = ?
+         ORDER BY att_date DESC, id DESC
+         LIMIT 10'
+    );
+    $st->execute([$employeeId]);
+    $rows = $st->fetchAll();
+
+    $count = 0;
+    foreach ($rows as $r) {
+        // انصراف اليوم (أحدث من الحضور)
+        if ($r['check_out'] !== null && $r['check_out_dist'] !== null) {
+            $dist = (float)$r['check_out_dist'];
+            if ($dist <= $radius) {
+                break;
+            }
+            if ($dist > $radius && empty($r['check_out_outside']) && $r['check_out_acc'] !== null) {
+                $count++;
+            }
+        }
+
+        // حضور اليوم
+        if ($r['check_in'] !== null && $r['check_in_dist'] !== null) {
+            $dist = (float)$r['check_in_dist'];
+            if ($dist <= $radius) {
+                break;
+            }
+            if ($dist > $radius && empty($r['check_in_outside']) && $r['check_in_acc'] !== null) {
+                $count++;
+            }
+        }
+    }
+
+    return $cache[$cacheKey] = $count;
+}
+
+/**
+ * فحص سبب منع تسجيل الحضور/الانصراف بناءً على النطاق الجغرافي.
+ * بيرجّع null لو مسموح، أو نص الرفض لو ممنوع.
+ */
+function geofence_block_reason(array $employee, ?float $lat, ?float $lng, array $geo): ?string
+{
+    // النطاق مش مفعّل على الموظف أو الفرع
+    if (empty($geo['enforced'])) {
+        return null;
+    }
+
+    // الموبايل مابعتش موقع
+    if ($lat === null || $lng === null) {
+        return 'مش قادرين نحدد موقعك. افتح الـGPS واسمح للمتصفح يعرف موقعك، وجرّب تاني.';
+    }
+
+    // برّه النطاق فعلاً
+    if (!empty($geo['outside'])) {
+        $dist = (int)($geo['dist'] ?? 0);
+        return 'إنت برّه نطاق الفرع (بعيد حوالي ' . $dist . ' متر). الحضور والانصراف من جوّه الفرع بس.';
+    }
+
+    // الموقع مش دقيق — سماح ٣ مرات ورا بعض، والرابعة تترفض
+    if (!empty($geo['uncertain'])) {
+        $radius = (int)($geo['radius'] ?: 50);
+        $grace = (int)setting('geofence_uncertain_grace', '3');
+        $prevCount = geofence_consecutive_uncertain((int)($employee['id'] ?? 0), $radius);
+        if ($prevCount >= $grace) {
+            return 'موقعك مش دقيق للمرة الرابعة ورا بعض. افتح إعدادات المتصفح وخلّي إذن الموقع «دقيق» (مش «تقريبي»)، وجرّب جنب الشباك.';
+        }
+    }
+
+    return null;
 }
 
 /**
