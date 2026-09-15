@@ -10,7 +10,7 @@
  * كل العمليات بتمر من finance.php (المصدر الوحيد للحقيقة).
  */
 require_once __DIR__ . '/auth.php';
-require_permission('treasury');
+require_permission('treasury:statement');
 require_once __DIR__ . '/finance.php';
 
 $pdo       = db();
@@ -22,11 +22,44 @@ $costBranches = cost_branches_list();
 
 // صلاحية تعديل (القيد + البيان) بعد الحفظ — الأونر بس، زي ما كان
 // `set_entry_account` بالظبط قبل التعديل ده. الملاحظات مفتوحة لأي حد
-// وصل للشاشة (الشاشة نفسها محمية بـ require_permission('treasury')).
+// وصل للشاشة (الشاشة نفسها محمية بـ require_permission('treasury:statement')).
 // ⚠️ لو عايز المحاسب يعدّل البيان والقيد كمان: غيّر السطر ده لـ
-//    $canEditEntry = is_owner() || can('treasury');
+//    $canEditEntry = is_owner() || can('treasury:statement');
 $canEditEntry = is_owner();
 $canEditNotes = true;
+$canReverse   = can('treasury:reverse');
+
+// =====================================================================
+//  AJAX — قيد عكسي لحركة صرف أو استلام
+//  حارس الصلاحية: treasury:reverse في أول سطر.
+// =====================================================================
+if (($_GET['ajax'] ?? '') === 'je_reverse') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!can('treasury:reverse')) {
+            throw new RuntimeException('غير مصرح لك بعمل قيد عكسي.');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            throw new RuntimeException('طلب غير صالح.');
+        }
+        $body = json_decode(file_get_contents('php://input') ?: '', true);
+        if (!is_array($body)) throw new RuntimeException('بيانات غير صالحة.');
+        if (!csrf_verify((string) ($body['csrf'] ?? ''))) {
+            throw new RuntimeException('انتهت صلاحية الجلسة — اعمل ريفريش وحاول تاني.');
+        }
+
+        $jid = (int) ($body['id'] ?? 0);
+        if ($jid <= 0) throw new RuntimeException('قيد غير صحيح.');
+
+        $revEntryId = reverse_treasury_movement($jid, $uid);
+
+        echo json_encode(['ok' => true, 'reversal_entry_id' => $revEntryId], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
 
 // =====================================================================
 //  AJAX — تعديل قيد بعد الحفظ (من غير أي ريفريش للصفحة)
@@ -53,7 +86,7 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
 
         // الصف الحالي — عشان اللي مالوش صلاحية يعدّل الملاحظة بس
         // من غير ما يقدر يغيّر البيان أو القيد أو التاريخ بتزوير الطلب.
-        $cur = $pdo->prepare('SELECT account_id, description, entry_date, ref_type FROM journal_entries WHERE id = ?');
+        $cur = $pdo->prepare('SELECT account_id, description, entry_date, ref_type, ref_id FROM journal_entries WHERE id = ?');
         $cur->execute([$jid]);
         $curRow = $cur->fetch();
         if (!$curRow) throw new RuntimeException('القيد ده مش موجود.');
@@ -81,6 +114,19 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
 
         $dateChanged = false;
         if ($canEditEntry && $reqDate !== '' && $reqDate !== (string) $curRow['entry_date']) {
+            if ((string) ($curRow['ref_type'] ?? '') === 'reversal') {
+                throw new RuntimeException('الحركة دي اتعكست — مينفعش تغيّر تاريخها.');
+            }
+            $refId = (int) ($curRow['ref_id'] ?? 0);
+            if ($refId > 0 && treasury_movements_has_reverse_cols($pdo)) {
+                $chkRev = $pdo->prepare('SELECT reversed_at FROM treasury_movements WHERE id = ?');
+                $chkRev->execute([$refId]);
+                $revAt = $chkRev->fetchColumn();
+                if ($revAt !== false && $revAt !== null) {
+                    throw new RuntimeException('الحركة دي اتعكست — مينفعش تغيّر تاريخها.');
+                }
+            }
+
             $dateRes = change_movement_date($jid, $reqDate, $uid);
             if (!empty($dateRes['changed'])) {
                 $dateChanged = true;
@@ -145,6 +191,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($bId <= 0) throw new RuntimeException('اختر الفرع لاستلام العهدة.');
                     receive_custody($bId, $amount, $tid, $date, $desc ?: null, $uid);
                     $flash = 'تم استلام العهدة من الفرع (الخزينة زادت وعهدة الفرع نقصت).';
+                }
+                elseif ($opType === 'supplier') {
+                    $suppId = (int) ($_POST['supplier_id'] ?? 0);
+                    if ($suppId <= 0) {
+                        throw new RuntimeException('اختر المورد.');
+                    }
+                    $stSupp = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? AND is_active = 1 LIMIT 1');
+                    $stSupp->execute([$suppId]);
+                    $supp = $stSupp->fetch();
+                    if (!$supp) {
+                        throw new RuntimeException('المورد غير موجود أو غير نشط.');
+                    }
+                    sync_dynamic_accounts();
+                    $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
+                    $stAcc->execute([$suppId]);
+                    $accId = (int) $stAcc->fetchColumn();
+                    if (!$accId) {
+                        throw new RuntimeException('المورد ده مالوش حساب في شجرة الحسابات — اتأكد إن فيه أب «موردين» في التعريفات.');
+                    }
+                    $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
+                        ? (int) $_POST['cost_branch_id'] : null;
+                    if (empty($costBranchId)) {
+                        throw new RuntimeException('اختار الفرع.');
+                    }
+                    $opDesc = $desc !== ''
+                        ? $desc
+                        : (($action === 'disbursement' ? 'صرف للمورد ' : 'استلام من المورد ') . $supp['name']);
+                    treasury_movement(
+                        $tid, $action, $amount, $date, $opDesc, $uid,
+                        $accId, $costBranchId, $notes !== '' ? $notes : null
+                    );
+                    $flash = ($action === 'disbursement')
+                        ? 'تم تسجيل الصرف للمورد.'
+                        : 'تم تسجيل الاستلام من المورد.';
                 }
                 else {
                     // القيد والفرع إجباريين في الاستلام والصرف العادي
@@ -211,6 +291,8 @@ foreach ($treasuries as $t) {
 
 // الموظفون (لقائمة السلفة)
 $employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+// الموردون (للصرف والاستلام)
+$suppliers = $pdo->query('SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
 // الفروع (لصرف العهدة من الخزينة)
 $branchesForCustody = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
 
@@ -242,6 +324,8 @@ $totalCredit = 0.0;
 $totalNet    = 0.0;
 $totalCount  = 0;   // عدد حركات الفترة كلها — الجدول محدود بـLIMIT، الكروت لأ
 
+$tmRevSelect = treasury_movements_has_reverse_cols($pdo) ? ', tm.reversed_at' : ', NULL AS reversed_at';
+
 if ($isAllStatement) {
     // كشف مجمّع لكل الخزائن (مع اسم الخزينة في كل حركة)
     $st = $pdo->prepare(
@@ -256,12 +340,12 @@ if ($isAllStatement) {
                 eu.full_name AS edited_by_name,
                 cb.name AS cost_branch_name,
                 tfrom.name AS transfer_from_name,
-                tto.name AS transfer_to_name
+                tto.name AS transfer_to_name{$tmRevSelect}
          FROM journal_entries je
          JOIN treasuries t ON t.id = je.treasury_id
          LEFT JOIN users u ON u.id = je.created_by
          LEFT JOIN users eu ON eu.id = je.edited_by
-         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
          LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
          LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
          LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -315,11 +399,11 @@ if ($isAllStatement) {
                         eu.full_name AS edited_by_name,
                         cb.name AS cost_branch_name,
                         tfrom.name AS transfer_from_name,
-                        tto.name AS transfer_to_name
+                        tto.name AS transfer_to_name{$tmRevSelect}
                  FROM journal_entries je
                  LEFT JOIN users u ON u.id = je.created_by
                  LEFT JOIN users eu ON eu.id = je.edited_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -389,22 +473,47 @@ function je_code_cell(array $row): string {
  * النص الطويل بيتقص بـ ellipsis والنص الكامل في الـ title (tooltip)،
  * والتصدير بياخد النص كامل من الداتا مش من الخلية.
  */
-function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): string {
+function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool $canReverse = false, string $treasuryName = ''): string {
     $notes = (string) ($row['notes'] ?? '');
+    $refType = (string) ($row['ref_type'] ?? '');
+    $isReversed = !empty($row['reversed_at']);
+    $isReversal = ($refType === 'reversal');
+
     $out = '<span class="je-note" title="' . e($notes) . '">'
          . ($notes !== '' ? e($notes) : '<span style="color:var(--ink-300);">—</span>')
          . '</span>';
 
     if ($canEditEntry || $canEditNotes) {
         $out .= '<button type="button" class="je-edit" title="تعديل القيد والبيان والملاحظات"'
-              . ' data-id="'      . (int) $row['id'] . '"'
-              . ' data-acc="'     . ($row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
-              . ' data-desc="'    . e((string) $row['description']) . '"'
-              . ' data-notes="'   . e($notes) . '"'
-              . ' data-date="'    . e((string) $row['entry_date']) . '"'
-              . ' data-reftype="' . e((string) ($row['ref_type'] ?? '')) . '"'
+              . ' data-id="'       . (int) ($row['id'] ?? 0) . '"'
+              . ' data-acc="'      . (isset($row['account_id']) && $row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
+              . ' data-desc="'     . e((string) ($row['description'] ?? '')) . '"'
+              . ' data-notes="'    . e($notes) . '"'
+              . ' data-date="'     . e((string) ($row['entry_date'] ?? '')) . '"'
+              . ' data-reftype="'  . e($refType) . '"'
+              . ' data-reversed="' . ($isReversed ? '1' : '0') . '"'
               . ' onclick="jeOpen(this)"><i class="ti ti-pencil"></i></button>';
     }
+
+    if ($canReverse && in_array($refType, ['receipt', 'disbursement'], true) && !$isReversed) {
+        $tName = (string) ($row['treasury_name'] ?? $treasuryName);
+        $amt = ((float) ($row['debit'] ?? 0) > 0) ? (float) $row['debit'] : (float) ($row['credit'] ?? 0);
+        $out .= '<button type="button" class="je-rev" title="قيد عكسي"'
+              . ' data-id="'       . (int) $row['id'] . '"'
+              . ' data-type="'     . e($refType) . '"'
+              . ' data-amount="'   . number_format($amt, 2) . '"'
+              . ' data-treasury="' . e($tName) . '"'
+              . ' data-date="'     . e(substr((string) $row['entry_date'], 0, 10)) . '"'
+              . ' onclick="jeReverse(this)"><i class="ti ti-refresh"></i></button>';
+    }
+
+    if ($isReversed) {
+        $out .= '<span class="je-edited" title="اتعكس ' . e((string) $row['reversed_at']) . '">اتعكس</span>';
+    }
+    if ($isReversal) {
+        $out .= '<span class="je-edited">قيد عكسي</span>';
+    }
+
     if (!empty($row['edited_at'])) {
         $who = !empty($row['edited_by_name']) ? ' — ' . $row['edited_by_name'] : '';
         $out .= '<span class="je-edited" title="اتعدّل ' . e($row['edited_at']) . e($who) . '">معدّل</span>';
@@ -506,6 +615,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .je-edit { background:none; border:none; cursor:pointer; color:var(--ink-400);
         padding:3px 5px; border-radius:6px; font-size:15px; vertical-align:middle; }
     .je-edit:hover { background:var(--bg); color:var(--accent-text); }
+    .je-rev { background:none; border:none; cursor:pointer; color:var(--ink-400);
+        padding:3px 5px; border-radius:6px; font-size:15px; vertical-align:middle; }
+    .je-rev:hover { background:var(--bg); color:var(--accent-text); }
     .je-edited { font-size:11px; color:var(--ink-400); background:var(--line-soft);
         padding:1px 7px; border-radius:20px; margin-right:4px; vertical-align:middle; }
     .je-locked { font-size:12px; color:var(--ink-500); background:var(--line-soft);
@@ -624,7 +736,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
-                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes) ?></td>
+                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -703,7 +815,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
-                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes) ?></td>
+                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -749,7 +861,7 @@ $today = date('Y-m-d');
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
             <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
-            <div class="form-row">
+            <div class="form-row" id="receiptAccountRow">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id') ?>
             </div>
@@ -770,14 +882,31 @@ $today = date('Y-m-d');
                 <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
             </div>
 
-            <!-- نوع الاستلام: عادي / رد سلفة / استلام عهدة -->
+            <!-- نوع الاستلام: عادي / مورد / رد سلفة / استلام عهدة -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label>نوع الاستلام</label>
                 <select name="op_type" id="receiptType" onchange="toggleReceiptType()">
                     <option value="normal">استلام عادي</option>
+                    <option value="supplier">استلام من مورد</option>
                     <option value="advance">رد سلفة من موظف</option>
                     <option value="custody">استلام عهدة من فرع</option>
                 </select>
+                <div id="recSupplierBox" style="display:none;margin-top:12px;">
+                    <input type="text" id="recSuppSearch" placeholder="ابحث باسم المورد..."
+                           oninput="filterRecSupps()" autocomplete="off"
+                           style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
+                    <div id="recSuppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                        <?php foreach ($suppliers as $s): ?>
+                            <div class="rec-supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                 onclick="pickRecSupp(this)"
+                                 style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                <?= e($s['name']) ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <input type="hidden" name="supplier_id" id="recSuppId" value="">
+                    <div id="recSuppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                </div>
                 <div id="recAdvanceBox" style="display:none;margin-top:12px;">
                     <input type="text" id="recEmpSearch" placeholder="ابحث باسم الموظف..."
                            oninput="filterRecEmps()" autocomplete="off"
@@ -852,7 +981,7 @@ $today = date('Y-m-d');
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="disburseAccountRow">
                     <label>القيد</label>
                     <?= acctree_field('entry_code_id') ?>
                 </div>
@@ -873,14 +1002,33 @@ $today = date('Y-m-d');
                     <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
                 </div>
 
-                <!-- نوع الصرف: عادي / سلفة موظف / عهدة فرع -->
+                <!-- نوع الصرف: عادي / مورد / سلفة موظف / عهدة فرع -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                     <label>نوع الصرف</label>
                     <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
                         <option value="normal">صرف عادي</option>
+                        <option value="supplier">صرف لمورد</option>
                         <option value="advance">سلفة لموظف</option>
                         <option value="custody">عهدة لفرع</option>
                     </select>
+
+                    <!-- صرف لمورد -->
+                    <div id="supplierBox" style="display:none;margin-top:12px;">
+                        <input type="text" id="suppSearch" placeholder="ابحث باسم المورد..."
+                               oninput="filterSupps()" autocomplete="off"
+                               style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
+                        <div id="suppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                            <?php foreach ($suppliers as $s): ?>
+                                <div class="supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                     onclick="pickSupp(this)"
+                                     style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                    <?= e($s['name']) ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="supplier_id" id="suppId" value="">
+                        <div id="suppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                    </div>
 
                     <!-- سلفة موظف -->
                     <div id="advanceBox" style="display:none;margin-top:12px;">
@@ -1022,11 +1170,17 @@ $today = date('Y-m-d');
         });
     });
 
-    // القيد والفرع إجباريين في الاستلام/الصرف العادي بس (السلفة والعهدة ليهم موظف/فرع).
+    // القيد والفرع إجباريين في الاستلام/الصرف العادي بس (السلفة والعهدة والمورد ليهم فحصهم).
     // خانة القيد input hidden — `required` مابيشتغلش عليها، فالفحص هنا.
     // والسيرفر بيرفض برضو (treasury.php — «اختار القيد.» / «اختار الفرع.»).
     function normalOpMissing(form, typeSelectId){
-        if (document.getElementById(typeSelectId).value !== 'normal') return '';
+        const op = document.getElementById(typeSelectId).value;
+        if (op === 'supplier') {
+            if (!form.querySelector('input[name="supplier_id"]').value) return 'اختار المورد.';
+            if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
+            return '';
+        }
+        if (op !== 'normal') return '';
         if (!form.querySelector('input[name="entry_code_id"]').value) return 'اختار القيد.';
         if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
         return '';
@@ -1083,12 +1237,19 @@ $today = date('Y-m-d');
             document.getElementById('disbConfirmAmount').textContent = formattedAmt;
             document.getElementById('disbConfirmTreasury').textContent = treName;
             // القيد والفرع في التأكيد — عشان لو القيد غلط ياخد باله قبل ما الفلوس تتسجّل
-            const isNormal = document.getElementById('disburseType').value === 'normal';
-            document.getElementById('disbConfirmNormal').style.display = isNormal ? '' : 'none';
+            const opType = document.getElementById('disburseType').value;
+            const isNormal = opType === 'normal';
+            const isSupplier = opType === 'supplier';
+            document.getElementById('disbConfirmNormal').style.display = (isNormal || isSupplier) ? '' : 'none';
             if (isNormal) {
                 const accLabel = form.querySelector('.act-label');
                 const brSelect = form.querySelector('select[name="cost_branch_id"]');
                 document.getElementById('disbConfirmAccount').textContent = accLabel ? accLabel.textContent.trim() : '';
+                document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
+            } else if (isSupplier) {
+                const suppChosenText = document.getElementById('suppChosen').textContent.replace('تم اختيار:', '').trim();
+                const brSelect = form.querySelector('select[name="cost_branch_id"]');
+                document.getElementById('disbConfirmAccount').textContent = 'مورد: ' + suppChosenText;
                 document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
             }
             document.getElementById('disbFormBody').style.display = 'none';
@@ -1129,8 +1290,15 @@ $today = date('Y-m-d');
     // نوع الصرف: إظهار/إخفاء الأقسام
     function toggleDisburseType(){
         const t = document.getElementById('disburseType').value;
+        const accRow = document.getElementById('disburseAccountRow');
+        if (accRow) accRow.style.display = (t === 'normal') ? '' : 'none';
+        document.getElementById('supplierBox').style.display = (t === 'supplier') ? 'block' : 'none';
         document.getElementById('advanceBox').style.display = (t === 'advance') ? 'block' : 'none';
         document.getElementById('custodyBox').style.display = (t === 'custody') ? 'block' : 'none';
+        if (t !== 'supplier') {
+            document.getElementById('suppId').value = '';
+            document.getElementById('suppChosen').textContent = '';
+        }
         if (t !== 'advance') {
             document.getElementById('empId').value = '';
             document.getElementById('empChosen').textContent = '';
@@ -1138,16 +1306,27 @@ $today = date('Y-m-d');
         if (t !== 'custody') {
             document.getElementById('custodyBranch').value = '';
         }
-        // فرع التكلفة للصرف العادي بس — السلفة والعهدة ليهم موظف/فرع محدد أصلاً
+        // فرع التكلفة للصرف العادي وللمورد — السلفة والعهدة ليهم موظف/فرع محدد أصلاً
         const cb = document.getElementById('disburseCostBranchRow');
-        cb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') cb.querySelector('select').value = '';
-        // الملاحظات للصرف العادي بس — السلفة والعهدة بيمروا على دوال
-        // تانية (disburse_advance / issue_disbursement_order) لسه ما
-        // اتضافلهاش الملاحظات. بنخفيها بدل ما المحاسب يكتب وتضيع.
+        cb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') cb.querySelector('select').value = '';
+        // الملاحظات للصرف العادي وللمورد
         const nb = document.getElementById('disburseNotesRow');
-        nb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') nb.querySelector('textarea').value = '';
+        nb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
+    }
+    function filterSupps(){
+        const q = (document.getElementById('suppSearch').value || '').trim().toLowerCase();
+        document.querySelectorAll('.supp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+    function pickSupp(el){
+        document.getElementById('suppId').value = el.dataset.id;
+        document.getElementById('suppChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.supp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
     }
     function filterEmps(){
         const q = (document.getElementById('empSearch').value || '').trim().toLowerCase();
@@ -1166,18 +1345,35 @@ $today = date('Y-m-d');
     // الاستلام: نوع الاستلام
     function toggleReceiptType(){
         const t = document.getElementById('receiptType').value;
+        const accRow = document.getElementById('receiptAccountRow');
+        if (accRow) accRow.style.display = (t === 'normal') ? '' : 'none';
+        document.getElementById('recSupplierBox').style.display = (t === 'supplier') ? 'block' : 'none';
         document.getElementById('recAdvanceBox').style.display = (t === 'advance') ? 'block' : 'none';
         document.getElementById('recCustodyBox').style.display = (t === 'custody') ? 'block' : 'none';
+        if (t !== 'supplier') { document.getElementById('recSuppId').value=''; document.getElementById('recSuppChosen').textContent=''; }
         if (t !== 'advance') { document.getElementById('recEmpId').value=''; document.getElementById('recEmpChosen').textContent=''; }
         if (t !== 'custody') { document.getElementById('recCustodyBranch').value=''; }
-        // فرع التكلفة للاستلام العادي بس
+        // فرع التكلفة للاستلام العادي وللمورد
         const cb = document.getElementById('receiptCostBranchRow');
-        cb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') cb.querySelector('select').value = '';
-        // نفس سبب الصرف — الملاحظات للاستلام العادي بس
+        cb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') cb.querySelector('select').value = '';
+        // نفس سبب الصرف — الملاحظات للاستلام العادي وللمورد
         const nb = document.getElementById('receiptNotesRow');
-        nb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') nb.querySelector('textarea').value = '';
+        nb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
+    }
+    function filterRecSupps(){
+        const q = (document.getElementById('recSuppSearch').value || '').trim().toLowerCase();
+        document.querySelectorAll('.rec-supp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+    function pickRecSupp(el){
+        document.getElementById('recSuppId').value = el.dataset.id;
+        document.getElementById('recSuppChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.rec-supp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
     }
     function filterRecEmps(){
         const q = (document.getElementById('recEmpSearch').value || '').trim().toLowerCase();
@@ -1224,10 +1420,18 @@ $today = date('Y-m-d');
             const dateHint  = document.getElementById('jeDateHint');
             if (dateInput) {
                 dateInput.value = jeCurrentDate;
-                const canChangeDate = (jeCurrentRefType === 'receipt' || jeCurrentRefType === 'disbursement');
+                const canChangeDate = (jeCurrentRefType === 'receipt' || jeCurrentRefType === 'disbursement')
+                    && btn.dataset.reversed !== '1'
+                    && jeCurrentRefType !== 'reversal';
                 dateInput.disabled = !canChangeDate;
                 if (dateHint) {
-                    dateHint.style.display = canChangeDate ? 'none' : 'block';
+                    if (btn.dataset.reversed === '1' || jeCurrentRefType === 'reversal') {
+                        dateHint.textContent = 'الحركة دي اتعكست — مينفعش تغيّر تاريخها.';
+                        dateHint.style.display = 'block';
+                    } else {
+                        dateHint.textContent = 'تغيير التاريخ متاح لحركات الصرف والاستلام اليدوي بس. باقي الحركات بتعدّل من الموديول بتاعها.';
+                        dateHint.style.display = canChangeDate ? 'none' : 'block';
+                    }
                 }
             }
             // acctreeSet بتضبط القيمة والاسم الظاهر مع بعض
@@ -1358,6 +1562,40 @@ $today = date('Y-m-d');
         tr.style.transition = 'background-color .35s';
         tr.style.backgroundColor = 'var(--pos-soft)';
         setTimeout(() => { tr.style.backgroundColor = ''; }, 900);
+    }
+
+    async function jeReverse(btn) {
+        const id = parseInt(btn.dataset.id, 10) || 0;
+        if (!id) return;
+        const type = btn.dataset.type || '';
+        const op = (type === 'disbursement') ? 'صرف' : 'استلام';
+        const revOp = (type === 'disbursement') ? 'استلام' : 'صرف';
+        const amt = btn.dataset.amount || '';
+        const tre = btn.dataset.treasury || '';
+        const dt = btn.dataset.date || '';
+
+        const msg = 'عكس ' + op + ' ' + amt + ' ج من «' + tre + '»؟\n'
+                  + 'هيتعمل ' + revOp + ' بنفس المبلغ بتاريخ ' + dt + '.';
+        if (!confirm(msg)) return;
+
+        btn.disabled = true;
+        try {
+            const res = await fetch('treasury.php?ajax=je_reverse', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: id, csrf: JE_CSRF })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                location.reload();
+            } else {
+                alert(data.error || 'حدث خطأ أثناء عكس القيد.');
+                btn.disabled = false;
+            }
+        } catch (e) {
+            alert('تعذر الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.');
+            btn.disabled = false;
+        }
     }
 </script>
 

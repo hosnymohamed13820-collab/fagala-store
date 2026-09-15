@@ -21,7 +21,7 @@ $entryCodes = entry_codes_list(true); // حسابات العهدة بس (is_cust
 $flash = ''; $flashType = 'success';
 
 // صلاحية إصدار إذون الصرف: الأونر أو من له صلاحية treasury (المحاسب)
-$canIssue = is_owner() || can('treasury');
+$canIssue = is_owner() || can('treasury:statement');
 
 // تحديد الفرع المعروض:
 // - لو المستخدم مربوط بفرع → فرعه.

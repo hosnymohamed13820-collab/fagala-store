@@ -40,6 +40,14 @@ require_once __DIR__ . '/config.php';
 try {
     $pdo = db();
 
+    // فحص الورديات المرفوضة التي انتهت مهلتها قبل سحب الطابور
+    try {
+        require_once __DIR__ . '/finance.php';
+        shift_returns_expire($pdo);
+    } catch (Throwable $ex) {
+        // صامت
+    }
+
     // ١) سحب ٥٠ صف من الطابور بترتيب المعرّف
     $st = $pdo->prepare(
         "SELECT id, user_id, title, body, link, tries

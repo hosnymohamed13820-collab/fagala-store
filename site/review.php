@@ -5,15 +5,23 @@
  *
  * - أرقام الكاشير ظاهرة للمحاسب في كل التابات (شريط أعلى البوب أب).
  * - تابات: كاش (فئات) + فيزا/إنستا (سطور) + مقارنة.
- * - الاعتماد أو الرفض → الأرقام تدخل الخزائن (عبر save_shift_review).
+ * - الاعتماد فقط → الأرقام تدخل الخزائن (عبر save_shift_review). أما الرفض فلا يحرّك أي فلوس.
  */
 require_once __DIR__ . '/auth.php';
 require_permission('review');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/push_lib.php';
 
 $pdo  = db();
 $uid  = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
+
+// فحص الورديات المرجوعة اللي عدّت مهلتها (٤٨ ساعة) آلياً
+try {
+    shift_returns_expire($pdo);
+} catch (Throwable $e) {
+    error_log("shift_returns_expire in review: " . $e->getMessage());
+}
 
 $denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
 
@@ -65,6 +73,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $bBranch = (int) ($_POST['branch_id'] ?? 0);
                 update_shift_date_branch($shiftId, $bDate, $bBranch, $uid);
                 $flash = 'اتغيّر تاريخ/فرع الوردية.';
+            } elseif (($_POST['action'] ?? '') === 'seq_ignore') {
+                if (!can_edit_shift_date_branch()) {
+                    throw new RuntimeException('غير مصرح لك بتنفيذ هذه العملية.');
+                }
+                $issueId = (int) ($_POST['issue_id'] ?? 0);
+                $ownerNote = trim((string)($_POST['owner_note'] ?? ''));
+                if ($ownerNote === '') {
+                    throw new RuntimeException('سبب التغاضي إجباري.');
+                }
+                $stmt = $pdo->prepare(
+                    "UPDATE shift_sequence_issues 
+                     SET status = 'ignored', owner_note = ?, resolved_by = ?, resolved_at = NOW() 
+                     WHERE id = ? AND status = 'open'"
+                );
+                $stmt->execute([$ownerNote, $uid, $issueId]);
+                $flash = 'تم التغاضي عن مشكلة التسلسل.';
+            } elseif (($_POST['action'] ?? '') === 'seq_send') {
+                if (!can_edit_shift_date_branch()) {
+                    throw new RuntimeException('غير مصرح لك بتنفيذ هذه العملية.');
+                }
+                $issueId = (int) ($_POST['issue_id'] ?? 0);
+                $assignedUserId = (int) ($_POST['assigned_user_id'] ?? 0);
+                $ownerNote = trim((string)($_POST['owner_note'] ?? ''));
+                if ($assignedUserId <= 0) {
+                    throw new RuntimeException('اختر الموظف لإرسال المشكلة.');
+                }
+                $stmtChk = $pdo->prepare("SELECT id, full_name FROM users WHERE id = ? AND is_active = 1");
+                $stmtChk->execute([$assignedUserId]);
+                $assignee = $stmtChk->fetch(PDO::FETCH_ASSOC);
+                if (!$assignee) {
+                    throw new RuntimeException('الموظف المحدد غير موجود أو غير نشط.');
+                }
+                $stmt = $pdo->prepare(
+                    "UPDATE shift_sequence_issues 
+                     SET status = 'sent', assigned_user_id = ?, owner_note = ? 
+                     WHERE id = ? AND status = 'open'"
+                );
+                $stmt->execute([$assignedUserId, $ownerNote ?: null, $issueId]);
+
+                try {
+                    $stmtIss = $pdo->prepare("SELECT * FROM shift_sequence_issues WHERE id = ?");
+                    $stmtIss->execute([$issueId]);
+                    $iss = $stmtIss->fetch(PDO::FETCH_ASSOC);
+                    if ($iss) {
+                        $desc = ($iss['kind'] === 'duplicate')
+                            ? "رقم {$iss['found_no']} اتكرر"
+                            : "بعد " . ($iss['expected_no'] - 1) . " جه {$iss['found_no']}";
+                        $noteMsg = $ownerNote !== '' ? " — {$ownerNote}" : '';
+                        notify(
+                            $pdo,
+                            [$assignedUserId],
+                            'shift_seq',
+                            'مطلوب ردك على مشكلة في تسلسل الورديات',
+                            "{$desc}{$noteMsg}",
+                            "cashier.php?seq_issue={$issueId}"
+                        );
+                    }
+                } catch (Throwable $e) {
+                    error_log("notify shift_seq error: " . $e->getMessage());
+                }
+                $flash = 'تم إرسال مشكلة التسلسل للموظف.';
             } else {
 
             $shiftId  = (int) ($_POST['shift_id'] ?? 0);
@@ -94,9 +163,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'system'   => (float) $rawSys,
             ];
             save_shift_review($shiftId, $amounts, $decision, $reason ?: null, $uid);
+
+            if ($decision === 'rejected') {
+                try {
+                    $stmtShift = $pdo->prepare("SELECT user_id, shift_name FROM shifts WHERE id = ? LIMIT 1");
+                    $stmtShift->execute([$shiftId]);
+                    $rejShift = $stmtShift->fetch(PDO::FETCH_ASSOC);
+                    if ($rejShift && !empty($rejShift['user_id'])) {
+                        $hours = (int) setting('shift_return_hours', 48);
+                        $sName = ($rejShift['shift_name'] !== null && $rejShift['shift_name'] !== '') ? $rejShift['shift_name'] : (string)$shiftId;
+                        notify(
+                            $pdo,
+                            [(int)$rejShift['user_id']],
+                            'shift_return',
+                            "ورديتك رقم {$sName} رجعت للتعديل",
+                            "السبب: " . ($reason ?: 'بدون سبب') . " — قدامك {$hours} ساعة تعدّلها وتبعتها تاني",
+                            "cashier.php?edit_shift={$shiftId}"
+                        );
+                    }
+                } catch (Throwable $e) {
+                    error_log("notify rejection error: " . $e->getMessage());
+                }
+            }
+
             $flash = $decision === 'approved'
                 ? 'تم اعتماد الوردية ودخلت الأرقام الخزائن.'
-                : 'تم رفض الوردية وأُعيدت للكاشير. الأرقام دخلت الخزائن.';
+                : 'تم رفض الوردية ورجعت للكاشير. مفيش فلوس اتحرّكت.';
 
             } // نهاية مسار الوردية
         } catch (Throwable $ex) {
@@ -215,6 +307,56 @@ foreach ($pendingCustody as $c) {
     $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
 }
 $totalPendingReviewCount = count($pending) + count($pendingCustody);
+
+// استعلام مشاكل تسلسل الورديات لو مسموح
+$seqIssues = [];
+$openSeqCount = 0;
+$seqUsersByBranch = [];
+$seqIssuesTableExists = false;
+if (can_edit_shift_date_branch()) {
+    try {
+        $seqIssues = $pdo->query(
+            "SELECT ssi.*, b.name AS branch_name, u_as.full_name AS assigned_name, u_res.full_name AS resolved_name
+             FROM shift_sequence_issues ssi
+             JOIN branches b ON b.id = ssi.branch_id
+             LEFT JOIN users u_as ON u_as.id = ssi.assigned_user_id
+             LEFT JOIN users u_res ON u_res.id = ssi.resolved_by
+             ORDER BY ssi.id DESC LIMIT 100"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        $seqIssuesTableExists = true;
+        foreach ($seqIssues as $iss) {
+            if ($iss['status'] === 'open') {
+                $openSeqCount++;
+            }
+        }
+        $branchUsersRaw = $pdo->query(
+            "SELECT u.id, u.full_name, u.branch_id AS u_branch, e.branch_id AS e_branch
+             FROM users u
+             LEFT JOIN employees e ON e.user_id = u.id AND e.is_active = 1
+             WHERE u.is_active = 1
+             ORDER BY u.full_name ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($branchUsersRaw as $uRow) {
+            $uId = (int)$uRow['id'];
+            $uName = $uRow['full_name'];
+            $uB = (int)($uRow['u_branch'] ?? 0);
+            $eB = (int)($uRow['e_branch'] ?? 0);
+            if ($uB > 0) {
+                $seqUsersByBranch[$uB][$uId] = ['id' => $uId, 'name' => $uName];
+            }
+            if ($eB > 0) {
+                $seqUsersByBranch[$eB][$uId] = ['id' => $uId, 'name' => $uName];
+            }
+        }
+        foreach ($seqUsersByBranch as $bid => $uList) {
+            $seqUsersByBranch[$bid] = array_values($uList);
+        }
+    } catch (Throwable $e) {
+        $seqIssues = [];
+        $openSeqCount = 0;
+        $seqIssuesTableExists = false;
+    }
+}
 
 $page_title    = 'مراجعة المحاسب';
 $active_module = 'review';
@@ -338,6 +480,9 @@ function shift_cashier_amounts(array $s): array {
     <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_custody')">عهد الفروع (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
+    <?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
+        <button class="rv-tab" id="tab_seq_btn" onclick="rvTab(this,'pane_seq')">تسلسل الورديات (<?= $openSeqCount ?> مفتوحة)</button>
+    <?php endif; ?>
 </div>
 
 <!-- في انتظار المراجعة -->
@@ -507,6 +652,76 @@ function shift_cashier_amounts(array $s): array {
     <?php endif; ?>
 </div>
 
+<?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
+<!-- تسلسل الورديات -->
+<div class="rv-pane" id="pane_seq">
+    <?php if (empty($seqIssues)): ?>
+        <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">لا توجد مشاكل في تسلسل الورديات.</div>
+    <?php else: ?>
+        <div class="card" style="overflow-x:auto;padding:0;">
+            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:14px;text-align:right;">
+                <thead>
+                    <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
+                        <th style="padding:10px 14px;">الفرع</th>
+                        <th style="padding:10px 14px;">النوع</th>
+                        <th style="padding:10px 14px;">الوصف</th>
+                        <th style="padding:10px 14px;">الحالة</th>
+                        <th style="padding:10px 14px;">الموظف</th>
+                        <th style="padding:10px 14px;">الرد / الملاحظة</th>
+                        <th style="padding:10px 14px;">التاريخ</th>
+                        <th style="padding:10px 14px;">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($seqIssues as $iss):
+                        $isDup = ($iss['kind'] === 'duplicate');
+                        $descText = $isDup ? ('رقم ' . e($iss['found_no']) . ' اتكرر') : ('بعد ' . e($iss['expected_no'] - 1) . ' جه ' . e($iss['found_no']));
+                        $st = $iss['status'];
+                        $stBadge = match($st) {
+                            'open'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--warn-soft,#fff3cd);color:var(--warn,#856404);font-size:12px;font-weight:600;">مفتوحة</span>',
+                            'ignored'  => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--line-soft,#e9ecef);color:var(--ink-500,#6c757d);font-size:12px;font-weight:600;">تم التغاضي</span>',
+                            'sent'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--surface,#e0e7ff);color:var(--accent-text,#4338ca);font-size:12px;font-weight:600;">مُرسلة للموظف</span>',
+                            'answered' => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--pos-soft,#d4edda);color:var(--pos,#155724);font-size:12px;font-weight:600;">تم الرد</span>',
+                            default    => e($st),
+                        };
+                    ?>
+                    <tr class="seq-issue-row" data-branch="<?= (int)$iss['branch_id'] ?>" style="border-bottom:1px solid var(--line-soft);">
+                        <td style="padding:10px 14px;font-weight:600;"><?= e($iss['branch_name']) ?></td>
+                        <td style="padding:10px 14px;"><?= $isDup ? 'مكرر' : 'فجوة' ?></td>
+                        <td style="padding:10px 14px;font-weight:600;color:var(--ink-900);"><?= $descText ?></td>
+                        <td style="padding:10px 14px;"><?= $stBadge ?></td>
+                        <td style="padding:10px 14px;"><?= !empty($iss['assigned_name']) ? e($iss['assigned_name']) : '—' ?></td>
+                        <td style="padding:10px 14px;font-size:13px;color:var(--ink-700);">
+                            <?php if (!empty($iss['owner_note'])): ?>
+                                <div><span style="color:var(--ink-500);">ملاحظة:</span> <?= e($iss['owner_note']) ?></div>
+                            <?php endif; ?>
+                            <?php if (!empty($iss['reply'])): ?>
+                                <div style="color:var(--pos);"><span style="color:var(--ink-500);">الرد:</span> <?= e($iss['reply']) ?></div>
+                            <?php endif; ?>
+                            <?php if (empty($iss['owner_note']) && empty($iss['reply'])): ?>
+                                —
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:10px 14px;font-size:12px;color:var(--ink-500);"><?= e($iss['created_at']) ?></td>
+                        <td style="padding:10px 14px;">
+                            <?php if ($st === 'open'): ?>
+                                <div style="display:flex;gap:6px;">
+                                    <button type="button" class="btn-shift-db" onclick="openSeqIgnore(<?= (int)$iss['id'] ?>)">تغاضي</button>
+                                    <button type="button" class="btn-shift-db" onclick="openSeqSend(<?= (int)$iss['id'] ?>, <?= (int)$iss['branch_id'] ?>, '<?= e(addslashes($descText)) ?>')">ابعت لموظف</button>
+                                </div>
+                            <?php else: ?>
+                                <span style="color:var(--ink-400);font-size:12px;">منتهية</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <!-- بوب أب المراجعة -->
 <div class="rv-modal" id="rvModal">
   <div class="rv-box">
@@ -651,7 +866,131 @@ function shift_cashier_amounts(array $s): array {
   </div>
 </div>
 
+<?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
+<!-- بوب أب تغاضي عن مشكلة التسلسل -->
+<div class="rv-modal" id="seqIgnoreModal">
+  <div class="rv-box" style="max-width:440px;">
+    <div class="rv-mhead">
+        <span class="t">تغاضي عن مشكلة التسلسل</span>
+        <button type="button" class="rv-x" onclick="closeSeqIgnore()">&times;</button>
+    </div>
+    <div class="rv-mbody">
+        <form method="post" id="seqIgnoreForm">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="seq_ignore">
+            <input type="hidden" name="issue_id" id="ignore_issue_id" value="">
+
+            <div style="margin-bottom:14px;">
+                <label for="ignore_owner_note" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">سبب التغاضي (إجباري)</label>
+                <textarea name="owner_note" id="ignore_owner_note" required rows="3" placeholder="اكتب سبب التغاضي..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
+            </div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+                <button type="button" onclick="closeSeqIgnore()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
+                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">تأكيد التغاضي</button>
+            </div>
+        </form>
+    </div>
+  </div>
+</div>
+
+<!-- بوب أب إرسال مشكلة التسلسل لموظف -->
+<div class="rv-modal" id="seqSendModal">
+  <div class="rv-box" style="max-width:480px;">
+    <div class="rv-mhead">
+        <span class="t">إرسال مشكلة التسلسل لموظف</span>
+        <button type="button" class="rv-x" onclick="closeSeqSend()">&times;</button>
+    </div>
+    <div class="rv-mbody">
+        <form method="post" id="seqSendForm">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="seq_send">
+            <input type="hidden" name="issue_id" id="send_issue_id" value="">
+
+            <div id="send_desc_box" class="rv-note" style="margin-bottom:14px;font-weight:600;"></div>
+
+            <div style="margin-bottom:14px;">
+                <label for="send_user_id" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">الموظف (من فرع المشكلة)</label>
+                <select name="assigned_user_id" id="send_user_id" required style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
+                    <option value="">اختر الموظف...</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label for="send_owner_note" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">ملاحظة للموظف (اختياري)</label>
+                <textarea name="owner_note" id="send_owner_note" rows="2" placeholder="اكتب ملاحظة أو توجيه للموظف..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
+            </div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+                <button type="button" onclick="closeSeqSend()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
+                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">إرسال للموظف</button>
+            </div>
+        </form>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <script>
+    var seqUsersByBranch = <?= json_encode($seqUsersByBranch ?? [], JSON_UNESCAPED_UNICODE) ?>;
+
+    function openSeqIgnore(id) {
+        var el = document.getElementById('ignore_issue_id');
+        if (el) el.value = id;
+        var note = document.getElementById('ignore_owner_note');
+        if (note) note.value = '';
+        var m = document.getElementById('seqIgnoreModal');
+        if (m) {
+            m.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+    function closeSeqIgnore() {
+        var m = document.getElementById('seqIgnoreModal');
+        if (m) {
+            m.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    }
+    function openSeqSend(id, branchId, desc) {
+        var el = document.getElementById('send_issue_id');
+        if (el) el.value = id;
+        var dBox = document.getElementById('send_desc_box');
+        if (dBox) dBox.textContent = desc || '';
+        var note = document.getElementById('send_owner_note');
+        if (note) note.value = '';
+        var sel = document.getElementById('send_user_id');
+        if (sel) {
+            sel.innerHTML = '<option value="">اختر الموظف...</option>';
+            var users = seqUsersByBranch[branchId] || [];
+            if (users.length === 0) {
+                var opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'لا يوجد موظفين مسجلين بهذا الفرع';
+                sel.appendChild(opt);
+            } else {
+                users.forEach(function(u) {
+                    var opt = document.createElement('option');
+                    opt.value = u.id;
+                    opt.textContent = u.name;
+                    sel.appendChild(opt);
+                });
+            }
+        }
+        var m = document.getElementById('seqSendModal');
+        if (m) {
+            m.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+    function closeSeqSend() {
+        var m = document.getElementById('seqSendModal');
+        if (m) {
+            m.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    }
+
     function openShiftDateBranch(id, date, branchId) {
         document.getElementById('sdb_shift_id').value = id;
         document.getElementById('sdb_date').value = date;
@@ -1183,6 +1522,11 @@ function shift_cashier_amounts(array $s): array {
             el.hidden = !match;
         });
 
+        document.querySelectorAll('#pane_seq .seq-issue-row').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+        });
+
         var cp = document.getElementById('cnt_pending');
         if (cp) cp.textContent = visiblePending;
         var cc = document.getElementById('cnt_custody');
@@ -1198,6 +1542,14 @@ function shift_cashier_amounts(array $s): array {
             saved = 'all';
         }
         filterReviewBranch(saved);
+
+        var urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('tab') === 'seq') {
+            var sBtn = document.getElementById('tab_seq_btn');
+            if (sBtn) {
+                rvTab(sBtn, 'pane_seq');
+            }
+        }
     });
 </script>
 

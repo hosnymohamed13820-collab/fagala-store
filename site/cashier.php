@@ -33,6 +33,12 @@ try {
 $defaultBranch = !empty($u['branch_id']) ? (int) $u['branch_id']
                  : ($allBranches ? (int) $allBranches[0]['id'] : 0);
 
+try {
+    shift_returns_expire($pdo);
+} catch (Throwable $e) {
+    // صامت لو الجدول أو الأعمدة لسه مانزلتش
+}
+
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -148,6 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } elseif ($action === 'resubmit_shift') {
                         // تعديل وردية مرفوضة موجودة
                         $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                        if (is_shift_return_expired($shiftId)) {
+                            throw new RuntimeException('الوقت المسموح لتعديل الوردية دي عدّى.');
+                        }
                         // تأكد إنها بتاعته ومرفوضة
                         $chk = $pdo->prepare("SELECT user_id, status FROM shifts WHERE id=? FOR UPDATE");
                         $chk->execute([$shiftId]);
@@ -217,6 +226,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $pdo->commit();
+                    try {
+                        shift_sequence_check($pdo, $shiftId);
+                    } catch (Throwable $seqEx) {
+                        // صامت
+                    }
+
                     if ($action === 'owner_edit_shift') {
                         $flash = 'تم تعديل الوردية.';
                     } elseif ($action === 'resubmit_shift') {
@@ -232,6 +247,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             elseif ($action === 'delete_shift') {
                 delete_shift((int)($_POST['shift_id'] ?? 0), $uid, is_owner());
                 $flash = 'تم مسح التقفيلة.';
+            }
+            elseif ($action === 'seq_reply') {
+                $issueId = (int)($_POST['issue_id'] ?? 0);
+                $reply   = trim((string)($_POST['reply'] ?? ''));
+                if ($reply === '') {
+                    throw new RuntimeException('اكتب الرد أولاً.');
+                }
+                $up = $pdo->prepare(
+                    "UPDATE shift_sequence_issues
+                     SET status = 'answered', reply = ?, resolved_at = NOW()
+                     WHERE id = ? AND assigned_user_id = ? AND status = 'sent'"
+                );
+                $up->execute([$reply, $issueId, $uid]);
+                if ($up->rowCount() > 0) {
+                    _notify_seq_issue($pdo, "{$u['full_name']} رد على مشكلة التسلسل", $reply);
+                    $flash = 'تم إرسال ردك بنجاح.';
+                } else {
+                    throw new RuntimeException('المشكلة غير متاحة للرد أو تم الرد عليها مسبقاً.');
+                }
             }
         } catch (Throwable $ex) {
             $flash = 'خطأ: ' . $ex->getMessage();
@@ -342,14 +376,73 @@ $todayShifts->execute($params);
 $todayShifts = $todayShifts->fetchAll();
 
 // تقفيلاتي المرفوضة (القديمة، القابلة للتعديل) — دي بتفضل ظاهرة لصاحبها
-$myRejected = $pdo->prepare(
-    "SELECT s.*, b.name AS branch_name
-     FROM shifts s JOIN branches b ON b.id = s.branch_id
-     WHERE s.user_id = ? AND s.status = 'rejected'
-     ORDER BY s.id DESC"
-);
-$myRejected->execute([$uid]);
-$myRejected = $myRejected->fetchAll();
+$hoursReturn = (int) setting('shift_return_hours', 48);
+try {
+    $myRejectedSt = $pdo->prepare(
+        "SELECT s.*, b.name AS branch_name,
+                CASE WHEN s.reviewed_at >= ? THEN TIMESTAMPDIFF(HOUR, NOW(), s.reviewed_at + INTERVAL ? HOUR) END AS hours_left,
+                (s.return_expired_at IS NOT NULL OR (s.reviewed_at >= ? AND s.reviewed_at + INTERVAL ? HOUR < NOW())) AS is_return_expired
+         FROM shifts s JOIN branches b ON b.id = s.branch_id
+         WHERE s.user_id = ? AND s.status = 'rejected'
+         ORDER BY s.id DESC"
+    );
+    // المرجوعة قبل shift_return_since مالهاش مهلة (hours_left = NULL) — شوف shift_return_since()
+    $retSince = shift_return_since();
+    $myRejectedSt->execute([$retSince, $hoursReturn, $retSince, $hoursReturn, $uid]);
+    $myRejected = $myRejectedSt->fetchAll();
+} catch (Throwable $e) {
+    $myRejectedSt = $pdo->prepare(
+        "SELECT s.*, b.name AS branch_name
+         FROM shifts s JOIN branches b ON b.id = s.branch_id
+         WHERE s.user_id = ? AND s.status = 'rejected'
+         ORDER BY s.id DESC"
+    );
+    $myRejectedSt->execute([$uid]);
+    $myRejected = $myRejectedSt->fetchAll();
+}
+
+// فتح الوردية من اللينك (edit_shift)
+$autoOpenShiftId = 0;
+if (isset($_GET['edit_shift'])) {
+    $reqEditId = (int)$_GET['edit_shift'];
+    if ($reqEditId > 0) {
+        $targetShift = null;
+        foreach ($myRejected as $rej) {
+            if ((int)$rej['id'] === $reqEditId) {
+                $targetShift = $rej;
+                break;
+            }
+        }
+        if ($targetShift) {
+            $isExp = !empty($targetShift['is_return_expired'])
+                || !empty($targetShift['return_expired_at'])
+                || (isset($targetShift['hours_left']) && (int)$targetShift['hours_left'] < 0)
+                || is_shift_return_expired($reqEditId);
+            if ($isExp) {
+                $flash = "الوقت المسموح لتعديل الوردية دي عدّى ({$hoursReturn} ساعة). كلّم المحاسب.";
+                $flashType = 'error';
+            } else {
+                $autoOpenShiftId = $reqEditId;
+            }
+        }
+    }
+}
+
+// قراءة مشاكل التسلسل المطلوب رد المستخدم عليها
+$mySeqIssues = [];
+try {
+    $stSeq = $pdo->prepare(
+        "SELECT ssi.*, b.name AS branch_name
+         FROM shift_sequence_issues ssi
+         JOIN branches b ON b.id = ssi.branch_id
+         WHERE ssi.status = 'sent' AND ssi.assigned_user_id = ?
+         ORDER BY ssi.id DESC"
+    );
+    $stSeq->execute([$uid]);
+    $mySeqIssues = $stSeq->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // الجدول لسه مانزلش
+}
 
 // ---------------------------------------------------------------------------
 //  الأرشيف
@@ -784,6 +877,36 @@ require_once __DIR__ . '/includes/header.php';
   </div>
 </div>
 
+<!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
+<?php if (!empty($mySeqIssues)): ?>
+<div class="card" style="border-right:4px solid var(--warn);">
+    <div class="section-title" style="color:var(--warn-text, var(--warn));"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
+    <?php foreach ($mySeqIssues as $iss):
+        $desc = $iss['kind'] === 'duplicate'
+            ? "رقم الوردية {$iss['found_no']} اتكرر في فرع {$iss['branch_name']}"
+            : "فجوة في أرقام الورديات بفرع {$iss['branch_name']}: المتوقع كان {$iss['expected_no']} لكن جه {$iss['found_no']}";
+    ?>
+        <div id="seq_card_<?= (int)$iss['id'] ?>" style="background:var(--bg);border-radius:10px;padding:14px;margin-bottom:12px;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:6px;"><?= e($desc) ?></div>
+            <?php if (!empty($iss['owner_note'])): ?>
+                <div style="font-size:13px;color:var(--ink-600);margin-bottom:8px;background:var(--surface);padding:8px 10px;border-radius:6px;">
+                    <b>ملاحظة:</b> <?= e($iss['owner_note']) ?>
+                </div>
+            <?php endif; ?>
+            <form method="post" style="margin-top:8px;">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="seq_reply">
+                <input type="hidden" name="issue_id" value="<?= (int)$iss['id'] ?>">
+                <div style="margin-bottom:8px;">
+                    <textarea name="reply" required rows="2" placeholder="اكتب ردك وتوضيحك هنا..." style="width:100%;padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;border-radius:7px;padding:6px 14px;cursor:pointer;">ابعت الرد</button>
+            </form>
+        </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
+
 <!-- تقفيلاتي المرفوضة -->
 <?php if (!empty($myRejected)): ?>
 <div class="card">
@@ -792,7 +915,13 @@ require_once __DIR__ . '/includes/header.php';
         <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th>المحصّل</th><th>الفرق</th><th>سبب الرفض</th><th>إجراء</th></tr></thead>
         <tbody>
         <?php foreach ($myRejected as $s): ?>
-            <?php $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total']; ?>
+            <?php
+                $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total'];
+                $isExpired = !empty($s['is_return_expired'])
+                    || !empty($s['return_expired_at'])
+                    || (isset($s['hours_left']) && (int)$s['hours_left'] < 0);
+                $hrsLeft = max(0, (int)($s['hours_left'] ?? 0));
+            ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
                 <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
@@ -800,7 +929,16 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="reject-reason"><?= e($s['reject_reason'] ?? '—') ?></span></td>
-                <td><button class="btn btn-sm" onclick='editShift(<?= (int)$s['id'] ?>)'>تعديل</button></td>
+                <td>
+                    <?php if ($isExpired): ?>
+                        <span class="badge" style="color:var(--neg);background:var(--neg-soft);">عدّت المهلة</span>
+                    <?php else: ?>
+                        <button class="btn btn-sm" onclick='editShift(<?= (int)$s['id'] ?>)'>تعديل</button>
+                        <?php if (isset($s['hours_left']) && $s['hours_left'] !== null): ?>
+                        <span style="font-size:12px;color:var(--ink-500);margin-inline-start:4px;">فاضل <?= $hrsLeft ?> ساعة</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -1111,6 +1249,19 @@ require_once __DIR__ . '/includes/header.php';
             if (next.select) next.select();   // يحدد المحتوى عشان الكتابة فوقه على طول
         });
     })();
+
+    <?php if ($autoOpenShiftId > 0): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        editShift(<?= (int)$autoOpenShiftId ?>);
+    });
+    <?php endif; ?>
+
+    <?php if (!empty($_GET['seq_issue'])): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('seq_card_<?= (int)$_GET['seq_issue'] ?>');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+    <?php endif; ?>
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('cashier');
+require_once __DIR__ . '/finance.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -28,6 +29,11 @@ $shift = $st->fetch();
 
 if (!$shift) {
     echo json_encode(['error' => 'الوردية غير متاحة للتعديل']);
+    exit;
+}
+
+if (!is_owner() && is_shift_return_expired((int)$shift['id'])) {
+    echo json_encode(['error' => 'الوقت المسموح لتعديل الوردية دي عدّى.']);
     exit;
 }
 

@@ -137,6 +137,10 @@ function module_parts(): array
         'invoices' => [
             'ashraqa' => 'فواتير إشراقة',
         ],
+        'treasury' => [
+            'statement' => 'الخزينة وكشف الحساب',
+            'reverse'   => 'قيد عكسي',
+        ],
     ];
 }
 

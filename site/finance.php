@@ -758,6 +758,154 @@ function change_movement_date(
 }
 
 /**
+ * هل أعمدة القيد العكسي موجودة في جدول treasury_movements؟
+ * للحماية لو ملف ترقية الداتابيز لسه ما نزلش.
+ */
+function treasury_movements_has_reverse_cols(PDO $pdo): bool
+{
+    static $has = null;
+    if ($has !== null) {
+        return $has;
+    }
+    try {
+        $st = $pdo->query("SHOW COLUMNS FROM treasury_movements LIKE 'reversed_at'");
+        $has = ($st && $st->rowCount() > 0);
+    } catch (Throwable $e) {
+        $has = false;
+    }
+    return $has;
+}
+
+/**
+ * قيد عكسي لحركة صرف أو استلام يدوي في الخزينة.
+ *
+ * القواعد:
+ *  - استلام يتعكس بصرف بنفس المبلغ، وصرف يتعكس باستلام.
+ *  - القيم (المبلغ والخزينة والحساب والملاحظات والتاريخ) بتتاخد من treasury_movements مباشرة.
+ *  - بينادي post_journal مباشرة لتحديث الرصيد التراكمي ورصيد الخزينة، ومفيش صف جديد في treasury_movements.
+ *  - بيتسجّل وقت ومستخدم القيد العكسي في صف treasury_movements الأصلي.
+ *
+ * @param int $journalEntryId  معرّف قيد اليومية المراد عكسه
+ * @param int $userId          معرّف المستخدم اللي بينفّذ العملية
+ * @return int                 معرّف القيد العكسي المنشأ في journal_entries
+ * @throws RuntimeException    لو القيد مش موجود أو مش صرف/استلام أو اتعكس قبل كده
+ */
+function reverse_treasury_movement(int $journalEntryId, int $userId): int
+{
+    if ($journalEntryId <= 0) {
+        throw new RuntimeException('قيد غير صحيح.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // 1. اقرا القيد بـ FOR UPDATE
+        $jeStmt = $pdo->prepare('SELECT * FROM journal_entries WHERE id = ? FOR UPDATE');
+        $jeStmt->execute([$journalEntryId]);
+        $je = $jeStmt->fetch();
+        if (!$je) {
+            throw new RuntimeException('القيد ده مش موجود.');
+        }
+
+        $refType = (string) ($je['ref_type'] ?? '');
+        if (!in_array($refType, ['receipt', 'disbursement'], true)) {
+            throw new RuntimeException('القيد ده مايتعكسش من هنا — ليه طريقة إرجاع خاصة.');
+        }
+
+        $refId = (int) ($je['ref_id'] ?? 0);
+        if ($refId <= 0) {
+            throw new RuntimeException('حركة الخزينة المرتبطة بالقيد غير موجودة.');
+        }
+
+        // 2. اقرا صف حركة الخزينة الأصلي بـ FOR UPDATE
+        $tmStmt = $pdo->prepare('SELECT * FROM treasury_movements WHERE id = ? FOR UPDATE');
+        $tmStmt->execute([$refId]);
+        $tm = $tmStmt->fetch();
+        if (!$tm) {
+            throw new RuntimeException('صف حركة الخزينة المرتبط مش موجود.');
+        }
+
+        // التأكد إنه ما اتعكسش قبل كده
+        if (!empty($tm['reversed_at'])) {
+            throw new RuntimeException('القيد ده اتعكس قبل كده.');
+        }
+
+        // 3. القيم من treasury_movements مش من الـ je
+        $treasuryId   = (int) $tm['treasury_id'];
+        $amount       = (float) $tm['amount'];
+        $accountId    = $tm['entry_code_id'] !== null ? (int) $tm['entry_code_id'] : null;
+        $notes        = ($tm['notes'] !== null && trim((string) $tm['notes']) !== '') ? trim((string) $tm['notes']) : null;
+        $movementDate = substr((string) $tm['movement_date'], 0, 10);
+        $movementType = (string) $tm['movement_type'];
+
+        $rawDesc = trim((string) ($tm['description'] ?? ''));
+        if ($rawDesc === '') {
+            $rawDesc = ($movementType === 'disbursement') ? 'صرف نقدية' : 'استلام نقدية';
+        }
+        $revDesc = 'قيد عكسي — ' . $rawDesc;
+        if (mb_strlen($revDesc) > 255) {
+            $revDesc = mb_substr($revDesc, 0, 255);
+        }
+
+        // 4. قيد عكسي مباشر بـ post_journal
+        // - صرف: كان خارج (مدين) ← العكس دائن (الفلوس رجعت)
+        // - استلام: كان داخل (دائن) ← العكس مدين (الفلوس خرجت)
+        if ($movementType === 'disbursement') {
+            $revEntryId = post_journal(
+                $treasuryId,
+                0,        // debit
+                $amount,  // credit
+                $revDesc,
+                $movementDate,
+                'reversal',
+                $refId,
+                $userId,
+                $pdo,
+                $accountId,
+                $notes
+            );
+        } elseif ($movementType === 'receipt') {
+            $revEntryId = post_journal(
+                $treasuryId,
+                $amount,  // debit
+                0,        // credit
+                $revDesc,
+                $movementDate,
+                'reversal',
+                $refId,
+                $userId,
+                $pdo,
+                $accountId,
+                $notes
+            );
+        } else {
+            throw new RuntimeException('نوع حركة الخزينة غير معروف.');
+        }
+
+        // 5. تحديث صف treasury_movements بعلامة العكس
+        $upStmt = $pdo->prepare(
+            'UPDATE treasury_movements
+                SET reversed_at = NOW(),
+                    reversed_by = ?,
+                    reversal_entry_id = ?
+              WHERE id = ? AND reversed_at IS NULL'
+        );
+        $upStmt->execute([$userId, $revEntryId, $refId]);
+        if ($upStmt->rowCount() !== 1) {
+            throw new RuntimeException('القيد ده اتعكس في نفس اللحظة من مستخدم تاني.');
+        }
+
+        $pdo->commit();
+        return $revEntryId;
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $ex;
+    }
+}
+
+/**
  * رصيد خزينة حالي.
  */
 function treasury_balance(int $treasuryId): float
@@ -1388,35 +1536,46 @@ function save_shift_review(
 
         $date = $shift['business_date'];
 
-        // الأرقام اللي دخلت الخزينة قبل كده (لو فيه مراجعة سابقة)
-        $prev = $pdo->prepare("SELECT * FROM shift_reviews WHERE shift_id=? ORDER BY id DESC LIMIT 1");
-        $prev->execute([$shiftId]);
-        $prevReview = $prev->fetch();
+        // 🔴 الترحيل للخزينة للمعتمد بس: الوردية المرجوعة ماتدخلش الخزينة خالص
+        if ($decision === 'approved') {
+            // حساب «إيراد مبيعات» من الإعدادات — مش رقم مكتوب في الكود، عشان
+            // لو شجرة الحسابات اتغيّرت مايبوظش الترحيل في صمت. فاضي = null =
+            // السلوك القديم بالظبط.
+            $salesAccountId = ((int) setting('sales_revenue_account_id', 0)) ?: null;
 
-        // حساب «إيراد مبيعات» من الإعدادات — مش رقم مكتوب في الكود، عشان
-        // لو شجرة الحسابات اتغيّرت مايبوظش الترحيل في صمت. فاضي = null =
-        // السلوك القديم بالظبط.
-        $salesAccountId = ((int) setting('sales_revenue_account_id', 0)) ?: null;
+            // «اللي اترحّل فعلاً» يتحسب من journal_entries مش من shift_reviews (استعلام واحد قبل حلقة الوسائل)
+            $qPosted = $pdo->prepare(
+                "SELECT treasury_id, SUM(credit - debit) AS posted
+                 FROM journal_entries
+                 WHERE ref_type = 'shift' AND ref_id = ?
+                 GROUP BY treasury_id"
+            );
+            $qPosted->execute([$shiftId]);
+            $postedByTreasury = [];
+            foreach ($qPosted->fetchAll(PDO::FETCH_ASSOC) as $pRow) {
+                $postedByTreasury[(int)$pRow['treasury_id']] = (float)$pRow['posted'];
+            }
 
-        // حرّك الفرق لكل وسيلة دفع
-        foreach ($methods as $m) {
-            $newAmt = (float) ($accountantAmounts[$m] ?? 0);
-            $oldAmt = $prevReview ? (float) $prevReview['accountant_' . $m] : 0.0;
-            $delta  = $newAmt - $oldAmt;
-            if (abs($delta) < 0.001) {
-                continue; // مفيش تغيير
-            }
-            $treasuryId = central_treasury_by_type(payment_method_treasury_type($m));
-            if ($treasuryId === null) {
-                throw new RuntimeException('لا توجد خزينة مركزية من نوع: ' . $m);
-            }
-            $label = 'تقفيل وردية #' . $shiftId . ' (' . treasury_type_label($m) . ')';
-            if ($delta > 0) {
-                // زيادة → دائن (دخول)
-                post_journal($treasuryId, 0, $delta, $label, $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
-            } else {
-                // نقص (تصحيح بعد رفض) → مدين (خروج)
-                post_journal($treasuryId, abs($delta), 0, $label . ' - تصحيح', $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
+            // حرّك الفرق لكل وسيلة دفع
+            foreach ($methods as $m) {
+                $newAmt = (float) ($accountantAmounts[$m] ?? 0);
+                $treasuryId = central_treasury_by_type(payment_method_treasury_type($m));
+                if ($treasuryId === null) {
+                    throw new RuntimeException('لا توجد خزينة مركزية من نوع: ' . $m);
+                }
+                $oldAmt = $postedByTreasury[$treasuryId] ?? 0.0;
+                $delta  = $newAmt - $oldAmt;
+                if (abs($delta) < 0.001) {
+                    continue; // مفيش تغيير
+                }
+                $label = 'تقفيل وردية #' . $shiftId . ' (' . treasury_type_label($m) . ')';
+                if ($delta > 0) {
+                    // زيادة → دائن (دخول)
+                    post_journal($treasuryId, 0, $delta, $label, $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
+                } else {
+                    // نقص (تصحيح بعد رفض أو مراجعة سابقة) → مدين (خروج)
+                    post_journal($treasuryId, abs($delta), 0, $label . ' - تصحيح', $date, 'shift', $shiftId, $userId, $pdo, $salesAccountId);
+                }
             }
         }
 
@@ -3340,6 +3499,11 @@ function update_shift_date_branch(int $shiftId, string $date, int $branchId, int
         shift_edit_log($pdo, $shiftId, $userId, 'date_branch', $shift, $after);
 
         if ($own) $pdo->commit();
+        try {
+            shift_sequence_check($pdo, $shiftId);
+        } catch (Throwable $seqEx) {
+            // صامت
+        }
     } catch (Throwable $ex) {
         if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
@@ -3372,6 +3536,307 @@ function delete_shift(int $shiftId, int $userId, bool $isOwner = false): void
     shift_edit_log($pdo, $shiftId, $userId, 'delete', $shift, null);
 
     $pdo->prepare('DELETE FROM shifts WHERE id=?')->execute([$shiftId]);
+}
+
+/**
+ * حساب نهاية مهلة تعديل الوردية المرجوعة كـ timestamp، أو null لو مش مرفوضة.
+ */
+function shift_return_deadline(array $shift): ?int
+{
+    if (($shift['status'] ?? '') !== 'rejected' || empty($shift['reviewed_at'])) {
+        return null;
+    }
+    $hours = (int) setting('shift_return_hours', 48);
+    $ts = strtotime((string) $shift['reviewed_at']);
+    if ($ts === false || $ts <= 0) {
+        return null;
+    }
+    return $ts + ($hours * 3600);
+}
+
+/**
+ * من إمتى مهلة الـ٤٨ ساعة بتشتغل — `settings.shift_return_since` (بيتحط وقت نزول
+ * upgrade_shift_returns.sql).
+ *
+ * 🔴 من غيره كل وردية مرجوعة **قديمة** (من أغسطس) كانت هتتحمّل على الكاشير بكامل
+ *    قيمة السيستم أول ما الكود يترفع — وعجز الوردية بيتخصم من المرتب لوحده.
+ *    اتمسك على Laragon (١٥ سبتمبر ٢٠٢٦): ٦ ورديات قديمة اتعلّمت «عدّت المهلة» فوراً.
+ *    الإعداد فاضي أو غلط = مفيش ولا وردية جوّه المهلة = مفيش تحميل خالص.
+ */
+function shift_return_since(): string
+{
+    $v = trim((string) setting('shift_return_since', ''));
+    return preg_match('/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/', $v) ? $v : '9999-12-31';
+}
+
+/**
+ * هل انتهت مهلة تعديل الوردية المرجوعة؟
+ * الفحص يتم في SQL لضمان مطابقة توقيت القاعدة بدون مشاكل الفروق الزمنية مع PHP.
+ */
+function is_shift_return_expired(int $shiftId): bool
+{
+    $pdo = db();
+    $hours = (int) setting('shift_return_hours', 48);
+    $since = shift_return_since();
+    try {
+        $st = $pdo->prepare(
+            "SELECT (return_expired_at IS NOT NULL OR (reviewed_at >= ? AND reviewed_at + INTERVAL ? HOUR < NOW())) AS is_exp
+             FROM shifts WHERE id = ?"
+        );
+        $st->execute([$since, $hours, $shiftId]);
+        $val = $st->fetchColumn();
+        return (bool) $val;
+    } catch (Throwable $e) {
+        try {
+            $st = $pdo->prepare(
+                "SELECT (reviewed_at >= ? AND reviewed_at + INTERVAL ? HOUR < NOW()) AS is_exp
+                 FROM shifts WHERE id = ?"
+            );
+            $st->execute([$since, $hours, $shiftId]);
+            return (bool) $st->fetchColumn();
+        } catch (Throwable $e2) {
+            return false;
+        }
+    }
+}
+
+/**
+ * تعليم الورديات المرفوضة التي تجاوزت مهلة التعديل وإرسال إشعار مجمّع للأونرز والمحاسب.
+ * آمنة للتكرار.
+ */
+function shift_returns_expire(PDO $pdo): int
+{
+    $hours = (int) setting('shift_return_hours', 48);
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare(
+            "SELECT s.id, s.user_id, s.shift_name, s.branch_id, s.system_total,
+                    u.full_name AS cashier_name, b.name AS branch_name
+             FROM shifts s
+             JOIN users u ON u.id = s.user_id
+             JOIN branches b ON b.id = s.branch_id
+             WHERE s.status = 'rejected'
+               AND s.return_expired_at IS NULL
+               AND s.reviewed_at >= ?
+               AND s.reviewed_at + INTERVAL ? HOUR < NOW()
+             FOR UPDATE"
+        );
+        $st->execute([shift_return_since(), $hours]);
+        $expired = $st->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($expired)) {
+            if ($own && $pdo->inTransaction()) $pdo->commit();
+            return 0;
+        }
+
+        $ids = array_map('intval', array_column($expired, 'id'));
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $up = $pdo->prepare(
+            "UPDATE shifts
+             SET return_expired_at = NOW(),
+                 cash_total = 0,
+                 visa_total = 0,
+                 instapay_total = 0,
+                 difference = -system_total
+             WHERE id IN ($in)"
+        );
+        $up->execute($ids);
+
+        if ($own) $pdo->commit();
+
+        // إشعار للأونرز والمحاسب + إشعار للكاشير بعد commit
+        try {
+            require_once __DIR__ . '/push_lib.php';
+            $owners = array_map('intval', $pdo->query(
+                'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
+                 WHERE u.is_active = 1 AND r.is_owner = 1'
+            )->fetchAll(PDO::FETCH_COLUMN));
+            $accId = (int) setting('shift_edit_accountant_id', 0);
+            $recipients = $owners;
+            if ($accId > 0) {
+                $recipients[] = $accId;
+            }
+            $recipients = array_values(array_unique(array_filter($recipients)));
+
+            if (!empty($recipients)) {
+                $count = count($expired);
+                if ($count === 1) {
+                    $row = $expired[0];
+                    $sName = !empty($row['shift_name']) ? $row['shift_name'] : $row['id'];
+                    $bName = $row['branch_name'] ?? '';
+                    $cName = $row['cashier_name'] ?? '';
+                    $sysTotal = number_format((float)$row['system_total'], 2);
+                    $title = "وردية رقم {$sName} ({$bName}) عدّت المهلة واتحمّلت على {$cName}: {$sysTotal} ج";
+                    $body  = "عدّت المهلة ({$hours} ساعة) بدون تعديل، وتم تحميل كامل قيمة السيستم عجزاً على الموظف.";
+                } else {
+                    $title = "{$count} ورديات عدّت المهلة واتحمّلت على الموظفين";
+                    $names = [];
+                    foreach ($expired as $ex) {
+                        $sName = !empty($ex['shift_name']) ? $ex['shift_name'] : $ex['id'];
+                        $bName = $ex['branch_name'] ?? '';
+                        $cName = $ex['cashier_name'] ?? '';
+                        $sysTotal = number_format((float)$ex['system_total'], 2);
+                        $names[] = "رقم {$sName} ({$bName}) على {$cName} ({$sysTotal} ج)";
+                    }
+                    $body  = 'الورديات: ' . implode(' · ', $names);
+                }
+                notify($pdo, $recipients, 'shift_return_expired', $title, $body, 'review.php');
+            }
+
+            // إشعار لكل كاشير اتعلّمت ورديته
+            foreach ($expired as $ex) {
+                $cUserId = (int)$ex['user_id'];
+                if ($cUserId > 0) {
+                    $sName = !empty($ex['shift_name']) ? $ex['shift_name'] : $ex['id'];
+                    $sysTotal = number_format((float)$ex['system_total'], 2);
+                    notify(
+                        $pdo,
+                        [$cUserId],
+                        'shift_return_expired',
+                        "ورديتك رقم {$sName} عدّت مهلة التعديل",
+                        "ورديتك رقم {$sName} عدّت مهلة التعديل واتحمّلت عليك بالكامل ({$sysTotal} ج).",
+                        'cashier.php'
+                    );
+                }
+            }
+        } catch (Throwable $notifEx) {
+            error_log('shift_returns_expire notify error: ' . $notifEx->getMessage());
+        }
+
+        return count($ids);
+    } catch (Throwable $e) {
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
+        error_log('shift_returns_expire error: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
+ * فحص تسلسل أرقام الورديات في الفرع (كشف الفجوات والتكرار).
+ * try/catch صامت بالكامل.
+ */
+function shift_sequence_check(PDO $pdo, int $shiftId): void
+{
+    try {
+        $st = $pdo->prepare(
+            'SELECT s.id, s.branch_id, s.business_date, s.shift_name, b.name AS branch_name
+             FROM shifts s
+             JOIN branches b ON b.id = s.branch_id
+             WHERE s.id = ?'
+        );
+        $st->execute([$shiftId]);
+        $shift = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$shift) return;
+
+        $rawName = trim((string)($shift['shift_name'] ?? ''));
+        if (!ctype_digit($rawName) || (int)$rawName <= 0) return;
+        $currentNo = (int) $rawName;
+
+        $startDate = trim((string) setting('shift_seq_start_date', ''));
+        if ($startDate === '' || $shift['business_date'] < $startDate) return;
+
+        $branchId = (int) $shift['branch_id'];
+        $bName    = (string) ($shift['branch_name'] ?? '');
+
+        // أرقام ورديات نفس الفرع من تاريخ البداية (غير الوردية دي)
+        $q = $pdo->prepare(
+            "SELECT CAST(shift_name AS UNSIGNED) AS num
+             FROM shifts
+             WHERE branch_id = ?
+               AND business_date >= ?
+               AND id != ?
+               AND shift_name REGEXP '^[0-9]+$'
+               AND CAST(shift_name AS UNSIGNED) > 0"
+        );
+        $q->execute([$branchId, $startDate, $shiftId]);
+        $existingNums = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+
+        // ١) فحص التكرار
+        if (in_array($currentNo, $existingNums, true)) {
+            $ins = $pdo->prepare(
+                "INSERT IGNORE INTO shift_sequence_issues (branch_id, shift_id, kind, expected_no, found_no, status)
+                 VALUES (?, ?, 'duplicate', NULL, ?, 'open')"
+            );
+            $ins->execute([$branchId, $shiftId, $currentNo]);
+            if ($ins->rowCount() > 0) {
+                _notify_seq_issue($pdo, "مشكلة في تسلسل ورديات {$bName}: رقم {$currentNo} اتكرر", "وردية برقم {$currentNo} اتكررت في فرع {$bName}.");
+            }
+            return;
+        }
+
+        // ٢) فحص الفجوة أو حل فجوة قديمة
+        if (!empty($existingNums)) {
+            $maxNo = max($existingNums);
+            if ($currentNo > $maxNo + 1) {
+                $expectedNo = $maxNo + 1;
+                $ins = $pdo->prepare(
+                    "INSERT IGNORE INTO shift_sequence_issues (branch_id, shift_id, kind, expected_no, found_no, status)
+                     VALUES (?, ?, 'gap', ?, ?, 'open')"
+                );
+                $ins->execute([$branchId, $shiftId, $expectedNo, $currentNo]);
+                if ($ins->rowCount() > 0) {
+                    _notify_seq_issue($pdo, "مشكلة في تسلسل ورديات {$bName}: بعد رقم {$maxNo} جه رقم {$currentNo}", "المتوقع كان رقم {$expectedNo}، جه رقم {$currentNo}.");
+                }
+            } elseif ($currentNo < $maxNo) {
+                // الرقم أصغر من الأكبر (وردية اتقفلت متأخر) — نشوف هل يحل مشكلة فجوة مفتوحة
+                $allNums = array_flip(array_merge($existingNums, [$currentNo]));
+                $gapIssues = $pdo->prepare(
+                    "SELECT id, expected_no, found_no
+                     FROM shift_sequence_issues
+                     WHERE branch_id = ? AND kind = 'gap' AND status = 'open'
+                       AND expected_no <= ? AND found_no > ?"
+                );
+                $gapIssues->execute([$branchId, $currentNo, $currentNo]);
+                foreach ($gapIssues->fetchAll(PDO::FETCH_ASSOC) as $gi) {
+                    $expStart = (int) $gi['expected_no'];
+                    $expEnd   = (int) $gi['found_no'];
+                    $allFilled = true;
+                    for ($n = $expStart; $n < $expEnd; $n++) {
+                        if (!isset($allNums[$n])) {
+                            $allFilled = false;
+                            break;
+                        }
+                    }
+                    if ($allFilled) {
+                        $upd = $pdo->prepare(
+                            "UPDATE shift_sequence_issues
+                             SET status = 'answered', reply = ?, resolved_at = NOW()
+                             WHERE id = ?"
+                        );
+                        $upd->execute(["اتقفلت الوردية الناقصة رقم {$currentNo}", (int)$gi['id']]);
+                    }
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('shift_sequence_check error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * إشعار داخلي للأونرز والمحاسب لمشاكل التسلسل
+ */
+function _notify_seq_issue(PDO $pdo, string $title, string $body): void
+{
+    try {
+        require_once __DIR__ . '/push_lib.php';
+        $owners = array_map('intval', $pdo->query(
+            'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
+             WHERE u.is_active = 1 AND r.is_owner = 1'
+        )->fetchAll(PDO::FETCH_COLUMN));
+        $accId = (int) setting('shift_edit_accountant_id', 0);
+        $recipients = $owners;
+        if ($accId > 0) {
+            $recipients[] = $accId;
+        }
+        $recipients = array_values(array_unique(array_filter($recipients)));
+        if (!empty($recipients)) {
+            notify($pdo, $recipients, 'shift_seq', $title, $body, 'review.php?tab=seq');
+        }
+    } catch (Throwable $e) {
+        error_log('_notify_seq_issue error: ' . $e->getMessage());
+    }
 }
 
 // =====================================================================

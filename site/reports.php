@@ -118,7 +118,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                JOIN treasuries t ON t.id = je.treasury_id
                LEFT JOIN users u ON u.id = je.created_by
                LEFT JOIN treasury_movements tm
-                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                LEFT JOIN accounts ja ON ja.id = je.account_id
                LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -385,7 +385,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         tto.name AS transfer_to_name
                  FROM journal_entries je JOIN treasuries t ON t.id=je.treasury_id
                  LEFT JOIN users u ON u.id=je.created_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
                  LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -484,7 +484,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                        LEFT JOIN users u ON u.id = je.created_by
                        LEFT JOIN treasury_movements tm
                               ON tm.id = je.ref_id
-                             AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+                             AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                        LEFT JOIN accounts ja ON ja.id = je.account_id
                        LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
@@ -553,11 +553,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $entryFilter    = isset($_GET['entry_code']) && $_GET['entry_code'] !== '' ? (int)$_GET['entry_code'] : null;
             $userFilter     = isset($_GET['user']) && $_GET['user'] !== '' ? (int)$_GET['user'] : (isset($_GET['created_by']) && $_GET['created_by'] !== '' ? (int)$_GET['created_by'] : null);
 
+            $hasRevCols = treasury_movements_has_reverse_cols($pdo);
+            $revSelect = $hasRevCols ? ', tm.reversed_at' : ', NULL AS reversed_at';
             $sqlExp =
                 "SELECT tm.movement_date, t.name AS treasury, tm.amount,
                         COALESCE(a.name, '— بدون قيد —') AS entry_name,
                         cb.name AS cost_branch, u.full_name AS by_name,
-                        tm.description, tm.notes
+                        tm.description, tm.notes{$revSelect}
                    FROM treasury_movements tm
                    JOIN treasuries t  ON t.id = tm.treasury_id
                    LEFT JOIN accounts a  ON a.id = tm.entry_code_id
@@ -590,11 +592,20 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $st = $pdo->prepare($sqlExp);
             $st->execute($paramsExp);
 
-            $rows = []; $tExp = 0.0;
-            foreach ($st as $r) {
-                $tExp += (float) $r['amount'];
+            $rows = []; $reversedRows = []; $tExp = 0.0;
+            foreach ($st as $i => $r) {
+                $isRev = !empty($r['reversed_at']);
+                if (!$isRev) {
+                    $tExp += (float) $r['amount'];
+                } else {
+                    $reversedRows[$i] = true;
+                }
+                $desc = (string) ($r['description'] ?: '—');
+                if ($isRev) {
+                    $desc .= ' (اتعكس)';
+                }
                 $rows[] = [$r['movement_date'], $r['entry_name'],
-                    $r['description'] ?: '—', $r['treasury'],
+                    $desc, $r['treasury'],
                     $r['cost_branch'] ?? '—',
                     number_format((float)$r['amount'], 2),
                     $r['by_name'] ?? '—', (string)($r['notes'] ?? '')];
@@ -602,6 +613,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             return ['title'=>'تقرير المصاريف',
                 'headers'=>['التاريخ','القيد','البيان','الخزينة','الفرع','المبلغ','بواسطة','الملاحظات'],
                 'rows'=>$rows, 'notes_col'=>7,
+                'reversed_rows'=>$reversedRows,
                 'sum_cards'=>[
                     ['label'=>'إجمالي المصاريف', 'col'=>5],
                     ['label'=>'عدد الحركات',     'col'=>5, 'count'=>true],
@@ -623,7 +635,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                    FROM journal_entries je
                    LEFT JOIN treasury_movements tm
                           ON tm.id = je.ref_id
-                         AND je.ref_type IN ('receipt','disbursement','date_fix_rev')
+                         AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                    LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                    LEFT JOIN accounts ja ON ja.id = je.account_id
                    LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -2892,8 +2904,9 @@ require_once __DIR__ . '/includes/header.php';
                 if (!empty($cd['count'])) {          // كارت عدّاد مش مجموع
                     $t = count($report['rows']);
                 }
-                foreach ($report['rows'] as $rw) {
+                foreach ($report['rows'] as $ri => $rw) {
                     if (!empty($cd['count'])) break;
+                    if (!empty($report['reversed_rows'][$ri])) continue;
                     foreach ($cols as $cx) {
                         $t += (float) str_replace([',', '—'], '', (string)($rw[$cx] ?? '0'));
                     }
@@ -2930,8 +2943,12 @@ require_once __DIR__ . '/includes/header.php';
                 $isAcc   = !empty($report['accordion']) && $rowMeta !== null;
                 $accId   = is_array($rowMeta) ? (int)$rowMeta['acc'] : (int)$rowMeta;
                 $brId    = is_array($rowMeta) ? (int)($rowMeta['branch'] ?? 0) : 0;
+                $trClasses = [];
+                if ($isAcc) $trClasses[] = 'acc-row';
+                if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
+                $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $isAcc ? ' class="acc-row" data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
@@ -3026,6 +3043,7 @@ require_once __DIR__ . '/includes/header.php';
                 continue;
             }
             for (var r = 0; r < rows.length; r++) {
+                if (rows[r].classList.contains('is-reversed')) continue;
                 for (var c = 0; c < cols.length; c++) {
                     var cell = rows[r].cells[cols[c]];
                     if (cell) sum += num(cell.textContent);
