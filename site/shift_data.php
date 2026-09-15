@@ -17,8 +17,13 @@ if ($id <= 0) {
 }
 
 $pdo = db();
-$st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND user_id=? AND status="rejected"');
-$st->execute([$id, $uid]);
+if (is_owner()) {
+    $st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND status IN ("submitted","resubmitted")');
+    $st->execute([$id]);
+} else {
+    $st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND user_id=? AND status="rejected"');
+    $st->execute([$id, $uid]);
+}
 $shift = $st->fetch();
 
 if (!$shift) {
@@ -31,7 +36,9 @@ $cash = [];
 $c = $pdo->prepare('SELECT denomination, count FROM shift_cash WHERE shift_id=?');
 $c->execute([$id]);
 foreach ($c as $row) {
-    $cash[(int)$row['denomination']] = (int) $row['count'];
+    $val = (float) $row['denomination'];
+    $k = ($val == (int)$val) ? (int)$val : (string)$val;
+    $cash[$k] = (int) $row['count'];
 }
 
 // سطور الدفع

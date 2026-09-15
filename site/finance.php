@@ -3241,6 +3241,112 @@ function entry_code_name(?int $id): ?string
 }
 
 /**
+ * هل المستخدم الحالي مسموحله يغيّر تاريخ وفرع الوردية المستنية؟
+ * الأونر مسموحله دايماً، أو المحاسب المحدد في الإعداد shift_edit_accountant_id.
+ */
+function can_edit_shift_date_branch(): bool
+{
+    if (is_owner()) {
+        return true;
+    }
+    $allowedUserId = (int) setting('shift_edit_accountant_id', 0);
+    if ($allowedUserId > 0) {
+        $u = current_user();
+        if ($u && (int) ($u['id'] ?? 0) === $allowedUserId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * تسجيل حركة تعديل أو مسح وردية في shift_edit_log.
+ * try/catch صامت لضمان عدم توقف العمليات لو جدول الترقية لسه مانزلش.
+ */
+function shift_edit_log(PDO $pdo, int $shiftId, int $userId, string $action, array $before, ?array $after): void
+{
+    try {
+        $st = $pdo->prepare(
+            'INSERT INTO shift_edit_log (shift_id, user_id, action, before_json, after_json)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        $st->execute([
+            $shiftId,
+            $userId,
+            $action,
+            json_encode($before, JSON_UNESCAPED_UNICODE),
+            $after !== null ? json_encode($after, JSON_UNESCAPED_UNICODE) : null,
+        ]);
+    } catch (Throwable $ex) {
+        // صامت لو الجدول مش موجود
+        error_log('shift_edit_log: ' . $ex->getMessage());
+    }
+}
+
+/**
+ * تعديل تاريخ وفرع الوردية المستنية (المحاسب المفوّض أو الأونر).
+ * يحدّث branch_id و business_date فقط بدون لمس أي أرقام أو خانات مالية.
+ */
+function update_shift_date_branch(int $shiftId, string $date, int $branchId, int $userId): void
+{
+    if (!can_edit_shift_date_branch()) {
+        throw new RuntimeException('غير مصرح لك بتعديل تاريخ أو فرع الوردية.');
+    }
+    $date = trim($date);
+    $dObj = DateTime::createFromFormat('Y-m-d', $date);
+    if (!$dObj || $dObj->format('Y-m-d') !== $date) {
+        throw new RuntimeException('تاريخ غير صالح.');
+    }
+    if ($branchId <= 0) {
+        throw new RuntimeException('اختر الفرع.');
+    }
+
+    $pdo = db();
+    // التحقق من وجود ونشاط الفرع
+    $bCheck = false;
+    try {
+        $bst = $pdo->prepare('SELECT 1 FROM branches WHERE id = ? AND is_active = 1 AND has_finance = 1 AND has_sales = 1 LIMIT 1');
+        $bst->execute([$branchId]);
+        $bCheck = (bool) $bst->fetchColumn();
+    } catch (Throwable $ex) {
+        $bst = $pdo->prepare('SELECT 1 FROM branches WHERE id = ? AND is_active = 1 AND has_finance = 1 LIMIT 1');
+        $bst->execute([$branchId]);
+        $bCheck = (bool) $bst->fetchColumn();
+    }
+    if (!$bCheck) {
+        throw new RuntimeException('الفرع غير متاح أو غير نشط.');
+    }
+
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare('SELECT * FROM shifts WHERE id = ? FOR UPDATE');
+        $st->execute([$shiftId]);
+        $shift = $st->fetch();
+        if (!$shift) {
+            throw new RuntimeException('الوردية مش موجودة.');
+        }
+        if (!in_array($shift['status'], ['submitted', 'resubmitted'], true)) {
+            throw new RuntimeException('مش ممكن تعديل وردية اتراجعت (لازم تكون مستنية مراجعة).');
+        }
+
+        $up = $pdo->prepare('UPDATE shifts SET branch_id = ?, business_date = ? WHERE id = ?');
+        $up->execute([$branchId, $date, $shiftId]);
+
+        $after = $shift;
+        $after['branch_id'] = $branchId;
+        $after['business_date'] = $date;
+
+        shift_edit_log($pdo, $shiftId, $userId, 'date_branch', $shift, $after);
+
+        if ($own) $pdo->commit();
+    } catch (Throwable $ex) {
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
+/**
  * مسح وردية — بشروط أمان صارمة.
  * الموظف يقدر يمسح بس الوردية اللي هو عملها ولسه pending (ماتراجعتش).
  * لو الوردية اتعمدت/اترفضت أو مش بتاعته → بيرفض.
@@ -3249,7 +3355,7 @@ function entry_code_name(?int $id): ?string
 function delete_shift(int $shiftId, int $userId, bool $isOwner = false): void
 {
     $pdo = db();
-    $st = $pdo->prepare('SELECT user_id, status FROM shifts WHERE id=?');
+    $st = $pdo->prepare('SELECT * FROM shifts WHERE id=?');
     $st->execute([$shiftId]);
     $shift = $st->fetch();
     if (!$shift) throw new RuntimeException('الوردية مش موجودة.');
@@ -3262,6 +3368,8 @@ function delete_shift(int $shiftId, int $userId, bool $isOwner = false): void
     if (!$isOwner && (int)$shift['user_id'] !== $userId) {
         throw new RuntimeException('مسموح تمسح بس التقفيلات اللي إنت عملتها.');
     }
+
+    shift_edit_log($pdo, $shiftId, $userId, 'delete', $shift, null);
 
     $pdo->prepare('DELETE FROM shifts WHERE id=?')->execute([$shiftId]);
 }

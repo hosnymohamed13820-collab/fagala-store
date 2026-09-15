@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = $_POST['action'] ?? '';
         try {
-            if ($action === 'submit_shift' || $action === 'resubmit_shift') {
+            if ($action === 'submit_shift' || $action === 'resubmit_shift' || $action === 'owner_edit_shift') {
                 $branchId = (int) ($_POST['branch_id'] ?? 0);
                 $bizDate  = $_POST['business_date'] ?? date('Y-m-d');
                 // ★ الحقلين دول إجباريين: من غيرهم المراجعة مش هتعرف
@@ -108,7 +108,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $pdo->beginTransaction();
                 try {
-                    if ($action === 'resubmit_shift') {
+                    if ($action === 'owner_edit_shift') {
+                        if (!is_owner()) {
+                            throw new RuntimeException('غير مصرح لك بتعديل هذه الوردية.');
+                        }
+                        $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                        $chk = $pdo->prepare('SELECT * FROM shifts WHERE id=? FOR UPDATE');
+                        $chk->execute([$shiftId]);
+                        $oldShift = $chk->fetch();
+                        if (!$oldShift || !in_array($oldShift['status'], ['submitted', 'resubmitted'], true)) {
+                            throw new RuntimeException('لا يمكن تعديل هذه الوردية (لازم تكون مستنية مراجعة).');
+                        }
+
+                        // قراءة الفئات والسطور القديمة قبل المسح (للسجل)
+                        $oldCashSt = $pdo->prepare('SELECT denomination, count, subtotal FROM shift_cash WHERE shift_id=?');
+                        $oldCashSt->execute([$shiftId]);
+                        $oldCash = $oldCashSt->fetchAll();
+
+                        $oldLinesSt = $pdo->prepare('SELECT method, line_no, reference, amount FROM shift_payment_lines WHERE shift_id=?');
+                        $oldLinesSt->execute([$shiftId]);
+                        $oldLines = $oldLinesSt->fetchAll();
+
+                        $before = [
+                            'shift' => $oldShift,
+                            'cash'  => $oldCash,
+                            'lines' => $oldLines,
+                        ];
+
+                        $pdo->prepare(
+                            'UPDATE shifts SET branch_id=?, business_date=?, shift_name=?, cash_total=?, visa_total=?,
+                                wallet_total=0, instapay_total=?, system_total=?, difference=?
+                             WHERE id=?'
+                        )->execute([$branchId, $bizDate, $shiftName, $cashTotal, $methodTotals['visa'],
+                            $methodTotals['instapay'], $systemTotal, $difference, $shiftId]);
+
+                        // مسح الفئات والسطور القديمة
+                        $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
+                        $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                    } elseif ($action === 'resubmit_shift') {
                         // تعديل وردية مرفوضة موجودة
                         $shiftId = (int) ($_POST['shift_id'] ?? 0);
                         // تأكد إنها بتاعته ومرفوضة
@@ -132,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo->prepare(
                             'INSERT INTO shifts (user_id, branch_id, business_date, shift_name, cash_total, visa_total,
                                 wallet_total, instapay_total, system_total, difference, status)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "submitted")'
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "submitted")'
                         )->execute([$uid, $branchId, $bizDate, $shiftName, $cashTotal, $methodTotals['visa'],
                             0, $methodTotals['instapay'], $systemTotal, $difference]);
                         $shiftId = (int) $pdo->lastInsertId();
@@ -149,10 +186,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $insL->execute([$shiftId, $ln[0], $ln[1], $ln[2] ?: null, $ln[3]]);
                     }
 
+                    if ($action === 'owner_edit_shift') {
+                        $afterShift = $oldShift;
+                        $afterShift['branch_id']      = $branchId;
+                        $afterShift['business_date']  = $bizDate;
+                        $afterShift['shift_name']     = $shiftName;
+                        $afterShift['cash_total']     = $cashTotal;
+                        $afterShift['visa_total']     = $methodTotals['visa'];
+                        $afterShift['wallet_total']   = 0;
+                        $afterShift['instapay_total'] = $methodTotals['instapay'];
+                        $afterShift['system_total']   = $systemTotal;
+                        $afterShift['difference']     = $difference;
+
+                        $newCash = [];
+                        foreach ($cashCounts as $d => $c) {
+                            if ($c > 0) $newCash[] = ['denomination' => $d, 'count' => $c, 'subtotal' => $d * $c];
+                        }
+                        $newLines = [];
+                        foreach ($lines as $ln) {
+                            $newLines[] = ['method' => $ln[0], 'line_no' => $ln[1], 'reference' => $ln[2] ?: null, 'amount' => $ln[3]];
+                        }
+
+                        $after = [
+                            'shift' => $afterShift,
+                            'cash'  => $newCash,
+                            'lines' => $newLines,
+                        ];
+
+                        shift_edit_log($pdo, $shiftId, $uid, 'edit', $before, $after);
+                    }
+
                     $pdo->commit();
-                    $flash = ($action === 'resubmit_shift')
-                        ? 'تم تعديل الوردية وإعادة إرسالها للمحاسب.'
-                        : 'تم تقفيل الوردية وإرسالها للمراجعة.';
+                    if ($action === 'owner_edit_shift') {
+                        $flash = 'تم تعديل الوردية.';
+                    } elseif ($action === 'resubmit_shift') {
+                        $flash = 'تم تعديل الوردية وإعادة إرسالها للمحاسب.';
+                    } else {
+                        $flash = 'تم تقفيل الوردية وإرسالها للمراجعة.';
+                    }
                 } catch (Throwable $ex) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     throw $ex;
@@ -772,6 +843,11 @@ require_once __DIR__ . '/includes/header.php';
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
                 <td>
                     <?php if (in_array($s['status'], ['submitted','resubmitted'], true) && (is_owner() || (int)$s['user_id'] === $uid)): ?>
+                        <?php if (is_owner()): ?>
+                            <button type="button" class="btn btn-sm" onclick="ownerEditShift(<?= (int)$s['id'] ?>)" title="تعديل الوردية">
+                                <i class="ti ti-edit"></i> تعديل
+                            </button>
+                        <?php endif; ?>
                         <form method="post" style="display:inline;"
                               onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -812,6 +888,7 @@ require_once __DIR__ . '/includes/header.php';
             <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
             <th>كاش</th><th>فيزا</th><th>إنستا</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th>
+            <?php if (is_owner()): ?><th data-xt-skip>الإجراءات</th><?php endif; ?>
         </tr></thead>
         <tbody>
         <?php foreach ($archiveShifts as $s): ?>
@@ -834,6 +911,26 @@ require_once __DIR__ . '/includes/header.php';
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
+                <?php if (is_owner()): ?>
+                <td>
+                    <?php if (in_array($s['status'], ['submitted','resubmitted'], true)): ?>
+                        <button type="button" class="btn btn-sm" onclick="ownerEditShift(<?= (int)$s['id'] ?>)" title="تعديل الوردية">
+                            <i class="ti ti-edit"></i> تعديل
+                        </button>
+                        <form method="post" style="display:inline;"
+                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete_shift">
+                            <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
+                            <button class="btn btn-sm" style="background:var(--neg-soft);color:var(--neg);" title="مسح التقفيلة">
+                                <i class="ti ti-trash"></i> مسح
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <span style="color:var(--ink-300);">—</span>
+                    <?php endif; ?>
+                </td>
+                <?php endif; ?>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -927,13 +1024,13 @@ require_once __DIR__ . '/includes/header.php';
         document.body.style.overflow = '';
     }
 
-    // تعديل وردية مرفوضة: نجيب تفاصيلها بـ AJAX بسيط
-    function editShift(id) {
+    // تعديل وردية: نجيب تفاصيلها بـ AJAX بسيط
+    function editShift(id, action = 'resubmit_shift') {
         fetch('shift_data.php?id=' + id)
             .then(r => r.json())
             .then(data => {
                 if (data.error) { alert(data.error); return; }
-                document.getElementById('formAction').value = 'resubmit_shift';
+                document.getElementById('formAction').value = action;
                 document.getElementById('shiftId').value = id;
                 document.querySelector('[name="branch_id"]').value = data.branch_id;
                 document.querySelector('[name="business_date"]').value = data.business_date;
@@ -942,16 +1039,14 @@ require_once __DIR__ . '/includes/header.php';
                 // تصفير ثم ملء الفئات
                 denoms.forEach(d => {
                     const inp = document.querySelector('.denom-input[data-denom="'+d+'"]');
-                    const cnt = data.cash[d] || 0;
-                    inp.value = cnt > 0 ? cnt : '';
-                });
-                // تصفير ثم ملء السطور
-                methods.forEach(m => {
-                    for (let i=1;i<=10;i++){
-                        const amt = document.querySelector('[name="'+m+'['+i+']"]');
-                        const ref = document.querySelector('[name="'+m+'_ref['+i+']"]');
-                        if(amt) amt.value=''; if(ref) ref.value='';
+                    if (inp) {
+                        const cnt = data.cash[d] || 0;
+                        inp.value = cnt > 0 ? cnt : '';
                     }
+                });
+                // تصفير ثم ملء السطور (تصفير كل خانات السطور في الفورم)
+                document.querySelectorAll('.pay-table input.ref, .pay-table input.amt').forEach(inp => {
+                    inp.value = '';
                 });
                 (data.lines||[]).forEach(ln => {
                     const amt = document.querySelector('[name="'+ln.method+'['+ln.line_no+']"]');
@@ -964,6 +1059,10 @@ require_once __DIR__ . '/includes/header.php';
                 openShiftModal();
             })
             .catch(() => alert('تعذّر تحميل بيانات الوردية.'));
+    }
+
+    function ownerEditShift(id) {
+        editShift(id, 'owner_edit_shift');
     }
 
     function resetForm() {

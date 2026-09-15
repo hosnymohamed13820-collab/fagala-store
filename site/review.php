@@ -59,8 +59,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = $cDecision === 'approved'
                     ? 'تم اعتماد العهدة والفلوس دخلت الخزينة.'
                     : 'تم رفض العهدة ورجعت للكاشير. مفيش فلوس اتحرّكت.';
-            }
-            else {
+            } elseif (($_POST['action'] ?? '') === 'shift_date_branch') {
+                $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                $bDate   = trim((string)($_POST['business_date'] ?? ''));
+                $bBranch = (int) ($_POST['branch_id'] ?? 0);
+                update_shift_date_branch($shiftId, $bDate, $bBranch, $uid);
+                $flash = 'اتغيّر تاريخ/فرع الوردية.';
+            } else {
 
             $shiftId  = (int) ($_POST['shift_id'] ?? 0);
             $decision = $_POST['decision'] ?? '';
@@ -307,6 +312,8 @@ function shift_cashier_amounts(array $s): array {
     /* قسم عهد الفروع */
     .cst-row { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-bottom:4px; }
     .section-head { font-size:15px; font-weight:600; color:var(--ink-700); margin:26px 0 12px; }
+    .btn-shift-db { background:var(--line-soft); color:var(--ink-700); border:1px solid var(--line); border-radius:9px; padding:7px 12px; cursor:pointer; font-family:inherit; font-size:13px; display:inline-flex; align-items:center; gap:5px; }
+    .btn-shift-db:hover { background:var(--line); color:var(--ink-900); }
     @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } .cst-row { grid-template-columns:1fr; } }
 </style>
 
@@ -344,15 +351,22 @@ function shift_cashier_amounts(array $s): array {
                     <div>
                         <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
                     </div>
-                    <button class="btn-review" onclick='openReview(<?= json_encode([
-                        "id"=>(int)$s["id"], "branch"=>$s["branch_name"], "cashier"=>$s["cashier_name"],
-                        "no"=>(string)($s["shift_name"] ?? ''),
-                        "date"=>$s["business_date"],
-                        "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
-                        "system"=>$amt["system"],
-                        "empCash"  => $empCash[(int)$s["id"]]  ?? (object)[],
-                        "empLines" => $empLines[(int)$s["id"]] ?? (object)[],
-                    ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
+                    <div style="display:flex;gap:6px;align-items:center;">
+                        <?php if (can_edit_shift_date_branch()): ?>
+                            <button type="button" class="btn-shift-db" onclick="openShiftDateBranch(<?= (int)$s['id'] ?>, '<?= e($s['business_date']) ?>', <?= (int)$s['branch_id'] ?>)" title="تغيير التاريخ والفرع">
+                                <i class="ti ti-calendar"></i> تغيير التاريخ/الفرع
+                            </button>
+                        <?php endif; ?>
+                        <button class="btn-review" onclick='openReview(<?= json_encode([
+                            "id"=>(int)$s["id"], "branch"=>$s["branch_name"], "cashier"=>$s["cashier_name"],
+                            "no"=>(string)($s["shift_name"] ?? ''),
+                            "date"=>$s["business_date"],
+                            "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
+                            "system"=>$amt["system"],
+                            "empCash"  => $empCash[(int)$s["id"]]  ?? (object)[],
+                            "empLines" => $empLines[(int)$s["id"]] ?? (object)[],
+                        ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
+                    </div>
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
@@ -601,7 +615,54 @@ function shift_cashier_amounts(array $s): array {
   </div>
 </div>
 
+<!-- بوب أب تغيير تاريخ/فرع الوردية -->
+<div class="rv-modal" id="shiftDateBranchModal">
+  <div class="rv-box" style="max-width:440px;">
+    <div class="rv-mhead">
+        <span class="t">تغيير تاريخ / فرع الوردية</span>
+        <button type="button" class="rv-x" onclick="closeShiftDateBranch()">&times;</button>
+    </div>
+    <div class="rv-mbody">
+        <form method="post" id="shiftDateBranchForm">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="shift_date_branch">
+            <input type="hidden" name="shift_id" id="sdb_shift_id" value="">
+
+            <div style="margin-bottom:14px;">
+                <label for="sdb_date" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">تاريخ الوردية</label>
+                <input type="date" name="business_date" id="sdb_date" required style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
+            </div>
+
+            <div style="margin-bottom:18px;">
+                <label for="sdb_branch" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">الفرع</label>
+                <select name="branch_id" id="sdb_branch" required style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
+                    <?php foreach ($reviewBranches as $rb): ?>
+                        <option value="<?= (int)$rb['id'] ?>"><?= e($rb['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+                <button type="button" onclick="closeShiftDateBranch()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
+                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">حفظ</button>
+            </div>
+        </form>
+    </div>
+  </div>
+</div>
+
 <script>
+    function openShiftDateBranch(id, date, branchId) {
+        document.getElementById('sdb_shift_id').value = id;
+        document.getElementById('sdb_date').value = date;
+        document.getElementById('sdb_branch').value = branchId;
+        document.getElementById('shiftDateBranchModal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeShiftDateBranch() {
+        document.getElementById('shiftDateBranchModal').classList.remove('open');
+        document.body.style.overflow = '';
+    }
     var rvEmp = {};       // أرقام الموظف (الكاشير)
     var rvRevealed = false;  // اتكشفت أرقام الموظف؟ (بعد ما يدوس «قارن»)
     var rvOpen = { 'كاش': false, 'فيزا': false, 'إنستا باي': false };

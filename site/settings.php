@@ -32,6 +32,7 @@ $editable = [
     'sales_revenue_account_id'  => ['حساب «إيراد مبيعات» اللي الورديات بتترحّل عليه (رقم الحساب)', 'number'],
     'transfer_account_id'       => ['حساب «تحويل» اللي حركات تحويل الخزائن بتترحّل عليه (رقم الحساب)', 'number'],
     'attendance_edit_user_id'   => ['موظف مسموحله يعدّل ساعات طلبات التصحيح (مع الأونر)', 'user'],
+    'shift_edit_accountant_id'  => ['المحاسب المسموحله يغيّر تاريخ وفرع الوردية المستنية (مع الأونر)', 'user'],
     // إشعارات الموبايل: المفتاح العام بيتحقن في الصفحة عشان المتصفح يشترك بيه.
     // 🔴 المفتاح **الخاص** مكانه config.php على السيرفر بس — عمره ما يدخل الجدول ولا الريبو.
     //    لو المفتاح العام فاضي، زرار «فعّل إشعارات الموبايل» مايظهرش خالص.
@@ -69,7 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // رقم مستخدم (٠ = مفيش)
                 if ($key === 'shortage_supervisor_id' || $key === 'purchase_supervisor_id'
                     || $key === 'purchase_supervisor_2_id'
-                    || $key === 'agent_watcher_id' || $key === 'attendance_edit_user_id') {
+                    || $key === 'agent_watcher_id' || $key === 'attendance_edit_user_id'
+                    || $key === 'shift_edit_accountant_id') {
                     $val = (string) max(0, (int) $val);
                 }
                 // حساب إيراد المبيعات وحساب التحويل: رقم حساب موجب.
