@@ -224,6 +224,11 @@ $stTo = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))
     ? $_GET['to']
     : date('Y-m-d');
 
+// الكشف بيعرض **كل** حركات الفترة. كان محدود بآخر ٣٠٠ (المجمّع) و٢٠٠ (خزينة
+// واحدة) — والشهر فيه ~٤٠٠ قيد، فمحمد كان بيفتح الشهر يلاقي نصه (١٥ سبتمبر ٢٠٢٦).
+// الحد ده حزام أمان بس لو حد اختار فترة سنين — مش المفروض يتلمس في شهر عادي.
+$stMaxRows = 5000;
+
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = $_GET['treasury'] ?? '';
 $selectedTreasuryId = (ctype_digit((string)$selectedParam) && (int)$selectedParam > 0)
@@ -272,7 +277,7 @@ if ($isAllStatement) {
          LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
          LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
          WHERE je.entry_date BETWEEN ? AND ?
-         ORDER BY je.id DESC LIMIT 300"
+         ORDER BY je.id DESC LIMIT {$stMaxRows}"
     );
     $st->execute([$stFrom, $stTo]);
     $statement = $st->fetchAll();
@@ -331,7 +336,7 @@ if ($isAllStatement) {
                  LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                  WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?
                  ORDER BY je.id DESC
-                 LIMIT 200"
+                 LIMIT {$stMaxRows}"
             );
             $st->execute([$selectedId, $stFrom, $stTo]);
             $statement = $st->fetchAll();
@@ -551,7 +556,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     <div class="card">
         <div class="section-title">
             كشف حساب مجمّع — كل الخزائن
-            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 300 حركة)</span>
+            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
             <a href="treasury.php" class="btn btn-sm" style="float:left;font-size:13px;padding:5px 12px;text-decoration:none;">عرض الخزائن</a>
         </div>
 
@@ -582,10 +587,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
         </div>
 
-        <?php if ($totalCount > 300): ?>
+        <?php if ($totalCount > $stMaxRows): ?>
             <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
                 الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
-                آخر 300 منهم بس، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+                آخر <?= number_format($stMaxRows) ?> منهم بس (صغّر الفترة عشان تشوف الباقي)، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
             </div>
         <?php endif; ?>
 
@@ -630,7 +635,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     <div class="card">
         <div class="section-title">
             كشف حساب: <?= e($selectedTreasury['name']) ?>
-            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 200 حركة)</span>
+            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
         </div>
 
         <form method="get" class="filter-bar">
@@ -660,10 +665,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
             <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
         </div>
 
-        <?php if ($totalCount > 200): ?>
+        <?php if ($totalCount > $stMaxRows): ?>
             <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
                 الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
-                آخر 200 منهم بس، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+                آخر <?= number_format($stMaxRows) ?> منهم بس (صغّر الفترة عشان تشوف الباقي)، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
             </div>
         <?php endif; ?>
 
