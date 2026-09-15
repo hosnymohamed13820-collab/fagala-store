@@ -60,13 +60,58 @@ if (empty($ashraqaQtys)) {
 // أصناف الفاتورة مدمجة
 $items = merge_invoice_items(sqlsrv_fetch_invoice_items($invoiceId, $suffix));
 
-// فلترة الأصناف: اللي اتوزع لإشراقة بس
+// جلب item_id لكل أكواد التوزيع باستعلام واحد مجمّع (للاحتياطي)
+$distCodes = array_keys($ashraqaQtys);
+$distCodeToItemId = [];
+$distCodesByItemId = [];
+$nonHashDistCodes = [];
+foreach ($distCodes as $dc) {
+    if (str_starts_with($dc, '#')) {
+        $iid = (int) substr($dc, 1);
+        if ($iid > 0) {
+            $distCodeToItemId[$dc] = $iid;
+            $distCodesByItemId[$iid][] = $dc;
+        }
+    } else {
+        $nonHashDistCodes[] = $dc;
+    }
+}
+if ($nonHashDistCodes) {
+    $phC = implode(',', array_fill(0, count($nonHashDistCodes), '?'));
+    try {
+        $stC = $pdo->prepare("SELECT code, item_id FROM hq_codes WHERE code IN ($phC)");
+        $stC->execute($nonHashDistCodes);
+        foreach ($stC as $cr) {
+            $iid = (int) $cr['item_id'];
+            $cVal = (string) $cr['code'];
+            $distCodeToItemId[$cVal] = $iid;
+            $distCodesByItemId[$iid][] = $cVal;
+        }
+    } catch (Throwable $ex) { /* تجاهل */ }
+}
+
+// فلترة الأصناف: بالكود أولاً ثم باحتياطي item_id (الأصناف اليتيمة ماتنزلش في الإكسيل)
+$claimedDistCodes = [];
 $ashraqaItems = [];
 $ashraqaCodes = [];
 foreach ($items as $it) {
     $c = (string)($it['item_code'] ?? '');
-    $q = (float)($ashraqaQtys[$c] ?? 0);
+    $q = 0.0;
+    if ($c !== '' && isset($ashraqaQtys[$c]) && !isset($claimedDistCodes[$c])) {
+        $q = (float) $ashraqaQtys[$c];
+        $claimedDistCodes[$c] = true;
+    } elseif (!empty($it['item_id'])) {
+        $iid = (int) $it['item_id'];
+        $candCodes = $distCodesByItemId[$iid] ?? [];
+        foreach ($candCodes as $dc) {
+            if (!isset($claimedDistCodes[$dc]) && isset($ashraqaQtys[$dc]) && (str_starts_with($c, '#') || str_starts_with($dc, '#'))) {
+                $q += (float) $ashraqaQtys[$dc];
+                $claimedDistCodes[$dc] = true;
+            }
+        }
+    }
     if ($q <= 0) continue;
+    $ashraqaQtys[$c] = $q;
     $ashraqaItems[] = $it;
     $ashraqaCodes[] = $c;
 }

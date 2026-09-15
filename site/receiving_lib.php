@@ -377,7 +377,7 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
         try {
             $sql = 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
                            supplier_code, supplier_name, net_amount, total_amount,
-                           invoice_date, doc_type, suffix
+                           invoice_date, doc_type, suffix, company_branch
                     FROM hq_invoices WHERE sth_id = ?';
             $args = [(int) $invoiceId];
             if ($isPosted) { $sql .= ' AND suffix = ?'; $args[] = $suffix; }
@@ -397,7 +397,7 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
             $st = db()->prepare(
                 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
                         supplier_code, supplier_name, net_amount, total_amount,
-                        invoice_date, doc_type, remark
+                        invoice_date, doc_type, remark, company_branch
                  FROM hq_unposted WHERE sth_id = ? LIMIT 1'
             );
             $st->execute([(int) $invoiceId]);
@@ -445,15 +445,106 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
  */
 
 /**
+ * شرط الربط بين جدول التوزيع والفاتورة بالمفتاح المركب (doc_no, company_branch, doc_type)
+ * مع الحفاظ على التوافق مع السجلات القديمة التي تحوي NULL.
+ */
+function dist_key_sql(string $d, string $cb, string $dt): string
+{
+    static $hasColumns = null;
+    if ($hasColumns === null) {
+        try {
+            $pdo = db();
+            $st = $pdo->query("SHOW COLUMNS FROM invoice_distribution LIKE 'company_branch'");
+            $hasColumns = ($st && $st->fetch() !== false);
+        } catch (Throwable $e) {
+            $hasColumns = false;
+        }
+    }
+    if (!$hasColumns) {
+        return "1=1";
+    }
+    return "($d.company_branch IS NULL OR $cb IS NULL OR $d.company_branch = $cb) AND ($d.doc_type IS NULL OR $dt IS NULL OR $d.doc_type = $dt)";
+}
+
+/**
  * يضمن وجود سجل توزيع (هيدر) للفاتورة في MySQL، ويرجّع صفّه.
  * بيربط الفاتورة بمورد في جدول suppliers (بإنشائه لو مش موجود).
+ * يعتمد على المفتاح المركب (invoice_no, company_branch, doc_type) لمنع تداخل أرقام الفواتير المتكررة.
  */
 function ensure_distribution_record(array $invHeader, ?int $userId = null): array
 {
     $pdo = db();
     $invNo = (string) $invHeader['inv_no'];
+    $companyBranch = isset($invHeader['company_branch']) && $invHeader['company_branch'] !== null && $invHeader['company_branch'] !== ''
+        ? (int) $invHeader['company_branch']
+        : (isset($invHeader['company_branch_id']) && $invHeader['company_branch_id'] !== null && $invHeader['company_branch_id'] !== '' ? (int) $invHeader['company_branch_id'] : null);
+    $docType = isset($invHeader['doc_type']) && $invHeader['doc_type'] !== null && $invHeader['doc_type'] !== ''
+        ? (int) $invHeader['doc_type']
+        : null;
 
-    // هل موجود بالفعل؟
+    $supplierName = trim((string) ($invHeader['supplier_name'] ?? '')) ?: 'مورد غير محدد';
+
+    // مسار المفتاح الجديد (إذا توفر الفرع ونوع المستند)
+    if ($companyBranch !== null && $docType !== null) {
+        try {
+            // 1. هل موجود بالمفتاح الكامل؟
+            $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? AND company_branch = ? AND doc_type = ? LIMIT 1');
+            $st->execute([$invNo, $companyBranch, $docType]);
+            $existing = $st->fetch();
+            if ($existing) {
+                return $existing;
+            }
+
+            // 2. سجلات قديمة company_branch IS NULL مع تطابق اسم المورد
+            $stOld = $pdo->prepare(
+                'SELECT d.* FROM invoice_distribution d
+                 JOIN suppliers s ON s.id = d.supplier_id
+                 WHERE d.invoice_no = ? AND d.company_branch IS NULL AND s.name = ?'
+            );
+            $stOld->execute([$invNo, $supplierName]);
+            $oldMatches = $stOld->fetchAll();
+            if (count($oldMatches) === 1) {
+                $claimId = (int) $oldMatches[0]['id'];
+                $upd = $pdo->prepare('UPDATE invoice_distribution SET company_branch = ?, doc_type = ? WHERE id = ? AND company_branch IS NULL');
+                $upd->execute([$companyBranch, $docType, $claimId]);
+
+                $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
+                $st->execute([$claimId]);
+                return $st->fetch();
+            }
+
+            // 3. إنشاء جديد + company_branch و doc_type
+            $sp = $pdo->prepare('SELECT id FROM suppliers WHERE name = ? LIMIT 1');
+            $sp->execute([$supplierName]);
+            $supplierId = $sp->fetchColumn();
+            if (!$supplierId) {
+                $pdo->prepare('INSERT INTO suppliers (name) VALUES (?)')->execute([$supplierName]);
+                $supplierId = (int) $pdo->lastInsertId();
+            }
+
+            $pdo->prepare(
+                'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by, company_branch, doc_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $invNo, (int) $supplierId,
+                date('Y-m-d', strtotime((string) $invHeader['invoice_date'])),
+                (float) $invHeader['total_amount'],
+                'الصافي: ' . number_format((float) $invHeader['net_amount'], 2),
+                $userId,
+                $companyBranch,
+                $docType,
+            ]);
+            $id = (int) $pdo->lastInsertId();
+
+            $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
+            $st->execute([$id]);
+            return $st->fetch();
+        } catch (Throwable $ex) {
+            // الأعمدة مش موجودة في الجدول (SQL مانزلش) ← نرجع للسلوك القديم بالحرف
+        }
+    }
+
+    // 4. السلوك القديم بالحرف (لو الحقلين مش موجودين أو الأعمدة مش موجودة)
     $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? LIMIT 1');
     $st->execute([$invNo]);
     $existing = $st->fetch();
@@ -461,8 +552,6 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
         return $existing;
     }
 
-    // إيجاد/إنشاء المورد بالاسم
-    $supplierName = trim((string) $invHeader['supplier_name']) ?: 'مورد غير محدد';
     $sp = $pdo->prepare('SELECT id FROM suppliers WHERE name = ? LIMIT 1');
     $sp->execute([$supplierName]);
     $supplierId = $sp->fetchColumn();
@@ -471,7 +560,6 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
         $supplierId = (int) $pdo->lastInsertId();
     }
 
-    // إنشاء سجل التوزيع (الهيدر)
     $pdo->prepare(
         'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by)
          VALUES (?, ?, ?, ?, ?, ?)'

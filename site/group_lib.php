@@ -104,7 +104,7 @@ function group_list(): array
         "SELECT COALESCE(SUM(dl.amount),0) AS q,
                 COUNT(DISTINCT dl.branch_id) AS b
          FROM invoice_group_items i
-         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
          JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
          JOIN invoice_group_lines gl
            ON gl.group_id = i.group_id AND gl.sth_id = i.sth_id
@@ -115,7 +115,7 @@ function group_list(): array
         "SELECT COALESCE(SUM(dl.amount),0) AS q,
                 COUNT(DISTINCT dl.branch_id) AS b
          FROM invoice_group_items i
-         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
          JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
          WHERE i.group_id = ?"
     );
@@ -196,12 +196,13 @@ function group_list(): array
  *   group_load بترميها في 'missing' → **الفاتورة تختفي من المجموعة**.
  *
  * الحل: نعيد ربطها بنفسها. بندوّر عليها في hq_invoices برقم
- * المستند (doc_no) — ده الرقم اللي مابيتغيّرش بالترحيل، وهو نفس
- * المفتاح اللي invoice_distribution متبني عليه (invoice_no).
+ * المستند (doc_no) — ده الرقم اللي مابيتغيّرش بالترحيل، ومفتاح
+ * الربط مع invoice_distribution بيعتمد على dist_key_sql
+ * لربط company_branch و doc_type بدقة.
  *
  * ✅ التوزيع والأسعار مابيضيعوش: invoice_distribution مفتاحه
- *    invoice_no مش sth_id/suffix، فكل الكميات على الفروع والأسعار
- *    المحفوظة بتفضل مربوطة زي ما هي. إحنا بنصلّح الربط بس.
+ *    المركب (doc_no, company_branch, doc_type) مش sth_id/suffix،
+ *    فكل الكميات على الفروع والأسعار المحفوظة بتفضل مربوطة زي ما هي.
  *
  * الأداء: استعلام واحد مفهرس بيرجّع فاضي في الحالة الطبيعية،
  * وبيتنده مرة واحدة لكل مجموعة في الريكوست.
@@ -242,15 +243,13 @@ function group_heal_posted(int $groupId): int
     if (!$ready) return 0;
 
     $find = $pdo->prepare(
-        'SELECT sth_id, suffix, supplier_name, invoice_date
+        'SELECT sth_id, suffix, supplier_name, invoice_date, company_branch, doc_type
          FROM hq_invoices
          WHERE doc_no = ?
          ORDER BY (supplier_name = ?) DESC, ABS(DATEDIFF(invoice_date, ?)) ASC, suffix DESC
          LIMIT 1'
     );
-    $upd = $pdo->prepare(
-        'UPDATE invoice_group_items SET sth_id = ?, suffix = ? WHERE id = ?'
-    );
+    $upd = null;
     // ⚠️ لازم نصلّح أسطر الأصناف المختارة كمان (مجموعة الأصناف) —
     //    وإلا الفلتر هيدوّر بـ suffix='YY_MM' والفاتورة بقت 26_08،
     //    فالأصناف هتختفي من المجموعة بعد الترحيل.
@@ -268,7 +267,13 @@ function group_heal_posted(int $groupId): int
         $hit = $find->fetch();
         if (!$hit) continue;   // اتلغت أو لسه ما وصلتش المرآة — تفضل زي ما هي
 
-        $upd->execute([(int) $hit['sth_id'], (string) $hit['suffix'], (int) $o['id']]);
+        try {
+            $upd = $pdo->prepare('UPDATE invoice_group_items SET sth_id = ?, suffix = ?, company_branch = ?, doc_type = ? WHERE id = ?');
+            $upd->execute([(int) $hit['sth_id'], (string) $hit['suffix'], $hit['company_branch'] ?? null, $hit['doc_type'] ?? null, (int) $o['id']]);
+        } catch (Throwable $ex) {
+            $upd = $pdo->prepare('UPDATE invoice_group_items SET sth_id = ?, suffix = ? WHERE id = ?');
+            $upd->execute([(int) $hit['sth_id'], (string) $hit['suffix'], (int) $o['id']]);
+        }
         try {
             $updL->execute([
                 (int) $hit['sth_id'], (string) $hit['suffix'],
@@ -447,7 +452,15 @@ function group_add_invoices(int $groupId, array $picks, ?int $userId = null): in
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $ins = $pdo->prepare(
+        $insNew = null;
+        try {
+            $insNew = $pdo->prepare(
+                'INSERT IGNORE INTO invoice_group_items
+                    (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order, company_branch, doc_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+        } catch (Throwable $ex) {}
+        $insOld = $pdo->prepare(
             'INSERT IGNORE INTO invoice_group_items
                 (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -468,12 +481,31 @@ function group_add_invoices(int $groupId, array $picks, ?int $userId = null): in
             if (!$h) continue;                                // اتلغت أو مش في المرآة
             $suf = (string) ($h['suffix'] ?? $suf);
 
-            $ins->execute([
-                $groupId, $sth, $suf, (string) ($h['inv_no'] ?? ''),
-                (string) ($h['supplier_name'] ?? ''),
-                !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
-                $maxSort++,
-            ]);
+            $cb = $h['company_branch'] ?? ($h['company_branch_id'] ?? null);
+            $dt = $h['doc_type'] ?? null;
+            $inserted = false;
+            if ($insNew) {
+                try {
+                    $insNew->execute([
+                        $groupId, $sth, $suf, (string) ($h['inv_no'] ?? ''),
+                        (string) ($h['supplier_name'] ?? ''),
+                        !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
+                        $maxSort++,
+                        $cb, $dt,
+                    ]);
+                    $inserted = true;
+                } catch (Throwable $ex) {
+                    $insNew = null;
+                }
+            }
+            if (!$inserted) {
+                $insOld->execute([
+                    $groupId, $sth, $suf, (string) ($h['inv_no'] ?? ''),
+                    (string) ($h['supplier_name'] ?? ''),
+                    !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
+                    $maxSort++,
+                ]);
+            }
             ensure_distribution_record($h, $userId);
 
             // مجموعة أصناف → أصناف الفاتورة كلها تدخل الفلتر
@@ -534,7 +566,15 @@ function group_add_items(int $groupId, array $picks, ?int $userId = null): array
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $insI = $pdo->prepare(
+        $insINew = null;
+        try {
+            $insINew = $pdo->prepare(
+                'INSERT IGNORE INTO invoice_group_items
+                    (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order, company_branch, doc_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+        } catch (Throwable $ex) {}
+        $insIOld = $pdo->prepare(
             'INSERT IGNORE INTO invoice_group_items
                 (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -558,12 +598,31 @@ function group_add_items(int $groupId, array $picks, ?int $userId = null): array
                 $h = sqlsrv_fetch_invoice_header($sth, $suf ?: null);
                 if (!$h) { $bad++; continue; }               // فاتورة اتحذفت/اتعدّلت
                 $realSuf = (string) ($h['suffix'] ?? $suf);
-                $insI->execute([
-                    $groupId, $sth, $realSuf, (string) ($h['inv_no'] ?? ''),
-                    (string) ($h['supplier_name'] ?? ''),
-                    !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
-                    $maxSort++,
-                ]);
+                $cb = $h['company_branch'] ?? ($h['company_branch_id'] ?? null);
+                $dt = $h['doc_type'] ?? null;
+                $inserted = false;
+                if ($insINew) {
+                    try {
+                        $insINew->execute([
+                            $groupId, $sth, $realSuf, (string) ($h['inv_no'] ?? ''),
+                            (string) ($h['supplier_name'] ?? ''),
+                            !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
+                            $maxSort++,
+                            $cb, $dt,
+                        ]);
+                        $inserted = true;
+                    } catch (Throwable $ex) {
+                        $insINew = null;
+                    }
+                }
+                if (!$inserted) {
+                    $insIOld->execute([
+                        $groupId, $sth, $realSuf, (string) ($h['inv_no'] ?? ''),
+                        (string) ($h['supplier_name'] ?? ''),
+                        !empty($h['invoice_date']) ? date('Y-m-d H:i:s', strtotime((string) $h['invoice_date'])) : null,
+                        $maxSort++,
+                    ]);
+                }
                 ensure_distribution_record($h, $userId);
                 $have[$sth . '|' . $realSuf] = true;
                 $suf = $realSuf;
@@ -660,18 +719,45 @@ function group_create(array $picks, ?int $userId, ?string $name = null, string $
         }
         $gid = (int) $pdo->lastInsertId();
 
-        $ins = $pdo->prepare(
+        $insNew = null;
+        try {
+            $insNew = $pdo->prepare(
+                'INSERT INTO invoice_group_items
+                    (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order, company_branch, doc_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+        } catch (Throwable $ex) {}
+        $insOld = $pdo->prepare(
             'INSERT INTO invoice_group_items
                 (group_id, sth_id, suffix, invoice_no, supplier_name, invoice_date, sort_order)
              VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         foreach ($headers as $i => $h) {
-            $ins->execute([
-                $gid, $h['sth_id'], $h['suffix'], $h['invoice_no'],
-                $h['supplier_name'],
-                $h['invoice_date'] ? date('Y-m-d H:i:s', strtotime($h['invoice_date'])) : null,
-                $i,
-            ]);
+            $cb = $h['header']['company_branch'] ?? ($h['header']['company_branch_id'] ?? null);
+            $dt = $h['header']['doc_type'] ?? null;
+            $inserted = false;
+            if ($insNew) {
+                try {
+                    $insNew->execute([
+                        $gid, $h['sth_id'], $h['suffix'], $h['invoice_no'],
+                        $h['supplier_name'],
+                        $h['invoice_date'] ? date('Y-m-d H:i:s', strtotime($h['invoice_date'])) : null,
+                        $i,
+                        $cb, $dt,
+                    ]);
+                    $inserted = true;
+                } catch (Throwable $ex) {
+                    $insNew = null;
+                }
+            }
+            if (!$inserted) {
+                $insOld->execute([
+                    $gid, $h['sth_id'], $h['suffix'], $h['invoice_no'],
+                    $h['supplier_name'],
+                    $h['invoice_date'] ? date('Y-m-d H:i:s', strtotime($h['invoice_date'])) : null,
+                    $i,
+                ]);
+            }
             // سجل التوزيع لكل فاتورة لازم يبقى موجود من دلوقتي
             ensure_distribution_record($h['header'], $userId);
         }
@@ -1148,7 +1234,7 @@ function group_code_dist_ids(int $groupId, string $itemCode): array
                  FROM invoice_group_lines gl
                  JOIN invoice_group_items i
                    ON i.group_id = gl.group_id AND i.sth_id = gl.sth_id AND i.suffix = gl.suffix
-                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
                  WHERE gl.group_id = ? AND gl.item_code = ?"
             );
             $st->execute([$groupId, $itemCode]);
@@ -1156,7 +1242,7 @@ function group_code_dist_ids(int $groupId, string $itemCode): array
             $st = $pdo->prepare(
                 "SELECT DISTINCT d.id
                  FROM invoice_group_items i
-                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
                  LEFT JOIN hq_invoice_lines l
                         ON l.sth_id = i.sth_id AND l.suffix = i.suffix AND l.item_code = ?
                  LEFT JOIN hq_unposted_lines u
@@ -1175,10 +1261,10 @@ function group_code_dist_ids(int $groupId, string $itemCode): array
     // احتياطي: كل سجلات توزيع المجموعة
     try {
         $st = $pdo->prepare(
-            'SELECT DISTINCT d.id
+            "SELECT DISTINCT d.id
              FROM invoice_group_items i
-             JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
-             WHERE i.group_id = ?'
+             JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
+             WHERE i.group_id = ?"
         );
         $st->execute([$groupId]);
         return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
@@ -1344,7 +1430,7 @@ function group_code_dist_map(int $groupId): array
                  FROM invoice_group_lines gl
                  JOIN invoice_group_items i
                    ON i.group_id = gl.group_id AND i.sth_id = gl.sth_id AND i.suffix = gl.suffix
-                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
                  WHERE gl.group_id = ?"
             );
             $st->execute([$groupId]);
@@ -1352,13 +1438,13 @@ function group_code_dist_map(int $groupId): array
             $st = db()->prepare(
                 "SELECT l.item_code AS code, d.id AS dist_id
                  FROM invoice_group_items i
-                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
                  JOIN hq_invoice_lines l ON l.sth_id = i.sth_id AND l.suffix = i.suffix
                  WHERE i.group_id = ?
                  UNION
                  SELECT u.item_code AS code, d.id AS dist_id
                  FROM invoice_group_items i
-                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
                  JOIN hq_unposted_lines u ON u.sth_id = i.sth_id
                  WHERE i.group_id = ? AND i.suffix = 'YY_MM'"
             );

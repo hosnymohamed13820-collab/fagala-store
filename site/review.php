@@ -264,6 +264,39 @@ $history = $pdo->query(
      ORDER BY s.id DESC LIMIT 50"
 )->fetchAll();
 
+// جلب بادج «آخر تعديل» للورديات المعروضة باستعلام مجمّع واحد
+$allReviewShiftIds = [];
+foreach ($pending as $ps) $allReviewShiftIds[] = (int)$ps['id'];
+foreach ($history as $hs) $allReviewShiftIds[] = (int)$hs['id'];
+$allReviewShiftIds = array_values(array_unique(array_filter($allReviewShiftIds)));
+
+$shiftEditBadges = [];
+if (!empty($allReviewShiftIds)) {
+    try {
+        $phBadge = implode(',', array_fill(0, count($allReviewShiftIds), '?'));
+        $stBadge = $pdo->prepare("
+            SELECT sel.shift_id, sel.created_at, u.full_name AS editor_name
+            FROM shift_edit_log sel
+            JOIN (
+                SELECT shift_id, MAX(id) AS max_id
+                FROM shift_edit_log
+                WHERE shift_id IN ($phBadge)
+                GROUP BY shift_id
+            ) latest ON latest.max_id = sel.id
+            JOIN users u ON u.id = sel.user_id
+        ");
+        $stBadge->execute($allReviewShiftIds);
+        foreach ($stBadge as $br) {
+            $shiftEditBadges[(int)$br['shift_id']] = [
+                'name' => $br['editor_name'],
+                'time' => date('H:i', strtotime($br['created_at'])),
+            ];
+        }
+    } catch (Throwable $ex) {
+        // لو جدول shift_edit_log مش موجود ← مفيش بادج ومفيش خطأ
+    }
+}
+
 // ===== عهد الفروع المقدّمة للمراجعة =====
 // استعلام واحد جايب اسم الفرع واسم اللي قدّم — مفيش prepare جوّه أي حلقة.
 $pendingCustody = $pdo->query(
@@ -495,6 +528,9 @@ function shift_cashier_amounts(array $s): array {
                 <div class="sc-head">
                     <div>
                         <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
+                        <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                            <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <?php endif; ?>
                     </div>
                     <div style="display:flex;gap:6px;align-items:center;">
                         <?php if (can_edit_shift_date_branch()): ?>
@@ -638,7 +674,12 @@ function shift_cashier_amounts(array $s): array {
         <?php foreach ($history as $s): $amt = shift_cashier_amounts($s); $isDone = $s['status']==='approved'; ?>
             <div class="shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
-                    <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · <?= e($s['cashier_name']) ?></span></div>
+                    <div>
+                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · <?= e($s['cashier_name']) ?></span></div>
+                        <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                            <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <?php endif; ?>
+                    </div>
                     <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span>
                 </div>
                 <div class="sc-stats">

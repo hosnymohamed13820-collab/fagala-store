@@ -474,6 +474,40 @@ $archiveShifts = $pdo->prepare(
 $archiveShifts->execute($aParams);
 $archiveShifts = $archiveShifts->fetchAll();
 
+// جلب بادج «آخر تعديل» لكل الورديات المعروضة باستعلام مجمّع واحد
+$allCashierShiftIds = [];
+foreach ($todayShifts as $ts) $allCashierShiftIds[] = (int)$ts['id'];
+foreach ($archiveShifts as $as) $allCashierShiftIds[] = (int)$as['id'];
+foreach ($myRejected as $mr) $allCashierShiftIds[] = (int)$mr['id'];
+$allCashierShiftIds = array_values(array_unique(array_filter($allCashierShiftIds)));
+
+$shiftEditBadges = [];
+if (!empty($allCashierShiftIds)) {
+    try {
+        $phBadge = implode(',', array_fill(0, count($allCashierShiftIds), '?'));
+        $stBadge = $pdo->prepare("
+            SELECT sel.shift_id, sel.created_at, u.full_name AS editor_name
+            FROM shift_edit_log sel
+            JOIN (
+                SELECT shift_id, MAX(id) AS max_id
+                FROM shift_edit_log
+                WHERE shift_id IN ($phBadge)
+                GROUP BY shift_id
+            ) latest ON latest.max_id = sel.id
+            JOIN users u ON u.id = sel.user_id
+        ");
+        $stBadge->execute($allCashierShiftIds);
+        foreach ($stBadge as $br) {
+            $shiftEditBadges[(int)$br['shift_id']] = [
+                'name' => $br['editor_name'],
+                'time' => date('H:i', strtotime($br['created_at'])),
+            ];
+        }
+    } catch (Throwable $ex) {
+        // لو جدول shift_edit_log مش موجود ← مفيش بادج ومفيش خطأ
+    }
+}
+
 // إجماليات اليوم (لبطاقات الملخص فوق + صف الإجماليات في الجدول)
 $sumCash   = array_sum(array_column($todayShifts, 'cash_total'));
 $sumVisa   = array_sum(array_column($todayShifts, 'visa_total'));
@@ -731,7 +765,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="shift-modal" id="shiftModal">
   <div class="shift-modal-box">
     <div class="shift-modal-head">
-        <span class="section-title" style="margin:0;">تقفيل وردية جديدة</span>
+        <span class="section-title" id="shiftModalTitle" style="margin:0;">تقفيل وردية جديدة</span>
         <button type="button" class="modal-x" onclick="closeShiftModal()">&times;</button>
     </div>
     <div class="shift-modal-body">
@@ -744,7 +778,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="grid-top grid-4">
             <div class="fld">
                 <label>القائم بالتقفيل</label>
-                <input type="text" value="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
+                <input type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
             </div>
             <div class="fld">
                 <label for="shiftName">رقم الوردية</label>
@@ -765,6 +799,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="date" name="business_date" value="<?= e($bizDateStr) ?>" required>
             </div>
         </div>
+        <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
 
         <!-- تبويبات التقفيل -->
         <div class="ct-tabs">
@@ -868,7 +903,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div style="margin-top:16px;display:flex;gap:8px;">
-            <button type="submit" class="btn"><i class="ti ti-lock"></i> تقفيل وإرسال للمراجعة</button>
+            <button type="submit" class="btn" id="shiftSubmitBtn"><i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span></button>
             <button type="button" class="btn btn-ghost" onclick="closeShiftModal()">إلغاء</button>
             <button type="button" class="btn btn-ghost" id="cancelEdit" style="display:none;" onclick="resetForm()">إلغاء التعديل</button>
         </div>
@@ -924,7 +959,12 @@ require_once __DIR__ . '/includes/header.php';
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= e($s['branch_name']) ?></td>
                 <td><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
@@ -970,7 +1010,12 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
@@ -1040,7 +1085,12 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
@@ -1115,18 +1165,18 @@ require_once __DIR__ . '/includes/header.php';
         const diff = collected - sys;
 
         // ملخص التفاصيل
-        setTxt('s_system', sys.toFixed(2) + ' ج.م');
-        setTxt('s_cash', cash.toFixed(2) + ' ج.م');
-        setTxt('s_visa', mt.visa.toFixed(2) + ' ج.م');
-        setTxt('s_instapay', mt.instapay.toFixed(2) + ' ج.م');
-        setTxt('s_collected', collected.toFixed(2) + ' ج.م');
+        setTxt('s_system', sys.toFixed(2));
+        setTxt('s_cash', cash.toFixed(2));
+        setTxt('s_visa', mt.visa.toFixed(2));
+        setTxt('s_instapay', mt.instapay.toFixed(2));
+        setTxt('s_collected', collected.toFixed(2));
 
         // الملخص الجانبي في تابات الدفع (نفس الأرقام)
-        setTxtAll('side_system', sys.toFixed(2) + ' ج.م');
-        setTxtAll('side_cash', cash.toFixed(2) + ' ج.م');
-        setTxtAll('side_visa', mt.visa.toFixed(2) + ' ج.م');
-        setTxtAll('side_instapay', mt.instapay.toFixed(2) + ' ج.م');
-        setTxtAll('side_collected', collected.toFixed(2) + ' ج.م');
+        setTxtAll('side_system', sys.toFixed(2));
+        setTxtAll('side_cash', cash.toFixed(2));
+        setTxtAll('side_visa', mt.visa.toFixed(2));
+        setTxtAll('side_instapay', mt.instapay.toFixed(2));
+        setTxtAll('side_collected', collected.toFixed(2));
 
         // بوكس الفرق
         const dv = document.getElementById('s_diff');
@@ -1154,6 +1204,16 @@ require_once __DIR__ . '/includes/header.php';
 
     // فتح وقفل بوب أب التقفيل
     function openShiftModal() {
+        if (document.getElementById('formAction').value === 'submit_shift') {
+            const cName = document.getElementById('cashierName');
+            if (cName && cName.dataset.self) cName.value = cName.dataset.self;
+            const mTitle = document.getElementById('shiftModalTitle');
+            if (mTitle) mTitle.textContent = 'تقفيل وردية جديدة';
+            const sBtn = document.getElementById('shiftSubmitBtn');
+            if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+            const oNotice = document.getElementById('ownerEditNotice');
+            if (oNotice) oNotice.style.display = 'none';
+        }
         document.getElementById('shiftModal').classList.add('open');
         document.body.style.overflow = 'hidden';
     }
@@ -1174,6 +1234,30 @@ require_once __DIR__ . '/includes/header.php';
                 document.querySelector('[name="business_date"]').value = data.business_date;
                 document.getElementById('shiftName').value = data.shift_name || '';
                 document.getElementById('systemTotal').value = data.system_total;
+
+                const cName = document.getElementById('cashierName');
+                if (cName && data.cashier_name) {
+                    cName.value = data.cashier_name;
+                }
+                const mTitle = document.getElementById('shiftModalTitle');
+                const sBtn = document.getElementById('shiftSubmitBtn');
+                const oNotice = document.getElementById('ownerEditNotice');
+                const oCName = document.getElementById('ownerEditCashierName');
+                const sName = data.shift_name ? data.shift_name : id;
+
+                if (action === 'owner_edit_shift') {
+                    if (mTitle) mTitle.textContent = 'تعديل وردية ' + sName;
+                    if (sBtn) sBtn.innerHTML = '<i class="ti ti-edit"></i> <span>حفظ التعديل</span>';
+                    if (oNotice) {
+                        if (oCName) oCName.textContent = data.cashier_name || '';
+                        oNotice.style.display = 'block';
+                    }
+                } else {
+                    if (mTitle) mTitle.textContent = 'تعديل الوردية المرجوعة';
+                    if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+                    if (oNotice) oNotice.style.display = 'none';
+                }
+
                 // تصفير ثم ملء الفئات
                 denoms.forEach(d => {
                     const inp = document.querySelector('.denom-input[data-denom="'+d+'"]');
@@ -1208,6 +1292,16 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('formAction').value = 'submit_shift';
         document.getElementById('shiftId').value = '';
         document.getElementById('cancelEdit').style.display = 'none';
+        const cName = document.getElementById('cashierName');
+        if (cName && cName.dataset.self) {
+            cName.value = cName.dataset.self;
+        }
+        const mTitle = document.getElementById('shiftModalTitle');
+        if (mTitle) mTitle.textContent = 'تقفيل وردية جديدة';
+        const sBtn = document.getElementById('shiftSubmitBtn');
+        if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+        const oNotice = document.getElementById('ownerEditNotice');
+        if (oNotice) oNotice.style.display = 'none';
         calc();
         closeShiftModal();
     }

@@ -160,7 +160,12 @@ function ilk_item_history(string $code, int $itemId = 0): array
         $isRet  = ((int) $l['doc_type'] === 6);
         $qty    = (float) $l['quantity'];
 
-        $d      = $dist[$docNo . '|' . $iCode] ?? [];
+        $cb = ($l['company_branch'] !== null && $l['company_branch'] !== '') ? (string) $l['company_branch'] : '*';
+        $dt = ($l['doc_type'] !== null && $l['doc_type'] !== '') ? (string) $l['doc_type'] : '*';
+        $fullKey = $docNo . '|' . $cb . '|' . $dt . '|' . $iCode;
+        $fallbackKey = $docNo . '|*|*|' . $iCode;
+        $oldKey = $docNo . '|' . $iCode;
+        $d      = $dist[$fullKey] ?? ($dist[$fallbackKey] ?? ($dist[$oldKey] ?? []));
         $dTotal = 0.0;
         $perBranch = [];
         foreach ($d as $bid => $q) {
@@ -202,10 +207,9 @@ function ilk_item_history(string $code, int $itemId = 0): array
 }
 
 /**
- * توزيعات مجموعة فواتير/أصناف — استعلام واحد.
- * بترجّع ["docNo|itemCode" => [branch_id => qty]]
- *
- * ليه كده: من غيره هنعمل استعلامين لكل سطر (٥٠ فاتورة = ١٠٠ استعلام).
+ * توزيعات مجموعة فواتير/أصناف — استعلام واحد بالمفتاح المركب (docNo|companyBranch|docType|itemCode).
+ * بترجّع ["docNo|cb|dt|itemCode" => [branch_id => qty]]
+ * مع التوافق مع السجلات القديمة docNo|*|*|itemCode و docNo|itemCode
  */
 function ilk_distribution_map(array $docNos, array $codes): array
 {
@@ -218,22 +222,45 @@ function ilk_distribution_map(array $docNos, array $codes): array
 
     try {
         $st = db()->prepare(
-            "SELECT d.invoice_no, dl.notes AS item_code, dl.branch_id,
+            "SELECT d.invoice_no, d.company_branch, d.doc_type, dl.notes AS item_code, dl.branch_id,
                     SUM(dl.amount) AS qty
              FROM invoice_distribution d
              JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
              WHERE d.invoice_no IN ($pd) AND dl.notes IN ($pc)
-             GROUP BY d.invoice_no, dl.notes, dl.branch_id"
+             GROUP BY d.invoice_no, d.company_branch, d.doc_type, dl.notes, dl.branch_id"
         );
         $st->execute(array_merge($docNos, $codes));
     } catch (Throwable $ex) {
-        return [];
+        // لو الأعمدة لسه مش موجودة في الجدول (قبل تشغيل ملف الترقية)
+        try {
+            $st = db()->prepare(
+                "SELECT d.invoice_no, NULL AS company_branch, NULL AS doc_type, dl.notes AS item_code, dl.branch_id,
+                        SUM(dl.amount) AS qty
+                 FROM invoice_distribution d
+                 JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
+                 WHERE d.invoice_no IN ($pd) AND dl.notes IN ($pc)
+                 GROUP BY d.invoice_no, dl.notes, dl.branch_id"
+            );
+            $st->execute(array_merge($docNos, $codes));
+        } catch (Throwable $ex2) {
+            return [];
+        }
     }
 
     $out = [];
     foreach ($st->fetchAll() as $r) {
-        $key = trim((string) $r['invoice_no']) . '|' . (string) $r['item_code'];
+        $doc = trim((string) $r['invoice_no']);
+        $cb  = ($r['company_branch'] !== null && $r['company_branch'] !== '') ? (string) $r['company_branch'] : '*';
+        $dt  = ($r['doc_type'] !== null && $r['doc_type'] !== '') ? (string) $r['doc_type'] : '*';
+        $code = (string) $r['item_code'];
+
+        $key = $doc . '|' . $cb . '|' . $dt . '|' . $code;
         $out[$key][(int) $r['branch_id']] = (float) $r['qty'];
+
+        if ($cb === '*' && $dt === '*') {
+            $oldKey = $doc . '|' . $code;
+            $out[$oldKey][(int) $r['branch_id']] = (float) $r['qty'];
+        }
     }
     return $out;
 }

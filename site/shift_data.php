@@ -19,10 +19,10 @@ if ($id <= 0) {
 
 $pdo = db();
 if (is_owner()) {
-    $st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND status IN ("submitted","resubmitted")');
+    $st = $pdo->prepare('SELECT s.*, u.full_name AS cashier_name FROM shifts s LEFT JOIN users u ON u.id = s.user_id WHERE s.id=? AND s.status IN ("submitted","resubmitted")');
     $st->execute([$id]);
 } else {
-    $st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND user_id=? AND status="rejected"');
+    $st = $pdo->prepare('SELECT s.*, u.full_name AS cashier_name FROM shifts s LEFT JOIN users u ON u.id = s.user_id WHERE s.id=? AND s.user_id=? AND s.status="rejected"');
     $st->execute([$id, $uid]);
 }
 $shift = $st->fetch();
@@ -64,6 +64,7 @@ echo json_encode([
     'branch_id'       => (int) $shift['branch_id'],
     'business_date'   => $shift['business_date'],
     'shift_name'      => $shift['shift_name'] ?? '',
+    'cashier_name'    => (string) ($shift['cashier_name'] ?? ''),
     'system_total'    => (float) $shift['system_total'],
     'cash'            => $cash,
     'lines'           => $lines,
