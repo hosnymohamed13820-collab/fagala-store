@@ -1,0 +1,3 @@
+# tests/check_columns_allow.txt
+# ملف السماح لأخطاء أسماء الأعمدة في SQL
+# الصيغة: file.php  table.column  # السبب

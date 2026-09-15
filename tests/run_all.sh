@@ -118,6 +118,12 @@ for f in "${PS1_FILES[@]}"; do
 done
 
 echo
+echo "== أسماء الأعمدة في SQL =="
+# حادثة ١ سبتمبر: الموقع وقع لما استعلام طلب description من custody_deficits
+# والعمود الحقيقي notes. الفحص ده بيمسك أي عمود مش موجود قبل ما يوصل السيرفر.
+python3 tests/check_columns.py || FAIL=1
+
+echo
 echo "== منطق تحليل الموسم =="
 if [ -n "$PHP_BIN" ]; then
     LOG="${TMPDIR:-/tmp}"
