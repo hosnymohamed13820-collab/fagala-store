@@ -191,6 +191,26 @@ $custodyHistory = $pdo->query(
       ORDER BY bc.reviewed_at DESC LIMIT 50"
 )->fetchAll();
 
+// الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
+try {
+    $reviewBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
+} catch (Throwable $e) {
+    // استرجاع آمن قبل تطبيق ملف الترقية upgrade_has_sales.sql
+    $reviewBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+}
+
+// حساب أعداد المعلق لكل فرع من المصفوفات المتحملة أصلاً (مفيش استعلام زيادة)
+$reviewBranchCounts = [];
+foreach ($pending as $s) {
+    $bid = (int)$s['branch_id'];
+    $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
+}
+foreach ($pendingCustody as $c) {
+    $bid = (int)$c['branch_id'];
+    $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
+}
+$totalPendingReviewCount = count($pending) + count($pendingCustody);
+
 $page_title    = 'مراجعة المحاسب';
 $active_module = 'review';
 require_once __DIR__ . '/includes/header.php';
@@ -207,6 +227,14 @@ function shift_cashier_amounts(array $s): array {
 ?>
 
 <style>
+  .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .branch-tabs .btab {
+      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
+      text-decoration:none; font-size:14px; border:1.5px solid var(--line);
+      transition:.15s; font-family:inherit; cursor:pointer;
+  }
+  .branch-tabs .btab:hover  { border-color:var(--accent); }
+  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
@@ -286,9 +314,22 @@ function shift_cashier_amounts(array $s): array {
     <div class="flash <?= $flashType ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
+<div class="branch-tabs" id="reviewBranchTabs">
+    <button type="button" class="btab active" data-b="all" onclick="filterReviewBranch('all')">
+        الكل (<?= $totalPendingReviewCount ?>)
+    </button>
+    <?php foreach ($reviewBranches as $rb):
+        $cnt = $reviewBranchCounts[(int)$rb['id']] ?? 0;
+    ?>
+    <button type="button" class="btab" data-b="<?= (int)$rb['id'] ?>" onclick="filterReviewBranch('<?= (int)$rb['id'] ?>')">
+        <?= e($rb['name']) ?> (<?= $cnt ?>)
+    </button>
+    <?php endforeach; ?>
+</div>
+
 <div class="rv-tabs">
-    <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<?= count($pending) ?>)</button>
-    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">عهد الفروع (<?= count($pendingCustody) ?>)</button>
+    <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
+    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">عهد الفروع (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
 </div>
 
@@ -298,13 +339,14 @@ function shift_cashier_amounts(array $s): array {
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش ورديات في انتظار المراجعة.</div>
     <?php else: ?>
         <?php foreach ($pending as $s): $amt = shift_cashier_amounts($s); $diff = ($amt['cash']+$amt['visa']+$amt['instapay']) - $amt['system']; ?>
-            <div class="shift-card">
+            <div class="shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
-                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية <span class="sc-sub"><?= e($s['business_date']) ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
+                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
                     </div>
                     <button class="btn-review" onclick='openReview(<?= json_encode([
                         "id"=>(int)$s["id"], "branch"=>$s["branch_name"], "cashier"=>$s["cashier_name"],
+                        "no"=>(string)($s["shift_name"] ?? ''),
                         "date"=>$s["business_date"],
                         "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
                         "system"=>$amt["system"],
@@ -335,7 +377,7 @@ function shift_cashier_amounts(array $s): array {
             $cCounted  = (float) ($c['counted_cash'] ?? 0);
             $cDiff     = $cCounted - $cExpected;
         ?>
-            <div class="shift-card">
+            <div class="shift-card rv-pending-custody" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
                         <b><?= e($c['branch_name']) ?></b> — عهدة
@@ -397,7 +439,7 @@ function shift_cashier_amounts(array $s): array {
         <?php foreach ($custodyHistory as $c):
             $isDone = $c['status'] === 'closed';
         ?>
-            <div class="shift-card <?= $isDone?'done':'rej' ?>">
+            <div class="shift-card rv-custody-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
                         <b><?= e($c['branch_name']) ?></b> — عهدة
@@ -435,9 +477,9 @@ function shift_cashier_amounts(array $s): array {
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش سجل بعد.</div>
     <?php else: ?>
         <?php foreach ($history as $s): $amt = shift_cashier_amounts($s); $isDone = $s['status']==='approved'; ?>
-            <div class="shift-card <?= $isDone?'done':'rej' ?>">
+            <div class="shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
-                    <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية <span class="sc-sub"><?= e($s['business_date']) ?> · <?= e($s['cashier_name']) ?></span></div>
+                    <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · <?= e($s['cashier_name']) ?></span></div>
                     <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span>
                 </div>
                 <div class="sc-stats">
@@ -602,7 +644,7 @@ function shift_cashier_amounts(array $s): array {
         rvEmp = data;
         document.getElementById('rvForm').reset();
         document.getElementById('rv_shift_id').value = data.id;
-        document.getElementById('rvTitle').textContent = 'مراجعة — ' + data.branch + ' — وردية';
+        document.getElementById('rvTitle').textContent = 'مراجعة — ' + data.branch + ' — وردية' + (data.no ? ' #' + data.no : '');
 
         // تصفير الحالة — كل وردية بتبدأ مقفولة
         rvRevealed = false;
@@ -1051,6 +1093,51 @@ function shift_cashier_amounts(array $s): array {
             if (next.select) next.select();
         });
     })();
+
+    function filterReviewBranch(branchId) {
+        try {
+            localStorage.setItem('rv_branch', String(branchId));
+        } catch (e) {}
+
+        document.querySelectorAll('#reviewBranchTabs .btab').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.b === String(branchId));
+        });
+
+        var visiblePending = 0;
+        document.querySelectorAll('#pane_pending .shift-card').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+            if (match) visiblePending++;
+        });
+
+        var visibleCustody = 0;
+        document.querySelectorAll('#pane_custody .rv-pending-custody').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+            if (match) visibleCustody++;
+        });
+
+        document.querySelectorAll('#pane_history .shift-card, #pane_custody .rv-custody-history').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+        });
+
+        var cp = document.getElementById('cnt_pending');
+        if (cp) cp.textContent = visiblePending;
+        var cc = document.getElementById('cnt_custody');
+        if (cc) cc.textContent = visibleCustody;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var saved = 'all';
+        try {
+            saved = localStorage.getItem('rv_branch') || 'all';
+        } catch (e) {}
+        if (saved !== 'all' && !document.querySelector('#reviewBranchTabs .btab[data-b="' + saved + '"]')) {
+            saved = 'all';
+        }
+        filterReviewBranch(saved);
+    });
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

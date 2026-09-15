@@ -160,9 +160,11 @@ require_once __DIR__ . '/includes/header.php';
                     <th style="width:34px;">#</th>
                     <th>الكود</th>
                     <th class="nm">اسم الكتاب</th>
+                    <th>إجمالي المحجوز</th>
                     <?php foreach ($suppliers as $s): ?>
                         <th class="sup-e"><?= e($s['name']) ?></th>
                     <?php endforeach; ?>
+                    <th>إجمالي الطلبيات</th>
                     <th style="width:34px;"></th>
                 </tr>
             </thead>
@@ -211,7 +213,7 @@ require_once __DIR__ . '/includes/header.php';
 <script>
     const CSRF      = <?= json_encode(csrf_token()) ?>;
     const SUPPLIERS = <?= json_encode(array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name']], $suppliers), JSON_UNESCAPED_UNICODE) ?>;
-    const NCOLS     = 4 + SUPPLIERS.length;
+    const NCOLS     = 6 + SUPPLIERS.length;
 
     let added    = [];   // الكتب المضافة للشاشة
     let lastRows = [];   // آخر نتايج بحث (عشان الاختيار بالرقم مش بلزق JSON في الـHTML)
@@ -358,9 +360,14 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         body.innerHTML = added.map((r, i) => {
+            const resVal = parseFloat(r.reserved) || 0;
+            const resText = (resVal > 0) ? ((resVal === Math.round(resVal)) ? String(Math.round(resVal)) : String(resVal)) : '—';
+
+            let ordTotal = 0;
             let tds = '';
             SUPPLIERS.forEach(s => {
                 const kReq = r.id + ':' + s.id + ':req';
+                ordTotal += parseFloat(qty[kReq]) || 0;
                 tds += '<td class="sup-e">' +
                     '<input type="number" class="q-inp" min="0" step="1" ' +
                         'aria-label="' + esc(s.name) + ' — الكمية المطلوبة" ' +
@@ -369,6 +376,9 @@ require_once __DIR__ . '/includes/header.php';
                         'oninput="onQty(this)" onblur="saveQty(this)">' +
                     '<span class="q-ind"></span></td>';
             });
+
+            const ordText = (ordTotal === Math.round(ordTotal)) ? String(Math.round(ordTotal)) : String(ordTotal);
+            const isWarn = (ordTotal < resVal);
 
             return '<tr>' +
                 '<td>' + (i + 1) + '</td>' +
@@ -379,7 +389,9 @@ require_once __DIR__ . '/includes/header.php';
                         (r.term ? (r.publisher ? ' · ' : '') + esc(r.term) : '') +
                         (r.has_order ? '' : ' <span class="tag-no">ملوش طلبية</span>') +
                     '</span></td>' +
+                '<td style="font-weight:600;">' + resText + '</td>' +
                 tds +
+                '<td id="ord_total_' + r.id + '" style="font-weight:700;' + (isWarn ? 'color:var(--warn);' : '') + '">' + ordText + '</td>' +
                 '<td><span class="rm" title="شيل من الشاشة" onclick="removeRow(' + r.id + ')">✕</span></td>' +
             '</tr>';
         }).join('');
@@ -392,6 +404,24 @@ require_once __DIR__ . '/includes/header.php';
     function onQty(inp) {
         qty[inp.dataset.book + ':' + inp.dataset.sup + ':' + inp.dataset.field] = inp.value.trim();
         updateCounts();   // العدّاد بيتحرك مع الكتابة، مش مستني الحفظ
+
+        // تحديث خلية إجمالي الطلبيات للصف ده لحظياً بدون إعادة رسم كاملة (حفظ الفوكس)
+        const bookId = inp.dataset.book;
+        const b = added.find(r => String(r.id) === String(bookId));
+        let ordTotal = 0;
+        SUPPLIERS.forEach(s => {
+            ordTotal += parseFloat(qty[bookId + ':' + s.id + ':req']) || 0;
+        });
+        const resVal = b ? (parseFloat(b.reserved) || 0) : 0;
+        const cell = document.getElementById('ord_total_' + bookId);
+        if (cell) {
+            cell.textContent = (ordTotal === Math.round(ordTotal)) ? String(Math.round(ordTotal)) : String(ordTotal);
+            if (ordTotal < resVal) {
+                cell.style.color = 'var(--warn)';
+            } else {
+                cell.style.color = '';
+            }
+        }
     }
 
     function saveQty(inp) {

@@ -1136,7 +1136,7 @@ $report = build_report($pdo, $type, $from, $to);
 //    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
 //    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
 //    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
-if ($export && $type !== 'stocktake') {
+if ($export && $type !== 'stocktake' && $type !== 'customers') {
     require_once __DIR__ . '/xlsx_lib.php';
     $x = new SimpleXlsx(mb_substr((string)($report['title'] ?? 'تقرير'), 0, 30));
 
@@ -1175,8 +1175,138 @@ $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
-    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع',
+    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء',
 ];
+
+// بيانات تقرير «داتا العملاء»
+$custRows = []; $custReady = true; $custMsg = ''; $custBranches = []; $custBranchName = '';
+if ($type === 'customers') {
+    try {
+        $pdo->query("SELECT 1 FROM book_reservations LIMIT 1");
+    } catch (Throwable $e) {
+        $custReady = false;
+        $custMsg = 'جدول الحجوزات مش موجود';
+    }
+
+    if ($custReady) {
+        try {
+            $custBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
+        } catch (Throwable $e) {
+            $custBranches = [];
+        }
+
+        $fromTs    = $from . ' 00:00:00';
+        $toTs      = $to . ' 23:59:59';
+        $selBranch = (int)($_GET['branch'] ?? 0);
+        $search    = trim((string)($_GET['q'] ?? ''));
+
+        if ($selBranch > 0) {
+            foreach ($custBranches as $cb) {
+                if ((int)$cb['id'] === $selBranch) {
+                    $custBranchName = $cb['name'];
+                    break;
+                }
+            }
+        }
+
+        $branchSql = $selBranch > 0 ? " AND r.branch_id = ?" : "";
+
+        if ($search === '') {
+            $sql = "SELECT
+                        latest.customer_name,
+                        CASE
+                            WHEN latest.customer_phone IS NOT NULL AND TRIM(latest.customer_phone) != ''
+                            THEN TRIM(latest.customer_phone)
+                            ELSE ''
+                        END AS customer_phone,
+                        grp.branches,
+                        grp.reservations_count,
+                        latest.created_at AS last_reservation_date
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN r.customer_phone IS NOT NULL AND TRIM(r.customer_phone) != ''
+                                THEN TRIM(r.customer_phone)
+                                ELSE CONCAT('__NAME__', TRIM(COALESCE(r.customer_name, 'بدون اسم')))
+                            END AS cust_key,
+                            MAX(r.id) AS max_id,
+                            COUNT(*) AS reservations_count,
+                            GROUP_CONCAT(DISTINCT COALESCE(b.name, '—') ORDER BY b.name SEPARATOR '، ') AS branches
+                        FROM book_reservations r
+                        LEFT JOIN branches b ON b.id = r.branch_id
+                        WHERE r.created_at >= ? AND r.created_at <= ? $branchSql
+                        GROUP BY cust_key
+                    ) grp
+                    JOIN book_reservations latest ON latest.id = grp.max_id
+                    ORDER BY latest.id DESC";
+
+            $args = [$fromTs, $toTs];
+            if ($selBranch > 0) $args[] = $selBranch;
+        } else {
+            $searchLike = '%' . $search . '%';
+            $sql = "SELECT
+                        latest.customer_name,
+                        CASE
+                            WHEN latest.customer_phone IS NOT NULL AND TRIM(latest.customer_phone) != ''
+                            THEN TRIM(latest.customer_phone)
+                            ELSE ''
+                        END AS customer_phone,
+                        grp.branches,
+                        grp.reservations_count,
+                        latest.created_at AS last_reservation_date
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN r.customer_phone IS NOT NULL AND TRIM(r.customer_phone) != ''
+                                THEN TRIM(r.customer_phone)
+                                ELSE CONCAT('__NAME__', TRIM(COALESCE(r.customer_name, 'بدون اسم')))
+                            END AS cust_key,
+                            MAX(r.id) AS max_id,
+                            COUNT(*) AS reservations_count,
+                            GROUP_CONCAT(DISTINCT COALESCE(b.name, '—') ORDER BY b.name SEPARATOR '، ') AS branches,
+                            MAX(CASE WHEN r.customer_name LIKE ? OR r.customer_phone LIKE ? THEN 1 ELSE 0 END) AS name_matched
+                        FROM book_reservations r
+                        LEFT JOIN branches b ON b.id = r.branch_id
+                        WHERE r.created_at >= ? AND r.created_at <= ? $branchSql
+                        GROUP BY cust_key
+                    ) grp
+                    JOIN book_reservations latest ON latest.id = grp.max_id
+                    WHERE (latest.customer_name LIKE ? OR latest.customer_phone LIKE ? OR grp.name_matched = 1)
+                    ORDER BY latest.id DESC";
+
+            $args = [$searchLike, $searchLike, $fromTs, $toTs];
+            if ($selBranch > 0) $args[] = $selBranch;
+            $args[] = $searchLike;
+            $args[] = $searchLike;
+        }
+
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute($args);
+            $custRows = $st->fetchAll();
+        } catch (Throwable $e) {
+            $custRows = [];
+        }
+
+        if ($export) {
+            require_once __DIR__ . '/xlsx_lib.php';
+            $x = new SimpleXlsx('داتا العملاء');
+            $x->setColumnTypes(['s', 's', 's', 'n', 's']);
+            $x->addRow(['الاسم', 'رقم التليفون', 'الفروع', 'عدد الحجوزات', 'تاريخ آخر حجز'], true);
+            foreach ($custRows as $r) {
+                $x->addRow([
+                    $r['customer_name'],
+                    !empty($r['customer_phone']) ? $r['customer_phone'] : '—',
+                    $r['branches'] ?: '—',
+                    (int)$r['reservations_count'],
+                    date('Y-m-d', strtotime($r['last_reservation_date'])),
+                ]);
+            }
+            $x->download('customers_' . $from . '_' . $to . '.xlsx');
+            exit;
+        }
+    }
+}
 
 // بيانات تقرير «أصناف بدون سعر بيع»
 $npRows = []; $npReady = true; $npMsg = '';
@@ -1493,8 +1623,19 @@ require_once __DIR__ . '/includes/header.php';
             <option value="exceeded" <?= $selDefStatus==='exceeded'?'selected':'' ?>>تجاوز العتبة</option>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'customers'): $selCustBranch = (int)($_GET['branch'] ?? 0); ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($custBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= $selCustBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="q" value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="الاسم أو التليفون" aria-label="بحث بالاسم أو التليفون"
+               style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -2117,6 +2258,37 @@ require_once __DIR__ . '/includes/header.php';
 </script>
 
 <?php endif; ?>
+
+<?php elseif ($type === 'customers'): ?>
+<?php /* ===== تقرير «داتا العملاء» — الواجهة (سطر لكل تليفون، والاسم وآخر تاريخ من نفس آخر حجز) ===== */ ?>
+<div class="card">
+    <div class="rep-title">داتا العملاء<?= $custBranchName !== '' ? ' — ' . e($custBranchName) : '' ?></div>
+    <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($custRows)) ?> عميل</div>
+    <?php if (!$custReady): ?>
+        <div class="empty" style="color:var(--neg);"><?= e($custMsg) ?></div>
+    <?php elseif (!$custRows): ?>
+        <div class="empty">مفيش حجوزات في الفترة دي.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto;">
+    <table>
+        <thead><tr>
+            <th>الاسم</th><th>رقم التليفون</th><th>الفروع</th><th>عدد الحجوزات</th><th>تاريخ آخر حجز</th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($custRows as $r): ?>
+            <tr>
+                <td><?= e((string)$r['customer_name']) ?></td>
+                <td dir="ltr" style="text-align:right;"><?= $r['customer_phone'] !== '' ? e($r['customer_phone']) : '—' ?></td>
+                <td><?= e((string)($r['branches'] ?: '—')) ?></td>
+                <td><?= (int)$r['reservations_count'] ?></td>
+                <td><?= e(date('Y-m-d', strtotime((string)$r['last_reservation_date']))) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+</div>
 
 <?php else: ?>
 <div class="card">

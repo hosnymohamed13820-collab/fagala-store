@@ -173,8 +173,32 @@ function book_catalog_with_orders(string $term = '', int $limit = 500): array
         }
     } catch (Throwable $ex) { /* الجدول لسه مش موجود */ }
 
+    // إجمالي النسخ المحجوزة للعملاء ولسه ماوصلتش في كل الفروع — استعلام واحد مجمّع
+    $reserved = [];
+    try {
+        $st = $pdo->prepare(
+            "SELECT bc.id AS book_id,
+                    SUM(GREATEST(rl.qty - rl.allocated_qty, 0)) AS total_reserved
+             FROM book_catalog bc
+             LEFT JOIN hq_codes hc ON hc.code = bc.code
+             JOIN book_reservation_lines rl ON (
+                 (rl.item_id > 0 AND hc.item_id IS NOT NULL AND rl.item_id = hc.item_id)
+                 OR
+                 ((rl.item_id = 0 OR hc.item_id IS NULL) AND rl.code = bc.code)
+             )
+             JOIN book_reservations r ON r.id = rl.reservation_id AND r.status = 'open'
+             WHERE bc.id IN ($ph)
+             GROUP BY bc.id"
+        );
+        $st->execute($ids);
+        foreach ($st->fetchAll() as $r) {
+            $reserved[(int) $r['book_id']] = (float) $r['total_reserved'];
+        }
+    } catch (Throwable $ex) { /* الجداول لسه مش موجودة يرجع صفر */ }
+
     foreach ($books as &$b) {
         $b['sup'] = $bySupplier[(int) $b['id']] ?? [];
+        $b['reserved'] = $reserved[(int) $b['id']] ?? 0.0;
     }
     unset($b);
 

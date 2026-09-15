@@ -132,6 +132,7 @@ function module_parts(): array
             'stocktake'  => 'الجرد',
             'noprice'    => 'أصناف بدون سعر بيع',
             'stock'      => 'استعلام أرصدة الأصناف',
+            'customers'  => 'داتا العملاء',
         ],
         'invoices' => [
             'ashraqa' => 'فواتير إشراقة',
