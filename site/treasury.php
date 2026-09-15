@@ -147,10 +147,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $flash = 'تم استلام العهدة من الفرع (الخزينة زادت وعهدة الفرع نقصت).';
                 }
                 else {
+                    // القيد والفرع إجباريين في الاستلام والصرف العادي
+                    if (empty($entryCodeId)) {
+                        throw new RuntimeException('اختار القيد.');
+                    }
                     // فرع التكلفة (تحليلي) — اسمه cost_branch_id في الفورم عشان
                     // ما يتعارضش مع branch_id بتاع صرف/استلام العهدة.
                     $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
                         ? (int) $_POST['cost_branch_id'] : null;
+                    if (empty($costBranchId)) {
+                        throw new RuntimeException('اختار الفرع.');
+                    }
                     treasury_movement($tid, $action, $amount, $date, $desc ?: null, $uid,
                                       $entryCodeId, $costBranchId, $notes ?: null);
                     $flash = ($action === 'receipt') ? 'تم تسجيل الاستلام.' : 'تم تسجيل الصرف.';
@@ -194,6 +201,13 @@ $treasuries = $pdo->query(
 )->fetchAll();
 
 $totalBalance = array_sum(array_column($treasuries, 'balance'));
+// «خزينة الكاش الفعلي» = الخزينة الرئيسية + خزينة الكاش، وبس. (نفس حسبة الداشبورد س 35-44)
+$realCash = 0.0;
+foreach ($treasuries as $t) {
+    if (in_array($t['type'], ['main', 'cash'], true)) {
+        $realCash += (float) $t['balance'];
+    }
+}
 
 // الموظفون (لقائمة السلفة)
 $employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
@@ -212,6 +226,9 @@ $stTo = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))
 
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = $_GET['treasury'] ?? '';
+$selectedTreasuryId = (ctype_digit((string)$selectedParam) && (int)$selectedParam > 0)
+    ? (int)$selectedParam
+    : null;
 $statement  = [];
 $selectedTreasury = null;
 $isAllStatement = ($selectedParam === 'all');
@@ -408,6 +425,20 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .btn:hover { background:var(--accent-hover); }
     .btn-white { background:rgba(255,255,255,0.18); }
     .btn-white:hover { background:rgba(255,255,255,0.28); }
+    /* خزينة الكاش الفعلي — نفس كارت الداشبورد س 161-168 */
+    .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
+    .tre-box .tre-val { font-size:26px; font-weight:800; color:var(--ink-900); }
+    .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
+    .tre-box.realcash {
+        border:2px solid var(--pos);
+        background:linear-gradient(135deg,var(--pos-soft) 0%,#fff 70%);
+        display:flex; align-items:center; justify-content:space-between;
+        gap:16px; padding:16px 22px;
+        margin-bottom:16px;
+    }
+    .tre-box.realcash .tre-top { margin-bottom:0; font-size:14px; color:var(--pos); }
+    .tre-box.realcash .tre-val { font-size:30px; }
     .treasuries-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:24px; }
     .treasury-card {
         background:var(--surface); border-radius:14px; padding:18px; cursor:pointer;
@@ -491,6 +522,11 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         <button class="btn btn-white" onclick="openModal('transferModal')"><i class="ti ti-transfer"></i> تحويل</button>
         <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
     </div>
+</div>
+
+<div class="tre-box realcash" title="الخزينة الرئيسية + خزينة الكاش">
+    <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
+    <div class="tre-val"><?= money_fmt($realCash) ?> <span class="tre-cur">ج.م</span></div>
 </div>
 
 <div class="treasuries-grid">
@@ -678,10 +714,11 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
 <!-- ===== Modals ===== -->
 <?php
 // قوائم الخزائن لإعادة الاستخدام
-function treasury_options(array $treasuries): string {
+function treasury_options(array $treasuries, ?int $selectedId = null): string {
     $html = '';
     foreach ($treasuries as $t) {
-        $html .= '<option value="' . (int)$t['id'] . '">'
+        $html .= '<option value="' . (int)$t['id'] . '"'
+               . ($selectedId === (int)$t['id'] ? ' selected' : '') . '>'
                . e($t['name']) . ' (' . e(treasury_type_label($t['type'])) . ')</option>';
     }
     return $html;
@@ -695,14 +732,15 @@ $receiptTreasuries = array_values(array_filter(
     $centralForTransfer,
     fn(array $t): bool => (int)($t['show_in_receipts'] ?? 1) === 1
 ));
-$receiptOpts = treasury_options($receiptTreasuries);
+// الخزينة اللي كشفها مفتوح بتتختار لوحدها — لو مش في القايمة بتتجاهل
+$receiptOpts = treasury_options($receiptTreasuries, $selectedTreasuryId);
 $today = date('Y-m-d');
 ?>
 
 <div class="modal-bg" id="receiptModal">
     <div class="modal">
         <h3>استلام نقدية</h3>
-        <form method="post">
+        <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
             <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
@@ -791,6 +829,11 @@ $today = date('Y-m-d');
             foreach ($disbTreasuries as $t) {
                 if ($t['type'] === 'main') { $defaultDisb = (int) $t['id']; break; }
             }
+            // الخزينة اللي كشفها مفتوح تغلب الرئيسية — لو موجودة في القايمة
+            // (خزينة الكاش مش فيها، فبترجع للرئيسية)
+            foreach ($disbTreasuries as $t) {
+                if ($selectedTreasuryId === (int) $t['id']) { $defaultDisb = $selectedTreasuryId; break; }
+            }
             ?>
             <div id="disbFormBody">
                 <div class="form-row">
@@ -877,6 +920,7 @@ $today = date('Y-m-d');
             <div id="disbConfirmBox" style="display:none;">
                 <div style="background:var(--line-soft);padding:16px;border-radius:12px;border:1.5px solid var(--line);margin-bottom:18px;line-height:1.7;font-size:14px;color:var(--ink-800);">
                     انت على وشك تسجيل مصروف بقيمة <b id="disbConfirmAmount"></b> جنيه من خزينة «<span id="disbConfirmTreasury"></span>».<br>
+                    <span id="disbConfirmNormal">القيد: <b id="disbConfirmAccount"></b> · الفرع: <b id="disbConfirmBranch"></b><br></span>
                     متأكد إن المبلغ ده هيتخصم من الخزينة دي؟
                 </div>
                 <div class="modal-actions">
@@ -891,7 +935,7 @@ $today = date('Y-m-d');
 <div class="modal-bg" id="transferModal">
     <div class="modal">
         <h3>تحويل بين خزينتين</h3>
-        <form method="post">
+        <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="transfer">
             <div class="form-row"><label>من خزينة</label><select name="from_treasury_id" required><?= $transferOpts ?></select></div>
@@ -973,6 +1017,41 @@ $today = date('Y-m-d');
         });
     });
 
+    // القيد والفرع إجباريين في الاستلام/الصرف العادي بس (السلفة والعهدة ليهم موظف/فرع).
+    // خانة القيد input hidden — `required` مابيشتغلش عليها، فالفحص هنا.
+    // والسيرفر بيرفض برضو (treasury.php — «اختار القيد.» / «اختار الفرع.»).
+    function normalOpMissing(form, typeSelectId){
+        if (document.getElementById(typeSelectId).value !== 'normal') return '';
+        if (!form.querySelector('input[name="entry_code_id"]').value) return 'اختار القيد.';
+        if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
+        return '';
+    }
+    function handleReceiptSubmit(e){
+        const missing = normalOpMissing(document.getElementById('receiptForm'), 'receiptType');
+        if (missing) { e.preventDefault(); alert(missing); return false; }
+        return true;
+    }
+    // تأكيد التحويل — أي تحويل بين خزينتين
+    function handleTransferSubmit(e){
+        const form = document.getElementById('transferForm');
+        const from = form.querySelector('select[name="from_treasury_id"]');
+        const to   = form.querySelector('select[name="to_treasury_id"]');
+        if (from.value === to.value) {
+            e.preventDefault();
+            alert('مينفعش تحوّل لنفس الخزينة.');
+            return false;
+        }
+        const amtVal = parseFloat(form.querySelector('input[name="amount"]').value) || 0;
+        const amt = amtVal.toLocaleString('en-US', {
+            minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
+            maximumFractionDigits: 2
+        });
+        const msg = 'تحويل ' + amt + ' ج من «' + from.options[from.selectedIndex].text.trim()
+                  + '» إلى «' + to.options[to.selectedIndex].text.trim() + '» — متأكد؟';
+        if (!confirm(msg)) { e.preventDefault(); return false; }
+        return true;
+    }
+
     // تأكيد صرف النقدية قبل الإرسال
     let disbConfirmed = false;
     let disbSending = false;
@@ -990,12 +1069,23 @@ $today = date('Y-m-d');
                 minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
                 maximumFractionDigits: 2
             });
+            const missing = normalOpMissing(form, 'disburseType');
+            if (missing) { alert(missing); return false; }
             const treSelect = form.querySelector('select[name="treasury_id"]');
             const treName = treSelect && treSelect.selectedIndex >= 0
                 ? treSelect.options[treSelect.selectedIndex].text.trim()
                 : '';
             document.getElementById('disbConfirmAmount').textContent = formattedAmt;
             document.getElementById('disbConfirmTreasury').textContent = treName;
+            // القيد والفرع في التأكيد — عشان لو القيد غلط ياخد باله قبل ما الفلوس تتسجّل
+            const isNormal = document.getElementById('disburseType').value === 'normal';
+            document.getElementById('disbConfirmNormal').style.display = isNormal ? '' : 'none';
+            if (isNormal) {
+                const accLabel = form.querySelector('.act-label');
+                const brSelect = form.querySelector('select[name="cost_branch_id"]');
+                document.getElementById('disbConfirmAccount').textContent = accLabel ? accLabel.textContent.trim() : '';
+                document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
+            }
             document.getElementById('disbFormBody').style.display = 'none';
             document.getElementById('disbConfirmBox').style.display = 'block';
             return false;

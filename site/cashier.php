@@ -23,8 +23,13 @@ $denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
 $payMethods    = ['visa' => 'فيزا', 'instapay' => 'إنستا باي'];
 $rowsPerMethod = 10;
 
-// الفروع المتاحة للاختيار (أي فرع نشط — للتغطية)
-$allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+// الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
+try {
+    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
+} catch (Throwable $e) {
+    // استرجاع آمن قبل تطبيق ملف الترقية upgrade_has_sales.sql
+    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+}
 $defaultBranch = !empty($u['branch_id']) ? (int) $u['branch_id']
                  : ($allBranches ? (int) $allBranches[0]['id'] : 0);
 
