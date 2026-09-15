@@ -201,7 +201,7 @@
             table: table, hrow: hrow, cols: cols, body: body,
             rows: [],            // {tr, cells:[نص مطبّع], nums:[رقم|null]}
             picks: {},           // idx -> {قيمة مختارة: true}
-            colType: [],         // 'num' | 'text'
+            colType: [],         // 'num' | 'text' | 'date'
             skip: [],            // أعمدة بلا فلتر
             q: '',
             sortIdx: -1, sortDir: 0,
@@ -232,16 +232,25 @@
         if (!st.rows.length) return;
 
         // ---- نوع كل عمود
+        var DATE_COL_RE = /^\d{4}-\d{2}-\d{2}/;
         for (var c2 = 0; c2 < cols; c2++) {
             var th = hrow.cells[c2];
             st.skip[c2] = th.hasAttribute('data-xt-skip') || norm(txt(th)) === '';
-            var numeric = 0, filled = 0;
+            var numeric = 0, filled = 0, dates = 0;
             for (var i = 0; i < st.rows.length; i++) {
-                if (st.rows[i].cells[c2] === '') continue;
+                var cval = st.rows[i].cells[c2];
+                if (cval === '') continue;
                 filled++;
                 if (st.rows[i].nums[c2] !== null) numeric++;
+                if (DATE_COL_RE.test(cval)) dates++;
             }
-            st.colType[c2] = (filled > 0 && numeric === filled) ? 'num' : 'text';
+            if (filled > 0 && dates === filled) {
+                st.colType[c2] = 'date';
+            } else if (filled > 0 && numeric === filled) {
+                st.colType[c2] = 'num';
+            } else {
+                st.colType[c2] = 'text';
+            }
         }
 
         buildBar(st);
@@ -355,6 +364,318 @@
         if (openBox && window.innerWidth !== openWidth) closePanel();
     });
 
+    var MONTH_NAMES = [
+        '', 'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+    var DATE_PARSE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+    function drawDateTree(list, allBox, order, map, getPicked, setPicked, commit, filterTxt, openMonths) {
+        list.innerHTML = '';
+        var f = norm(filterTxt || '');
+
+        // 1) تجميع المفاتيح في شجرة (سنة ← شهر ← يوم)
+        var tree = {}, extra = { label: '(فاضي)', n: 0, keys: [] };
+        for (var i = 0; i < order.length; i++) {
+            var k = order[i];
+            var m = DATE_PARSE_RE.exec(k);
+            if (!m) {
+                extra.keys.push(k);
+                extra.n += (map[k] ? map[k].n : 0);
+                continue;
+            }
+            var y = m[1];
+            var moNum = parseInt(m[2], 10);
+            var moKey = y + '-' + m[2];
+            var dNum = parseInt(m[3], 10);
+            var dayKey = y + '-' + m[2] + '-' + m[3];
+            var count = map[k] ? map[k].n : 0;
+
+            if (!tree[y]) {
+                tree[y] = { y: y, n: 0, keys: [], months: {} };
+            }
+            tree[y].n += count;
+            tree[y].keys.push(k);
+
+            if (!tree[y].months[moKey]) {
+                tree[y].months[moKey] = {
+                    moKey: moKey,
+                    y: y,
+                    mo: moNum,
+                    label: MONTH_NAMES[moNum] || moKey,
+                    n: 0,
+                    keys: [],
+                    days: {}
+                };
+            }
+            tree[y].months[moKey].n += count;
+            tree[y].months[moKey].keys.push(k);
+
+            if (!tree[y].months[moKey].days[dNum]) {
+                tree[y].months[moKey].days[dNum] = {
+                    d: dNum,
+                    dayKey: dayKey,
+                    n: 0,
+                    keys: []
+                };
+            }
+            tree[y].months[moKey].days[dNum].n += count;
+            tree[y].months[moKey].days[dNum].keys.push(k);
+        }
+
+        // ترتيب السنوات تنازلياً (الأحدث فوق)
+        var years = Object.keys(tree).sort(function (a, b) { return b.localeCompare(a); });
+
+        // دوال مساعدة لحالة الاختيار
+        function getSelState(keys) {
+            var p = getPicked();
+            if (!p) return { checked: true, indet: false, count: keys.length };
+            var cnt = 0;
+            for (var j = 0; j < keys.length; j++) {
+                if (p[keys[j]]) cnt++;
+            }
+            return {
+                checked: (cnt === keys.length && keys.length > 0),
+                indet: (cnt > 0 && cnt < keys.length),
+                count: cnt
+            };
+        }
+
+        function toggleKeys(keys, on) {
+            var p = getPicked();
+            if (!p) {
+                p = {};
+                for (var j = 0; j < order.length; j++) p[order[j]] = true;
+            }
+            for (var j = 0; j < keys.length; j++) {
+                if (on) p[keys[j]] = true;
+                else delete p[keys[j]];
+            }
+            setPicked(p);
+            commit();
+            syncAllCheckboxes();
+        }
+
+        function pickOnly(keys) {
+            var p = {};
+            for (var j = 0; j < keys.length; j++) p[keys[j]] = true;
+            setPicked(p);
+            commit();
+            syncAllCheckboxes();
+        }
+
+        var binders = [];
+        function syncAllCheckboxes() {
+            for (var j = 0; j < binders.length; j++) {
+                binders[j]();
+            }
+            var allSt = getSelState(order);
+            allBox.checked = allSt.checked;
+            allBox.indeterminate = allSt.indet;
+        }
+
+        var frag = document.createDocumentFragment();
+        var visibleCount = 0;
+
+        for (var yi = 0; yi < years.length; yi++) {
+            var yObj = tree[years[yi]];
+            // ترتيب الشهور تنازلياً (الأحدث فوق)
+            var months = Object.values(yObj.months).sort(function (a, b) { return b.mo - a.mo; });
+
+            // تصفية الشهور والأيام بحسب البحث
+            var filteredMonths = [];
+            for (var mi = 0; mi < months.length; mi++) {
+                var mObj = months[mi];
+                // ترتيب الأيام تصاعدياً (من 1 لآخر الشهر)
+                var days = Object.values(mObj.days).sort(function (a, b) { return a.d - b.d; });
+
+                if (!f) {
+                    filteredMonths.push({ mObj: mObj, days: days, autoOpen: false });
+                } else {
+                    var mMatches = (
+                        mObj.moKey.indexOf(f) !== -1 ||
+                        mObj.moKey.slice(5, 7) === f ||
+                        String(mObj.mo) === f ||
+                        norm(mObj.label).indexOf(f) !== -1 ||
+                        yObj.y.indexOf(f) !== -1
+                    );
+
+                    var matchedDays = [];
+                    for (var di = 0; di < days.length; di++) {
+                        var dObj = days[di];
+                        var dMatches = mMatches || (
+                            dObj.dayKey.indexOf(f) !== -1 ||
+                            String(dObj.d) === f ||
+                            dObj.dayKey.slice(8, 10) === f
+                        );
+                        if (!dMatches) {
+                            for (var ki = 0; ki < dObj.keys.length; ki++) {
+                                if (dObj.keys[ki].indexOf(f) !== -1) { dMatches = true; break; }
+                            }
+                        }
+                        if (dMatches) matchedDays.push(dObj);
+                    }
+
+                    if (matchedDays.length > 0) {
+                        filteredMonths.push({ mObj: mObj, days: matchedDays, autoOpen: true });
+                    }
+                }
+            }
+
+            if (!filteredMonths.length) continue;
+            visibleCount++;
+
+            // سطر السنة
+            var yRow = document.createElement('div');
+            yRow.className = 'xt-p-row xt-dt-year-row';
+            yRow.innerHTML =
+                '<label><input type="checkbox" class="xt-dt-cb">' +
+                '<span class="xt-p-lbl">' + yObj.y + '</span>' +
+                '<span class="xt-p-n">' + yObj.n + '</span></label>';
+
+            var yCb = yRow.querySelector('input');
+            (function (keys, cb) {
+                cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                binders.push(function () {
+                    var st = getSelState(keys);
+                    cb.checked = st.checked;
+                    cb.indeterminate = st.indet;
+                });
+            })(yObj.keys, yCb);
+            frag.appendChild(yRow);
+
+            // سطور الشهور والأيام
+            for (var fmi = 0; fmi < filteredMonths.length; fmi++) {
+                var fItem = filteredMonths[fmi];
+                var mObj = fItem.mObj;
+                var mDays = fItem.days;
+                var isOpen = f ? fItem.autoOpen : !!openMonths[mObj.moKey];
+
+                var mRow = document.createElement('div');
+                mRow.className = 'xt-p-row xt-dt-month-row';
+                mRow.innerHTML =
+                    '<button type="button" class="xt-dt-toggle">' + (isOpen ? '▾' : '▸') + '</button>' +
+                    '<label><input type="checkbox" class="xt-dt-cb"></label>' +
+                    '<span class="xt-p-lbl xt-dt-mname">' + mObj.label + '</span>' +
+                    '<span class="xt-p-n">' + mObj.n + '</span>' +
+                    '<button type="button" class="xt-p-only">بس ده</button>';
+
+                var mCb = mRow.querySelector('input');
+                var mToggle = mRow.querySelector('.xt-dt-toggle');
+                var mName = mRow.querySelector('.xt-dt-mname');
+                var mOnly = mRow.querySelector('.xt-p-only');
+
+                var daysCont = document.createElement('div');
+                daysCont.className = 'xt-dt-days';
+                daysCont.style.display = isOpen ? 'block' : 'none';
+
+                (function (moKey, toggleBtn, dCont, nameEl) {
+                    function doToggle() {
+                        var nowOpen = (dCont.style.display === 'none');
+                        dCont.style.display = nowOpen ? 'block' : 'none';
+                        toggleBtn.textContent = nowOpen ? '▾' : '▸';
+                        openMonths[moKey] = nowOpen;
+                    }
+                    toggleBtn.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); doToggle();
+                    });
+                    nameEl.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); doToggle();
+                    });
+                })(mObj.moKey, mToggle, daysCont, mName);
+
+                (function (keys, cb) {
+                    cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                    binders.push(function () {
+                        var st = getSelState(keys);
+                        cb.checked = st.checked;
+                        cb.indeterminate = st.indet;
+                    });
+                })(mObj.keys, mCb);
+
+                (function (keys) {
+                    mOnly.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                    });
+                })(mObj.keys);
+
+                frag.appendChild(mRow);
+
+                // سطور الأيام
+                for (var di = 0; di < mDays.length; di++) {
+                    var dObj = mDays[di];
+                    var dRow = document.createElement('div');
+                    dRow.className = 'xt-p-row xt-dt-day-row';
+                    dRow.innerHTML =
+                        '<label><input type="checkbox" class="xt-dt-cb">' +
+                        '<span class="xt-p-lbl">' + dObj.d + '</span>' +
+                        '<span class="xt-p-n">' + dObj.n + '</span></label>' +
+                        '<button type="button" class="xt-p-only">بس ده</button>';
+
+                    var dCb = dRow.querySelector('input');
+                    var dOnly = dRow.querySelector('.xt-p-only');
+
+                    (function (keys, cb) {
+                        cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                        binders.push(function () {
+                            var st = getSelState(keys);
+                            cb.checked = st.checked;
+                            cb.indeterminate = st.indet;
+                        });
+                    })(dObj.keys, dCb);
+
+                    (function (keys) {
+                        dOnly.addEventListener('click', function (e) {
+                            e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                        });
+                    })(dObj.keys);
+
+                    daysCont.appendChild(dRow);
+                }
+
+                frag.appendChild(daysCont);
+            }
+        }
+
+        // سطر القيم الفارغة إن وجدت
+        if (extra.keys.length > 0 && (!f || norm(extra.label).indexOf(f) !== -1)) {
+            visibleCount++;
+            var eRow = document.createElement('div');
+            eRow.className = 'xt-p-row xt-dt-year-row';
+            eRow.innerHTML =
+                '<label><input type="checkbox" class="xt-dt-cb">' +
+                '<span class="xt-p-lbl">' + extra.label + '</span>' +
+                '<span class="xt-p-n">' + extra.n + '</span></label>' +
+                '<button type="button" class="xt-p-only">بس ده</button>';
+            var eCb = eRow.querySelector('input');
+            var eOnly = eRow.querySelector('.xt-p-only');
+            (function (keys, cb) {
+                cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                binders.push(function () {
+                    var st = getSelState(keys);
+                    cb.checked = st.checked;
+                    cb.indeterminate = st.indet;
+                });
+            })(extra.keys, eCb);
+            (function (keys) {
+                eOnly.addEventListener('click', function (e) {
+                    e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                });
+            })(extra.keys);
+            frag.appendChild(eRow);
+        }
+
+        if (!visibleCount) {
+            var em = document.createElement('div');
+            em.className = 'xt-p-empty';
+            em.textContent = 'مفيش قيم مطابقة';
+            frag.appendChild(em);
+        }
+
+        list.appendChild(frag);
+        syncAllCheckboxes();
+    }
+
     function openPanel(st, idx, anchor) {
         closePanel();
         openWidth = window.innerWidth;
@@ -465,17 +786,33 @@
             apply(st);
         }
 
+        var isDate = (st.colType[idx] === 'date');
+        var openMonths = {};
+
+        function render(filterTxt) {
+            if (isDate) {
+                drawDateTree(
+                    list, allBox, order, map,
+                    function () { return picked; },
+                    function (p) { picked = p; },
+                    commit, filterTxt, openMonths
+                );
+            } else {
+                draw(filterTxt);
+            }
+        }
+
         allBox.addEventListener('change', function () {
             picked = this.checked ? null : {};
             commit();
-            draw(box.querySelector('.xt-p-q').value);
+            render(box.querySelector('.xt-p-q').value);
         });
-        box.querySelector('.xt-p-q').addEventListener('input', function () { draw(this.value); });
+        box.querySelector('.xt-p-q').addEventListener('input', function () { render(this.value); });
         box.querySelector('.xt-p-clear').addEventListener('click', function () {
-            picked = null; commit(); draw(''); 
+            picked = null; commit(); render(''); 
         });
 
-        draw('');
+        render('');
 
         // الموضع — مع مراعاة حواف الشاشة
         var r = anchor.getBoundingClientRect();
@@ -736,6 +1073,15 @@
             'cursor:pointer;padding:2px 5px;border-radius:4px;opacity:0;white-space:nowrap;}',
         '.xt-p-row:hover .xt-p-only{opacity:1;}',
         '.xt-p-only:hover{background:var(--accent,#2f5d8a);color:#fff;}',
+        '.xt-dt-year-row{font-weight:700;}',
+        '.xt-dt-month-row{font-weight:600;padding-inline-start:18px;}',
+        '.xt-dt-month-row label{flex:none;padding:4px 3px;}',
+        '.xt-dt-toggle{border:0;background:none;cursor:pointer;color:var(--ink-500,#6d7f9a);font-size:11px;',
+            'line-height:1;padding:3px 4px;border-radius:3px;user-select:none;font-family:inherit;}',
+        '.xt-dt-toggle:hover{color:var(--accent,#2f5d8a);background:var(--accent-soft,#eaf1f8);}',
+        '.xt-dt-mname{flex:1;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+        '.xt-dt-days{padding:0;}',
+        '.xt-dt-day-row{padding-inline-start:36px;}',
         '.xt-p-empty,.xt-p-more{padding:10px;color:var(--ink-400,#94a3b8);font-size:11.5px;text-align:center;}',
         '.xt-p-foot{padding:7px 8px;border-top:1px solid var(--line-soft,#eff2f6);}',
         '.xt-p-foot .xt-btn{width:100%;}',
