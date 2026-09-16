@@ -55,7 +55,9 @@ try {
                    WHERE branch_id = ?
                    GROUP BY distribution_id, notes
                   HAVING SUM(amount) > 0
-                ) l ON l.distribution_id = d.id'
+                ) l ON l.distribution_id = d.id
+          WHERE (d.company_branch = 1 OR d.company_branch IS NULL)
+            AND (d.doc_type = 2 OR d.doc_type IS NULL)'
     );
     $rows->execute([ASHRAQA_BRANCH_ID]);
 } catch (Throwable $ex) {
@@ -395,11 +397,12 @@ if ($openId !== null && $openId !== '') {
     $header = sqlsrv_fetch_invoice_header($openId, $openSuf);
     $docNo = $header ? (string)($header['inv_no'] ?? '') : '';
     $isRet = $header && (int)($header['doc_type'] ?? 0) === ASH_DOC_RETURN;
+    $cb = $header ? ($header['company_branch_id'] ?? ($header['company_branch'] ?? null)) : null;
     $distId = $header ? ash_dist_for($header, $ashraqaDocNos) : null;
-    // حارس إجباري: الفاتورة فيها توزيع لإشراقة؟ ومش مردود؟
+    // حارس إجباري: الفاتورة فيها توزيع لإشراقة؟ ومش مردود؟ ومن الإدارة المركزية (branch 1)؟
     // 🔴 شرط المردود هنا مش بس في القايمة — من غيره حد يكتب رقم مردود
     //    في اللينك ويفتحه عادي.
-    if (!$header || $isRet || $distId === null) {
+    if (!$header || $isRet || ($cb !== null && (int)$cb !== 1) || $distId === null) {
         http_response_code(403);
         require_once __DIR__ . '/includes/header.php';
         ?>
@@ -425,6 +428,10 @@ if ($openInvoice === null) {
     $all = sqlsrv_fetch_invoices();
     $cand = [];
     foreach ($all as $inv) {
+        // فواتير الإدارة المركزية فقط (company_branch = 1 أو غير محدد)
+        $cb = $inv['company_branch_id'] ?? ($inv['company_branch'] ?? null);
+        if ($cb !== null && (int)$cb !== 1) continue;
+
         $dId = ash_dist_for($inv, $ashraqaDocNos);
         if ($dId === null) continue;
         // المردودات مابتظهرش لعاشور — مشتريات بس

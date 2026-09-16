@@ -100,6 +100,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if ($action === 'delete_invoice_problems') {
+            $did = (int) ($_POST['distribution_id'] ?? 0);
+            if ($did > 0) {
+                $del = $pdo->prepare('DELETE FROM invoice_problems WHERE distribution_id = ?');
+                $del->execute([$did]);
+            }
+            echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         throw new RuntimeException('إجراء غير معروف.');
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -131,8 +141,8 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
     $dist = $stDist->fetch();
     if (!$dist) return;
 
-    // مشاكل الفواتير مخصصة لفواتير شراء الإدارة فقط (company_branch = 6 و doc_type = 2)
-    if ($dist['company_branch'] !== null && (int) $dist['company_branch'] !== 6) return;
+    // مشاكل الفواتير مخصصة لفواتير شراء الإدارة فقط (company_branch = 1 و doc_type = 2)
+    if ($dist['company_branch'] !== null && (int) $dist['company_branch'] !== 1) return;
     if ($dist['doc_type'] !== null && (int) $dist['doc_type'] !== 2) return;
 
     // جلب فاتورة الشراء الأصلية من مرآة الشركة باستخدام المفتاح المركب
@@ -141,7 +151,7 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
         "SELECT i.sth_id, i.suffix, i.doc_no, i.company_branch, i.doc_type, i.supplier_id, i.invoice_date
          FROM hq_invoices i
          CROSS JOIN (SELECT ? AS company_branch, ? AS doc_type) d
-         WHERE i.doc_no = ? AND i.doc_type = 2 AND (i.company_branch = 6 OR i.company_branch IS NULL) AND $distKey
+         WHERE i.doc_no = ? AND i.doc_type = 2 AND (i.company_branch = 1 OR i.company_branch IS NULL) AND $distKey
          LIMIT 1"
     );
     $stHq->execute([$dist['company_branch'], $dist['doc_type'], $dist['invoice_no']]);
@@ -599,7 +609,14 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <a href="invoice_problems.php?d=<?= (int)$pi['dist_id'] ?>" class="btn btn-ghost btn-sm">عرض الفاتورة</a>
+                                <div style="display:flex;gap:4px;align-items:center;">
+                                    <a href="invoice_problems.php?d=<?= (int)$pi['dist_id'] ?>" class="btn btn-ghost btn-sm">عرض الفاتورة</a>
+                                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);padding:4px 8px;"
+                                            title="حذف كل مشاكل هذه الفاتورة"
+                                            onclick="deleteInvoiceProblems(<?= (int)$pi['dist_id'] ?>, this)">
+                                        <i class="ti ti-trash"></i>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -736,7 +753,12 @@ require_once __DIR__ . '/includes/header.php';
                         <span><b>أصناف المشاكل:</b> <b style="color:var(--neg);"><?= $problemsOnlyCount ?></b> من <?= count($itemsList) ?> صنف</span>
                     </div>
                 </div>
-                <div style="display:flex;gap:8px;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);"
+                            title="حذف كل مشاكل هذه الفاتورة"
+                            onclick="deleteCurrentInvoiceProblems(<?= (int)$selectedDistId ?>)">
+                        <i class="ti ti-trash"></i> حذف مشاكل الفاتورة
+                    </button>
                     <a href="invoice_problems.php" class="btn btn-ghost btn-sm">← رجوع لكل الفواتير</a>
                 </div>
             </div>
@@ -762,6 +784,7 @@ require_once __DIR__ . '/includes/header.php';
                         <th>الملاحظة</th>
                         <th style="width:80px;text-align:center;">المصدر</th>
                         <th style="width:130px;">التسجيل</th>
+                        <th style="width:70px;text-align:center;">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -825,6 +848,14 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php else: ?>
                                     <span style="color:var(--ink-300);">—</span>
                                 <?php endif; ?>
+                            </td>
+                            <td style="text-align:center;">
+                                <button type="button" class="btn btn-ghost btn-sm btn-del-item"
+                                        style="color:var(--neg);padding:2px 6px;<?= $it['has_problem'] ? '' : 'display:none;' ?>"
+                                        title="حذف مشكلة هذا الصنف"
+                                        onclick="deleteItemProblem(this, '<?= e((string)$it['code']) ?>')">
+                                    <i class="ti ti-trash"></i>
+                                </button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -917,10 +948,99 @@ require_once __DIR__ . '/includes/header.php';
                 .catch(function () {
                     input.value = prev;
                     if (ind) { ind.innerHTML = '<i class="ti ti-x"></i>'; ind.style.color = 'var(--neg)'; }
+                    alert('تعذر الاتصال بالسيرفر');
                 });
+        }
+
+        function deleteItemProblem(btn, code) {
+            if (!confirm('هل أنت متأكد من حذف مشكلة هذا الصنف؟')) return;
+            var row = btn.closest('tr');
+            if (!row) return;
+
+            var fd = new FormData();
+            fd.append('action', 'delete_problem');
+            fd.append('csrf', CSRF);
+            fd.append('distribution_id', DIST_ID);
+            fd.append('item_code', code);
+
+            fetch('invoice_problems.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.ok) {
+                        // تصفير الخانات
+                        var inS = row.querySelector('.input-short');
+                        var inO = row.querySelector('.input-over');
+                        var inN = row.querySelector('.input-note');
+                        if (inS) { inS.value = ''; inS.dataset.saved = ''; }
+                        if (inO) { inO.value = ''; inO.dataset.saved = ''; }
+                        if (inN) { inN.value = ''; inN.dataset.saved = ''; }
+                        var ind = row.querySelector('.save-ind');
+                        if (ind) ind.innerHTML = '';
+                        var srcBadge = row.querySelector('.src-badge');
+                        if (srcBadge) {
+                            srcBadge.textContent = '—';
+                            srcBadge.className = 'badge-src src-badge';
+                            srcBadge.style.color = 'var(--ink-400)';
+                        }
+                        btn.style.display = 'none';
+
+                        row.dataset.hasProblem = '0';
+                        row.classList.remove('is-problem');
+                        row.classList.add('not-problem');
+                        if (currentFilter === 'problems') {
+                            row.style.display = 'none';
+                        }
+                    } else {
+                        alert(d.error || 'حدث خطأ أثناء الحذف');
+                    }
+                })
+                .catch(() => alert('تعذر الاتصال بالسيرفر'));
+        }
+
+        function deleteCurrentInvoiceProblems(distId) {
+            if (!confirm('هل أنت متأكد من حذف كل المشاكل المسجلة على هذه الفاتورة؟')) return;
+            var fd = new FormData();
+            fd.append('action', 'delete_invoice_problems');
+            fd.append('csrf', CSRF);
+            fd.append('distribution_id', distId);
+
+            fetch('invoice_problems.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.ok) {
+                        window.location.href = 'invoice_problems.php';
+                    } else {
+                        alert(d.error || 'حدث خطأ أثناء الحذف');
+                    }
+                })
+                .catch(() => alert('تعذر الاتصال بالسيرفر'));
         }
         </script>
     <?php endif; ?>
+
+    <script>
+    var CSRF = <?= json_encode(csrf_token()) ?>;
+
+    function deleteInvoiceProblems(distId, btn) {
+        if (!confirm('هل أنت متأكد من حذف هذه الفاتورة من قائمة المشاكل؟')) return;
+        var fd = new FormData();
+        fd.append('action', 'delete_invoice_problems');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', distId);
+
+        fetch('invoice_problems.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    var tr = btn.closest('tr');
+                    if (tr) tr.remove();
+                } else {
+                    alert(d.error || 'حدث خطأ أثناء الحذف');
+                }
+            })
+            .catch(() => alert('تعذر الاتصال بالسيرفر'));
+    }
+    </script>
 
 <?php endif; ?>
 
