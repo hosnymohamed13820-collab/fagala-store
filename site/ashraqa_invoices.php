@@ -47,10 +47,10 @@ const ASH_DOC_RETURN = 6;
 //    إخفاء فاتورة ليها توزيع حقيقي أوحش بكتير من عرض واحدة زيادة.
 try {
     $rows = $pdo->prepare(
-        'SELECT d.invoice_no, d.company_branch, d.doc_type, d.id AS dist_id, l.item_code
+        'SELECT d.invoice_no, d.company_branch, d.doc_type, d.id AS dist_id, l.item_code, l.qty
            FROM invoice_distribution d
            JOIN (
-                  SELECT distribution_id, notes AS item_code
+                  SELECT distribution_id, notes AS item_code, SUM(amount) AS qty
                     FROM invoice_distribution_lines
                    WHERE branch_id = ?
                    GROUP BY distribution_id, notes
@@ -63,10 +63,10 @@ try {
 } catch (Throwable $ex) {
     // لو الأعمدة لسه مش موجودة في الجدول (قبل تشغيل ملف الترقية)
     $rows = $pdo->prepare(
-        'SELECT d.invoice_no, NULL AS company_branch, NULL AS doc_type, d.id AS dist_id, l.item_code
+        'SELECT d.invoice_no, NULL AS company_branch, NULL AS doc_type, d.id AS dist_id, l.item_code, l.qty
            FROM invoice_distribution d
            JOIN (
-                  SELECT distribution_id, notes AS item_code
+                  SELECT distribution_id, notes AS item_code, SUM(amount) AS qty
                     FROM invoice_distribution_lines
                    WHERE branch_id = ?
                    GROUP BY distribution_id, notes
@@ -78,21 +78,30 @@ try {
 
 $ashraqaDocNos = [];       // [key => dist_id]
 $ashraqaCodesByDoc = [];   // [key => [code => true]]
+$ashraqaQtysByDist = [];   // [dist_id => [code => qty]]
+$ashraqaCodesByDist = [];  // [dist_id => [code => true]]
 foreach ($rows as $r) {
+    $did  = (int) $r['dist_id'];
+    $code = trim((string) $r['item_code']);
+    $qty  = (float) ($r['qty'] ?? 0);
+
+    $ashraqaQtysByDist[$did][$code] = $qty;
+    $ashraqaCodesByDist[$did][$code] = true;
+
     $no = trim((string) $r['invoice_no']);
     $cb = ($r['company_branch'] !== null && $r['company_branch'] !== '') ? (string)$r['company_branch'] : '*';
     $dt = ($r['doc_type'] !== null && $r['doc_type'] !== '') ? (string)$r['doc_type'] : '*';
 
     $key = $no . '|' . $cb . '|' . $dt;
-    $ashraqaDocNos[$key] = (int) $r['dist_id'];
-    $ashraqaCodesByDoc[$key][(string) $r['item_code']] = true;
+    $ashraqaDocNos[$key] = $did;
+    $ashraqaCodesByDoc[$key][$code] = true;
 
     // توافق مع السجلات القديمة التي تحوي NULL
     if ($cb === '*' && $dt === '*') {
-        $ashraqaDocNos[$no . '|*|*'] = (int) $r['dist_id'];
-        $ashraqaCodesByDoc[$no . '|*|*'][(string) $r['item_code']] = true;
-        $ashraqaDocNos[$no] = (int) $r['dist_id'];
-        $ashraqaCodesByDoc[$no][(string) $r['item_code']] = true;
+        $ashraqaDocNos[$no . '|*|*'] = $did;
+        $ashraqaCodesByDoc[$no . '|*|*'][$code] = true;
+        $ashraqaDocNos[$no] = $did;
+        $ashraqaCodesByDoc[$no][$code] = true;
     }
 }
 
@@ -450,10 +459,11 @@ if ($openInvoice === null) {
         fn($i) => (int) $i['inv_id'], $cand
     )));
     $lineCodes = [];   // ["sth|suffix" => [code => true]]
+    $lineCosts = [];   // ["sth|suffix" => [code => cost]]
     if ($sthIds) {
         $ph = implode(',', array_fill(0, count($sthIds), '?'));
         $q  = $pdo->prepare(
-            "SELECT sth_id, suffix, item_code, item_id
+            "SELECT sth_id, suffix, item_code, item_id, unit_price, cost_price
                FROM hq_invoice_lines WHERE sth_id IN ($ph)"
         );
         $q->execute($sthIds);
@@ -464,19 +474,43 @@ if ($openInvoice === null) {
             //    باركود — لازم نقبل الشكلين وإلا الصنف ده مايتلاقاش أبداً.
             if ($c === '') $c = '#' . (int) ($r['item_id'] ?? 0);
             $lineCodes[$k][$c] = true;
+
+            $cost = (float)($r['unit_price'] ?? 0);
+            if ($cost <= 0) $cost = (float)($r['cost_price'] ?? 0);
+            if (!isset($lineCosts[$k][$c]) || $cost > $lineCosts[$k][$c]) {
+                $lineCosts[$k][$c] = $cost;
+            }
+            if (!empty($r['item_id'])) {
+                $hKey = '#' . (int)$r['item_id'];
+                if (!isset($lineCosts[$k][$hKey]) || $cost > $lineCosts[$k][$hKey]) {
+                    $lineCosts[$k][$hKey] = $cost;
+                }
+            }
         }
     }
 
     foreach ($cand as $inv) {
-        $k = (int) $inv['inv_id'] . '|' . (string) ($inv['suffix'] ?? '');
+        $k   = (int) $inv['inv_id'] . '|' . (string) ($inv['suffix'] ?? '');
+        $dId = (int) $inv['dist_id'];
         // ⚠️ المرآة مالهاش سطور للفاتورة دي (الجسر لسه ماجابهاش) →
         //    نوريها. إخفاء فاتورة ليها توزيع حقيقي أوحش من عرض واحدة زيادة.
-        if (!isset($lineCodes[$k])) { $invoices[] = $inv; continue; }
-
-        $codes = ash_codes_for($inv, $ashraqaCodesByDoc);
-        if (array_intersect_key($codes, $lineCodes[$k])) {
-            $invoices[] = $inv;
+        if (isset($lineCodes[$k])) {
+            $codes = ash_codes_for($inv, $ashraqaCodesByDoc);
+            if (!array_intersect_key($codes, $lineCodes[$k])) {
+                continue;
+            }
         }
+
+        // حساب إجمالي التكلفة وعدد أصناف إشراقة
+        $invTotal = 0.0;
+        foreach (($ashraqaQtysByDist[$dId] ?? []) as $c => $q) {
+            $cost = $lineCosts[$k][$c] ?? 0.0;
+            $invTotal += ($q * $cost);
+        }
+        $inv['ash_total'] = $invTotal;
+        $inv['ash_items_count'] = count($ashraqaCodesByDist[$dId] ?? []);
+
+        $invoices[] = $inv;
     }
 } else {
     // جلب أصناف الفاتورة ودمج المتكرر
@@ -661,6 +695,15 @@ if ($openInvoice === null) {
 
     $salePrices = ashraqa_get_prices($distId);
     $lastSync   = ashraqa_last_sync();
+
+    // إجمالي تكلفة أصناف إشراقة في هذه الفاتورة
+    $totalAshraqaCost = 0.0;
+    foreach ($ashraqaItems as $it) {
+        $c = (string)($it['item_code'] ?? '');
+        $q = (float)($ashraqaQtys[$c] ?? 0);
+        $cost = ash_mrk_cost($it);
+        $totalAshraqaCost += ($q * $cost);
+    }
 }
 
 require_once __DIR__ . '/includes/header.php';
@@ -1009,6 +1052,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th>رقم الفاتورة</th>
                             <th>التاريخ</th>
                             <th>أصناف إشراقة</th>
+                            <th>الإجمالي</th>
                             <th>الحالة</th>
                         </tr>
                     </thead>
@@ -1018,7 +1062,8 @@ require_once __DIR__ . '/includes/header.php';
                             $st         = $ashraqaStatus[(int) $inv['dist_id']] ?? 'new';
                             $stLbl      = $st === 'entered' ? 'تم الإدخال' : 'جديدة';
                             $docNo      = (string)($inv['inv_no'] ?? '');
-                            $itemsCount = count($ashraqaCodesByDoc[$docNo] ?? []);
+                            $itemsCount = (int)($inv['ash_items_count'] ?? 0);
+                            $invTotal   = (float)($inv['ash_total'] ?? 0);
                         ?>
                             <tr class="inv-row" tabindex="0" role="link"
                                 data-st="<?= $st ?>"
@@ -1034,6 +1079,9 @@ require_once __DIR__ . '/includes/header.php';
                                 </td>
                                 <td style="font-weight:600;color:var(--ink-700);">
                                     <?= $itemsCount ?>
+                                </td>
+                                <td style="font-weight:700;color:var(--accent-text);white-space:nowrap;">
+                                    <?= number_format($invTotal, 2) ?> ج.م
                                 </td>
                                 <td>
                                     <span class="st-badge<?= $st === 'entered' ? ' st-entered' : '' ?>"><?= $stLbl ?></span>
@@ -1295,8 +1343,11 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:12.5px;color:var(--ink-500);border-top:1px solid var(--line-soft);padding-top:8px;">
-            <div>
-                تاريخ الفاتورة: <?= !empty($openInvoice['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$openInvoice['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?>
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+                <span>تاريخ الفاتورة: <?= !empty($openInvoice['invoice_date']) ? htmlspecialchars(date('Y-m-d', strtotime((string)$openInvoice['invoice_date'])), ENT_QUOTES, 'UTF-8') : '—' ?></span>
+                <span style="display:inline-flex;align-items:center;gap:6px;background:var(--line-soft);padding:3px 10px;border-radius:6px;font-weight:600;color:var(--ink-900);">
+                    إجمالي التكلفة لإشراقة: <strong style="color:var(--accent-text);font-size:13.5px;"><?= number_format($totalAshraqaCost, 2) ?></strong> ج.م
+                </span>
             </div>
             <div>
                 <i class="ti ti-clock"></i> آخر تحديث أرصدة إشراقة: <?= $lastSync ? htmlspecialchars($lastSync, ENT_QUOTES, 'UTF-8') : 'لسه مافيش مزامنة' ?>

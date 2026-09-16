@@ -428,6 +428,13 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--accent-text);
     font-weight: 600;
 }
+.prob-table tbody tr.inv-row {
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+.prob-table tbody tr.inv-row:hover {
+    background: var(--accent-soft);
+}
 .prob-input {
     width: 100%;
     padding: 6px 8px;
@@ -589,12 +596,16 @@ require_once __DIR__ . '/includes/header.php';
                         <th style="width:120px;">تاريخ الفاتورة</th>
                         <th style="width:150px;">مين دخّلها</th>
                         <th style="width:120px;">الأصناف المتأثرة</th>
-                        <th style="width:100px;">إجراء</th>
+                        <th style="width:60px;text-align:center;">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($problemInvoices as $pi): ?>
-                        <tr>
+                    <?php foreach ($problemInvoices as $pi):
+                        $dUrl = 'invoice_problems.php?d=' . (int)$pi['dist_id'];
+                    ?>
+                        <tr class="inv-row" tabindex="0" role="link"
+                            onclick="location.href='<?= $dUrl ?>'"
+                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='<?= $dUrl ?>';}">
                             <td><b>#<?= e((string)$pi['invoice_no']) ?></b></td>
                             <td><?= e((string)$pi['supplier_name']) ?></td>
                             <td><?= e((string)$pi['dist_date']) ?></td>
@@ -608,15 +619,12 @@ require_once __DIR__ . '/includes/header.php';
                                     <span style="font-size:11px;color:var(--accent-text);">(<?= (int)$pi['over_count'] ?> زيادة)</span>
                                 <?php endif; ?>
                             </td>
-                            <td>
-                                <div style="display:flex;gap:4px;align-items:center;">
-                                    <a href="invoice_problems.php?d=<?= (int)$pi['dist_id'] ?>" class="btn btn-ghost btn-sm">عرض الفاتورة</a>
-                                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);padding:4px 8px;"
-                                            title="حذف كل مشاكل هذه الفاتورة"
-                                            onclick="deleteInvoiceProblems(<?= (int)$pi['dist_id'] ?>, this)">
-                                        <i class="ti ti-trash"></i>
-                                    </button>
-                                </div>
+                            <td style="text-align:center;">
+                                <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);padding:4px 8px;"
+                                        title="حذف كل مشاكل هذه الفاتورة"
+                                        onclick="event.stopPropagation(); deleteInvoiceProblems(<?= (int)$pi['dist_id'] ?>, this)">
+                                    <i class="ti ti-trash"></i>
+                                </button>
                             </td>
                         </tr>
                     <?php endforeach; ?>
