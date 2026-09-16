@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // 🔴 حماية الأمان: مين مالوش فرع ومش أونر/مسؤول استلامات مايعملش أي حاجة.
+    // حماية الأمان: مين مالوش فرع ومش أونر/مسؤول استلامات مايعملش أي حاجة.
     //    من غير الشرط ده، أي مستخدم معاه صلاحية «استلام» ومش مربوط بفرع
     //    كان يقدر يستلم باسم أي فرع في النظام.
     if (!$canManageAll && $userBranchId === null) {
@@ -247,6 +247,14 @@ require_once __DIR__ . '/includes/header.php';
     margin-bottom: 14px;
     box-shadow: var(--shadow-sm);
 }
+.clickable-card {
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.clickable-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.07);
+}
 .rc-header {
     display: flex;
     justify-content: space-between;
@@ -328,9 +336,9 @@ require_once __DIR__ . '/includes/header.php';
     <!--  عرض قايمة الهيدرز (فواتير / مجموعات للاستلام)                       -->
     <!-- ===================================================================== -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h2 style="font-size:20px;font-weight:bold;margin:0;">📦 استلام الفواتير في الفروع</h2>
+        <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-package"></i> استلام الفواتير في الفروع</h2>
         <?php if ($isOwner || $isSupervisor || can('receiving:diffs') || $userBranchId !== null): ?>
-            <a href="receiving_diffs.php" class="btn btn-ghost">📊 صفحة الفروقات الشاملة</a>
+            <a href="receiving_diffs.php" class="btn btn-ghost"><i class="ti ti-chart-bar"></i> صفحة الفروقات الشاملة</a>
         <?php endif; ?>
     </div>
 
@@ -368,15 +376,95 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php
     else:
-        // تجميع السجلات حسب الهيدر (المجموعة أو الفاتورة المفردة)
+        // جلب معرفات المجموعات والفواتير المفردة لحساب الكميات الموزعة خارج الحلقات
+        $gIds = [];
+        $singleDistIds = [];
+        foreach ($allReceipts as $rc) {
+            $gid = (int) $rc['group_id'];
+            $did = (int) $rc['distribution_id'];
+            if ($gid > 0) {
+                $gIds[$gid] = true;
+            } elseif ($did > 0) {
+                $singleDistIds[$did] = true;
+            }
+        }
+        $gIds = array_keys($gIds);
+        $singleDistIds = array_keys($singleDistIds);
+
+        // ربط المجموعات بسجلات التوزيع الخاصة بها باستعلام واحد مجمّع
+        $groupDistsMap = []; // [group_id => [dist_id, ...]]
+        $allDistIdsToQuery = $singleDistIds;
+        if (!empty($gIds)) {
+            $gPh = implode(',', array_fill(0, count($gIds), '?'));
+            $stGDist = $pdo->prepare(
+                "SELECT DISTINCT gi.group_id, d.id AS dist_id
+                 FROM invoice_group_items gi
+                 JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+                 WHERE gi.group_id IN ($gPh)"
+            );
+            $stGDist->execute($gIds);
+            foreach ($stGDist->fetchAll() as $gRow) {
+                $gid = (int) $gRow['group_id'];
+                $did = (int) $gRow['dist_id'];
+                if ($did > 0) {
+                    $groupDistsMap[$gid][] = $did;
+                    $allDistIdsToQuery[] = $did;
+                }
+            }
+        }
+
+        $allDistIdsToQuery = array_values(array_unique($allDistIdsToQuery));
+
+        // جلب إجمالي الكميات الموزعة لكل فرع باستعلام واحد مجمّع خارج أي حلقة
+        $distBranchQty = [];
+        if (!empty($allDistIdsToQuery)) {
+            $dPh = implode(',', array_fill(0, count($allDistIdsToQuery), '?'));
+            $stBranchQty = $pdo->prepare(
+                "SELECT dl.distribution_id, dl.branch_id, SUM(dl.amount) AS total_qty
+                 FROM invoice_distribution_lines dl
+                 WHERE dl.distribution_id IN ($dPh) AND dl.amount > 0 AND dl.branch_id <> 6
+                 GROUP BY dl.distribution_id, dl.branch_id"
+            );
+            $stBranchQty->execute($allDistIdsToQuery);
+            foreach ($stBranchQty->fetchAll() as $qRow) {
+                $did = (int) $qRow['distribution_id'];
+                $bid = (int) $qRow['branch_id'];
+                $qty = (float) $qRow['total_qty'];
+                $distBranchQty[$did][$bid] = ($distBranchQty[$did][$bid] ?? 0.0) + $qty;
+            }
+        }
+
+        // تجميع السجلات حسب الهيدر مع إخفاء أي فرع ليس له كمية موزعة (> 0)
         $headersMap = [];
         foreach ($allReceipts as $rc) {
-            $key = $rc['group_id'] > 0 ? ('g_' . $rc['group_id']) : ('d_' . $rc['distribution_id']);
+            $gid = (int) $rc['group_id'];
+            $did = (int) $rc['distribution_id'];
+            $bid = (int) $rc['branch_id'];
+
+            // حساب الكمية الموزعة لهذا الفرع في هذا السياق
+            $branchDistributedQty = 0.0;
+            if ($gid > 0) {
+                $contextDists = $groupDistsMap[$gid] ?? [];
+                foreach ($contextDists as $cDid) {
+                    $branchDistributedQty += ($distBranchQty[$cDid][$bid] ?? 0.0);
+                }
+            } else {
+                $branchDistributedQty = ($distBranchQty[$did][$bid] ?? 0.0);
+            }
+
+            // الشرط ٥: لو الفرع ليس له أي كميات موزعة، لا يظهر نهائياً في الكارت
+            if ($branchDistributedQty <= 0.0001) {
+                continue;
+            }
+
+            $key = $gid > 0 ? ('g_' . $gid) : ('d_' . $did);
             if (!isset($headersMap[$key])) {
-                $title = $rc['group_id'] > 0 ? ('مجموعة فواتير #' . $rc['group_id'] . ' — ' . ($rc['group_name'] ?: 'بدون اسم')) : ('فاتورة #' . ($rc['invoice_no'] ?: $rc['distribution_id']));
+                $title = $gid > 0
+                    ? ('مجموعة فواتير #' . $gid . ' — ' . ($rc['group_name'] ?: 'بدون اسم'))
+                    : ('فاتورة #' . ($rc['invoice_no'] ?: $did));
                 $headersMap[$key] = [
-                    'group_id'        => (int) $rc['group_id'],
-                    'distribution_id' => (int) $rc['distribution_id'],
+                    'group_id'        => $gid,
+                    'distribution_id' => $did,
                     'title'           => $title,
                     'created_at'      => $rc['created_at'],
                     'branches'        => [],
@@ -386,10 +474,28 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         foreach ($headersMap as $hKey => $hdr):
+            if (empty($hdr['branches'])) continue;
             $isGroup = $hdr['group_id'] > 0;
             $diffUrl = 'receiving_diffs.php?' . ($isGroup ? ('g=' . $hdr['group_id']) : ('d=' . $hdr['distribution_id']));
+
+            // الحارس الذكي (Smart Guard):
+            // - موظف الفرع (users.branch_id > 0): النقر على الكارت يوجهه مباشرةً لاستلام فرعه
+            // - الإدارة / الأونر / المشرف: النقر على الكارت يوجهه لصفحة الفروقات الشاملة
+            $cardTargetUrl = $diffUrl;
+            if ($userBranchId !== null && $userBranchId > 0) {
+                $myReceiptId = 0;
+                foreach ($hdr['branches'] as $br) {
+                    if ((int) $br['branch_id'] === $userBranchId) {
+                        $myReceiptId = (int) $br['receipt_id'];
+                        break;
+                    }
+                }
+                if ($myReceiptId > 0) {
+                    $cardTargetUrl = 'receiving.php?r=' . $myReceiptId;
+                }
+            }
     ?>
-        <div class="receiving-card">
+        <div class="receiving-card clickable-card" data-url="<?= e($cardTargetUrl) ?>">
             <div class="rc-header">
                 <div>
                     <h3 style="margin:0 0 4px 0;font-size:16px;">
@@ -398,7 +504,7 @@ require_once __DIR__ . '/includes/header.php';
                     <span style="font-size:12px;color:var(--ink-400);">تاريخ التجهيز: <?= date('Y-m-d H:i', strtotime($hdr['created_at'])) ?></span>
                 </div>
                 <div>
-                    <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm">📊 الفروقات</a>
+                    <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm"><i class="ti ti-chart-bar"></i> الفروقات</a>
                 </div>
             </div>
 
@@ -423,6 +529,20 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php
         endforeach;
+    ?>
+    <script>
+    document.querySelectorAll('.clickable-card').forEach(function(card) {
+        card.addEventListener('click', function(e) {
+            // لو النقر على رابط أو زرار داخلي نسيب الرابط يشتغل طبيعي
+            if (e.target.closest('a, button, input, select')) return;
+            var url = this.getAttribute('data-url');
+            if (url && url !== '#') {
+                window.location.href = url;
+            }
+        });
+    });
+    </script>
+    <?php
     endif;
     ?>
 
@@ -434,7 +554,7 @@ require_once __DIR__ . '/includes/header.php';
     if (!$receipt):
 ?>
         <div class="receiving-card" style="text-align:center;color:var(--neg);padding:24px;">
-            ⚠️ سجل الاستلام المطلوب غير موجود.
+            <i class="ti ti-alert-triangle"></i> سجل الاستلام المطلوب غير موجود.
             <div style="margin-top:12px;"><a href="receiving.php" class="btn btn-ghost btn-sm">← رجوع للقائمة</a></div>
         </div>
 <?php
@@ -442,7 +562,7 @@ require_once __DIR__ . '/includes/header.php';
         exit;
     endif;
 
-    // 🔴 حماية الأمان (الحالة 205): موظف الفرع يفتح استلام فرع آخر ← رفض فوري وممنوع ظهور أي كميات
+    // حماية الأمان (الحالة 205): موظف الفرع يفتح استلام فرع آخر ← رفض فوري وممنوع ظهور أي كميات
     if (!$canManageAll && $userBranchId !== null && (int)$receipt['branch_id'] !== $userBranchId):
 ?>
         <div class="receiving-card" style="text-align:center;color:var(--neg);padding:36px 20px;">
@@ -466,14 +586,14 @@ require_once __DIR__ . '/includes/header.php';
         <div>
             <div style="display:flex;align-items:center;gap:10px;">
                 <h2 style="font-size:18px;font-weight:bold;margin:0;">
-                    📦 استلام فرع: <?= e($receipt['branch_name']) ?>
+                    <i class="ti ti-package"></i> استلام فرع: <?= e($receipt['branch_name']) ?>
                 </h2>
                 <span class="status-pill pill-<?= $status ?>">
                     <?= match($status) {
                         'sent'      => 'أُرسلت (جاهزة للبدء)',
                         'receiving' => 'يتم الاستلام بالكاميرا',
                         'received'  => 'تم الاستلام (بانتظار الاعتماد)',
-                        'approved'  => 'معتمد نهائياً ✓',
+                        'approved'  => 'معتمد نهائياً',
                         default     => $status
                     } ?>
                 </span>
@@ -484,7 +604,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div style="display:flex;gap:8px;align-items:center;">
-            <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm">📊 صفحة الفروقات</a>
+            <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm"><i class="ti ti-chart-bar"></i> صفحة الفروقات</a>
             <a href="receiving.php" class="btn btn-ghost btn-sm">← القائمة</a>
         </div>
     </div>
@@ -641,7 +761,7 @@ require_once __DIR__ . '/includes/header.php';
                             <td><b><?= $scanQ ?></b></td>
                             <td>
                                 <?php if ($diff == 0): ?>
-                                    <span style="color:var(--pos);font-weight:bold;">0 ✓</span>
+                                    <span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span>
                                 <?php elseif ($diff > 0): ?>
                                     <span style="color:var(--neg);font-weight:bold;">-<?= $diff ?> (عجز)</span>
                                 <?php else: ?>

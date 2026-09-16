@@ -467,7 +467,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ===================================================================== -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
         <div>
-            <h2 style="font-size:20px;font-weight:bold;margin:0;">⚠️ مشاكل الفواتير</h2>
+            <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-alert-triangle"></i> مشاكل الفواتير</h2>
             <span style="font-size:12.5px;color:var(--ink-400);">الأصناف التي بها فروقات في الاستلام (عجز/زيادة) أو ملاحظات</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -604,7 +604,7 @@ require_once __DIR__ . '/includes/header.php';
     if (!$distHeader):
     ?>
         <div class="prob-card" style="text-align:center;color:var(--neg);padding:30px;">
-            ⚠️ الفاتورة المطلوبة غير موجودة.
+            <i class="ti ti-alert-triangle"></i> الفاتورة المطلوبة غير موجودة.
             <div style="margin-top:12px;"><a href="invoice_problems.php" class="btn btn-ghost btn-sm">← الرجوع للقائمة</a></div>
         </div>
     <?php
@@ -831,7 +831,7 @@ require_once __DIR__ . '/includes/header.php';
             if (val === prev) return; // مفيش تعديل
 
             var ind = input.parentElement.querySelector('.save-ind');
-            if (ind) { ind.textContent = '⏳'; ind.style.color = 'var(--warn)'; }
+            if (ind) { ind.innerHTML = '<i class="ti ti-clock"></i>'; ind.style.color = 'var(--warn)'; }
 
             var fd = new FormData();
             fd.append('action', 'save_problem_field');
@@ -848,9 +848,9 @@ require_once __DIR__ . '/includes/header.php';
                     if (d.ok) {
                         input.dataset.saved = val;
                         if (ind) {
-                            ind.textContent = '✓';
+                            ind.innerHTML = '<i class="ti ti-check"></i>';
                             ind.style.color = 'var(--pos)';
-                            setTimeout(function(){ ind.textContent = ''; }, 1800);
+                            setTimeout(function(){ ind.innerHTML = ''; }, 1800);
                         }
                         if (d.source) {
                             var srcBadge = row.querySelector('.src-badge');
@@ -878,13 +878,13 @@ require_once __DIR__ . '/includes/header.php';
                         }
                     } else {
                         input.value = prev;
-                        if (ind) { ind.textContent = '✗'; ind.style.color = 'var(--neg)'; }
+                        if (ind) { ind.innerHTML = '<i class="ti ti-x"></i>'; ind.style.color = 'var(--neg)'; }
                         alert(d.error || 'حدث خطأ في الحفظ');
                     }
                 })
                 .catch(function () {
                     input.value = prev;
-                    if (ind) { ind.textContent = '✗'; ind.style.color = 'var(--neg)'; }
+                    if (ind) { ind.innerHTML = '<i class="ti ti-x"></i>'; ind.style.color = 'var(--neg)'; }
                 });
         }
         </script>

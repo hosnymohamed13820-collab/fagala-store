@@ -7,7 +7,7 @@
  * - عرض الفروقات بين الكميات الموزعة والكميات المستلمة فعلياً لكل فرع.
  * - للعرض فقط (بدون أي تعديل).
  * - الفرع الذي لم يستلم بعد (الحالة sent أو receiving) يكتب له «لسه» وليس فرق كامل.
- * - 🔴 سعر التكلفة لا يظهر نهائياً.
+ * - سعر التكلفة لا يظهر نهائياً.
  */
 declare(strict_types=1);
 
@@ -117,7 +117,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <div>
-            <h2 style="font-size:20px;font-weight:bold;margin:0;">📊 صفحة فروقات الاستلام بين الفروع</h2>
+            <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-chart-bar"></i> صفحة فروقات الاستلام بين الفروع</h2>
             <span style="font-size:12.5px;color:var(--ink-400);">مقارنة الكميات الموزعة بما تم مسحه واستلامه فعلياً في كل فرع.</span>
         </div>
         <div>
@@ -198,7 +198,7 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         // جلب معرفات التوزيع
-        $distIds = ifl_ctx_ids($distId, $groupId);
+        $distIds = receiving_ctx_dist_ids($distId, $groupId);
         $distIdsClean = array_values(array_unique(array_filter(array_map('intval', $distIds), fn($x) => $x > 0)));
 
         $itemsMap = [];
@@ -320,14 +320,14 @@ require_once __DIR__ . '/includes/header.php';
                                             continue;
                                         }
 
-                                        // 🔴 الشرط الصارم: الفرع الذي لسه ما استلمش (sent أو receiving) يُكتب «لسه»
+                                        // الشرط الصارم: الفرع الذي لسه ما استلمش (sent أو receiving) يُكتب «لسه»
                                         if (!$rc || in_array($status, ['sent', 'receiving'], true)) {
                                             echo '<td><span class="pill-yet">لسه</span></td>';
                                         } else {
                                             // الحالة received أو approved ← حساب الفرق الفعلي
                                             $diff = $distQ - $scanQ;
                                             if ($diff == 0) {
-                                                echo '<td><span style="color:var(--pos);font-weight:bold;">0 ✓</span></td>';
+                                                echo '<td><span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span></td>';
                                             } elseif ($diff > 0) {
                                                 echo '<td><span style="color:var(--neg);font-weight:bold;">-' . $diff . '</span></td>';
                                             } else {

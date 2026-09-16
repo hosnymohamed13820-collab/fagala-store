@@ -1123,15 +1123,28 @@ function recalc_invoice_status(?int $distributionId, array $items): string
         $status = (string) $row['status'];
     }
 
-    // 🔴 الحالة بقت «تم التوزيع» ← نفتح الاستلام للفروع.
-    //    مكان النداء هنا عن قصد: ده **الطريق الوحيد** اللي كل الحالات
-    //    بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
-    //    (الحط في زرار واحد بس كان بيخلّي التحميل مايفتحش استلام خالص.)
-    //    الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
+    // الحالة بقت «تم التوزيع» ← نفتح الاستلام للفروع (لو الفاتورة مفردة مش جوه مجموعة).
+    // مكان النداء هنا عن قصد: ده الطريق الوحيد اللي كل الحالات
+    // بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
+    // الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
     if ($status === 'done') {
         try {
-            require_once __DIR__ . '/receiving_flow_lib.php';
-            receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
+            // فحص ما إذا كانت الفاتورة تتبع مجموعة فواتير نشطة (invoice_group_items)
+            $stGrp = $pdo->prepare(
+                "SELECT 1
+                 FROM invoice_group_items gi
+                 JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+                 WHERE d.id = ?
+                 LIMIT 1"
+            );
+            $stGrp->execute([$distributionId]);
+            $inGroup = (bool) $stGrp->fetchColumn();
+
+            // إذا كانت الفاتورة جزءاً من مجموعة، لا يتم فتح استلام مفرد لها
+            if (!$inGroup) {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
+            }
         } catch (Throwable $ex) {
             error_log('receiving: تعذّر فتح الاستلام للتوزيع ' . $distributionId . ' — ' . $ex->getMessage());
         }

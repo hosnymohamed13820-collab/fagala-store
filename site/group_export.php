@@ -147,6 +147,14 @@ foreach ($invoices as $inv) {
     }
 }
 
+// فتح استلام المجموعة ككل (وليس فواتير مفردة)
+try {
+    require_once __DIR__ . '/receiving_flow_lib.php';
+    receiving_open($pdo, $groupId, 0, (int) ($_SESSION['user']['id'] ?? 0));
+} catch (Throwable $ex) {
+    error_log('group_export: تعذّر فتح استلام المجموعة ' . $groupId . ' — ' . $ex->getMessage());
+}
+
 header('Content-Type: text/plain; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Content-Length: ' . strlen($content));
