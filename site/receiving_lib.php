@@ -352,7 +352,7 @@ function hq_unposted_exists(int $sthId): bool
 /**
  * جلب هيدر فاتورة واحدة من SQL Server.
  */
-function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
+function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null, ?int $companyBranch = null, ?int $docType = null): ?array
 {
     // =================================================================
     //  ⚠️ تصادم الـ STH_ID
@@ -372,7 +372,7 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
     $isPosted   = ($suffix !== null && $suffix !== '' && !$isUnposted);
 
     // ١) النسخة المحلية — الفواتير المرحّلة
-    //    بنفلتر بالـ suffix كمان: الـ sth_id لوحده مش فريد بين الشهور.
+    //    بنفلتر بالـ suffix والفرع والنوع كمان: الـ sth_id لوحده مش فريد بين الشهور أو الفروع.
     if (!$isUnposted) {
         try {
             $sql = 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
@@ -381,6 +381,8 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
                     FROM hq_invoices WHERE sth_id = ?';
             $args = [(int) $invoiceId];
             if ($isPosted) { $sql .= ' AND suffix = ?'; $args[] = $suffix; }
+            if ($companyBranch !== null) { $sql .= ' AND company_branch = ?'; $args[] = $companyBranch; }
+            if ($docType !== null) { $sql .= ' AND doc_type = ?'; $args[] = $docType; }
             $st = db()->prepare($sql . ' LIMIT 1');
             $st->execute($args);
             $local = $st->fetch();
@@ -394,13 +396,16 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
     //    ممنوعة تماماً لو إحنا متأكدين إن الفاتورة مرحّلة.
     if (!$isPosted) {
         try {
-            $st = db()->prepare(
-                'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
+            $sql = 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
                         supplier_code, supplier_name, net_amount, total_amount,
                         invoice_date, doc_type, remark, company_branch
-                 FROM hq_unposted WHERE sth_id = ? LIMIT 1'
-            );
-            $st->execute([(int) $invoiceId]);
+                 FROM hq_unposted WHERE sth_id = ?';
+            $args = [(int) $invoiceId];
+            if ($companyBranch !== null) { $sql .= ' AND company_branch = ?'; $args[] = $companyBranch; }
+            if ($docType !== null) { $sql .= ' AND doc_type = ?'; $args[] = $docType; }
+            $sql .= ' LIMIT 1';
+            $st = db()->prepare($sql);
+            $st->execute($args);
             $localUnp = $st->fetch();
             if ($localUnp) {
                 $localUnp['suffix'] = 'YY_MM';
@@ -423,11 +428,16 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
                    LTRIM(RTRIM(s.SUPP_CODE)) AS supplier_code,
                    COALESCE(LTRIM(RTRIM(s." . SUPP_NAME_COL . ")), CAST(h." . COL_INV_SUPP_ID . " AS NVARCHAR(50))) AS supplier_name,
                    h." . COL_INV_NET . " AS net_amount, h." . COL_INV_TOTAL . " AS total_amount,
-                   h." . COL_INV_DATE . " AS invoice_date
+                   h." . COL_INV_DATE . " AS invoice_date,
+                   h." . COL_INV_BRANCH . " AS company_branch,
+                   h.SSTT_ID AS doc_type
             FROM " . $headTable . " h
             LEFT JOIN " . SUPPLIERS_TABLE . " s ON s." . SUPP_ID_COL . " = h." . COL_INV_SUPP_ID . "
             WHERE h." . COL_INV_ID . " = ?";
-    $rows = sqlsrv_query($sql, [$invoiceId]);
+    $args = [$invoiceId];
+    if ($companyBranch !== null) { $sql .= ' AND h.' . COL_INV_BRANCH . ' = ?'; $args[] = $companyBranch; }
+    if ($docType !== null) { $sql .= ' AND h.SSTT_ID = ?'; $args[] = $docType; }
+    $rows = sqlsrv_query($sql, $args);
     $row = $rows[0] ?? null;
     if ($row) {
         if (isset($row['supplier_name'])) $row['supplier_name'] = sqlsrv_fix_encoding((string)$row['supplier_name']);
@@ -475,83 +485,88 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
 {
     $pdo = db();
     $invNo = (string) $invHeader['inv_no'];
-    $companyBranch = isset($invHeader['company_branch']) && $invHeader['company_branch'] !== null && $invHeader['company_branch'] !== ''
-        ? (int) $invHeader['company_branch']
-        : (isset($invHeader['company_branch_id']) && $invHeader['company_branch_id'] !== null && $invHeader['company_branch_id'] !== '' ? (int) $invHeader['company_branch_id'] : null);
-    $docType = isset($invHeader['doc_type']) && $invHeader['doc_type'] !== null && $invHeader['doc_type'] !== ''
-        ? (int) $invHeader['doc_type']
-        : null;
 
-    $supplierName = trim((string) ($invHeader['supplier_name'] ?? '')) ?: 'مورد غير محدد';
+    // استخراج company_branch بدقة
+    $companyBranch = null;
+    if (isset($invHeader['company_branch']) && $invHeader['company_branch'] !== null && $invHeader['company_branch'] !== '') {
+        $companyBranch = (int) $invHeader['company_branch'];
+    } elseif (isset($invHeader['company_branch_id']) && $invHeader['company_branch_id'] !== null && $invHeader['company_branch_id'] !== '') {
+        $companyBranch = (int) $invHeader['company_branch_id'];
+    }
 
-    // مسار المفتاح الجديد (إذا توفر الفرع ونوع المستند)
-    if ($companyBranch !== null && $docType !== null) {
-        try {
-            // 1. هل موجود بالمفتاح الكامل؟
-            $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? AND company_branch = ? AND doc_type = ? LIMIT 1');
-            $st->execute([$invNo, $companyBranch, $docType]);
-            $existing = $st->fetch();
-            if ($existing) {
-                return $existing;
-            }
+    // استخراج doc_type بدقة
+    $docType = null;
+    if (isset($invHeader['doc_type']) && $invHeader['doc_type'] !== null && $invHeader['doc_type'] !== '') {
+        $docType = (int) $invHeader['doc_type'];
+    }
 
-            // 2. سجلات قديمة company_branch IS NULL مع تطابق اسم المورد
-            $stOld = $pdo->prepare(
-                'SELECT d.* FROM invoice_distribution d
-                 JOIN suppliers s ON s.id = d.supplier_id
-                 WHERE d.invoice_no = ? AND d.company_branch IS NULL AND s.name = ?'
-            );
-            $stOld->execute([$invNo, $supplierName]);
-            $oldMatches = $stOld->fetchAll();
-            if (count($oldMatches) === 1) {
-                $claimId = (int) $oldMatches[0]['id'];
-                $upd = $pdo->prepare('UPDATE invoice_distribution SET company_branch = ?, doc_type = ? WHERE id = ? AND company_branch IS NULL');
-                $upd->execute([$companyBranch, $docType, $claimId]);
-
-                $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
-                $st->execute([$claimId]);
-                return $st->fetch();
-            }
-
-            // 3. إنشاء جديد + company_branch و doc_type
-            $sp = $pdo->prepare('SELECT id FROM suppliers WHERE name = ? LIMIT 1');
-            $sp->execute([$supplierName]);
-            $supplierId = $sp->fetchColumn();
-            if (!$supplierId) {
-                $pdo->prepare('INSERT INTO suppliers (name) VALUES (?)')->execute([$supplierName]);
-                $supplierId = (int) $pdo->lastInsertId();
-            }
-
-            $pdo->prepare(
-                'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by, company_branch, doc_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-            )->execute([
-                $invNo, (int) $supplierId,
-                date('Y-m-d', strtotime((string) $invHeader['invoice_date'])),
-                (float) $invHeader['total_amount'],
-                'الصافي: ' . number_format((float) $invHeader['net_amount'], 2),
-                $userId,
-                $companyBranch,
-                $docType,
-            ]);
-            $id = (int) $pdo->lastInsertId();
-
-            $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
-            $st->execute([$id]);
-            return $st->fetch();
-        } catch (Throwable $ex) {
-            // الأعمدة مش موجودة في الجدول (SQL مانزلش) ← نرجع للسلوك القديم بالحرف
+    // إذا لم يتوفر الفرع أو نوع المستند في الهيدر، جلبهما من hq_invoices أو hq_unposted
+    if ($companyBranch === null || $docType === null) {
+        $sthId = (int) ($invHeader['inv_id'] ?? $invHeader['sth_id'] ?? 0);
+        $suf   = (string) ($invHeader['suffix'] ?? '');
+        if ($sthId > 0) {
+            try {
+                if ($suf === 'YY_MM') {
+                    $stCheck = $pdo->prepare('SELECT company_branch, doc_type FROM hq_unposted WHERE sth_id = ? LIMIT 1');
+                    $stCheck->execute([$sthId]);
+                } else {
+                    $sqlC = 'SELECT company_branch, doc_type FROM hq_invoices WHERE sth_id = ?';
+                    $argsC = [$sthId];
+                    if ($suf !== '') { $sqlC .= ' AND suffix = ?'; $argsC[] = $suf; }
+                    $sqlC .= ' LIMIT 1';
+                    $stCheck = $pdo->prepare($sqlC);
+                    $stCheck->execute($argsC);
+                }
+                $hqRow = $stCheck ? $stCheck->fetch() : null;
+                if ($hqRow) {
+                    if ($companyBranch === null && $hqRow['company_branch'] !== null && $hqRow['company_branch'] !== '') {
+                        $companyBranch = (int) $hqRow['company_branch'];
+                    }
+                    if ($docType === null && $hqRow['doc_type'] !== null && $hqRow['doc_type'] !== '') {
+                        $docType = (int) $hqRow['doc_type'];
+                    }
+                }
+            } catch (Throwable $e) { /* تجاهل */ }
         }
     }
 
-    // 4. السلوك القديم بالحرف (لو الحقلين مش موجودين أو الأعمدة مش موجودة)
-    $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? LIMIT 1');
-    $st->execute([$invNo]);
+    // إذا ما زال غير محدد، الإدارة الافتراضية = 1 (المركز الرئيسي) والنوع = 2 (فاتورة شراء)
+    if ($companyBranch === null) {
+        $companyBranch = 1;
+    }
+    if ($docType === null) {
+        $docType = 2;
+    }
+
+    $supplierName = trim((string) ($invHeader['supplier_name'] ?? '')) ?: 'مورد غير محدد';
+
+    // 1. هل موجود بالمفتاح المركب الكامل (invoice_no, company_branch, doc_type)؟
+    $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? AND company_branch = ? AND doc_type = ? LIMIT 1');
+    $st->execute([$invNo, $companyBranch, $docType]);
     $existing = $st->fetch();
     if ($existing) {
         return $existing;
     }
 
+    // 2. فحص السجلات القديمة التي تحوي company_branch IS NULL مع تطابق اسم المورد (للترقية الآمنة)
+    $stOld = $pdo->prepare(
+        'SELECT d.* FROM invoice_distribution d
+         JOIN suppliers s ON s.id = d.supplier_id
+         WHERE d.invoice_no = ? AND d.company_branch IS NULL AND s.name = ?'
+    );
+    $stOld->execute([$invNo, $supplierName]);
+    $oldMatches = $stOld->fetchAll();
+    if (count($oldMatches) === 1) {
+        $claimId = (int) $oldMatches[0]['id'];
+        $upd = $pdo->prepare('UPDATE invoice_distribution SET company_branch = ?, doc_type = ? WHERE id = ? AND company_branch IS NULL');
+        $upd->execute([$companyBranch, $docType, $claimId]);
+
+        $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
+        $st->execute([$claimId]);
+        return $st->fetch();
+    }
+
+    // 3. ربط بمورد في جدول suppliers
     $sp = $pdo->prepare('SELECT id FROM suppliers WHERE name = ? LIMIT 1');
     $sp->execute([$supplierName]);
     $supplierId = $sp->fetchColumn();
@@ -560,15 +575,23 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
         $supplierId = (int) $pdo->lastInsertId();
     }
 
+    // 4. إنشاء سجل توزيع جديد — إلزامي تخزين company_branch و doc_type
+    $invDate = !empty($invHeader['invoice_date']) ? date('Y-m-d', strtotime((string) $invHeader['invoice_date'])) : date('Y-m-d');
+    $totAmt  = (float) ($invHeader['total_amount'] ?? 0.0);
+    $netAmt  = (float) ($invHeader['net_amount'] ?? 0.0);
+
     $pdo->prepare(
-        'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by, company_branch, doc_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )->execute([
-        $invNo, (int) $supplierId,
-        date('Y-m-d', strtotime((string) $invHeader['invoice_date'])),
-        (float) $invHeader['total_amount'],
-        'الصافي: ' . number_format((float) $invHeader['net_amount'], 2),
+        $invNo,
+        (int) $supplierId,
+        $invDate,
+        $totAmt,
+        'الصافي: ' . number_format($netAmt, 2),
         $userId,
+        $companyBranch,
+        $docType,
     ]);
     $id = (int) $pdo->lastInsertId();
 
@@ -852,22 +875,43 @@ function group_invoices_3days(array $invoices): array
  */
 function group_invoices_by_branch(array $invoices): array
 {
-    // خريطة sto_id → [الاسم, in_receiving] من الفروع المحلية
-    $map = [];
-    foreach (db()->query('SELECT sto_id, name, in_receiving FROM branches WHERE is_active = 1 AND sto_id IS NOT NULL') as $b) {
-        $map[(int) $b['sto_id']] = ['name' => $b['name'], 'in_receiving' => (int) $b['in_receiving']];
-    }
+    // خريطة sto_id / company_branch_id → [الاسم, in_receiving]
+    // 1: الإدارة (المركز الرئيسي) · 2: الفجالة · 3: بونجور · 4: موبايل · 5: دجلة · 6: اي بي سي
+    $map = [
+        1 => ['name' => 'الإدارة (المركز الرئيسي)', 'in_receiving' => 0],
+        2 => ['name' => 'الفجالة', 'in_receiving' => 1],
+        3 => ['name' => 'بونجور', 'in_receiving' => 1],
+        4 => ['name' => 'موبايل', 'in_receiving' => 1],
+        5 => ['name' => 'دجلة', 'in_receiving' => 1],
+        6 => ['name' => 'اي بي سي', 'in_receiving' => 1],
+    ];
+
+    try {
+        foreach (db()->query('SELECT sto_id, name, in_receiving FROM branches WHERE is_active = 1 AND sto_id IS NOT NULL') as $b) {
+            $sid = (int) $b['sto_id'];
+            if ($sid > 0) {
+                $isAdmBranch = ($sid === 1 || (int)$b['in_receiving'] === 0);
+                $map[$sid] = [
+                    'name' => $isAdmBranch ? 'الإدارة (المركز الرئيسي)' : $b['name'],
+                    'in_receiving' => $isAdmBranch ? 0 : (int)$b['in_receiving']
+                ];
+            }
+        }
+    } catch (Throwable $e) {}
 
     $groups = []; // sto_id => bucket
     foreach ($invoices as $inv) {
         $sid = (int) ($inv['company_branch_id'] ?? 0);
+        // لو مفيش فرع (NULL أو 0) بنحسبه ضمن الإدارة (المركز الرئيسي)
+        if ($sid <= 0) {
+            $sid = 1;
+        }
         if (!isset($groups[$sid])) {
             $known = $map[$sid] ?? null;
             $groups[$sid] = [
                 'branch_id'   => $sid,
-                'branch_name' => $known['name'] ?? ($sid > 0 ? 'فرع #' . $sid : 'غير محدّد'),
-                // الإدارة = فرع مش داخل في الاستلامات (in_receiving = 0)
-                'is_admin'    => $known !== null && $known['in_receiving'] === 0,
+                'branch_name' => $known['name'] ?? ($sid === 1 ? 'الإدارة (المركز الرئيسي)' : 'فرع #' . $sid),
+                'is_admin'    => ($sid === 1) || ($known !== null && $known['in_receiving'] === 0),
                 'is_known'    => $known !== null,
                 'invoices'    => [],
             ];
@@ -1154,8 +1198,8 @@ function recalc_invoice_status(?int $distributionId, array $items): string
 }
 
 /**
- * الحالات المخزّنة لمجموعة فواتير — استعلام واحد على MySQL.
- * بترجّع [invoice_no => status].
+ * الحالات المخزّنة لمجموعة فواتير — استعلام واحد على MySQL بالمفتاح المركب والافتراضي.
+ * بترجّع [composite_key => status, invoice_no => status].
  */
 function get_invoice_statuses(array $invoiceNos): array
 {
@@ -1166,17 +1210,25 @@ function get_invoice_statuses(array $invoiceNos): array
     if (!$nos) return [];
 
     $ph = implode(',', array_fill(0, count($nos), '?'));
-    $st = db()->prepare("SELECT invoice_no, status FROM invoice_distribution WHERE invoice_no IN ($ph)");
+    $st = db()->prepare("SELECT invoice_no, company_branch, doc_type, status FROM invoice_distribution WHERE invoice_no IN ($ph)");
     $st->execute($nos);
 
     $out = [];
-    foreach ($st->fetchAll() as $r) $out[(string) $r['invoice_no']] = (string) $r['status'];
+    foreach ($st->fetchAll() as $r) {
+        $no = (string) $r['invoice_no'];
+        $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
+        $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
+        $out[$no . '|' . $cb . '|' . $dt] = (string) $r['status'];
+        if (!isset($out[$no])) {
+            $out[$no] = (string) $r['status'];
+        }
+    }
     return $out;
 }
 
 /**
- * ملاحظات الفواتير — عشان نعرض النص نفسه في القائمة.
- * بترجّع [invoice_no => نص الملاحظة].
+ * ملاحظات الفواتير — عشان نعرض النص نفسه في القائمة بالمفتاح المركب والافتراضي.
+ * بترجّع [composite_key => نص الملاحظة, invoice_no => نص الملاحظة].
  */
 function get_invoices_with_notes(array $invoiceNos): array
 {
@@ -1189,13 +1241,19 @@ function get_invoices_with_notes(array $invoiceNos): array
     try {
         $ph = implode(',', array_fill(0, count($nos), '?'));
         $st = db()->prepare(
-            "SELECT invoice_no, user_notes FROM invoice_distribution
+            "SELECT invoice_no, company_branch, doc_type, user_notes FROM invoice_distribution
              WHERE invoice_no IN ($ph) AND user_notes IS NOT NULL AND user_notes <> ''"
         );
         $st->execute($nos);
         $out = [];
         foreach ($st->fetchAll() as $r) {
-            $out[(string) $r['invoice_no']] = (string) $r['user_notes'];
+            $no = (string) $r['invoice_no'];
+            $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
+            $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
+            $out[$no . '|' . $cb . '|' . $dt] = (string) $r['user_notes'];
+            if (!isset($out[$no])) {
+                $out[$no] = (string) $r['user_notes'];
+            }
         }
         return $out;
     } catch (Throwable $ex) {

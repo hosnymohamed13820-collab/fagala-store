@@ -131,13 +131,17 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
     $dist = $stDist->fetch();
     if (!$dist) return;
 
+    // مشاكل الفواتير مخصصة لفواتير شراء الإدارة فقط (company_branch = 6 و doc_type = 2)
+    if ($dist['company_branch'] !== null && (int) $dist['company_branch'] !== 6) return;
+    if ($dist['doc_type'] !== null && (int) $dist['doc_type'] !== 2) return;
+
     // جلب فاتورة الشراء الأصلية من مرآة الشركة باستخدام المفتاح المركب
     $distKey = dist_key_sql('d', 'i.company_branch', 'i.doc_type');
     $stHq = $pdo->prepare(
         "SELECT i.sth_id, i.suffix, i.doc_no, i.company_branch, i.doc_type, i.supplier_id, i.invoice_date
          FROM hq_invoices i
          CROSS JOIN (SELECT ? AS company_branch, ? AS doc_type) d
-         WHERE i.doc_no = ? AND i.doc_type = 2 AND $distKey
+         WHERE i.doc_no = ? AND i.doc_type = 2 AND (i.company_branch = 6 OR i.company_branch IS NULL) AND $distKey
          LIMIT 1"
     );
     $stHq->execute([$dist['company_branch'], $dist['doc_type'], $dist['invoice_no']]);
@@ -240,6 +244,15 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
  */
 function sync_all_invoice_problems_auto(PDO $pdo): void
 {
+    // تنظيف أي سجلات تلقائية قديمة لفروع أخرى أو لمردودات
+    try {
+        $pdo->exec(
+            "DELETE p FROM invoice_problems p
+             JOIN invoice_distribution d ON d.id = p.distribution_id
+             WHERE p.source = 'auto' AND ((d.company_branch IS NOT NULL AND d.company_branch <> 1) OR d.doc_type = 6)"
+        );
+    } catch (Throwable $e) { /* تجاهل */ }
+
     $sql = "
         SELECT 
             d.id AS dist_id,
@@ -250,18 +263,22 @@ function sync_all_invoice_problems_auto(PDO $pdo): void
         JOIN hq_invoices inv_p 
             ON inv_p.doc_no = d.invoice_no 
            AND inv_p.doc_type = 2
-           AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
-           AND (d.doc_type IS NULL OR d.doc_type = inv_p.doc_type)
+           AND (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
+           AND (d.doc_type = 2 OR d.doc_type IS NULL)
+           AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)
         JOIN hq_invoice_lines lp 
             ON lp.sth_id = inv_p.sth_id AND lp.suffix = inv_p.suffix
         JOIN hq_invoices inv_r 
             ON inv_r.doc_type = 6 
            AND inv_r.supplier_id = inv_p.supplier_id
+           AND (inv_r.company_branch = 1 OR inv_r.company_branch IS NULL OR inv_r.company_branch = inv_p.company_branch)
            AND inv_r.invoice_date >= inv_p.invoice_date 
            AND inv_r.invoice_date <= DATE_ADD(inv_p.invoice_date, INTERVAL 90 DAY)
         JOIN hq_invoice_lines lr 
             ON lr.sth_id = inv_r.sth_id AND lr.suffix = inv_r.suffix 
            AND lr.item_code = lp.item_code
+        WHERE (d.company_branch = 1 OR d.company_branch IS NULL)
+          AND (d.doc_type = 2 OR d.doc_type IS NULL)
         GROUP BY d.id, lp.item_code
         HAVING return_qty > 0
     ";
@@ -397,8 +414,8 @@ require_once __DIR__ . '/includes/header.php';
     vertical-align: middle;
 }
 .prob-table th {
-    background: var(--bg);
-    color: var(--ink-600);
+    background: var(--line-soft);
+    color: var(--accent-text);
     font-weight: 600;
 }
 .prob-input {
@@ -421,11 +438,12 @@ require_once __DIR__ . '/includes/header.php';
     max-width: 90px;
 }
 .save-ind {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 16px;
     margin-right: 4px;
-    font-size: 12px;
-    font-weight: bold;
+    font-size: 13px;
 }
 .badge-src {
     display: inline-block;
@@ -442,15 +460,20 @@ require_once __DIR__ . '/includes/header.php';
     margin-bottom: 12px;
 }
 .filter-pill {
-    padding: 5px 12px;
+    padding: 6px 14px;
     border-radius: var(--r);
     border: 1px solid var(--line);
-    background: var(--bg);
-    color: var(--ink-700);
+    background: var(--surface);
+    color: var(--text);
     cursor: pointer;
     font-size: 12.5px;
     font-weight: 600;
+    font-family: inherit;
     transition: all 0.15s;
+}
+.filter-pill:hover {
+    border-color: var(--accent);
+    color: var(--accent-text);
 }
 .filter-pill.active {
     background: var(--accent);
@@ -476,7 +499,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php
-    // جلب كل الفواتير الموزعة لإتاحة فتح أي فاتورة
+    // جلب فواتير الإدارة فقط (company_branch = 1 ومشتريات فقط doc_type = 2) لإتاحة فتح أي فاتورة
     $stAllInv = $pdo->query(
         "SELECT d.id, d.invoice_no, d.dist_date,
                 COALESCE(s.name, inv_p.supplier_name, 'غير محدد') AS supplier_name
@@ -486,12 +509,15 @@ require_once __DIR__ . '/includes/header.php';
              ON inv_p.doc_no = d.invoice_no 
             AND inv_p.doc_type = 2
             AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
+         WHERE (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
+           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
+           AND (d.doc_type IS NULL OR d.doc_type <> 6)
          ORDER BY d.id DESC
          LIMIT 200"
     );
     $allInvoices = $stAllInv ? $stAllInv->fetchAll() : [];
 
-    // استعلام الفواتير التي بها مشاكل حالياً مع اسم المورد وتاريخها ومين دخلها
+    // استعلام فواتير الإدارة التي بها مشاكل حالياً مع اسم المورد وتاريخها ومين دخلها
     $stProblemsList = $pdo->query(
         "SELECT 
             d.id AS dist_id,
@@ -511,7 +537,10 @@ require_once __DIR__ . '/includes/header.php';
              ON inv_p.doc_no = d.invoice_no 
             AND inv_p.doc_type = 2
             AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
-         WHERE (p.short_qty > 0 OR p.over_qty > 0 OR (p.note IS NOT NULL AND p.note <> ''))
+         WHERE (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
+           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
+           AND (d.doc_type IS NULL OR d.doc_type <> 6)
+           AND (p.short_qty > 0 OR p.over_qty > 0 OR (p.note IS NOT NULL AND p.note <> ''))
          GROUP BY d.id, d.invoice_no, d.dist_date, supplier_name, u.full_name
          ORDER BY d.id DESC"
     );
@@ -524,8 +553,8 @@ require_once __DIR__ . '/includes/header.php';
             فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل:
         </label>
         <select onchange="if(this.value) location.href='invoice_problems.php?d=' + this.value;"
-                style="width:100%;max-width:500px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--bg);">
-            <option value="">— اختر الفاتورة من القائمة —</option>
+                style="width:100%;max-width:500px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--surface);color:var(--text);">
+            <option value="">— اختر فاتورة مشتريات الإدارة من القائمة —</option>
             <?php foreach ($allInvoices as $ai): ?>
                 <option value="<?= (int)$ai['id'] ?>">
                     فاتورة #<?= e((string)$ai['invoice_no']) ?> — مورد: <?= e((string)$ai['supplier_name']) ?> (<?= e((string)$ai['dist_date']) ?>)
@@ -537,11 +566,11 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($problemInvoices)): ?>
         <div class="prob-card" style="text-align:center;padding:40px 20px;color:var(--ink-400);">
             <i class="ti ti-circle-check" style="font-size:38px;color:var(--pos);display:block;margin-bottom:8px;"></i>
-            لا توجد مشاكل أو فروقات مسجلة في الفواتير حالياً.
+            لا توجد مشاكل أو فروقات مسجلة في فواتير الإدارة حالياً.
         </div>
     <?php else: ?>
         <div class="prob-card">
-            <h3 style="margin:0 0 12px 0;font-size:15px;">قائمة الفواتير التي بها مشاكل (<?= count($problemInvoices) ?> فاتورة)</h3>
+            <h3 style="margin:0 0 12px 0;font-size:15px;">قائمة فواتير الإدارة التي بها مشاكل (<?= count($problemInvoices) ?> فاتورة)</h3>
             <table class="prob-table">
                 <thead>
                     <tr>
@@ -596,6 +625,9 @@ require_once __DIR__ . '/includes/header.php';
             AND inv_p.doc_type = 2
             AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
          WHERE d.id = ?
+           AND (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
+           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
+           AND (d.doc_type IS NULL OR d.doc_type <> 6)
          LIMIT 1"
     );
     $stDistHeader->execute([$selectedDistId]);
@@ -604,7 +636,7 @@ require_once __DIR__ . '/includes/header.php';
     if (!$distHeader):
     ?>
         <div class="prob-card" style="text-align:center;color:var(--neg);padding:30px;">
-            <i class="ti ti-alert-triangle"></i> الفاتورة المطلوبة غير موجودة.
+            <i class="ti ti-alert-triangle"></i> الفاتورة المطلوبة غير موجودة أو ليست من فواتير مشتريات الإدارة.
             <div style="margin-top:12px;"><a href="invoice_problems.php" class="btn btn-ghost btn-sm">← الرجوع للقائمة</a></div>
         </div>
     <?php

@@ -1380,6 +1380,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reser
 // ===== تحديد العرض: قائمة أو فاتورة مفتوحة =====
 $openInvoiceId = $_GET['invoice'] ?? null;
 $openSuffix    = $_GET['suffix'] ?? null;
+$openCb        = isset($_GET['cb']) && $_GET['cb'] !== '' ? (int) $_GET['cb'] : null;
+$openDt        = isset($_GET['dt']) && $_GET['dt'] !== '' ? (int) $_GET['dt'] : null;
 $sqlsrvError = '';
 $invoiceGroups = [];
 $openInvoice = null;
@@ -1388,9 +1390,16 @@ $distId = 0;
 
 try {
     if ($openInvoiceId !== null) {
-        // فتح فاتورة محددة (بالـ suffix بتاع الشهر)
-        $openInvoice = sqlsrv_fetch_invoice_header($openInvoiceId, $openSuffix);
+        // فتح فاتورة محددة (بالـ suffix بتاع الشهر والفرع ونوع المستند)
+        $openInvoice = sqlsrv_fetch_invoice_header($openInvoiceId, $openSuffix, $openCb, $openDt);
         if ($openInvoice) {
+            // ضمان وجود الفرع ونوع المستند في الهيدر
+            if ($openCb !== null && !isset($openInvoice['company_branch'])) {
+                $openInvoice['company_branch'] = $openCb;
+            }
+            if ($openDt !== null && !isset($openInvoice['doc_type'])) {
+                $openInvoice['doc_type'] = $openDt;
+            }
             // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
             // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
             $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
@@ -1810,7 +1819,9 @@ require_once __DIR__ . '/includes/header.php';
                     '<div class="ilk-top">' +
                         '<span class="ilk-tag' + (r.is_return ? ' ret' : '') + '">' + esc(r.type_label) + '</span>' +
                         '<a class="inv-link" href="invoices.php?invoice=' + encodeURIComponent(r.sth_id) +
-                            '&suffix=' + encodeURIComponent(r.suffix) + '">' + esc(r.doc_no) + '</a>' +
+                            '&suffix=' + encodeURIComponent(r.suffix) +
+                            (r.company_branch ? '&cb=' + encodeURIComponent(r.company_branch) : '') +
+                            (r.doc_type ? '&dt=' + encodeURIComponent(r.doc_type) : '') + '">' + esc(r.doc_no) + '</a>' +
                         '<span class="ilk-muted">' + esc(r.date ? r.date.substring(0, 10) : '') + '</span>' +
                         '<span style="flex:1;min-width:60px;"></span>' +
                         '<span>كمية <b>' + num(r.qty) + '</b></span>' +
@@ -1864,6 +1875,17 @@ require_once __DIR__ . '/includes/header.php';
     .ls-clear { position:absolute; left:8px; top:50%; transform:translateY(-50%);
         background:none; border:none; font-size:20px; line-height:1; color:var(--ink-400); cursor:pointer; }
     .ls-clear:hover { color:var(--ink-700); }
+
+    .scope-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .scope-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
+        border:1px solid var(--line); border-radius:20px; background:var(--surface);
+        color:var(--ink-600); font-family:inherit; font-size:13px; font-weight:600;
+        cursor:pointer; transition:all .15s; }
+    .scope-btn:hover { border-color:var(--accent); color:var(--accent-text); }
+    .scope-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
+        background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
+    .scope-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .scope-btn.active span { background:rgba(255,255,255,0.25); color:#fff; }
 
     .status-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .sf-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
@@ -3518,6 +3540,32 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
+        <?php
+        $adminCount = 0;
+        $branchCount = 0;
+        foreach ($invoiceGroups as $g) {
+            $cnt = count($g['invoices']);
+            if (!empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1) {
+                $adminCount += $cnt;
+            } else {
+                $branchCount += $cnt;
+            }
+        }
+        ?>
+
+        <!-- أزرار عزل فواتير الإدارة عن باقي الفروع -->
+        <div class="scope-filters">
+            <button type="button" class="scope-btn active" data-scope="admin" onclick="setScopeFilter('admin', this)">
+                <i class="ti ti-building-bank"></i> فواتير الإدارة (المركز الرئيسي) <span><?= $adminCount ?></span>
+            </button>
+            <button type="button" class="scope-btn" data-scope="branches" onclick="setScopeFilter('branches', this)">
+                <i class="ti ti-building-store"></i> فواتير الفروع الأخرى <span><?= $branchCount ?></span>
+            </button>
+            <button type="button" class="scope-btn" data-scope="all" onclick="setScopeFilter('all', this)">
+                <i class="ti ti-list-details"></i> كل الفواتير <span><?= $adminCount + $branchCount ?></span>
+            </button>
+        </div>
+
         <?php if ($tab==='posted'): ?>
         <div class="status-filters">
             <button type="button" class="sf-btn active" data-st="all"   onclick="setStatusFilter(this)">الكل <span></span></button>
@@ -3542,18 +3590,18 @@ require_once __DIR__ . '/includes/header.php';
             <?php $rowNo = 0; foreach ($invoiceGroups as $g): ?>
                 <?php
                     $colspan = $tab==='posted' ? 8 : 7;
-                    $bIcon = $g['is_admin'] ? 'ti-building-bank' : 'ti-building-store';
+                    $isAdm = !empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1;
+                    $gScope = $isAdm ? 'admin' : 'branch';
+                    $bIcon = $isAdm ? 'ti-building-bank' : 'ti-building-store';
                 ?>
-                <tr class="branch-head<?= $g['is_admin']?' branch-admin':'' ?>" data-branchhead="1"
+                <tr class="branch-head<?= $isAdm ?' branch-admin':'' ?>" data-branchhead="1"
+                    data-scope="<?= $gScope ?>"
                     data-acckey="br:<?= e((string)($g['branch_name'] ?? '')) ?>"
                     onclick="toggleBranch(this)" role="button" tabindex="0" title="اضغط لطي/فرد فواتير الفرع">
                     <td colspan="<?= $colspan ?>">
                         <i class="ti ti-chevron-down bh-caret"></i>
                         <i class="ti <?= $bIcon ?>"></i>
-                        <?= e($g['is_admin'] ? 'الإدارة' : $g['branch_name']) ?>
-                        <?php if ($g['is_admin'] && $g['branch_name'] !== 'الإدارة'): ?>
-                            <span class="bh-sub"><?= e($g['branch_name']) ?></span>
-                        <?php endif; ?>
+                        <?= e($isAdm ? 'الإدارة (المركز الرئيسي)' : $g['branch_name']) ?>
                         <span class="bh-count"><?= count($g['invoices']) ?> فاتورة</span>
                     </td>
                 </tr>
@@ -3571,6 +3619,7 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                 <?php foreach ($subGroups as $sg): ?>
                 <tr class="subtype-head subtype-<?= e($sg['kind']) ?>" data-subhead="1"
+                    data-scope="<?= $gScope ?>"
                     data-acckey="sub:<?= e((string)($g['branch_name'] ?? '')) ?>:<?= e((string)$sg['kind']) ?>"
                     onclick="toggleSubtype(this)" role="button" tabindex="0" title="اضغط لطي/فرد">
                     <td colspan="<?= $colspan ?>">
@@ -3581,20 +3630,26 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                 </tr>
                 <?php foreach ($sg['rows'] as $inv): $rowNo++;
-                    $st = $invStatuses[(string)($inv['inv_no'] ?? '')] ?? 'new';
+                    $invNo = (string)($inv['inv_no'] ?? '');
+                    $invCb = isset($inv['company_branch_id']) && $inv['company_branch_id'] !== '' ? (string)$inv['company_branch_id'] : (isset($inv['company_branch']) && $inv['company_branch'] !== '' ? (string)$inv['company_branch'] : ($isAdm ? '1' : '*'));
+                    $invDt = isset($inv['doc_type']) && $inv['doc_type'] !== '' ? (string)$inv['doc_type'] : '*';
+                    $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
+                    $fallbackKey = $invNo . '|*|*';
+                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? ($invStatuses[$invNo] ?? 'new'));
                     [$stLabel, $stClass] = invoice_status_label($st);
+                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? ($invNotes[$invNo] ?? ''))));
                 ?>
                     <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>"
                         data-st="<?= e($st) ?>"
-                        data-s="<?= e(mb_strtolower(($inv['inv_no'] ?? '').' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.($invNotes[(string)($inv['inv_no'] ?? '')] ?? ''))) ?>"
-                        onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>')" title="اضغط لفتح أصناف الفاتورة">
+                        data-scope="<?= $gScope ?>"
+                        data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>"
+                        onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')" title="اضغط لفتح أصناف الفاتورة">
                         <td><?= $rowNo ?></td>
                         <td class="inv-no">
-                            <?= e($inv['inv_no']) ?>
+                            <?= e($invNo) ?>
                             <?php if ((int)($inv['doc_type'] ?? 0) === 6): ?>
                                 <span class="doc-badge refund">مردود شراء</span>
                             <?php endif; ?>
-                            <?php $nTxt = trim((string)($invNotes[(string)($inv['inv_no'] ?? '')] ?? '')); ?>
                             <?php if ($nTxt !== ''): ?>
                                 <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
                             <?php endif; ?>
@@ -3829,11 +3884,18 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
 
-    let invFilter = { q: '', st: 'all' };
+    let invFilter = { q: '', st: 'all', scope: 'admin' };
 
     function filterInvList() {
         const inp = document.getElementById('invSearch');
         invFilter.q = (inp ? inp.value : '').trim().toLowerCase();
+        applyInvFilter();
+    }
+
+    function setScopeFilter(scope, btn) {
+        document.querySelectorAll('.scope-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        invFilter.scope = scope;
         applyInvFilter();
     }
 
@@ -3857,7 +3919,8 @@ require_once __DIR__ . '/includes/header.php';
         rows.forEach(r => {
             const okQ  = !invFilter.q || (r.dataset.s || '').includes(invFilter.q);
             const okSt = invFilter.st === 'all' || (r.dataset.st || 'new') === invFilter.st;
-            const hit  = okQ && okSt;
+            const okScope = invFilter.scope === 'all' || (r.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && r.dataset.scope === 'branch');
+            const hit  = okQ && okSt && okScope;
             r.dataset.filterHidden = hit ? '0' : '1';
             // صف يظهر لو عدّى الفلتر وفرعه مش مطوي
             const visible = hit && r.dataset.branchCollapsed !== '1';
@@ -3871,19 +3934,21 @@ require_once __DIR__ . '/includes/header.php';
         });
         // رأس الفرع يفضل ظاهر لو مطوي عمداً؛ يتخفى بس لو الفلتر شال كل فواتيره
         document.querySelectorAll('.branch-head').forEach(h => {
+            const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             const rows = branchRows(h);
             const anyMatch = rows.some(r => r.dataset.filterHidden !== '1');
-            h.style.display = anyMatch ? '' : 'none';
+            h.style.display = (okScope && anyMatch) ? '' : 'none';
         });
         // نفس الشيء للرؤوس الفرعية (شراء/مردود)
         document.querySelectorAll('.subtype-head').forEach(h => {
+            const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             let any = false, sib = h.nextElementSibling;
             while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
                 if (sib.classList.contains('inv-row') && sib.dataset.filterHidden !== '1') { any = true; break; }
                 sib = sib.nextElementSibling;
             }
             // نخفيه بس لو فرعه مش مطوي (عشان ماينافسش طي الفرع)
-            if (h.style.display !== 'none' || any) h.style.display = any ? '' : 'none';
+            if (h.style.display !== 'none' || any) h.style.display = (okScope && any) ? '' : 'none';
         });
         const cnt = document.getElementById('listCount');
         if (cnt) cnt.textContent = shown + (shown === rows.length ? '' : ' من ' + rows.length);
@@ -3901,17 +3966,20 @@ require_once __DIR__ . '/includes/header.php';
             const sp = b.querySelector('span');
             if (sp) sp.textContent = c[b.dataset.st] ?? 0;
         });
-        const cnt = document.getElementById('listCount');
-        if (cnt) cnt.textContent = rows.length;
+        // تطبيق الفلترة المبدئية لحصر العرض على فواتير الإدارة
+        applyInvFilter();
     })();
 
     // إعادة حالة الأكورديونات المحفوظة (بعد العدّادات عشان الأرقام تتحسب على الكل)
     accRestore();
 
-    // فتح أصناف الفاتورة بالضغط على الصف كله
-    function openInvoice(id, suffix) {
-        window.location = '?invoice=' + encodeURIComponent(id) + '&suffix=' + encodeURIComponent(suffix)
-                        + '&tab=<?= e($tab) ?>';
+    // فتح أصناف الفاتورة بالضغط على الصف كله (مع تمرير الفرع ونوع المستند)
+    function openInvoice(id, suffix, cb, dt) {
+        var url = '?invoice=' + encodeURIComponent(id) + '&suffix=' + encodeURIComponent(suffix);
+        if (cb !== undefined && cb !== null && cb !== '') url += '&cb=' + encodeURIComponent(cb);
+        if (dt !== undefined && dt !== null && dt !== '') url += '&dt=' + encodeURIComponent(dt);
+        url += '&tab=<?= e($tab) ?>';
+        window.location = url;
     }
 </script>
 
