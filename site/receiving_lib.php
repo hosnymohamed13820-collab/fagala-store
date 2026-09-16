@@ -1120,7 +1120,21 @@ function recalc_invoice_status(?int $distributionId, array $items): string
     $st2->execute([$distributionId]);
     $row = $st2->fetch();
     if ($row && (int) $row['status_manual'] === 1) {
-        return (string) $row['status'];
+        $status = (string) $row['status'];
+    }
+
+    // 🔴 الحالة بقت «تم التوزيع» ← نفتح الاستلام للفروع.
+    //    مكان النداء هنا عن قصد: ده **الطريق الوحيد** اللي كل الحالات
+    //    بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
+    //    (الحط في زرار واحد بس كان بيخلّي التحميل مايفتحش استلام خالص.)
+    //    الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
+    if ($status === 'done') {
+        try {
+            require_once __DIR__ . '/receiving_flow_lib.php';
+            receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
+        } catch (Throwable $ex) {
+            error_log('receiving: تعذّر فتح الاستلام للتوزيع ' . $distributionId . ' — ' . $ex->getMessage());
+        }
     }
 
     return $status;
