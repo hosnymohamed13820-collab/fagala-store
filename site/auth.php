@@ -136,7 +136,8 @@ function module_parts(): array
             'customers'  => 'داتا العملاء',
         ],
         'invoices' => [
-            'ashraqa' => 'فواتير إشراقة',
+            'problems' => 'مشاكل الفواتير',
+            'ashraqa'  => 'فواتير إشراقة',
         ],
         'receiving' => [
             'diffs' => 'صفحة الفروقات',

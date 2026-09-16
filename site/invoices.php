@@ -1017,6 +1017,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
     exit;
 }
 
+// ===== إضافة صنف لمشاكل الفواتير من الإشعار (AJAX) =====
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_to_problems') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $code = trim((string) ($_POST['item_code'] ?? ''));
+        $did  = (int) ($_POST['distribution_id'] ?? 0);
+        $gid  = (int) ($_POST['group_id'] ?? 0);
+        $note = trim((string) ($_POST['note'] ?? ''));
+        if ($code === '') throw new RuntimeException('كود الصنف ناقص.');
+        if ($did <= 0 && $gid > 0) {
+            $ids = ifl_ctx_ids($did, $gid, $code);
+            $did = $ids[0] ?? 0;
+        }
+        if ($did <= 0) throw new RuntimeException('معرّف التوزيع غير موجود.');
+
+        $itemName = trim((string) ($_POST['item_name'] ?? ''));
+        if ($itemName === '') {
+            $stName = $pdo->prepare('SELECT name FROM hq_codes c JOIN hq_items i ON i.item_id = c.item_id WHERE c.code = ? LIMIT 1');
+            $stName->execute([$code]);
+            $itemName = (string) $stName->fetchColumn();
+        }
+
+        $ins = $pdo->prepare(
+            "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, note, created_by)
+             VALUES (?, ?, ?, 'manual', ?, ?)
+             ON DUPLICATE KEY UPDATE
+                 note = VALUES(note),
+                 item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name),
+                 updated_at = NOW()"
+        );
+        $ins->execute([$did, $code, $itemName ?: null, $note, $uid]);
+
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // ===== حفظ تلقائي (AJAX): كمية فرع واحد لصنف =====
 // ===== الفواتير المجمّعة: إنشاء / مسح =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group_create') {
@@ -1531,12 +1573,69 @@ require_once __DIR__ . '/includes/header.php';
          (والأونر منهم). التحويل اللي فوق بيشتغل لمين معاه الجزء بس —
          والأونر `can('invoices')` بترجّعله true، فالتحويل مابيلمسوش
          وكانت الصفحة مالهاش أي لينك من أي مكان. */ ?>
-<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+<div style="display:flex;justify-content:flex-end;margin-bottom:10px;gap:8px;">
+    <?php if (can('invoices:problems')): ?>
+    <a href="invoice_problems.php" class="btn btn-sm"
+       title="الأصناف التي بها مشاكل أو فروقات في الفواتير">
+        <i class="ti ti-alert-circle"></i> مشاكل الفواتير
+    </a>
+    <?php endif; ?>
     <a href="ashraqa_invoices.php" class="btn btn-sm"
        title="الفواتير اللي اتوزّع منها كمية لفرع إشراقة">
         <i class="ti ti-building-store"></i> فواتير إشراقة
     </a>
 </div>
+
+<!-- إشعار إضافة الصنف لمشاكل الفواتير -->
+<div id="problemToast" class="problem-toast" style="display:none;">
+    <div class="problem-toast-inner">
+        <span class="problem-toast-text">
+            <i class="ti ti-alert-circle"></i> تحب تضيف الصنف ده في مشاكل الفواتير؟
+            <span id="problemToastItem" style="font-weight:bold;margin-right:4px;"></span>
+        </span>
+        <div class="problem-toast-actions">
+            <button type="button" class="btn btn-sm" id="problemToastYes" style="background:var(--accent);color:#fff;">أيوه</button>
+            <button type="button" class="btn btn-sm btn-ghost" id="problemToastNo" style="background:var(--surface);color:var(--text);border:1px solid var(--line);">لأ</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.problem-toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99999;
+    background: var(--surface);
+    color: var(--text);
+    border: 1.5px solid var(--accent);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.15);
+    border-radius: var(--r);
+    padding: 12px 20px;
+    animation: problemToastIn 0.2s ease;
+}
+@keyframes problemToastIn {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+.problem-toast-inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.problem-toast-text {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+}
+.problem-toast-actions {
+    display: flex;
+    gap: 6px;
+}
+</style>
 
 <!-- ================= تتبّع الصنف (سيرش بار الهيدر) ================= -->
 <div class="ilk-bar">
@@ -5608,6 +5707,11 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
         post(code, { user_notes: val }, false)
             .then(() => state('اتحفظت ✓', 'var(--pos)'))
+            .then(() => {
+                if (!window.isPageUnloading && val.trim() !== '') {
+                    showProblemPrompt(code, val.trim(), row ? (row.dataset.name || code) : code);
+                }
+            })
             .catch(e => state(e.message, 'var(--neg)'));
     }
 
@@ -5647,6 +5751,9 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 cellInd(input, '✓', 'var(--pos)');
                 setTimeout(() => cellInd(input, ''), 1400);
                 if (curCode === code) document.getElementById('iflNote').value = val;
+                if (!window.isPageUnloading && val !== '') {
+                    showProblemPrompt(code, val, row.dataset.name || code);
+                }
             })
             .catch(e => {
                 row.dataset.note = prev; paint(row);
@@ -5731,8 +5838,77 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
             .catch(() => alert('تعذّر الاتصال بالسيرفر'));
     };
 
+    // ---------- إشعار إضافة الصنف لمشاكل الفواتير ----------
+    var problemToastTimer = null;
+    var pendingProblemItem = null;
+
+    function showProblemPrompt(code, note, name) {
+        if (window.isPageUnloading) return;
+        if (!note || !note.trim()) return;
+
+        pendingProblemItem = { code: code, note: note.trim(), name: name || code };
+
+        var toast = document.getElementById('problemToast');
+        var label = document.getElementById('problemToastItem');
+        if (!toast) return;
+
+        if (label) label.textContent = name ? ('«' + name + '»') : ('[' + code + ']');
+        toast.style.display = 'block';
+
+        if (problemToastTimer) clearTimeout(problemToastTimer);
+        // الإشعار يختفي لوحده بعد 15 ثانية لو محدش داس
+        problemToastTimer = setTimeout(function () {
+            hideProblemPrompt();
+        }, 15000);
+    }
+
+    function hideProblemPrompt() {
+        var toast = document.getElementById('problemToast');
+        if (toast) toast.style.display = 'none';
+        if (problemToastTimer) {
+            clearTimeout(problemToastTimer);
+            problemToastTimer = null;
+        }
+        pendingProblemItem = null;
+    }
+
+    var btnNo = document.getElementById('problemToastNo');
+    if (btnNo) {
+        btnNo.addEventListener('click', function () {
+            hideProblemPrompt();
+        });
+    }
+
+    var btnYes = document.getElementById('problemToastYes');
+    if (btnYes) {
+        btnYes.addEventListener('click', function () {
+            if (!pendingProblemItem) return;
+            var item = pendingProblemItem;
+            hideProblemPrompt();
+
+            var fd = new FormData();
+            fd.append('action', 'add_to_problems');
+            fd.append('csrf', CSRF);
+            fd.append('distribution_id', DIST_ID);
+            fd.append('group_id', GRP_ID);
+            fd.append('item_code', item.code);
+            fd.append('item_name', item.name);
+            fd.append('note', item.note);
+
+            fetch('invoices.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(j => {
+                    if (!j.ok) {
+                        console.error(j.error || 'فشل إضافة الصنف لمشاكل الفواتير');
+                    }
+                })
+                .catch(e => console.error('تعذر الاتصال بالسيرفر'));
+        });
+    }
+
     // احفظ أي ملاحظة معلّقة قبل مغادرة الصفحة
     window.addEventListener('beforeunload', function () {
+        window.isPageUnloading = true;
         document.querySelectorAll('.inote-input').forEach(function (i) {
             const row = i.closest('tr.item-row');
             if (row && (row.dataset.note || '') !== i.value.trim()) iflNoteSave(i);
