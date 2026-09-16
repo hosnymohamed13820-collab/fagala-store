@@ -74,7 +74,7 @@ function all_modules(): array
         'price_inquiry' => ['label' => 'استعلام الأسعار',   'icon' => 'ti-scan',          'url' => 'price_inquiry.php'],
         'remote_scan'   => ['label' => 'سكانر الكمبيوتر',   'icon' => 'ti-device-mobile', 'url' => 'remote_scan.php'],
         'cashier'       => ['label' => 'تقفيل الكاشير',     'icon' => 'ti-lock-dollar',    'url' => 'cashier.php'],
-        'custody'       => ['label' => 'عهدة الفرع',        'icon' => 'ti-cash',           'url' => 'custody.php'],
+        'custody'       => ['label' => 'العهد',             'icon' => 'ti-cash',           'url' => 'custody.php'],
         'review'        => ['label' => 'مراجعة المحاسب',    'icon' => 'ti-user-check',        'url' => 'review.php'],
         'treasury'      => ['label' => 'الخزينة وكشف الحساب','icon' => 'ti-building-bank',    'url' => 'treasury.php'],
         'hr'            => ['label' => 'الموارد البشرية',   'icon' => 'ti-users',            'url' => 'hr.php'],
@@ -108,6 +108,10 @@ function all_modules(): array
 function module_parts(): array
 {
     return [
+        'custody' => [
+            'employee' => 'عهدة الموظف',
+            'branch'   => 'عهدة الفرع',
+        ],
         'hr' => [
             'employees'  => 'الموظفون',
             'advances'   => 'السلف',
@@ -134,6 +138,7 @@ function module_parts(): array
             'noprice'    => 'أصناف بدون سعر بيع',
             'stock'      => 'استعلام أرصدة الأصناف',
             'customers'  => 'داتا العملاء',
+            'receiving'  => 'استلام الفواتير',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',

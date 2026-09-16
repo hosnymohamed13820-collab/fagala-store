@@ -986,7 +986,7 @@ function main_cash_treasury_id(): ?int
  */
 function open_custody_for_branch(int $branchId): ?array
 {
-    $st = db()->prepare("SELECT * FROM branch_custody WHERE branch_id = ? AND status='open' ORDER BY id DESC LIMIT 1");
+    $st = db()->prepare("SELECT * FROM branch_custody WHERE branch_id = ? AND employee_id IS NULL AND status='open' ORDER BY id DESC LIMIT 1");
     $st->execute([$branchId]);
     $row = $st->fetch();
     return $row ?: null;
@@ -1000,10 +1000,37 @@ function current_custody_for_branch(int $branchId): ?array
 {
     $st = db()->prepare(
         "SELECT * FROM branch_custody
-         WHERE branch_id = ? AND status IN ('open','pending_review','rejected')
+         WHERE branch_id = ? AND employee_id IS NULL AND status IN ('open','pending_review','rejected')
          ORDER BY id DESC LIMIT 1"
     );
     $st->execute([$branchId]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+/**
+ * العهدة المفتوحة الحالية لموظف (status=open). بترجّع صف أو null.
+ */
+function open_custody_for_employee(int $employeeId): ?array
+{
+    $st = db()->prepare("SELECT * FROM branch_custody WHERE employee_id = ? AND status='open' ORDER BY id DESC LIMIT 1");
+    $st->execute([$employeeId]);
+    $row = $st->fetch();
+    return $row ?: null;
+}
+
+/**
+ * العهدة الحالية للموظف أياً كانت حالتها طول ما هي مش مقفولة.
+ * (open / pending_review / rejected)
+ */
+function current_custody_for_employee(int $employeeId): ?array
+{
+    $st = db()->prepare(
+        "SELECT * FROM branch_custody
+         WHERE employee_id = ? AND status IN ('open','pending_review','rejected')
+         ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([$employeeId]);
     $row = $st->fetch();
     return $row ?: null;
 }
@@ -1076,6 +1103,103 @@ function issue_disbursement_order(
                     (branch_id, custody_treasury_id, period_start, opening_balance, total_expenses, closing_balance, status)
                  VALUES (?, ?, ?, ?, 0, ?, "open")'
             )->execute([$branchId, $custodyTreasuryId, $date, $amount, $amount]);
+        }
+
+        $pdo->commit();
+        return $orderId;
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
+/**
+ * إصدار إذن صرف لعهدة موظف: الكاش الرئيسي → خزينة عهدة الموظف.
+ * - بيسجل الإذن في disbursement_orders برقم الموظف.
+ * - بيحرّك الفلوس (مدين الكاش، دائن العهدة) عبر post_journal.
+ * - بيفتح عهدة (branch_custody) للموظف لو مفيش وحدة مفتوحة، أو بيزوّد أول المدة لو فيه.
+ *
+ * @return int معرّف الإذن
+ */
+function issue_employee_disbursement_order(
+    int $employeeId,
+    float $amount,
+    string $date,
+    ?string $notes = null,
+    ?int $userId = null
+): int {
+    if ($amount <= 0) {
+        throw new InvalidArgumentException('مبلغ الإذن لازم يكون أكبر من صفر.');
+    }
+    $cashId = require_main_treasury();
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // التحقق من وجود الموظف
+        $empStmt = $pdo->prepare("SELECT id, full_name, branch_id FROM employees WHERE id=? AND is_active=1 LIMIT 1");
+        $empStmt->execute([$employeeId]);
+        $emp = $empStmt->fetch();
+        if (!$emp) {
+            throw new RuntimeException('الموظف غير موجود أو غير نشط.');
+        }
+        $empName = $emp['full_name'];
+        $empBranchId = !empty($emp['branch_id']) ? (int) $emp['branch_id'] : null;
+
+        // حارس: لو الموظف عنده عهدة معلقة للمراجعة أو مرفوضة، نرفض قبل أي حركة مالية
+        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE employee_id=? AND status IN ('pending_review','rejected') ORDER BY id DESC LIMIT 1");
+        $chk->execute([$employeeId]);
+        $pendingStatus = $chk->fetchColumn();
+        if ($pendingStatus) {
+            throw new RuntimeException('عهدة الموظف مقدّمة للمراجعة لسه. لازم المحاسب يعتمدها أو يرفضها قبل إذن صرف جديد.');
+        }
+
+        // إيجاد أو إنشاء خزينة عهدة الموظف
+        $trStmt = $pdo->prepare("SELECT id FROM treasuries WHERE type='employee_custody' AND employee_id=? LIMIT 1");
+        $trStmt->execute([$employeeId]);
+        $custodyTreasuryId = (int) $trStmt->fetchColumn();
+        if (!$custodyTreasuryId) {
+            $pdo->prepare(
+                "INSERT INTO treasuries (name, type, employee_id, branch_id, balance, is_active)
+                 VALUES (?, 'employee_custody', ?, ?, 0.00, 1)"
+            )->execute(['عهدة: ' . $empName, $employeeId, $empBranchId]);
+            $custodyTreasuryId = (int) $pdo->lastInsertId();
+        }
+
+        // تسجيل الإذن
+        $pdo->prepare(
+            'INSERT INTO disbursement_orders (employee_id, branch_id, custody_treasury_id, amount, order_date, notes, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$employeeId, $empBranchId, $custodyTreasuryId, $amount, $date, $notes, $userId]);
+        $orderId = (int) $pdo->lastInsertId();
+
+        // حركة الفلوس: مدين الكاش، دائن العهدة
+        post_journal($cashId, $amount, 0, 'إذن صرف لعهدة موظف: ' . $empName . ($notes ? " - $notes" : ''),
+                     $date, 'disbursement_order', $orderId, $userId, $pdo);
+        post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف عهدة' . ($notes ? " - $notes" : ''),
+                     $date, 'disbursement_order', $orderId, $userId, $pdo);
+
+        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة
+        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE employee_id=? AND status='open' ORDER BY id DESC LIMIT 1");
+        $st->execute([$employeeId]);
+        $custodyId = $st->fetchColumn();
+
+        if ($custodyId) {
+            // عهدة مفتوحة: اقرأ القيم الحالية واحسب صراحةً
+            $cur = $pdo->prepare('SELECT opening_balance, total_expenses FROM branch_custody WHERE id=? FOR UPDATE');
+            $cur->execute([$custodyId]);
+            $row = $cur->fetch();
+            $newOpening = (float)$row['opening_balance'] + $amount;
+            $newClosing = $newOpening - (float)$row['total_expenses'];
+            $pdo->prepare('UPDATE branch_custody SET opening_balance=?, closing_balance=? WHERE id=?')
+                ->execute([$newOpening, $newClosing, $custodyId]);
+        } else {
+            // افتح عهدة جديدة للموظف
+            $pdo->prepare(
+                'INSERT INTO branch_custody
+                    (employee_id, branch_id, custody_treasury_id, period_start, opening_balance, total_expenses, closing_balance, status)
+                 VALUES (?, ?, ?, ?, ?, 0, ?, "open")'
+            )->execute([$employeeId, $empBranchId, $custodyTreasuryId, $date, $amount, $amount]);
         }
 
         $pdo->commit();
@@ -1398,43 +1522,104 @@ function save_custody_review(
         $cashId = require_main_treasury();
         $custodyTreasuryId = (int) $custody['custody_treasury_id'];
 
-        // الرصيد الحالي لخزينة العهدة
-        $balStmt = $pdo->prepare('SELECT balance FROM treasuries WHERE id=? FOR UPDATE');
-        $balStmt->execute([$custodyTreasuryId]);
-        $custodyBalance = (float) $balStmt->fetchColumn();
-
-        // 1. لو فيه زيادة (الفعلي أكبر من رصيد العهدة)، نزوّد العهدة بالزيادة
-        if ($accountantCounted > $custodyBalance) {
-            $surplus = $accountantCounted - $custodyBalance;
-            post_journal($custodyTreasuryId, 0, $surplus, 'زيادة عهدة عند الإقفال',
-                         $date, 'custody_surplus', $custodyId, $userId, $pdo);
-        }
-
-        // 2. الاستلام الفعلي: يخرج من العهدة (مدين) ويدخل الكاش الرئيسي (دائن)
-        if ($accountantCounted > 0) {
-            post_journal($custodyTreasuryId, $accountantCounted, 0, 'استلام باقي العهدة عند الإقفال',
-                         $date, 'custody_settlement', $custodyId, $userId, $pdo);
-            post_journal($cashId, 0, $accountantCounted, 'استلام باقي عهدة الفرع',
-                         $date, 'custody_settlement', $custodyId, $userId, $pdo);
-        }
-
-        // 3. معالجة العجز (لو الفعلي أقل من المفروض)
+        $isEmployeeCustody = !empty($custody['employee_id']);
         $onEmployee = false;
         $deficitId = null;
-        if ($variance < 0) {
-            $deficit = abs($variance);
-            // تصفير خزينة العهدة من العجز (مدين على العهدة)
-            post_journal($custodyTreasuryId, $deficit, 0, 'عجز عهدة عند الإقفال',
-                         $date, 'custody_deficit', $custodyId, $userId, $pdo);
 
-            if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
-                $pdo->prepare(
-                    'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
-                     VALUES (?, ?, ?, ?, "pending", ?)'
-                )->execute([$custodyId, $employeeId, (int)$custody['branch_id'], $deficit,
-                            'عجز عند إقفال العهدة - يُخصم من المرتب']);
-                $deficitId = (int) $pdo->lastInsertId();
-                $onEmployee = true;
+        if ($isEmployeeCustody) {
+            // =================================================================
+            // مسار عهدة الموظف:
+            // ١. قيد عكسي لإذن الصرف الأصلي (الفلوس ترجع للخزينة الرئيسية)
+            // ٢. المصاريف اللي حصلت تنزل على الخزينة الرئيسية مباشرة
+            // ٣. معالجة العجز أو الزيادة
+            // =================================================================
+            $empStmt = $pdo->prepare("SELECT full_name FROM employees WHERE id=?");
+            $empStmt->execute([(int)$custody['employee_id']]);
+            $empName = $empStmt->fetchColumn() ?: 'موظف';
+
+            $openingBalance = (float) $custody['opening_balance'];
+            if ($openingBalance > 0) {
+                post_journal($cashId, 0, $openingBalance, 'قيد عكسي لإذن صرف عهدة: ' . $empName,
+                             $date, 'custody_reverse_order', $custodyId, $userId, $pdo);
+                post_journal($custodyTreasuryId, $openingBalance, 0, 'قيد عكسي لإذن صرف عهدة: ' . $empName,
+                             $date, 'custody_reverse_order', $custodyId, $userId, $pdo);
+            }
+
+            // المصاريف تنزل على الخزينة الرئيسية مباشرة (مدين) وتتسوى من خزينة العهدة
+            $linesStmt = $pdo->prepare('SELECT * FROM custody_lines WHERE custody_id=?');
+            $linesStmt->execute([$custodyId]);
+            $custodyExpenses = $linesStmt->fetchAll();
+            foreach ($custodyExpenses as $cl) {
+                $expAmt  = (float) $cl['amount'];
+                $expDesc = $cl['description'];
+                $expDate = $cl['expense_date'];
+                $ecId    = $cl['entry_code_id'] !== null ? (int) $cl['entry_code_id'] : null;
+
+                post_journal($cashId, $expAmt, 0, 'مصروف عهدة موظف (' . $empName . '): ' . $expDesc,
+                             $expDate, 'custody_expense', (int)$cl['id'], $userId, $pdo, $ecId);
+                post_journal($custodyTreasuryId, 0, $expAmt, 'تسوية مصروف عهدة موظف: ' . $expDesc,
+                             $expDate, 'custody_expense_settle', (int)$cl['id'], $userId, $pdo, $ecId);
+            }
+
+            // عجز أو زيادة في الكاش المستلم
+            if ($variance < 0) {
+                $deficit = abs($variance);
+                post_journal($cashId, $deficit, 0, 'عجز عهدة موظف عند الإقفال: ' . $empName,
+                             $date, 'custody_deficit', $custodyId, $userId, $pdo);
+
+                if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
+                    $pdo->prepare(
+                        'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
+                         VALUES (?, ?, ?, ?, "pending", ?)'
+                    )->execute([$custodyId, $employeeId, (int)($custody['branch_id'] ?? 0), $deficit,
+                                'عجز عند إقفال عهدة الموظف - يُخصم من المرتب']);
+                    $deficitId = (int) $pdo->lastInsertId();
+                    $onEmployee = true;
+                }
+            } elseif ($variance > 0) {
+                post_journal($cashId, 0, $variance, 'زيادة عهدة موظف عند الإقفال: ' . $empName,
+                             $date, 'custody_surplus', $custodyId, $userId, $pdo);
+            }
+        } else {
+            // =================================================================
+            // مسار عهدة الفرع الأصلي (بدون أي مساس بالفلو المالي للفرع)
+            // =================================================================
+            // الرصيد الحالي لخزينة العهدة
+            $balStmt = $pdo->prepare('SELECT balance FROM treasuries WHERE id=? FOR UPDATE');
+            $balStmt->execute([$custodyTreasuryId]);
+            $custodyBalance = (float) $balStmt->fetchColumn();
+
+            // 1. لو فيه زيادة (الفعلي أكبر من رصيد العهدة)، نزوّد العهدة بالزيادة
+            if ($accountantCounted > $custodyBalance) {
+                $surplus = $accountantCounted - $custodyBalance;
+                post_journal($custodyTreasuryId, 0, $surplus, 'زيادة عهدة عند الإقفال',
+                             $date, 'custody_surplus', $custodyId, $userId, $pdo);
+            }
+
+            // 2. الاستلام الفعلي: يخرج من العهدة (مدين) ويدخل الكاش الرئيسي (دائن)
+            if ($accountantCounted > 0) {
+                post_journal($custodyTreasuryId, $accountantCounted, 0, 'استلام باقي العهدة عند الإقفال',
+                             $date, 'custody_settlement', $custodyId, $userId, $pdo);
+                post_journal($cashId, 0, $accountantCounted, 'استلام باقي عهدة الفرع',
+                             $date, 'custody_settlement', $custodyId, $userId, $pdo);
+            }
+
+            // 3. معالجة العجز (لو الفعلي أقل من المفروض)
+            if ($variance < 0) {
+                $deficit = abs($variance);
+                // تصفير خزينة العهدة من العجز (مدين على العهدة)
+                post_journal($custodyTreasuryId, $deficit, 0, 'عجز عهدة عند الإقفال',
+                             $date, 'custody_deficit', $custodyId, $userId, $pdo);
+
+                if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
+                    $pdo->prepare(
+                        'INSERT INTO custody_deficits (custody_id, employee_id, branch_id, amount, status, notes)
+                         VALUES (?, ?, ?, ?, "pending", ?)'
+                    )->execute([$custodyId, $employeeId, (int)$custody['branch_id'], $deficit,
+                                'عجز عند إقفال العهدة - يُخصم من المرتب']);
+                    $deficitId = (int) $pdo->lastInsertId();
+                    $onEmployee = true;
+                }
             }
         }
 

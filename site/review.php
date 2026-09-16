@@ -515,7 +515,7 @@ function shift_cashier_amounts(array $s): array {
 
 <div class="rv-tabs">
     <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
-    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">عهد الفروع (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
+    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">العهد (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
     <?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
         <button class="rv-tab" id="tab_seq_btn" onclick="rvTab(this,'pane_seq')">تسلسل الورديات (<?= $openSeqCount ?> مفتوحة)</button>
@@ -603,7 +603,7 @@ function shift_cashier_amounts(array $s): array {
                     <input type="hidden" name="kind" value="custody">
                     <input type="hidden" name="custody_id" value="<?= (int)$c['id'] ?>">
                     <input type="hidden" name="decision" value="">
-                    <input type="hidden" name="branch_label" value="<?= e($c['branch_name']) ?>">
+                    <input type="hidden" name="branch_label" value="<?= e(!empty($c['employee_id']) ? ('موظف: ' . ($c['employee_name'] ?: ('#' . $c['employee_id']))) : ($c['branch_name'] ?? '')) ?>">
 
                     <div class="cst-row">
                         <div class="rv-sys" style="margin-bottom:0;">

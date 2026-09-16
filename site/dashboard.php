@@ -50,7 +50,7 @@ $custodies = $pdo->query(
      FROM branch_custody bc
      JOIN branches b ON b.id = bc.branch_id
      JOIN treasuries t ON t.id = bc.custody_treasury_id
-     WHERE bc.status = 'open'"
+     WHERE bc.status = 'open' AND bc.employee_id IS NULL"
 )->fetchAll();
 
 $allBranchesWithCustody = $pdo->query(
@@ -81,6 +81,31 @@ foreach ($allBranchesWithCustody as $br) {
     else                $color = 'green';
     $custodyBars[] = [
         'name' => $br['name'], 'opening' => $opening, 'balance' => $balance,
+        'pct' => $pct, 'color' => $color,
+    ];
+}
+
+// ===== عهد الموظفين (المفتوحة فقط — تختفي فور الإقفال والاعتماد) =====
+$empCustodies = $pdo->query(
+    "SELECT bc.*, e.full_name AS employee_name, t.balance AS treasury_balance
+     FROM branch_custody bc
+     JOIN employees e ON e.id = bc.employee_id
+     JOIN treasuries t ON t.id = bc.custody_treasury_id
+     WHERE bc.status = 'open' AND bc.employee_id IS NOT NULL
+     ORDER BY e.full_name"
+)->fetchAll();
+
+$empCustodyBars = [];
+foreach ($empCustodies as $ec) {
+    $opening = (float) $ec['opening_balance'];
+    $balance = (float) $ec['treasury_balance'];
+    $pct = $opening > 0 ? max(0, min(100, ($balance / $opening) * 100)) : 0;
+    if ($opening <= 0)  $color = 'empty';
+    elseif ($pct <= 20) $color = 'red';
+    elseif ($pct < 50)  $color = 'orange';
+    else                $color = 'green';
+    $empCustodyBars[] = [
+        'name' => $ec['employee_name'], 'opening' => $opening, 'balance' => $balance,
         'pct' => $pct, 'color' => $color,
     ];
 }
@@ -275,6 +300,21 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا توجد فروع.</div>
         <?php else: ?>
             <?php foreach ($custodyBars as $bar): ?>
+                <div class="bar-row">
+                    <div class="bar-head">
+                        <span class="bn">عهدة <?= e($bar['name']) ?></span>
+                        <span class="bv"><?= number_format($bar['balance'],0) ?> / <?= number_format($bar['opening'],0) ?> ج.م</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill <?= e($bar['color']) ?>" style="width:<?= $bar['opening']>0 ? round($bar['pct']) : 0 ?>%;"></div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
+
+        <?php if (!empty($empCustodyBars)): ?>
+            <div class="section-title" style="margin-top:20px;border-top:1px solid var(--line-soft);padding-top:14px;">عُهد الموظفين (المفتوحة)</div>
+            <?php foreach ($empCustodyBars as $bar): ?>
                 <div class="bar-row">
                     <div class="bar-head">
                         <span class="bn">عهدة <?= e($bar['name']) ?></span>

@@ -1125,6 +1125,115 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             return ['title' => 'تقرير إجمالي الحضور', 'headers' => ['الموظف', 'الفرع', 'أيام الحضور', 'إجمالي الساعات'],
                 'rows' => $rows, 'totals' => ['إجمالي:', '', $tDays, minutes_to_hhmm($tMin)]];
 
+        case 'receiving':
+            // تقرير استلام الفواتير: مين استلم ومين اعتمد
+            $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+            $statusFilter = isset($_GET['status']) && $_GET['status'] !== '' ? trim($_GET['status']) : null;
+
+            $supervisorId = (int) setting('receiving_supervisor_id', '0');
+            $supervisorName = '—';
+            if ($supervisorId > 0) {
+                $supStmt = $pdo->prepare("SELECT full_name FROM users WHERE id=?");
+                $supStmt->execute([$supervisorId]);
+                $supervisorName = $supStmt->fetchColumn() ?: '—';
+            }
+
+            $sqlRec =
+                "SELECT r.id AS receipt_id, r.group_id, r.distribution_id, r.status,
+                        r.started_at, r.received_at, r.approved_at,
+                        b.name AS branch_name,
+                        d.invoice_no, s.name AS supplier_name,
+                        g.name AS group_name,
+                        u_start.full_name AS started_by_name,
+                        u_rec.full_name AS received_by_name,
+                        u_app.full_name AS approved_by_name
+                 FROM receipts r
+                 JOIN branches b ON b.id = r.branch_id
+                 LEFT JOIN invoice_distribution d ON d.id = r.distribution_id
+                 LEFT JOIN suppliers s ON s.id = d.supplier_id
+                 LEFT JOIN invoice_groups g ON g.id = r.group_id
+                 LEFT JOIN users u_start ON u_start.id = r.started_by
+                 LEFT JOIN users u_rec ON u_rec.id = r.received_by
+                 LEFT JOIN users u_app ON u_app.id = r.approved_by
+                 WHERE (r.created_at BETWEEN ? AND ? OR r.received_at BETWEEN ? AND ? OR r.approved_at BETWEEN ? AND ?)";
+            $paramsRec = [
+                $from . ' 00:00:00', $to . ' 23:59:59',
+                $from . ' 00:00:00', $to . ' 23:59:59',
+                $from . ' 00:00:00', $to . ' 23:59:59',
+            ];
+            if ($branchFilter !== null) {
+                $sqlRec .= " AND r.branch_id = ?";
+                $paramsRec[] = $branchFilter;
+            }
+            if ($statusFilter !== null) {
+                $sqlRec .= " AND r.status = ?";
+                $paramsRec[] = $statusFilter;
+            }
+            $sqlRec .= " ORDER BY r.id DESC";
+
+            $st = $pdo->prepare($sqlRec);
+            $st->execute($paramsRec);
+
+            $statusMap = [
+                'sent'      => 'موزعة (بانتظار البدء)',
+                'receiving' => 'جاري الاستلام',
+                'received'  => 'تم الاستلام (بانتظار الاعتماد)',
+                'approved'  => 'معتمدة',
+            ];
+
+            $rows = [];
+            $cntApproved = 0; $cntReceived = 0; $cntReceiving = 0; $cntSent = 0;
+            foreach ($st as $r) {
+                $docLabel = '';
+                if (!empty($r['invoice_no'])) {
+                    $docLabel = 'فاتورة #' . $r['invoice_no'];
+                } elseif (!empty($r['group_name'])) {
+                    $docLabel = 'مجموعة: ' . $r['group_name'];
+                } else {
+                    $docLabel = 'إذن #' . $r['receipt_id'];
+                }
+
+                $stVal = (string)$r['status'];
+                if ($stVal === 'approved') $cntApproved++;
+                elseif ($stVal === 'received') $cntReceived++;
+                elseif ($stVal === 'receiving') $cntReceiving++;
+                else $cntSent++;
+
+                $rows[] = [
+                    $docLabel,
+                    $r['supplier_name'] ?: '—',
+                    $r['branch_name'],
+                    $statusMap[$stVal] ?? $stVal,
+                    $r['started_by_name'] ?: '—',
+                    $r['started_at'] ? date('Y-m-d H:i', strtotime($r['started_at'])) : '—',
+                    $r['received_by_name'] ?: '—',
+                    $r['received_at'] ? date('Y-m-d H:i', strtotime($r['received_at'])) : '—',
+                    $r['approved_by_name'] ?: '—',
+                    $r['approved_at'] ? date('Y-m-d H:i', strtotime($r['approved_at'])) : '—',
+                ];
+            }
+
+            return [
+                'title' => 'تقرير استلام الفواتير (مسؤول الاستلامات في الإعدادات: ' . $supervisorName . ')',
+                'headers' => [
+                    'المستند / الفاتورة',
+                    'المورد',
+                    'الفرع',
+                    'الحالة',
+                    'بدء الاستلام بواسطة',
+                    'تاريخ البدء',
+                    'المستلم (مراجعة الكميات)',
+                    'تاريخ الاستلام',
+                    'المعتمد (اعتماد الكميات)',
+                    'تاريخ الاعتماد',
+                ],
+                'rows' => $rows,
+                'sum_cards' => [
+                    ['label' => 'إجمالي الإشعارات', 'count' => true],
+                ],
+                'totals' => ['إجمالي: ' . count($rows) . ' (معتمدة: ' . $cntApproved . ' · مستلمة: ' . $cntReceived . ' · جاري: ' . $cntReceiving . ' · جديدة: ' . $cntSent . ')', '', '', '', '', '', '', '', '', ''],
+            ];
+
         default:
             return ['title'=>'','headers'=>[],'rows'=>[],'totals'=>[]];
     }
@@ -1187,7 +1296,7 @@ $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
-    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء',
+    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
 ];
 
 // بيانات تقرير «داتا العملاء»
@@ -1646,8 +1755,29 @@ require_once __DIR__ . '/includes/header.php';
         <input type="text" name="q" value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="الاسم أو التليفون" aria-label="بحث بالاسم أو التليفون"
                style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
     <?php endif; ?>
+    <?php if ($type === 'receiving'):
+        $recBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
+        $selRecBranch = (int)($_GET['branch'] ?? 0);
+        $selRecStatus = (string)($_GET['status'] ?? '');
+    ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($recBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= $selRecBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>الحالة</label>
+        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الحالات</option>
+            <option value="sent" <?= $selRecStatus === 'sent' ? 'selected' : '' ?>>موزعة (بانتظار البدء)</option>
+            <option value="receiving" <?= $selRecStatus === 'receiving' ? 'selected' : '' ?>>جاري الاستلام</option>
+            <option value="received" <?= $selRecStatus === 'received' ? 'selected' : '' ?>>تم الاستلام (بانتظار الاعتماد)</option>
+            <option value="approved" <?= $selRecStatus === 'approved' ? 'selected' : '' ?>>معتمدة</option>
+        </select>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>

@@ -1,17 +1,14 @@
 <?php
 /**
- * custody.php — عهدة الفرع
+ * custody.php — العهد (عهدة الموظف / عهدة الفرع)
  * نظام الفجالة ستور المالي
  *
- * - إصدار إذن صرف (المحاسب/الأونر) → يفتح/يزوّد عهدة الفرع.
- * - تسجيل مصروفات (الكاشير) → تطلع من خزينة العهدة فعلياً.
- * - جرد فئات الكاش + حساب الفرق.
- * - الإقفال الشهري: استلام الباقي الفعلي → تصفير العهدة + عجز/زيادة.
- *
- * كل الحركات المالية تمر من finance.php.
+ * - عهدة الموظف: متاحة للجميع بصلاحية custody (أو custody:employee).
+ * - عهدة الفرع: متاحة بصلاحية خاصة custody:branch.
+ * - كل الحركات المالية تمر من finance.php.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('custody');
+require_module_access('custody');
 require_once __DIR__ . '/finance.php';
 
 $pdo  = db();
@@ -20,14 +17,31 @@ $uid  = (int) $u['id'];
 $entryCodes = entry_codes_list(true); // حسابات العهدة بس (is_custody=1)
 $flash = ''; $flashType = 'success';
 
+// صلاحيات العهد
+$canBranchCustody   = is_owner() || can('custody:branch');
+$canEmployeeCustody = is_owner() || can('custody:employee');
+
+// لو المستخدم مش معاه أي صلاحية للعهد
+if (!$canBranchCustody && !$canEmployeeCustody) {
+    require_permission('custody'); // 403
+}
+
 // صلاحية إصدار إذون الصرف: الأونر أو من له صلاحية treasury (المحاسب)
 $canIssue = is_owner() || can('treasury:statement');
 
-// تحديد الفرع المعروض:
-// - لو المستخدم مربوط بفرع → فرعه.
-// - لو أونر/محاسب → يقدر يختار فرع من القائمة.
-$allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+// تحديد التاب النشط:
+// عهدة الموظف هي الافتراضية، وعهدة الفرع لمن لديه الصلاحية فقط
+$defaultTab = $canEmployeeCustody ? 'employee' : 'branch';
+$activeTab = $_GET['tab'] ?? $defaultTab;
+if ($activeTab === 'branch' && !$canBranchCustody) {
+    $activeTab = 'employee';
+}
+if ($activeTab === 'employee' && !$canEmployeeCustody) {
+    $activeTab = 'branch';
+}
 
+// تحديد الفرع المعروض لعهدة الفرع:
+$allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
 $branchId = null;
 if (!empty($u['branch_id'])) {
     $branchId = (int) $u['branch_id'];
@@ -37,9 +51,19 @@ if (!empty($u['branch_id'])) {
     $branchId = (int) $allBranches[0]['id'];
 }
 
-$activeTab = ($_GET['tab'] ?? '') === 'employee' ? 'employee' : 'branch';
-if ($activeTab === 'employee' && !is_owner()) {
-    $activeTab = 'branch';
+// الموظف المختار لعهدة الموظف
+$allEmployees = $pdo->query('SELECT id, full_name, job_title, branch_id FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+$selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
+if ($selectedEmpId <= 0 && !empty($allEmployees)) {
+    // لو المستخدم مربوط بموظف، اختاره تلقائياً
+    $uEmpStmt = $pdo->prepare("SELECT id FROM employees WHERE user_id = ? AND is_active = 1 LIMIT 1");
+    $uEmpStmt->execute([$uid]);
+    $uEmpId = (int) $uEmpStmt->fetchColumn();
+    if ($uEmpId > 0) {
+        $selectedEmpId = $uEmpId;
+    } else {
+        $selectedEmpId = (int) $allEmployees[0]['id'];
+    }
 }
 
 // ===== معالجة العمليات =====
@@ -50,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = $_POST['action'] ?? '';
         try {
-            if ($action === 'issue_order' && $canIssue) {
+            if ($action === 'issue_order' && $canIssue && $canBranchCustody) {
                 $bId    = (int) ($_POST['branch_id'] ?? 0);
                 $amount = (float) ($_POST['amount'] ?? 0);
                 $date   = $_POST['date'] ?? date('Y-m-d');
@@ -63,7 +87,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 issue_disbursement_order($bId, $ctId, $amount, $date, $notes ?: null, $uid);
                 $flash = 'تم إصدار إذن الصرف وتزويد عهدة الفرع.';
                 $branchId = $bId;
-                $prgTarget = 'custody.php?branch=' . $bId; // نرجع لصفحة الفرع اللي اتصرفله
+                $prgTarget = 'custody.php?tab=branch&branch=' . $bId;
+            }
+            elseif ($action === 'issue_emp_order' && $canIssue && $canEmployeeCustody) {
+                $eId    = (int) ($_POST['employee_id'] ?? 0);
+                $amount = (float) ($_POST['amount'] ?? 0);
+                $date   = $_POST['date'] ?? date('Y-m-d');
+                $notes  = trim($_POST['notes'] ?? '');
+                if ($eId <= 0) throw new RuntimeException('اختر الموظف أولاً.');
+                issue_employee_disbursement_order($eId, $amount, $date, $notes ?: null, $uid);
+                $flash = 'تم إصدار إذن الصرف وتزويد عهدة الموظف.';
+                $prgTarget = 'custody.php?tab=employee&emp=' . $eId;
             }
             elseif ($action === 'add_expense') {
                 $custodyId = (int) ($_POST['custody_id'] ?? 0);
@@ -72,20 +106,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $amount    = (float) ($_POST['amount'] ?? 0);
                 $entryCodeId = ($_POST['entry_code_id'] ?? '') !== '' ? (int) $_POST['entry_code_id'] : null;
                 if ($desc === '') throw new RuntimeException('بيان المصروف مطلوب.');
+
+                $stC = $pdo->prepare("SELECT branch_id, employee_id FROM branch_custody WHERE id=?");
+                $stC->execute([$custodyId]);
+                $cRow = $stC->fetch();
+                if (!$cRow) throw new RuntimeException('العهدة غير موجودة.');
+                if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
+                    throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الموظف.');
+                }
+                if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
+                    throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الفرع.');
+                }
+
                 add_custody_expense($custodyId, $date, $desc, $amount, $uid, $entryCodeId);
                 $flash = 'تم تسجيل المصروف.';
+                if (!empty($cRow['employee_id'])) {
+                    $prgTarget = 'custody.php?tab=employee&emp=' . (int)$cRow['employee_id'];
+                } elseif (!empty($cRow['branch_id'])) {
+                    $prgTarget = 'custody.php?tab=branch&branch=' . (int)$cRow['branch_id'];
+                }
             }
             elseif ($action === 'delete_expense') {
                 $lineId = (int) ($_POST['line_id'] ?? 0);
                 if ($lineId <= 0) throw new RuntimeException('مصروف غير محدد.');
+
+                $stC = $pdo->prepare("SELECT bc.branch_id, bc.employee_id FROM custody_lines cl JOIN branch_custody bc ON bc.id = cl.custody_id WHERE cl.id=?");
+                $stC->execute([$lineId]);
+                $cRow = $stC->fetch();
+                if (!$cRow) throw new RuntimeException('المصروف غير موجود.');
+                if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
+                    throw new RuntimeException('غير مصرح لك بإلغاء مصروف عهدة الموظف.');
+                }
+                if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
+                    throw new RuntimeException('غير مصرح لك بإلغاء مصروف عهدة الفرع.');
+                }
+
                 delete_custody_expense($lineId, $uid);
                 $flash = 'تم إلغاء المصروف ورجّعنا المبلغ لخزينة العهدة.';
+                if (!empty($cRow['employee_id'])) {
+                    $prgTarget = 'custody.php?tab=employee&emp=' . (int)$cRow['employee_id'];
+                } elseif (!empty($cRow['branch_id'])) {
+                    $prgTarget = 'custody.php?tab=branch&branch=' . (int)$cRow['branch_id'];
+                }
             }
             elseif ($action === 'close_custody') {
                 $custodyId  = (int) ($_POST['custody_id'] ?? 0);
                 $counted    = (float) ($_POST['counted_cash'] ?? 0);
                 $date       = $_POST['date'] ?? date('Y-m-d');
                 $employeeId = ($_POST['employee_id'] ?? '') !== '' ? (int) $_POST['employee_id'] : null;
+
+                $stC = $pdo->prepare("SELECT branch_id, employee_id FROM branch_custody WHERE id=?");
+                $stC->execute([$custodyId]);
+                $cRow = $stC->fetch();
+                if (!$cRow) throw new RuntimeException('العهدة غير موجودة.');
+                if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
+                    throw new RuntimeException('غير مصرح لك بإقفال عهدة الموظف.');
+                }
+                if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
+                    throw new RuntimeException('غير مصرح لك بإقفال عهدة الفرع.');
+                }
+
                 $res = submit_custody_count($custodyId, $counted, $date, $employeeId, $uid);
                 $diff = $res['difference'];
                 if ($diff < 0) {
@@ -95,13 +175,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $flash = 'تم إقفال العهدة وإرسالها لمراجعة المحاسب. الفلوس هتدخل الخزينة بعد الاعتماد.';
                 }
+                if (!empty($cRow['employee_id'])) {
+                    $prgTarget = 'custody.php?tab=employee&emp=' . (int)$cRow['employee_id'];
+                } elseif (!empty($cRow['branch_id'])) {
+                    $prgTarget = 'custody.php?tab=branch&branch=' . (int)$cRow['branch_id'];
+                }
             }
         } catch (Throwable $ex) {
             $flash = 'خطأ: ' . $ex->getMessage();
             $flashType = 'error';
         }
     }
-    // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار)
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
     header('Location: ' . ($prgTarget ?? ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF'])));
@@ -228,23 +312,40 @@ require_once __DIR__ . '/includes/header.php';
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-<div style="display:flex;gap:8px;margin-bottom:18px;">
-    <a href="custody.php<?= $branchId ? ('?branch=' . $branchId) : '' ?>" class="btn <?= $activeTab==='branch' ? '' : 'btn-cancel' ?>">
-        <i class="ti ti-building-store"></i> عهدة الفرع
-    </a>
-    <?php if (is_owner()): ?>
-    <a href="custody.php?tab=employee" class="btn <?= $activeTab==='employee' ? '' : 'btn-cancel' ?>">
-        <i class="ti ti-users"></i> عهدة موظف
-    </a>
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+    <div style="display:flex;gap:8px;">
+        <?php if ($canEmployeeCustody): ?>
+        <a href="custody.php?tab=employee<?= $selectedEmpId ? ('&emp=' . (int)$selectedEmpId) : '' ?>" class="btn <?= $activeTab==='employee' ? '' : 'btn-cancel' ?>">
+            <i class="ti ti-users"></i> عهدة موظف
+        </a>
+        <?php endif; ?>
+        <?php if ($canBranchCustody): ?>
+        <a href="custody.php?tab=branch<?= $branchId ? ('&branch=' . (int)$branchId) : '' ?>" class="btn <?= $activeTab==='branch' ? '' : 'btn-cancel' ?>">
+            <i class="ti ti-building-store"></i> عهدة الفرع
+        </a>
+        <?php endif; ?>
+    </div>
+    <?php if ($canIssue): ?>
+        <?php if ($activeTab === 'branch' && $branchId): ?>
+            <button type="button" class="btn" onclick="openModal('orderModal')">
+                <i class="ti ti-plus"></i> إصدار إذن صرف لفرع
+            </button>
+        <?php elseif ($activeTab === 'employee'): ?>
+            <button type="button" class="btn" onclick="openModal('modalEmpOrder')">
+                <i class="ti ti-plus"></i> إصدار إذن صرف لموظف
+            </button>
+        <?php endif; ?>
     <?php endif; ?>
 </div>
 
 <?php if ($activeTab === 'employee'): ?>
     <?php
-    $allEmployees = $pdo->query('SELECT id, full_name, job_title FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
-    $selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
-    $empCustody = null;
     $selectedEmpName = '';
+    $empCustody = null;
+    $empExpenses = [];
+    $empOrders = [];
+    $empTrBal = 0.0;
+
     if ($selectedEmpId > 0) {
         foreach ($allEmployees as $eRow) {
             if ((int)$eRow['id'] === $selectedEmpId) {
@@ -252,9 +353,32 @@ require_once __DIR__ . '/includes/header.php';
                 break;
             }
         }
-        $stEC = $pdo->prepare("SELECT * FROM branch_custody WHERE employee_id = ? AND status IN ('open','pending_review','rejected') ORDER BY id DESC LIMIT 1");
-        $stEC->execute([$selectedEmpId]);
-        $empCustody = $stEC->fetch();
+        $empCustody = current_custody_for_employee($selectedEmpId);
+        if ($empCustody) {
+            $stExp = $pdo->prepare(
+                "SELECT cl.*, ec.name AS entry_code_name
+                 FROM custody_lines cl
+                 LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
+                 WHERE cl.custody_id = ?
+                 ORDER BY cl.id DESC"
+            );
+            $stExp->execute([(int)$empCustody['id']]);
+            $empExpenses = $stExp->fetchAll();
+
+            $stOrd = $pdo->prepare(
+                "SELECT * FROM disbursement_orders
+                 WHERE employee_id = ? AND order_date >= ?
+                 ORDER BY id DESC"
+            );
+            $stOrd->execute([(int)$selectedEmpId, $empCustody['period_start']]);
+            $empOrders = $stOrd->fetchAll();
+
+            if (!empty($empCustody['custody_treasury_id'])) {
+                $stTr = $pdo->prepare("SELECT balance FROM treasuries WHERE id=?");
+                $stTr->execute([(int)$empCustody['custody_treasury_id']]);
+                $empTrBal = (float)$stTr->fetchColumn();
+            }
+        }
     }
     ?>
     <div class="top-row">
@@ -279,19 +403,201 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card">
             <div class="empty">
                 لا توجد عهدة مفتوحة للموظف <?= e($selectedEmpName) ?> حالياً.<br>
-                <span style="display:block;font-size:13px;color:var(--warn);margin-top:10px;">
-                    ⚠️ بانتظار قرار الإدارة بشأن الخزينة التي تصرف منها عهدة الموظف.
-                </span>
+                <?php if ($canIssue): ?>
+                    <button type="button" class="btn" style="margin-top:14px;" onclick="openModal('modalEmpOrder')">
+                        <i class="ti ti-plus"></i> إصدار إذن صرف لبدء العهدة
+                    </button>
+                <?php endif; ?>
             </div>
         </div>
     <?php else: ?>
-        <div class="card">
-            <h3 style="margin-top:0;">عهدة الموظف: <?= e($selectedEmpName) ?></h3>
-            <div class="stats" style="margin-top:14px;">
-                <div class="stat"><div class="label">رصيد أول المدة</div><div class="value"><?= number_format((float)$empCustody['opening_balance'], 2) ?></div></div>
-                <div class="stat"><div class="label">إجمالي المصروفات</div><div class="value" style="color:var(--neg);"><?= number_format((float)$empCustody['total_expenses'], 2) ?></div></div>
-                <div class="stat accent"><div class="label">المفروض</div><div class="value"><?= number_format((float)$empCustody['closing_balance'], 2) ?></div></div>
+        <?php
+            $empOpening = (float) $empCustody['opening_balance'];
+            $empTotalExp = (float) $empCustody['total_expenses'];
+            $empClosing = $empOpening - $empTotalExp;
+            $empStatus = (string) $empCustody['status'];
+            $isEmpPending = $empStatus === 'pending_review';
+            $isEmpRej = $empStatus === 'rejected';
+            $canEditThisEmpCustody = in_array($empStatus, ['open', 'rejected'], true);
+        ?>
+        <?php if ($isEmpPending): ?>
+            <div class="status-bar pending">
+                <i class="ti ti-clock"></i>
+                <div>
+                    <strong>مقدّمة لمراجعة المحاسب.</strong>
+                    الفلوس <u>مادخلتش الخزينة لسه</u> — هتدخل أول ما المحاسب يعتمد ويتم عكس إذن الصرف ونزول المصاريف.
+                    <?php if (!empty($empCustody['submitted_at'])): ?>
+                        <span class="sb-sub">اتقدّمت <?= e($empCustody['submitted_at']) ?></span>
+                    <?php endif; ?>
+                </div>
             </div>
+        <?php elseif ($isEmpRej): ?>
+            <div class="status-bar rejected">
+                <i class="ti ti-alert-triangle"></i>
+                <div>
+                    <strong>المحاسب رفض الإقفال:</strong> <?= e($empCustody['reject_reason'] ?? '—') ?>
+                    <span class="sb-sub">ظبّط المصاريف أو العدّ وقدّم تاني.</span>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <div class="stats" style="display:flex;gap:14px;flex-wrap:wrap;">
+            <div class="stat" style="flex:1;min-width:160px;">
+                <div class="label">رصيد أول المدة</div>
+                <div class="value"><?= number_format($empOpening,2) ?></div>
+            </div>
+            <div class="stat" style="flex:1;min-width:160px;">
+                <div class="label">إجمالي المصروفات</div>
+                <div class="value" style="color:var(--neg);"><?= number_format($empTotalExp,2) ?></div>
+            </div>
+            <div class="stat accent" style="flex:1;min-width:160px;">
+                <div class="label">رصيد آخر المدة (المفروض)</div>
+                <div class="value"><?= number_format($empClosing,2) ?></div>
+            </div>
+        </div>
+
+        <div class="grid2">
+            <!-- المصروفات -->
+            <div class="card">
+                <div class="section-title">المصروفات</div>
+                <?php if ($canEditThisEmpCustody): ?>
+                <form method="post" class="form-inline" style="margin-bottom:16px;">
+                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="add_expense">
+                    <input type="hidden" name="custody_id" value="<?= (int)$empCustody['id'] ?>">
+                    <div class="fld" style="max-width:150px;">
+                        <label>القيد</label>
+                        <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
+                    </div>
+                    <div class="fld"><label>البيان</label><input type="text" name="description" required aria-label="البيان"></div>
+                    <div class="fld" style="max-width:110px;"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+                    <div class="fld" style="max-width:140px;"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
+                    <button type="submit" class="btn btn-sm">إضافة</button>
+                </form>
+                <?php endif; ?>
+                <?php if (empty($empExpenses)): ?>
+                    <div class="empty">لا توجد مصروفات بعد.</div>
+                <?php else: ?>
+                <table>
+                    <thead><tr><th>التاريخ</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                    <tbody>
+                    <?php foreach ($empExpenses as $ex): ?>
+                        <tr>
+                            <td><?= e($ex['expense_date']) ?></td>
+                            <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                            <td><?= e($ex['description']) ?></td>
+                            <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
+                            <?php if ($canEditThisEmpCustody): ?>
+                            <td>
+                                <form method="post" style="margin:0;"
+                                      onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة عهدة الموظف.');">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="delete_expense">
+                                    <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
+                                    <button type="submit" title="إلغاء المصروف"
+                                            style="background:none;border:none;cursor:pointer;color:var(--neg);
+                                                   font-size:17px;padding:4px 8px;border-radius:7px;line-height:1;">
+                                        <i class="ti ti-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                            <?php endif; ?>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+
+            <!-- إذونات الصرف الواردة -->
+            <div class="card">
+                <div class="section-title">إذونات الصرف الصادرة للموظف</div>
+                <?php if (empty($empOrders)): ?>
+                    <div class="empty">لا توجد إذونات في هذه الفترة.</div>
+                <?php else: ?>
+                <table>
+                    <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظات</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($empOrders as $o): ?>
+                        <tr>
+                            <td><?= e($o['order_date']) ?></td>
+                            <td style="font-weight:500;color:var(--pos);"><?= number_format((float)$o['amount'],2) ?></td>
+                            <td><?= e($o['notes'] ?? '—') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- محضر جرد الكاش والإقفال لعهدة الموظف -->
+        <div class="card">
+            <div class="section-title">محضر جرد عهدة الموظف والإقفال</div>
+
+        <?php if ($isEmpPending): ?>
+            <?php
+                $subCounted = (float) ($empCustody['counted_cash'] ?? 0);
+                $subDiff    = $subCounted - $empClosing;
+            ?>
+            <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
+                الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
+            </p>
+            <table style="max-width:420px;">
+                <tbody>
+                    <tr><td>آخر المدة المفروض</td>
+                        <td style="font-weight:600;"><?= number_format($empClosing,2) ?></td></tr>
+                    <tr><td>اللي اتعدّ فعلاً</td>
+                        <td style="font-weight:600;"><?= number_format($subCounted,2) ?></td></tr>
+                    <tr><td>الفرق المتوقع</td>
+                        <td style="font-weight:700;color:<?= $subDiff < 0 ? 'var(--neg)' : ($subDiff > 0 ? 'var(--warn)' : 'var(--pos)') ?>;">
+                            <?= number_format($subDiff,2) ?>
+                        </td></tr>
+                </tbody>
+            </table>
+            <p style="color:var(--ink-400);font-size:12px;margin-top:12px;">
+                الفرق ده متوقع بس — الرقم النهائي هو اللي المحاسب هيستلمه فعلاً.
+            </p>
+        <?php else: ?>
+            <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
+                عُدّ الكاش الموجود فعلاً بالفئات. النظام هيحسب الفرق مع آخر المدة المفروض
+                (<?= number_format($empClosing,2) ?> جنيه). بعد ما تبعت، المحاسب بيراجع —
+                <strong>وعند الاعتماد بيتعمل قيد عكسي لإذن الصرف والمصاريف تنزل على الخزينة مباشرة وتختفي العهدة من الداشبورد.</strong>
+            </p>
+            <form method="post" id="closeEmpForm">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="close_custody">
+                <input type="hidden" name="custody_id" value="<?= (int)$empCustody['id'] ?>">
+                <input type="hidden" name="employee_id" value="<?= (int)$selectedEmpId ?>">
+                <input type="hidden" name="counted_cash" id="countedCashEmp" value="0">
+
+                <table class="denom-table" style="max-width:420px;">
+                    <thead><tr><th>الفئة</th><th>العدد</th><th>الإجمالي</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($denominations as $d): ?>
+                        <tr>
+                            <td><?= $d ?> جنيه</td>
+                            <td><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count-emp" data-denom="<?= $d ?>"
+                                       value="0" oninput="recalcEmp()"></td>
+                            <td class="denom-sub" id="sub_emp_<?= $d ?>">0.00</td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <div id="countResultEmp" class="count-result ok" style="display:none;"></div>
+
+                <div class="form-inline" style="margin-top:16px;">
+                    <div class="fld" style="max-width:150px;">
+                        <label>تاريخ الإقفال</label>
+                        <input type="date" name="date" value="<?= date('Y-m-d') ?>">
+                    </div>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="ti ti-lock"></i> إقفال وإرسال للمراجعة
+                    </button>
+                </div>
+            </form>
+        <?php endif; ?>
         </div>
     <?php endif; ?>
 <?php else: ?>
@@ -518,13 +824,14 @@ require_once __DIR__ . '/includes/header.php';
         </form>
     <?php endif; ?>
     </div>
-<?php endif; ?>
+<?php endif; // قفل if (!$branchId): ... else ?>
+<?php endif; // قفل if ($activeTab === 'employee'): ... else ?>
 
-<!-- Modal: إذن صرف -->
-<?php if ($canIssue && $branchId): ?>
+<!-- Modal: إذن صرف لفرع -->
+<?php if ($canIssue && $canBranchCustody): ?>
 <div class="modal-bg" id="orderModal">
     <div class="modal">
-        <h3>إصدار إذن صرف</h3>
+        <h3>إصدار إذن صرف لفرع</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="issue_order">
@@ -538,9 +845,9 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>المبلغ (ج.م)</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" aria-label="ملاحظات"></div>
+            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="ملاحظات الصرف..." aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">إصدار الإذن</button>
                 <button type="button" class="btn btn-cancel" onclick="closeModal('orderModal')">إلغاء</button>
@@ -550,22 +857,55 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<!-- Modal: إذن صرف لموظف -->
+<?php if ($canIssue && $canEmployeeCustody): ?>
+<div class="modal-bg" id="modalEmpOrder">
+    <div class="modal">
+        <h3>إصدار إذن صرف لعهدة موظف</h3>
+        <p style="font-size:13px;color:var(--ink-500);margin-top:-6px;margin-bottom:14px;">
+            الفلوس هتخرج من الخزينة الرئيسية وتدخل خزينة عهدة الموظف.
+        </p>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="issue_emp_order">
+            <div class="form-row">
+                <label>الموظف</label>
+                <select name="employee_id" required>
+                    <option value="">— اختر الموظف —</option>
+                    <?php foreach ($allEmployees as $em): ?>
+                        <option value="<?= (int)$em['id'] ?>" <?= $selectedEmpId===(int)$em['id']?'selected':'' ?>>
+                            <?= e($em['full_name']) ?><?= !empty($em['job_title']) ? ' (' . e($em['job_title']) . ')' : '' ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-row"><label>المبلغ (ج.م)</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="سبب الصرف..." aria-label="ملاحظات"></div>
+            <div class="modal-actions">
+                <button type="submit" class="btn">إصدار الإذن</button>
+                <button type="button" class="btn btn-cancel" onclick="closeModal('modalEmpOrder')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <?= acctree_data(true) ?>
 <script src="assets/acctree.js?v=2"></script>
 <script>
-    function openModal(id){ document.getElementById(id).classList.add('open'); }
-    function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+    function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
+    function closeModal(id){ const el = document.getElementById(id); if (el) el.classList.remove('open'); }
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
     });
 
+    // ===== جرد عهدة الفرع =====
     const expected = <?= json_encode($custody ? (float)$custody['closing_balance'] : 0) ?>;
     const tolerance = <?= json_encode($tolerance) ?>;
     let currentDiff = 0;
 
     function recalc() {
-        // 🔴 وقت المراجعة الفورم مختفي خالص — من غير الحارس ده
-        //    getElementById('countedCash') بترجّع null والسكربت كله بيقع.
         const hidden = document.getElementById('countedCash');
         if (!hidden) return;
         let total = 0;
@@ -574,25 +914,28 @@ require_once __DIR__ . '/includes/header.php';
             const c = parseInt(inp.value) || 0;
             const sub = d * c;
             total += sub;
-            document.getElementById('sub_' + d).textContent = sub.toFixed(2);
+            const subEl = document.getElementById('sub_' + d);
+            if (subEl) subEl.textContent = sub.toFixed(2);
         });
         hidden.value = total.toFixed(2);
 
         const diff = total - expected;
         currentDiff = diff;
         const box = document.getElementById('countResult');
-        box.style.display = 'block';
-        if (Math.abs(diff) < 0.001) {
-            box.className = 'count-result ok';
-            box.textContent = 'الفعلي ' + total.toFixed(2) + ' = المفروض. مفيش فرق ✓';
-        } else if (diff < 0) {
-            const def = Math.abs(diff);
-            const who = def > tolerance ? ' (يُسجّل على الموظف)' : ' (يتحمّله المحل)';
-            box.className = 'count-result def';
-            box.textContent = 'عجز ' + def.toFixed(2) + ' جنيه' + who;
-        } else {
-            box.className = 'count-result sur';
-            box.textContent = 'زيادة ' + diff.toFixed(2) + ' جنيه (تدخل الخزينة بعد اعتماد المحاسب)';
+        if (box) {
+            box.style.display = 'block';
+            if (Math.abs(diff) < 0.001) {
+                box.className = 'count-result ok';
+                box.textContent = 'الفعلي ' + total.toFixed(2) + ' = المفروض. مفيش فرق ✓';
+            } else if (diff < 0) {
+                const def = Math.abs(diff);
+                const who = def > tolerance ? ' (يُسجّل على الموظف)' : ' (يتحمّله المحل)';
+                box.className = 'count-result def';
+                box.textContent = 'عجز ' + def.toFixed(2) + ' جنيه' + who;
+            } else {
+                box.className = 'count-result sur';
+                box.textContent = 'زيادة ' + diff.toFixed(2) + ' جنيه (تدخل الخزينة بعد اعتماد المحاسب)';
+            }
         }
     }
     recalc();
@@ -615,8 +958,53 @@ require_once __DIR__ . '/includes/header.php';
             }
         });
     }
-</script>
 
-<?php endif; ?>
+    // ===== جرد عهدة الموظف =====
+    const empExpected = <?= json_encode(!empty($empClosing) ? $empClosing : 0) ?>;
+    let empCurrentDiff = 0;
+
+    function recalcEmp() {
+        const hidden = document.getElementById('countedCashEmp');
+        if (!hidden) return;
+        let total = 0;
+        document.querySelectorAll('.denom-count-emp').forEach(inp => {
+            const d = parseFloat(inp.dataset.denom);
+            const c = parseInt(inp.value) || 0;
+            const sub = d * c;
+            total += sub;
+            const subEl = document.getElementById('sub_emp_' + d);
+            if (subEl) subEl.textContent = sub.toFixed(2);
+        });
+        hidden.value = total.toFixed(2);
+
+        const diff = total - empExpected;
+        empCurrentDiff = diff;
+        const box = document.getElementById('countResultEmp');
+        if (box) {
+            box.style.display = 'block';
+            if (Math.abs(diff) < 0.001) {
+                box.className = 'count-result ok';
+                box.textContent = 'الفعلي ' + total.toFixed(2) + ' = المفروض. مفيش فرق ✓';
+            } else if (diff < 0) {
+                box.className = 'count-result def';
+                box.textContent = 'عجز ' + Math.abs(diff).toFixed(2) + ' جنيه';
+            } else {
+                box.className = 'count-result sur';
+                box.textContent = 'زيادة ' + diff.toFixed(2) + ' جنيه (تدخل الخزينة بعد اعتماد المحاسب)';
+            }
+        }
+    }
+    recalcEmp();
+
+    const closeEmpForm = document.getElementById('closeEmpForm');
+    if (closeEmpForm) {
+        closeEmpForm.addEventListener('submit', function (e) {
+            if (!confirm('تأكيد إقفال عهدة الموظف وإرسالها لمراجعة المحاسب؟\n\nالفلوس مش هتدخل الخزينة دلوقتي — هتدخل بعد ما المحاسب يعتمد ويتم قيد عكسي لإذن الصرف ونزول المصاريف.')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
+</script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
