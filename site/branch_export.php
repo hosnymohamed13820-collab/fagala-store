@@ -18,6 +18,11 @@ if (!can('invoices') && can('invoices:ashraqa')) {
     require_permission('invoices');
     $ashraqaOnly = false;
 }
+
+// الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+// فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';   // الأصناف الممنوعة من ملف الفرع
 require_once __DIR__ . '/group_lib.php';        // فلتر مجموعة الأصناف

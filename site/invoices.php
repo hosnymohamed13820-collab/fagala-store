@@ -955,6 +955,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
         if (!csrf_verify($_POST['csrf'] ?? '')) {
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
+
+        // الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+        // فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
         $code = trim((string) ($_POST['item_code'] ?? ''));
         $gid  = (int) ($_POST['group_id'] ?? 0);
         $did  = (int) ($_POST['distribution_id'] ?? 0);
@@ -5356,6 +5361,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
     let curCode = null;          // الصنف المفتوح في البوب أب
     let noteTimer = null;        // مؤقت حفظ الملاحظة من البوب أب
     const cellTimers = {};       // مؤقتات خانات الملاحظة في الجدول
+    const skipSeq = {};          // آخر ضغطة لكل كود — الرد القديم بيتتجاهل
 
     const ov = document.getElementById('iflOverlay');
 
@@ -5374,8 +5380,9 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
     /**
      * الحفظ — بيبعت الحقول المتغيّرة بس.
-     * `busy` بيمنع الضغط المتكرر السريع على نفس الصنف من إنه يسبق
-     * نفسه ويسيب الحالة غلط (آخر رد يوصل مش آخر ضغطة).
+     * `busy` بيمنع الضغط المتكرر السريع في تمييز الألوان من إنه يسبق نفسه.
+     * الراديو والملاحظات الاتنين مش متحرسين (`guard === false`) لأن
+     * المفتاح واحد وآخر كتابة هي الصح على item_export_flags وسجلات التوزيع.
      */
     const busy = {};
     function post(code, fields, guard) {
@@ -5489,30 +5496,45 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
     // ---------- ملف الفرع ----------
     window.iflSetSkip = function (v) {
         if (!curCode) return;
-        const row = rowOf(curCode);
-        if (!row) return;
+        const code = curCode;
 
-        const prev = row.dataset.skip || '0';
-        row.dataset.skip = String(v);
-        paint(row);
+        const rows = [];
+        document.querySelectorAll('tr.item-row').forEach(r => {
+            if ((r.dataset.code || '') === code) rows.push(r);
+        });
+        if (!rows.length) return;
+
+        const prev = rows[0].dataset.skip || '0';
+        rows.forEach(r => {
+            r.dataset.skip = String(v);
+            paint(r);
+        });
         state('جاري الحفظ…');
 
-        post(curCode, { skip_export: v })
+        const my = (skipSeq[code] = (skipSeq[code] || 0) + 1);
+
+        post(code, { skip_export: v }, false)
             .then(() => {
+                if (skipSeq[code] !== my) return;
                 state(v === 1
                     ? 'اتحفظ ✓ — الصنف مش هينزل في ملف أي فرع'
                     : 'اتحفظ ✓ — الصنف هينزل عادي', 'var(--pos)');
                 iflRecalcDownloads();   // الأرقام على الأزرار تتظبط فورًا
             })
             .catch(e => {
-                row.dataset.skip = prev; paint(row);
-                document.querySelectorAll('input[name="iflSkip"]').forEach(r => {
-                    r.checked = (r.value === prev);
+                if (skipSeq[code] !== my) return;
+                rows.forEach(r => {
+                    r.dataset.skip = prev;
+                    paint(r);
                 });
-                state(e.message, 'var(--neg)');
-                // ده إعداد بيأثر على ملفات الفروع — الفشل لازم يبان،
-                // مش سطر صغير تحت المستخدم ممكن مايشوفهوش.
-                alert('ماتحفظش: ' + e.message);
+                // الراديو بتاع البوب أب يترجّع **بس** لو لسه فاتح على نفس
+                // الصنف — المستخدم ممكن يكون قفله وفتح صنف تاني في الوقت ده.
+                if (curCode === code) {
+                    document.querySelectorAll('input[name="iflSkip"]').forEach(r => {
+                        r.checked = (r.value === prev);
+                    });
+                    state(e.message, 'var(--neg)');
+                }
             });
     };
 
