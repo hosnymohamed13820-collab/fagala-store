@@ -37,6 +37,11 @@ if (!empty($u['branch_id'])) {
     $branchId = (int) $allBranches[0]['id'];
 }
 
+$activeTab = ($_GET['tab'] ?? '') === 'employee' ? 'employee' : 'branch';
+if ($activeTab === 'employee' && !is_owner()) {
+    $activeTab = 'branch';
+}
+
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -222,6 +227,74 @@ require_once __DIR__ . '/includes/header.php';
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
 <?php endif; ?>
+
+<div style="display:flex;gap:8px;margin-bottom:18px;">
+    <a href="custody.php<?= $branchId ? ('?branch=' . $branchId) : '' ?>" class="btn <?= $activeTab==='branch' ? '' : 'btn-cancel' ?>">
+        <i class="ti ti-building-store"></i> عهدة الفرع
+    </a>
+    <?php if (is_owner()): ?>
+    <a href="custody.php?tab=employee" class="btn <?= $activeTab==='employee' ? '' : 'btn-cancel' ?>">
+        <i class="ti ti-users"></i> عهدة موظف
+    </a>
+    <?php endif; ?>
+</div>
+
+<?php if ($activeTab === 'employee'): ?>
+    <?php
+    $allEmployees = $pdo->query('SELECT id, full_name, job_title FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+    $selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
+    $empCustody = null;
+    $selectedEmpName = '';
+    if ($selectedEmpId > 0) {
+        foreach ($allEmployees as $eRow) {
+            if ((int)$eRow['id'] === $selectedEmpId) {
+                $selectedEmpName = $eRow['full_name'];
+                break;
+            }
+        }
+        $stEC = $pdo->prepare("SELECT * FROM branch_custody WHERE employee_id = ? AND status IN ('open','pending_review','rejected') ORDER BY id DESC LIMIT 1");
+        $stEC->execute([$selectedEmpId]);
+        $empCustody = $stEC->fetch();
+    }
+    ?>
+    <div class="top-row">
+        <div class="branch-select">
+            <form method="get" style="display:inline;">
+                <input type="hidden" name="tab" value="employee">
+                <select name="emp" onchange="formSubmit(this.form)">
+                    <option value="">— اختر الموظف —</option>
+                    <?php foreach ($allEmployees as $em): ?>
+                        <option value="<?= (int)$em['id'] ?>" <?= $selectedEmpId===(int)$em['id']?'selected':'' ?>>
+                            <?= e($em['full_name']) ?><?= !empty($em['job_title']) ? ' (' . e($em['job_title']) . ')' : '' ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <?php if ($selectedEmpId <= 0): ?>
+        <div class="card"><div class="empty">اختر موظفاً لعرض تفاصيل عهدته.</div></div>
+    <?php elseif (!$empCustody): ?>
+        <div class="card">
+            <div class="empty">
+                لا توجد عهدة مفتوحة للموظف <?= e($selectedEmpName) ?> حالياً.<br>
+                <span style="display:block;font-size:13px;color:var(--warn);margin-top:10px;">
+                    ⚠️ بانتظار قرار الإدارة بشأن الخزينة التي تصرف منها عهدة الموظف.
+                </span>
+            </div>
+        </div>
+    <?php else: ?>
+        <div class="card">
+            <h3 style="margin-top:0;">عهدة الموظف: <?= e($selectedEmpName) ?></h3>
+            <div class="stats" style="margin-top:14px;">
+                <div class="stat"><div class="label">رصيد أول المدة</div><div class="value"><?= number_format((float)$empCustody['opening_balance'], 2) ?></div></div>
+                <div class="stat"><div class="label">إجمالي المصروفات</div><div class="value" style="color:var(--neg);"><?= number_format((float)$empCustody['total_expenses'], 2) ?></div></div>
+                <div class="stat accent"><div class="label">المفروض</div><div class="value"><?= number_format((float)$empCustody['closing_balance'], 2) ?></div></div>
+            </div>
+        </div>
+    <?php endif; ?>
+<?php else: ?>
 
 <div class="top-row">
     <div class="branch-select">
@@ -543,5 +616,7 @@ require_once __DIR__ . '/includes/header.php';
         });
     }
 </script>
+
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

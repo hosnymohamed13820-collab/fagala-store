@@ -297,13 +297,15 @@ if (!empty($allReviewShiftIds)) {
     }
 }
 
-// ===== عهد الفروع المقدّمة للمراجعة =====
-// استعلام واحد جايب اسم الفرع واسم اللي قدّم — مفيش prepare جوّه أي حلقة.
+// ===== عهد الفروع والموظفين المقدّمة للمراجعة =====
+// استعلام واحد جايب اسم الفرع واسم الموظف واسم اللي قدّم — مفيش prepare جوّه أي حلقة.
 $pendingCustody = $pdo->query(
-    "SELECT bc.*, b.name AS branch_name, u.full_name AS submitted_by_name
+    "SELECT bc.*, b.name AS branch_name, u.full_name AS submitted_by_name,
+            e.full_name AS employee_name
        FROM branch_custody bc
-       JOIN branches b ON b.id = bc.branch_id
+       LEFT JOIN branches b ON b.id = bc.branch_id
        LEFT JOIN users u ON u.id = bc.submitted_by
+       LEFT JOIN employees e ON e.id = bc.employee_id
       WHERE bc.status = 'pending_review'
       ORDER BY bc.id DESC"
 )->fetchAll();
@@ -313,10 +315,12 @@ $pendingCustody = $pdo->query(
 //    NULL. من غير الشرط ده هتظهر في السجل كأن حد راجعها، وهي أصلاً اتقفلت
 //    بالنظام القديم اللي كان بيقفل ويعمل القيد بضغطة واحدة.
 $custodyHistory = $pdo->query(
-    "SELECT bc.*, b.name AS branch_name, u.full_name AS reviewer_name
+    "SELECT bc.*, b.name AS branch_name, u.full_name AS reviewer_name,
+            e.full_name AS employee_name
        FROM branch_custody bc
-       JOIN branches b ON b.id = bc.branch_id
+       LEFT JOIN branches b ON b.id = bc.branch_id
        LEFT JOIN users u ON u.id = bc.reviewed_by
+       LEFT JOIN employees e ON e.id = bc.employee_id
       WHERE bc.status IN ('closed','rejected') AND bc.reviewed_at IS NOT NULL
       ORDER BY bc.reviewed_at DESC LIMIT 50"
 )->fetchAll();
@@ -575,7 +579,7 @@ function shift_cashier_amounts(array $s): array {
             <div class="shift-card rv-pending-custody" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
-                        <b><?= e($c['branch_name']) ?></b> — عهدة
+                        <b><?= !empty($c['employee_id']) ? ('عهدة موظف: ' . e($c['employee_name'] ?: ('#' . $c['employee_id']))) : (e($c['branch_name'] ?? '') . ' — عهدة') ?></b>
                         <span class="sc-sub">
                             قدّمها <?= e($c['submitted_by_name'] ?? '—') ?>
                             <?= !empty($c['submitted_at']) ? ' · ' . e($c['submitted_at']) : '' ?>
@@ -637,7 +641,7 @@ function shift_cashier_amounts(array $s): array {
             <div class="shift-card rv-custody-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
-                        <b><?= e($c['branch_name']) ?></b> — عهدة
+                        <b><?= !empty($c['employee_id']) ? ('عهدة موظف: ' . e($c['employee_name'] ?: ('#' . $c['employee_id']))) : (e($c['branch_name'] ?? '') . ' — عهدة') ?></b>
                         <span class="sc-sub">
                             راجعها <?= e($c['reviewer_name'] ?? '—') ?> · <?= e($c['reviewed_at']) ?>
                         </span>

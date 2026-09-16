@@ -887,10 +887,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
             $cur = $pdo->prepare('SELECT status FROM invoice_distribution WHERE id = ?');
             $cur->execute([$distId]);
             $newStatus = (string) $cur->fetchColumn();
+            if ($newStatus === 'done') {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distId, $uid);
+            }
             echo json_encode(['ok' => true, 'status' => $newStatus, 'manual' => false], JSON_UNESCAPED_UNICODE);
         } else {
             if (!set_invoice_status_manual($distId, $status, $uid)) {
                 throw new RuntimeException('حالة غير صحيحة.');
+            }
+            if ($status === 'done') {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distId, $uid);
             }
             echo json_encode(['ok' => true, 'status' => $status, 'manual' => true], JSON_UNESCAPED_UNICODE);
         }

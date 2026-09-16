@@ -1505,7 +1505,7 @@ function group_save_prices_bulk(int $groupId, array $prices, ?int $userId = null
  * تحديث حالة كل فاتورة في المجموعة بعد التوزيع.
  * بيستخدم نفس دالة الفاتورة الواحدة — مابنلمسش المنطق ده.
  */
-function group_refresh_statuses(int $groupId): void
+function group_refresh_statuses(int $groupId, ?int $userId = null): void
 {
     foreach (group_invoices($groupId) as $inv) {
         $sth    = (int) $inv['sth_id'];
@@ -1519,5 +1519,23 @@ function group_refresh_statuses(int $groupId): void
             // فاتورة واحدة فشلت ما توقفش الباقي
             error_log('group: فشل تحديث حالة الفاتورة ' . $sth . ' — ' . $ex->getMessage());
         }
+    }
+
+    try {
+        $distIds = group_code_dist_ids($groupId, '__any__');
+        if (!empty($distIds)) {
+            $distIdsClean = array_values(array_unique(array_filter(array_map('intval', $distIds), fn($x) => $x > 0)));
+            if (!empty($distIdsClean)) {
+                $inClause = implode(',', $distIdsClean);
+                $notDone = (int) db()->query("SELECT COUNT(*) FROM invoice_distribution WHERE id IN ($inClause) AND status <> 'done'")->fetchColumn();
+                if ($notDone === 0) {
+                    require_once __DIR__ . '/receiving_flow_lib.php';
+                    $uid = $userId ?? ($_SESSION['user']['id'] ?? 0);
+                    receiving_open(db(), $groupId, 0, (int) $uid);
+                }
+            }
+        }
+    } catch (Throwable $ex) {
+        error_log('group: فشل فتح الاستلام للمجموعة ' . $groupId . ' — ' . $ex->getMessage());
     }
 }

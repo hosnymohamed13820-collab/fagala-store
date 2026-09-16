@@ -83,6 +83,7 @@ function all_modules(): array
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
         'invoices'      => ['label' => 'الاستلامات',        'icon' => 'ti-package-import',     'url' => 'invoices.php'],
+        'receiving'     => ['label' => 'استلام الفواتير',   'icon' => 'ti-truck',              'url' => 'receiving.php'],
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
         'analysis'      => ['label' => 'تحليل الموسم',     'icon' => 'ti-calculator'   , 'url' => 'analysis.php'],
@@ -136,6 +137,9 @@ function module_parts(): array
         ],
         'invoices' => [
             'ashraqa' => 'فواتير إشراقة',
+        ],
+        'receiving' => [
+            'diffs' => 'صفحة الفروقات',
         ],
         'treasury' => [
             'statement' => 'الخزينة وكشف الحساب',
