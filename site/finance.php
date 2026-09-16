@@ -921,12 +921,13 @@ function treasury_balance(int $treasuryId): float
 function treasury_type_label(string $type): string
 {
     return [
-        'cash'           => 'كاش',
-        'visa'           => 'فيزا',
-        'instapay'       => 'إنستا باي',
-        'card'           => 'كارت',
-        'branch_custody' => 'عهدة فرع',
-        'main'           => 'رئيسية',
+        'cash'             => 'كاش',
+        'visa'             => 'فيزا',
+        'instapay'         => 'إنستا باي',
+        'card'             => 'كارت',
+        'branch_custody'   => 'عهدة فرع',
+        'employee_custody' => 'عهدة موظف',
+        'main'             => 'رئيسية',
     ][$type] ?? $type;
 }
 
@@ -1152,6 +1153,17 @@ function issue_employee_disbursement_order(
         $pendingStatus = $chk->fetchColumn();
         if ($pendingStatus) {
             throw new RuntimeException('عهدة الموظف مقدّمة للمراجعة لسه. لازم المحاسب يعتمدها أو يرفضها قبل إذن صرف جديد.');
+        }
+
+        // حارس منع التكرار اللحظي (Double click / Debounce):
+        $dupChk = $pdo->prepare(
+            "SELECT id FROM disbursement_orders 
+             WHERE employee_id = ? AND amount = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+             LIMIT 1"
+        );
+        $dupChk->execute([$employeeId, $amount]);
+        if ($dupChk->fetchColumn()) {
+            throw new RuntimeException('تم إصدار إذن صرف بنفس المبلغ لهذا الموظف منذ لحظات. يرجى الانتظار قليلاً أو مراجعة كشف الحساب.');
         }
 
         // إيجاد أو إنشاء خزينة عهدة الموظف

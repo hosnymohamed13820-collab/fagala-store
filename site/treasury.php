@@ -180,6 +180,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid);
                     $flash = 'تم صرف العهدة للفرع (الخزينة نقصت وعهدة الفرع زادت).';
                 }
+                elseif ($action === 'disbursement' && $opType === 'employee_custody') {
+                    $empId = (int) ($_POST['employee_id'] ?? 0);
+                    if ($empId <= 0) throw new RuntimeException('اختر الموظف للعهدة.');
+                    issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid);
+                    $flash = 'تم صرف العهدة للموظف (الخزينة نقصت وعهدة الموظف زادت).';
+                }
                 elseif ($action === 'receipt' && $opType === 'advance') {
                     $empId = (int) ($_POST['employee_id'] ?? 0);
                     if ($empId <= 0) throw new RuntimeException('اختر الموظف لرد السلفة.');
@@ -277,7 +283,7 @@ $treasuries = $pdo->query(
      FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
      WHERE t.is_active = 1
-     ORDER BY FIELD(t.type, "cash","main","visa","instapay","card","branch_custody"), t.name'
+     ORDER BY FIELD(t.type, "cash","main","visa","instapay","card","branch_custody","employee_custody"), t.name'
 )->fetchAll();
 
 $totalBalance = array_sum(array_column($treasuries, 'balance'));
@@ -450,6 +456,7 @@ require_once __DIR__ . '/includes/header.php';
 $typeIcons = [
     'cash' => 'ti-cash', 'visa' => 'ti-credit-card', 'instapay' => 'ti-device-mobile',
     'card' => 'ti-credit-card', 'branch_custody' => 'ti-building-store',
+    'employee_custody' => 'ti-users',
     // ti-building-bank موجودة في tabler-subset.css (بتتستخدم في أيقونة موديول الخزينة)
     'main' => 'ti-building-bank',
 ];
@@ -1010,6 +1017,7 @@ $today = date('Y-m-d');
                         <option value="supplier">صرف لمورد</option>
                         <option value="advance">سلفة لموظف</option>
                         <option value="custody">عهدة لفرع</option>
+                        <option value="employee_custody">عهدة لموظف</option>
                     </select>
 
                     <!-- صرف لمورد -->
@@ -1151,7 +1159,7 @@ $today = date('Y-m-d');
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=2"></script>
+<script src="assets/acctree.js?v=3"></script>
 <script>
     function openModal(id){
         if (id === 'disburseModal') resetDisburseModal();
@@ -1178,6 +1186,14 @@ $today = date('Y-m-d');
         if (op === 'supplier') {
             if (!form.querySelector('input[name="supplier_id"]').value) return 'اختار المورد.';
             if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
+            return '';
+        }
+        if (op === 'advance' || op === 'employee_custody') {
+            if (!form.querySelector('input[name="employee_id"]').value) return 'اختار الموظف.';
+            return '';
+        }
+        if (op === 'custody') {
+            if (!form.querySelector('select[name="branch_id"]').value) return 'اختار الفرع.';
             return '';
         }
         if (op !== 'normal') return '';
@@ -1251,6 +1267,11 @@ $today = date('Y-m-d');
                 const brSelect = form.querySelector('select[name="cost_branch_id"]');
                 document.getElementById('disbConfirmAccount').textContent = 'مورد: ' + suppChosenText;
                 document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
+            } else if (opType === 'advance' || opType === 'employee_custody') {
+                const empChosenText = document.getElementById('empChosen').textContent.replace('تم اختيار:', '').trim();
+                document.getElementById('disbConfirmNormal').style.display = '';
+                document.getElementById('disbConfirmAccount').textContent = (opType === 'employee_custody' ? 'عهدة موظف: ' : 'سلفة: ') + empChosenText;
+                document.getElementById('disbConfirmBranch').textContent = '—';
             }
             document.getElementById('disbFormBody').style.display = 'none';
             document.getElementById('disbConfirmBox').style.display = 'block';
@@ -1293,13 +1314,13 @@ $today = date('Y-m-d');
         const accRow = document.getElementById('disburseAccountRow');
         if (accRow) accRow.style.display = (t === 'normal') ? '' : 'none';
         document.getElementById('supplierBox').style.display = (t === 'supplier') ? 'block' : 'none';
-        document.getElementById('advanceBox').style.display = (t === 'advance') ? 'block' : 'none';
+        document.getElementById('advanceBox').style.display = (t === 'advance' || t === 'employee_custody') ? 'block' : 'none';
         document.getElementById('custodyBox').style.display = (t === 'custody') ? 'block' : 'none';
         if (t !== 'supplier') {
             document.getElementById('suppId').value = '';
             document.getElementById('suppChosen').textContent = '';
         }
-        if (t !== 'advance') {
+        if (t !== 'advance' && t !== 'employee_custody') {
             document.getElementById('empId').value = '';
             document.getElementById('empChosen').textContent = '';
         }

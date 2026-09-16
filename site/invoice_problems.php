@@ -401,6 +401,28 @@ require_once __DIR__ . '/includes/header.php';
     margin-bottom: 16px;
     box-shadow: var(--shadow-sm);
 }
+.modal-bg {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(30, 27, 75, 0.45);
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.modal-bg.open {
+    display: flex;
+}
+.modal {
+    background: var(--surface);
+    border-radius: var(--r);
+    width: 100%;
+    padding: 20px;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--line);
+    color: var(--text);
+}
 .prob-header {
     display: flex;
     justify-content: space-between;
@@ -565,19 +587,78 @@ require_once __DIR__ . '/includes/header.php';
     ?>
 
     <!-- شريط اختيار فاتورة لفتحها وإضافة مشاكل لها -->
-    <div class="prob-card" style="padding:12px 16px;">
-        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--ink-700);margin-bottom:6px;">
-            فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل:
-        </label>
-        <select onchange="if(this.value) location.href='invoice_problems.php?d=' + this.value;"
-                style="width:100%;max-width:500px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--surface);color:var(--text);">
-            <option value="">— اختر فاتورة مشتريات الإدارة من القائمة —</option>
-            <?php foreach ($allInvoices as $ai): ?>
-                <option value="<?= (int)$ai['id'] ?>">
-                    فاتورة #<?= e((string)$ai['invoice_no']) ?> — مورد: <?= e((string)$ai['supplier_name']) ?> (<?= e((string)$ai['dist_date']) ?>)
-                </option>
-            <?php endforeach; ?>
-        </select>
+    <div class="prob-card" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div>
+            <div style="font-size:14px;font-weight:700;color:var(--ink-900);margin-bottom:3px;display:flex;align-items:center;gap:6px;">
+                <i class="ti ti-file-invoice" style="color:var(--accent);"></i> فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل
+            </div>
+            <div style="font-size:12.5px;color:var(--ink-500);">
+                اختر أي فاتورة مشتريات للإدارة للتحقق من كمياتها، أصنافها، أو تسجيل عجز/زيادة وملاحظات
+            </div>
+        </div>
+        <button type="button" class="btn" onclick="openInvoicePickerModal()">
+            <i class="ti ti-search"></i> اختيار فاتورة مشتريات...
+        </button>
+    </div>
+
+    <!-- مودال اختيار فاتورة مشتريات مع بحث فوري -->
+    <div class="modal-bg" id="invPickModal" onclick="if(event.target===this)closeInvoicePickerModal()">
+        <div class="modal" style="max-width:700px;display:flex;flex-direction:column;max-height:85vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:14px;">
+                <div style="font-size:16px;font-weight:700;color:var(--ink-900);display:flex;align-items:center;gap:8px;">
+                    <i class="ti ti-file-invoice" style="color:var(--accent);"></i> اختيار فاتورة مشتريات
+                </div>
+                <button type="button" class="btn-ghost btn-sm" onclick="closeInvoicePickerModal()" style="border:none;font-size:16px;cursor:pointer;padding:4px 8px;" title="إغلاق">
+                    <i class="ti ti-x"></i>
+                </button>
+            </div>
+            
+            <div style="margin-bottom:12px;">
+                <input type="text" id="invSearchInput" oninput="filterInvoicesList()" placeholder="🔍 ابحث برقم الفاتورة أو اسم المورد..."
+                       style="width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--surface);color:var(--text);box-sizing:border-box;">
+            </div>
+
+            <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r);min-height:220px;max-height:50vh;">
+                <table class="prob-table" id="invPickTable" style="margin:0;">
+                    <thead style="position:sticky;top:0;z-index:1;">
+                        <tr>
+                            <th style="width:110px;">رقم الفاتورة</th>
+                            <th>المورد</th>
+                            <th style="width:110px;">التاريخ</th>
+                            <th style="width:70px;text-align:center;">إجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($allInvoices as $ai): ?>
+                            <tr class="inv-picker-row" 
+                                data-inv="<?= e((string)$ai['invoice_no']) ?>" 
+                                data-supplier="<?= e(mb_strtolower((string)$ai['supplier_name'])) ?>"
+                                style="cursor:pointer;"
+                                onclick="location.href='invoice_problems.php?d=<?= (int)$ai['id'] ?>'">
+                                <td><b>#<?= e((string)$ai['invoice_no']) ?></b></td>
+                                <td><?= e((string)$ai['supplier_name']) ?></td>
+                                <td style="font-size:12px;color:var(--ink-500);"><?= e((string)$ai['dist_date']) ?></td>
+                                <td style="text-align:center;">
+                                    <a href="invoice_problems.php?d=<?= (int)$ai['id'] ?>" class="btn btn-ghost btn-sm" style="padding:3px 8px;" onclick="event.stopPropagation();">
+                                        فتح
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($allInvoices)): ?>
+                            <tr>
+                                <td colspan="4" style="text-align:center;padding:24px;color:var(--ink-400);">لا توجد فواتير مشتريات متاحة</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;">
+                <span id="invCountText" style="font-size:12.5px;color:var(--ink-500);">إجمالي: <?= count($allInvoices) ?> فاتورة</span>
+                <button type="button" class="btn btn-ghost" onclick="closeInvoicePickerModal()">إغلاق</button>
+            </div>
+        </div>
     </div>
 
     <?php if (empty($problemInvoices)): ?>
@@ -632,6 +713,71 @@ require_once __DIR__ . '/includes/header.php';
             </table>
         </div>
     <?php endif; ?>
+
+    <script>
+    var CSRF = <?= json_encode(csrf_token()) ?>;
+
+    function openInvoicePickerModal() {
+        var m = document.getElementById('invPickModal');
+        if (m) {
+            m.classList.add('open');
+            var inp = document.getElementById('invSearchInput');
+            if (inp) {
+                inp.value = '';
+                filterInvoicesList();
+                setTimeout(function() { inp.focus(); }, 80);
+            }
+        }
+    }
+
+    function closeInvoicePickerModal() {
+        var m = document.getElementById('invPickModal');
+        if (m) m.classList.remove('open');
+    }
+
+    function filterInvoicesList() {
+        var inp = document.getElementById('invSearchInput');
+        var q = (inp ? inp.value : '').trim().toLowerCase();
+        var rows = document.querySelectorAll('#invPickTable tbody tr.inv-picker-row');
+        var visible = 0;
+        rows.forEach(function(r) {
+            var inv = (r.getAttribute('data-inv') || '').toLowerCase();
+            var sup = (r.getAttribute('data-supplier') || '').toLowerCase();
+            if (!q || inv.indexOf(q) !== -1 || sup.indexOf(q) !== -1) {
+                r.style.display = '';
+                visible++;
+            } else {
+                r.style.display = 'none';
+            }
+        });
+        var cnt = document.getElementById('invCountText');
+        if (cnt) cnt.textContent = 'المعروض: ' + visible + ' فاتورة';
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeInvoicePickerModal();
+    });
+
+    function deleteInvoiceProblems(distId, btn) {
+        if (!confirm('هل أنت متأكد من حذف هذه الفاتورة من قائمة المشاكل؟')) return;
+        var fd = new FormData();
+        fd.append('action', 'delete_invoice_problems');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', distId);
+
+        fetch('invoice_problems.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (d.ok) {
+                    var tr = btn.closest('tr');
+                    if (tr) tr.remove();
+                } else {
+                    alert(d.error || 'حدث خطأ أثناء الحذف');
+                }
+            })
+            .catch(() => alert('تعذر الاتصال بالسيرفر'));
+    }
+    </script>
 
 <?php else: ?>
     <!-- ===================================================================== -->
@@ -1025,30 +1171,6 @@ require_once __DIR__ . '/includes/header.php';
         }
         </script>
     <?php endif; ?>
-
-    <script>
-    var CSRF = <?= json_encode(csrf_token()) ?>;
-
-    function deleteInvoiceProblems(distId, btn) {
-        if (!confirm('هل أنت متأكد من حذف هذه الفاتورة من قائمة المشاكل؟')) return;
-        var fd = new FormData();
-        fd.append('action', 'delete_invoice_problems');
-        fd.append('csrf', CSRF);
-        fd.append('distribution_id', distId);
-
-        fetch('invoice_problems.php', { method: 'POST', body: fd })
-            .then(r => r.json())
-            .then(d => {
-                if (d.ok) {
-                    var tr = btn.closest('tr');
-                    if (tr) tr.remove();
-                } else {
-                    alert(d.error || 'حدث خطأ أثناء الحذف');
-                }
-            })
-            .catch(() => alert('تعذر الاتصال بالسيرفر'));
-    }
-    </script>
 
 <?php endif; ?>
 

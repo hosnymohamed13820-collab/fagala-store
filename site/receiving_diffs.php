@@ -300,6 +300,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <?= e($br['name']) ?>
                                     </th>
                                 <?php endforeach; ?>
+                                <th style="min-width:100px;text-align:center;background:var(--line-soft);">الإجمالي</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -307,7 +308,14 @@ require_once __DIR__ . '/includes/header.php';
                                 <tr>
                                     <td class="td-item"><code><?= e($it['item_code']) ?></code></td>
                                     <td class="td-item"><?= e($it['item_name']) ?></td>
-                                    <?php foreach ($branches as $br):
+                                    <?php
+                                    $rowTotalDist = 0.0;
+                                    $rowTotalScan = 0.0;
+                                    $anyDistributed = false;
+                                    $allDone = true;
+                                    $anyDone = false;
+
+                                    foreach ($branches as $br):
                                         $bid = (int)$br['id'];
                                         $distQ = (float)($it['by_branch'][$bid]['dist'] ?? 0);
                                         $scanQ = (float)($it['by_branch'][$bid]['scan'] ?? 0);
@@ -320,10 +328,16 @@ require_once __DIR__ . '/includes/header.php';
                                             continue;
                                         }
 
+                                        $anyDistributed = true;
+                                        $rowTotalDist += $distQ;
+
                                         // الشرط الصارم: الفرع الذي لسه ما استلمش (sent أو receiving) يُكتب «لسه»
                                         if (!$rc || in_array($status, ['sent', 'receiving'], true)) {
+                                            $allDone = false;
                                             echo '<td><span class="pill-yet">لسه</span></td>';
                                         } else {
+                                            $anyDone = true;
+                                            $rowTotalScan += $scanQ;
                                             // الحالة received أو approved ← حساب الفرق الفعلي
                                             $diff = $distQ - $scanQ;
                                             if ($diff == 0) {
@@ -334,7 +348,36 @@ require_once __DIR__ . '/includes/header.php';
                                                 echo '<td><span style="color:var(--accent-text);font-weight:bold;">+' . abs($diff) . '</span></td>';
                                             }
                                         }
-                                    endforeach; ?>
+                                    endforeach;
+
+                                    // خلية الإجمالي للصنف
+                                    echo '<td style="font-weight:bold;background:var(--line-soft);text-align:center;">';
+                                    if (!$anyDistributed) {
+                                        echo '<span style="color:var(--ink-300);">—</span>';
+                                    } elseif (!$anyDone) {
+                                        echo '<span class="pill-yet">لسه</span>';
+                                    } else {
+                                        $totalDiff = $rowTotalDist - $rowTotalScan;
+                                        if ($allDone) {
+                                            if ($totalDiff == 0) {
+                                                echo '<span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span>';
+                                            } elseif ($totalDiff > 0) {
+                                                echo '<span style="color:var(--neg);font-weight:bold;">-' . $totalDiff . '</span>';
+                                            } else {
+                                                echo '<span style="color:var(--accent-text);font-weight:bold;">+' . abs($totalDiff) . '</span>';
+                                            }
+                                        } else {
+                                            if ($totalDiff == 0) {
+                                                echo '<span style="color:var(--pos);font-size:12px;" title="الفروع المكتملة مطابقة">' . $rowTotalScan . ' / ' . $rowTotalDist . '</span>';
+                                            } elseif ($totalDiff > 0) {
+                                                echo '<span style="color:var(--neg);font-size:12px;" title="عجز حتى الآن">' . $rowTotalScan . ' / ' . $rowTotalDist . ' (-' . $totalDiff . ')</span>';
+                                            } else {
+                                                echo '<span style="color:var(--accent-text);font-size:12px;" title="زيادة حتى الآن">' . $rowTotalScan . ' / ' . $rowTotalDist . ' (+' . abs($totalDiff) . ')</span>';
+                                            }
+                                        }
+                                    }
+                                    echo '</td>';
+                                    ?>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

@@ -53,16 +53,24 @@ if (!empty($u['branch_id'])) {
 
 // الموظف المختار لعهدة الموظف
 $allEmployees = $pdo->query('SELECT id, full_name, job_title, branch_id FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
-$selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
-if ($selectedEmpId <= 0 && !empty($allEmployees)) {
-    // لو المستخدم مربوط بموظف، اختاره تلقائياً
-    $uEmpStmt = $pdo->prepare("SELECT id FROM employees WHERE user_id = ? AND is_active = 1 LIMIT 1");
-    $uEmpStmt->execute([$uid]);
-    $uEmpId = (int) $uEmpStmt->fetchColumn();
-    if ($uEmpId > 0) {
-        $selectedEmpId = $uEmpId;
-    } else {
-        $selectedEmpId = (int) $allEmployees[0]['id'];
+
+// جلب موظف المستخدم الحالي (إن وُجد)
+$uEmpStmt = $pdo->prepare("SELECT id, full_name FROM employees WHERE user_id = ? AND is_active = 1 LIMIT 1");
+$uEmpStmt->execute([$uid]);
+$curUserEmp = $uEmpStmt->fetch();
+$currentUserEmpId = (int) ($curUserEmp['id'] ?? 0);
+
+// الموظف العادي لا يرى إلا عهدته هو فقط — الأونر فقط يقدر يختار أي موظف
+if (!is_owner()) {
+    $selectedEmpId = $currentUserEmpId;
+} else {
+    $selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
+    if ($selectedEmpId <= 0) {
+        if ($currentUserEmpId > 0) {
+            $selectedEmpId = $currentUserEmpId;
+        } elseif (!empty($allEmployees)) {
+            $selectedEmpId = (int) $allEmployees[0]['id'];
+        }
     }
 }
 
@@ -88,16 +96,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = 'تم إصدار إذن الصرف وتزويد عهدة الفرع.';
                 $branchId = $bId;
                 $prgTarget = 'custody.php?tab=branch&branch=' . $bId;
-            }
-            elseif ($action === 'issue_emp_order' && $canIssue && $canEmployeeCustody) {
-                $eId    = (int) ($_POST['employee_id'] ?? 0);
-                $amount = (float) ($_POST['amount'] ?? 0);
-                $date   = $_POST['date'] ?? date('Y-m-d');
-                $notes  = trim($_POST['notes'] ?? '');
-                if ($eId <= 0) throw new RuntimeException('اختر الموظف أولاً.');
-                issue_employee_disbursement_order($eId, $amount, $date, $notes ?: null, $uid);
-                $flash = 'تم إصدار إذن الصرف وتزويد عهدة الموظف.';
-                $prgTarget = 'custody.php?tab=employee&emp=' . $eId;
             }
             elseif ($action === 'add_expense') {
                 $custodyId = (int) ($_POST['custody_id'] ?? 0);
@@ -325,16 +323,10 @@ require_once __DIR__ . '/includes/header.php';
         </a>
         <?php endif; ?>
     </div>
-    <?php if ($canIssue): ?>
-        <?php if ($activeTab === 'branch' && $branchId): ?>
-            <button type="button" class="btn" onclick="openModal('orderModal')">
-                <i class="ti ti-plus"></i> إصدار إذن صرف لفرع
-            </button>
-        <?php elseif ($activeTab === 'employee'): ?>
-            <button type="button" class="btn" onclick="openModal('modalEmpOrder')">
-                <i class="ti ti-plus"></i> إصدار إذن صرف لموظف
-            </button>
-        <?php endif; ?>
+    <?php if ($canIssue && $activeTab === 'branch' && $branchId): ?>
+        <button type="button" class="btn" onclick="openModal('orderModal')">
+            <i class="ti ti-plus"></i> إصدار إذن صرف لفرع
+        </button>
     <?php endif; ?>
 </div>
 
@@ -381,6 +373,7 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
     ?>
+    <?php if (is_owner()): ?>
     <div class="top-row">
         <div class="branch-select">
             <form method="get" style="display:inline;">
@@ -396,17 +389,20 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
     </div>
+    <?php endif; ?>
 
     <?php if ($selectedEmpId <= 0): ?>
-        <div class="card"><div class="empty">اختر موظفاً لعرض تفاصيل عهدته.</div></div>
+        <div class="card"><div class="empty">لا توجد عهدة مسجلة لحسابك حالياً.</div></div>
     <?php elseif (!$empCustody): ?>
         <div class="card">
             <div class="empty">
-                لا توجد عهدة مفتوحة للموظف <?= e($selectedEmpName) ?> حالياً.<br>
-                <?php if ($canIssue): ?>
-                    <button type="button" class="btn" style="margin-top:14px;" onclick="openModal('modalEmpOrder')">
-                        <i class="ti ti-plus"></i> إصدار إذن صرف لبدء العهدة
-                    </button>
+                <?php if (is_owner()): ?>
+                    لا توجد عهدة مفتوحة للموظف <?= e($selectedEmpName) ?> حالياً.<br>
+                    <span style="font-size:13px;color:var(--ink-400);margin-top:8px;display:inline-block;">
+                        (لإصدار إذن صرف: اذهب إلى صفحة <b>الخزينة</b> واضغط زر «صرف» واختر «عهدة لموظف»)
+                    </span>
+                <?php else: ?>
+                    لا توجد عهدة مفتوحة لك حالياً.
                 <?php endif; ?>
             </div>
         </div>
@@ -857,42 +853,8 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<!-- Modal: إذن صرف لموظف -->
-<?php if ($canIssue && $canEmployeeCustody): ?>
-<div class="modal-bg" id="modalEmpOrder">
-    <div class="modal">
-        <h3>إصدار إذن صرف لعهدة موظف</h3>
-        <p style="font-size:13px;color:var(--ink-500);margin-top:-6px;margin-bottom:14px;">
-            الفلوس هتخرج من الخزينة الرئيسية وتدخل خزينة عهدة الموظف.
-        </p>
-        <form method="post">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="action" value="issue_emp_order">
-            <div class="form-row">
-                <label>الموظف</label>
-                <select name="employee_id" required>
-                    <option value="">— اختر الموظف —</option>
-                    <?php foreach ($allEmployees as $em): ?>
-                        <option value="<?= (int)$em['id'] ?>" <?= $selectedEmpId===(int)$em['id']?'selected':'' ?>>
-                            <?= e($em['full_name']) ?><?= !empty($em['job_title']) ? ' (' . e($em['job_title']) . ')' : '' ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-row"><label>المبلغ (ج.م)</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="سبب الصرف..." aria-label="ملاحظات"></div>
-            <div class="modal-actions">
-                <button type="submit" class="btn">إصدار الإذن</button>
-                <button type="button" class="btn btn-cancel" onclick="closeModal('modalEmpOrder')">إلغاء</button>
-            </div>
-        </form>
-    </div>
-</div>
-<?php endif; ?>
-
 <?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=2"></script>
+<script src="assets/acctree.js?v=3"></script>
 <script>
     function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
     function closeModal(id){ const el = document.getElementById(id); if (el) el.classList.remove('open'); }
