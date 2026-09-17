@@ -261,3 +261,104 @@ function receipt_last_scanned(PDO $pdo, int $receiptId, int $limit = 20): array
     $st->execute();
     return $st->fetchAll() ?: [];
 }
+
+/**
+ * مطابقة الباركود الممسوح مع أصناف الفاتورة الموزعة للفرع.
+ *
+ * القواعد:
+ * 1. إذا كان الكود خاصاً بوحدة غير القطعة (unit_factor != 1.0) يتم رفضه برسالة واضحة.
+ * 2. إذا كان الكود مطابقاً مباشرة لكود الصنف بالفاتورة، يتم قبوله.
+ * 3. إذا كان الكود باركوداً بديلاً (مرتبط بنفس item_id في hq_codes) يتم قبوله وإرجاع كود الصنف الأساسي بالفاتورة.
+ * 4. لا يوجد أي استعلام داخل حلقة تكرارية.
+ */
+function receipt_resolve_scanned_code(PDO $pdo, int $receiptId, string $scannedCode): array
+{
+    $scannedCode = trim($scannedCode);
+    if ($scannedCode === '') {
+        return ['ok' => false, 'error' => 'كود الصنف مطلوب.'];
+    }
+
+    $items = receipt_items_for_branch($pdo, $receiptId);
+    if (empty($items)) {
+        return ['ok' => false, 'error' => 'لا توجد أصناف موزعة لهذا الفرع.'];
+    }
+
+    $invoiceItemsMap = [];
+    foreach ($items as $it) {
+        $c = (string) $it['item_code'];
+        $invoiceItemsMap[$c] = $it;
+    }
+    $invoiceCodes = array_keys($invoiceItemsMap);
+
+    // 1. فحص الكود الممسوح في hq_codes للتحقق من الوحدة ومعرّف الصنف
+    $stCode = $pdo->prepare('SELECT item_id, name, unit_factor FROM hq_codes WHERE code = ? LIMIT 1');
+    $stCode->execute([$scannedCode]);
+    $hqRow = $stCode->fetch(PDO::FETCH_ASSOC);
+
+    if ($hqRow) {
+        // حارس الوحدة: لو وحدة تجميعية (كرتونة/باكتة) نرفض ونطلب باركود القطعة
+        $unitFactor = (float)($hqRow['unit_factor'] ?? 1.0);
+        if (abs($unitFactor - 1.0) > 0.001) {
+            return [
+                'ok'    => false,
+                'error' => 'هذا الباركود خاص بـ (كرتونة/باكتة) وليس بالقطعة، يرجى مسح باركود القطعة.'
+            ];
+        }
+
+        // هل الكود نفسه موجود في أصناف الفاتورة مباشرة؟
+        if (isset($invoiceItemsMap[$scannedCode])) {
+            $matched = $invoiceItemsMap[$scannedCode];
+            return [
+                'ok'              => true,
+                'item_code'       => $matched['item_code'],
+                'scanned_code'    => $scannedCode,
+                'item_name'       => $matched['item_name'],
+                'distributed_qty' => (float)$matched['distributed_qty'],
+                'scanned_qty'     => (float)$matched['scanned_qty'],
+            ];
+        }
+
+        // هل الكود يمثل باركوداً بديلاً لصنف موجود بالفاتورة (نفس item_id)؟
+        $itemId = (int)$hqRow['item_id'];
+        if ($itemId > 0 && !empty($invoiceCodes)) {
+            $inClause = implode(',', array_fill(0, count($invoiceCodes), '?'));
+            $stMatch = $pdo->prepare(
+                "SELECT c.code
+                 FROM hq_codes c
+                 WHERE c.item_id = ? AND c.code IN ($inClause)
+                 LIMIT 1"
+            );
+            $params = array_merge([$itemId], $invoiceCodes);
+            $stMatch->execute($params);
+            $primaryCode = $stMatch->fetchColumn();
+
+            if ($primaryCode && isset($invoiceItemsMap[$primaryCode])) {
+                $matched = $invoiceItemsMap[$primaryCode];
+                return [
+                    'ok'              => true,
+                    'item_code'       => $matched['item_code'],
+                    'scanned_code'    => $scannedCode,
+                    'item_name'       => $matched['item_name'],
+                    'distributed_qty' => (float)$matched['distributed_qty'],
+                    'scanned_qty'     => (float)$matched['scanned_qty'],
+                ];
+            }
+        }
+    } else {
+        // لو مش متسجل في hq_codes لكن موجود ككود مباشر في الفاتورة
+        if (isset($invoiceItemsMap[$scannedCode])) {
+            $matched = $invoiceItemsMap[$scannedCode];
+            return [
+                'ok'              => true,
+                'item_code'       => $matched['item_code'],
+                'scanned_code'    => $scannedCode,
+                'item_name'       => $matched['item_name'],
+                'distributed_qty' => (float)$matched['distributed_qty'],
+                'scanned_qty'     => (float)$matched['scanned_qty'],
+            ];
+        }
+    }
+
+    return ['ok' => false, 'error' => 'الصنف ده مش في الفاتورة'];
+}
+

@@ -135,24 +135,28 @@ $content = implode("\r\n", $lines) . "\r\n";
 $safeBranch = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $branchName);
 $filename   = 'dist_group' . $groupId . '_' . $safeBranch . '.txt';
 
+$skipReceiving = !empty($_GET['skip_receiving']);
+
 // تسجيل التصدير على كل فاتورة + تحديث حالتها
 foreach ($invoices as $inv) {
     $sth = (int) $inv['sth_id'];
     if (!isset($distIds[$sth])) continue;
     try {
         mark_branch_exported($distIds[$sth], $branchId, current_user()['id'] ?? null);
-        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null);
+        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, !$skipReceiving);
     } catch (Throwable $ex) {
         error_log('group_export: تعذّر تسجيل التصدير للفاتورة ' . $sth . ' — ' . $ex->getMessage());
     }
 }
 
 // فتح استلام المجموعة ككل (وليس فواتير مفردة)
-try {
-    require_once __DIR__ . '/receiving_flow_lib.php';
-    receiving_open($pdo, $groupId, 0, (int) ($_SESSION['user']['id'] ?? 0));
-} catch (Throwable $ex) {
-    error_log('group_export: تعذّر فتح استلام المجموعة ' . $groupId . ' — ' . $ex->getMessage());
+if (!$skipReceiving) {
+    try {
+        require_once __DIR__ . '/receiving_flow_lib.php';
+        receiving_open($pdo, $groupId, 0, (int) ($_SESSION['user']['id'] ?? 0));
+    } catch (Throwable $ex) {
+        error_log('group_export: تعذّر فتح استلام المجموعة ' . $groupId . ' — ' . $ex->getMessage());
+    }
 }
 
 header('Content-Type: text/plain; charset=utf-8');

@@ -35,15 +35,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // حذف/إلغاء فاتورة أو مجموعة بالكامل من الاستلامات (للأونر فقط)
+    if ($action === 'delete_invoice_receipts') {
+        if (!$isOwner) {
+            echo json_encode(['ok' => false, 'error' => 'إلغاء الفواتير متاح للأونر فقط.']);
+            exit;
+        }
+        $delGroupId = (int)($_POST['group_id'] ?? 0);
+        $delDistId  = (int)($_POST['distribution_id'] ?? 0);
+        if ($delGroupId <= 0 && $delDistId <= 0) {
+            echo json_encode(['ok' => false, 'error' => 'معرف الفاتورة أو المجموعة غير صحيح.']);
+            exit;
+        }
+
+        if ($delGroupId > 0) {
+            $stIds = $pdo->prepare('SELECT id FROM receipts WHERE group_id = ?');
+            $stIds->execute([$delGroupId]);
+        } else {
+            $stIds = $pdo->prepare('SELECT id FROM receipts WHERE distribution_id = ?');
+            $stIds->execute([$delDistId]);
+        }
+        $rcIds = $stIds->fetchAll(PDO::FETCH_COLUMN);
+        if (!empty($rcIds)) {
+            $ph = implode(',', array_fill(0, count($rcIds), '?'));
+            $pdo->prepare("DELETE FROM receipt_lines WHERE receipt_id IN ($ph)")->execute($rcIds);
+            $pdo->prepare("DELETE FROM receipts WHERE id IN ($ph)")->execute($rcIds);
+            $links = array_map(fn($id) => 'receiving.php?r=' . $id, $rcIds);
+            $lph = implode(',', array_fill(0, count($links), '?'));
+            $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link IN ($lph)")->execute($links);
+        }
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     $receipt = receipt_get($pdo, $receiptId);
     if (!$receipt) {
         echo json_encode(['ok' => false, 'error' => 'سجل الاستلام غير موجود.']);
         exit;
     }
 
+    // حذف/إلغاء استلام فرع مفرد (للأونر فقط)
+    if ($action === 'delete_receipt') {
+        if (!$isOwner) {
+            echo json_encode(['ok' => false, 'error' => 'إلغاء الاستلام متاح للأونر فقط.']);
+            exit;
+        }
+        $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link = ?")->execute(['receiving.php?r=' . $receiptId]);
+        $pdo->prepare('DELETE FROM receipt_lines WHERE receipt_id = ?')->execute([$receiptId]);
+        $pdo->prepare('DELETE FROM receipts WHERE id = ?')->execute([$receiptId]);
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     // حماية الأمان: مين مالوش فرع ومش أونر/مسؤول استلامات مايعملش أي حاجة.
-    //    من غير الشرط ده، أي مستخدم معاه صلاحية «استلام» ومش مربوط بفرع
-    //    كان يقدر يستلم باسم أي فرع في النظام.
     if (!$canManageAll && $userBranchId === null) {
         echo json_encode(['ok' => false, 'error' => 'حسابك مش مربوط بفرع — كلّم الأونر.']);
         exit;
@@ -65,6 +109,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
+    // استعلام فوري عن بيانات الصنف قبل الإضافة (Lookup)
+    if ($action === 'lookup') {
+        if ($receipt['status'] !== 'receiving') {
+            echo json_encode(['ok' => false, 'error' => 'لا يمكن البحث إلا في حالة جاري الاستلام.']);
+            exit;
+        }
+        $code = trim((string)($_POST['code'] ?? ''));
+        $res = receipt_resolve_scanned_code($pdo, $receiptId, $code);
+        echo json_encode($res);
+        exit;
+    }
+
     if ($action === 'scan') {
         if ($receipt['status'] !== 'receiving') {
             echo json_encode(['ok' => false, 'error' => 'لا يمكن المسح إلا في حالة جاري الاستلام.']);
@@ -80,21 +136,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // فحص الصنف في أصناف الفاتورة الخاصة بهذا الفرع
-        $items = receipt_items_for_branch($pdo, $receiptId);
-        $targetItem = null;
-        foreach ($items as $it) {
-            if ($it['item_code'] === $code) {
-                $targetItem = $it;
-                break;
-            }
-        }
-
-        if (!$targetItem) {
-            // الصنف غير موجود في فاتورة الفرع ← رفض ولا يتم الحفظ
-            echo json_encode(['ok' => false, 'error' => 'الصنف ده مش في الفاتورة']);
+        // مطابقة الكود والتحقق من الوحدة والباركود البديل
+        $res = receipt_resolve_scanned_code($pdo, $receiptId, $code);
+        if (!$res['ok']) {
+            echo json_encode($res);
             exit;
         }
+
+        $targetCode = $res['item_code'];
+        $targetName = $res['item_name'];
 
         $ins = $pdo->prepare(
             'INSERT INTO receipt_lines (receipt_id, item_code, item_name, scanned_qty, updated_by)
@@ -103,18 +153,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  scanned_qty = scanned_qty + VALUES(scanned_qty),
                  updated_by  = VALUES(updated_by)'
         );
-        $ins->execute([$receiptId, $code, $targetItem['item_name'], $qty, $uid]);
+        $ins->execute([$receiptId, $targetCode, $targetName, $qty, $uid]);
 
         $stScanned = $pdo->prepare('SELECT scanned_qty FROM receipt_lines WHERE receipt_id=? AND item_code=?');
-        $stScanned->execute([$receiptId, $code]);
+        $stScanned->execute([$receiptId, $targetCode]);
         $newQty = (float) $stScanned->fetchColumn();
 
         echo json_encode([
-            'ok'          => true,
-            'item_code'   => $code,
-            'item_name'   => $targetItem['item_name'],
-            'scanned_qty' => $newQty,
-            'added_qty'   => $qty
+            'ok'              => true,
+            'item_code'       => $targetCode,
+            'scanned_code'    => $code,
+            'item_name'       => $targetName,
+            'scanned_qty'     => $newQty,
+            'added_qty'       => $qty,
+            'distributed_qty' => $res['distributed_qty']
         ]);
         exit;
     }
@@ -143,6 +195,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'receiving',
                 'تمت مراجعة استلام بضاعة فرع ' . $receipt['branch_name'],
                 'قام الفرع بمراجعة الاستلام والمحضر في انتظار الاعتماد النهائي.',
+                'receiving.php?r=' . $receiptId
+            );
+        }
+
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
+    // رفض الاستلام وإعادة الفتح للفرع (للأونر أو المشرف)
+    if ($action === 'reject_review') {
+        if (!$canManageAll) {
+            echo json_encode(['ok' => false, 'error' => 'رفض الاستلام متاح للأونر والمشرف فقط.']);
+            exit;
+        }
+        if ($receipt['status'] !== 'received') {
+            echo json_encode(['ok' => false, 'error' => 'لا يمكن رفض الاستلام إلا في حالة بانتظار الاعتماد (تم الاستلام).']);
+            exit;
+        }
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        if ($reason === '') {
+            echo json_encode(['ok' => false, 'error' => 'يرجى كتابة سبب رفض الاستلام للتوضيح للفرع.']);
+            exit;
+        }
+
+        $st = $pdo->prepare("UPDATE receipts SET status='receiving', reject_reason=?, rejected_at=NOW(), rejected_by=? WHERE id=? AND status='received'");
+        $st->execute([$reason, $uid, $receiptId]);
+
+        // إشعار لمستخدمي الفرع والقائم بالاستلام
+        $notifUsers = [];
+        $bId = (int)$receipt['branch_id'];
+        $stBranchUsers = $pdo->prepare('SELECT id FROM users WHERE branch_id = ? AND is_active = 1');
+        $stBranchUsers->execute([$bId]);
+        foreach ($stBranchUsers->fetchAll() as $bu) {
+            $notifUsers[] = (int) $bu['id'];
+        }
+        if (!empty($receipt['received_by']) && !in_array((int)$receipt['received_by'], $notifUsers, true)) {
+            $notifUsers[] = (int)$receipt['received_by'];
+        }
+
+        if (!empty($notifUsers)) {
+            $senderName = $user['full_name'] ?? ($isOwner ? 'الأونر' : 'مشرف الاستلامات');
+            notify(
+                $pdo,
+                $notifUsers,
+                'receiving',
+                'تم رفض استلام بضاعة فرع ' . $receipt['branch_name'],
+                'تم رفض الاستلام بواسطة ' . $senderName . ' — السبب: ' . $reason,
                 'receiving.php?r=' . $receiptId
             );
         }
@@ -503,8 +602,17 @@ require_once __DIR__ . '/includes/header.php';
                     </h3>
                     <span style="font-size:12px;color:var(--ink-400);">تاريخ التجهيز: <?= date('Y-m-d H:i', strtotime($hdr['created_at'])) ?></span>
                 </div>
-                <div>
+                <div style="display:flex;gap:6px;align-items:center;">
                     <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm"><i class="ti ti-chart-bar"></i> الفروقات</a>
+                    <?php if ($isOwner): ?>
+                        <button type="button" class="btn btn-danger btn-sm btn-delete-invoice"
+                                data-group="<?= (int)$hdr['group_id'] ?>"
+                                data-dist="<?= (int)$hdr['distribution_id'] ?>"
+                                data-title="<?= e($hdr['title']) ?>"
+                                onclick="btnDeleteInvoice(this, event)">
+                            <i class="ti ti-trash"></i> إلغاء من الاستلامات
+                        </button>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -531,6 +639,42 @@ require_once __DIR__ . '/includes/header.php';
         endforeach;
     ?>
     <script>
+    var csrfToken = <?= json_encode(csrf_token()) ?>;
+
+    function btnDeleteInvoice(btn, e) {
+        if (e) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.preventDefault) e.preventDefault();
+        }
+        var groupId = parseInt(btn.getAttribute('data-group')) || 0;
+        var distId  = parseInt(btn.getAttribute('data-dist')) || 0;
+        var title   = btn.getAttribute('data-title') || 'هذه الفاتورة';
+        deleteInvoiceReceipts(groupId, distId, title);
+    }
+
+    function deleteInvoiceReceipts(groupId, distId, title) {
+        if (!confirm('هل أنت متأكد من إلغاء وحذف "' + title + '" من موديول الاستلامات بالكامل؟\nسيتم مسح سجلات استلام الفروع والإشعارات المرتبطة بها نهائياً.')) {
+            return;
+        }
+        var fd = new FormData();
+        fd.append('action', 'delete_invoice_receipts');
+        fd.append('group_id', groupId);
+        fd.append('distribution_id', distId);
+        fd.append('csrf', csrfToken);
+
+        fetch('receiving.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) {
+                    alert('تم إلغاء الفاتورة من موديول الاستلامات.');
+                    location.reload();
+                } else {
+                    alert(d.error || 'حدث خطأ أثناء إلغاء الفاتورة.');
+                }
+            })
+            .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+    }
+
     document.querySelectorAll('.clickable-card').forEach(function(card) {
         card.addEventListener('click', function(e) {
             // لو النقر على رابط أو زرار داخلي نسيب الرابط يشتغل طبيعي
@@ -605,12 +749,40 @@ require_once __DIR__ . '/includes/header.php';
 
         <div style="display:flex;gap:8px;align-items:center;">
             <a href="<?= e($diffUrl) ?>" class="btn btn-ghost btn-sm"><i class="ti ti-chart-bar"></i> صفحة الفروقات</a>
+            <?php if ($isOwner): ?>
+                <button type="button" class="btn btn-danger btn-sm" onclick="deleteSingleReceipt(<?= $receiptId ?>)">
+                    <i class="ti ti-trash"></i> إلغاء هذا الاستلام
+                </button>
+            <?php endif; ?>
             <a href="receiving.php" class="btn btn-ghost btn-sm">← القائمة</a>
         </div>
     </div>
 
     <!-- التنبيهات -->
     <div id="scanAlertMsg" class="scan-alert"></div>
+
+    <?php
+    if (!empty($receipt['reject_reason']) && $status === 'receiving'):
+        $rejecterName = 'الإدارة';
+        if (!empty($receipt['rejected_by'])) {
+            $stRej = $pdo->prepare('SELECT full_name FROM users WHERE id = ?');
+            $stRej->execute([(int)$receipt['rejected_by']]);
+            $rejecterName = $stRej->fetchColumn() ?: 'الإدارة';
+        }
+    ?>
+        <div class="receiving-card" style="border: 2px solid var(--neg); background: var(--neg-soft); color: var(--neg); padding: 14px 18px; margin-bottom: 16px;">
+            <div style="font-weight: bold; font-size: 15px; margin-bottom: 6px; display:flex; align-items:center; gap:8px;">
+                <i class="ti ti-alert-triangle" style="font-size:20px;"></i>
+                تم رفض الاستلام السابق بواسطة <?= e($rejecterName) ?> بتاريخ <?= date('Y-m-d H:i', strtotime($receipt['rejected_at'])) ?>
+            </div>
+            <div style="font-size: 13.5px; color: var(--text); margin-top: 6px;">
+                <b>سبب الرفض والتوجيهات:</b> <?= nl2br(e($receipt['reject_reason'])) ?>
+            </div>
+            <div style="font-size: 12px; color: var(--ink-500); margin-top: 6px;">
+                يرجى إعادة مسح ومراجعة الكميات وتصحيح الأخطاء ثم الضغط على «تم الاستلام ومراجعة الفروقات».
+            </div>
+        </div>
+    <?php endif; ?>
 
     <?php if ($status === 'sent'): ?>
         <!-- ================================================================= -->
@@ -660,17 +832,25 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <form id="barcodeScanForm" onsubmit="return handleManualScan(event);" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-                <div style="flex:2;min-width:200px;">
+                <div style="flex:1.5;min-width:180px;">
                     <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">كود الصنف / الباركود</label>
                     <div style="display:flex;gap:6px;">
                         <input type="text" id="codeInput" name="code" required autofocus autocomplete="off"
                                placeholder="امسح أو اكتب الكود..."
+                               oninput="liveLookup(this.value)"
                                style="flex:1;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;">
                         <button type="button" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
                                 style="background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:0 14px;cursor:pointer;font-size:18px;">
                             <i class="ti ti-camera"></i>
                         </button>
                     </div>
+                </div>
+
+                <div style="flex:2.5;min-width:220px;">
+                    <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">اسم الصنف</label>
+                    <input type="text" id="codeName" readonly placeholder="هيظهر بعد الكود..."
+                           style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;background:var(--surface);color:var(--text);cursor:default;">
+                    <div id="codeDistInfo" style="display:none;font-size:12px;color:var(--accent-text);margin-top:4px;font-weight:600;"></div>
                 </div>
 
                 <div style="width:100px;">
@@ -680,7 +860,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <div>
-                    <button type="submit" class="btn" style="height:38px;">مسح / إضافة</button>
+                    <button type="submit" id="addBtn" class="btn" style="height:38px;"><i class="ti ti-plus"></i> إضافة</button>
                 </div>
             </form>
         </div>
@@ -724,16 +904,23 @@ require_once __DIR__ . '/includes/header.php';
                     <span style="font-size:12px;color:var(--ink-400);">الفروقات بين الكمية الموزعة والكمية المستلمة فعلياً بالكاميرا.</span>
                 </div>
 
-                <div style="display:flex;gap:8px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <?php if ($status === 'receiving'): ?>
                         <a href="receiving.php?r=<?= $receiptId ?>" class="btn btn-ghost btn-sm">← رجوع للمسح</a>
-                        <button type="button" class="btn btn-success" onclick="finishReview()">
+                        <button type="button" class="btn btn-success btn-sm" onclick="finishReview()">
                             <i class="ti ti-check"></i> تمت المراجعة
                         </button>
-                    <?php elseif ($status === 'received' && $isOwner): ?>
-                        <button type="button" class="btn btn-success" onclick="approveReceipt()">
-                            <i class="ti ti-circle-check"></i> اعتماد الاستلام النهائي
-                        </button>
+                    <?php elseif ($status === 'received'): ?>
+                        <?php if ($canManageAll): ?>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="rejectReceiptModal()">
+                                <i class="ti ti-x"></i> رفض الاستلام وإعادة الفتح
+                            </button>
+                        <?php endif; ?>
+                        <?php if ($isOwner): ?>
+                            <button type="button" class="btn btn-success btn-sm" onclick="approveReceipt()">
+                                <i class="ti ti-circle-check"></i> اعتماد الاستلام النهائي
+                            </button>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
@@ -775,6 +962,25 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php endif; ?>
 
+    <!-- نافذة منبثقة لسبب الرفض وإعادة الفتح -->
+    <div id="rejectModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.6);z-index:99999;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:var(--surface);border-radius:var(--r);max-width:480px;width:100%;padding:20px;border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 10px 0;font-size:16px;color:var(--neg);display:flex;align-items:center;gap:6px;">
+                <i class="ti ti-alert-triangle"></i> رفض الاستلام وإعادة الفتح للفرع
+            </h3>
+            <p style="font-size:13px;color:var(--ink-600);margin-bottom:12px;line-height:1.5;">
+                سيتم إعادة فتح الاستلام لموظف الفرع ليتمكن من تصحيح الأخطاء، وسيصل إشعار للفرع بسبب الرفض والتوجيهات.
+            </p>
+            <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;">سبب الرفض والتوجيهات:</label>
+            <textarea id="rejectReasonInput" rows="3" placeholder="اكتب سبب الرفض هنا بالتفصيل (مثل: عجز ٥ قطع في صنف كذا، أو مسح صنف خطأ)..."
+                      style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-family:inherit;font-size:13.5px;box-sizing:border-box;resize:vertical;"></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <button type="button" class="btn btn-ghost" onclick="closeRejectModal()">إلغاء</button>
+                <button type="button" class="btn btn-danger" onclick="submitRejectReceipt()">تأكيد الرفض والإرسال</button>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
 </div>
 
 <!-- المكون المشترك للسكانر (كاميرا الموبايل) -->
@@ -787,41 +993,117 @@ var receiptId = <?= (int)$receiptId ?>;
 function showAlert(msg, isError) {
     var box = document.getElementById('scanAlertMsg');
     if (!box) return;
+    if (!msg) {
+        box.style.display = 'none';
+        return;
+    }
     box.textContent = msg;
     box.className = isError ? 'scan-alert scan-alert-error' : 'scan-alert scan-alert-success';
     box.style.display = 'block';
     if (!isError) {
-        setTimeout(function(){ box.style.display = 'none'; }, 3000);
+        setTimeout(function(){ box.style.display = 'none'; }, 4000);
     }
 }
 
-function startReceiving() {
-    if (!confirm('هل تريد بدء استلام هذه الفاتورة الآن؟')) return;
-    var fd = new FormData();
-    fd.append('action', 'start');
-    fd.append('receipt_id', receiptId);
-    fd.append('csrf', csrfToken);
+// استعلام فوري عن اسم الصنف وبياناته (Lookup)
+var lookupTimer = null;
+function liveLookup(code, callback) {
+    clearTimeout(lookupTimer);
+    code = (code || '').trim();
+    var nameBox = document.getElementById('codeName');
+    var distBox = document.getElementById('codeDistInfo');
+    if (!code) {
+        if (nameBox) nameBox.value = '';
+        if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
+        if (callback) callback(false);
+        return;
+    }
 
-    fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(d => {
-            if (d.ok) {
-                location.reload();
-            } else {
-                alert(d.error || 'حدث خطأ');
-            }
-        })
-        .catch(err => alert('تعذر الاتصال بالخادم'));
+    lookupTimer = setTimeout(function() {
+        if (nameBox) nameBox.value = 'جاري البحث عن الصنف...';
+        var fd = new FormData();
+        fd.append('action', 'lookup');
+        fd.append('receipt_id', receiptId);
+        fd.append('code', code);
+        fd.append('csrf', csrfToken);
+
+        fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (d.ok) {
+                    if (nameBox) nameBox.value = d.item_name;
+                    if (distBox) {
+                        distBox.textContent = 'الموزّع للفرع: ' + d.distributed_qty + ' | المستلم حالياً: ' + d.scanned_qty;
+                        distBox.style.display = 'block';
+                    }
+                    showAlert('', false);
+                    if (callback) callback(true, d);
+                } else {
+                    if (nameBox) nameBox.value = '';
+                    if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
+                    showAlert(d.error || 'الصنف ده مش في الفاتورة', true);
+                    if (callback) callback(false, d);
+                }
+            })
+            .catch(function(err) {
+                if (nameBox) nameBox.value = '';
+                showAlert('تعذر الاتصال بالخادم للبحث', true);
+                if (callback) callback(false);
+            });
+    }, 120);
 }
 
+// ربط أحداث الإدخال بلوحة المفاتيح
+document.addEventListener('DOMContentLoaded', function() {
+    var codeInput = document.getElementById('codeInput');
+    var qtyInput  = document.getElementById('qtyInput');
+
+    if (codeInput) {
+        // عند الضغط على Enter في خانة الكود: استعلام ونقل الفوكس للكمية بدون حفظ
+        codeInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                var codeVal = (this.value || '').trim();
+                if (!codeVal) return;
+                liveLookup(codeVal, function(ok) {
+                    if (ok && qtyInput) {
+                        qtyInput.focus();
+                        qtyInput.select();
+                    }
+                });
+            }
+        });
+    }
+
+    if (qtyInput) {
+        // عند الضغط على Enter في خانة الكمية: تنفيذ الإضافة والحفظ
+        qtyInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleManualScan(e);
+            }
+        });
+    }
+});
+
 function handleManualScan(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     var codeBox = document.getElementById('codeInput');
     var qtyBox  = document.getElementById('qtyInput');
-    var code = (codeBox.value || '').trim();
-    var qty  = parseFloat(qtyBox.value) || 1;
+    var nameBox = document.getElementById('codeName');
+    var distBox = document.getElementById('codeDistInfo');
+    var addBtn  = document.getElementById('addBtn');
 
-    if (!code) return false;
+    var code = (codeBox ? codeBox.value : '').trim();
+    var qty  = parseFloat(qtyBox ? qtyBox.value : 1) || 1;
+
+    if (!code) {
+        showAlert('يرجى كتابة أو مسح كود الصنف أولاً.', true);
+        if (codeBox) codeBox.focus();
+        return false;
+    }
+
+    if (addBtn) addBtn.disabled = true;
 
     var fd = new FormData();
     fd.append('action', 'scan');
@@ -831,20 +1113,25 @@ function handleManualScan(e) {
     fd.append('csrf', csrfToken);
 
     fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(d => {
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (addBtn) addBtn.disabled = false;
             if (d.ok) {
-                showAlert('تم مسح: ' + d.item_name + ' (الكمية المستلمة: ' + d.scanned_qty + ')', false);
-                codeBox.value = '';
-                qtyBox.value = '1';
-                codeBox.focus();
+                showAlert('تم استلام: ' + d.item_name + ' (الكمية المستلمة: ' + d.scanned_qty + ' من أصل ' + d.distributed_qty + ')', false);
+                if (codeBox) { codeBox.value = ''; codeBox.focus(); }
+                if (nameBox) nameBox.value = '';
+                if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
+                if (qtyBox) qtyBox.value = '1';
                 updateLastScannedTable(d.item_code, d.item_name, d.scanned_qty);
             } else {
                 showAlert(d.error || 'الصنف ده مش في الفاتورة', true);
-                codeBox.select();
+                if (codeBox) codeBox.select();
             }
         })
-        .catch(err => showAlert('تعذر الاتصال بالخادم', true));
+        .catch(function(err) {
+            if (addBtn) addBtn.disabled = false;
+            showAlert('تعذر الاتصال بالخادم', true);
+        });
 
     return false;
 }
@@ -878,6 +1165,25 @@ function updateLastScannedTable(code, name, scannedQty) {
     }
 }
 
+function startReceiving() {
+    if (!confirm('هل تريد بدء استلام هذه الفاتورة الآن؟')) return;
+    var fd = new FormData();
+    fd.append('action', 'start');
+    fd.append('receipt_id', receiptId);
+    fd.append('csrf', csrfToken);
+
+    fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.ok) {
+                location.reload();
+            } else {
+                alert(d.error || 'حدث خطأ');
+            }
+        })
+        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+}
+
 function finishReview() {
     if (!confirm('هل تأكدت من مراجعة كل البضاعة المستلمة وإنهاء المراجعة؟')) return;
     var fd = new FormData();
@@ -886,15 +1192,15 @@ function finishReview() {
     fd.append('csrf', csrfToken);
 
     fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(d => {
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
             if (d.ok) {
                 location.href = 'receiving.php?r=' + receiptId;
             } else {
                 alert(d.error || 'حدث خطأ');
             }
         })
-        .catch(err => alert('تعذر الاتصال بالخادم'));
+        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
 }
 
 function approveReceipt() {
@@ -905,15 +1211,77 @@ function approveReceipt() {
     fd.append('csrf', csrfToken);
 
     fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(d => {
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
             if (d.ok) {
                 location.reload();
             } else {
                 alert(d.error || 'حدث خطأ');
             }
         })
-        .catch(err => alert('تعذر الاتصال بالخادم'));
+        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+}
+
+function rejectReceiptModal() {
+    var modal = document.getElementById('rejectModal');
+    var txt = document.getElementById('rejectReasonInput');
+    if (txt) txt.value = '';
+    if (modal) modal.style.display = 'flex';
+    if (txt) txt.focus();
+}
+
+function closeRejectModal() {
+    var modal = document.getElementById('rejectModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function submitRejectReceipt() {
+    var txt = document.getElementById('rejectReasonInput');
+    var reason = (txt ? txt.value : '').trim();
+    if (!reason) {
+        alert('يرجى كتابة سبب رفض الاستلام.');
+        if (txt) txt.focus();
+        return;
+    }
+
+    var fd = new FormData();
+    fd.append('action', 'reject_review');
+    fd.append('receipt_id', receiptId);
+    fd.append('reason', reason);
+    fd.append('csrf', csrfToken);
+
+    fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.ok) {
+                location.reload();
+            } else {
+                alert(d.error || 'حدث خطأ أثناء رفض الاستلام.');
+            }
+        })
+        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+}
+
+function deleteSingleReceipt(id) {
+    if (!confirm('هل أنت متأكد من إلغاء وحذف هذا الاستلام بالكامل؟\nسيتم مسح الكميات الممسوحة وسجل الاستلام والإشعارات المرتبطة به نهائياً.')) {
+        return;
+    }
+    var fd = new FormData();
+    fd.append('action', 'delete_receipt');
+    fd.append('receipt_id', id);
+    fd.append('csrf', csrfToken);
+
+    fetch('receiving.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.ok) {
+                alert('تم إلغاء الاستلام بنجاح.');
+                window.location.href = 'receiving.php';
+            } else {
+                alert(d.error || 'حدث خطأ أثناء إلغاء الاستلام.');
+            }
+        })
+        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
 }
 
 function escapeHtml(str) {
@@ -921,7 +1289,5 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 </script>
-
-<?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -163,10 +163,12 @@ $content = implode("\r\n", $lines) . "\r\n";
 $safeBranch = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $branchName);
 $filename = 'dist_' . $invHeader['inv_no'] . '_' . $safeBranch . '.txt';
 
+$skipReceiving = !empty($_GET['skip_receiving']);
+
 // تسجيل إن الفرع ده اتصدّر (بيحدّد حالة الفاتورة: تم التقسيم / تم التوزيع)
 try {
     mark_branch_exported($distId, $branchId, current_user()['id'] ?? null);
-    refresh_invoice_status($distId, $invoiceId, $_GET['suffix'] ?? null);
+    refresh_invoice_status($distId, $invoiceId, $_GET['suffix'] ?? null, !$skipReceiving);
 } catch (Throwable $ex) {
     // فشل التسجيل مايمنعش التصدير نفسه
     error_log('branch_export: تعذّر تسجيل التصدير — ' . $ex->getMessage());

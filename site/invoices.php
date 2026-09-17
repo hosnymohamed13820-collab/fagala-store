@@ -2775,8 +2775,14 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <?php
+    $isReceivingOpened = false;
+    if (!empty($distId)) {
+        $isReceivingOpened = (int) $pdo->query('SELECT COUNT(*) FROM receipts WHERE distribution_id = ' . (int)$distId)->fetchColumn() > 0;
+    }
+    ?>
     <!-- أزرار تحميل ملف TEXT لكل فرع اتوزّعله حاجة -->
-    <div class="card" id="branchDlCard" <?= (empty($branchTotals) && $tab !== 'unposted') ? 'style="display:none;"' : '' ?>>
+    <div class="card" id="branchDlCard" data-receiving-open="<?= $isReceivingOpened ? '1' : '0' ?>" <?= (empty($branchTotals) && $tab !== 'unposted') ? 'style="display:none;"' : '' ?>>
         <div class="section-title">تحميل ملفات التوزيع (لكل فرع)</div>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
             كل زر بينزّل ملف TEXT خاص بالفرع (كود الصنف، الكمية، سعر التكلفة). يظهر فقط للفروع اللي اتوزّعلها كميات.
@@ -3240,9 +3246,10 @@ require_once __DIR__ . '/includes/header.php';
                 foreach ($activeBranches as $b) {
                     if ((float)($grpBranchTotals[(int)$b['id']] ?? 0) > 0) { $anyGrp = true; break; }
                 }
+                $isGrpReceivingOpened = (int) $pdo->query('SELECT COUNT(*) FROM receipts WHERE group_id = ' . (int)$grpCurrent['id'])->fetchColumn() > 0;
             ?>
             <div style="border:2px solid var(--pos);border-radius:12px;padding:16px;margin-bottom:16px;
-                        background:var(--pos-soft);">
+                        background:var(--pos-soft);" data-receiving-open="<?= $isGrpReceivingOpened ? '1' : '0' ?>">
                 <div style="font-weight:700;color:var(--pos);font-size:14px;margin-bottom:6px;">
                     <i class="ti ti-stack-2"></i> مجمّع — كل فواتير المجموعة في ملف واحد
                 </div>
@@ -3290,7 +3297,7 @@ require_once __DIR__ . '/includes/header.php';
                         if ((float)($bt[(int)$b['id']] ?? 0) > 0) { $anyB = true; break; }
                     }
                 ?>
-                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;" data-receiving-open="<?= $isGrpReceivingOpened ? '1' : '0' ?>">
                     <div style="font-weight:600;color:var(--ink-900);font-size:14px;margin-bottom:10px;">
                         فاتورة <?= e($gi['invoice_no']) ?>
                         <span style="font-weight:400;color:var(--ink-500);font-size:13px;">
@@ -5981,6 +5988,34 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
             const row = i.closest('tr.item-row');
             if (row && (row.dataset.note || '') !== i.value.trim()) iflNoteSave(i);
         });
+    });
+
+    // تأكيد فتح الاستلام عند تنزيل ملف التوزيع لأول مرة
+    document.addEventListener('click', function (e) {
+        var link = e.target.closest('.branch-dl, .grp-combo, .grp-dl');
+        if (!link) return;
+
+        var card = link.closest('[data-receiving-open]');
+        if (!card) return;
+
+        var isOpen = card.getAttribute('data-receiving-open');
+        if (isOpen === '1') return; // تم فتح الاستلام مسبقاً — تنزيل عادي بدون سؤال
+
+        e.preventDefault();
+        var targetUrl = link.href;
+        var msg = 'هل تريد توزيع هذه الفاتورة وإرسالها لموديول استلام الفروع؟\n\n'
+                + '• الضغط على "موافق": إرسال لموديول الاستلام وتنبيه الفروع وبدء المتابعة.\n'
+                + '• الضغط على "إلغاء": تنزيل الملف فقط كتقرير دون إرساله للاستلام وبدون إشعارات.';
+
+        if (confirm(msg)) {
+            document.querySelectorAll('[data-receiving-open]').forEach(function (c) {
+                c.setAttribute('data-receiving-open', '1');
+            });
+            window.location.href = targetUrl;
+        } else {
+            var sep = targetUrl.indexOf('?') !== -1 ? '&' : '?';
+            window.location.href = targetUrl + sep + 'skip_receiving=1';
+        }
     });
 })();
 </script>

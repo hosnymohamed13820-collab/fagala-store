@@ -999,11 +999,11 @@ function mark_branch_exported(int $distributionId, int $branchId, ?int $userId =
  * بتجيب الأصناف من SQL Server وتعيد الحساب والتخزين.
  * الفشل مابيوقفش العملية الأصلية — الحالة تتصلّح في أول إعادة حساب.
  */
-function refresh_invoice_status(int $distributionId, $invoiceId, ?string $suffix = null): void
+function refresh_invoice_status(int $distributionId, $invoiceId, ?string $suffix = null, bool $autoOpenReceiving = true): void
 {
     try {
         $items = sqlsrv_fetch_invoice_items($invoiceId, $suffix);
-        recalc_invoice_status($distributionId, $items);
+        recalc_invoice_status($distributionId, $items, $autoOpenReceiving);
     } catch (Throwable $ex) {
         error_log('receiving: تعذّر تحديث حالة الفاتورة — ' . $ex->getMessage());
     }
@@ -1102,7 +1102,7 @@ function get_exported_branches(int $distributionId): array
  *
  * @param array $items أصناف الفاتورة (من sqlsrv_fetch_invoice_items)
  */
-function recalc_invoice_status(?int $distributionId, array $items): string
+function recalc_invoice_status(?int $distributionId, array $items, bool $autoOpenReceiving = true): string
 {
     if (!$distributionId || !$items) return 'new';
 
@@ -1171,7 +1171,7 @@ function recalc_invoice_status(?int $distributionId, array $items): string
     // مكان النداء هنا عن قصد: ده الطريق الوحيد اللي كل الحالات
     // بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
     // الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
-    if ($status === 'done') {
+    if ($status === 'done' && $autoOpenReceiving) {
         try {
             // فحص ما إذا كانت الفاتورة تتبع مجموعة فواتير نشطة (invoice_group_items)
             $stGrp = $pdo->prepare(
