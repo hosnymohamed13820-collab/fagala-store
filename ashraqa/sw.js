@@ -27,7 +27,7 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v13'; // v13: xtable.js — فلتر وترتيب لكل جداول النظام
+const VERSION = 'v28'; // v28: إصلاح دعم الوضع الليلي في acctree.js | v27: فلتر التاريخ شجرة سنة/شهر/يوم | v26: منع قفل لوحة فلتر xtable على الموبايل عند الفوكس والـ resize | v25: app.js فيه formSubmit والمتصفحات كانت ماسكة القديم | v24: fagala.css اتحدّث والمتصفحات كانت لسه ماسكة القديم | v23: الأصل اللي مش في الكاش بيروح للشبكة صح | v22: الوضع الليلي | v21: الضغط على الإشعار بيعلّمه مقروء | v20: بترد على GET_VERSION
 const CACHE = 'ashraqa-' + VERSION;
 
 const ASSETS = [
@@ -39,6 +39,7 @@ const ASSETS = [
   './favicon-32.png',
   './assets/app.js',
   './assets/xtable.js',
+  './assets/acctree.js',
   './assets/fagala.css',
   './assets/barcode_scanner.js',
   './assets/tabler-subset.css',
@@ -108,17 +109,98 @@ self.addEventListener('fetch', (e) => {
     // باقي الأصول: من الكاش الأول (أسرع)، وبيتحدّث في الخلفية
     e.respondWith(
       caches.match(req).then((hit) => {
-        const net = fetch(req).then((res) => {
+        if (hit) {
+          // موجود في الكاش؟ ردّ بيه فوراً وحدّثه في الخلفية،
+          // فأي ملف اترفع صح بيوصل في الفتحة اللي بعدها.
+          e.waitUntil(
+            fetch(req).then((res) => putIfGood(req, res)).catch(() => {})
+          );
+          return hit;
+        }
+        // 🔴 مش في الكاش؟ الشبكة **ومعاها الخطأ بتاعها**.
+        //    الكود القديم كان `.catch(() => hit)` و`hit` هنا `undefined`،
+        //    فـ`respondWith(undefined)` كان بيفشّل الطلب **نهائي** بدل ما
+        //    يسيب المتصفح يتصرف. أي تعتيرة شبكة لحظية على الموبايل كانت
+        //    بتخلي `fagala.css` مايوصلش والصفحة تطلع من غير أي ستايل.
+        //    وده بيحصل بالذات بعد ما نزوّد `?v=` — النسخة الجديدة مش في
+        //    الكاش أصلاً فمفيش حاجة ترجع لها.
+        return fetch(req).then((res) => {
           putIfGood(req, res);
           return res;
-        }).catch(() => hit);
-        // hit موجود؟ استخدمه. ومهما حصل الشبكة شغالة في الخلفية
-        // فأي ملف اترفع صح بيوصل في الفتحة اللي بعدها.
-        return hit || net;
+        });
       })
     );
     return;
   }
 
   // أي حاجة تانية (صفحات PHP، بيانات): الشبكة مباشرة — بيانات لايف دايمًا
+});
+
+// =====================================================================
+//  إشعارات الويب (Push Notifications)
+// =====================================================================
+
+self.addEventListener('push', (e) => {
+  let data = {};
+  if (e.data) {
+    try {
+      data = e.data.json();
+    } catch (_) {
+      try {
+        data = { title: e.data.text() };
+      } catch (__) {}
+    }
+  }
+
+  const title = (data && data.title) ? data.title : 'إشعار جديد';
+  const options = {
+    body: (data && data.body) ? data.body : '',
+    icon: './icon-192.png',
+    badge: './favicon-32.png',
+    data: {
+      link: (data && data.link) ? data.link : './'
+    }
+  };
+
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const link = e.notification.data?.link;
+  const target = (link && link !== './' && link !== '')
+    ? 'notifications_read.php?go=' + encodeURIComponent(link)
+    : './';
+  const targetUrl = new URL(target, self.location.origin).href;
+
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          if ('navigate' in client) {
+            client.navigate(targetUrl);
+          }
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+
+
+// =====================================================================
+//  الرد على سؤال «انت نسخة كام؟»
+//
+//  صفحة الإعدادات كانت بتقرا sw.js من السيرفر عشان تعرف النسخة — وده
+//  بيقول اللي **على السيرفر** مش اللي **شغّال** على الجهاز. والفرق ده
+//  وقّعنا: النسخة الشغالة كانت قديمة ومفيهاش معالج push، فالإشعارات
+//  كانت بتتبعت وتتقبل من FCM ومحدش بيعرضها.
+// =====================================================================
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'GET_VERSION' && e.ports && e.ports[0]) {
+    e.ports[0].postMessage({ version: VERSION, hasPush: true });
+  }
 });

@@ -35,6 +35,8 @@
         var rows = Array.prototype.slice.call(body.rows);
         var grid = [];
         rows.forEach(function (row) {
+            // تخطّي أي صف مخفي (xt-out أو display:none أو غيره)
+            if (row.offsetParent === null) return;
             var line = [];
             Array.prototype.slice.call(row.cells).forEach(function (cell) {
                 var input = cell.querySelector('input:not([type=hidden]), select, textarea');
@@ -45,24 +47,38 @@
         return grid;
     }
 
-    function focusAt(grid, r, c) {
+    // حركة رأسية: العمود يفضل ثابت، يدوّر على أول صف فوق/تحت فيه خانة صالحة في نفس العمود
+    function focusVertical(grid, startR, c, step) {
+        var r = startR;
+        while (r >= 0 && r < grid.length) {
+            var line = grid[r];
+            if (line && c >= 0 && c < line.length) {
+                var t = line[c];
+                if (t && !t.disabled && !t.readOnly) {
+                    t.focus();
+                    if (t.select) { try { t.select(); } catch (e) {} }
+                    return true;
+                }
+            }
+            r += step;
+        }
+        return false;
+    }
+
+    // حركة أفقية: الصف يفضل ثابت، يدوّر في نفس الصف بالاتجاه المطلوب
+    function focusHorizontal(grid, r, startC, step) {
         if (r < 0 || r >= grid.length) return false;
         var line = grid[r];
         if (!line) return false;
-        // لو الخانة في نفس العمود فاضية، دوّر على أقرب خانة في نفس الصف
-        var candidates = [c];
-        for (var off = 1; off < (line.length || 1); off++) {
-            candidates.push(c - off, c + off);
-        }
-        for (var i = 0; i < candidates.length; i++) {
-            var cc = candidates[i];
-            if (cc < 0 || cc >= line.length) continue;
-            var t = line[cc];
+        var c = startC;
+        while (c >= 0 && c < line.length) {
+            var t = line[c];
             if (t && !t.disabled && !t.readOnly) {
                 t.focus();
                 if (t.select) { try { t.select(); } catch (e) {} }
                 return true;
             }
+            c += step;
         }
         return false;
     }
@@ -149,6 +165,15 @@
                      ['text','search','url','tel','email','password'].indexOf(el.type) !== -1;
         if (isText && (key === 'ArrowLeft' || key === 'ArrowRight')) return;
 
+        // 🔴 حماية خانات الأرقام من التغيير بالسهم فوق/تحت، وحماية الفورم من الإرسال بـ Enter
+        var isNumber = el.tagName === 'INPUT' && el.type === 'number';
+        if (isNumber && (key === 'ArrowUp' || key === 'ArrowDown')) {
+            e.preventDefault();
+        }
+        if (key === 'Enter') {
+            e.preventDefault();
+        }
+
         var grid = buildGrid(table);
         var pos = findPosition(grid, el);
         if (!pos) return;
@@ -157,22 +182,23 @@
         var moved = false;
 
         if (key === 'ArrowDown' || key === 'Enter') {
-            if (pos.r + 1 < grid.length) {
-                moved = focusAt(grid, pos.r + 1, pos.c);
-            } else if (isRepeatable(table)) {
-                // آخر صف: ضيف صف جديد وانزل له
+            moved = focusVertical(grid, pos.r + 1, pos.c, 1);
+            if (!moved && isRepeatable(table)) {
+                // آخر صف: ضيف صف جديد وانزل له في نفس العمود
                 var newRow = addRow(table);
                 if (newRow) {
                     var fresh = buildGrid(table);
-                    moved = focusAt(fresh, fresh.length - 1, pos.c);
+                    moved = focusVertical(fresh, fresh.length - 1, pos.c, 1);
                 }
             }
         } else if (key === 'ArrowUp') {
-            moved = focusAt(grid, pos.r - 1, pos.c);
+            moved = focusVertical(grid, pos.r - 1, pos.c, -1);
         } else if (key === 'ArrowRight') {
-            moved = focusAt(grid, pos.r, rtl ? pos.c - 1 : pos.c + 1);
+            var stepR = rtl ? -1 : 1;
+            moved = focusHorizontal(grid, pos.r, pos.c + stepR, stepR);
         } else if (key === 'ArrowLeft') {
-            moved = focusAt(grid, pos.r, rtl ? pos.c + 1 : pos.c - 1);
+            var stepL = rtl ? 1 : -1;
+            moved = focusHorizontal(grid, pos.r, pos.c + stepL, stepL);
         }
 
         if (moved) e.preventDefault();
@@ -189,6 +215,37 @@
         init();
     }
 })();
+
+/* ============================================================
+ * formSubmit — بديل `form.submit()` بيبعت حدث submit فعلاً
+ * ------------------------------------------------------------
+ *  🔴 البق اللي اتعمل عشانه (2026-09-01):
+ *  `form.submit()` اللي بيتنادى من جافاسكربت **مابيبعتش حدث
+ *  `submit`** — ده سلوك المتصفح نفسه مش بق عندنا. و`xtable`
+ *  بيحفظ فلتر الجدول على الحدث ده بالظبط (قسم ١١ فيه).
+ *
+ *  النتيجة: أي `onchange="this.form.submit()"` — زي مبدّل الشهر
+ *  في شاشة الرواتب — كان بيرجّع الصفحة **من غير الفلتر**، ومحمد
+ *  يفضل يفلتر من أول وجديد كل مرة يغيّر التاريخ.
+ *
+ *  استخدم `formSubmit(this.form)` بدل `this.form.submit()` في أي
+ *  فلتر بيبعت لوحده.
+ *
+ *  ⚠️ **مش** بديل عام: في `stocktake.php` و`attendance.php` فيه
+ *  نداءات `form.submit()` **مقصودة** عشان تتخطى `onsubmit`
+ *  (واحد منهم بيشيل الخاصية بإيده الأول). سيبهم زي ما هم.
+ * ============================================================ */
+window.formSubmit = function (form) {
+    if (!form) return;
+    /* requestSubmit بيبعت الحدث وبيشغّل تحقق HTML — ده اللي عايزينه */
+    if (typeof form.requestSubmit === 'function') { form.requestSubmit(); return; }
+    /* متصفح قديم (سفاري أقل من ١٦): ابعت الحدث بإيدك، وامشِ بس
+       لو محدش لغاه — عشان `onsubmit="return confirm(...)"` يفضل شغّال */
+    var ev;
+    try { ev = new Event('submit', { bubbles: true, cancelable: true }); }
+    catch (e) { form.submit(); return; }
+    if (form.dispatchEvent(ev)) form.submit();
+};
 
 /* ============================================================
  * isEnterKey — فحص موحّد لزرار Enter يشتغل على كيبورد الموبايل

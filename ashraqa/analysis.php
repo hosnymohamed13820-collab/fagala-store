@@ -103,6 +103,27 @@ if ($ready && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
+            // ===== بناء من الداتا الحيّة (ERP) =====
+            if ($action === 'build_erp') {
+                $bid  = (int) ($_POST['batch_id'] ?? 0);
+                $from = trim((string) ($_POST['period_from'] ?? ''));
+                $to   = trim((string) ($_POST['period_to'] ?? ''));
+                if ($bid <= 0 || !an_batch($bid)) throw new RuntimeException('الرفعة مش موجودة.');
+                if ($from === '' || $to === '')   throw new RuntimeException('اختار فترة البداية والنهاية.');
+                if ($from > $to)                  throw new RuntimeException('تاريخ البداية بعد النهاية.');
+
+                $res = an_import_erp($bid, $from, $to);
+
+                $_SESSION['flash'] = sprintf(
+                    'اتخزن %s صنف في %d مخازن من الداتا الحيّة%s.',
+                    number_format($res['stored']),
+                    $res['stores'],
+                    $res['skipped'] ? (' — واتتجاهل ' . number_format($res['skipped']) . ' صنف من غير باركود') : ''
+                );
+                header('Location: analysis.php?tab=batches&batch=' . $bid);
+                exit;
+            }
+
             // ===== رفع ملف فرع =====
             if ($action === 'upload') {
                 $bid   = (int) ($_POST['batch_id'] ?? 0);
@@ -219,6 +240,7 @@ $batches   = $ready ? an_batches() : [];
 $curBatch  = (int) ($_GET['batch'] ?? ($batches[0]['id'] ?? 0));
 $stores    = $ready ? an_stores() : [];
 $uploaded  = ($ready && $curBatch) ? an_batch_stores($curBatch) : [];
+$curBatchObj = ($ready && $curBatch) ? an_batch($curBatch) : null;
 
 $report = null; $summary = null; $cats = [];
 if ($ready && $tab === 'report' && $curBatch) {
@@ -244,8 +266,8 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--surface); color:var(--accent); border:1.5px solid var(--line); }
-    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
+    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent-text); }
     .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
     .btn-danger:hover { background:var(--neg-soft); }
 
@@ -255,7 +277,7 @@ require_once __DIR__ . '/includes/header.php';
         border:1.5px solid var(--line); color:var(--ink-600); font-size:13.5px;
         text-decoration:none; display:inline-flex; align-items:center; gap:7px; }
     .an-tab:hover { border-color:var(--ink-300); color:var(--ink-800); }
-    .an-tab.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .an-tab.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
 
     /* ===== الكروت والنماذج ===== */
     .an-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
@@ -270,7 +292,7 @@ require_once __DIR__ . '/includes/header.php';
         font-family:inherit; font-size:13.5px; color:var(--ink-800); background:var(--surface);
         min-height:42px; }
     .an-fld input:focus, .an-fld select:focus {
-        outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+        outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .an-hint { font-size:11.5px; color:var(--ink-400); margin-top:9px; line-height:1.7; }
 
     /* شريط أدوات التقرير — الحقول شمال والأفعال يمين */
@@ -284,7 +306,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:13px 15px; border:1.5px solid var(--line); border-radius:var(--r);
         text-decoration:none; color:inherit; }
     .an-b:hover { border-color:var(--ink-300); background:var(--bg); }
-    .an-b.on { border-color:var(--accent); background:var(--accent-soft); }
+    .an-b.on { border-color:var(--accent-text); background:var(--accent-soft); }
     .an-b b { font-size:13.5px; color:var(--ink-900); }
     .an-b span { font-size:12px; color:var(--ink-500); }
 
@@ -306,15 +328,15 @@ require_once __DIR__ . '/includes/header.php';
     .an-c.k-naqes { border-top-color:var(--neg); }
     .an-c.k-raked { border-top-color:var(--warn); }
     .an-c.k-tamam { border-top-color:var(--pos); }
-    .an-c.k-nazar { border-top-color:var(--accent); }
+    .an-c.k-nazar { border-top-color:var(--accent-text); }
 
     /* ===== الشارات — هادية زي باقي النظام ===== */
     .an-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600;
         white-space:nowrap; display:inline-block; }
     .b-naqes  { background:var(--neg-soft);    color:var(--neg); }
     .b-raked  { background:var(--warn-soft);   color:var(--warn); }
-    .b-rakedf { background:var(--warn);        color:#fff; }
-    .b-nazar  { background:var(--accent-soft); color:var(--accent); }
+    .b-rakedf { background:var(--warn-fill);        color:#fff; }
+    .b-nazar  { background:var(--accent-soft); color:var(--accent-text); }
     .b-tamam  { background:var(--pos-soft);    color:var(--pos); }
 
     /* =================================================================
@@ -339,12 +361,16 @@ require_once __DIR__ . '/includes/header.php';
           «-16» مش «16-»). فكانت بترسم البوردر على شمالها بدل يمينها،
           والنتيجة إن الحد بين «القسم» و«مبيعات الفجالة» — وبين
           «الحالة» و«الأولوية» — يطلع فاضي. */
+    /* 🔴 كان `#000` صريح. في الوضع الليلي خط أسود على أرضية سودا =
+       شبكة مختفية والجدول بيبقى كتلة أرقام من غير حدود. `--ink-300`
+       بيقلب مع الوضع: رمادي فاتح على الأبيض، ورمادي غامق على الأسود —
+       فالشبكة بتفضل ظاهرة في الاتنين. */
     .an-tbl th, .an-tbl td {
-        border-bottom:1px solid #000;
-        border-right:1px solid #000; }
+        border-bottom:1px solid var(--ink-300);
+        border-right:1px solid var(--ink-300); }
     .an-tbl th:last-child, .an-tbl td:last-child {
-        border-left:1px solid #000; }
-    .an-tbl thead tr:first-child th { border-top:1px solid #000; }
+        border-left:1px solid var(--ink-300); }
+    .an-tbl thead tr:first-child th { border-top:1px solid var(--ink-300); }
 
     .an-tbl thead th { background:var(--bg); color:var(--ink-600);
         font-size:11px; font-weight:600; padding:7px 9px; text-align:center;
@@ -354,7 +380,7 @@ require_once __DIR__ . '/includes/header.php';
     .an-tbl thead tr:last-child th { top:30px; }
 
     .an-tbl td { padding:7px 9px; text-align:center; color:var(--ink-800); }
-    .an-tbl tbody tr:nth-child(even) td { background:#fbfcfd; }
+    .an-tbl tbody tr:nth-child(even) td { background:var(--surface); }
     .an-tbl tbody tr:hover td { background:var(--accent-soft); }
 
     /* الأرقام: خانات متساوية العرض، واتجاه لاتيني عشان السالب يطلع
@@ -371,14 +397,14 @@ require_once __DIR__ . '/includes/header.php';
     .an-tbl .c-name { right:118px;              width:210px; min-width:210px;
         white-space:normal; line-height:1.5; }
     .an-tbl tbody tr:nth-child(even) .c-code,
-    .an-tbl tbody tr:nth-child(even) .c-name { background:#fbfcfd; }
+    .an-tbl tbody tr:nth-child(even) .c-name { background:var(--surface); }
     .an-tbl tbody tr:hover .c-code,
     .an-tbl tbody tr:hover .c-name { background:var(--accent-soft); }
     .an-tbl thead .c-code, .an-tbl thead .c-name { z-index:6; background:var(--bg); }
 
     /* تظليل خفيف يفصل مجموعة كل فرع عن اللي جنبها */
-    .an-tbl .g1 td, .an-tbl td.g1 { background:#f7f9fb; }
-    .an-tbl tbody tr:nth-child(even) td.g1 { background:#f2f5f8; }
+    .an-tbl .g1 td, .an-tbl td.g1 { background:var(--surface); }
+    .an-tbl tbody tr:nth-child(even) td.g1 { background:var(--line-soft); }
     .an-tbl tbody tr:hover td.g1 { background:var(--accent-soft); }
     /* فاصل المجموعات بقى أعرض شوية عشان يفضل باين وسط البوردر العام */
     .an-tbl th.gsep, .an-tbl td.gsep { border-right-width:2px; }
@@ -414,11 +440,11 @@ require_once __DIR__ . '/includes/header.php';
     .an-legend i { width:22px; height:10px; border-radius:3px; display:inline-block; }
 
     .an-warn { padding:11px 14px; border-radius:var(--r); background:var(--warn-soft);
-        border:1px solid #e8d5aa; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--warn); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
     .an-ok   { padding:11px 14px; border-radius:var(--r); background:var(--pos-soft);
-        border:1px solid #b8d6c6; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--pos); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
     .an-err  { padding:11px 14px; border-radius:var(--r); background:var(--neg-soft);
-        border:1px solid #e0b5b3; color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
+        border:1px solid var(--neg); color:var(--ink-800); font-size:12.5px; margin-bottom:12px; }
 
     .an-prev { width:100%; border-collapse:collapse; font-size:11.5px; margin-top:12px; }
     .an-prev th, .an-prev td { padding:6px 8px; border:1px solid var(--line-soft); text-align:center; }
@@ -565,6 +591,21 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </div>
 
+            <form method="post" class="an-row" style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line-soft);">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="build_erp">
+                <input type="hidden" name="batch_id" value="<?= $curBatch ?>">
+                <div class="an-fld">
+                    <label>من تاريخ</label>
+                    <input type="date" name="period_from" value="<?= e($curBatchObj['period_from'] ?? '') ?>" required>
+                </div>
+                <div class="an-fld">
+                    <label>لـ تاريخ</label>
+                    <input type="date" name="period_to" value="<?= e($curBatchObj['period_to'] ?? '') ?>" required>
+                </div>
+                <button class="btn" type="submit"><i class="ti ti-refresh"></i> ابنِ من الداتا الحيّة</button>
+            </form>
+
             <form method="post" enctype="multipart/form-data" class="an-row" style="margin-top:14px;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="upload">
@@ -617,7 +658,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="tab" value="report">
             <div class="an-fld">
                 <label>الرفعة</label>
-                <select name="batch" onchange="this.form.submit()">
+                <select name="batch" onchange="formSubmit(this.form)">
                     <?php foreach ($batches as $b): ?>
                         <option value="<?= (int) $b['id'] ?>" <?= (int) $b['id'] === $curBatch ? 'selected' : '' ?>>
                             <?= e($b['label'] ?: ('#' . $b['id'])) ?>

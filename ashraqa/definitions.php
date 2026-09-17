@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('definitions');
+require_once __DIR__ . '/finance.php';
 
 $pdo       = db();
 $flash     = '';
@@ -118,39 +119,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ===== الموظفون =====
         elseif ($action === 'add_employee') {
-            $name     = trim($_POST['full_name'] ?? '');
-            $branchId = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
-            $phone    = trim($_POST['phone'] ?? '');
-            $jobTitle = trim($_POST['job_title'] ?? '');
-            $salary   = (float) ($_POST['base_salary'] ?? 0);
-            $expIn    = trim($_POST['expected_in'] ?? '') ?: null;
-            $expOut   = trim($_POST['expected_out'] ?? '') ?: null;
-            $userId   = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
+            $name       = trim($_POST['full_name'] ?? '');
+            $branchId   = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
+            $phone      = trim($_POST['phone'] ?? '');
+            $jobTitle   = trim($_POST['job_title'] ?? '');
+            $salary     = (float) ($_POST['base_salary'] ?? 0);
+            $salaryMode = ($_POST['salary_mode'] ?? '') === 'fixed' ? 'fixed' : 'hours';
+            $expHours   = ($_POST['expected_monthly_hours'] ?? '') !== '' ? (float) $_POST['expected_monthly_hours'] : null;
+            $expIn      = trim($_POST['expected_in'] ?? '') ?: null;
+            $expOut     = trim($_POST['expected_out'] ?? '') ?: null;
+            $userId     = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
             if ($name === '') {
                 $flash = 'اسم الموظف مطلوب.'; $flashType = 'error';
             } else {
                 $pdo->prepare(
-                    'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut]);
+                    'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_monthly_hours, expected_in, expected_out, salary_mode)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut, $salaryMode]);
                 $flash = 'تم إضافة الموظف.';
             }
             $tab = 'employees';
         }
         elseif ($action === 'edit_employee') {
-            $id       = (int) ($_POST['id'] ?? 0);
-            $name     = trim($_POST['full_name'] ?? '');
-            $branchId = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
-            $phone    = trim($_POST['phone'] ?? '');
-            $jobTitle = trim($_POST['job_title'] ?? '');
-            $salary   = (float) ($_POST['base_salary'] ?? 0);
-            $expIn    = trim($_POST['expected_in'] ?? '') ?: null;
-            $expOut   = trim($_POST['expected_out'] ?? '') ?: null;
-            $userId   = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
+            $id         = (int) ($_POST['id'] ?? 0);
+            $name       = trim($_POST['full_name'] ?? '');
+            $branchId   = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
+            $phone      = trim($_POST['phone'] ?? '');
+            $jobTitle   = trim($_POST['job_title'] ?? '');
+            $salary     = (float) ($_POST['base_salary'] ?? 0);
+            $salaryMode = ($_POST['salary_mode'] ?? '') === 'fixed' ? 'fixed' : 'hours';
+            $expHours   = ($_POST['expected_monthly_hours'] ?? '') !== '' ? (float) $_POST['expected_monthly_hours'] : null;
+            $expIn      = trim($_POST['expected_in'] ?? '') ?: null;
+            $expOut     = trim($_POST['expected_out'] ?? '') ?: null;
+            $userId     = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
             if ($id > 0 && $name !== '') {
                 $pdo->prepare(
-                    'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=? WHERE id=?'
-                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $id]);
+                    'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_monthly_hours=?, expected_in=?, expected_out=?, salary_mode=? WHERE id=?'
+                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut, $salaryMode, $id]);
                 $flash = 'تم تعديل الموظف.';
             }
             $tab = 'employees';
@@ -181,6 +186,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $flash = 'تم إضافة الحساب.';
                 } catch (PDOException $ex) {
                     $flash = 'التصنيف موجود بالفعل.'; $flashType = 'error';
+                }
+            }
+            $tab = 'categories';
+        }
+        elseif ($action === 'edit_category') {
+            $id = (int) ($_POST['id'] ?? 0);
+            $name = trim($_POST['name'] ?? '');
+            if ($id <= 0 || $name === '') {
+                $flash = 'بيانات الحساب غير مكتملة.';
+                $flashType = 'error';
+            } else {
+                $parentId = ($_POST['parent_id'] ?? '') !== '' ? (int) $_POST['parent_id'] : null;
+                if ($parentId === 0) {
+                    $parentId = null;
+                }
+                $accType = in_array($_POST['acc_type'] ?? '', ['asset','liability','revenue','expense'], true)
+                            ? $_POST['acc_type'] : 'expense';
+
+                // حراسات منع الدورة (Cycle Prevention)
+                if ($parentId !== null && $parentId === $id) {
+                    $flash = 'لا يمكن اختيار الحساب كأب لنفسه.';
+                    $flashType = 'error';
+                } elseif ($parentId !== null && $parentId > 0) {
+                    // فحص هل الأب الجديد من نسل الحساب الحالي (امشي لفوق من الأب الجديد)
+                    $allParents = $pdo->query('SELECT id, parent_id FROM accounts')->fetchAll(PDO::FETCH_KEY_PAIR);
+                    $curr = $parentId;
+                    $visited = [];
+                    $hasCycle = false;
+                    $maxHops = 100;
+                    while ($curr !== null && $curr > 0 && $maxHops-- > 0) {
+                        if ($curr === $id) {
+                            $hasCycle = true;
+                            break;
+                        }
+                        if (isset($visited[$curr])) {
+                            // دورة قديمة في البيانات
+                            $hasCycle = true;
+                            break;
+                        }
+                        $visited[$curr] = true;
+                        $curr = isset($allParents[$curr]) && $allParents[$curr] !== null ? (int)$allParents[$curr] : null;
+                    }
+
+                    if ($hasCycle) {
+                        $flash = 'لا يمكن اختيار حساب فرعي كأب للحساب الحالي (منعاً للدوران في الشجرة).';
+                        $flashType = 'error';
+                    }
+                }
+
+                if ($flashType !== 'error') {
+                    try {
+                        // لا نعدّل is_custody هنا (حسابات العهدة لها منطق خاص)
+                        $pdo->prepare(
+                            'UPDATE accounts SET name = ?, parent_id = ?, type = ? WHERE id = ?'
+                        )->execute([$name, $parentId, $accType, $id]);
+                        $flash = 'تم تعديل الحساب بنجاح.';
+                    } catch (PDOException $ex) {
+                        $flash = 'حدث خطأ أو اسم الحساب موجود بالفعل.';
+                        $flashType = 'error';
+                    }
                 }
             }
             $tab = 'categories';
@@ -341,7 +406,6 @@ $accWalk = function(int $pid, int $depth) use (&$accWalk, &$accFlat, &$accAutoCo
 };
 $accWalk(0, 0);
 // الآباء المتاحين للاختيار عند الإضافة
-$accParents = array_values(array_filter($accFlat, fn($a) => (int)$a['depth'] < 2));
 $treasuries = $pdo->query(
     "SELECT t.*, b.name AS branch_name FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
@@ -363,7 +427,7 @@ require_once __DIR__ . '/includes/header.php';
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
     .tab {
         padding:10px 20px; border-radius:10px; text-decoration:none;
-        color:var(--accent-hover); background:#fff; font-size:14px; font-weight:500;
+        color:var(--accent-text); background:var(--surface); font-size:14px; font-weight:500;
         border:1.5px solid transparent;
     }
     .tab.active { background:var(--accent); color:#fff; }
@@ -374,7 +438,7 @@ require_once __DIR__ . '/includes/header.php';
         display:inline-flex; align-items:center; gap:7px; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:12px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
@@ -382,11 +446,11 @@ require_once __DIR__ . '/includes/header.php';
     td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
-    .badge.inactive { background:var(--line-soft); color:#999; }
+    .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:480px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:480px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .tag-on { display:inline-block; padding:2px 8px; margin:1px 2px; border-radius:5px;
@@ -404,10 +468,11 @@ require_once __DIR__ . '/includes/header.php';
     .form-row input, .form-row select {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
-    .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
+    .btn-cancel:hover { background:var(--line); }
+    .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
 </style>
 
 <?php if ($flash): ?>
@@ -534,7 +599,7 @@ require_once __DIR__ . '/includes/header.php';
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <?php elseif ($tab === 'employees'): ?>
-    <div class="card" style="background:var(--warn-soft);border:1.5px solid #ffe0a8;margin-bottom:14px;">
+    <div class="card" style="background:var(--warn-soft);border:1.5px solid var(--warn);margin-bottom:14px;">
         <div style="color:var(--warn);font-size:13px;line-height:1.7;">
             <strong>ملاحظة:</strong> الأفضل إنشاء الموظف من صفحة <strong>المستخدمين</strong> (كل موظف = حساب مستخدم،
             تحدّدله كل حاجة من مكان واحد: الدخول، الصلاحيات، الفرع، المرتب، مواعيد الحضور). الموظفون اللي بتضيفهم هنا
@@ -550,14 +615,28 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا يوجد موظفون بعد.</div>
         <?php else: ?>
         <table>
-            <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>الراتب</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>نوع الحساب</th><th>الراتب</th><th>الساعات المنتظرة</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($employees as $emp): ?>
                 <tr>
                     <td style="font-weight:500;"><?= e($emp['full_name']) ?></td>
                     <td><?= e($emp['branch_name'] ?? '—') ?></td>
                     <td><?= e($emp['job_title'] ?? '—') ?></td>
+                    <td>
+                        <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
+                            <span class="badge" style="color:var(--accent-text);background:var(--accent-soft);">مرتب ثابت</span>
+                        <?php else: ?>
+                            <span style="color:var(--ink-700);font-size:13px;">على الساعات</span>
+                        <?php endif; ?>
+                    </td>
                     <td><?= number_format((float)$emp['base_salary'], 2) ?></td>
+                    <td>
+                        <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
+                            <span style="color:var(--ink-400);">—</span>
+                        <?php else: ?>
+                            <?= ($emp['expected_monthly_hours'] !== null && $emp['expected_monthly_hours'] !== '') ? ((float)$emp['expected_monthly_hours'] . ' س') : '<span style="color:var(--warn);font-size:12px;">غير محدد</span>' ?>
+                        <?php endif; ?>
+                    </td>
                     <td><?= e($emp['phone'] ?? '—') ?></td>
                     <td><span class="badge <?= $emp['is_active']?'active':'inactive' ?>"><?= $emp['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
@@ -596,6 +675,20 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-row"><label>الوظيفة</label><input type="text" name="job_title" id="e_job"></div>
                 <div class="form-row"><label for="e_salary">الراتب الأساسي</label><input type="number" step="0.01" name="base_salary" id="e_salary" value="0"></div>
+                <div class="form-row">
+                    <label for="e_salary_mode">نوع حساب المرتب</label>
+                    <select name="salary_mode" id="e_salary_mode" onchange="toggleEmpSalaryMode()">
+                        <option value="hours">على الساعات (حضور وبصمة)</option>
+                        <option value="fixed">مرتب ثابت (كامل بدون حساب ساعات)</option>
+                    </select>
+                </div>
+                <div class="form-row" id="e_exp_hours_row">
+                    <label for="e_exp_hours">الساعات المنتظرة في الشهر</label>
+                    <input type="number" step="0.5" min="0" name="expected_monthly_hours" id="e_exp_hours" placeholder="مثلاً 240 أو 300">
+                    <small style="display:block;color:var(--ink-500);font-size:12px;margin-top:4px;">
+                        ٢٤٠ = ٨ ساعات في اليوم · ٣٠٠ = ١٠ ساعات (غير مطلوبة للمرتب الثابت)
+                    </small>
+                </div>
                 <div class="form-row"><label for="e_phone">التليفون</label><input type="text" name="phone" id="e_phone"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div class="form-row"><label for="t_name">الحضور المتوقع</label><input type="time" name="expected_in" id="e_in" value="09:00"></div>
@@ -671,14 +764,14 @@ require_once __DIR__ . '/includes/header.php';
                     <td><span class="badge <?= $t['is_active']?'active':'inactive' ?>"><?= $t['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <?php if ($isCustody): ?>
-                            <span style="color:#bbb;font-size:13px;">—</span>
+                            <span style="color:var(--ink-400);font-size:13px;">—</span>
                         <?php else: ?>
                             <span class="badge <?= ($t['show_in_receipts'] ?? 1)?'active':'inactive' ?>"><?= ($t['show_in_receipts'] ?? 1)?'يظهر في الإيصالات':'مخفي من الإيصالات' ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?php if ($isCustody): ?>
-                            <span style="color:#bbb;font-size:13px;">تُدار مع الفرع</span>
+                            <span style="color:var(--ink-400);font-size:13px;">تُدار مع الفرع</span>
                         <?php else: ?>
                             <button class="btn btn-sm btn-ghost"
                                 onclick='openTre(<?= json_encode(["id"=>$t["id"],"name"=>$t["name"]], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
@@ -787,6 +880,13 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= !empty($c['is_custody']) ? '<span class="tag-on">عهدة</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
                     <td><span class="badge <?= $c['is_active']?'active':'inactive' ?>"><?= $c['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
+                        <button class="btn btn-sm btn-ghost"
+                            onclick='openCat(<?= json_encode([
+                                "id" => (int)$c["id"],
+                                "name" => $c["name"],
+                                "parent_id" => $c["parent_id"] !== null ? (int)$c["parent_id"] : null,
+                                "type" => $c["type"],
+                            ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
                         <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد؟')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_category">
@@ -803,34 +903,32 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="modal-bg" id="catModal">
         <div class="modal">
-            <h3>إضافة حساب</h3>
+            <h3 id="catTitle">إضافة حساب</h3>
             <form method="post">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                <input type="hidden" name="action" value="add_category">
-                <div class="form-row"><label>اسم الحساب *</label><input type="text" name="name" required aria-label="اسم الحساب"></div>
+                <input type="hidden" name="action" id="catAction" value="add_category">
+                <input type="hidden" name="id" id="catId" value="">
+                <div class="form-row"><label for="c_name">اسم الحساب *</label><input type="text" name="name" id="c_name" required aria-label="اسم الحساب"></div>
                 <div class="form-row">
-                    <label>الحساب الأب</label>
-                    <select name="parent_id">
-                        <option value="">— حساب رئيسي —</option>
-                        <?php foreach ($accParents as $ap): ?>
-                            <option value="<?= (int)$ap['id'] ?>">
-                                <?= str_repeat('— ', (int)$ap['depth']) ?><?= e($ap['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
+                    <label>الحساب الأب (رأس القيد)</label>
+                    <?= acctree_field('parent_id', null, '— بدون أب (حساب رئيسي) —', 'all', 'catParent') ?>
                 </div>
                 <div class="form-row">
-                    <label>النوع</label>
-                    <select name="acc_type">
+                    <label for="c_type">النوع</label>
+                    <select name="acc_type" id="c_type">
                         <option value="expense">مصروف</option>
                         <option value="revenue">إيراد</option>
                         <option value="asset">أصل</option>
                         <option value="liability">التزام</option>
                     </select>
                 </div>
-                <div class="form-row" style="display:flex;align-items:center;gap:8px;">
+                <div class="form-row" id="custodyRow" style="display:flex;align-items:center;gap:8px;">
                     <input type="checkbox" name="is_custody" id="acc_cust" value="1">
                     <label for="acc_cust" style="margin:0;">يظهر في شاشة العهدة</label>
+                </div>
+                <div id="catWarn" style="display:none;margin-top:10px;padding:9px 11px;border-radius:9px;
+                     background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);font-size:12px;line-height:1.6;">
+                    <i class="ti ti-alert-triangle"></i> <b>تنبيه:</b> نقل التصنيف تحت رأس قيد جديد هيخلّي التقارير القديمة تعرضه تحت الرأس الجديد (التقارير بتجمّع بحسب شجرة الحسابات الحالية). المبالغ والقيود بتفضل سليمة زي ما هي.
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn">حفظ</button>
@@ -840,6 +938,9 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <?php endif; ?>
+
+<?= acctree_data() ?>
+<script src="assets/acctree.js?v=3"></script>
 
 <script>
     function show(id){ document.getElementById(id).classList.add('open'); }
@@ -941,6 +1042,13 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     // الموظفون
+    function toggleEmpSalaryMode(){
+        var mode = document.getElementById('e_salary_mode').value;
+        var row = document.getElementById('e_exp_hours_row');
+        if (row) {
+            row.style.opacity = mode === 'fixed' ? '0.45' : '1';
+        }
+    }
     function openEmp(d){
         document.getElementById('empTitle').textContent = d ? 'تعديل موظف' : 'إضافة موظف';
         document.getElementById('empAction').value = d ? 'edit_employee' : 'add_employee';
@@ -949,16 +1057,35 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('e_branch').value = d && d.branch_id ? d.branch_id : '';
         document.getElementById('e_job').value = d && d.job_title ? d.job_title : '';
         document.getElementById('e_salary').value = d ? d.base_salary : '0';
+        document.getElementById('e_salary_mode').value = (d && d.salary_mode) ? d.salary_mode : 'hours';
+        document.getElementById('e_exp_hours').value = (d && d.expected_monthly_hours !== null && d.expected_monthly_hours !== undefined) ? d.expected_monthly_hours : '';
         document.getElementById('e_phone').value = d && d.phone ? d.phone : '';
         document.getElementById('e_in').value = d && d.expected_in ? d.expected_in.substring(0,5) : '09:00';
         document.getElementById('e_out').value = d && d.expected_out ? d.expected_out.substring(0,5) : '17:00';
         document.getElementById('e_user').value = d && d.user_id ? d.user_id : '';
+        toggleEmpSalaryMode();
         show('empModal');
     }
     function closeEmp(){ hide('empModal'); }
 
     // التصنيفات
-    function openCat(){ show('catModal'); }
+    function openCat(d){
+        document.getElementById('catTitle').textContent = d ? 'تعديل حساب' : 'إضافة حساب';
+        document.getElementById('catAction').value = d ? 'edit_category' : 'add_category';
+        document.getElementById('catId').value = d ? d.id : '';
+        document.getElementById('c_name').value = d ? d.name : '';
+        document.getElementById('c_type').value = d ? d.type : 'expense';
+        document.getElementById('custodyRow').style.display = d ? 'none' : 'flex';
+        document.getElementById('catWarn').style.display = d ? 'block' : 'none';
+        if (!d) {
+            document.getElementById('acc_cust').checked = false;
+        }
+        var parentEl = document.getElementById('catParent');
+        if (parentEl && typeof acctreeSet === 'function') {
+            acctreeSet(parentEl, (d && d.parent_id) ? d.parent_id : '');
+        }
+        show('catModal');
+    }
     function closeCat(){ hide('catModal'); }
 
     // الخزائن

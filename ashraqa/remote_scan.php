@@ -10,7 +10,7 @@
  * المدخلات: ?s=كود_الاقتران (اختياري — بييجي من QR صفحة pc_scan.php)
  */
 require_once __DIR__ . '/auth.php';
-require_login();
+require_permission('remote_scan');
 
 $session = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['s'] ?? ''));
 $uid = (int) (current_user()['id'] ?? 0);
@@ -85,16 +85,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <link rel="icon" href="favicon-32.png?v=3">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-    :root { --navy:#16233d; --steel:#2f5d8a; --gold:#d6af6a; --line:#e3e1ef;
-            --ink:#1E1B4B; --mut:#8884a8; --pos:#1a9e5c; --neg:#d64545; }
+    :root { --navy:var(--ink-900); --steel:var(--accent-text); --gold:var(--warn); --line:var(--ink-400);
+            --ink:var(--accent-text); --mut:var(--accent-text); --pos:var(--pos); --neg:var(--neg); }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'IBM Plex Sans Arabic',sans-serif; }
     html, body { overflow-x:hidden; }
-    body { background:#f2f3f8; min-height:100vh; padding:16px; }
+    body { background:var(--line-soft); min-height:100vh; padding:16px; }
     .top { display:flex; align-items:center; justify-content:space-between; max-width:480px;
            margin:0 auto 14px; }
     .top a { color:var(--steel); text-decoration:none; font-size:14px; }
     .top b { color:var(--navy); font-size:17px; }
-    .card { background:#fff; border-radius:16px; padding:20px; max-width:480px; margin:0 auto;
+    .card { background:var(--surface); border-radius:16px; padding:20px; max-width:480px; margin:0 auto;
             box-shadow:0 4px 18px rgba(22,35,61,0.08); }
     .hint { color:var(--mut); font-size:13px; line-height:1.8; margin-bottom:16px; }
     .sess { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
@@ -107,11 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     .go:active { background:var(--steel); }
     #devList { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
     .dev { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
-           border-radius:12px; cursor:pointer; background:#fbfbfd; }
-    .dev:active { background:#eef1f7; }
+           border-radius:12px; cursor:pointer; background:var(--surface); }
+    .dev:active { background:var(--line-soft); }
     .dev.off { opacity:0.55; }
-    .dev .dot { width:12px; height:12px; border-radius:50%; background:#b9b6cc; flex-shrink:0; }
-    .dev.on .dot { background:var(--pos); box-shadow:0 0 0 4px rgba(26,158,92,0.15); }
+    .dev .dot { width:12px; height:12px; border-radius:50%; background:var(--accent-soft); flex-shrink:0; }
+    .dev.on .dot { background:var(--pos-fill); box-shadow:0 0 0 4px rgba(26,158,92,0.15); }
     .dev .dinfo { flex:1; min-width:0; }
     .dev .dname { font-weight:700; color:var(--navy); font-size:16px; }
     .dev .dsub { font-size:12px; color:var(--mut); }
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 </head>
 <body>
     <div class="top">
-        <b>📡 سكانر الكمبيوتر</b>
+        <b><i class="ti ti-antenna-bars-5"></i> سكانر الكمبيوتر</b>
         <a href="<?= e(first_allowed_module()) ?>">← رجوع للنظام</a>
     </div>
     <div class="card">
@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
             <label for="rsSession">كود الجهاز:</label>
             <input type="text" id="rsSession" value="<?= e($session) ?>" placeholder="PC1"
                    aria-label="كود الاقتران" autocomplete="off" enterkeyhint="go">
-            <button type="button" class="go" style="width:auto;padding:12px 18px;" onclick="startRemote()">📷</button>
+            <button type="button" class="go" style="width:auto;padding:12px 18px;" onclick="startRemote()"><i class="ti ti-camera"></i></button>
         </div>
         <!-- خانة مخفية بيصب فيها المكون المشترك -->
         <input type="text" id="rsBarcode" aria-label="باركود" oninput="pushCode(this)"
@@ -157,6 +157,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <script>
     const CSRF = '<?= e(csrf_token()) ?>';
     let sent = 0, busy = false;
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
 
     // آخر كود جهاز استخدمه — عشان "افتح التاب وامسح على طول"
     const savedS = localStorage.getItem('rs_session');
@@ -185,11 +189,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
                 const name = d.hostname ? d.hostname : d.session_code;
                 const sub = on ? 'متصل الآن' : 'آخر ظهور ' + agoText(d.ago);
                 return '<div class="dev ' + (on ? 'on' : 'off') + '" role="button" tabindex="0" ' +
-                       'onclick="pickDevice(\'' + d.session_code + '\',' + (on?1:0) + ')">' +
+                       'onclick="pickDevice(\'' + escapeHtml(d.session_code) + '\',' + (on?1:0) + ')">' +
                        '<span class="dot"></span>' +
-                       '<span class="dinfo"><span class="dname">' + name + '</span><br>' +
-                       '<span class="dsub">' + d.session_code + ' · ' + sub + '</span></span>' +
-                       '<span class="dgo">' + (on ? '📷' : '💤') + '</span></div>';
+                       '<span class="dinfo"><span class="dname">' + escapeHtml(name) + '</span><br>' +
+                       '<span class="dsub">' + escapeHtml(d.session_code) + ' · ' + sub + '</span></span>' +
+                       '<span class="dgo"><i class="ti ' + (on ? 'ti-camera' : 'ti-zzz') + '"></i></span></div>';
             }).join('');
         }).catch(() => {});
     }

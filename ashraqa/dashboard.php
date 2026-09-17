@@ -50,7 +50,7 @@ $custodies = $pdo->query(
      FROM branch_custody bc
      JOIN branches b ON b.id = bc.branch_id
      JOIN treasuries t ON t.id = bc.custody_treasury_id
-     WHERE bc.status = 'open'"
+     WHERE bc.status = 'open' AND bc.employee_id IS NULL"
 )->fetchAll();
 
 $allBranchesWithCustody = $pdo->query(
@@ -81,6 +81,31 @@ foreach ($allBranchesWithCustody as $br) {
     else                $color = 'green';
     $custodyBars[] = [
         'name' => $br['name'], 'opening' => $opening, 'balance' => $balance,
+        'pct' => $pct, 'color' => $color,
+    ];
+}
+
+// ===== عهد الموظفين (المفتوحة فقط — تختفي فور الإقفال والاعتماد) =====
+$empCustodies = $pdo->query(
+    "SELECT bc.*, e.full_name AS employee_name, t.balance AS treasury_balance
+     FROM branch_custody bc
+     JOIN employees e ON e.id = bc.employee_id
+     JOIN treasuries t ON t.id = bc.custody_treasury_id
+     WHERE bc.status = 'open' AND bc.employee_id IS NOT NULL
+     ORDER BY e.full_name"
+)->fetchAll();
+
+$empCustodyBars = [];
+foreach ($empCustodies as $ec) {
+    $opening = (float) $ec['opening_balance'];
+    $balance = (float) $ec['treasury_balance'];
+    $pct = $opening > 0 ? max(0, min(100, ($balance / $opening) * 100)) : 0;
+    if ($opening <= 0)  $color = 'empty';
+    elseif ($pct <= 20) $color = 'red';
+    elseif ($pct < 50)  $color = 'orange';
+    else                $color = 'green';
+    $empCustodyBars[] = [
+        'name' => $ec['employee_name'], 'opening' => $opening, 'balance' => $balance,
         'pct' => $pct, 'color' => $color,
     ];
 }
@@ -134,9 +159,9 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .period-bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
-    .period-btn { background:#fff; border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
-        font-size:14px; color:var(--accent-hover); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
-    .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .period-btn { background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
+        font-size:14px; color:var(--accent-text); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
+    .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .period-custom { display:flex; gap:8px; align-items:center; }
     .period-custom input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .period-custom button { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 14px; cursor:pointer; font-family:inherit; }
@@ -144,7 +169,7 @@ require_once __DIR__ . '/includes/header.php';
     /* الكارت المجمّع سطر كامل، والخزائن تحته تتوزّع بالتساوي على العرض. */
     .treasury-grid { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:22px; }
     .treasury-grid > .tre-box { flex:1 1 0; min-width:150px; }
-    .tre-box { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
 
     .tre-box.main {
         flex:1 1 58%;   /* كان 100% — ضاق عشان كارت الكاش الفعلي يقف جنبه */
@@ -173,15 +198,15 @@ require_once __DIR__ . '/includes/header.php';
 
     .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
     .tre-box .tre-val { font-size:26px; font-weight:800; color:var(--ink-900); }
-    .tre-box.main .tre-val { color:var(--accent); }
+    .tre-box.main .tre-val { color:var(--accent-text); }
     .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
-    .sum-box { background:#fff; border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .sum-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .sum-box .l { font-size:13px; color:var(--ink-500); margin-bottom:6px; display:flex; align-items:center; gap:6px; }
     .sum-box .v { font-size:28px; font-weight:800; }
     .sum-box .u { font-size:12px; color:var(--ink-400); margin-top:2px; }
-    .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent); }
-    .bars-card, .shifts-card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent-text); }
+    .bars-card, .shifts-card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:880px){ .bottom-grid { grid-template-columns:1fr; } }
     .bar-row { margin-bottom:16px; }
@@ -190,17 +215,17 @@ require_once __DIR__ . '/includes/header.php';
     .bar-head .bv { color:var(--ink-500); font-size:13px; }
     .bar-track { height:12px; background:var(--line); border-radius:8px; overflow:hidden; border:1px solid var(--line); }
     .bar-fill { height:100%; border-radius:8px; transition:width .3s; }
-    .bar-fill.green { background:var(--pos); }
-    .bar-fill.orange { background:var(--warn); }
-    .bar-fill.red { background:var(--neg); }
+    .bar-fill.green { background:var(--pos-fill); }
+    .bar-fill.orange { background:var(--warn-fill); }
+    .bar-fill.red { background:var(--neg-fill); }
     .bar-fill.empty { background:transparent; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .shift-item { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
     .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .quick-actions { display:flex; gap:8px; margin-top:14px; }
     .qa-btn { padding:9px 16px; border-radius:9px; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
-    .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-hover); }
+    .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-text); }
     /* موبايل: الكروت تبقى أعمدة مرنة من غير عرض ثابت يطلّع الصفحة عريضة */
     @media (max-width:760px){
         .summary-grid { grid-template-columns:repeat(2,1fr); }
@@ -286,6 +311,21 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
+
+        <?php if (!empty($empCustodyBars)): ?>
+            <div class="section-title" style="margin-top:20px;border-top:1px solid var(--line-soft);padding-top:14px;">عُهد الموظفين (المفتوحة)</div>
+            <?php foreach ($empCustodyBars as $bar): ?>
+                <div class="bar-row">
+                    <div class="bar-head">
+                        <span class="bn">عهدة <?= e($bar['name']) ?></span>
+                        <span class="bv"><?= number_format($bar['balance'],0) ?> / <?= number_format($bar['opening'],0) ?> ج.م</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill <?= e($bar['color']) ?>" style="width:<?= $bar['opening']>0 ? round($bar['pct']) : 0 ?>%;"></div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </div>
 
     <div class="shifts-card">
@@ -294,7 +334,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا توجد تقفيلات في هذه الفترة.</div>
         <?php else: ?>
             <?php foreach ($periodShifts as $s): ?>
-                <?php $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee']; ?>
+                <?php $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)']; ?>
                 <div class="shift-item">
                     <span><?= e($s['cashier_name']) ?> — <?= e($s['branch_name']) ?></span>
                     <span class="badge" style="color:<?=$sl[1]?>;background:<?=$sl[2]?>;"><?= e($sl[0]) ?></span>

@@ -12,6 +12,12 @@
  * - الهيدر بيتزامن مع الموردين تلقائياً (ensure_distribution_record).
  */
 require_once __DIR__ . '/auth.php';
+// مين معاه جزء إشراقة بس (مش الموديول كامل) بيتحوّل لصفحته.
+// من غير ده القايمة بتوريله «الاستلامات» والصفحة بتصده — لينك ميت.
+if (!can('invoices') && can('invoices:ashraqa')) {
+    header('Location: ashraqa_invoices.php');
+    exit;
+}
 require_permission('invoices');
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';       // الفواتير المجمّعة
@@ -430,7 +436,7 @@ function grp_admin_toggle(int $branchCount): string
     // ما تفضل تتفرج على كل الفواتير وانت فاكر إن الفلتر شغال.
     if (!grp_branch_stores()) {
         return '<div class="grp-admtip" style="margin-top:9px;color:var(--warn);">'
-            . '⚠️ مفيش فروع متسجّلة بكود مخزن (sto_id) في «التعريفات ← الفروع» — '
+            . '<i class="ti ti-alert-triangle"></i> مفيش فروع متسجّلة بكود مخزن (sto_id) في «التعريفات ← الفروع» — '
             . 'فمقدرناش نفرّق بين فواتير الإدارة والفروع، وبتشوف الكل.</div>';
     }
     if ($branchCount < 1) return '';   // كل الفواتير إدارة أصلاً
@@ -547,7 +553,7 @@ function grp_picker(array $unposted, array $posted, int $groupId = 0, string $gr
             . ' aria-label="بحث عن صنف" placeholder="كود الصنف أو جزء من الاسم…"'
             . ' oninput="grpFindItem()" onkeydown="grpNoEnter(event)">'
             . '<button type="button" class="btn btn-sm" title="مسح بالكاميرا"'
-            . ' onclick="openBarcodeScanner(\'grpItemSearch\')" style="font-size:16px;">📷</button>'
+            . ' onclick="openBarcodeScanner(\'grpItemSearch\')" style="font-size:16px;"><i class="ti ti-camera"></i></button>'
             . '</div>'
             . '<div class="gi-hint">بيدوّر في فواتير الشراء والمردود — المرحّلة والغير محفوظة.</div>'
             . '</div>';
@@ -881,10 +887,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
             $cur = $pdo->prepare('SELECT status FROM invoice_distribution WHERE id = ?');
             $cur->execute([$distId]);
             $newStatus = (string) $cur->fetchColumn();
+            if ($newStatus === 'done') {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distId, $uid);
+            }
             echo json_encode(['ok' => true, 'status' => $newStatus, 'manual' => false], JSON_UNESCAPED_UNICODE);
         } else {
             if (!set_invoice_status_manual($distId, $status, $uid)) {
                 throw new RuntimeException('حالة غير صحيحة.');
+            }
+            if ($status === 'done') {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distId, $uid);
             }
             echo json_encode(['ok' => true, 'status' => $status, 'manual' => true], JSON_UNESCAPED_UNICODE);
         }
@@ -949,6 +963,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
         if (!csrf_verify($_POST['csrf'] ?? '')) {
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
+
+        // الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+        // فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
         $code = trim((string) ($_POST['item_code'] ?? ''));
         $gid  = (int) ($_POST['group_id'] ?? 0);
         $did  = (int) ($_POST['distribution_id'] ?? 0);
@@ -992,6 +1011,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
 
         $n = $what === 'done' ? ifl_clear_done($ids) : ifl_clear_highlights($ids);
         echo json_encode(['ok' => true, 'count' => $n], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
+// ===== إضافة صنف لمشاكل الفواتير من الإشعار (AJAX) =====
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_to_problems') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $code = trim((string) ($_POST['item_code'] ?? ''));
+        $did  = (int) ($_POST['distribution_id'] ?? 0);
+        $gid  = (int) ($_POST['group_id'] ?? 0);
+        $note = trim((string) ($_POST['note'] ?? ''));
+        if ($code === '') throw new RuntimeException('كود الصنف ناقص.');
+        if ($did <= 0 && $gid > 0) {
+            $ids = ifl_ctx_ids($did, $gid, $code);
+            $did = $ids[0] ?? 0;
+        }
+        if ($did <= 0) throw new RuntimeException('معرّف التوزيع غير موجود.');
+
+        $itemName = trim((string) ($_POST['item_name'] ?? ''));
+        if ($itemName === '') {
+            $stName = $pdo->prepare('SELECT name FROM hq_codes c JOIN hq_items i ON i.item_id = c.item_id WHERE c.code = ? LIMIT 1');
+            $stName->execute([$code]);
+            $itemName = (string) $stName->fetchColumn();
+        }
+
+        $ins = $pdo->prepare(
+            "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, note, created_by)
+             VALUES (?, ?, ?, 'manual', ?, ?)
+             ON DUPLICATE KEY UPDATE
+                 note = VALUES(note),
+                 item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name),
+                 updated_at = NOW()"
+        );
+        $ins->execute([$did, $code, $itemName ?: null, $note, $uid]);
+
+        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -1193,11 +1254,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         //  "لسه ماتوزّعش منها حاجة" لحد ما المستخدم يعمل ريفريش.)
         $groupTotals   = [];
         $invoiceTotals = [];
+        $q = $pdo->prepare(
+            'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
+             WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
+        );
         foreach ($g['dist_ids'] as $sth => $did) {
-            $q = $pdo->prepare(
-                'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
-                 WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
-            );
             $q->execute([(int) $did]);
             foreach ($q->fetchAll() as $r) {
                 $bid = (int) $r['branch_id'];
@@ -1258,9 +1319,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autos
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reservation_pull_preview') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $distId = (int) ($_POST['distribution_id'] ?? 0);
+        $invId  = $_POST['invoice_id'] ?? null;
+        $suffix = $_POST['suffix'] ?? null;
+        if ($distId <= 0 || $invId === null || $invId === '') {
+            throw new RuntimeException('بيانات ناقصة.');
+        }
+        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+        $items = merge_invoice_items($rawItems);
+        $preview = reservation_pull_preview($distId, $items);
+        echo json_encode(['ok' => true, 'items' => $preview['items'], 'total_candidates' => $preview['total_candidates']], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reservation_pull_apply') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
+        }
+        $distId    = (int) ($_POST['distribution_id'] ?? 0);
+        $invoiceNo = trim($_POST['invoice_no'] ?? '');
+        $invId     = $_POST['invoice_id'] ?? null;
+        $suffix    = $_POST['suffix'] ?? null;
+        $allocRaw  = $_POST['alloc'] ?? '[]';
+        $alloc     = is_array($allocRaw) ? $allocRaw : json_decode($allocRaw, true);
+        if (!is_array($alloc)) $alloc = [];
+
+        if ($distId <= 0 || $invId === null || $invId === '') {
+            throw new RuntimeException('بيانات ناقصة.');
+        }
+
+        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+        $items = merge_invoice_items($rawItems);
+        $itemQty      = [];
+        $codeByItemId = [];
+        foreach ($items as $it) {
+            $itemQty[(string) $it['item_code']] = (float) ($it['quantity'] ?? 0);
+            $iid = (int) ($it['item_id'] ?? 0);
+            if ($iid > 0) $codeByItemId[$iid] = (string) $it['item_code'];
+        }
+
+        $res = reservation_pull_apply($distId, $invoiceNo, $itemQty, $alloc, $uid, $codeByItemId);
+        echo json_encode(['ok' => true, 'allocated_count' => $res['allocated_count']], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // ===== تحديد العرض: قائمة أو فاتورة مفتوحة =====
 $openInvoiceId = $_GET['invoice'] ?? null;
 $openSuffix    = $_GET['suffix'] ?? null;
+$openCb        = isset($_GET['cb']) && $_GET['cb'] !== '' ? (int) $_GET['cb'] : null;
+$openDt        = isset($_GET['dt']) && $_GET['dt'] !== '' ? (int) $_GET['dt'] : null;
 $sqlsrvError = '';
 $invoiceGroups = [];
 $openInvoice = null;
@@ -1269,9 +1390,16 @@ $distId = 0;
 
 try {
     if ($openInvoiceId !== null) {
-        // فتح فاتورة محددة (بالـ suffix بتاع الشهر)
-        $openInvoice = sqlsrv_fetch_invoice_header($openInvoiceId, $openSuffix);
+        // فتح فاتورة محددة (بالـ suffix بتاع الشهر والفرع ونوع المستند)
+        $openInvoice = sqlsrv_fetch_invoice_header($openInvoiceId, $openSuffix, $openCb, $openDt);
         if ($openInvoice) {
+            // ضمان وجود الفرع ونوع المستند في الهيدر
+            if ($openCb !== null && !isset($openInvoice['company_branch'])) {
+                $openInvoice['company_branch'] = $openCb;
+            }
+            if ($openDt !== null && !isset($openInvoice['doc_type'])) {
+                $openInvoice['doc_type'] = $openDt;
+            }
             // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
             // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
             $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
@@ -1450,6 +1578,74 @@ $active_module = 'invoices';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
+<?php /* 🔴 الباب الوحيد لصفحة فواتير إشراقة لأي حد معاه «الاستلامات» كامل
+         (والأونر منهم). التحويل اللي فوق بيشتغل لمين معاه الجزء بس —
+         والأونر `can('invoices')` بترجّعله true، فالتحويل مابيلمسوش
+         وكانت الصفحة مالهاش أي لينك من أي مكان. */ ?>
+<div style="display:flex;justify-content:flex-end;margin-bottom:10px;gap:8px;">
+    <?php if (can('invoices:problems')): ?>
+    <a href="invoice_problems.php" class="btn btn-sm"
+       title="الأصناف التي بها مشاكل أو فروقات في الفواتير">
+        <i class="ti ti-alert-circle"></i> مشاكل الفواتير
+    </a>
+    <?php endif; ?>
+    <a href="ashraqa_invoices.php" class="btn btn-sm"
+       title="الفواتير اللي اتوزّع منها كمية لفرع إشراقة">
+        <i class="ti ti-building-store"></i> فواتير إشراقة
+    </a>
+</div>
+
+<!-- إشعار إضافة الصنف لمشاكل الفواتير -->
+<div id="problemToast" class="problem-toast" style="display:none;">
+    <div class="problem-toast-inner">
+        <span class="problem-toast-text">
+            <i class="ti ti-alert-circle"></i> تحب تضيف الصنف ده في مشاكل الفواتير؟
+            <span id="problemToastItem" style="font-weight:bold;margin-right:4px;"></span>
+        </span>
+        <div class="problem-toast-actions">
+            <button type="button" class="btn btn-sm" id="problemToastYes" style="background:var(--accent);color:#fff;">أيوه</button>
+            <button type="button" class="btn btn-sm btn-ghost" id="problemToastNo" style="background:var(--surface);color:var(--text);border:1px solid var(--line);">لأ</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.problem-toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99999;
+    background: var(--surface);
+    color: var(--text);
+    border: 1.5px solid var(--accent);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.15);
+    border-radius: var(--r);
+    padding: 12px 20px;
+    animation: problemToastIn 0.2s ease;
+}
+@keyframes problemToastIn {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+.problem-toast-inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.problem-toast-text {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+}
+.problem-toast-actions {
+    display: flex;
+    gap: 6px;
+}
+</style>
+
 <!-- ================= تتبّع الصنف (سيرش بار الهيدر) ================= -->
 <div class="ilk-bar">
     <i class="ti ti-search"></i>
@@ -1476,16 +1672,16 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <style>
-    .ilk-bar { background:#fff; border-radius:12px; padding:11px 15px; margin-bottom:16px;
+    .ilk-bar { background:var(--surface); border-radius:12px; padding:11px 15px; margin-bottom:16px;
         display:flex; gap:10px; align-items:center;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .ilk-bar > i { color:var(--ink-500); font-size:18px; }
     .ilk-wrap { position:relative; flex:1; }
     .ilk-wrap input { width:100%; box-sizing:border-box; padding:9px 11px;
         border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px; }
-    .ilk-wrap input:focus { outline:none; border-color:var(--accent); }
+    .ilk-wrap input:focus { outline:none; border-color:var(--accent-text); }
     .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
-        background:#fff; border:1.5px solid var(--line); border-radius:10px;
+        background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:330px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.13); display:none; }
     .ilk-sugg div.ilk-s { padding:9px 12px; cursor:pointer; border-bottom:1px solid var(--line-soft); font-size:13px; }
     .ilk-sugg div.ilk-s:last-child { border-bottom:none; }
@@ -1495,7 +1691,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-modal { position:fixed; inset:0; background:rgba(20,16,50,0.55); z-index:300;
         display:none; align-items:center; justify-content:center; padding:16px; }
     .ilk-modal.on { display:flex; }
-    .ilk-box { background:#fff; border-radius:14px; width:min(900px,100%); max-height:88vh;
+    .ilk-box { background:var(--surface); border-radius:14px; width:min(900px,100%); max-height:88vh;
         display:flex; flex-direction:column; overflow:hidden; }
     .ilk-box header { padding:14px 18px; border-bottom:1px solid var(--line);
         display:flex; gap:10px; align-items:flex-start; }
@@ -1506,15 +1702,15 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-body { overflow-y:auto; padding:12px 18px 18px; }
 
     .ilk-inv { border:1.5px solid var(--line); border-radius:11px; padding:12px 14px; margin-bottom:10px; }
-    .ilk-inv.ilk-ret { border-color:#f0c9c9; background:#fffafa; }
+    .ilk-inv.ilk-ret { border-color:var(--neg); background:var(--surface); }
     .ilk-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .ilk-tag { padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; background:var(--accent); }
-    .ilk-tag.ret { background:var(--neg); }
+    .ilk-tag.ret { background:var(--neg-fill); }
     .ilk-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
     .ilk-chip { background:var(--bg); border:1px solid var(--line); border-radius:8px;
         padding:4px 10px; font-size:12.5px; }
     .ilk-chip b { color:var(--accent-hover,var(--accent)); }
-    .ilk-chip.store { background:#fff8e8; border-color:#f0dcb0; }
+    .ilk-chip.store { background:var(--line-soft); border-color:var(--warn); }
     .ilk-none { color:var(--ink-500); font-size:12.5px; margin-top:8px; }
 </style>
 
@@ -1623,7 +1819,9 @@ require_once __DIR__ . '/includes/header.php';
                     '<div class="ilk-top">' +
                         '<span class="ilk-tag' + (r.is_return ? ' ret' : '') + '">' + esc(r.type_label) + '</span>' +
                         '<a class="inv-link" href="invoices.php?invoice=' + encodeURIComponent(r.sth_id) +
-                            '&suffix=' + encodeURIComponent(r.suffix) + '">' + esc(r.doc_no) + '</a>' +
+                            '&suffix=' + encodeURIComponent(r.suffix) +
+                            (r.company_branch ? '&cb=' + encodeURIComponent(r.company_branch) : '') +
+                            (r.doc_type ? '&dt=' + encodeURIComponent(r.doc_type) : '') + '">' + esc(r.doc_no) + '</a>' +
                         '<span class="ilk-muted">' + esc(r.date ? r.date.substring(0, 10) : '') + '</span>' +
                         '<span style="flex:1;min-width:60px;"></span>' +
                         '<span>كمية <b>' + num(r.qty) + '</b></span>' +
@@ -1649,7 +1847,7 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .sqlsrv-warn { background:var(--warn-soft); color:var(--warn); padding:16px; border-radius:12px; font-size:14px; line-height:1.7; }
     /* تحذير: الفاتورة موجودة محلي بس بنودها ماوصلتش من المزامنة */
@@ -1662,7 +1860,7 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
-    .inv-link { color:var(--accent); font-weight:600; text-decoration:none; }
+    .inv-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     .inv-link:hover { text-decoration:underline; }
     /* جدول الفواتير - الصف كله قابل للضغط */
     /* ===== شريط أدوات القائمة ===== */
@@ -1678,6 +1876,17 @@ require_once __DIR__ . '/includes/header.php';
         background:none; border:none; font-size:20px; line-height:1; color:var(--ink-400); cursor:pointer; }
     .ls-clear:hover { color:var(--ink-700); }
 
+    .scope-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    .scope-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
+        border:1px solid var(--line); border-radius:20px; background:var(--surface);
+        color:var(--ink-600); font-family:inherit; font-size:13px; font-weight:600;
+        cursor:pointer; transition:all .15s; }
+    .scope-btn:hover { border-color:var(--accent); color:var(--accent-text); }
+    .scope-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
+        background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
+    .scope-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .scope-btn.active span { background:rgba(255,255,255,0.25); color:#fff; }
+
     .status-filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .sf-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px;
         border:1px solid var(--line); border-radius:20px; background:var(--surface);
@@ -1686,28 +1895,28 @@ require_once __DIR__ . '/includes/header.php';
     .sf-btn:hover { border-color:var(--ink-300); color:var(--ink-800); }
     .sf-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
         background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
-    .sf-btn.active { background:var(--ink-900); border-color:var(--ink-900); color:#fff; }
-    .sf-btn.active span { background:rgba(255,255,255,.18); color:#fff; }
+    .sf-btn.active { background:var(--fill-strong); border-color:var(--fill-strong); color:var(--fill-strong-fg); }
+    .sf-btn.active span { background:var(--fill-strong-veil); color:var(--fill-strong-fg); }
     .no-match { padding:26px; text-align:center; color:var(--ink-400); }
 
     .inv-table { width:100%; border-collapse:collapse; }
-    .inv-table thead th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
+    .inv-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
     .inv-table tbody td { padding:11px 12px; text-align:center; border-bottom:1px solid var(--line-soft); }
     .inv-table .inv-row { cursor:pointer; transition:background 0.12s; }
     .inv-table .inv-row:hover { background:var(--accent-soft); }
-    .inv-table .inv-no { font-weight:700; color:var(--accent); }
+    .inv-table .inv-no { font-weight:700; color:var(--accent-text); }
     /* بادج نوع المستند (مردود شراء) جنب رقم الفاتورة */
     .doc-badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px;
                  border-radius:20px; margin-right:6px; white-space:nowrap; vertical-align:middle; }
     .doc-badge.refund { background:var(--neg-soft); color:var(--neg); }
     /* رأس الفرع داخل قائمة الفواتير */
     .inv-table .branch-head td {
-        background:var(--accent-soft); color:var(--accent-hover); font-weight:700;
+        background:var(--accent-soft); color:var(--accent-text); font-weight:700;
         font-size:14px; text-align:right; padding:12px 14px; border-top:2px solid var(--accent);
         border-bottom:1px solid var(--line); position:sticky; top:0;
     }
     .inv-table .branch-head.branch-admin td {
-        background:var(--accent); color:#fff; border-top-color:var(--accent-hover);
+        background:var(--accent); color:#fff; border-top-color:var(--accent-text);
     }
     .inv-table .branch-head i { margin-left:6px; }
     .inv-table .branch-head { cursor:pointer; user-select:none; }
@@ -1715,7 +1924,7 @@ require_once __DIR__ . '/includes/header.php';
     .inv-table .branch-head.collapsed .bh-caret { transform:rotate(-90deg); }
     /* رأس فرعي داخل الفرع: فاتورة شراء / مردود شراء */
     .inv-table .subtype-head td {
-        background:var(--bg-soft, #f6f7fb); color:var(--ink-700, #4a4a68);
+        background:var(--bg-soft, var(--surface)); color:var(--ink-700, var(--accent-text));
         font-weight:600; font-size:13px; text-align:right; padding:8px 14px 8px 28px;
         border-bottom:1px solid var(--line);
     }
@@ -1725,7 +1934,7 @@ require_once __DIR__ . '/includes/header.php';
     .inv-table .subtype-head.collapsed .st-caret { transform:rotate(-90deg); }
     .inv-table .subtype-head .bh-count {
         float:left; font-weight:400; font-size:11px; opacity:0.8;
-        background:var(--line); color:var(--ink-700,#4a4a68); padding:1px 9px; border-radius:20px;
+        background:var(--line); color:var(--ink-700,var(--accent-text)); padding:1px 9px; border-radius:20px;
     }
     .inv-table .subtype-head.subtype-refund .bh-count { background:var(--neg-soft); color:var(--neg); }
     .inv-table .branch-head .bh-sub {
@@ -1753,9 +1962,9 @@ require_once __DIR__ . '/includes/header.php';
 
     /* اختيار الحالة يدوي */
     .inv-status-sel { font-family:inherit; font-size:12.5px; font-weight:600; padding:3px 8px;
-        border:1.5px solid var(--line); border-radius:8px; background:#fff; color:var(--ink-900);
+        border:1.5px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-900);
         cursor:pointer; }
-    .inv-status-sel:focus { outline:none; border-color:var(--accent); }
+    .inv-status-sel:focus { outline:none; border-color:var(--accent-text); }
     .inv-lock { font-size:12px; margin-right:4px; }
 
     /* بار الملاحظات */
@@ -1764,16 +1973,16 @@ require_once __DIR__ . '/includes/header.php';
     .notes-head { display:flex; justify-content:space-between; align-items:center;
         font-size:12.5px; color:var(--ink-500); margin-bottom:6px; }
     .notes-state { font-size:11.5px; color:var(--ink-400); }
-    .notes-state.saving { color:var(--accent); }
-    .notes-state.saved  { color:#1c9e5a; }
+    .notes-state.saving { color:var(--accent-text); }
+    .notes-state.saved  { color:var(--pos); }
     .notes-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 10px;
         font-family:inherit; font-size:13px; color:var(--ink-900); resize:vertical;
-        background:#fff; line-height:1.6; }
-    .notes-input:focus { outline:none; border-color:var(--accent); }
+        background:var(--surface); line-height:1.6; }
+    .notes-input:focus { outline:none; border-color:var(--accent-text); }
 
     /* الملاحظات في قائمة الفواتير — النص نفسه بيبان تحت رقم الفاتورة */
     .inv-note-text { display:block; font-size:11.5px; color:var(--ink-600);
-        background:#fffdf2; border:1px solid #f0e2b6; border-right:3px solid #e8c752;
+        background:var(--surface); border:1px solid var(--warn); border-right:3px solid var(--warn);
         border-radius:6px; padding:3px 8px; margin-top:5px; line-height:1.55;
         font-weight:400; white-space:normal; word-break:break-word; max-width:340px; }
     .store-v.has { color:var(--warn); } .store-v.zero { color:var(--pos); }
@@ -1788,10 +1997,10 @@ require_once __DIR__ . '/includes/header.php';
     /* ===== التابين + حالة الفاتورة ===== */
     .inv-tabs { display:flex; gap:8px; margin-bottom:14px; align-items:center; flex-wrap:wrap; }
     .tab-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:10px;
-               background:#fff; color:var(--ink-500); border:1.5px solid var(--line); text-decoration:none;
+               background:var(--surface); color:var(--ink-500); border:1.5px solid var(--line); text-decoration:none;
                font-size:14px; font-weight:600; transition:.15s; }
     .tab-btn:hover { border-color:var(--line); color:var(--ink-700); }
-    .tab-btn.active { background:var(--accent-hover); color:#fff; border-color:var(--accent-hover); }
+    .tab-btn.active { background:var(--accent-hover); color:#fff; border-color:var(--accent-text); }
     .st-new   { background:var(--line-soft); color:var(--ink-500); }
     .st-split { background:var(--warn-soft); color:var(--warn); }
     .st-done  { background:var(--pos-soft); color:var(--pos); }
@@ -1803,10 +2012,10 @@ require_once __DIR__ . '/includes/header.php';
     .lookup-overlay { display:none; position:fixed; inset:0; background:rgba(30,25,70,.45);
                       z-index:900; align-items:flex-start; justify-content:center; padding:60px 16px; }
     .lookup-overlay.open { display:flex; }
-    .lookup-box { background:#fff; border-radius:14px; width:100%; max-width:640px;
+    .lookup-box { background:var(--surface); border-radius:14px; width:100%; max-width:640px;
                   box-shadow:0 18px 50px rgba(40,30,90,.25); overflow:hidden; }
     .lookup-head { display:flex; align-items:center; justify-content:space-between; gap:10px;
-                   padding:14px 18px; border-bottom:1px solid #eeecf8; font-weight:700; color:var(--ink-800); }
+                   padding:14px 18px; border-bottom:1px solid var(--ink-400); font-weight:700; color:var(--ink-800); }
     .lookup-x { background:none; border:none; font-size:26px; line-height:1; color:var(--ink-400); cursor:pointer; }
     .lookup-form { padding:16px 18px; }
     .lk-row { display:flex; gap:8px; align-items:stretch; width:100%; }
@@ -1815,49 +2024,68 @@ require_once __DIR__ . '/includes/header.php';
     .lk-input { flex:1 1 auto; min-width:0; width:auto; padding:10px 14px;
                 border:1.5px solid var(--line); border-radius:9px;
                 font-size:14px; font-family:inherit; }
-    .lk-input:focus { outline:none; border-color:var(--accent); }
+    .lk-input:focus { outline:none; border-color:var(--accent-text); }
     .lk-muted { color:var(--ink-400); font-size:14px; margin:14px 0 0; }
     .lk-alert { padding:12px 14px; border-radius:9px; margin:16px 0 12px; font-size:14px; }
     .lk-alert-info { background:var(--accent-soft); color:var(--ink-800); }
     .lk-alert-warning { background:var(--warn-soft); color:var(--warn); }
     .lk-table { width:100%; border-collapse:collapse; }
     .lk-table th { background:var(--line-soft); padding:9px 14px; font-size:12px; color:var(--ink-500); text-align:right; }
-    .lk-table td { padding:9px 14px; border-top:1px solid #f0eefa; font-size:14px; }
+    .lk-table td { padding:9px 14px; border-top:1px solid var(--ink-400); font-size:14px; }
+
+    /* ===== بوب أب سحب أعداد الفروع من الحجوزات ===== */
+    .btn-res-pull { background:var(--accent); color:#fff; }
+    .btn-res-pull:hover { background:var(--accent-hover); color:#fff; }
+    .res-card { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+    .res-card-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--line-soft); }
+    .res-card-title { font-size:14px; font-weight:700; color:var(--ink-900); }
+    .res-card-meta { display:flex; gap:12px; font-size:12.5px; color:var(--ink-500); flex-wrap:wrap; }
+    .res-card-meta b { color:var(--ink-900); }
+    .res-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px; }
+    .res-table th { background:var(--bg); color:var(--ink-700); padding:7px 10px; text-align:right; font-weight:600; border-bottom:1.5px solid var(--line); }
+    .res-table td { padding:7px 10px; border-bottom:1px solid var(--line-soft); color:var(--ink-900); }
+    .res-alloc-inp { width:75px; padding:4px 8px; border:1.5px solid var(--line); border-radius:6px; font-family:inherit; font-size:13px; font-weight:600; }
+    .res-alloc-inp:focus { outline:none; border-color:var(--accent-text); }
+    .res-alloc-inp.invalid { border-color:var(--neg); background:var(--neg-soft); }
+    .res-branch-sum { font-size:12.5px; color:var(--accent-text); font-weight:600; padding:6px 10px; background:var(--accent-soft); border-radius:8px; margin-bottom:8px; }
+    .res-card-foot { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; font-size:12.5px; color:var(--ink-700); padding-top:6px; }
+    .res-card-foot b { color:var(--ink-900); }
+    .res-empty-msg { padding:35px 20px; text-align:center; color:var(--ink-500); font-size:14px; }
 
     .lines-table { width:100%; border-collapse:collapse; font-size:13px; min-width:700px; }
-    .lines-table thead th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; padding:11px 10px;
+    .lines-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 10px;
         text-align:center; white-space:nowrap; border-bottom:2px solid var(--line); position:sticky; top:0; }
     .lines-table tbody td { padding:8px 10px; text-align:center; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
-    .lines-table tbody tr:hover { background:#fafaff; }
+    .lines-table tbody tr:hover { background:var(--surface); }
     .lines-table .c-code { font-family:monospace; color:var(--ink-500); white-space:nowrap; }
     .lines-table .c-name { text-align:right; font-weight:500; color:var(--ink-900); min-width:160px; }
-    .lines-table .c-qty { font-weight:700; color:var(--accent); }
+    .lines-table .c-qty { font-weight:700; color:var(--accent-text); }
     .lines-table .c-cost { color:var(--ink-500); white-space:nowrap; }
     .lines-table .c-after { font-weight:700; color:var(--pos); white-space:nowrap; }
 
     /* ===================== علامات الأصناف ===================== */
     /* ألوان التمييز: خلفيات فاتحة عن قصد — النص لازم يفضل مقروء.
        شريطة جانبية غامقة عشان اللون يبان حتى لو الصف طويل ومسحوب. */
-    .lines-table tbody tr.hl-red    { background:#fbeceb; box-shadow:inset -4px 0 0 #9d3b38; }
+    .lines-table tbody tr.hl-red    { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--neg); }
     .lines-table tbody tr.hl-green,
-    .lines-table tbody tr.hl-done   { background:#e9f2ed; box-shadow:inset -4px 0 0 #2c6e52; }
-    .lines-table tbody tr.hl-yellow { background:#faf3dd; box-shadow:inset -4px 0 0 #b08d2a; }
-    .lines-table tbody tr.hl-orange { background:#fbeedf; box-shadow:inset -4px 0 0 #b46a1e; }
+    .lines-table tbody tr.hl-done   { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--pos); }
+    .lines-table tbody tr.hl-yellow { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
+    .lines-table tbody tr.hl-orange { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
     /* الهوفر مايلغيش اللون */
-    .lines-table tbody tr.hl-red:hover    { background:#f8e2e0; }
+    .lines-table tbody tr.hl-red:hover    { background:var(--line-soft); }
     .lines-table tbody tr.hl-green:hover,
-    .lines-table tbody tr.hl-done:hover   { background:#dfece5; }
-    .lines-table tbody tr.hl-yellow:hover { background:#f6ecca; }
-    .lines-table tbody tr.hl-orange:hover { background:#f8e5d0; }
+    .lines-table tbody tr.hl-done:hover   { background:var(--line); }
+    .lines-table tbody tr.hl-yellow:hover { background:var(--warn-soft); }
+    .lines-table tbody tr.hl-orange:hover { background:var(--warn-soft); }
 
     .ifl-codewrap { display:inline-flex; align-items:center; gap:5px; }
     .ifl-gear { background:none; border:none; cursor:pointer; padding:2px; line-height:1;
         color:var(--ink-400); font-size:15px; border-radius:6px; }
-    .ifl-gear:hover { color:var(--accent); background:var(--accent-soft); }
+    .ifl-gear:hover { color:var(--accent-text); background:var(--accent-soft); }
     .ifl-noexp { color:var(--neg); font-size:14px; position:relative; }
     /* شخطة على أيقونة التنزيل = مابينزلش في ملف الفرع */
     .ifl-noexp::after { content:''; position:absolute; inset:0; margin:auto;
-        width:17px; height:1.8px; background:var(--neg); transform:rotate(-45deg); border-radius:2px; }
+        width:17px; height:1.8px; background:var(--neg-fill); transform:rotate(-45deg); border-radius:2px; }
     /* أيقونة الملاحظة: تولتيب بس — مافيش ضغط عليها */
     .ifl-noteic { color:var(--ink-300); font-size:14px; cursor:help; vertical-align:-1px; }
     .ifl-noteic.has { color:var(--warn); }
@@ -1868,12 +2096,12 @@ require_once __DIR__ . '/includes/header.php';
     .inote-input { width:100%; box-sizing:border-box; padding:5px 8px; font-size:12.5px;
         font-family:inherit; border:1px solid var(--line); border-radius:8px;
         background:var(--surface); color:var(--ink-900); }
-    .inote-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+    .inote-input:focus { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .inote-input::placeholder { color:var(--ink-300); }
     .inote-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:11px; }
 
     .ifl-skipnote { display:flex; gap:9px; align-items:flex-start; margin-bottom:14px;
-        background:var(--neg-soft); border:1px solid #e6c9c7; border-radius:var(--r);
+        background:var(--neg-soft); border:1px solid var(--neg); border-radius:var(--r);
         padding:10px 13px; font-size:12.5px; color:var(--ink-700); line-height:1.8; }
     .ifl-skipnote i { color:var(--neg); font-size:16px; margin-top:2px; }
     .ifl-skiplist { font-family:monospace; font-size:11.5px; color:var(--ink-500); }
@@ -1884,7 +2112,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:9px 13px; margin-bottom:12px; }
     .ifl-bar .ifl-lbl { font-weight:600; color:var(--ink-700); font-size:13px; white-space:nowrap; }
     .ifl-bar .btn { background:var(--surface); color:var(--ink-700); border:1px solid var(--line); }
-    .ifl-bar .btn:hover { border-color:var(--accent); color:var(--accent); }
+    .ifl-bar .btn:hover { border-color:var(--accent-text); color:var(--accent-text); }
     .ifl-hint { color:var(--ink-500); font-size:12px; }
 
     /* ===== بوب أب إعدادات الصنف ===== */
@@ -1906,10 +2134,10 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-sw button { width:42px; height:34px; border-radius:9px; cursor:pointer;
         border:2px solid var(--line); background:var(--surface); position:relative; }
     .ifl-sw button.on { border-color:var(--ink-900); box-shadow:0 0 0 3px var(--accent-ring); }
-    .ifl-sw button[data-c="red"]    { background:#fbeceb; border-color:#e0b8b6; }
-    .ifl-sw button[data-c="green"]  { background:#e9f2ed; border-color:#b3cdc0; }
-    .ifl-sw button[data-c="yellow"] { background:#faf3dd; border-color:#ddc98c; }
-    .ifl-sw button[data-c="orange"] { background:#fbeedf; border-color:#e0bf95; }
+    .ifl-sw button[data-c="red"]    { background:var(--line-soft); border-color:var(--neg); }
+    .ifl-sw button[data-c="green"]  { background:var(--line-soft); border-color:var(--pos); }
+    .ifl-sw button[data-c="yellow"] { background:var(--warn-soft); border-color:var(--warn); }
+    .ifl-sw button[data-c="orange"] { background:var(--warn-soft); border-color:var(--warn); }
     .ifl-sw button[data-c=""]::after { content:'✕'; color:var(--ink-400); font-size:13px; }
     .ifl-sw button.on[data-c="red"], .ifl-sw button.on[data-c="green"],
     .ifl-sw button.on[data-c="yellow"], .ifl-sw button.on[data-c="orange"] { border-color:var(--ink-900); }
@@ -1919,12 +2147,12 @@ require_once __DIR__ . '/includes/header.php';
     .ifl-donebtn { width:100%; padding:11px; border-radius:var(--r); border:2px solid var(--pos);
         background:var(--surface); color:var(--pos); font-family:inherit; font-weight:600;
         font-size:13.5px; cursor:pointer; margin-top:14px; }
-    .ifl-donebtn.on { background:var(--pos); color:#fff; }
+    .ifl-donebtn.on { background:var(--pos-fill); color:#fff; }
     .ifl-donebtn:disabled { opacity:.6; cursor:default; }
     .ifl-donehint { color:var(--ink-500); font-size:11.5px; line-height:1.7; margin-top:7px; }
     .ifl-note-in { width:100%; box-sizing:border-box; padding:9px 11px; font-family:inherit;
         font-size:13px; border:1.5px solid var(--line); border-radius:var(--r-sm); resize:vertical; }
-    .ifl-note-in:focus { outline:none; border-color:var(--accent); }
+    .ifl-note-in:focus { outline:none; border-color:var(--accent-text); }
     .ifl-foot { padding:12px 18px; display:flex; justify-content:space-between;
         align-items:center; gap:10px; background:var(--line-soft); }
     .ifl-state { font-size:12px; color:var(--ink-500); }
@@ -1935,12 +2163,12 @@ require_once __DIR__ . '/includes/header.php';
         border:1px solid var(--line); border-radius:8px; font-size:13px;
         font-family:inherit; background:var(--surface); color:var(--ink-900);
     }
-    .disc-pct-inp:focus { outline:none; border-color:var(--accent);
+    .disc-pct-inp:focus { outline:none; border-color:var(--accent-text);
         box-shadow:0 0 0 3px rgba(99,102,241,.12); }
     .disc-pct-inp::placeholder { color:var(--ink-300); }
     .lines-table tr.disc-locked { background:rgba(99,102,241,.05); }
     .lines-table tr.disc-locked .disc-pct-inp {
-        border-color:var(--accent); font-weight:700; color:var(--accent); }
+        border-color:var(--accent-text); font-weight:700; color:var(--accent-text); }
     /* ===== بوب أب اختيار الفاتورة ===== */
     .picker-overlay { display:none; position:fixed; inset:0; background:rgba(22,35,61,.5);
         z-index:950; align-items:flex-start; justify-content:center; padding:50px 16px; }
@@ -1972,7 +2200,7 @@ require_once __DIR__ . '/includes/header.php';
         padding:11px 20px; text-decoration:none; color:var(--ink-800); font-size:13.5px;
         border-bottom:1px solid var(--line-soft); transition:background .12s; }
     .picker-row:hover { background:var(--accent-soft); }
-    .pk-no { font-weight:700; color:var(--accent); }
+    .pk-no { font-weight:700; color:var(--accent-text); }
     .pk-sup { color:var(--ink-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pk-date { color:var(--ink-500); font-size:12.5px; }
     .pk-amt { font-weight:600; text-align:left; }
@@ -1980,9 +2208,9 @@ require_once __DIR__ . '/includes/header.php';
 
     /* ===== كروت المجموعات ===== */
     .grp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
-    .grp-card { display:block; background:#fff; border:1.5px solid var(--line); border-radius:14px;
+    .grp-card { display:block; background:var(--surface); border:1.5px solid var(--line); border-radius:14px;
         padding:16px 18px; text-decoration:none; color:inherit; transition:all .15s; }
-    .grp-card:hover { border-color:var(--accent); transform:translateY(-2px);
+    .grp-card:hover { border-color:var(--accent-text); transform:translateY(-2px);
         box-shadow:0 8px 22px rgba(124,111,247,.13); }
     .gc-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
     .gc-title { font-weight:700; color:var(--ink-900); font-size:15px; }
@@ -1997,31 +2225,31 @@ require_once __DIR__ . '/includes/header.php';
     /* ===== أنواع المجموعات + بوب أب تحديد الأصناف ===== */
     .grp-type { display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
         border-radius:20px; font-size:11.5px; font-weight:700; vertical-align:middle; }
-    .grp-type.full  { background:var(--accent-soft); color:var(--accent); }
+    .grp-type.full  { background:var(--accent-soft); color:var(--accent-text); }
     .grp-type.items { background:var(--warn-soft);   color:var(--warn); }
     .grp-itemsnote { display:flex; gap:9px; align-items:flex-start; margin-top:12px;
-        background:var(--warn-soft); border:1px solid #e8dcc0; border-radius:var(--r);
+        background:var(--warn-soft); border:1px solid var(--warn); border-radius:var(--r);
         padding:10px 13px; font-size:12.5px; color:var(--ink-700); line-height:1.8; }
     .grp-itemsnote i { color:var(--warn); font-size:16px; margin-top:2px; }
 
     /* × شيل فاتورة من شريحة المجموعة */
-    .grp-xbtn { border:0; background:none; cursor:pointer; color:var(--accent);
+    .grp-xbtn { border:0; background:none; cursor:pointer; color:var(--accent-text);
         font-size:17px; line-height:1; padding:0 1px; opacity:.5;
         border-radius:50%; width:18px; height:18px; font-family:inherit; }
-    .grp-xbtn:hover { opacity:1; background:var(--neg); color:#fff; }
+    .grp-xbtn:hover { opacity:1; background:var(--neg-fill); color:#fff; }
     /* شيل صنف من صف الجدول */
     .grp-itemx { border:0; background:none; cursor:pointer; color:var(--ink-300);
         font-size:16px; line-height:1; padding:2px 5px; border-radius:5px;
         font-family:inherit; }
-    .grp-itemx:hover { color:#fff; background:var(--neg); }
+    .grp-itemx:hover { color:#fff; background:var(--neg-fill); }
 
     .grp-modes { display:flex; gap:0; border-bottom:1px solid var(--line); }
     .gm-btn { flex:1; padding:12px 10px; background:none; border:none; cursor:pointer;
         font-family:inherit; font-size:13.5px; font-weight:600; color:var(--ink-500);
         border-bottom:3px solid transparent; display:flex; align-items:center;
         justify-content:center; gap:6px; }
-    .gm-btn:hover { color:var(--accent); background:var(--line-soft); }
-    .gm-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .gm-btn:hover { color:var(--accent-text); background:var(--line-soft); }
+    .gm-btn.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
     .grp-lockmsg { display:flex; gap:8px; align-items:flex-start; padding:11px 16px;
         background:var(--warn-soft); color:var(--ink-700); font-size:12.5px; line-height:1.8;
         border-bottom:1px solid var(--line); }
@@ -2043,20 +2271,20 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
     .gi-doc { padding:1.5px 8px; border-radius:20px; font-size:10.5px; font-weight:700;
         color:#fff; background:var(--accent); }
-    .gi-doc.ret { background:var(--neg); }
-    .gi-doc.unp { background:var(--warn); }
-    .gi-add { border:1.5px solid var(--accent); background:var(--surface); color:var(--accent);
+    .gi-doc.ret { background:var(--neg-fill); }
+    .gi-doc.unp { background:var(--warn-fill); }
+    .gi-add { border:1.5px solid var(--accent); background:var(--surface); color:var(--accent-text);
         border-radius:8px; padding:6px 13px; font-family:inherit; font-size:12.5px;
         font-weight:600; cursor:pointer; white-space:nowrap; }
-    .gi-add.on { background:var(--pos); border-color:var(--pos); color:#fff; }
+    .gi-add.on { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
     .gi-add:disabled { border-color:var(--line); color:var(--ink-400); cursor:default; }
 
     .gi-ways { display:flex; gap:6px; margin-bottom:9px; }
     .giw-btn { flex:1; padding:8px 10px; border:1.5px solid var(--line); background:var(--surface);
         border-radius:9px; cursor:pointer; font-family:inherit; font-size:12.5px; font-weight:600;
         color:var(--ink-500); display:flex; align-items:center; justify-content:center; gap:6px; }
-    .giw-btn:hover { border-color:var(--accent); color:var(--accent); }
-    .giw-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .giw-btn:hover { border-color:var(--accent-text); color:var(--accent-text); }
+    .giw-btn.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }
     #grpInvFilter { width:100%; padding:11px 14px; font-size:14px; }
 
     .gi-crumb { display:flex; align-items:center; gap:10px; padding:9px 16px;
@@ -2064,13 +2292,13 @@ require_once __DIR__ . '/includes/header.php';
     .gi-crumb b { flex:1; font-size:13px; color:var(--ink-900); overflow:hidden;
         text-overflow:ellipsis; white-space:nowrap; }
     .gi-back, .gi-all { border:1.5px solid var(--accent); background:var(--surface);
-        color:var(--accent); border-radius:8px; padding:5px 11px; font-family:inherit;
+        color:var(--accent-text); border-radius:8px; padding:5px 11px; font-family:inherit;
         font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
     .gi-all { border-color:var(--pos); color:var(--pos); }
 
     .grp-admtog { display:flex; align-items:center; gap:8px; margin-top:9px;
         font-size:12.5px; color:var(--ink-700); cursor:pointer; flex-wrap:wrap; }
-    .grp-admtog input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+    .grp-admtog input { width:16px; height:16px; accent-color:var(--accent-text); cursor:pointer; }
     .grp-admtip { color:var(--ink-500); font-size:11.5px; }
 
     .picker-row.gi-grprow { grid-template-columns:60px 1fr 90px 70px; cursor:pointer; }
@@ -2102,7 +2330,7 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
     /* عمود زيادة للـ checkbox قدام أعمدة الفاتورة الأربعة */
     .picker-row.grp-row { grid-template-columns:26px 110px 1fr 100px 110px; cursor:pointer; }
-    .picker-row.grp-row input[type=checkbox] { width:18px; height:18px; cursor:pointer; accent-color:var(--accent); }
+    .picker-row.grp-row input[type=checkbox] { width:18px; height:18px; cursor:pointer; accent-color:var(--accent-text); }
     .picker-row.grp-row:has(input:checked) { background:var(--accent-soft); }
     @media (max-width:640px){
         .picker-row.grp-row { grid-template-columns:26px 1fr 1fr; }
@@ -2122,8 +2350,8 @@ require_once __DIR__ . '/includes/header.php';
     .unlock-btn { background:none; border:1px solid var(--line); border-radius:6px;
         padding:3px 7px; margin-right:6px; cursor:pointer; color:var(--ink-500);
         font-size:14px; line-height:1; transition:all .15s; vertical-align:middle; }
-    .unlock-btn:hover { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
-    .unlock-btn.is-open { background:var(--pos); border-color:var(--pos); color:#fff; }
+    .unlock-btn:hover { border-color:var(--accent-text); color:var(--accent-text); background:var(--accent-soft); }
+    .unlock-btn.is-open { background:var(--pos-fill); border-color:var(--pos); color:#fff; }
     .item-row.editing { background:var(--warn-soft) !important; }
     .lines-table .c-bal { white-space:nowrap; font-weight:700; color:var(--ink-800);
         background:var(--line-soft); }
@@ -2135,7 +2363,7 @@ require_once __DIR__ . '/includes/header.php';
     .sale-input { width:88px; padding:6px 8px; border:1px solid var(--line); border-radius:7px;
         font-size:13px; font-family:inherit; text-align:center; background:var(--surface);
         transition:border-color .15s, box-shadow .15s; }
-    .sale-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+    .sale-input:focus { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .sale-input.dirty { border-color:var(--warn); background:var(--warn-soft); }
     .sale-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:12px; }
     .sale-ind.ok { color:var(--pos); }
@@ -2149,7 +2377,7 @@ require_once __DIR__ . '/includes/header.php';
     .mrk-input { width:82px; padding:6px 3px; border:1px dashed var(--line); border-radius:7px;
         font-size:11.5px; font-family:inherit; text-align:center; background:var(--surface);
         color:var(--ink-900); transition:border-color .15s, box-shadow .15s; }
-    .mrk-input:focus { outline:none; border-style:solid; border-color:var(--accent);
+    .mrk-input:focus { outline:none; border-style:solid; border-color:var(--accent-text);
         box-shadow:0 0 0 3px var(--accent-ring); }
     /* النسبة المحسوبة بتبان باهتة جوه الخانة (placeholder) — مش قيمة متخزّنة */
     .mrk-input::placeholder { color:var(--ink-400); opacity:1; }
@@ -2160,15 +2388,15 @@ require_once __DIR__ . '/includes/header.php';
     .mrk-bulk input { width:96px; padding:7px 10px; border:1px solid var(--line);
         border-radius:7px; font-size:13.5px; font-family:inherit; text-align:center;
         background:var(--surface); }
-    .mrk-bulk input:focus { outline:none; border-color:var(--accent);
+    .mrk-bulk input:focus { outline:none; border-color:var(--accent-text);
         box-shadow:0 0 0 3px var(--accent-ring); }
     .mrk-bulk .mrk-lbl { font-size:13px; color:var(--ink-700); font-weight:600; }
     .mrk-bulk .mrk-hint { font-size:12px; color:var(--ink-500); }
     .lines-table .c-store .store-v.has { color:var(--warn); font-weight:600; }
     .lines-table .dist-input { width:64px; padding:6px 4px; border:1.5px solid var(--line); border-radius:7px;
         font-size:13px; text-align:center; font-family:inherit; }
-    .lines-table .dist-input:focus { border-color:var(--accent); outline:none; }
-    .lines-table .dist-input:disabled { background:var(--line-soft); color:#bbb; }
+    .lines-table .dist-input:focus { border-color:var(--accent-text); outline:none; }
+    .lines-table .dist-input:disabled { background:var(--line-soft); color:var(--ink-400); }
     .lines-table .prev-val { color:var(--pos); font-size:12px; }
     .lines-table .dist-remain { display:block; font-size:11px; margin-top:2px; }
     .lines-table .dist-btn { padding:6px 14px; font-size:12px; white-space:nowrap; }
@@ -2221,7 +2449,7 @@ require_once __DIR__ . '/includes/header.php';
                     <option value="done"  <?= $isManual && $curStatus==='done'  ? 'selected' : '' ?>>تم التوزيع</option>
                 </select>
                 <span id="invStatusLock" class="inv-lock" style="<?= $isManual ? '' : 'display:none;' ?>"
-                      title="الحالة مقفولة يدوي">🔒</span>
+                      title="الحالة مقفولة يدوي"><i class="ti ti-lock"></i></span>
             </div>
         </div>
 
@@ -2238,9 +2466,13 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- بحث الصنف -->
+        <!-- بحث الصنف + سحب أعداد الفروع -->
         <div class="search-box">
             <button class="btn btn-sm btn-primary" type="button" onclick="openLookup()">
                 <i class="ti ti-search"></i> بحث صنف
+            </button>
+            <button class="btn btn-sm btn-res-pull" type="button" onclick="openReservationPull()">
+                <i class="ti ti-users"></i> سحب أعداد الفروع
             </button>
         </div>
 
@@ -2261,10 +2493,27 @@ require_once __DIR__ . '/includes/header.php';
                                onkeyup="handleLookupKey(event)"
                                onsearch="doLookup()">
                         <button type="button" class="btn btn-sm" onclick="openBarcodeScanner('lookupCode')"
-                                title="مسح بالكاميرا" style="font-size:16px;">📷</button>
+                                title="مسح بالكاميرا" style="font-size:16px;"><i class="ti ti-camera"></i></button>
                         <button type="button" class="btn btn-sm btn-primary" onclick="doLookup()">بحث</button>
                     </div>
                     <div id="lookupResult"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- بوب أب سحب أعداد الفروع -->
+        <div class="lookup-overlay" id="resPullOverlay" onclick="if(event.target===this)closeReservationPull()">
+            <div class="lookup-box" style="max-width:850px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
+                <div class="lookup-head">
+                    <span><i class="ti ti-users"></i> سحب أعداد الفروع من الحجوزات</span>
+                    <button type="button" class="lookup-x" onclick="closeReservationPull()">&times;</button>
+                </div>
+                <div id="resPullBody" style="overflow-y:auto;padding:16px;flex:1;min-height:0;"></div>
+                <div class="res-pull-foot" id="resPullFoot" style="padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:var(--bg);border-radius:0 0 14px 14px;flex-shrink:0;">
+                    <div id="resPullSummaryNote" style="font-size:13px;color:var(--ink-500);"></div>
+                    <button type="button" class="btn btn-sm btn-primary" id="btnSubmitResPull" onclick="submitReservationPull()" disabled>
+                        <i class="ti ti-check"></i> اعتماد التوزيع
+                    </button>
                 </div>
             </div>
         </div>
@@ -2289,6 +2538,24 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد أصناف في هذه الفاتورة.</div>
             <?php endif; ?>
         <?php else: ?>
+            <?php
+                $naCount = 0;
+                foreach ($items as $it) {
+                    $iid = (int) ($it['item_id'] ?? 0);
+                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                        $naCount++;
+                    }
+                }
+            ?>
+            <?php if ($naCount > 0): ?>
+                <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                    <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
+                    <div>
+                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
+                        شغّل وكيل مزامنة الإدارة.
+                    </div>
+                </div>
+            <?php endif; ?>
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
@@ -2322,6 +2589,14 @@ require_once __DIR__ . '/includes/header.php';
                         $available = $qty - $distributedTotal;
                         $iFlags = $itemFlags[$code] ?? [];
                         $iSkip  = isset($skipMap[$code]);
+                        // رصيد الإدارة — سقف التوزيع. `$itemBalances` محسوبة
+                        // مجمّعة قبل الحلقة، فمفيش أي استعلام هنا.
+                        // 🔴 `null` = مفيش سقف (الصنف مش معروف / الوكيل ما زامنش)،
+                        //    **مش صفر**. لو بقت صفر التوزيع بيتقفل على الموقع كله.
+                        $iid   = (int) ($it['item_id'] ?? 0);
+                        $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
+                        $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                        $hqNA  = ($hqB === null);   // رصيد الإدارة مش واصل = التوزيع متقفل
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>
@@ -2340,7 +2615,9 @@ require_once __DIR__ . '/includes/header.php';
                                                data-branch="<?= (int)$b['id'] ?>"
                                                data-code="<?= e($code) ?>"
                                                data-qty="<?= $qty ?>"
+                                               data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
+                                               <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2359,7 +2636,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -2389,7 +2666,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php else: ?>
                             <?php foreach ($activeBranches as $b): ?>
@@ -2403,7 +2680,9 @@ require_once __DIR__ . '/includes/header.php';
                                                data-branch="<?= (int)$b['id'] ?>"
                                                data-code="<?= e($code) ?>"
                                                data-qty="<?= $qty ?>"
+                                               data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                                data-saved="<?= $prev ?>"
+                                               <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                                oninput="onDistInput(this)"
                                                onblur="autoSave(this)">
                                         <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2422,7 +2701,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -2448,7 +2727,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                                 echo $bal === null ? '<span class="bal-na">—</span>'
                                     : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                            ?></td>
+                            ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                             <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php endif; ?>
                     </tr>
@@ -2466,7 +2745,7 @@ require_once __DIR__ . '/includes/header.php';
             ملف إكسيل (.xlsx) فيه كل بيانات الفاتورة: الهيدر، الأصناف، التوزيع على الفروع،
             أرصدة الفروع، أسعار البيع، والمتبقي بالمخزن.
         </p>
-        <a class="btn" style="background:var(--pos);"
+        <a class="btn" style="background:var(--pos-fill);"
            href="invoice_full_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
             <i class="ti ti-file-spreadsheet"></i> تصدير الفاتورة كاملة (Excel)
         </a>
@@ -2481,7 +2760,7 @@ require_once __DIR__ . '/includes/header.php';
             التصدير بيطلع ملف نصي: كود الصنف + Tab + السعر.
         </p>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-            <a class="btn" id="pricesExportBtn" style="background:var(--ink-800);"
+            <a class="btn" id="pricesExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                href="prices_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                 <i class="ti ti-download"></i> تصدير ملف الأسعار
             </a>
@@ -2496,8 +2775,14 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <?php
+    $isReceivingOpened = false;
+    if (!empty($distId)) {
+        $isReceivingOpened = (int) $pdo->query('SELECT COUNT(*) FROM receipts WHERE distribution_id = ' . (int)$distId)->fetchColumn() > 0;
+    }
+    ?>
     <!-- أزرار تحميل ملف TEXT لكل فرع اتوزّعله حاجة -->
-    <div class="card" id="branchDlCard" <?= (empty($branchTotals) && $tab !== 'unposted') ? 'style="display:none;"' : '' ?>>
+    <div class="card" id="branchDlCard" data-receiving-open="<?= $isReceivingOpened ? '1' : '0' ?>" <?= (empty($branchTotals) && $tab !== 'unposted') ? 'style="display:none;"' : '' ?>>
         <div class="section-title">تحميل ملفات التوزيع (لكل فرع)</div>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
             كل زر بينزّل ملف TEXT خاص بالفرع (كود الصنف، الكمية، سعر التكلفة). يظهر فقط للفروع اللي اتوزّعلها كميات.
@@ -2505,7 +2790,7 @@ require_once __DIR__ . '/includes/header.php';
         <?= ifl_skip_note($skipMap) ?>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
             <?php foreach ($activeBranches as $b): $btotal = (float)($branchTotals[(int)$b['id']] ?? 0); ?>
-                <a class="btn branch-dl" style="background:var(--pos);<?= $btotal>0?'':'display:none;' ?>"
+                <a class="btn branch-dl" style="background:var(--pos-fill);<?= $btotal>0?'':'display:none;' ?>"
                    data-branch="<?= (int)$b['id'] ?>"
                    href="branch_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&branch=<?= (int)$b['id'] ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                     <i class="ti ti-download"></i> <?= e($b['name']) ?>
@@ -2514,7 +2799,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
 
             <?php if ($tab === 'unposted'): ?>
-                <a class="btn" style="background:var(--pos);"
+                <a class="btn" style="background:var(--pos-fill);"
                    href="invoices_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
                     <i class="ti ti-file-spreadsheet"></i> تصدير إكسيل
                 </a>
@@ -2537,7 +2822,7 @@ require_once __DIR__ . '/includes/header.php';
         <a class="tab-btn <?= $tab==='group'?'active':'' ?>" href="invoices.php?tab=group">
             <i class="ti ti-stack-2"></i> فواتير مجمّعة
             <?php $grpOpenCount = count(group_list()); if ($grpOpenCount > 0): ?>
-                <span style="background:var(--pos);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
+                <span style="background:var(--pos-fill);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
                     <?= $grpOpenCount ?>
                 </span>
             <?php endif; ?>
@@ -2601,7 +2886,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="gc-bar"><span style="width:<?= $pct ?>%;background:<?= $col ?>;"></span></div>
                     <?php $gcNote = trim((string)($gc['user_notes'] ?? '')); ?>
                     <?php if ($gcNote !== ''): ?>
-                        <span class="inv-note-text" title="<?= e($gcNote) ?>">📝 <?= e(mb_strimwidth($gcNote, 0, 120, '…')) ?></span>
+                        <span class="inv-note-text" title="<?= e($gcNote) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($gcNote, 0, 120, '…')) ?></span>
                     <?php endif; ?>
                     <div class="gc-foot">
                         <span><?= rtrim(rtrim(number_format((float)$gc['done_qty'],2,'.',''),'0'),'.') ?>
@@ -2649,7 +2934,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;">
                         <?php $grpCanRemove = count($grpInvoices) > 1; ?>
                         <?php foreach ($grpInvoices as $gi): ?>
-                            <span style="background:var(--accent-soft);color:var(--accent);border-radius:20px;
+                            <span style="background:var(--accent-soft);color:var(--accent-text);border-radius:20px;
                                          padding:4px 12px;font-size:12.5px;display:inline-flex;
                                          align-items:center;gap:6px;">
                                 <?= e($gi['invoice_no']) ?>
@@ -2676,7 +2961,7 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="group_delete">
                         <input type="hidden" name="group_id" value="<?= (int)$grpCurrent['id'] ?>">
-                        <button class="btn" style="background:var(--neg);">
+                        <button class="btn" style="background:var(--neg-fill);">
                             <i class="ti ti-trash"></i> امسح المجموعة
                         </button>
                     </form>
@@ -2705,7 +2990,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             <?php if (!empty($grpData['missing'])): ?>
                 <div class="sqlsrv-warn" style="margin-top:14px;">
-                    ⚠️ فيه <?= count($grpData['missing']) ?> فاتورة مقدرناش نجيب بياناتها
+                    <i class="ti ti-alert-triangle"></i> فيه <?= count($grpData['missing']) ?> فاتورة مقدرناش نجيب بياناتها
                     (يمكن اتحفظت أو اتلغت من نظام الشركة). الباقي شغّال عادي.
                 </div>
             <?php endif; ?>
@@ -2755,7 +3040,7 @@ require_once __DIR__ . '/includes/header.php';
                                    onkeyup="handleLookupKey(event)"
                                    onsearch="doLookup()">
                             <button type="button" class="btn btn-sm" onclick="openBarcodeScanner('lookupCode')"
-                                    title="مسح بالكاميرا" style="font-size:16px;">📷</button>
+                                    title="مسح بالكاميرا" style="font-size:16px;"><i class="ti ti-camera"></i></button>
                             <button type="button" class="btn btn-sm btn-primary" onclick="doLookup()">بحث</button>
                         </div>
                         <div id="lookupResult"></div>
@@ -2766,6 +3051,24 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($grpItems)): ?>
                 <div class="empty">مفيش أصناف في فواتير المجموعة.</div>
             <?php else: ?>
+            <?php
+                $naCount = 0;
+                foreach ($grpItems as $it) {
+                    $iid = (int) ($it['item_id'] ?? 0);
+                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                        $naCount++;
+                    }
+                }
+            ?>
+            <?php if ($naCount > 0): ?>
+                <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                    <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
+                    <div>
+                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
+                        شغّل وكيل مزامنة الإدارة.
+                    </div>
+                </div>
+            <?php endif; ?>
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
@@ -2803,6 +3106,10 @@ require_once __DIR__ . '/includes/header.php';
                         }
                         $iFlags = $itemFlags[$code] ?? [];
                         $iSkip  = isset($skipMap[$code]);
+                        $iid   = (int) ($it['item_id'] ?? 0);
+                        $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
+                        $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                        $hqNA  = ($hqB === null);
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>
@@ -2824,7 +3131,9 @@ require_once __DIR__ . '/includes/header.php';
                                            data-branch="<?= (int)$b['id'] ?>"
                                            data-code="<?= e($code) ?>"
                                            data-qty="<?= $qty ?>"
+                                           data-hqbal="<?= $hqB === null ? '' : (float)$hqB ?>"
                                            data-saved="<?= $prev ?>"
+                                           <?= $hqNA ? 'title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد"' : '' ?>
                                            oninput="onDistInput(this)"
                                            onblur="grpSave(this)">
                                     <span class="save-ind" style="position:absolute;left:4px;top:50%;transform:translateY(-50%);font-size:12px;"></span>
@@ -2842,7 +3151,7 @@ require_once __DIR__ . '/includes/header.php';
                                 if ($bbal === null) {
                                     echo '<span class="bal-na">—</span>';
                                 } else {
-                                    $neg = $bbal < 0 ? ' style="color:var(--danger,#c0392b);"' : '';
+                                    $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
                                     echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                 }
                             ?></td>
@@ -2864,10 +3173,10 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                         <?= mrk_cell($code, mrk_cost($it), $salePrices[$code] ?? null) ?>
                         <td class="c-bal"><?php
-                            $bal = $itemBalances[(int)$it['item_id']] ?? null;
+                            $bal = $itemBalances[(int)($it['item_id'] ?? 0)] ?? null;
                             echo $bal === null ? '<span class="bal-na">—</span>'
                                 : rtrim(rtrim(number_format((float)$bal, 2, '.', ''), '0'), '.');
-                        ?></td>
+                        ?><?php if ($hqNA): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--neg);background:var(--neg-soft);" title="رصيد الإدارة مش واصل — تقدر تقلّل بس مش تزوّد">الرصيد مش واصل</span><?php elseif ($hqLow): ?><span class="badge" style="display:block;margin-top:3px;font-size:10.5px;color:var(--warn);background:var(--warn-soft);" title="الفاتورة <?= number_format($qty, 2) ?> ورصيد الإدارة <?= number_format(max(0.0, (float)$hqB), 2) ?> — التوزيع محدود بالرصيد">الرصيد أقل</span><?php endif; ?></td>
                         <?= ifl_notes_cell($code, $iFlags) ?>
                         <?php if ($gIsItems): ?>
                             <td style="text-align:center;">
@@ -2893,7 +3202,7 @@ require_once __DIR__ . '/includes/header.php';
                 المصدر (الصنف جاي من أنهي فاتورة وبكام)، التوزيع على الفروع، أرصدة الفروع،
                 أسعار البيع، والمتبقي بالمخزن.
             </p>
-            <a class="btn" style="background:var(--pos);"
+            <a class="btn" style="background:var(--pos-fill);"
                href="group_full_export.php?group=<?= (int)$grpCurrent['id'] ?>">
                 <i class="ti ti-file-spreadsheet"></i> تصدير المجموعة كاملة (Excel)
                 <span style="opacity:.8;font-size:12px;">(<?= count($grpItems) ?> صنف)</span>
@@ -2910,7 +3219,7 @@ require_once __DIR__ . '/includes/header.php';
                 والتحديث من السيستم بيكتب فوق أي تعديل يدوي (قاعدة الشركة مابتتكتبش أبدًا).
             </p>
             <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-                <a class="btn" id="pricesExportBtn" style="background:var(--ink-800);"
+                <a class="btn" id="pricesExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                    href="group_prices_export.php?group=<?= (int)$grpCurrent['id'] ?>">
                     <i class="ti ti-download"></i> تصدير ملف الأسعار المجمّع
                     <span style="opacity:.8;font-size:12px;">(<?= count($grpItems) ?> صنف)</span>
@@ -2937,9 +3246,10 @@ require_once __DIR__ . '/includes/header.php';
                 foreach ($activeBranches as $b) {
                     if ((float)($grpBranchTotals[(int)$b['id']] ?? 0) > 0) { $anyGrp = true; break; }
                 }
+                $isGrpReceivingOpened = (int) $pdo->query('SELECT COUNT(*) FROM receipts WHERE group_id = ' . (int)$grpCurrent['id'])->fetchColumn() > 0;
             ?>
             <div style="border:2px solid var(--pos);border-radius:12px;padding:16px;margin-bottom:16px;
-                        background:var(--pos-soft);">
+                        background:var(--pos-soft);" data-receiving-open="<?= $isGrpReceivingOpened ? '1' : '0' ?>">
                 <div style="font-weight:700;color:var(--pos);font-size:14px;margin-bottom:6px;">
                     <i class="ti ti-stack-2"></i> مجمّع — كل فواتير المجموعة في ملف واحد
                 </div>
@@ -2952,7 +3262,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php foreach ($activeBranches as $b): ?>
                         <?php $gt = (float)($grpBranchTotals[(int)$b['id']] ?? 0); ?>
                         <a class="btn grp-combo" data-branch="<?= (int)$b['id'] ?>"
-                           style="background:var(--pos);padding:9px 16px;font-size:13.5px;<?= $gt > 0 ? '' : 'display:none;' ?>"
+                           style="background:var(--pos-fill);padding:9px 16px;font-size:13.5px;<?= $gt > 0 ? '' : 'display:none;' ?>"
                            href="group_export.php?group=<?= (int)$grpCurrent['id'] ?>&branch=<?= (int)$b['id'] ?>">
                             <i class="ti ti-download"></i> <?= e($b['name']) ?>
                             <span class="dl-count" style="opacity:.8;font-size:12px;">(<?= number_format($gt,0) ?>)</span>
@@ -2987,7 +3297,7 @@ require_once __DIR__ . '/includes/header.php';
                         if ((float)($bt[(int)$b['id']] ?? 0) > 0) { $anyB = true; break; }
                     }
                 ?>
-                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;">
+                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;" data-receiving-open="<?= $isGrpReceivingOpened ? '1' : '0' ?>">
                     <div style="font-weight:600;color:var(--ink-900);font-size:14px;margin-bottom:10px;">
                         فاتورة <?= e($gi['invoice_no']) ?>
                         <span style="font-weight:400;color:var(--ink-500);font-size:13px;">
@@ -2997,7 +3307,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div style="display:flex;flex-wrap:wrap;gap:8px;" data-invwrap="<?= (int)$sth ?>">
                         <?php foreach ($activeBranches as $b): ?>
                             <?php $tot = (float)($bt[(int)$b['id']] ?? 0); ?>
-                            <a class="btn grp-dl" style="background:var(--pos);padding:8px 14px;font-size:13px;<?= $tot > 0 ? '' : 'display:none;' ?>"
+                            <a class="btn grp-dl" style="background:var(--pos-fill);padding:8px 14px;font-size:13px;<?= $tot > 0 ? '' : 'display:none;' ?>"
                                data-sth="<?= (int)$sth ?>" data-branch="<?= (int)$b['id'] ?>"
                                href="branch_export.php?invoice=<?= e((string)$sth) ?>&branch=<?= (int)$b['id'] ?>&suffix=<?= e((string)$gi['suffix']) ?>&group=<?= (int)$grpCurrent['id'] ?>">
                                 <i class="ti ti-download"></i> <?= e($b['name']) ?>
@@ -3149,7 +3459,7 @@ require_once __DIR__ . '/includes/header.php';
                                    onkeydown="if(isEnterKey(event)){event.preventDefault();this.blur();}">
                         </td>
                         <td class="c-after js-after"><?= disc_price_txt((float)$r['price_after']) ?><?php
-                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent);font-size:11px;"> ★</span>';
+                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>';
                             elseif (!empty($r['adjusted'])) echo '<span class="disc-dot" title="اتعدّل بأقل وحدة ممكنة لضبط الإجمالي" style="color:var(--warn);font-size:11px;"> ●</span>';
                         ?></td>
                         <td class="c-cost js-total"><?= number_format($r['total_after'],2) ?></td>
@@ -3214,7 +3524,7 @@ require_once __DIR__ . '/includes/header.php';
                 ملف نصي: كود الصنف + Tab + الكمية + Tab + السعر بعد الخصم
                 (لغاية <?= DISC_PRICE_DP ?> خانات عشرية — زي ما نظام الشركة بيخزّن).
             </p>
-            <a class="btn" id="discExportBtn" style="background:var(--ink-800);"
+            <a class="btn" id="discExportBtn" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
                data-base="discount_export.php?invoice=<?= e(rawurlencode((string)$discInvId)) ?>&suffix=<?= e(rawurlencode((string)($discSuffix ?? ''))) ?><?= $discNetOverride !== null ? '&dnet=' . e(rawurlencode((string)$discNetOverride)) : '' ?>"
                href="discount_export.php?invoice=<?= e((string)$discInvId) ?>&suffix=<?= e((string)($discSuffix ?? '')) ?><?= $discNetOverride !== null ? '&dnet=' . e((string)$discNetOverride) : '' ?><?= $dpctRaw !== '' ? '&dpct=' . e(rawurlencode($dpctRaw)) : '' ?>">
                 <i class="ti ti-download"></i> تصدير ملف الخصم
@@ -3235,6 +3545,32 @@ require_once __DIR__ . '/includes/header.php';
                        aria-label="بحث في الفواتير" autocomplete="off" oninput="filterInvList()">
                 <button type="button" class="ls-clear" onclick="clearInvSearch()" title="مسح">&times;</button>
             </div>
+        </div>
+
+        <?php
+        $adminCount = 0;
+        $branchCount = 0;
+        foreach ($invoiceGroups as $g) {
+            $cnt = count($g['invoices']);
+            if (!empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1) {
+                $adminCount += $cnt;
+            } else {
+                $branchCount += $cnt;
+            }
+        }
+        ?>
+
+        <!-- أزرار عزل فواتير الإدارة عن باقي الفروع -->
+        <div class="scope-filters">
+            <button type="button" class="scope-btn active" data-scope="admin" onclick="setScopeFilter('admin', this)">
+                <i class="ti ti-building-bank"></i> فواتير الإدارة (المركز الرئيسي) <span><?= $adminCount ?></span>
+            </button>
+            <button type="button" class="scope-btn" data-scope="branches" onclick="setScopeFilter('branches', this)">
+                <i class="ti ti-building-store"></i> فواتير الفروع الأخرى <span><?= $branchCount ?></span>
+            </button>
+            <button type="button" class="scope-btn" data-scope="all" onclick="setScopeFilter('all', this)">
+                <i class="ti ti-list-details"></i> كل الفواتير <span><?= $adminCount + $branchCount ?></span>
+            </button>
         </div>
 
         <?php if ($tab==='posted'): ?>
@@ -3261,18 +3597,18 @@ require_once __DIR__ . '/includes/header.php';
             <?php $rowNo = 0; foreach ($invoiceGroups as $g): ?>
                 <?php
                     $colspan = $tab==='posted' ? 8 : 7;
-                    $bIcon = $g['is_admin'] ? 'ti-building-bank' : 'ti-building-store';
+                    $isAdm = !empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1;
+                    $gScope = $isAdm ? 'admin' : 'branch';
+                    $bIcon = $isAdm ? 'ti-building-bank' : 'ti-building-store';
                 ?>
-                <tr class="branch-head<?= $g['is_admin']?' branch-admin':'' ?>" data-branchhead="1"
+                <tr class="branch-head<?= $isAdm ?' branch-admin':'' ?>" data-branchhead="1"
+                    data-scope="<?= $gScope ?>"
                     data-acckey="br:<?= e((string)($g['branch_name'] ?? '')) ?>"
                     onclick="toggleBranch(this)" role="button" tabindex="0" title="اضغط لطي/فرد فواتير الفرع">
                     <td colspan="<?= $colspan ?>">
                         <i class="ti ti-chevron-down bh-caret"></i>
                         <i class="ti <?= $bIcon ?>"></i>
-                        <?= e($g['is_admin'] ? 'الإدارة' : $g['branch_name']) ?>
-                        <?php if ($g['is_admin'] && $g['branch_name'] !== 'الإدارة'): ?>
-                            <span class="bh-sub"><?= e($g['branch_name']) ?></span>
-                        <?php endif; ?>
+                        <?= e($isAdm ? 'الإدارة (المركز الرئيسي)' : $g['branch_name']) ?>
                         <span class="bh-count"><?= count($g['invoices']) ?> فاتورة</span>
                     </td>
                 </tr>
@@ -3290,6 +3626,7 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                 <?php foreach ($subGroups as $sg): ?>
                 <tr class="subtype-head subtype-<?= e($sg['kind']) ?>" data-subhead="1"
+                    data-scope="<?= $gScope ?>"
                     data-acckey="sub:<?= e((string)($g['branch_name'] ?? '')) ?>:<?= e((string)$sg['kind']) ?>"
                     onclick="toggleSubtype(this)" role="button" tabindex="0" title="اضغط لطي/فرد">
                     <td colspan="<?= $colspan ?>">
@@ -3300,22 +3637,28 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                 </tr>
                 <?php foreach ($sg['rows'] as $inv): $rowNo++;
-                    $st = $invStatuses[(string)($inv['inv_no'] ?? '')] ?? 'new';
+                    $invNo = (string)($inv['inv_no'] ?? '');
+                    $invCb = isset($inv['company_branch_id']) && $inv['company_branch_id'] !== '' ? (string)$inv['company_branch_id'] : (isset($inv['company_branch']) && $inv['company_branch'] !== '' ? (string)$inv['company_branch'] : ($isAdm ? '1' : '*'));
+                    $invDt = isset($inv['doc_type']) && $inv['doc_type'] !== '' ? (string)$inv['doc_type'] : '*';
+                    $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
+                    $fallbackKey = $invNo . '|*|*';
+                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? ($invStatuses[$invNo] ?? 'new'));
                     [$stLabel, $stClass] = invoice_status_label($st);
+                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? ($invNotes[$invNo] ?? ''))));
                 ?>
                     <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>"
                         data-st="<?= e($st) ?>"
-                        data-s="<?= e(mb_strtolower(($inv['inv_no'] ?? '').' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.($invNotes[(string)($inv['inv_no'] ?? '')] ?? ''))) ?>"
-                        onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>')" title="اضغط لفتح أصناف الفاتورة">
+                        data-scope="<?= $gScope ?>"
+                        data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>"
+                        onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')" title="اضغط لفتح أصناف الفاتورة">
                         <td><?= $rowNo ?></td>
                         <td class="inv-no">
-                            <?= e($inv['inv_no']) ?>
+                            <?= e($invNo) ?>
                             <?php if ((int)($inv['doc_type'] ?? 0) === 6): ?>
                                 <span class="doc-badge refund">مردود شراء</span>
                             <?php endif; ?>
-                            <?php $nTxt = trim((string)($invNotes[(string)($inv['inv_no'] ?? '')] ?? '')); ?>
                             <?php if ($nTxt !== ''): ?>
-                                <span class="inv-note-text" title="<?= e($nTxt) ?>">📝 <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
+                                <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
                             <?php endif; ?>
                         </td>
                         <td style="font-size:13px;"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td>
@@ -3418,7 +3761,7 @@ require_once __DIR__ . '/includes/header.php';
 
         tr.classList.toggle('disc-locked', hasPct);
         afterCell.innerHTML = _fmtAfter(after) +
-            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent);font-size:11px;"> ★</span>' : '');
+            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>' : '');
         totalCell.textContent = _fmt2(total);
         return total;
     }
@@ -3548,11 +3891,18 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
 
-    let invFilter = { q: '', st: 'all' };
+    let invFilter = { q: '', st: 'all', scope: 'admin' };
 
     function filterInvList() {
         const inp = document.getElementById('invSearch');
         invFilter.q = (inp ? inp.value : '').trim().toLowerCase();
+        applyInvFilter();
+    }
+
+    function setScopeFilter(scope, btn) {
+        document.querySelectorAll('.scope-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        invFilter.scope = scope;
         applyInvFilter();
     }
 
@@ -3576,7 +3926,8 @@ require_once __DIR__ . '/includes/header.php';
         rows.forEach(r => {
             const okQ  = !invFilter.q || (r.dataset.s || '').includes(invFilter.q);
             const okSt = invFilter.st === 'all' || (r.dataset.st || 'new') === invFilter.st;
-            const hit  = okQ && okSt;
+            const okScope = invFilter.scope === 'all' || (r.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && r.dataset.scope === 'branch');
+            const hit  = okQ && okSt && okScope;
             r.dataset.filterHidden = hit ? '0' : '1';
             // صف يظهر لو عدّى الفلتر وفرعه مش مطوي
             const visible = hit && r.dataset.branchCollapsed !== '1';
@@ -3590,19 +3941,21 @@ require_once __DIR__ . '/includes/header.php';
         });
         // رأس الفرع يفضل ظاهر لو مطوي عمداً؛ يتخفى بس لو الفلتر شال كل فواتيره
         document.querySelectorAll('.branch-head').forEach(h => {
+            const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             const rows = branchRows(h);
             const anyMatch = rows.some(r => r.dataset.filterHidden !== '1');
-            h.style.display = anyMatch ? '' : 'none';
+            h.style.display = (okScope && anyMatch) ? '' : 'none';
         });
         // نفس الشيء للرؤوس الفرعية (شراء/مردود)
         document.querySelectorAll('.subtype-head').forEach(h => {
+            const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             let any = false, sib = h.nextElementSibling;
             while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
                 if (sib.classList.contains('inv-row') && sib.dataset.filterHidden !== '1') { any = true; break; }
                 sib = sib.nextElementSibling;
             }
             // نخفيه بس لو فرعه مش مطوي (عشان ماينافسش طي الفرع)
-            if (h.style.display !== 'none' || any) h.style.display = any ? '' : 'none';
+            if (h.style.display !== 'none' || any) h.style.display = (okScope && any) ? '' : 'none';
         });
         const cnt = document.getElementById('listCount');
         if (cnt) cnt.textContent = shown + (shown === rows.length ? '' : ' من ' + rows.length);
@@ -3620,17 +3973,20 @@ require_once __DIR__ . '/includes/header.php';
             const sp = b.querySelector('span');
             if (sp) sp.textContent = c[b.dataset.st] ?? 0;
         });
-        const cnt = document.getElementById('listCount');
-        if (cnt) cnt.textContent = rows.length;
+        // تطبيق الفلترة المبدئية لحصر العرض على فواتير الإدارة
+        applyInvFilter();
     })();
 
     // إعادة حالة الأكورديونات المحفوظة (بعد العدّادات عشان الأرقام تتحسب على الكل)
     accRestore();
 
-    // فتح أصناف الفاتورة بالضغط على الصف كله
-    function openInvoice(id, suffix) {
-        window.location = '?invoice=' + encodeURIComponent(id) + '&suffix=' + encodeURIComponent(suffix)
-                        + '&tab=<?= e($tab) ?>';
+    // فتح أصناف الفاتورة بالضغط على الصف كله (مع تمرير الفرع ونوع المستند)
+    function openInvoice(id, suffix, cb, dt) {
+        var url = '?invoice=' + encodeURIComponent(id) + '&suffix=' + encodeURIComponent(suffix);
+        if (cb !== undefined && cb !== null && cb !== '') url += '&cb=' + encodeURIComponent(cb);
+        if (dt !== undefined && dt !== null && dt !== '') url += '&dt=' + encodeURIComponent(dt);
+        url += '&tab=<?= e($tab) ?>';
+        window.location = url;
     }
 </script>
 
@@ -3663,7 +4019,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('grpDropSth').value  = fields.sth  || '';
         document.getElementById('grpDropSuf').value  = fields.suf  || '';
         document.getElementById('grpDropCode').value = fields.code || '';
-        f.submit();
+        formSubmit(f);
     }
 
     document.addEventListener('click', function (ev) {
@@ -4598,7 +4954,7 @@ require_once __DIR__ . '/includes/header.php';
                 found = true;
                 const name = (tr.dataset.name || '').trim();
                 const qty  = tr.querySelector('.c-qty') ? tr.querySelector('.c-qty').textContent.trim() : '';
-                let html = `<div class="lk-alert lk-alert-info"><strong>${name}</strong> — كود: ${rowCode} — إجمالي: ${qty}</div>
+                let html = `<div class="lk-alert lk-alert-info"><strong>${escRes(name)}</strong> — كود: ${escRes(rowCode)} — إجمالي: ${escRes(qty)}</div>
                             <table class="lk-table"><thead><tr><th>الفرع</th><th>الكمية</th></tr></thead><tbody>`;
 
                 // الكميات: من الخانات (لو لسه بيتوزّع) أو من النص (لو خلص التوزيع)
@@ -4630,9 +4986,257 @@ require_once __DIR__ . '/includes/header.php';
     // الأسعار في الشاشة دي ليها مسار حفظ مختلف (كل فواتير المجموعة).
     const GRP_ID  = <?= (int)($grpCurrent['id'] ?? 0) ?>;
     const INV_ID     = '<?= e((string)($openInvoice['inv_id'] ?? '')) ?>';
+    const INV_NO     = '<?= e((string)($openInvoice['inv_no'] ?? '')) ?>';
     const INV_SUFFIX = '<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>';
     const CSRF = '<?= e(csrf_token()) ?>';
     const saveTimers = {};
+
+    // ===== سحب أعداد الفروع من الحجوزات =====
+    const resPullOverlay = document.getElementById('resPullOverlay');
+    const escRes = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function openReservationPull() {
+        if (!resPullOverlay) return;
+        resPullOverlay.classList.add('open');
+        const body = document.getElementById('resPullBody');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        const summary = document.getElementById('resPullSummaryNote');
+        if (btnSubmit) btnSubmit.disabled = true;
+        if (summary) summary.textContent = '';
+        if (body) {
+            body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--ink-500);">'
+                + '<i class="ti ti-loader ti-spin" style="font-size:24px;display:block;margin-bottom:8px;"></i>'
+                + 'جاري فحص الحجوزات المفتوحة…</div>';
+        }
+
+        const fd = new FormData();
+        fd.append('action', 'reservation_pull_preview');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', DIST_ID);
+        fd.append('invoice_id', INV_ID);
+        fd.append('suffix', INV_SUFFIX);
+
+        fetch('invoices.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    body.innerHTML = '<div class="lk-alert lk-alert-warning" style="margin:10px;">'
+                        + escRes(d.error || 'تعذّر جلب بيانات الحجوزات.') + '</div>';
+                    return;
+                }
+                renderReservationPull(d.items || []);
+            })
+            .catch(() => {
+                body.innerHTML = '<div class="lk-alert lk-alert-warning" style="margin:10px;">تعذّر الاتصال بالسيرفر.</div>';
+            });
+    }
+
+    function closeReservationPull() {
+        if (resPullOverlay) resPullOverlay.classList.remove('open');
+    }
+
+    function renderReservationPull(items) {
+        const body = document.getElementById('resPullBody');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        const summary = document.getElementById('resPullSummaryNote');
+        if (!body) return;
+
+        if (!items || items.length === 0) {
+            body.innerHTML = '<div class="res-empty-msg">'
+                + '<i class="ti ti-users" style="font-size:36px;display:block;margin-bottom:10px;color:var(--ink-400);"></i>'
+                + 'مفيش حجوزات على أصناف الفاتورة دي'
+                + '</div>';
+            if (btnSubmit) btnSubmit.disabled = true;
+            if (summary) summary.textContent = '';
+            return;
+        }
+
+        let html = '';
+        items.forEach((it) => {
+            const lines = it.lines || [];
+            html += `<div class="res-card" data-item-code="${escRes(it.item_code)}" data-received="${it.received_qty}">
+                <div class="res-card-head">
+                    <div class="res-card-title">${escRes(it.item_name)} <span style="font-size:12px;color:var(--ink-500);font-weight:normal;">(${escRes(it.item_code)})</span></div>
+                    <div class="res-card-meta">
+                        <span>المستلم: <b>${it.received_qty}</b></span>
+                        <span>إجمالي الحجوزات: <b>${it.total_reserved}</b></span>
+                        <span>المطلوب توزيعه: <b>${it.available_qty}</b></span>
+                    </div>
+                </div>
+                <table class="res-table">
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>العميل</th>
+                            <th>الفرع</th>
+                            <th>المحجوز</th>
+                            <th>المتبقي</th>
+                            <th>المخصص</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            lines.forEach(l => {
+                const dt = l.created_at ? l.created_at.substring(0, 10) : '—';
+                const branchName = l.branch_name || 'بدون فرع';
+                html += `<tr>
+                    <td>${escRes(dt)}</td>
+                    <td>${escRes(l.customer_name)}</td>
+                    <td>${escRes(branchName)}</td>
+                    <td>${l.qty}</td>
+                    <td>${l.remaining_qty}</td>
+                    <td>
+                        <input type="number" step="1" min="0" max="${l.remaining_qty}"
+                               class="res-alloc-inp"
+                               data-line-id="${l.res_line_id}"
+                               data-code="${escRes(it.item_code)}"
+                               data-branch-id="${l.branch_id || ''}"
+                               data-branch-name="${escRes(branchName)}"
+                               data-max="${l.remaining_qty}"
+                               value="${l.suggested_qty}"
+                               oninput="onResAllocInput()">
+                    </td>
+                </tr>`;
+            });
+
+            html += `</tbody>
+                </table>
+                <div class="res-branch-sum"></div>
+                <div class="res-card-foot">
+                    <span>إجمالي المستلم: <b>${it.received_qty}</b></span>
+                    <span>إجمالي الموزّع: <b class="res-dist-total">0</b></span>
+                    <span>متبقي: <b class="res-dist-remain">${it.received_qty}</b></span>
+                </div>
+            </div>`;
+        });
+
+        body.innerHTML = html;
+        onResAllocInput();
+    }
+
+    function onResAllocInput() {
+        const cards = document.querySelectorAll('.res-card');
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        let allValid = true;
+        let totalItemsCount = cards.length;
+        let totalAllocatedSum = 0;
+
+        cards.forEach(card => {
+            const received = parseFloat(card.dataset.received) || 0;
+            const inputs = card.querySelectorAll('.res-alloc-inp');
+            let itemAllocSum = 0;
+            const branchSums = {};
+
+            inputs.forEach(inp => {
+                const val = parseFloat(inp.value) || 0;
+                const max = parseFloat(inp.dataset.max) || 0;
+                const bName = inp.dataset.branchName;
+                const bId = inp.dataset.branchId;
+
+                if (val < 0 || val > max + 0.0001) {
+                    inp.classList.add('invalid');
+                    allValid = false;
+                } else {
+                    inp.classList.remove('invalid');
+                }
+
+                itemAllocSum += val;
+                if (val > 0 && bId && bName && bName !== 'بدون فرع') {
+                    branchSums[bName] = (branchSums[bName] || 0) + val;
+                }
+            });
+
+            totalAllocatedSum += itemAllocSum;
+
+            // تحديث الإجمالي والمتبقي للصنف
+            const distTotalEl = card.querySelector('.res-dist-total');
+            const distRemainEl = card.querySelector('.res-dist-remain');
+            const remain = received - itemAllocSum;
+
+            if (distTotalEl) {
+                distTotalEl.textContent = itemAllocSum;
+                distTotalEl.style.color = (itemAllocSum > received + 0.0001) ? 'var(--neg)' : '';
+            }
+            if (distRemainEl) {
+                distRemainEl.textContent = remain;
+                distRemainEl.style.color = (remain < -0.0001) ? 'var(--neg)' : '';
+            }
+
+            if (itemAllocSum > received + 0.0001) {
+                allValid = false;
+            }
+
+            // ملخص توزيع الفروع
+            const branchSumEl = card.querySelector('.res-branch-sum');
+            if (branchSumEl) {
+                const parts = [];
+                for (const [bn, bq] of Object.entries(branchSums)) {
+                    parts.push(`${bn} ${bq}`);
+                }
+                branchSumEl.textContent = parts.length ? ('توزيع الفروع: ' + parts.join(' · ')) : 'توزيع الفروع: —';
+            }
+        });
+
+        if (totalItemsCount === 0) allValid = false;
+        if (btnSubmit) {
+            btnSubmit.disabled = !allValid;
+        }
+
+        const summaryNote = document.getElementById('resPullSummaryNote');
+        if (summaryNote) {
+            summaryNote.textContent = allValid
+                ? `جاهز للاعتماد (${totalItemsCount} صنف — إجمالي التخصيص: ${totalAllocatedSum})`
+                : 'يوجد خطأ في توزيع الكميات (تأكد من عدم تجاوز المستلم أو المتبقي في الحجز)';
+            summaryNote.style.color = allValid ? 'var(--ink-500)' : 'var(--neg)';
+        }
+    }
+
+    function submitReservationPull() {
+        const btnSubmit = document.getElementById('btnSubmitResPull');
+        if (btnSubmit && btnSubmit.disabled) return;
+
+        const alloc = {};
+        document.querySelectorAll('.res-alloc-inp').forEach(inp => {
+            const lid = inp.dataset.lineId;
+            const val = parseFloat(inp.value) || 0;
+            if (lid) alloc[lid] = val;
+        });
+
+        if (btnSubmit) {
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = '<i class="ti ti-loader ti-spin"></i> جاري الاعتماد…';
+        }
+
+        const fd = new FormData();
+        fd.append('action', 'reservation_pull_apply');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', DIST_ID);
+        fd.append('invoice_no', INV_NO);
+        fd.append('invoice_id', INV_ID);
+        fd.append('suffix', INV_SUFFIX);
+        fd.append('alloc', JSON.stringify(alloc));
+
+        fetch('invoices.php', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    alert('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'));
+                    if (btnSubmit) {
+                        btnSubmit.disabled = false;
+                        btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
+                    }
+                    return;
+                }
+                location.reload();
+            })
+            .catch(() => {
+                alert('تعذّر الاتصال بالسيرفر.');
+                if (btnSubmit) {
+                    btnSubmit.disabled = false;
+                    btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
+                }
+            });
+    }
 
     // ===== ملاحظات الفاتورة (حفظ تلقائي بعد وقفة كتابة) =====
     let notesTimer = null;
@@ -4712,14 +5316,51 @@ require_once __DIR__ . '/includes/header.php';
     function onDistInput(input) {
         const row = input.closest('tr');
         const itemQty = parseFloat(input.dataset.qty) || 0;
+
+        const rawBal = input.dataset.hqbal;
+        const hasBal = rawBal !== undefined && rawBal !== '';
+
+        /* السقف = الأقل بين كمية الفاتورة ورصيد الإدارة. الفاتورة ممكن
+           ١٢ والواصل فعلاً ١٠ (والباقي مردود)، فتوزيع ١٢ بيطلّع بضاعة
+           مش موجودة والفرق يظهر بعدين كعجز على الفرع.
+
+           🔴 والرصيد مش واصل = التوزيع متقفل. الخانة `readonly` أصلاً،
+              وده حزام أمان تاني لو حد فك الـreadonly من أدوات المطوّر.
+              الحماية الحقيقية في السيرفر جوّه set_branch_distribution(). */
+        if (!hasBal) {
+            /* 🔴 ممنوع تزوّد، مسموح تقلّل — نفس قاعدة السيرفر بالظبط. */
+            const savedNA = parseFloat(input.dataset.saved) || 0;
+            if ((parseFloat(input.value) || 0) > savedNA + 0.0001) {
+                input.value = savedNA > 0 ? input.dataset.saved : '';
+                setInd(input, '✗ الرصيد مش واصل — تقدر تقلّل بس', 'var(--neg)');
+                return;
+            }
+            /* تقليل أو تصفير: عدّي للحفظ زي أي تعديل عادي */
+            const kNA = input.dataset.code + ':' + input.dataset.branch;
+            clearTimeout(saveTimers[kNA]);
+            saveTimers[kNA] = setTimeout(
+                () => (input.classList.contains('grp-input') ? grpSave(input) : autoSave(input)),
+                800
+            );
+            return;
+        }
+
+        const hqBal = Math.max(0, parseFloat(rawBal) || 0);
+        const cap   = Math.min(itemQty, hqBal);
+
         const inputs = row.querySelectorAll('.dist-input');
 
         let sum = 0;
         inputs.forEach(i => sum += (parseFloat(i.value) || 0));
-        if (sum > itemQty + 0.0001) {
+        if (sum > cap + 0.0001) {
             // رجّع القيمة لآخر محفوظ
             input.value = parseFloat(input.dataset.saved) > 0 ? input.dataset.saved : '';
-            setInd(input, '✗ أكبر من المتاح', 'var(--neg)');
+            // قول **ليه** الحد أقل — من غير كده الرسالة بتبان غلط في
+            // النظام، وهي أصلاً بتمنع توزيع بضاعة مش موجودة
+            const why = (hqBal !== null && cap < itemQty - 0.0001)
+                ? ('✗ رصيد الإدارة ' + cap)
+                : '✗ أكبر من المتاح';
+            setInd(input, why, 'var(--neg)');
             return;
         }
 
@@ -4864,7 +5505,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 <label><input type="radio" name="iflSkip" value="1" onchange="iflSetSkip(1)"> لا ينزل في التقرير</label>
             </div>
             <div class="sub">
-                ⚠️ الإعداد ده على <b>كود الصنف في كل النظام</b> — يعني مش هينزل في ملف
+                <i class="ti ti-alert-triangle"></i> الإعداد ده على <b>كود الصنف في كل النظام</b> — يعني مش هينزل في ملف
                 أي فرع في أي فاتورة أو مجموعة.<br>
                 التوزيع والكميات والأسعار وملفات الإكسيل <b>ماتتأثرش خالص</b> — ملف الفرع بس.
             </div>
@@ -4902,6 +5543,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
     let curCode = null;          // الصنف المفتوح في البوب أب
     let noteTimer = null;        // مؤقت حفظ الملاحظة من البوب أب
     const cellTimers = {};       // مؤقتات خانات الملاحظة في الجدول
+    const skipSeq = {};          // آخر ضغطة لكل كود — الرد القديم بيتتجاهل
 
     const ov = document.getElementById('iflOverlay');
 
@@ -4920,8 +5562,9 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
     /**
      * الحفظ — بيبعت الحقول المتغيّرة بس.
-     * `busy` بيمنع الضغط المتكرر السريع على نفس الصنف من إنه يسبق
-     * نفسه ويسيب الحالة غلط (آخر رد يوصل مش آخر ضغطة).
+     * `busy` بيمنع الضغط المتكرر السريع في تمييز الألوان من إنه يسبق نفسه.
+     * الراديو والملاحظات الاتنين مش متحرسين (`guard === false`) لأن
+     * المفتاح واحد وآخر كتابة هي الصح على item_export_flags وسجلات التوزيع.
      */
     const busy = {};
     function post(code, fields, guard) {
@@ -5035,30 +5678,45 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
     // ---------- ملف الفرع ----------
     window.iflSetSkip = function (v) {
         if (!curCode) return;
-        const row = rowOf(curCode);
-        if (!row) return;
+        const code = curCode;
 
-        const prev = row.dataset.skip || '0';
-        row.dataset.skip = String(v);
-        paint(row);
+        const rows = [];
+        document.querySelectorAll('tr.item-row').forEach(r => {
+            if ((r.dataset.code || '') === code) rows.push(r);
+        });
+        if (!rows.length) return;
+
+        const prev = rows[0].dataset.skip || '0';
+        rows.forEach(r => {
+            r.dataset.skip = String(v);
+            paint(r);
+        });
         state('جاري الحفظ…');
 
-        post(curCode, { skip_export: v })
+        const my = (skipSeq[code] = (skipSeq[code] || 0) + 1);
+
+        post(code, { skip_export: v }, false)
             .then(() => {
+                if (skipSeq[code] !== my) return;
                 state(v === 1
                     ? 'اتحفظ ✓ — الصنف مش هينزل في ملف أي فرع'
                     : 'اتحفظ ✓ — الصنف هينزل عادي', 'var(--pos)');
                 iflRecalcDownloads();   // الأرقام على الأزرار تتظبط فورًا
             })
             .catch(e => {
-                row.dataset.skip = prev; paint(row);
-                document.querySelectorAll('input[name="iflSkip"]').forEach(r => {
-                    r.checked = (r.value === prev);
+                if (skipSeq[code] !== my) return;
+                rows.forEach(r => {
+                    r.dataset.skip = prev;
+                    paint(r);
                 });
-                state(e.message, 'var(--neg)');
-                // ده إعداد بيأثر على ملفات الفروع — الفشل لازم يبان،
-                // مش سطر صغير تحت المستخدم ممكن مايشوفهوش.
-                alert('ماتحفظش: ' + e.message);
+                // الراديو بتاع البوب أب يترجّع **بس** لو لسه فاتح على نفس
+                // الصنف — المستخدم ممكن يكون قفله وفتح صنف تاني في الوقت ده.
+                if (curCode === code) {
+                    document.querySelectorAll('input[name="iflSkip"]').forEach(r => {
+                        r.checked = (r.value === prev);
+                    });
+                    state(e.message, 'var(--neg)');
+                }
             });
     };
 
@@ -5124,6 +5782,11 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
         post(code, { user_notes: val }, false)
             .then(() => state('اتحفظت ✓', 'var(--pos)'))
+            .then(() => {
+                if (!window.isPageUnloading && val.trim() !== '') {
+                    showProblemPrompt(code, val.trim(), row ? (row.dataset.name || code) : code);
+                }
+            })
             .catch(e => state(e.message, 'var(--neg)'));
     }
 
@@ -5163,6 +5826,9 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 cellInd(input, '✓', 'var(--pos)');
                 setTimeout(() => cellInd(input, ''), 1400);
                 if (curCode === code) document.getElementById('iflNote').value = val;
+                if (!window.isPageUnloading && val !== '') {
+                    showProblemPrompt(code, val, row.dataset.name || code);
+                }
             })
             .catch(e => {
                 row.dataset.note = prev; paint(row);
@@ -5247,12 +5913,109 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
             .catch(() => alert('تعذّر الاتصال بالسيرفر'));
     };
 
+    // ---------- إشعار إضافة الصنف لمشاكل الفواتير ----------
+    var problemToastTimer = null;
+    var pendingProblemItem = null;
+
+    function showProblemPrompt(code, note, name) {
+        if (window.isPageUnloading) return;
+        if (!note || !note.trim()) return;
+
+        pendingProblemItem = { code: code, note: note.trim(), name: name || code };
+
+        var toast = document.getElementById('problemToast');
+        var label = document.getElementById('problemToastItem');
+        if (!toast) return;
+
+        if (label) label.textContent = name ? ('«' + name + '»') : ('[' + code + ']');
+        toast.style.display = 'block';
+
+        if (problemToastTimer) clearTimeout(problemToastTimer);
+        // الإشعار يختفي لوحده بعد 15 ثانية لو محدش داس
+        problemToastTimer = setTimeout(function () {
+            hideProblemPrompt();
+        }, 15000);
+    }
+
+    function hideProblemPrompt() {
+        var toast = document.getElementById('problemToast');
+        if (toast) toast.style.display = 'none';
+        if (problemToastTimer) {
+            clearTimeout(problemToastTimer);
+            problemToastTimer = null;
+        }
+        pendingProblemItem = null;
+    }
+
+    var btnNo = document.getElementById('problemToastNo');
+    if (btnNo) {
+        btnNo.addEventListener('click', function () {
+            hideProblemPrompt();
+        });
+    }
+
+    var btnYes = document.getElementById('problemToastYes');
+    if (btnYes) {
+        btnYes.addEventListener('click', function () {
+            if (!pendingProblemItem) return;
+            var item = pendingProblemItem;
+            hideProblemPrompt();
+
+            var fd = new FormData();
+            fd.append('action', 'add_to_problems');
+            fd.append('csrf', CSRF);
+            fd.append('distribution_id', DIST_ID);
+            fd.append('group_id', GRP_ID);
+            fd.append('item_code', item.code);
+            fd.append('item_name', item.name);
+            fd.append('note', item.note);
+
+            fetch('invoices.php', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(j => {
+                    if (!j.ok) {
+                        console.error(j.error || 'فشل إضافة الصنف لمشاكل الفواتير');
+                    }
+                })
+                .catch(e => console.error('تعذر الاتصال بالسيرفر'));
+        });
+    }
+
     // احفظ أي ملاحظة معلّقة قبل مغادرة الصفحة
     window.addEventListener('beforeunload', function () {
+        window.isPageUnloading = true;
         document.querySelectorAll('.inote-input').forEach(function (i) {
             const row = i.closest('tr.item-row');
             if (row && (row.dataset.note || '') !== i.value.trim()) iflNoteSave(i);
         });
+    });
+
+    // تأكيد فتح الاستلام عند تنزيل ملف التوزيع لأول مرة
+    document.addEventListener('click', function (e) {
+        var link = e.target.closest('.branch-dl, .grp-combo, .grp-dl');
+        if (!link) return;
+
+        var card = link.closest('[data-receiving-open]');
+        if (!card) return;
+
+        var isOpen = card.getAttribute('data-receiving-open');
+        if (isOpen === '1') return; // تم فتح الاستلام مسبقاً — تنزيل عادي بدون سؤال
+
+        e.preventDefault();
+        var targetUrl = link.href;
+        var msg = 'هل تريد توزيع هذه الفاتورة وإرسالها لموديول استلام الفروع؟\n\n'
+                + '• الضغط على "موافق": إرسال لموديول الاستلام وتنبيه الفروع وبدء المتابعة.\n'
+                + '• الضغط على "إلغاء": تنزيل الملف فقط كتقرير دون إرساله للاستلام وبدون إشعارات.';
+
+        if (confirm(msg)) {
+            document.querySelectorAll('[data-receiving-open]').forEach(function (c) {
+                c.setAttribute('data-receiving-open', '1');
+            });
+            window.location.href = targetUrl;
+        } else {
+            var sep = targetUrl.indexOf('?') !== -1 ? '&' : '?';
+            window.location.href = targetUrl + sep + 'skip_receiving=1';
+        }
     });
 })();
 </script>

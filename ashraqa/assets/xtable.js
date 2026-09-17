@@ -175,7 +175,17 @@
         for (var r = 0; r < body.rows.length; r++) {
             if (rowKind(body.rows[r], cols) === 'data') n++;
         }
-        return n >= CFG.minRows;
+        // `data-xt-min` بتخلّي الجدول يتجاوز الحد الافتراضي.
+        // السبب: جداول التقارير للقراءة والتحليل، والترتيب وزرار Σ
+        // مفيدين فيها حتى في صف واحد. الحد الافتراضي معمول لجداول
+        // الإدخال في الشاشات التانية.
+        var minRows = CFG.minRows;
+        var attrMin = t.getAttribute('data-xt-min');
+        if (attrMin !== null && attrMin !== '') {
+            var v = parseInt(attrMin, 10);
+            if (!isNaN(v) && v >= 1) minRows = v;
+        }
+        return n >= minRows;
     }
 
     /* ================================================================
@@ -191,7 +201,7 @@
             table: table, hrow: hrow, cols: cols, body: body,
             rows: [],            // {tr, cells:[نص مطبّع], nums:[رقم|null]}
             picks: {},           // idx -> {قيمة مختارة: true}
-            colType: [],         // 'num' | 'text'
+            colType: [],         // 'num' | 'text' | 'date'
             skip: [],            // أعمدة بلا فلتر
             q: '',
             sortIdx: -1, sortDir: 0,
@@ -222,22 +232,34 @@
         if (!st.rows.length) return;
 
         // ---- نوع كل عمود
+        var DATE_COL_RE = /^\d{4}-\d{2}-\d{2}/;
         for (var c2 = 0; c2 < cols; c2++) {
             var th = hrow.cells[c2];
             st.skip[c2] = th.hasAttribute('data-xt-skip') || norm(txt(th)) === '';
-            var numeric = 0, filled = 0;
+            var numeric = 0, filled = 0, dates = 0;
             for (var i = 0; i < st.rows.length; i++) {
-                if (st.rows[i].cells[c2] === '') continue;
+                var cval = st.rows[i].cells[c2];
+                if (cval === '') continue;
                 filled++;
                 if (st.rows[i].nums[c2] !== null) numeric++;
+                if (DATE_COL_RE.test(cval)) dates++;
             }
-            st.colType[c2] = (filled > 0 && numeric === filled) ? 'num' : 'text';
+            if (filled > 0 && dates === filled) {
+                st.colType[c2] = 'date';
+            } else if (filled > 0 && numeric === filled) {
+                st.colType[c2] = 'num';
+            } else {
+                st.colType[c2] = 'text';
+            }
         }
 
         buildBar(st);
         buildHeads(st);
-        apply(st);
+        /* (١١) لو فيه فلتر محفوظ، tryRestore بتطبّقه وبتنادي apply بنفسها.
+               لو ما فيش، نادي apply العادي عشان العدّاد والحدث يشتغلوا. */
+        if (!tryRestore(st)) apply(st);
     }
+
 
     /* ---- الشريط العلوي ---------------------------------------- */
     function buildBar(st) {
@@ -327,7 +349,7 @@
        5) لوحة الفلتر
        fixed مش absolute — عشان ماتتقصّش لو الجدول جوه حاوية بـoverflow.
        ================================================================ */
-    var openBox = null;
+    var openBox = null, openWidth = 0;
 
     function closePanel() {
         if (openBox) { openBox.remove(); openBox = null; }
@@ -338,10 +360,325 @@
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') closePanel();
     });
-    window.addEventListener('resize', closePanel);
+    window.addEventListener('resize', function () {
+        if (openBox && window.innerWidth !== openWidth) closePanel();
+    });
+
+    var MONTH_NAMES = [
+        '', 'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+    ];
+    var DATE_PARSE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+
+    function drawDateTree(list, allBox, order, map, getPicked, setPicked, commit, filterTxt, openMonths) {
+        list.innerHTML = '';
+        var f = norm(filterTxt || '');
+
+        // 1) تجميع المفاتيح في شجرة (سنة ← شهر ← يوم)
+        var tree = {}, extra = { label: '(فاضي)', n: 0, keys: [] };
+        for (var i = 0; i < order.length; i++) {
+            var k = order[i];
+            var m = DATE_PARSE_RE.exec(k);
+            if (!m) {
+                extra.keys.push(k);
+                extra.n += (map[k] ? map[k].n : 0);
+                continue;
+            }
+            var y = m[1];
+            var moNum = parseInt(m[2], 10);
+            var moKey = y + '-' + m[2];
+            var dNum = parseInt(m[3], 10);
+            var dayKey = y + '-' + m[2] + '-' + m[3];
+            var count = map[k] ? map[k].n : 0;
+
+            if (!tree[y]) {
+                tree[y] = { y: y, n: 0, keys: [], months: {} };
+            }
+            tree[y].n += count;
+            tree[y].keys.push(k);
+
+            if (!tree[y].months[moKey]) {
+                tree[y].months[moKey] = {
+                    moKey: moKey,
+                    y: y,
+                    mo: moNum,
+                    label: MONTH_NAMES[moNum] || moKey,
+                    n: 0,
+                    keys: [],
+                    days: {}
+                };
+            }
+            tree[y].months[moKey].n += count;
+            tree[y].months[moKey].keys.push(k);
+
+            if (!tree[y].months[moKey].days[dNum]) {
+                tree[y].months[moKey].days[dNum] = {
+                    d: dNum,
+                    dayKey: dayKey,
+                    n: 0,
+                    keys: []
+                };
+            }
+            tree[y].months[moKey].days[dNum].n += count;
+            tree[y].months[moKey].days[dNum].keys.push(k);
+        }
+
+        // ترتيب السنوات تنازلياً (الأحدث فوق)
+        var years = Object.keys(tree).sort(function (a, b) { return b.localeCompare(a); });
+
+        // دوال مساعدة لحالة الاختيار
+        function getSelState(keys) {
+            var p = getPicked();
+            if (!p) return { checked: true, indet: false, count: keys.length };
+            var cnt = 0;
+            for (var j = 0; j < keys.length; j++) {
+                if (p[keys[j]]) cnt++;
+            }
+            return {
+                checked: (cnt === keys.length && keys.length > 0),
+                indet: (cnt > 0 && cnt < keys.length),
+                count: cnt
+            };
+        }
+
+        function toggleKeys(keys, on) {
+            var p = getPicked();
+            if (!p) {
+                p = {};
+                for (var j = 0; j < order.length; j++) p[order[j]] = true;
+            }
+            for (var j = 0; j < keys.length; j++) {
+                if (on) p[keys[j]] = true;
+                else delete p[keys[j]];
+            }
+            setPicked(p);
+            commit();
+            syncAllCheckboxes();
+        }
+
+        function pickOnly(keys) {
+            var p = {};
+            for (var j = 0; j < keys.length; j++) p[keys[j]] = true;
+            setPicked(p);
+            commit();
+            syncAllCheckboxes();
+        }
+
+        var binders = [];
+        function syncAllCheckboxes() {
+            for (var j = 0; j < binders.length; j++) {
+                binders[j]();
+            }
+            var allSt = getSelState(order);
+            allBox.checked = allSt.checked;
+            allBox.indeterminate = allSt.indet;
+        }
+
+        var frag = document.createDocumentFragment();
+        var visibleCount = 0;
+
+        for (var yi = 0; yi < years.length; yi++) {
+            var yObj = tree[years[yi]];
+            // ترتيب الشهور تنازلياً (الأحدث فوق)
+            var months = Object.values(yObj.months).sort(function (a, b) { return b.mo - a.mo; });
+
+            // تصفية الشهور والأيام بحسب البحث
+            var filteredMonths = [];
+            for (var mi = 0; mi < months.length; mi++) {
+                var mObj = months[mi];
+                // ترتيب الأيام تصاعدياً (من 1 لآخر الشهر)
+                var days = Object.values(mObj.days).sort(function (a, b) { return a.d - b.d; });
+
+                if (!f) {
+                    filteredMonths.push({ mObj: mObj, days: days, autoOpen: false });
+                } else {
+                    var mMatches = (
+                        mObj.moKey.indexOf(f) !== -1 ||
+                        mObj.moKey.slice(5, 7) === f ||
+                        String(mObj.mo) === f ||
+                        norm(mObj.label).indexOf(f) !== -1 ||
+                        yObj.y.indexOf(f) !== -1
+                    );
+
+                    var matchedDays = [];
+                    for (var di = 0; di < days.length; di++) {
+                        var dObj = days[di];
+                        var dMatches = mMatches || (
+                            dObj.dayKey.indexOf(f) !== -1 ||
+                            String(dObj.d) === f ||
+                            dObj.dayKey.slice(8, 10) === f
+                        );
+                        if (!dMatches) {
+                            for (var ki = 0; ki < dObj.keys.length; ki++) {
+                                if (dObj.keys[ki].indexOf(f) !== -1) { dMatches = true; break; }
+                            }
+                        }
+                        if (dMatches) matchedDays.push(dObj);
+                    }
+
+                    if (matchedDays.length > 0) {
+                        filteredMonths.push({ mObj: mObj, days: matchedDays, autoOpen: true });
+                    }
+                }
+            }
+
+            if (!filteredMonths.length) continue;
+            visibleCount++;
+
+            // سطر السنة
+            var yRow = document.createElement('div');
+            yRow.className = 'xt-p-row xt-dt-year-row';
+            yRow.innerHTML =
+                '<label><input type="checkbox" class="xt-dt-cb">' +
+                '<span class="xt-p-lbl">' + yObj.y + '</span>' +
+                '<span class="xt-p-n">' + yObj.n + '</span></label>';
+
+            var yCb = yRow.querySelector('input');
+            (function (keys, cb) {
+                cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                binders.push(function () {
+                    var st = getSelState(keys);
+                    cb.checked = st.checked;
+                    cb.indeterminate = st.indet;
+                });
+            })(yObj.keys, yCb);
+            frag.appendChild(yRow);
+
+            // سطور الشهور والأيام
+            for (var fmi = 0; fmi < filteredMonths.length; fmi++) {
+                var fItem = filteredMonths[fmi];
+                var mObj = fItem.mObj;
+                var mDays = fItem.days;
+                var isOpen = f ? fItem.autoOpen : !!openMonths[mObj.moKey];
+
+                var mRow = document.createElement('div');
+                mRow.className = 'xt-p-row xt-dt-month-row';
+                mRow.innerHTML =
+                    '<button type="button" class="xt-dt-toggle">' + (isOpen ? '▾' : '▸') + '</button>' +
+                    '<label><input type="checkbox" class="xt-dt-cb"></label>' +
+                    '<span class="xt-p-lbl xt-dt-mname">' + mObj.label + '</span>' +
+                    '<span class="xt-p-n">' + mObj.n + '</span>' +
+                    '<button type="button" class="xt-p-only">بس ده</button>';
+
+                var mCb = mRow.querySelector('input');
+                var mToggle = mRow.querySelector('.xt-dt-toggle');
+                var mName = mRow.querySelector('.xt-dt-mname');
+                var mOnly = mRow.querySelector('.xt-p-only');
+
+                var daysCont = document.createElement('div');
+                daysCont.className = 'xt-dt-days';
+                daysCont.style.display = isOpen ? 'block' : 'none';
+
+                (function (moKey, toggleBtn, dCont, nameEl) {
+                    function doToggle() {
+                        var nowOpen = (dCont.style.display === 'none');
+                        dCont.style.display = nowOpen ? 'block' : 'none';
+                        toggleBtn.textContent = nowOpen ? '▾' : '▸';
+                        openMonths[moKey] = nowOpen;
+                    }
+                    toggleBtn.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); doToggle();
+                    });
+                    nameEl.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); doToggle();
+                    });
+                })(mObj.moKey, mToggle, daysCont, mName);
+
+                (function (keys, cb) {
+                    cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                    binders.push(function () {
+                        var st = getSelState(keys);
+                        cb.checked = st.checked;
+                        cb.indeterminate = st.indet;
+                    });
+                })(mObj.keys, mCb);
+
+                (function (keys) {
+                    mOnly.addEventListener('click', function (e) {
+                        e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                    });
+                })(mObj.keys);
+
+                frag.appendChild(mRow);
+
+                // سطور الأيام
+                for (var di = 0; di < mDays.length; di++) {
+                    var dObj = mDays[di];
+                    var dRow = document.createElement('div');
+                    dRow.className = 'xt-p-row xt-dt-day-row';
+                    dRow.innerHTML =
+                        '<label><input type="checkbox" class="xt-dt-cb">' +
+                        '<span class="xt-p-lbl">' + dObj.d + '</span>' +
+                        '<span class="xt-p-n">' + dObj.n + '</span></label>' +
+                        '<button type="button" class="xt-p-only">بس ده</button>';
+
+                    var dCb = dRow.querySelector('input');
+                    var dOnly = dRow.querySelector('.xt-p-only');
+
+                    (function (keys, cb) {
+                        cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                        binders.push(function () {
+                            var st = getSelState(keys);
+                            cb.checked = st.checked;
+                            cb.indeterminate = st.indet;
+                        });
+                    })(dObj.keys, dCb);
+
+                    (function (keys) {
+                        dOnly.addEventListener('click', function (e) {
+                            e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                        });
+                    })(dObj.keys);
+
+                    daysCont.appendChild(dRow);
+                }
+
+                frag.appendChild(daysCont);
+            }
+        }
+
+        // سطر القيم الفارغة إن وجدت
+        if (extra.keys.length > 0 && (!f || norm(extra.label).indexOf(f) !== -1)) {
+            visibleCount++;
+            var eRow = document.createElement('div');
+            eRow.className = 'xt-p-row xt-dt-year-row';
+            eRow.innerHTML =
+                '<label><input type="checkbox" class="xt-dt-cb">' +
+                '<span class="xt-p-lbl">' + extra.label + '</span>' +
+                '<span class="xt-p-n">' + extra.n + '</span></label>' +
+                '<button type="button" class="xt-p-only">بس ده</button>';
+            var eCb = eRow.querySelector('input');
+            var eOnly = eRow.querySelector('.xt-p-only');
+            (function (keys, cb) {
+                cb.addEventListener('change', function () { toggleKeys(keys, this.checked); });
+                binders.push(function () {
+                    var st = getSelState(keys);
+                    cb.checked = st.checked;
+                    cb.indeterminate = st.indet;
+                });
+            })(extra.keys, eCb);
+            (function (keys) {
+                eOnly.addEventListener('click', function (e) {
+                    e.preventDefault(); e.stopPropagation(); pickOnly(keys);
+                });
+            })(extra.keys);
+            frag.appendChild(eRow);
+        }
+
+        if (!visibleCount) {
+            var em = document.createElement('div');
+            em.className = 'xt-p-empty';
+            em.textContent = 'مفيش قيم مطابقة';
+            frag.appendChild(em);
+        }
+
+        list.appendChild(frag);
+        syncAllCheckboxes();
+    }
 
     function openPanel(st, idx, anchor) {
         closePanel();
+        openWidth = window.innerWidth;
 
         // القيم الفريدة — بتتحسب عند الفتح بس (lazy)
         var map = {}, order = [];
@@ -449,17 +786,33 @@
             apply(st);
         }
 
+        var isDate = (st.colType[idx] === 'date');
+        var openMonths = {};
+
+        function render(filterTxt) {
+            if (isDate) {
+                drawDateTree(
+                    list, allBox, order, map,
+                    function () { return picked; },
+                    function (p) { picked = p; },
+                    commit, filterTxt, openMonths
+                );
+            } else {
+                draw(filterTxt);
+            }
+        }
+
         allBox.addEventListener('change', function () {
             picked = this.checked ? null : {};
             commit();
-            draw(box.querySelector('.xt-p-q').value);
+            render(box.querySelector('.xt-p-q').value);
         });
-        box.querySelector('.xt-p-q').addEventListener('input', function () { draw(this.value); });
+        box.querySelector('.xt-p-q').addEventListener('input', function () { render(this.value); });
         box.querySelector('.xt-p-clear').addEventListener('click', function () {
-            picked = null; commit(); draw(''); 
+            picked = null; commit(); render(''); 
         });
 
-        draw('');
+        render('');
 
         // الموضع — مع مراعاة حواف الشاشة
         var r = anchor.getBoundingClientRect();
@@ -469,7 +822,7 @@
         if (top + 340 > window.innerHeight) top = Math.max(8, r.top - 346);
         box.style.left = left + 'px';
         box.style.top  = top + 'px';
-        box.querySelector('.xt-p-q').focus();
+        if (!window.matchMedia('(pointer: coarse)').matches) { box.querySelector('.xt-p-q').focus(); }
     }
 
     /* ================================================================
@@ -720,6 +1073,15 @@
             'cursor:pointer;padding:2px 5px;border-radius:4px;opacity:0;white-space:nowrap;}',
         '.xt-p-row:hover .xt-p-only{opacity:1;}',
         '.xt-p-only:hover{background:var(--accent,#2f5d8a);color:#fff;}',
+        '.xt-dt-year-row{font-weight:700;}',
+        '.xt-dt-month-row{font-weight:600;padding-inline-start:18px;}',
+        '.xt-dt-month-row label{flex:none;padding:4px 3px;}',
+        '.xt-dt-toggle{border:0;background:none;cursor:pointer;color:var(--ink-500,#6d7f9a);font-size:11px;',
+            'line-height:1;padding:3px 4px;border-radius:3px;user-select:none;font-family:inherit;}',
+        '.xt-dt-toggle:hover{color:var(--accent,#2f5d8a);background:var(--accent-soft,#eaf1f8);}',
+        '.xt-dt-mname{flex:1;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+        '.xt-dt-days{padding:0;}',
+        '.xt-dt-day-row{padding-inline-start:36px;}',
         '.xt-p-empty,.xt-p-more{padding:10px;color:var(--ink-400,#94a3b8);font-size:11.5px;text-align:center;}',
         '.xt-p-foot{padding:7px 8px;border-top:1px solid var(--line-soft,#eff2f6);}',
         '.xt-p-foot .xt-btn{width:100%;}',
@@ -744,6 +1106,18 @@
     /* ================================================================
        10) الإقلاع
        ================================================================ */
+
+    /* ── ترتيب الجداول في الصفحة ─────────────────────────────────────
+       بنحتاج رقم الجدول (ترتيبه وسط الجداول المؤهّلة في الصفحة) عشان
+       نحفظه ونرجّعه. بنحسبه من table.xt-on اللي اتبنوا بالفعل. */
+    function tableIndex(table) {
+        var all = document.querySelectorAll('table.xt-on');
+        for (var i = 0; i < all.length; i++) {
+            if (all[i] === table) return i;
+        }
+        return -1;
+    }
+
     function scan(root) {
         var list = (root || document).querySelectorAll('table');
         for (var i = 0; i < list.length; i++) {
@@ -771,6 +1145,7 @@
 
     function init() {
         injectCSS();
+        attachSubmitSave();   // (١١) ربط الحفظ عند الـsubmit
         watching = true;
         try { scan(document); } finally { watching = false; }
         watch();
@@ -784,4 +1159,130 @@
 
     // للجداول اللي بتتبني بجافاسكربت بعد التحميل
     window.xtableScan = function (root) { injectCSS(); scan(root); };
+
+    /* ================================================================
+       11) حفظ الفلتر عند الـsubmit واسترجاعه مرة واحدة
+       ─────────────────────────────────────────────────────────────────
+       المبدأ الأصلي (السطر 18 فوق) لازم يفضل صح:
+         «مفيش حفظ للفلتر بين الصفحات — تفتح الشاشة تلاقيها كاملة دايماً.»
+
+       الاستثناء الوحيد: المستخدم دوس زرار/فورم جوّا نفس الشاشة والصفحة
+       رجعت لنفس المسار. في الحالة دي مابساش الشاشة — بس POST/redirect
+       بيخلي الصفحة تتحمّل من الأول.
+
+       الحل:
+         (١) وقت الـsubmit: لو فيه فلتر شغّال → اخزّنه في sessionStorage.
+         (٢) وقت بناء الجدول: لو لقينا مفتاح → امسحه فوراً ← طبّق الفلتر.
+         النتيجة: رجع للصفحة مرة → فلتر. F5 أو فتح من جديد → كاملة.
+
+       ── تفاصيل تقنية ────────────────────────────────────────────────
+       • المفتاح: 'xt-restore:' + location.pathname (بدون search/hash)
+         لأن الـredirect بعد POST ممكن يغيّر الكويري (?tab=attendance وكده).
+       • sessionStorage مش storage الدايمة — يموت مع التاب.
+       • كل نداء على sessionStorage ملفوف في try/catch — التصفح الخاص
+         بيرمي استثناء فعلي مش بيرجّع null، والمكتبة لازم تفضل شغالة.
+       • المسح قبل التطبيق — لو التطبيق رمى استثناء والمفتاح لسه موجود،
+         الفلتر هيرجع في كل تحميل للأبد وده أوحش من المشكلة الأصلية.
+       ================================================================ */
+
+    /* المفتاح: pathname بس من غير search — الـredirect بيغيّر الكويري */
+    function restoreKey() {
+        return 'xt-restore:' + location.pathname;
+    }
+
+    /* (١) الحفظ — بيتنادى مرة واحدة من init() */
+    function attachSubmitSave() {
+        /* 🔴 مرحلة الفقاعة (bubble) مش الالتقاط، وبنتخطى لو الفورم اتلغى.
+           السبب: فورمات المسح عندها onsubmit="return confirm(...)".
+           في مرحلة الالتقاط كنا بنسبق التأكيد، فلو المستخدم دوس «إلغاء»
+           الفلتر بيتخزّن وهو أصلاً ماعملش حاجة — ويرجع له بعدين من غير
+           سبب. الحدث بيوصل لـdocument في الحالتين (preventDefault
+           مابيوقفش الانتشار)، فالفرق الوحيد هو defaultPrevented. */
+        document.addEventListener('submit', function (e) {
+            if (e.defaultPrevented) return;   /* المستخدم لغى — مفيش تنقّل */
+            try {
+                var tables = document.querySelectorAll('table.xt-on');
+                var snapshot = [];
+                var hasActive = false;
+
+                for (var i = 0; i < tables.length; i++) {
+                    var st = tables[i].__xt;
+                    if (!st) continue;
+                    var picksKeys = Object.keys(st.picks);
+                    if (!st.q && picksKeys.length === 0) continue;
+                    hasActive = true;
+                    snapshot.push({
+                        idx:   i,           /* ترتيب الجدول وسط جداول الصفحة */
+                        cols:  st.cols,     /* عدد الأعمدة — للتحقق عند الاسترجاع */
+                        q:     st.q,
+                        picks: st.picks
+                    });
+                }
+
+                if (!hasActive) return;     /* مفيش فلاتر — مفيش حاجة تتحفظ */
+                sessionStorage.setItem(restoreKey(), JSON.stringify(snapshot));
+            } catch (e) { /* sessionStorage ممكن يرمي في التصفح الخاص */ }
+        });
+    }
+
+    /* (٢) الاسترجاع — بيتنادى من build() بعد ما الجدول يتبنى */
+    function tryRestore(st) {
+        var key = restoreKey();
+        var raw;
+        try { raw = sessionStorage.getItem(key); } catch (e) { return; }
+        if (!raw) return;
+
+        var snapshot;
+        try { snapshot = JSON.parse(raw); } catch (e) {
+            /* JSON تالف — امسح عشان مانفضّلش عالقين */
+            try { sessionStorage.removeItem(key); } catch (e2) {}
+            return;
+        }
+
+        /* رقم هذا الجدول في الصفحة دلوقتي */
+        var myIdx = tableIndex(st.table);
+        if (myIdx < 0) return;
+
+        /* دوّر على صنبشوت الجدول ده بالتحديد */
+        var entry = null;
+        for (var i = 0; i < snapshot.length; i++) {
+            if (snapshot[i].idx === myIdx) { entry = snapshot[i]; break; }
+        }
+        if (!entry) return;
+
+        /* ────────────────────────────────────────────────────────────
+           🔴 امسح المفتاح الأول — قبل أي تطبيق.
+           لو التطبيق رمى استثناء بعد كده المفتاح بيبقى ماشي وده سليم.
+           لو تركناه ورمى استثناء، الفلتر هيرجع في كل تحميل للأبد.
+           ──────────────────────────────────────────────────────────── */
+        try { sessionStorage.removeItem(key); } catch (e) {}
+
+        /* لو عدد الأعمدة اتغيّر → الصفحة اترندرت مختلفة → تجاهل خالص */
+        if (entry.cols !== st.cols) return;
+
+        /* طبّق البحث العام */
+        if (entry.q) {
+            st.q = entry.q;
+            var inp = st.bar && st.bar.querySelector('input');
+            if (inp) inp.value = entry.q;
+        }
+
+        /* طبّق picks لكل عمود */
+        var picks = entry.picks || {};
+        var pickKeys = Object.keys(picks);
+        for (var j = 0; j < pickKeys.length; j++) {
+            var ci = pickKeys[j];
+            if (picks[ci] && Object.keys(picks[ci]).length > 0) {
+                st.picks[ci] = picks[ci];
+                /* لوّن رأس العمود عشان المستخدم يشوف الفلتر شغّال */
+                if (st.hrow && st.hrow.cells[Number(ci)]) {
+                    st.hrow.cells[Number(ci)].classList.add('xt-active');
+                }
+            }
+        }
+
+        /* نادِ apply عشان الصفوف تتفلتر والعدّاد يتحدّث وحدث xtable:filter يتبعت */
+        apply(st);
+        return true;   /* علامة للـbuild() إن الفلتر اتطبّق */
+    }
 })();

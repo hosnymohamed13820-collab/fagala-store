@@ -21,10 +21,13 @@
             --ink-200: #e2e7ee;
 
             /* ===== التفاعل: أزرق فولاذي هادي ===== */
-            --accent:       #2f5d8a;
-            --accent-hover: #254a6f;
-            --accent-soft:  #eaf1f8;
-            --accent-ring:  rgba(47,93,138,.16);
+            /* اتنقّحت الألوان يوم ٣١ أغسطس ٢٠٢٦ عشان الدلالية كانت غامقة (إضاءة ٣٠-٤٢٪) فبتقرا طيني بدل ما تبقى إشارة.
+               كل القيم دي اتفحص تباينها ومعدّية معيار AA: كل لون على الأبيض ≥ ٤.٥، وكل لون على خلفيته الناعمة ≥ ٤.٥.
+               أي تعديل فيها لازم يتفحص تباينه تاني قبل ما يتحط. */
+            --accent:       #1e6fbf;
+            --accent-hover: #185a9c;
+            --accent-soft:  #e8f1fb;
+            --accent-ring:  rgba(30,111,191,.20);
 
             /* ===== الأسطح ===== */
             --bg:        #f5f6f8;   /* رمادي فاتح محايد */
@@ -33,21 +36,51 @@
             --line-soft: #eff2f6;
 
             /* ===== دلالات الأرقام — مهدّاة مش فاقعة ===== */
-            --pos:       #2c6e52;
-            --pos-soft:  #e8f1ec;
-            --neg:       #9d3b38;
-            --neg-soft:  #f7eceb;
-            --warn:      #8a6524;
-            --warn-soft: #f7f0e2;
+            --pos:       #0b7a52;
+            --pos-soft:  #e6f6ee;
+            --neg:       #c0332e;
+            --neg-soft:  #fdeceb;
+            --warn:      #946105;
+            --warn-soft: #fdf4e3;
+
+            /* ===== الدور التاني للألوان الدلالية =====
+               `--pos` و`--neg` و`--warn` بيتقلبوا فاتحين في الوضع الليلي
+               عشان ٤٨٧ استعمال منهم **كتابة**. لكن اللي بيستعملهم
+               **خلفية بكتابة بيضا** (١٢٠ موضع) محتاج لون غامق يقبل
+               الأبيض فوقه. فدول الدور التاني.
+               🔴 قيمهم **واحدة في الوضعين** — كل واحد فيهم الأبيض فوقه
+               عدّى AA: pos ٥.٣٦ · neg ٥.٥٩ · warn ٥.٢٩.
+               عشان كده مش هتلاقيهم في بلوك [data-theme="dark"]. */
+            --pos-fill:  #0b7a52;
+            --neg-fill:  #c0332e;
+            --warn-fill: #946105;
+
+            /* الأزرق ككتابة. `--accent` نفسه بيفضل غامق في الوضعين لأنه
+               خلفية الزراير في كل مكان (الأبيض فوقه ٥.١٤). */
+            --accent-text: #1e6fbf;
+
+            /* ===== السطح القوي (الزرار المختار · الزرار الثانوي) =====
+               ١٢ موضع في المشروع بيستعملوا `--ink-900`/`--ink-800`
+               **كخلفية** بكتابة بيضا. وسلّم الحبر **بيتعكس** في الوضع
+               الليلي — يعني الخلفية كانت هتطلع **بيضا والكتابة بيضا**.
+               🔴 دي كانت مكسورة فعلاً في شريط فلاتر الفواتير.
+               الحل: الدور ده بقى ليه توكن بيتقلب مع الوضع — غامق بكتابة
+               بيضا في الفاتح، وفاتح بكتابة غامقة في الليلي. الاتنين
+               تباينهم ١٢.٦ فما فوق. */
+            --fill-strong:      var(--ink-900);
+            --fill-strong-fg:   #ffffff;
+            --fill-strong-veil: rgba(255,255,255,.18);
+
+            color-scheme: light;
 
             /* ===== الخطوط ===== */
             --font: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
 
             /* ===== الإيقاع ===== */
             --r-sm: 8px;  --r: 10px;  --r-lg: 14px;
-            --shadow-sm: 0 1px 2px rgba(22,35,61,.05);
-            --shadow:    0 2px 10px rgba(22,35,61,.07);
-            --shadow-lg: 0 16px 40px rgba(22,35,61,.15);
+            --shadow-sm: 0 1px 2px rgba(20,33,61,.07);
+            --shadow:    0 2px 4px rgba(20,33,61,.06), 0 8px 20px rgba(20,33,61,.07);
+            --shadow-lg: 0 18px 44px rgba(20,33,61,.20);
 
             /* توافق مع الكود القديم */
             --purple: var(--accent);
@@ -56,6 +89,77 @@
             --sidebar-hover: var(--ink-800);
             --text: var(--ink-800);
             --muted: var(--ink-500);
+        }
+
+        /* =====================================================================
+         *  الوضع الليلي — ٣١ أغسطس ٢٠٢٦
+         *
+         *  الفكرة: مفيش قاعدة CSS واحدة بتتغيّر هنا. **قيم متغيّرات وبس.**
+         *  الصفحة كلها بتقلب لأن كل حاجة بتقرا من المتغيّرات دي.
+         *
+         *  سلّم الحبر **بيتعكس**: في الفاتح `--ink-900` أغمق لون (نص)،
+         *  وفي الليلي بقى **أفتح** لون (نص). عشان كده `--sidebar`
+         *  و`--sidebar-hover` مكتوبين هنا بلون صريح مش `var(--ink-900)`
+         *  — من غير كده الشريط الجانبي كان هيطلع **أبيض**.
+         *
+         *  🔴 كل قيمة هنا اتفحص تباينها بحساب فعلي ومعدّية AA:
+         *     ink-800 على السطح ١٢.٦ · ink-500 ٥.٣٠ · accent-text ٧.٧٣
+         *     pos ٩.٥٠ · neg ٧.١٦ · warn ٨.٦٦
+         *     وكل لون على خلفيته الناعمة: pos ٨.٣١ · neg ٦.٨٦ · warn ٧.٧١
+         *  🔴 أي تعديل في أي قيمة **لازم يتفحص تباينه تاني** قبل ما يتحط.
+         * ===================================================================== */
+        :root[data-theme="dark"] {
+            /* سلّم الحبر معكوس: ٩٠٠ = أنصع نص، ٢٠٠ = أغمق حد */
+            --ink-900: #eef2f8;
+            --ink-800: #dbe3ee;
+            --ink-700: #bcc8d8;
+            --ink-600: #9aa8bf;
+            --ink-500: #8494ac;
+            --ink-400: #6b7b95;
+            --ink-300: #4a5a75;
+            --ink-200: #313f57;
+
+            /* الأسطح: الأرضية أغمق، والكارت طالع فوقها درجة */
+            --bg:        #0f1826;
+            --surface:   #16202f;
+            --line:      #263243;
+            --line-soft: #1b2635;
+
+            /* 🔴 صريحين مش var(--ink-*) — السبب مشروح فوق */
+            --sidebar:       #0a111c;
+            --sidebar-hover: #16202f;
+
+            /* الأزرق: `--accent` و`--accent-hover` **مش هنا** بقصد —
+               دول خلفيات الزراير والأبيض فوقهم عدّى AA في الوضعين
+               (٥.١٤ و٧.٠٥). اللي بيتغيّر هو الأزرق ككتابة وكخلفية ناعمة. */
+            --accent-soft: #14263c;
+            --accent-text: #7ab8f0;
+            --accent-ring: rgba(122,184,240,.22);
+
+            /* الدلالية ككتابة — فاتحة */
+            --pos:  #4ade9a;
+            --neg:  #ff8a80;
+            --warn: #f0b23c;
+
+            /* الخلفيات الناعمة — صبغات غامقة */
+            --pos-soft:  #12301f;
+            --neg-soft:  #3a1a18;
+            --warn-soft: #362614;
+
+            /* الظل على أرضية غامقة لازم يبقى أسود وأقوى، الرمادي بيختفي */
+            --shadow-sm: 0 1px 2px rgba(0,0,0,.40);
+            --shadow:    0 2px 4px rgba(0,0,0,.35), 0 8px 20px rgba(0,0,0,.45);
+            --shadow-lg: 0 18px 44px rgba(0,0,0,.60);
+
+            /* السطح القوي بينعكس: في الفاتح غامق بكتابة بيضا، وهنا
+               فاتح بكتابة غامقة. 🔴 مكتوب بلون صريح مش `var(--ink-900)`
+               عشان سلّم الحبر اتعكس — لو ساب `var(--ink-900)` كان هيبقى
+               نفس القيمة بس الكتابة تفضل بيضا = زرار مختفي. */
+            --fill-strong:      #dbe3ee;
+            --fill-strong-fg:   #0f1826;
+            --fill-strong-veil: rgba(0,0,0,.13);
+
+            color-scheme: dark;
         }
         body {
             font-family: var(--font);
@@ -170,7 +274,7 @@
             border-right-color: #5d96d0;
         }
         .nav-item.active i {
-            background: linear-gradient(160deg, #4a80b8 0%, #2f5d8a 100%);
+            background: linear-gradient(160deg, #3d8ad4 0%, #1e6fbf 100%);
             color: #fff;
             box-shadow: 0 6px 18px rgba(60,120,190,.45), 0 0 0 1px rgba(255,255,255,.10) inset;
         }
@@ -210,6 +314,12 @@
         @keyframes ic-tune  { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 60%{transform:translateX(5px);} }
         /* الإعدادات: الترس بيلف */
         @keyframes ic-gear  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
+        /* سكانر الكمبيوتر: اهتزاز خفيف — الموبايل بيرن */
+        @keyframes ic-ring  { 0%,100%{transform:rotate(0) scale(1);} 20%{transform:rotate(-12deg) scale(1.08);} 40%{transform:rotate(12deg) scale(1.08);} 60%{transform:rotate(-8deg) scale(1.04);} 80%{transform:rotate(8deg) scale(1.04);} }
+        /* طلب نواقص: دحرجة لقدّام ورجوع */
+        @keyframes ic-cart  { 0%,100%{transform:translateX(0) rotate(0);} 35%{transform:translateX(-6px) rotate(-5deg);} 70%{transform:translateX(2px) rotate(2deg);} }
+        /* تحليل الموسم: نبضة + ميلة بسيطة */
+        @keyframes ic-calc  { 0%,100%{transform:scale(1) rotate(0);} 40%{transform:scale(1.22) rotate(-8deg);} 70%{transform:scale(1.05) rotate(4deg);} }
 
         .nav-item i::before { display: inline-block !important; transform-origin: center; will-change: transform; }
 
@@ -229,6 +339,9 @@
         .nav-item:hover i.ti-chart-bar::before        { animation: ic-bars .8s ease infinite; }
         .nav-item:hover i.ti-adjustments::before      { animation: ic-tune .9s ease infinite; }
         .nav-item:hover i.ti-settings::before         { animation: ic-gear 1.4s linear infinite; }
+        .nav-item:hover i.ti-device-mobile::before   { animation: ic-ring .7s ease infinite; }
+        .nav-item:hover i.ti-shopping-cart::before   { animation: ic-cart .8s ease infinite; }
+        .nav-item:hover i.ti-calculator::before      { animation: ic-calc .8s ease infinite; }
 
         /* ===== حركات دورية للعنصر النشط =====
            الحركة بتحصل في أول ربع الدورة والباقي سكون — يعني نبضة
@@ -248,6 +361,9 @@
         @keyframes icp-bars  { 0%,25%,100%{transform:scaleY(1);} 12%{transform:scaleY(1.5);} }
         @keyframes icp-tune  { 0%,25%,100%{transform:translateX(0);} 7%{transform:translateX(-5px);} 16%{transform:translateX(5px);} }
         @keyframes icp-gear  { 0%{transform:rotate(0);} 45%,100%{transform:rotate(360deg);} }
+        @keyframes icp-ring  { 0%,25%,100%{transform:rotate(0) scale(1);} 6%{transform:rotate(-12deg) scale(1.08);} 12%{transform:rotate(12deg) scale(1.08);} 18%{transform:rotate(-8deg) scale(1.04);} 22%{transform:rotate(8deg) scale(1.04);} }
+        @keyframes icp-cart  { 0%,25%,100%{transform:translateX(0) rotate(0);} 9%{transform:translateX(-6px) rotate(-5deg);} 18%{transform:translateX(2px) rotate(2deg);} }
+        @keyframes icp-calc  { 0%,25%,100%{transform:scale(1) rotate(0);} 10%{transform:scale(1.22) rotate(-8deg);} 18%{transform:scale(1.05) rotate(4deg);} }
 
         .nav-item.active i.ti-layout-dashboard::before { animation: icp-pulse 3s ease infinite; }
         .nav-item.active i.ti-scan::before             { animation: icp-scan  3s ease-in-out infinite; }
@@ -265,10 +381,13 @@
         .nav-item.active i.ti-chart-bar::before        { animation: icp-bars  3s ease infinite; }
         .nav-item.active i.ti-adjustments::before      { animation: icp-tune  3s ease infinite; }
         .nav-item.active i.ti-settings::before         { animation: icp-gear  3s ease-in-out infinite; }
+        .nav-item.active i.ti-device-mobile::before   { animation: icp-ring 3s ease infinite; }
+        .nav-item.active i.ti-shopping-cart::before   { animation: icp-cart 3s ease infinite; }
+        .nav-item.active i.ti-calculator::before      { animation: icp-calc 3s ease infinite; }
 
-        /* احترام تفضيل تقليل الحركة */
+        /* احترام تفضيل تقليل الحركة — تسكت الأيقونات لو المستخدم مقفل الحركات في نظامه */
         @media (prefers-reduced-motion: reduce) {
-            .nav-item i::before { animation: none !important; }
+            .nav-item i::before, .nav-item.active i::before { animation: none !important; }
         }
 
         /* نقطة ذهبية صغيرة على العنصر النشط */
@@ -332,13 +451,13 @@
         }
         /* الجرس والإشعارات */
         .notif-wrap { position: relative; }
-        .notif-bell { position: relative; background: var(--accent-soft); border: none; width: 42px; height: 42px; border-radius: 12px; cursor: pointer; color: var(--accent); font-size: 20px; display: flex; align-items: center; justify-content: center; }
+        .notif-bell { position: relative; background: var(--accent-soft); border: none; width: 42px; height: 42px; border-radius: 12px; cursor: pointer; color: var(--accent-text); font-size: 20px; display: flex; align-items: center; justify-content: center; }
         .notif-bell:hover { background: var(--line); }
-        .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
-        .notif-panel { display: none; position: absolute; top: 52px; left: 0; width: 340px; max-width: 90vw; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(30,27,75,0.18); border: 1px solid var(--line); z-index: 100; overflow: hidden; }
+        .notif-badge { position: absolute; top: -4px; left: -4px; background: var(--neg-fill); color: #fff; font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+        .notif-panel { display: none; position: absolute; top: 52px; left: 0; width: 340px; max-width: 90vw; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-lg); border: 1px solid var(--line); z-index: 100; overflow: hidden; }
         .notif-panel.open { display: block; }
         .notif-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); font-weight: 600; color: var(--ink-900); }
-        .notif-mark { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 400; }
+        .notif-mark { font-size: 12px; color: var(--accent-text); text-decoration: none; font-weight: 400; }
         .notif-list { max-height: 400px; overflow-y: auto; }
         .notif-item { display: block; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); text-decoration: none; color: inherit; }
         .notif-item:hover { background: var(--line-soft); }
@@ -348,6 +467,30 @@
         .ni-body { font-size: 13px; color: var(--ink-500); margin-top: 3px; }
         .ni-time { font-size: 11px; color: var(--ink-300); margin-top: 4px; }
         .notif-empty { text-align: center; color: var(--ink-400); padding: 30px; font-size: 14px; }
+
+        /* ===== سلايدر الوضع الليلي ===== */
+        /* 🔴 النافبار `justify-content: space-between` وعنده تلات عناصر
+           (العنوان · السلايدر · الجرس). من غير الهامش التلقائي ده السلايدر
+           بيقع في **نص** الشريط بدل ما يبقى جنب الجرس. */
+        .theme-toggle { background:none; border:none; padding:0; cursor:pointer; display:flex; align-items:center; margin-inline-start:auto; margin-inline-end:12px; }
+        .tt-track {
+            display:block; position:relative;
+            width:46px; height:26px; border-radius:99px;
+            background: var(--line-soft); border:1px solid var(--line);
+            transition: background .2s, border-color .2s;
+        }
+        .tt-knob {
+            position:absolute; top:2px; right:2px;
+            width:20px; height:20px; border-radius:50%;
+            background: var(--surface); box-shadow: var(--shadow-sm);
+            display:flex; align-items:center; justify-content:center;
+            font-size:12px; color: var(--ink-400);
+            transition: transform .2s, color .2s;
+        }
+        :root[data-theme="dark"] .tt-track { background: var(--accent); border-color: var(--accent); }
+        /* الزرار على اليمين في الوضع الفاتح، وبيمشي شمال في الليلي.
+           translateX فيزيائي مش منطقي — السالب شمال حتى في RTL. */
+        :root[data-theme="dark"] .tt-knob { transform: translateX(-20px); color: var(--accent); }
         .topbar .menu-toggle {
             display: none;
             background: none; border: none;
@@ -383,7 +526,7 @@
             position: sticky;
             top: 0;
             z-index: 5;
-            background: #fff;
+            background: var(--surface);
             box-shadow: 0 1px 0 var(--line);
         }
         /* =================================================================
@@ -425,6 +568,11 @@
             border: none !important;
             color: #fff;
         }
+        /* 🔴 الكارت ده **مش** بياخد `--fill-strong` زي الزراير. ده كارت
+           كبير، ولو بقى فاتح في الوضع الليلي هيبقى بلوك وهج في نص الشاشة.
+           فبياخد الأزرق بدل ما ينعكس — بيفضل «أهم رقم في الشاشة» من غير
+           ما يعمي، والكتابة البيضا اللي تحت لسه معدّية AA (٥.١٤). */
+        :root[data-theme="dark"] .tre-box.main { background: var(--accent) !important; }
         .tre-box.main .tre-top { color: rgba(255,255,255,.62) !important; }
         .tre-box.main .tre-val { color: #fff !important; font-size: 34px !important; }
         .tre-box.main .tre-cur { color: rgba(255,255,255,.5) !important; }
@@ -453,9 +601,9 @@
         }
         .period-btn:hover { border-color: var(--ink-300) !important; }
         .period-btn.active {
-            background: var(--ink-900) !important;
-            border-color: var(--ink-900) !important;
-            color: #fff !important;
+            background: var(--fill-strong) !important;
+            border-color: var(--fill-strong) !important;
+            color: var(--fill-strong-fg) !important;
         }
 
         /* الشارات: خفيفة ومقروءة */
@@ -613,3 +761,60 @@
         .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
         .flash.success { background:var(--pos-soft); color:var(--pos); }
         .flash.error   { background:var(--neg-soft); color:var(--neg); }
+
+/* =====================================================================
+   منتقي القيود الشجري (acctree.js) — 2026-08-22
+   بديل الـ<select> المسطّح اللي كان بيعرض المسار كنص طويل.
+   متحطّة هنا مش جوه الصفحات عشان الخمس شاشات تشاركها ويتكاش مرة واحدة.
+   ===================================================================== */
+.act { position:relative; }
+.act-btn {
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
+    background:var(--line-soft); font-size:14px; font-family:inherit;
+    cursor:pointer; text-align:right; color:var(--ink-800);
+}
+.act-btn:hover { border-color:var(--accent); }
+.act-label { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.act-label.act-empty { color:var(--ink-400); }
+.act-caret { color:var(--ink-400); font-size:11px; flex-shrink:0; }
+
+.act-pop {
+    position:absolute; z-index:60; top:calc(100% + 4px); right:0; left:0;
+    background:var(--surface); border:1.5px solid var(--line); border-radius:11px;
+    box-shadow:var(--shadow-lg); overflow:hidden;
+}
+.act-head { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line); }
+.act-search {
+    flex:1; padding:7px 10px; border:1.5px solid var(--line); border-radius:8px;
+    font-size:13px; font-family:inherit; background:var(--line-soft);
+}
+.act-search:focus { outline:none; border-color:var(--accent); background:var(--surface); }
+.act-clear {
+    padding:7px 11px; border:none; border-radius:8px; cursor:pointer;
+    background:var(--line-soft); color:var(--ink-600); font-size:12px; font-family:inherit;
+}
+.act-clear:hover { background:var(--neg-soft); color:var(--neg); }
+
+.act-body, .act-results { max-height:260px; overflow-y:auto; padding:4px 0; }
+.act-row {
+    display:flex; align-items:center; gap:7px; padding:7px 8px;
+    cursor:pointer; font-size:13px; color:var(--ink-800);
+}
+.act-row:hover { background:var(--bg); }
+.act-arrow { width:13px; flex-shrink:0; color:var(--accent); font-size:10px; }
+.act-dot   { width:13px; flex-shrink:0; }
+.act-dot::before {
+    content:''; display:block; width:4px; height:4px; border-radius:50%;
+    background:var(--ink-300); margin:0 4px;
+}
+.act-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.act-row.has-kids > .act-name { font-weight:600; color:var(--ink-900); }
+.act-pick {
+    opacity:0; border:none; background:var(--accent-soft); color:var(--accent-hover);
+    font-size:11px; font-family:inherit; padding:2px 9px; border-radius:20px;
+    cursor:pointer; flex-shrink:0;
+}
+.act-row:hover .act-pick { opacity:1; }
+.act-pick:hover { background:var(--accent); color:#fff; }
+.act-none { padding:18px; text-align:center; color:var(--ink-400); font-size:13px; }

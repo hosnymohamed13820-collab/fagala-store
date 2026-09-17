@@ -16,6 +16,7 @@
  * مثلاً: 'YourDB.dbo.' أو 'dbo.' (سيبها '' لو الجداول في نفس القاعدة الافتراضية).
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/agent_lib.php';   // bal_table() — مصدر الأرصدة
 // SQLSRV_PREFIX بتتعرّف في config.php (اسم قاعدة الفرع + .dbo.)
 // الجداول ممكن تكون شهرية (مثلاً STO_TRANS_HEADER_26_06). النظام بيكتشفها كلها
 // تلقائياً ويجمّعها، فمايقعش لو شهر مش موجود، وبيشمل أي شهر جديد لوحده.
@@ -311,7 +312,7 @@ function hq_balances_ready(): bool
     static $ready = null;
     if ($ready !== null) return $ready;
     try {
-        $ready = (bool) db()->query('SELECT 1 FROM hq_balances LIMIT 1')->fetchColumn();
+        $ready = (bool) db()->query('SELECT 1 FROM ' . bal_table() . ' LIMIT 1')->fetchColumn();
     } catch (Throwable $ex) {
         $ready = false;
     }
@@ -351,7 +352,7 @@ function hq_unposted_exists(int $sthId): bool
 /**
  * جلب هيدر فاتورة واحدة من SQL Server.
  */
-function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
+function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null, ?int $companyBranch = null, ?int $docType = null): ?array
 {
     // =================================================================
     //  ⚠️ تصادم الـ STH_ID
@@ -371,15 +372,17 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
     $isPosted   = ($suffix !== null && $suffix !== '' && !$isUnposted);
 
     // ١) النسخة المحلية — الفواتير المرحّلة
-    //    بنفلتر بالـ suffix كمان: الـ sth_id لوحده مش فريد بين الشهور.
+    //    بنفلتر بالـ suffix والفرع والنوع كمان: الـ sth_id لوحده مش فريد بين الشهور أو الفروع.
     if (!$isUnposted) {
         try {
             $sql = 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
                            supplier_code, supplier_name, net_amount, total_amount,
-                           invoice_date, doc_type, suffix
+                           invoice_date, doc_type, suffix, company_branch
                     FROM hq_invoices WHERE sth_id = ?';
             $args = [(int) $invoiceId];
             if ($isPosted) { $sql .= ' AND suffix = ?'; $args[] = $suffix; }
+            if ($companyBranch !== null) { $sql .= ' AND company_branch = ?'; $args[] = $companyBranch; }
+            if ($docType !== null) { $sql .= ' AND doc_type = ?'; $args[] = $docType; }
             $st = db()->prepare($sql . ' LIMIT 1');
             $st->execute($args);
             $local = $st->fetch();
@@ -393,13 +396,16 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
     //    ممنوعة تماماً لو إحنا متأكدين إن الفاتورة مرحّلة.
     if (!$isPosted) {
         try {
-            $st = db()->prepare(
-                'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
+            $sql = 'SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
                         supplier_code, supplier_name, net_amount, total_amount,
-                        invoice_date, doc_type, remark
-                 FROM hq_unposted WHERE sth_id = ? LIMIT 1'
-            );
-            $st->execute([(int) $invoiceId]);
+                        invoice_date, doc_type, remark, company_branch
+                 FROM hq_unposted WHERE sth_id = ?';
+            $args = [(int) $invoiceId];
+            if ($companyBranch !== null) { $sql .= ' AND company_branch = ?'; $args[] = $companyBranch; }
+            if ($docType !== null) { $sql .= ' AND doc_type = ?'; $args[] = $docType; }
+            $sql .= ' LIMIT 1';
+            $st = db()->prepare($sql);
+            $st->execute($args);
             $localUnp = $st->fetch();
             if ($localUnp) {
                 $localUnp['suffix'] = 'YY_MM';
@@ -422,11 +428,16 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
                    LTRIM(RTRIM(s.SUPP_CODE)) AS supplier_code,
                    COALESCE(LTRIM(RTRIM(s." . SUPP_NAME_COL . ")), CAST(h." . COL_INV_SUPP_ID . " AS NVARCHAR(50))) AS supplier_name,
                    h." . COL_INV_NET . " AS net_amount, h." . COL_INV_TOTAL . " AS total_amount,
-                   h." . COL_INV_DATE . " AS invoice_date
+                   h." . COL_INV_DATE . " AS invoice_date,
+                   h." . COL_INV_BRANCH . " AS company_branch,
+                   h.SSTT_ID AS doc_type
             FROM " . $headTable . " h
             LEFT JOIN " . SUPPLIERS_TABLE . " s ON s." . SUPP_ID_COL . " = h." . COL_INV_SUPP_ID . "
             WHERE h." . COL_INV_ID . " = ?";
-    $rows = sqlsrv_query($sql, [$invoiceId]);
+    $args = [$invoiceId];
+    if ($companyBranch !== null) { $sql .= ' AND h.' . COL_INV_BRANCH . ' = ?'; $args[] = $companyBranch; }
+    if ($docType !== null) { $sql .= ' AND h.SSTT_ID = ?'; $args[] = $docType; }
+    $rows = sqlsrv_query($sql, $args);
     $row = $rows[0] ?? null;
     if ($row) {
         if (isset($row['supplier_name'])) $row['supplier_name'] = sqlsrv_fix_encoding((string)$row['supplier_name']);
@@ -444,24 +455,118 @@ function sqlsrv_fetch_invoice_header($invoiceId, ?string $suffix = null): ?array
  */
 
 /**
+ * شرط الربط بين جدول التوزيع والفاتورة بالمفتاح المركب (doc_no, company_branch, doc_type)
+ * مع الحفاظ على التوافق مع السجلات القديمة التي تحوي NULL.
+ */
+function dist_key_sql(string $d, string $cb, string $dt): string
+{
+    static $hasColumns = null;
+    if ($hasColumns === null) {
+        try {
+            $pdo = db();
+            $st = $pdo->query("SHOW COLUMNS FROM invoice_distribution LIKE 'company_branch'");
+            $hasColumns = ($st && $st->fetch() !== false);
+        } catch (Throwable $e) {
+            $hasColumns = false;
+        }
+    }
+    if (!$hasColumns) {
+        return "1=1";
+    }
+    return "($d.company_branch IS NULL OR $cb IS NULL OR $d.company_branch = $cb) AND ($d.doc_type IS NULL OR $dt IS NULL OR $d.doc_type = $dt)";
+}
+
+/**
  * يضمن وجود سجل توزيع (هيدر) للفاتورة في MySQL، ويرجّع صفّه.
  * بيربط الفاتورة بمورد في جدول suppliers (بإنشائه لو مش موجود).
+ * يعتمد على المفتاح المركب (invoice_no, company_branch, doc_type) لمنع تداخل أرقام الفواتير المتكررة.
  */
 function ensure_distribution_record(array $invHeader, ?int $userId = null): array
 {
     $pdo = db();
     $invNo = (string) $invHeader['inv_no'];
 
-    // هل موجود بالفعل؟
-    $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? LIMIT 1');
-    $st->execute([$invNo]);
+    // استخراج company_branch بدقة
+    $companyBranch = null;
+    if (isset($invHeader['company_branch']) && $invHeader['company_branch'] !== null && $invHeader['company_branch'] !== '') {
+        $companyBranch = (int) $invHeader['company_branch'];
+    } elseif (isset($invHeader['company_branch_id']) && $invHeader['company_branch_id'] !== null && $invHeader['company_branch_id'] !== '') {
+        $companyBranch = (int) $invHeader['company_branch_id'];
+    }
+
+    // استخراج doc_type بدقة
+    $docType = null;
+    if (isset($invHeader['doc_type']) && $invHeader['doc_type'] !== null && $invHeader['doc_type'] !== '') {
+        $docType = (int) $invHeader['doc_type'];
+    }
+
+    // إذا لم يتوفر الفرع أو نوع المستند في الهيدر، جلبهما من hq_invoices أو hq_unposted
+    if ($companyBranch === null || $docType === null) {
+        $sthId = (int) ($invHeader['inv_id'] ?? $invHeader['sth_id'] ?? 0);
+        $suf   = (string) ($invHeader['suffix'] ?? '');
+        if ($sthId > 0) {
+            try {
+                if ($suf === 'YY_MM') {
+                    $stCheck = $pdo->prepare('SELECT company_branch, doc_type FROM hq_unposted WHERE sth_id = ? LIMIT 1');
+                    $stCheck->execute([$sthId]);
+                } else {
+                    $sqlC = 'SELECT company_branch, doc_type FROM hq_invoices WHERE sth_id = ?';
+                    $argsC = [$sthId];
+                    if ($suf !== '') { $sqlC .= ' AND suffix = ?'; $argsC[] = $suf; }
+                    $sqlC .= ' LIMIT 1';
+                    $stCheck = $pdo->prepare($sqlC);
+                    $stCheck->execute($argsC);
+                }
+                $hqRow = $stCheck ? $stCheck->fetch() : null;
+                if ($hqRow) {
+                    if ($companyBranch === null && $hqRow['company_branch'] !== null && $hqRow['company_branch'] !== '') {
+                        $companyBranch = (int) $hqRow['company_branch'];
+                    }
+                    if ($docType === null && $hqRow['doc_type'] !== null && $hqRow['doc_type'] !== '') {
+                        $docType = (int) $hqRow['doc_type'];
+                    }
+                }
+            } catch (Throwable $e) { /* تجاهل */ }
+        }
+    }
+
+    // إذا ما زال غير محدد، الإدارة الافتراضية = 1 (المركز الرئيسي) والنوع = 2 (فاتورة شراء)
+    if ($companyBranch === null) {
+        $companyBranch = 1;
+    }
+    if ($docType === null) {
+        $docType = 2;
+    }
+
+    $supplierName = trim((string) ($invHeader['supplier_name'] ?? '')) ?: 'مورد غير محدد';
+
+    // 1. هل موجود بالمفتاح المركب الكامل (invoice_no, company_branch, doc_type)؟
+    $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE invoice_no = ? AND company_branch = ? AND doc_type = ? LIMIT 1');
+    $st->execute([$invNo, $companyBranch, $docType]);
     $existing = $st->fetch();
     if ($existing) {
         return $existing;
     }
 
-    // إيجاد/إنشاء المورد بالاسم
-    $supplierName = trim((string) $invHeader['supplier_name']) ?: 'مورد غير محدد';
+    // 2. فحص السجلات القديمة التي تحوي company_branch IS NULL مع تطابق اسم المورد (للترقية الآمنة)
+    $stOld = $pdo->prepare(
+        'SELECT d.* FROM invoice_distribution d
+         JOIN suppliers s ON s.id = d.supplier_id
+         WHERE d.invoice_no = ? AND d.company_branch IS NULL AND s.name = ?'
+    );
+    $stOld->execute([$invNo, $supplierName]);
+    $oldMatches = $stOld->fetchAll();
+    if (count($oldMatches) === 1) {
+        $claimId = (int) $oldMatches[0]['id'];
+        $upd = $pdo->prepare('UPDATE invoice_distribution SET company_branch = ?, doc_type = ? WHERE id = ? AND company_branch IS NULL');
+        $upd->execute([$companyBranch, $docType, $claimId]);
+
+        $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
+        $st->execute([$claimId]);
+        return $st->fetch();
+    }
+
+    // 3. ربط بمورد في جدول suppliers
     $sp = $pdo->prepare('SELECT id FROM suppliers WHERE name = ? LIMIT 1');
     $sp->execute([$supplierName]);
     $supplierId = $sp->fetchColumn();
@@ -470,16 +575,23 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
         $supplierId = (int) $pdo->lastInsertId();
     }
 
-    // إنشاء سجل التوزيع (الهيدر)
+    // 4. إنشاء سجل توزيع جديد — إلزامي تخزين company_branch و doc_type
+    $invDate = !empty($invHeader['invoice_date']) ? date('Y-m-d', strtotime((string) $invHeader['invoice_date'])) : date('Y-m-d');
+    $totAmt  = (float) ($invHeader['total_amount'] ?? 0.0);
+    $netAmt  = (float) ($invHeader['net_amount'] ?? 0.0);
+
     $pdo->prepare(
-        'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by)
-         VALUES (?, ?, ?, ?, ?, ?)'
+        'INSERT INTO invoice_distribution (invoice_no, supplier_id, dist_date, total_amount, notes, created_by, company_branch, doc_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )->execute([
-        $invNo, (int) $supplierId,
-        date('Y-m-d', strtotime((string) $invHeader['invoice_date'])),
-        (float) $invHeader['total_amount'],
-        'الصافي: ' . number_format((float) $invHeader['net_amount'], 2),
+        $invNo,
+        (int) $supplierId,
+        $invDate,
+        $totAmt,
+        'الصافي: ' . number_format($netAmt, 2),
         $userId,
+        $companyBranch,
+        $docType,
     ]);
     $id = (int) $pdo->lastInsertId();
 
@@ -612,7 +724,8 @@ function set_branch_distribution(
 ): array {
     if ($qty < 0) throw new InvalidArgumentException('الكمية لا يمكن أن تكون سالبة.');
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // الموزّع سابقاً لباقي الفروع (غير الفرع الحالي) — بقفل للسطور
         $st = $pdo->prepare(
@@ -622,13 +735,61 @@ function set_branch_distribution(
         $st->execute([$distributionId, $itemCode, $branchId]);
         $othersTotal = (float) $st->fetchColumn();
 
-        // المتاح للفرع ده = الكمية − توزيع باقي الفروع
-        $available = $itemQty - $othersTotal;
-        if ($qty > $available + 0.0001) {
-            throw new RuntimeException(
-                'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
-                number_format($available, 2) . ').'
+        // 🔴 السقف الحقيقي = الأقل بين كمية الفاتورة ورصيد الإدارة.
+        //    الفاتورة ممكن تبقى ١٢ والواصل فعلاً ١٠ (والباقي اتعمله
+        //    مردود)، فرصيد الإدارة ١٠. توزيع ١٢ بيطلّع بضاعة مش موجودة.
+        //
+        // 🔴 وبيتحسب **هنا في السيرفر** بقصد. `$itemQty` جاي من
+        //    `$_POST['item_qty']` في المتصفح، يعني ممكن يتزوّر — كان
+        //    ينفع حد يبعت item_qty=99999 ويوزّع أي كمية يعوزها.
+        //    رصيد الإدارة بيتقري من القاعدة فمالوش دعوة بالعميل.
+        $hqBal = hq_admin_balance_for_code($itemCode);
+
+        // 🔴 الرصيد مش معروف: **ممنوع تزوّد، مسموح تقلّل**.
+        //    التطوّر ده حصل على تلات خطوات في يوم واحد (٣١ أغسطس ٢٠٢٦):
+        //      ١) «مش معروف = مفيش سقف» ← الميزة بتفضل نايمة بالظبط في
+        //         الحالة اللي اتعملت عشانها.
+        //      ٢) «مش معروف = امنع خالص» ← اتقفل ٥٤ صنف من ٧٥ في فاتورة
+        //         واحدة، بما فيهم أصناف **متوزّعة خلاص**.
+        //      ٣) الصح: امنع **الخطر الجديد** بس.
+        if ($hqBal === null) {
+            // 🔴 الرصيد مش واصل: **ممنوع تزوّد، مسموح تقلّل**.
+            //    أول نسخة كانت بتمنع الصنف خالص، فاتقفل ٥٤ صنف من ٧٥ —
+            //    بما فيهم أصناف **متوزّعة خلاص**، فمحمد مابقاش يقدر
+            //    يصلّح ولا يمسح توزيع قديم. القفل كان بيعاقبه على شغل
+            //    عمله قبل ما الميزة تتعمل أصلاً.
+            //    طول ما الكمية مابتزيدش عن المحفوظ، مفيش بضاعة زيادة
+            //    بتطلع — فمفيش سبب نمنعه.
+            $ownSt = $pdo->prepare(
+                'SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
+                 WHERE distribution_id = ? AND notes = ? AND branch_id = ? FOR UPDATE'
             );
+            $ownSt->execute([$distributionId, $itemCode, $branchId]);
+            $ownCurrent = (float) $ownSt->fetchColumn();
+
+            if ($qty > $ownCurrent + 0.0001) {
+                throw new RuntimeException(
+                    'رصيد الإدارة للصنف ده مش واصل، فمش هينفع تزوّد الكمية. '
+                    . 'تقدر تقلّلها أو تصفّرها. شغّل وكيل مزامنة الإدارة عشان توزّع أكتر.'
+                );
+            }
+            $cap = min($itemQty, $othersTotal + $ownCurrent);
+        } else {
+            $cap = min($itemQty, max(0.0, $hqBal));   // الرصيد السالب = صفر
+        }
+
+        // المتاح للفرع ده = السقف − توزيع باقي الفروع
+        $available = $cap - $othersTotal;
+        if ($qty > $available + 0.0001) {
+            $msg = 'الكمية (' . number_format($qty, 2) . ') أكبر من المتاح (' .
+                   number_format(max(0.0, $available), 2) . ')';
+            // لو السبب رصيد الإدارة مش كمية الفاتورة، قولها صريحة —
+            // من غير كده الرسالة بتبان غلط في النظام مش حماية مقصودة
+            if ($cap < $itemQty - 0.0001) {
+                $msg .= ' — رصيد الإدارة ' . number_format(max(0.0, $hqBal), 2)
+                      . ' والفاتورة ' . number_format($itemQty, 2);
+            }
+            throw new RuntimeException($msg . '.');
         }
 
         // استبدال سطور الفرع للصنف ده بسطر واحد بالقيمة الجديدة
@@ -644,13 +805,13 @@ function set_branch_distribution(
             )->execute([$distributionId, $branchId, $qty, $itemCode]);
         }
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return [
             'remaining'    => $itemQty - $othersTotal - $qty,
             'branch_total' => $qty,
         ];
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -714,22 +875,43 @@ function group_invoices_3days(array $invoices): array
  */
 function group_invoices_by_branch(array $invoices): array
 {
-    // خريطة sto_id → [الاسم, in_receiving] من الفروع المحلية
-    $map = [];
-    foreach (db()->query('SELECT sto_id, name, in_receiving FROM branches WHERE is_active = 1 AND sto_id IS NOT NULL') as $b) {
-        $map[(int) $b['sto_id']] = ['name' => $b['name'], 'in_receiving' => (int) $b['in_receiving']];
-    }
+    // خريطة sto_id / company_branch_id → [الاسم, in_receiving]
+    // 1: الإدارة (المركز الرئيسي) · 2: الفجالة · 3: بونجور · 4: موبايل · 5: دجلة · 6: اي بي سي
+    $map = [
+        1 => ['name' => 'الإدارة (المركز الرئيسي)', 'in_receiving' => 0],
+        2 => ['name' => 'الفجالة', 'in_receiving' => 1],
+        3 => ['name' => 'بونجور', 'in_receiving' => 1],
+        4 => ['name' => 'موبايل', 'in_receiving' => 1],
+        5 => ['name' => 'دجلة', 'in_receiving' => 1],
+        6 => ['name' => 'اي بي سي', 'in_receiving' => 1],
+    ];
+
+    try {
+        foreach (db()->query('SELECT sto_id, name, in_receiving FROM branches WHERE is_active = 1 AND sto_id IS NOT NULL') as $b) {
+            $sid = (int) $b['sto_id'];
+            if ($sid > 0) {
+                $isAdmBranch = ($sid === 1 || (int)$b['in_receiving'] === 0);
+                $map[$sid] = [
+                    'name' => $isAdmBranch ? 'الإدارة (المركز الرئيسي)' : $b['name'],
+                    'in_receiving' => $isAdmBranch ? 0 : (int)$b['in_receiving']
+                ];
+            }
+        }
+    } catch (Throwable $e) {}
 
     $groups = []; // sto_id => bucket
     foreach ($invoices as $inv) {
         $sid = (int) ($inv['company_branch_id'] ?? 0);
+        // لو مفيش فرع (NULL أو 0) بنحسبه ضمن الإدارة (المركز الرئيسي)
+        if ($sid <= 0) {
+            $sid = 1;
+        }
         if (!isset($groups[$sid])) {
             $known = $map[$sid] ?? null;
             $groups[$sid] = [
                 'branch_id'   => $sid,
-                'branch_name' => $known['name'] ?? ($sid > 0 ? 'فرع #' . $sid : 'غير محدّد'),
-                // الإدارة = فرع مش داخل في الاستلامات (in_receiving = 0)
-                'is_admin'    => $known !== null && $known['in_receiving'] === 0,
+                'branch_name' => $known['name'] ?? ($sid === 1 ? 'الإدارة (المركز الرئيسي)' : 'فرع #' . $sid),
+                'is_admin'    => ($sid === 1) || ($known !== null && $known['in_receiving'] === 0),
                 'is_known'    => $known !== null,
                 'invoices'    => [],
             ];
@@ -817,11 +999,11 @@ function mark_branch_exported(int $distributionId, int $branchId, ?int $userId =
  * بتجيب الأصناف من SQL Server وتعيد الحساب والتخزين.
  * الفشل مابيوقفش العملية الأصلية — الحالة تتصلّح في أول إعادة حساب.
  */
-function refresh_invoice_status(int $distributionId, $invoiceId, ?string $suffix = null): void
+function refresh_invoice_status(int $distributionId, $invoiceId, ?string $suffix = null, bool $autoOpenReceiving = true): void
 {
     try {
         $items = sqlsrv_fetch_invoice_items($invoiceId, $suffix);
-        recalc_invoice_status($distributionId, $items);
+        recalc_invoice_status($distributionId, $items, $autoOpenReceiving);
     } catch (Throwable $ex) {
         error_log('receiving: تعذّر تحديث حالة الفاتورة — ' . $ex->getMessage());
     }
@@ -920,7 +1102,7 @@ function get_exported_branches(int $distributionId): array
  *
  * @param array $items أصناف الفاتورة (من sqlsrv_fetch_invoice_items)
  */
-function recalc_invoice_status(?int $distributionId, array $items): string
+function recalc_invoice_status(?int $distributionId, array $items, bool $autoOpenReceiving = true): string
 {
     if (!$distributionId || !$items) return 'new';
 
@@ -982,15 +1164,42 @@ function recalc_invoice_status(?int $distributionId, array $items): string
     $st2->execute([$distributionId]);
     $row = $st2->fetch();
     if ($row && (int) $row['status_manual'] === 1) {
-        return (string) $row['status'];
+        $status = (string) $row['status'];
+    }
+
+    // الحالة بقت «تم التوزيع» ← نفتح الاستلام للفروع (لو الفاتورة مفردة مش جوه مجموعة).
+    // مكان النداء هنا عن قصد: ده الطريق الوحيد اللي كل الحالات
+    // بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
+    // الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
+    if ($status === 'done' && $autoOpenReceiving) {
+        try {
+            // فحص ما إذا كانت الفاتورة تتبع مجموعة فواتير نشطة (invoice_group_items)
+            $stGrp = $pdo->prepare(
+                "SELECT 1
+                 FROM invoice_group_items gi
+                 JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+                 WHERE d.id = ?
+                 LIMIT 1"
+            );
+            $stGrp->execute([$distributionId]);
+            $inGroup = (bool) $stGrp->fetchColumn();
+
+            // إذا كانت الفاتورة جزءاً من مجموعة، لا يتم فتح استلام مفرد لها
+            if (!$inGroup) {
+                require_once __DIR__ . '/receiving_flow_lib.php';
+                receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
+            }
+        } catch (Throwable $ex) {
+            error_log('receiving: تعذّر فتح الاستلام للتوزيع ' . $distributionId . ' — ' . $ex->getMessage());
+        }
     }
 
     return $status;
 }
 
 /**
- * الحالات المخزّنة لمجموعة فواتير — استعلام واحد على MySQL.
- * بترجّع [invoice_no => status].
+ * الحالات المخزّنة لمجموعة فواتير — استعلام واحد على MySQL بالمفتاح المركب والافتراضي.
+ * بترجّع [composite_key => status, invoice_no => status].
  */
 function get_invoice_statuses(array $invoiceNos): array
 {
@@ -1001,17 +1210,25 @@ function get_invoice_statuses(array $invoiceNos): array
     if (!$nos) return [];
 
     $ph = implode(',', array_fill(0, count($nos), '?'));
-    $st = db()->prepare("SELECT invoice_no, status FROM invoice_distribution WHERE invoice_no IN ($ph)");
+    $st = db()->prepare("SELECT invoice_no, company_branch, doc_type, status FROM invoice_distribution WHERE invoice_no IN ($ph)");
     $st->execute($nos);
 
     $out = [];
-    foreach ($st->fetchAll() as $r) $out[(string) $r['invoice_no']] = (string) $r['status'];
+    foreach ($st->fetchAll() as $r) {
+        $no = (string) $r['invoice_no'];
+        $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
+        $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
+        $out[$no . '|' . $cb . '|' . $dt] = (string) $r['status'];
+        if (!isset($out[$no])) {
+            $out[$no] = (string) $r['status'];
+        }
+    }
     return $out;
 }
 
 /**
- * ملاحظات الفواتير — عشان نعرض النص نفسه في القائمة.
- * بترجّع [invoice_no => نص الملاحظة].
+ * ملاحظات الفواتير — عشان نعرض النص نفسه في القائمة بالمفتاح المركب والافتراضي.
+ * بترجّع [composite_key => نص الملاحظة, invoice_no => نص الملاحظة].
  */
 function get_invoices_with_notes(array $invoiceNos): array
 {
@@ -1024,13 +1241,19 @@ function get_invoices_with_notes(array $invoiceNos): array
     try {
         $ph = implode(',', array_fill(0, count($nos), '?'));
         $st = db()->prepare(
-            "SELECT invoice_no, user_notes FROM invoice_distribution
+            "SELECT invoice_no, company_branch, doc_type, user_notes FROM invoice_distribution
              WHERE invoice_no IN ($ph) AND user_notes IS NOT NULL AND user_notes <> ''"
         );
         $st->execute($nos);
         $out = [];
         foreach ($st->fetchAll() as $r) {
-            $out[(string) $r['invoice_no']] = (string) $r['user_notes'];
+            $no = (string) $r['invoice_no'];
+            $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
+            $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
+            $out[$no . '|' . $cb . '|' . $dt] = (string) $r['user_notes'];
+            if (!isset($out[$no])) {
+                $out[$no] = (string) $r['user_notes'];
+            }
         }
         return $out;
     } catch (Throwable $ex) {
@@ -1532,6 +1755,46 @@ function calc_invoice_discount(
 const ADMIN_STO_ID = 1;
 
 /**
+ * رصيد الإدارة لصنف واحد بالباركود — للاستعمال **كسقف للتوزيع**.
+ *
+ * ليه موجودة: الفاتورة ممكن تبقى ١٢ قلم والواصل فعلاً ١٠ (والباقي
+ * اتعمله مردود)، فرصيد الإدارة بقى ١٠. توزيع ١٢ بيطلّع بضاعة مش
+ * موجودة، والفرق بيظهر بعدين كعجز على الفرع.
+ *
+ * 🔴 بترجّع `null` معناها **مفيش سقف** — مش صفر. حالتين:
+ *      • النسخة المحلية لسه فاضية (وكيل الإدارة ما اشتغلش)
+ *      • الباركود مش موجود في `hq_codes`
+ *    الفرق ده مش تفصيلة: لو رجّعنا صفر في الحالتين دول، التوزيع
+ *    بيتقفل على **كل** الأصناف المش معروفة، والموقع كله يقف لـ٤٩
+ *    موظف في ٥ فروع أول ما الوكيل يتأخر ساعة.
+ *
+ * 🔴 ودي **لصنف واحد وقت الحفظ بس**. متنادهاش في حلقة رندر —
+ *    الفاتورة فيها مئات الأصناف، والأرصدة بتتجاب مجمّعة بـ
+ *    `sqlsrv_fetch_item_balances_all()` قبل الحلقة.
+ */
+function hq_admin_balance_for_code(string $itemCode): ?float
+{
+    $code = trim($itemCode);
+    if ($code === '' || !hq_balances_ready()) return null;
+
+    try {
+        $st = db()->prepare(
+            'SELECT b.balance
+               FROM hq_codes c
+               JOIN ' . bal_table() . ' b
+                 ON b.item_id = c.item_id AND b.sto_id = ' . ADMIN_STO_ID . '
+              WHERE c.code = ? LIMIT 1'
+        );
+        $st->execute([$code]);
+        $row = $st->fetch();
+        if ($row === false) return null;      // الباركود مش معروف = مفيش سقف
+        return (float) $row['balance'];
+    } catch (Throwable $ex) {
+        return null;                          // أي مشكلة = مفيش سقف، مش قفل
+    }
+}
+
+/**
  * جلب أرصدة مجموعة أصناف من مخزن الإدارة.
  * بترجّع [item_id => balance].
  *
@@ -1551,7 +1814,7 @@ function sqlsrv_fetch_item_balances(array $itemIds): array
         foreach (array_chunk($ids, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             $st = db()->prepare(
-                "SELECT item_id, balance FROM hq_balances
+                "SELECT item_id, balance FROM " . bal_table() . "
                  WHERE sto_id = " . ADMIN_STO_ID . " AND item_id IN ($ph)"
             );
             $st->execute($chunk);
@@ -1641,7 +1904,7 @@ function sqlsrv_fetch_item_balances_all(array $itemIds): array
         foreach (array_chunk($ids, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             $st = db()->prepare(
-                "SELECT item_id, sto_id, balance FROM hq_balances
+                "SELECT item_id, sto_id, balance FROM " . bal_table() . "
                  WHERE item_id IN ($ph) ORDER BY item_id, sto_id"
             );
             $st->execute($chunk);
@@ -1813,3 +2076,449 @@ function clear_invoice_status_manual(int $distributionId): void
         'UPDATE invoice_distribution SET status_manual = 0 WHERE id = ?'
     )->execute([$distributionId]);
 }
+
+// =====================================================================
+//  سحب أعداد الفروع من الحجوزات المفتوحة
+// =====================================================================
+
+/**
+ * معاينة سحب أعداد الفروع من الحجوزات المفتوحة لأصناف الفاتورة.
+ * التوزيع الشره بالأقدم (الأقدم الأول — والفرع مالوش أي دور في الترتيب).
+ *
+ * @param int   $distributionId رقم سجل التوزيع (invoice_distribution.id)
+ * @param array $items          أصناف الفاتورة (بعد merge_invoice_items)
+ * @return array ['items' => array, 'total_candidates' => int]
+ */
+function reservation_pull_preview(int $distributionId, array $items): array
+{
+    $items = merge_invoice_items($items);
+    if (!$items || $distributionId <= 0) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    $pdo = db();
+
+    // استخراج أرقام الأصناف الصالحة (> 0) وربطها ببنود الفاتورة
+    $itemIds = [];
+    $itemsByItemId = [];
+    foreach ($items as $it) {
+        $iid = (int) ($it['item_id'] ?? 0);
+        if ($iid > 0) {
+            $itemIds[$iid] = $iid;
+            $itemsByItemId[$iid] = $it;
+        }
+    }
+
+    if (!$itemIds) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    // تخصيصات الفاتورة دي السابقة (لو الزرار اتشغّل قبل كده)
+    $prevAllocByLine = [];
+    $prevAllocByCode = [];
+    try {
+        $stPrev = $pdo->prepare(
+            'SELECT res_line_id, item_code, qty
+             FROM reservation_allocations
+             WHERE distribution_id = ?'
+        );
+        $stPrev->execute([$distributionId]);
+        foreach ($stPrev->fetchAll() as $r) {
+            $lid = (int) $r['res_line_id'];
+            $q   = (float) $r['qty'];
+            $c   = (string) $r['item_code'];
+            $prevAllocByLine[$lid] = $q;
+            $prevAllocByCode[$c]   = ($prevAllocByCode[$c] ?? 0.0) + $q;
+        }
+    } catch (Throwable $ex) {
+        // الجدول ممكن يكون لسه ما اتعملش
+    }
+
+    // إجمالي الموزّع حالياً لكل كود صنف في الفاتورة
+    $currentDistByCode = [];
+    try {
+        $stDist = $pdo->prepare(
+            'SELECT notes AS item_code, COALESCE(SUM(amount), 0) AS total
+             FROM invoice_distribution_lines
+             WHERE distribution_id = ?
+             GROUP BY notes'
+        );
+        $stDist->execute([$distributionId]);
+        foreach ($stDist->fetchAll() as $r) {
+            $currentDistByCode[(string) $r['item_code']] = (float) $r['total'];
+        }
+    } catch (Throwable $ex) {
+        // تجاهل
+    }
+
+    // ١) الحجوزات المرشحة — استعلام واحد لكل أصناف الفاتورة
+    // الترتيب بالأقدم أولاً (created_at ASC, l.id ASC) والفرع مالوش أي دور
+    $idList = array_values($itemIds);
+    $ph = implode(',', array_fill(0, count($idList), '?'));
+    $sql = "SELECT l.id AS res_line_id, l.reservation_id, l.item_id, l.code,
+                   l.item_name, l.qty, l.allocated_qty,
+                   r.branch_id, r.customer_name, r.created_at,
+                   b.name AS branch_name
+            FROM book_reservation_lines l
+            JOIN book_reservations r ON r.id = l.reservation_id
+            LEFT JOIN branches b ON b.id = r.branch_id
+            WHERE r.status = 'open'
+              AND (l.qty > l.allocated_qty OR l.id IN (
+                  SELECT res_line_id FROM reservation_allocations WHERE distribution_id = ?
+              ))
+              AND l.item_id IN ($ph)
+            ORDER BY r.created_at ASC, l.id ASC";
+
+    $args = array_merge([$distributionId], $idList);
+    $st = $pdo->prepare($sql);
+    $st->execute($args);
+    $candidates = $st->fetchAll();
+
+    if (!$candidates) {
+        return ['items' => [], 'total_candidates' => 0];
+    }
+
+    // تجميع المرشحين حسب item_id
+    $candidatesByItem = [];
+    foreach ($candidates as $c) {
+        $candidatesByItem[(int) $c['item_id']][] = $c;
+    }
+
+    $resultItems = [];
+    $totalCandidatesCount = 0;
+
+    foreach ($itemIds as $iid) {
+        if (empty($candidatesByItem[$iid])) {
+            continue; // صنف مالوش أي حجز ← مايظهرش خالص
+        }
+
+        $it = $itemsByItemId[$iid];
+        $code = (string) ($it['item_code'] ?? '');
+        $received = (float) ($it['quantity'] ?? 0);
+        $currDist = $currentDistByCode[$code] ?? 0.0;
+        $prevAlloc = $prevAllocByCode[$code] ?? 0.0;
+
+        // المتاح = المستلم − الموزّع حالياً + تخصيصنا السابق
+        $available = $received - $currDist + $prevAlloc;
+        if ($available < 0) $available = 0.0;
+
+        $availableForItem = $available;
+        $lines = [];
+        $totalReservedForItem = 0.0;
+
+        foreach ($candidatesByItem[$iid] as $c) {
+            $totalCandidatesCount++;
+            $lid = (int) $c['res_line_id'];
+            $lQty = (float) $c['qty'];
+            $lAlloc = (float) $c['allocated_qty'];
+            $pAlloc = $prevAllocByLine[$lid] ?? 0.0;
+
+            // المتبقي في السطر (مع إعادة تخصيصنا السابق له)
+            $remainLine = $lQty - ($lAlloc - $pAlloc);
+            if ($remainLine < 0) $remainLine = 0.0;
+
+            $totalReservedForItem += $remainLine;
+
+            // التوزيع الشره بالأقدم
+            $give = min($remainLine, $availableForItem);
+            if ($give <= 0) $give = 0.0;
+            $availableForItem -= $give;
+
+            $lines[] = [
+                'res_line_id'    => $lid,
+                'reservation_id' => (int) $c['reservation_id'],
+                'item_id'        => (int) $c['item_id'],
+                'code'           => (string) $c['code'],
+                'item_name'      => (string) $c['item_name'],
+                'customer_name'  => (string) ($c['customer_name'] ?? '—'),
+                'created_at'     => (string) ($c['created_at'] ?? ''),
+                'branch_id'      => $c['branch_id'] !== null ? (int) $c['branch_id'] : null,
+                'branch_name'    => (string) ($c['branch_name'] ?? 'بدون فرع'),
+                'qty'            => $lQty,
+                'allocated_qty'  => $lAlloc,
+                'remaining_qty'  => $remainLine,
+                'suggested_qty'  => $give,
+            ];
+        }
+
+        $resultItems[] = [
+            'item_id'        => $iid,
+            'item_code'      => $code,
+            'item_name'      => (string) ($it['item_name'] ?? ''),
+            'received_qty'   => $received,
+            'total_reserved' => $totalReservedForItem,
+            'available_qty'  => $available,
+            'lines'          => $lines,
+        ];
+    }
+
+    return [
+        'items'            => $resultItems,
+        'total_candidates' => $totalCandidatesCount,
+    ];
+}
+
+/**
+ * تطبيق توزيع الحجوزات على الفاتورة وتحديث الأرصدة وتوزيع الفروع.
+ *
+ * @param int    $distributionId رقم سجل التوزيع (invoice_distribution.id)
+ * @param string $invoiceNo      رقم الفاتورة الظاهر
+ * @param array  $itemQty        كميات الأصناف المستلمة [item_code => received_qty]
+ * @param array  $alloc          التخصيصات المعتمدة [res_line_id => qty]
+ * @param int    $userId         رقم المستخدم الحالي
+ * @return array ['ok' => bool, 'allocated_count' => int]
+ */
+function reservation_pull_apply(
+    int $distributionId,
+    string $invoiceNo,
+    array $itemQty,
+    array $alloc,
+    int $userId,
+    array $codeByItemId = []
+): array {
+    if ($distributionId <= 0) {
+        throw new InvalidArgumentException('رقم سجل التوزيع غير صالح.');
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // تنظيف المدخلات والتحقق من الكميات غير السالبة
+        $cleanAlloc = [];
+        foreach ($alloc as $lid => $q) {
+            $lineId = (int) $lid;
+            $qty    = (float) $q;
+            if ($qty < 0) {
+                throw new InvalidArgumentException('الكمية لا يمكن أن تكون سالبة.');
+            }
+            if ($lineId > 0) {
+                $cleanAlloc[$lineId] = $qty;
+            }
+        }
+
+        // جلب التخصيصات السابقة لهذه الفاتورة
+        $prevAllocByLine = [];
+        $prevAllocByCode = [];
+        $prevAllocByCodeBranch = [];
+        $stPrev = $pdo->prepare(
+            'SELECT res_line_id, item_code, branch_id, qty
+             FROM reservation_allocations
+             WHERE distribution_id = ?'
+        );
+        $stPrev->execute([$distributionId]);
+        foreach ($stPrev->fetchAll() as $r) {
+            $lid = (int) $r['res_line_id'];
+            $q   = (float) $r['qty'];
+            $c   = (string) $r['item_code'];
+            $bid = $r['branch_id'] !== null ? (int) $r['branch_id'] : null;
+            $prevAllocByLine[$lid] = $r;
+            $prevAllocByCode[$c]   = ($prevAllocByCode[$c] ?? 0.0) + $q;
+            if ($bid !== null && $bid > 0) {
+                $prevAllocByCodeBranch[$c][$bid] = ($prevAllocByCodeBranch[$c][$bid] ?? 0.0) + $q;
+            }
+        }
+
+        // كل أرقام السطور المتأثرة (الجديدة أو السابقة)
+        $allLineIds = array_values(array_unique(array_merge(
+            array_keys($cleanAlloc),
+            array_keys($prevAllocByLine)
+        )));
+
+        if (!$allLineIds) {
+            $pdo->commit();
+            return ['ok' => true, 'allocated_count' => 0];
+        }
+
+        // قفل سطور الحجز للتحقق من الداتابيز مباشرة (FOR UPDATE)
+        $ph = implode(',', array_fill(0, count($allLineIds), '?'));
+        $sqlLock = "SELECT l.id AS res_line_id, l.reservation_id, l.item_id, l.code,
+                           l.item_name, l.qty, l.allocated_qty,
+                           r.branch_id, r.status AS res_status
+                    FROM book_reservation_lines l
+                    JOIN book_reservations r ON r.id = l.reservation_id
+                    WHERE l.id IN ($ph)
+                    FOR UPDATE";
+        $stLock = $pdo->prepare($sqlLock);
+        $stLock->execute($allLineIds);
+        $dbLines = [];
+        foreach ($stLock->fetchAll() as $row) {
+            $dbLines[(int) $row['res_line_id']] = $row;
+        }
+
+        // إجمالي الموزّع حالياً في invoice_distribution_lines لكل كود
+        $currentDistByCode = [];
+        $currentDistByCodeBranch = [];
+        $stDist = $pdo->prepare(
+            'SELECT notes AS item_code, branch_id, SUM(amount) AS total
+             FROM invoice_distribution_lines
+             WHERE distribution_id = ?
+             GROUP BY notes, branch_id'
+        );
+        $stDist->execute([$distributionId]);
+        foreach ($stDist->fetchAll() as $r) {
+            $c   = (string) $r['item_code'];
+            $bid = (int) $r['branch_id'];
+            $tot = (float) $r['total'];
+            $currentDistByCode[$c] = ($currentDistByCode[$c] ?? 0.0) + $tot;
+            $currentDistByCodeBranch[$c][$bid] = $tot;
+        }
+
+        // التحقق لكل سطر ومجموع كل صنف
+        $reqByCode = [];
+        $newAllocByCodeBranch = [];
+        $touchedCodes = [];
+
+        foreach ($cleanAlloc as $lineId => $requestedQty) {
+            if (!isset($dbLines[$lineId])) {
+                throw new RuntimeException('سطر الحجز غير موجود.');
+            }
+            $row = $dbLines[$lineId];
+            // 🔴 الكود بتاع الفاتورة مش بتاع الحجز. الصنف ليه أكتر من كود
+            // (أساسي + فرعي) بنفس الـitem_id، والمطابقة بتتم بالـitem_id.
+            // لو أخدنا كود الحجز، $itemQty[$code] بترجع صفر والاعتماد بيترفض.
+            $code = (string) ($codeByItemId[(int) $row['item_id']] ?? $row['code']);
+            $bid  = $row['branch_id'] !== null ? (int) $row['branch_id'] : null;
+
+            // التحقق ١: سطر حجزه مقفول/ملغي
+            if ($requestedQty > 0.0001 && ($row['res_status'] ?? '') !== 'open') {
+                throw new RuntimeException('الحجز اتقفل — اعمل ريفريش.');
+            }
+
+            // التحقق ٢: أكبر من المتبقي في الحجز
+            $prevHere = (float) ($prevAllocByLine[$lineId]['qty'] ?? 0.0);
+            $maxAllowedForLine = (float) $row['qty'] - (float) $row['allocated_qty'] + $prevHere;
+            if ($requestedQty > $maxAllowedForLine + 0.0001) {
+                throw new RuntimeException('أكبر من المتبقي في الحجز.');
+            }
+
+            $reqByCode[$code] = ($reqByCode[$code] ?? 0.0) + $requestedQty;
+            $touchedCodes[$code] = true;
+            if ($bid !== null && $bid > 0 && $requestedQty > 0) {
+                $newAllocByCodeBranch[$code][$bid] = ($newAllocByCodeBranch[$code][$bid] ?? 0.0) + $requestedQty;
+            }
+        }
+
+        // إضافة الأكواد التي كانت مخصصة سابقاً حتى لو تم تصفيرها
+        foreach (array_keys($prevAllocByCode) as $c) {
+            $touchedCodes[$c] = true;
+        }
+
+        // التحقق ٣: إجمالي الموزّع لكل صنف أكبر من الكمية المستلمة
+        foreach ($touchedCodes as $code => $_) {
+            $receivedQty = (float) ($itemQty[$code] ?? 0.0);
+            $currDist    = (float) ($currentDistByCode[$code] ?? 0.0);
+            $prevAlloc   = (float) ($prevAllocByCode[$code] ?? 0.0);
+            $available   = $receivedQty - $currDist + $prevAlloc;
+
+            $totalRequestedForCode = (float) ($reqByCode[$code] ?? 0.0);
+            if ($totalRequestedForCode > $available + 0.0001) {
+                throw new RuntimeException('إجمالي الموزّع أكبر من الكمية المستلمة.');
+            }
+        }
+
+        // كتابة / تحديث reservation_allocations
+        $insAlloc = $pdo->prepare(
+            'INSERT INTO reservation_allocations
+                (distribution_id, invoice_no, item_id, item_code, reservation_id, res_line_id, branch_id, qty, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                invoice_no = VALUES(invoice_no),
+                item_id    = VALUES(item_id),
+                branch_id  = VALUES(branch_id),
+                qty        = VALUES(qty),
+                created_by = VALUES(created_by),
+                updated_at = CURRENT_TIMESTAMP'
+        );
+
+        $delAlloc = $pdo->prepare(
+            'DELETE FROM reservation_allocations
+             WHERE distribution_id = ? AND res_line_id = ?'
+        );
+
+        foreach ($allLineIds as $lineId) {
+            $q = (float) ($cleanAlloc[$lineId] ?? 0.0);
+            if ($q > 0.0001) {
+                $row = $dbLines[$lineId];
+                // نفس القاعدة: بنخزّن كود الفاتورة عشان prevAllocByCode
+                // يطابق invoice_distribution_lines في التشغيلة الجاية
+                $insAlloc->execute([
+                    $distributionId,
+                    $invoiceNo,
+                    (int) $row['item_id'],
+                    (string) ($codeByItemId[(int) $row['item_id']] ?? $row['code']),
+                    (int) $row['reservation_id'],
+                    $lineId,
+                    $row['branch_id'] !== null ? (int) $row['branch_id'] : null,
+                    $q,
+                    $userId,
+                ]);
+            } else {
+                $delAlloc->execute([$distributionId, $lineId]);
+            }
+        }
+
+        // إعادة حساب allocated_qty لكل سطر من reservation_allocations (SUM مش +)
+        $sqlUpdAlloc = "UPDATE book_reservation_lines l
+                        SET l.allocated_qty = (
+                            SELECT COALESCE(SUM(a.qty), 0)
+                            FROM reservation_allocations a
+                            WHERE a.res_line_id = l.id
+                        )
+                        WHERE l.id IN ($ph)";
+        $stUpdAlloc = $pdo->prepare($sqlUpdAlloc);
+        $stUpdAlloc->execute($allLineIds);
+
+        // كتابة توزيع الفروع لكل صنف وفرع عبر set_branch_distribution
+        // الإجمالي الجديد للفرع = الموجود حالياً − تخصيصنا السابق لنفس الفرع + تخصيصنا الجديد
+        foreach (array_keys($touchedCodes) as $code) {
+            $receivedQty = (float) ($itemQty[$code] ?? 0.0);
+
+            // جمع كل الفروع التي لها توزيع حالي أو تخصيص سابق أو جديد
+            $branchesForCode = [];
+            if (!empty($currentDistByCodeBranch[$code])) {
+                foreach (array_keys($currentDistByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+            if (!empty($prevAllocByCodeBranch[$code])) {
+                foreach (array_keys($prevAllocByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+            if (!empty($newAllocByCodeBranch[$code])) {
+                foreach (array_keys($newAllocByCodeBranch[$code]) as $bid) $branchesForCode[$bid] = true;
+            }
+
+            foreach (array_keys($branchesForCode) as $branchId) {
+                $branchId = (int) $branchId;
+                if ($branchId <= 0) continue; // حجز branch_id = NULL يتخطّى في التوزيع
+
+                $existingQty = (float) ($currentDistByCodeBranch[$code][$branchId] ?? 0.0);
+                $prevAllocQ  = (float) ($prevAllocByCodeBranch[$code][$branchId] ?? 0.0);
+                $newAllocQ   = (float) ($newAllocByCodeBranch[$code][$branchId] ?? 0.0);
+
+                $newTotal = $existingQty - $prevAllocQ + $newAllocQ;
+                if ($newTotal < 0) $newTotal = 0.0;
+
+                set_branch_distribution(
+                    $distributionId,
+                    $code,
+                    $receivedQty,
+                    $branchId,
+                    $newTotal,
+                    $userId
+                );
+            }
+        }
+
+        // تحديث حالة الفاتورة مرة واحدة في الآخر
+        $recalcItems = [];
+        foreach ($itemQty as $c => $q) {
+            $recalcItems[] = ['item_code' => $c, 'quantity' => $q];
+        }
+        recalc_invoice_status($distributionId, $recalcItems);
+
+        $pdo->commit();
+        return ['ok' => true, 'allocated_count' => count($cleanAlloc)];
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+

@@ -19,6 +19,11 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('invoices');
+
+// الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+// فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
 require_once __DIR__ . '/group_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';   // الأصناف الممنوعة من ملف الفرع
 
@@ -53,6 +58,13 @@ $distIds    = [];
 //    الفلتر ده الملف هيطلع بأصناف الفاتورة كلها بدل أصناف المجموعة.
 $grpIsItems = group_is_items($groupId);
 
+$q = $pdo->prepare(
+    'SELECT notes AS item_code, SUM(amount) AS qty
+     FROM invoice_distribution_lines
+     WHERE distribution_id = ? AND branch_id = ?
+     GROUP BY notes HAVING SUM(amount) > 0'
+);
+
 foreach ($invoices as $inv) {
     $sth    = (int) $inv['sth_id'];
     $suffix = (string) $inv['suffix'];
@@ -68,12 +80,6 @@ foreach ($invoices as $inv) {
     $allow = $grpIsItems ? group_invoice_codes($groupId, $sth, $suffix) : [];
 
     // كميات الفرع في الفاتورة دي
-    $q = $pdo->prepare(
-        'SELECT notes AS item_code, SUM(amount) AS qty
-         FROM invoice_distribution_lines
-         WHERE distribution_id = ? AND branch_id = ?
-         GROUP BY notes HAVING SUM(amount) > 0'
-    );
     $q->execute([$distId, $branchId]);
     foreach ($q as $row) {
         $code = (string) $row['item_code'];
@@ -129,15 +135,27 @@ $content = implode("\r\n", $lines) . "\r\n";
 $safeBranch = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $branchName);
 $filename   = 'dist_group' . $groupId . '_' . $safeBranch . '.txt';
 
+$skipReceiving = !empty($_GET['skip_receiving']);
+
 // تسجيل التصدير على كل فاتورة + تحديث حالتها
 foreach ($invoices as $inv) {
     $sth = (int) $inv['sth_id'];
     if (!isset($distIds[$sth])) continue;
     try {
         mark_branch_exported($distIds[$sth], $branchId, current_user()['id'] ?? null);
-        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null);
+        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, !$skipReceiving);
     } catch (Throwable $ex) {
         error_log('group_export: تعذّر تسجيل التصدير للفاتورة ' . $sth . ' — ' . $ex->getMessage());
+    }
+}
+
+// فتح استلام المجموعة ككل (وليس فواتير مفردة)
+if (!$skipReceiving) {
+    try {
+        require_once __DIR__ . '/receiving_flow_lib.php';
+        receiving_open($pdo, $groupId, 0, (int) ($_SESSION['user']['id'] ?? 0));
+    } catch (Throwable $ex) {
+        error_log('group_export: تعذّر فتح استلام المجموعة ' . $groupId . ' — ' . $ex->getMessage());
     }
 }
 

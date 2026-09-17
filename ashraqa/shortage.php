@@ -17,6 +17,10 @@ require_once __DIR__ . '/shortage_lib.php';
 // book_lib بيوفّر شريط التابات المشترك (طلب نواقص / طلبيات الكتب / حجز الكتب)
 require_once __DIR__ . '/book_lib.php';
 
+// 🔴 طلب النواقص بيقرا من مرآة الوكلاء بس. الجسر واقف وكل نداء عليه
+//    بيستنى الاتصال يفشل، والشاشة دي بتبحث بالباركود عشرات المرات.
+stock_mirror_only(true);
+
 $uid = (int) current_user()['id'];
 
 // ===== AJAX =====
@@ -30,7 +34,7 @@ if ($ajax !== '') {
                 $row = stock_item_by_code((string) ($_GET['code'] ?? ''));
                 echo json_encode($row
                     ? ['ok' => true, 'row' => $row]
-                    : ['ok' => false, 'not_found' => true], JSON_UNESCAPED_UNICODE);
+                    : ['ok' => false, 'not_found' => true, 'local_ready' => stock_local_ready()], JSON_UNESCAPED_UNICODE);
                 break;
 
             // اقتراحات البحث بالاسم (منسدلة)
@@ -64,7 +68,8 @@ if ($ajax !== '') {
                     (int) ($body['to_branch'] ?? 0),
                     (array) ($body['lines'] ?? []),
                     (string) ($body['notes'] ?? ''),
-                    $uid
+                    $uid,
+                    (string) ($body['source'] ?? 'branch')
                 );
                 echo json_encode([
                     'ok'      => true,
@@ -106,8 +111,8 @@ require_once __DIR__ . '/includes/header.php';
               flex-wrap:wrap; }
     .sq-bar input.main { flex:1; min-width:260px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .sq-bar input.main:focus { outline:none; border-color:var(--accent); }
-    .sq-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .sq-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
     .sq-sug.show { display:block; }
@@ -120,10 +125,10 @@ require_once __DIR__ . '/includes/header.php';
     .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
                   padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
-                 background:#fff; color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
+                 background:var(--surface); color:var(--ink-700,var(--accent-text)); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
-    .sq-filter:hover { border-color:var(--accent); color:var(--accent); }
-    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
+    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .sq-sub { display:none; align-items:center; gap:6px; }
     .sq-sub.show { display:inline-flex; }
     .sq-sub select, .sq-sub input { padding:8px 12px; border:1.5px solid var(--line); border-radius:9px;
@@ -133,12 +138,12 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table { width:100%; border-collapse:collapse; }
     .sq-table th, .sq-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                   text-align:center; font-size:13px; white-space:nowrap; }
-    .sq-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .sq-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .sq-table th.admin, .sq-table td.admin { background:var(--accent-soft); font-weight:700; }
     .sq-table th.req, .sq-table td.req { background:rgba(34,197,94,0.07); }
     .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
     .sq-table .code-cell { font-family:monospace; color:var(--ink-500); font-size:12px; }
-    .sq-table .zero { color:#c9c9d4; }
+    .sq-table .zero { color:var(--ink-400); }
     .sq-table .pos { color:var(--pos); font-weight:600; }
     .sq-table tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
     .sq-table tbody tr:hover td { background:rgba(124,111,247,0.04); }
@@ -149,7 +154,7 @@ require_once __DIR__ . '/includes/header.php';
     .qty-inp:focus { outline:none; border-color:var(--pos); }
 
     .sq-status { font-size:13px; min-height:20px; margin-bottom:10px; }
-    .sq-empty { text-align:center; color:#bbb; padding:40px 20px; font-size:15px; }
+    .sq-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .sq-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;
                gap:12px; margin-bottom:12px; }
     .sq-meta .tools { display:flex; gap:10px; flex-wrap:wrap; }
@@ -158,7 +163,7 @@ require_once __DIR__ . '/includes/header.php';
     .shr-overlay { display:none; position:fixed; inset:0; background:rgba(22,35,61,0.55); z-index:200;
                    align-items:center; justify-content:center; padding:16px; }
     .shr-overlay.open { display:flex; }
-    .shr-modal { background:#fff; border-radius:16px; width:100%; max-width:440px; max-height:92vh;
+    .shr-modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; max-height:92vh;
                  overflow-y:auto; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,0.25); }
     .shr-modal h3 { color:var(--ink-900); font-size:17px; margin-bottom:16px; }
     .shr-fld { margin-bottom:14px; }
@@ -170,6 +175,12 @@ require_once __DIR__ . '/includes/header.php';
                  color:var(--ink-900); font-weight:600; }
     .shr-summary { background:rgba(34,197,94,0.08); border-radius:10px; padding:10px 14px;
                    font-size:13.5px; color:var(--ink-700); margin-bottom:14px; }
+    .shr-src-btn { flex:1; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
+                   background:var(--surface); color:var(--ink-700); font-size:13.5px; font-weight:600;
+                   cursor:pointer; font-family:inherit; transition:all 0.15s; }
+    .shr-src-btn:hover { border-color:var(--accent-text); color:var(--accent-text); background:var(--line-soft); }
+    .shr-src-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
+    .shr-src-btn.active:hover { background:var(--accent-hover); color:#fff; }
     .shr-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
     .shr-err { color:var(--neg); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
@@ -177,7 +188,7 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('shortage') ?>
 
 <div class="card">
-    <div class="section-title">🛒 طلب نواقص</div>
+    <div class="section-title"><i class="ti ti-shopping-cart"></i> طلب نواقص</div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">
@@ -186,7 +197,7 @@ require_once __DIR__ . '/includes/header.php';
                enterkeyhint="search"
                oninput="onType()"
                onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-        <button type="button" class="btn" style="background:var(--ink-800);padding:11px 16px;"
+        <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
                 onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
             <i class="ti ti-camera" style="font-size:18px;"></i>
         </button>
@@ -220,13 +231,13 @@ require_once __DIR__ . '/includes/header.php';
     <div class="sq-meta">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
         <span class="tools">
-            <button type="button" class="btn" id="reqBtn" style="background:var(--pos);" onclick="openRequest()">
+            <button type="button" class="btn" id="reqBtn" style="background:var(--pos-fill);" onclick="openRequest()">
                 <i class="ti ti-shopping-cart"></i> طلب نواقص
             </button>
-            <button type="button" class="btn" style="background:var(--ink-800);" onclick="exportCsv()">
+            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);" onclick="exportCsv()">
                 <i class="ti ti-download"></i> تصدير
             </button>
-            <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+            <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
         </span>
@@ -254,10 +265,18 @@ require_once __DIR__ . '/includes/header.php';
 <!-- ===== بوب أب طلب النواقص ===== -->
 <div class="shr-overlay" id="shrOverlay" onclick="if(event.target===this)closeRequest()">
     <div class="shr-modal">
-        <h3>🛒 إرسال طلب نواقص</h3>
+        <h3 id="shrModalTitle">🛒 إرسال طلب نواقص</h3>
         <div class="shr-summary" id="shrSummary"></div>
 
         <div class="shr-fld">
+            <label>وجهة الطلب</label>
+            <div style="display:flex;gap:8px;">
+                <button type="button" class="shr-src-btn active" id="srcBranchBtn" onclick="setReqSource('branch')">من فرع تاني</button>
+                <button type="button" class="shr-src-btn" id="srcPurchaseBtn" onclick="setReqSource('purchase')">من المشتريات</button>
+            </div>
+        </div>
+
+        <div class="shr-fld" id="fromBranchFld">
             <label>الفرع الطالب (اللي ناقصه الأصناف)</label>
             <?php if ($myBranchId > 0):
                 $myBranchName = '';
@@ -275,7 +294,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         </div>
 
-        <div class="shr-fld">
+        <div class="shr-fld" id="toBranchFld">
             <label>الفرع المطلوب منه (اللي هيجهّز)</label>
             <select id="toBranch">
                 <option value="0">— اختار الفرع —</option>
@@ -287,13 +306,13 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="shr-fld">
             <label>ملاحظات (اختياري)</label>
-            <textarea id="shrNotes" placeholder="أي تفاصيل زيادة للفرع اللي هيجهّز…"></textarea>
+            <textarea id="shrNotes" placeholder="أي تفاصيل زيادة…"></textarea>
         </div>
 
         <div class="shr-err" id="shrErr"></div>
         <div class="shr-actions">
             <button type="button" class="btn" style="background:var(--line);color:var(--ink-700);" onclick="closeRequest()">إلغاء</button>
-            <button type="button" class="btn" id="shrSubmit" style="background:var(--pos);" onclick="submitRequest()">
+            <button type="button" class="btn" id="shrSubmit" style="background:var(--pos-fill);" onclick="submitRequest()">
                 <i class="ti ti-send"></i> طلب
             </button>
         </div>
@@ -363,7 +382,11 @@ require_once __DIR__ . '/includes/header.php';
                     pushRow(j.row);
                     if (navigator.vibrate) navigator.vibrate(50);
                 } else if (j.not_found) {
-                    setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
+                    if (j.local_ready === false) {
+                        setStatus('✗ الصنف ده مش في مرآة الإدارة. شغّل وكيل مزامنة الإدارة وجرّب تاني.', 'var(--neg)');
+                    } else {
+                        setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
+                    }
                 } else {
                     setStatus('✗ ' + (j.error || 'خطأ'), 'var(--neg)');
                 }
@@ -538,6 +561,18 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     // ===== بوب أب الطلب =====
+    let reqSource = 'branch';
+
+    function setReqSource(src) {
+        reqSource = (src === 'purchase') ? 'purchase' : 'branch';
+        const isPurch = (reqSource === 'purchase');
+        document.getElementById('srcBranchBtn').classList.toggle('active', !isPurch);
+        document.getElementById('srcPurchaseBtn').classList.toggle('active', isPurch);
+        document.getElementById('toBranchFld').style.display = isPurch ? 'none' : 'block';
+        document.getElementById('shrModalTitle').textContent = isPurch ? '🛒 طلب من المشتريات' : '🛒 إرسال طلب نواقص';
+        document.getElementById('shrErr').textContent = '';
+    }
+
     function requestLines() {
         return Object.keys(reqQty).map(code => {
             const r = rowByCode[code] || added.find(x => x.code === code) || {};
@@ -551,6 +586,7 @@ require_once __DIR__ . '/includes/header.php';
             setStatus('✗ اكتب الكمية المطلوبة لصنف واحد على الأقل الأول', 'var(--neg)');
             return;
         }
+        setReqSource('branch');
         document.getElementById('shrSummary').textContent =
             'هتطلب ' + lines.length + ' صنف — راجع الكميات في الجدول قبل الإرسال.';
         document.getElementById('shrErr').textContent = '';
@@ -566,8 +602,10 @@ require_once __DIR__ . '/includes/header.php';
         const to   = +document.getElementById('toBranch').value || 0;
         err.textContent = '';
         if (!from) { err.textContent = 'اختار الفرع الطالب.'; return; }
-        if (!to)   { err.textContent = 'اختار الفرع المطلوب منه.'; return; }
-        if (from === to) { err.textContent = 'الفرعين مينفعش يكونوا نفس الفرع.'; return; }
+        if (reqSource === 'branch') {
+            if (!to)   { err.textContent = 'اختار الفرع المطلوب منه.'; return; }
+            if (from === to) { err.textContent = 'الفرعين مينفعش يكونوا نفس الفرع.'; return; }
+        }
 
         const btn = document.getElementById('shrSubmit');
         btn.disabled = true;
@@ -576,8 +614,9 @@ require_once __DIR__ . '/includes/header.php';
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 csrf: CSRF,
+                source: reqSource,
                 from_branch: from,
-                to_branch: to,
+                to_branch: reqSource === 'branch' ? to : 0,
                 notes: document.getElementById('shrNotes').value,
                 lines: requestLines(),
             }),

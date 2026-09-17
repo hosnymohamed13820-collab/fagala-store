@@ -23,10 +23,21 @@ $denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
 $payMethods    = ['visa' => 'فيزا', 'instapay' => 'إنستا باي'];
 $rowsPerMethod = 10;
 
-// الفروع المتاحة للاختيار (أي فرع نشط — للتغطية)
-$allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+// الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
+try {
+    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
+} catch (Throwable $e) {
+    // استرجاع آمن قبل تطبيق ملف الترقية upgrade_has_sales.sql
+    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
+}
 $defaultBranch = !empty($u['branch_id']) ? (int) $u['branch_id']
                  : ($allBranches ? (int) $allBranches[0]['id'] : 0);
+
+try {
+    shift_returns_expire($pdo);
+} catch (Throwable $e) {
+    // صامت لو الجدول أو الأعمدة لسه مانزلتش
+}
 
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -36,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = $_POST['action'] ?? '';
         try {
-            if ($action === 'submit_shift' || $action === 'resubmit_shift') {
+            if ($action === 'submit_shift' || $action === 'resubmit_shift' || $action === 'owner_edit_shift') {
                 $branchId = (int) ($_POST['branch_id'] ?? 0);
                 $bizDate  = $_POST['business_date'] ?? date('Y-m-d');
                 // ★ الحقلين دول إجباريين: من غيرهم المراجعة مش هتعرف
@@ -52,6 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $systemTotal = (float) $rawSystem;
+                if ($systemTotal <= 0) {
+                    throw new RuntimeException('قيمة السيستم لازم تكون أكبر من صفر.');
+                }
 
                 if ($branchId <= 0) throw new RuntimeException('اختر الفرع.');
 
@@ -94,40 +108,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                // حساب المصروفات النثرية من الدرج
-                $rawExpAmounts  = $_POST['exp_amount'] ?? [];
-                $rawExpAccounts = $_POST['exp_account_id'] ?? [];
-                $rawExpNotes    = $_POST['exp_note'] ?? [];
-                $expenses = [];
-                if (is_array($rawExpAmounts)) {
-                    foreach ($rawExpAmounts as $k => $rawAmt) {
-                        $amt = (float) $rawAmt;
-                        if ($amt <= 0) continue;
-                        $accId = !empty($rawExpAccounts[$k]) ? (int) $rawExpAccounts[$k] : null;
-                        $note  = isset($rawExpNotes[$k]) ? trim((string)$rawExpNotes[$k]) : '';
-                        if (mb_strlen($note) > 255) {
-                            $note = mb_substr($note, 0, 255);
-                        }
-                        $expenses[] = [
-                            'account_id' => $accId,
-                            'amount'     => $amt,
-                            'note'       => $note !== '' ? $note : null,
-                        ];
-                    }
-                }
-
-                // حساب إجمالي المصروفات النثرية من الدرج
-                $expTotal = array_sum(array_column($expenses, 'amount'));
-
-                // الفرق المجمع = (كاش في الدرج + مصروفات الدرج + وسائل الدفع) − السيستم
-                $collected  = $cashTotal + $expTotal + $methodTotals['visa'] + $methodTotals['instapay'];
+                // الفرق المجمع = (كاش + وسائل) − السيستم
+                $collected = $cashTotal + $methodTotals['visa'] + $methodTotals['instapay'];
                 $difference = $collected - $systemTotal;
 
                 $pdo->beginTransaction();
                 try {
-                    if ($action === 'resubmit_shift') {
+                    if ($action === 'owner_edit_shift') {
+                        if (!is_owner()) {
+                            throw new RuntimeException('غير مصرح لك بتعديل هذه الوردية.');
+                        }
+                        $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                        $chk = $pdo->prepare('SELECT * FROM shifts WHERE id=? FOR UPDATE');
+                        $chk->execute([$shiftId]);
+                        $oldShift = $chk->fetch();
+                        if (!$oldShift || !in_array($oldShift['status'], ['submitted', 'resubmitted'], true)) {
+                            throw new RuntimeException('لا يمكن تعديل هذه الوردية (لازم تكون مستنية مراجعة).');
+                        }
+
+                        // قراءة الفئات والسطور القديمة قبل المسح (للسجل)
+                        $oldCashSt = $pdo->prepare('SELECT denomination, count, subtotal FROM shift_cash WHERE shift_id=?');
+                        $oldCashSt->execute([$shiftId]);
+                        $oldCash = $oldCashSt->fetchAll();
+
+                        $oldLinesSt = $pdo->prepare('SELECT method, line_no, reference, amount FROM shift_payment_lines WHERE shift_id=?');
+                        $oldLinesSt->execute([$shiftId]);
+                        $oldLines = $oldLinesSt->fetchAll();
+
+                        $before = [
+                            'shift' => $oldShift,
+                            'cash'  => $oldCash,
+                            'lines' => $oldLines,
+                        ];
+
+                        $pdo->prepare(
+                            'UPDATE shifts SET branch_id=?, business_date=?, shift_name=?, cash_total=?, visa_total=?,
+                                wallet_total=0, instapay_total=?, system_total=?, difference=?
+                             WHERE id=?'
+                        )->execute([$branchId, $bizDate, $shiftName, $cashTotal, $methodTotals['visa'],
+                            $methodTotals['instapay'], $systemTotal, $difference, $shiftId]);
+
+                        // مسح الفئات والسطور القديمة
+                        $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
+                        $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                    } elseif ($action === 'resubmit_shift') {
                         // تعديل وردية مرفوضة موجودة
                         $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                        if (is_shift_return_expired($shiftId)) {
+                            throw new RuntimeException('الوقت المسموح لتعديل الوردية دي عدّى.');
+                        }
                         // تأكد إنها بتاعته ومرفوضة
                         $chk = $pdo->prepare("SELECT user_id, status FROM shifts WHERE id=? FOR UPDATE");
                         $chk->execute([$shiftId]);
@@ -144,13 +173,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // امسح التفاصيل القديمة
                         $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
-                        $pdo->prepare('DELETE FROM shift_expenses WHERE shift_id=?')->execute([$shiftId]);
                     } else {
                         // وردية جديدة
                         $pdo->prepare(
                             'INSERT INTO shifts (user_id, branch_id, business_date, shift_name, cash_total, visa_total,
                                 wallet_total, instapay_total, system_total, difference, status)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "submitted")'
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "submitted")'
                         )->execute([$uid, $branchId, $bizDate, $shiftName, $cashTotal, $methodTotals['visa'],
                             0, $methodTotals['instapay'], $systemTotal, $difference]);
                         $shiftId = (int) $pdo->lastInsertId();
@@ -166,18 +194,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($lines as $ln) {
                         $insL->execute([$shiftId, $ln[0], $ln[1], $ln[2] ?: null, $ln[3]]);
                     }
-                    // حفظ بنود المصروفات
-                    if (!empty($expenses)) {
-                        $insE = $pdo->prepare('INSERT INTO shift_expenses (shift_id, account_id, amount, note) VALUES (?, ?, ?, ?)');
-                        foreach ($expenses as $exp) {
-                            $insE->execute([$shiftId, $exp['account_id'], $exp['amount'], $exp['note']]);
+
+                    if ($action === 'owner_edit_shift') {
+                        $afterShift = $oldShift;
+                        $afterShift['branch_id']      = $branchId;
+                        $afterShift['business_date']  = $bizDate;
+                        $afterShift['shift_name']     = $shiftName;
+                        $afterShift['cash_total']     = $cashTotal;
+                        $afterShift['visa_total']     = $methodTotals['visa'];
+                        $afterShift['wallet_total']   = 0;
+                        $afterShift['instapay_total'] = $methodTotals['instapay'];
+                        $afterShift['system_total']   = $systemTotal;
+                        $afterShift['difference']     = $difference;
+
+                        $newCash = [];
+                        foreach ($cashCounts as $d => $c) {
+                            if ($c > 0) $newCash[] = ['denomination' => $d, 'count' => $c, 'subtotal' => $d * $c];
                         }
+                        $newLines = [];
+                        foreach ($lines as $ln) {
+                            $newLines[] = ['method' => $ln[0], 'line_no' => $ln[1], 'reference' => $ln[2] ?: null, 'amount' => $ln[3]];
+                        }
+
+                        $after = [
+                            'shift' => $afterShift,
+                            'cash'  => $newCash,
+                            'lines' => $newLines,
+                        ];
+
+                        shift_edit_log($pdo, $shiftId, $uid, 'edit', $before, $after);
                     }
 
                     $pdo->commit();
-                    $flash = ($action === 'resubmit_shift')
-                        ? 'تم تعديل الوردية وإعادة إرسالها للمحاسب.'
-                        : 'تم تقفيل الوردية وإرسالها للمراجعة.';
+                    try {
+                        shift_sequence_check($pdo, $shiftId);
+                    } catch (Throwable $seqEx) {
+                        // صامت
+                    }
+
+                    if ($action === 'owner_edit_shift') {
+                        $flash = 'تم تعديل الوردية.';
+                    } elseif ($action === 'resubmit_shift') {
+                        $flash = 'تم تعديل الوردية وإعادة إرسالها للمحاسب.';
+                    } else {
+                        $flash = 'تم تقفيل الوردية وإرسالها للمراجعة.';
+                    }
                 } catch (Throwable $ex) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
                     throw $ex;
@@ -187,15 +248,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 delete_shift((int)($_POST['shift_id'] ?? 0), $uid, is_owner());
                 $flash = 'تم مسح التقفيلة.';
             }
+            elseif ($action === 'seq_reply') {
+                $issueId = (int)($_POST['issue_id'] ?? 0);
+                $reply   = trim((string)($_POST['reply'] ?? ''));
+                if ($reply === '') {
+                    throw new RuntimeException('اكتب الرد أولاً.');
+                }
+                $up = $pdo->prepare(
+                    "UPDATE shift_sequence_issues
+                     SET status = 'answered', reply = ?, resolved_at = NOW()
+                     WHERE id = ? AND assigned_user_id = ? AND status = 'sent'"
+                );
+                $up->execute([$reply, $issueId, $uid]);
+                if ($up->rowCount() > 0) {
+                    _notify_seq_issue($pdo, "{$u['full_name']} رد على مشكلة التسلسل", $reply);
+                    $flash = 'تم إرسال ردك بنجاح.';
+                } else {
+                    throw new RuntimeException('المشكلة غير متاحة للرد أو تم الرد عليها مسبقاً.');
+                }
+            }
         } catch (Throwable $ex) {
             $flash = 'خطأ: ' . $ex->getMessage();
             $flashType = 'error';
         }
     }
-    // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار)
+    // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار) والحفاظ على الفلاتر
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
-    header('Location: ' . $_SERVER['PHP_SELF']);
+    header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
     exit;
 }
 
@@ -296,14 +376,73 @@ $todayShifts->execute($params);
 $todayShifts = $todayShifts->fetchAll();
 
 // تقفيلاتي المرفوضة (القديمة، القابلة للتعديل) — دي بتفضل ظاهرة لصاحبها
-$myRejected = $pdo->prepare(
-    "SELECT s.*, b.name AS branch_name
-     FROM shifts s JOIN branches b ON b.id = s.branch_id
-     WHERE s.user_id = ? AND s.status = 'rejected'
-     ORDER BY s.id DESC"
-);
-$myRejected->execute([$uid]);
-$myRejected = $myRejected->fetchAll();
+$hoursReturn = (int) setting('shift_return_hours', 48);
+try {
+    $myRejectedSt = $pdo->prepare(
+        "SELECT s.*, b.name AS branch_name,
+                CASE WHEN s.reviewed_at >= ? THEN TIMESTAMPDIFF(HOUR, NOW(), s.reviewed_at + INTERVAL ? HOUR) END AS hours_left,
+                (s.return_expired_at IS NOT NULL OR (s.reviewed_at >= ? AND s.reviewed_at + INTERVAL ? HOUR < NOW())) AS is_return_expired
+         FROM shifts s JOIN branches b ON b.id = s.branch_id
+         WHERE s.user_id = ? AND s.status = 'rejected'
+         ORDER BY s.id DESC"
+    );
+    // المرجوعة قبل shift_return_since مالهاش مهلة (hours_left = NULL) — شوف shift_return_since()
+    $retSince = shift_return_since();
+    $myRejectedSt->execute([$retSince, $hoursReturn, $retSince, $hoursReturn, $uid]);
+    $myRejected = $myRejectedSt->fetchAll();
+} catch (Throwable $e) {
+    $myRejectedSt = $pdo->prepare(
+        "SELECT s.*, b.name AS branch_name
+         FROM shifts s JOIN branches b ON b.id = s.branch_id
+         WHERE s.user_id = ? AND s.status = 'rejected'
+         ORDER BY s.id DESC"
+    );
+    $myRejectedSt->execute([$uid]);
+    $myRejected = $myRejectedSt->fetchAll();
+}
+
+// فتح الوردية من اللينك (edit_shift)
+$autoOpenShiftId = 0;
+if (isset($_GET['edit_shift'])) {
+    $reqEditId = (int)$_GET['edit_shift'];
+    if ($reqEditId > 0) {
+        $targetShift = null;
+        foreach ($myRejected as $rej) {
+            if ((int)$rej['id'] === $reqEditId) {
+                $targetShift = $rej;
+                break;
+            }
+        }
+        if ($targetShift) {
+            $isExp = !empty($targetShift['is_return_expired'])
+                || !empty($targetShift['return_expired_at'])
+                || (isset($targetShift['hours_left']) && (int)$targetShift['hours_left'] < 0)
+                || is_shift_return_expired($reqEditId);
+            if ($isExp) {
+                $flash = "الوقت المسموح لتعديل الوردية دي عدّى ({$hoursReturn} ساعة). كلّم المحاسب.";
+                $flashType = 'error';
+            } else {
+                $autoOpenShiftId = $reqEditId;
+            }
+        }
+    }
+}
+
+// قراءة مشاكل التسلسل المطلوب رد المستخدم عليها
+$mySeqIssues = [];
+try {
+    $stSeq = $pdo->prepare(
+        "SELECT ssi.*, b.name AS branch_name
+         FROM shift_sequence_issues ssi
+         JOIN branches b ON b.id = ssi.branch_id
+         WHERE ssi.status = 'sent' AND ssi.assigned_user_id = ?
+         ORDER BY ssi.id DESC"
+    );
+    $stSeq->execute([$uid]);
+    $mySeqIssues = $stSeq->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    // الجدول لسه مانزلش
+}
 
 // ---------------------------------------------------------------------------
 //  الأرشيف
@@ -335,26 +474,37 @@ $archiveShifts = $pdo->prepare(
 $archiveShifts->execute($aParams);
 $archiveShifts = $archiveShifts->fetchAll();
 
-// جلب مصروفات كل الورديات المعروضة في استعلام واحد مجمّع (منع أي استعلام في حلقة)
-$allShiftIds = array_unique(array_filter(array_merge(
-    array_column($todayShifts, 'id'),
-    array_column($myRejected, 'id'),
-    array_column($archiveShifts, 'id')
-)));
-$shiftExpensesMap = shift_expenses_for_shifts($allShiftIds, $pdo);
+// جلب بادج «آخر تعديل» لكل الورديات المعروضة باستعلام مجمّع واحد
+$allCashierShiftIds = [];
+foreach ($todayShifts as $ts) $allCashierShiftIds[] = (int)$ts['id'];
+foreach ($archiveShifts as $as) $allCashierShiftIds[] = (int)$as['id'];
+foreach ($myRejected as $mr) $allCashierShiftIds[] = (int)$mr['id'];
+$allCashierShiftIds = array_values(array_unique(array_filter($allCashierShiftIds)));
 
-$rejectedExpensesMap = [];
-foreach ($myRejected as $s) {
-    $sid = (int)$s['id'];
-    $rejectedExpensesMap[$sid] = $shiftExpensesMap[$sid] ?? [];
-}
-
-$sumExp = 0.0;
-foreach ($todayShifts as $s) {
-    $sid = (int)$s['id'];
-    $exps = $shiftExpensesMap[$sid] ?? [];
-    foreach ($exps as $x) {
-        $sumExp += (float)$x['amount'];
+$shiftEditBadges = [];
+if (!empty($allCashierShiftIds)) {
+    try {
+        $phBadge = implode(',', array_fill(0, count($allCashierShiftIds), '?'));
+        $stBadge = $pdo->prepare("
+            SELECT sel.shift_id, sel.created_at, u.full_name AS editor_name
+            FROM shift_edit_log sel
+            JOIN (
+                SELECT shift_id, MAX(id) AS max_id
+                FROM shift_edit_log
+                WHERE shift_id IN ($phBadge)
+                GROUP BY shift_id
+            ) latest ON latest.max_id = sel.id
+            JOIN users u ON u.id = sel.user_id
+        ");
+        $stBadge->execute($allCashierShiftIds);
+        foreach ($stBadge as $br) {
+            $shiftEditBadges[(int)$br['shift_id']] = [
+                'name' => $br['editor_name'],
+                'time' => date('H:i', strtotime($br['created_at'])),
+            ];
+        }
+    } catch (Throwable $ex) {
+        // لو جدول shift_edit_log مش موجود ← مفيش بادج ومفيش خطأ
     }
 }
 
@@ -363,7 +513,7 @@ $sumCash   = array_sum(array_column($todayShifts, 'cash_total'));
 $sumVisa   = array_sum(array_column($todayShifts, 'visa_total'));
 $sumInsta  = array_sum(array_column($todayShifts, 'instapay_total'));
 $sumSys    = array_sum(array_column($todayShifts, 'system_total'));
-$sumColl   = $sumCash + $sumExp + $sumVisa + $sumInsta;
+$sumColl   = $sumCash + $sumVisa + $sumInsta;
 $sumVI     = $sumVisa + $sumInsta;   // الفيزا + الإنستا (من غير الكاش)
 $sumDiff   = $sumColl - $sumSys;
 
@@ -383,25 +533,26 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .fld input, .fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .denom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
     .denom-cell { background:var(--line-soft); border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .denom-cell .dlabel { font-size:13px; color:var(--ink-500); margin-bottom:5px; }
     .denom-cell input { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:7px;
         font-size:14px; text-align:center; font-family:inherit; }
-    .denom-cell .dsub { font-size:12px; color:var(--accent); margin-top:4px; font-weight:600; }
+    .denom-cell .dsub { font-size:12px; color:var(--accent-text); margin-top:4px; font-weight:600; }
     .pay-method { margin-bottom:16px; }
     .pay-method h4 { font-size:14px; color:var(--ink-700); margin-bottom:8px; }
     .pay-rows { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
@@ -417,19 +568,30 @@ require_once __DIR__ . '/includes/header.php';
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
     td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 11px; border-radius:20px; font-size:12px; font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .reject-reason { background:var(--neg-soft); color:var(--neg); padding:8px 12px; border-radius:8px; font-size:13px; margin-top:4px; }
     /* تبويبات التقفيل */
     .ct-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 16px; border-bottom:2px solid var(--line); }
     .ct-tab { padding:9px 18px; border:none; background:transparent; color:var(--ink-500); font-family:inherit;
         font-size:14px; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; font-weight:600; }
-    .ct-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
-    .ct-tab:hover:not(.active) { color:var(--accent-hover); }
+    .ct-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
+    .ct-tab:hover:not(.active) { color:var(--accent-text); }
     .ct-pane { display:none; }
     .ct-pane.active { display:block; }
-    .pay-table { width:100%; border-collapse:collapse; }
+    /* 🔴 table-layout:fixed مش رفاهية — من غيرها المتصفح بيسأل كل <input>
+       عايز عرض قد إيه، والـinput بيرد «٢٠ حرف» (~175px) حتى وهو فاضي.
+       الجدول بيطلع عايز ~446px والمتاح ليه ~438px، فخانة المبلغ كانت
+       بتتزنق بره ويظهر سكرول أفقي.
+       ⚠️ `min-width:0` اللي تحت في قسم الموبايل ماحلّتش دي — الـmin-width
+          مالهاش تأثير على حساب أعمدة الجدول في وضع auto. */
+    .pay-table { width:100%; border-collapse:collapse; table-layout:fixed; }
     .pay-table td { padding:4px; border:none; }
-    .pay-table td:first-child { width:34px; }
+    /* مع fixed العرض بيتقرا من أول صف = <thead>، فلازم يتحط على th و td
+       مع بعض. على td لوحده مابيشتغلش. */
+    .pay-table td:first-child, .pay-table th:first-child { width:34px; }
+    /* المبلغ: أطول رقم واقعي 55057.75 محتاج ~87px، و110 فيها هامش.
+       السيريال مالوش عرض — بياخد الباقي لوحده. */
+    .pay-table td:last-child, .pay-table th:last-child { width:110px; }
     .pay-table th { padding:4px 6px 8px; text-align:right; font-size:12px; color:var(--ink-500); font-weight:600; border:none; }
     .pay-table input { width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; box-sizing:border-box; }
     .totals-row td { font-weight:700; background:var(--accent-soft); color:var(--ink-900); }
@@ -442,10 +604,10 @@ require_once __DIR__ . '/includes/header.php';
     .shift-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5);
         z-index:9999; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .shift-modal.open { display:flex; }
-    .shift-modal-box { background:#fff; border-radius:16px; width:100%; max-width:780px;
+    .shift-modal-box { background:var(--surface); border-radius:16px; width:100%; max-width:780px;
         box-shadow:0 18px 50px rgba(0,0,0,0.25); margin:auto; }
     .shift-modal-head { display:flex; justify-content:space-between; align-items:center;
-        padding:18px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:#fff; border-radius:16px 16px 0 0; z-index:2; }
+        padding:18px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; z-index:2; }
     .shift-modal-body { padding:20px 22px; }
     .modal-x { background:none; border:none; font-size:28px; color:var(--ink-400); cursor:pointer; line-height:1; padding:0 6px; }
     .modal-x:hover { color:var(--neg); }
@@ -463,18 +625,19 @@ require_once __DIR__ . '/includes/header.php';
         .side-summary { margin-top:14px; }
         .cash-total-box, .side-summary .sum-detail { padding:12px; }
         .denom-line input { width:70px; }
+        /* الشاشة ضيقة — نضيّق المبلغ شوية عشان السيريال ياخد مساحة مقروءة */
+        .pay-table td:last-child, .pay-table th:last-child { width:88px; }
+        .pay-table input { padding:7px 8px; font-size:13px; }
     }
     /* بطاقات ملخص اليوم */
-    .stat-cards { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:18px; }
-    @media (max-width:1100px){ .stat-cards { grid-template-columns:repeat(4,1fr); } }
-    @media (max-width:760px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
+    .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
+    @media (max-width:900px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
     @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
-    .stat-card { background:#fff; border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
-    .stat-card .value { font-size:17px; font-weight:700; color:var(--accent); }
+    .stat-card .value { font-size:17px; font-weight:700; color:var(--accent-text); }
     .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
-    .stat-card .value.exp-val { color:var(--neg); }
-    .stat-card .sub { font-size:11px; color:#bbb; margin-top:2px; }
+    .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
     .pay-with-summary .pay-method { min-width:0; }
@@ -485,7 +648,7 @@ require_once __DIR__ . '/includes/header.php';
     .side-summary .sum-detail td { padding:6px 2px; font-size:14px; }
     .side-summary .sum-detail td.k { color:var(--ink-500); }
     .side-summary .sum-detail td.v { text-align:left; color:var(--ink-900); font-weight:600; }
-    .side-summary .sum-detail tr.grand td { border-top:1.5px solid var(--line); padding-top:10px; font-weight:700; color:var(--accent); }
+    .side-summary .sum-detail tr.grand td { border-top:1.5px solid var(--line); padding-top:10px; font-weight:700; color:var(--accent-text); }
     /* تاب الكاش (شكل المشروع القديم: قائمة يسار + بوكس إجمالي يمين) */
     .cash-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
     @media (max-width:640px){ .cash-layout { grid-template-columns:1fr; } }
@@ -493,12 +656,12 @@ require_once __DIR__ . '/includes/header.php';
     .denom-line .dn { font-size:13px; color:var(--ink-500); min-width:62px; }
     .denom-line input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         text-align:center; font-family:inherit; font-size:14px; background:var(--line-soft); }
-    .denom-line input:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .denom-line input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .denom-line .mul { font-size:13px; color:var(--ink-300); }
-    .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent); }
+    .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent-text); }
     .cash-total-box { background:var(--bg); border-radius:12px; padding:18px; height:fit-content; }
     .cash-total-box .ctl { font-size:13px; color:var(--ink-500); }
-    .cash-total-box .ctv { font-size:26px; font-weight:700; color:var(--accent); margin-top:2px; }
+    .cash-total-box .ctv { font-size:26px; font-weight:700; color:var(--accent-text); margin-top:2px; }
     .cash-total-box .cbreak { font-size:11px; color:var(--ink-500); margin-top:12px; line-height:1.9; }
     /* تاب الملخص (جدول تفاصيل يسار + بوكس الفرق يمين) */
     .sum-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
@@ -545,25 +708,25 @@ require_once __DIR__ . '/includes/header.php';
 <style>
   .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:#fff; color:#5b5878;
+      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
       text-decoration:none; font-size:14px; border:1.5px solid var(--line);
       transition:.15s;
   }
-  .branch-tabs .btab:hover  { border-color:#a99ff0; }
-  .branch-tabs .btab.active { background:#6c5ce7; color:#fff; border-color:#6c5ce7; }
+  .branch-tabs .btab:hover  { border-color:var(--accent); }
+  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
 </style>
 <?php endif; ?>
 
 <?php if (empty($allowedBranches)): ?>
 <!-- المستخدم مش مربوط بفرع ومعملش أي تقفيل قبل كده -->
-<div style="background:var(--warn-soft);color:#8a6d00;border-radius:10px;padding:14px 18px;
+<div style="background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:14px 18px;
             margin-bottom:16px;font-size:14px;">
     مش مربوط بأي فرع. اضغط «إضافة تقفيل»، اختار الفرع، وابعت للمراجعة —
     وبعدها هتشوف بيانات الفرع ده هنا.
 </div>
 <?php endif; ?>
 
-<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · المصروفات · الفرق.
+<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · الفرق.
          كارت «الفيزا + الإنستا» = الوسائل غير النقدية، الكاش مش داخل فيه. */ ?>
 <div class="stat-cards">
     <div class="stat-card">
@@ -592,11 +755,6 @@ require_once __DIR__ . '/includes/header.php';
         <div class="sub">ج.م</div>
     </div>
     <div class="stat-card">
-        <div class="label">إجمالي المصروفات</div>
-        <div class="value exp-val"><?= number_format($sumExp,2) ?></div>
-        <div class="sub">ج.م</div>
-    </div>
-    <div class="stat-card">
         <div class="label">الفرق المجمع</div>
         <div class="value <?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($sumDiff,2) ?></div>
         <div class="sub">ج.م</div>
@@ -607,7 +765,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="shift-modal" id="shiftModal">
   <div class="shift-modal-box">
     <div class="shift-modal-head">
-        <span class="section-title" style="margin:0;">تقفيل وردية جديدة</span>
+        <span class="section-title" id="shiftModalTitle" style="margin:0;">تقفيل وردية جديدة</span>
         <button type="button" class="modal-x" onclick="closeShiftModal()">&times;</button>
     </div>
     <div class="shift-modal-body">
@@ -620,7 +778,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="grid-top grid-4">
             <div class="fld">
                 <label>القائم بالتقفيل</label>
-                <input type="text" value="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
+                <input type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
             </div>
             <div class="fld">
                 <label for="shiftName">رقم الوردية</label>
@@ -641,13 +799,13 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="date" name="business_date" value="<?= e($bizDateStr) ?>" required>
             </div>
         </div>
+        <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
 
         <!-- تبويبات التقفيل -->
         <div class="ct-tabs">
             <button type="button" class="ct-tab active" data-pane="pane_cash" onclick="ctTab(this)">كاش</button>
             <button type="button" class="ct-tab" data-pane="pane_visa" onclick="ctTab(this)">فيزا</button>
             <button type="button" class="ct-tab" data-pane="pane_instapay" onclick="ctTab(this)">إنستا باي</button>
-            <button type="button" class="ct-tab" data-pane="pane_expenses" onclick="ctTab(this)">مصروفات</button>
             <button type="button" class="ct-tab" data-pane="pane_summary" onclick="calc();ctTab(this)">الملخص</button>
         </div>
 
@@ -706,8 +864,7 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="sdt">تفاصيل التقفيل</div>
                         <table>
                             <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">كاش في الدرج</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">مصروفات من الدرج</td><td class="v" style="color:var(--neg);"><span class="side_expenses">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">كاش</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
                             <tr><td class="k">فيزا</td><td class="v"><span class="side_visa">0.00</span> ج.م</td></tr>
                             <tr><td class="k">إنستا باي</td><td class="v"><span class="side_instapay">0.00</span> ج.م</td></tr>
                             <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span class="side_collected">0.00</span> ج.م</td></tr>
@@ -718,78 +875,12 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <?php endforeach; ?>
 
-        <!-- مصروفات من الدرج -->
-        <div class="ct-pane" id="pane_expenses">
-            <div class="pay-with-summary">
-                <div class="pay-method">
-                    <h4>مصروفات من الدرج</h4>
-                    <table class="repeatable pay-table" style="width:100%;border-collapse:collapse;">
-                        <thead>
-                            <tr>
-                                <th style="width:34px;text-align:center;">#</th>
-                                <th style="width:170px;">تصنيف المصروف</th>
-                                <th style="width:110px;">المبلغ</th>
-                                <th>ملاحظة / بيان</th>
-                                <th style="width:36px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="expRowsTbody">
-                            <?php for ($i = 1; $i <= $rowsPerMethod; $i++): ?>
-                                <tr>
-                                    <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
-                                    <td style="padding:4px;">
-                                        <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
-                                    </td>
-                                    <td style="padding:4px;">
-                                        <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
-                                               placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
-                                    </td>
-                                    <td style="padding:4px;">
-                                        <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
-                                               style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;">
-                                    </td>
-                                    <td style="padding:4px;text-align:center;">
-                                        <button type="button" onclick="removeExpRow(this)" title="حذف المصروف"
-                                                style="background:none;border:none;cursor:pointer;color:var(--neg);font-size:16px;padding:4px 6px;border-radius:6px;line-height:1;">
-                                            <i class="ti ti-trash"></i>
-                                        </button>
-                                    </td>
-                                </tr>
-                            <?php endfor; ?>
-                        </tbody>
-                    </table>
-                    <div style="margin-top:10px;">
-                        <button type="button" class="btn btn-sm btn-ghost" onclick="addExpRow()">
-                            <i class="ti ti-plus"></i> إضافة سطر مصروف
-                        </button>
-                    </div>
-                </div>
-                <div class="side-summary">
-                    <div class="sum-detail">
-                        <div class="sdt">تفاصيل التقفيل</div>
-                        <table>
-                            <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">كاش في الدرج</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">مصروفات من الدرج</td><td class="v" style="color:var(--neg);"><span class="side_expenses">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">فيزا</td><td class="v"><span class="side_visa">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">إنستا باي</td><td class="v"><span class="side_instapay">0.00</span> ج.م</td></tr>
-                            <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span class="side_collected">0.00</span> ج.م</td></tr>
-                        </table>
-                        <div style="margin-top:14px;padding:12px;background:var(--bg);border-radius:10px;text-align:center;">
-                            <div style="font-size:12px;color:var(--ink-500);">إجمالي المصروفات</div>
-                            <div style="font-size:20px;font-weight:700;color:var(--neg);" id="t_expenses">0.00 ج.م</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- الملخص (شامل السيستم) -->
         <div class="ct-pane" id="pane_summary">
             <div class="grid-top">
                 <div class="fld">
                     <label>إجمالي السيستم</label>
-                    <input type="number" step="0.01" min="0" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
+                    <input type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
                 </div>
             </div>
             <div class="sum-layout">
@@ -797,8 +888,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="sdt">تفاصيل التقفيل</div>
                     <table>
                         <tr><td class="k">مبيعات السيستم</td><td class="v"><span id="s_system">0.00</span> ج.م</td></tr>
-                        <tr><td class="k">كاش في الدرج</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
-                        <tr><td class="k">مصروفات من الدرج</td><td class="v" style="color:var(--neg);"><span id="s_expenses">0.00</span> ج.م</td></tr>
+                        <tr><td class="k">كاش</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
                         <tr><td class="k">فيزا</td><td class="v"><span id="s_visa">0.00</span> ج.م</td></tr>
                         <tr><td class="k">إنستا باي</td><td class="v"><span id="s_instapay">0.00</span> ج.م</td></tr>
                         <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span id="s_collected">0.00</span> ج.م</td></tr>
@@ -813,7 +903,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div style="margin-top:16px;display:flex;gap:8px;">
-            <button type="submit" class="btn"><i class="ti ti-lock"></i> تقفيل وإرسال للمراجعة</button>
+            <button type="submit" class="btn" id="shiftSubmitBtn"><i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span></button>
             <button type="button" class="btn btn-ghost" onclick="closeShiftModal()">إلغاء</button>
             <button type="button" class="btn btn-ghost" id="cancelEdit" style="display:none;" onclick="resetForm()">إلغاء التعديل</button>
         </div>
@@ -822,67 +912,73 @@ require_once __DIR__ . '/includes/header.php';
   </div>
 </div>
 
-<!-- قالب سطر المصروف الديناميكي -->
-<template id="expRowTpl">
-    <tr>
-        <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"></td>
-        <td style="padding:4px;">
-            <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
-        </td>
-        <td style="padding:4px;">
-            <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
-                   placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
-        </td>
-        <td style="padding:4px;">
-            <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
-                   style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;">
-        </td>
-        <td style="padding:4px;text-align:center;">
-            <button type="button" onclick="removeExpRow(this)" title="حذف المصروف"
-                    style="background:none;border:none;cursor:pointer;color:var(--neg);font-size:16px;padding:4px 6px;border-radius:6px;line-height:1;">
-                <i class="ti ti-trash"></i>
-            </button>
-        </td>
-    </tr>
-</template>
+<!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
+<?php if (!empty($mySeqIssues)): ?>
+<div class="card" style="border-right:4px solid var(--warn);">
+    <div class="section-title" style="color:var(--warn-text, var(--warn));"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
+    <?php foreach ($mySeqIssues as $iss):
+        $desc = $iss['kind'] === 'duplicate'
+            ? "رقم الوردية {$iss['found_no']} اتكرر في فرع {$iss['branch_name']}"
+            : "فجوة في أرقام الورديات بفرع {$iss['branch_name']}: المتوقع كان {$iss['expected_no']} لكن جه {$iss['found_no']}";
+    ?>
+        <div id="seq_card_<?= (int)$iss['id'] ?>" style="background:var(--bg);border-radius:10px;padding:14px;margin-bottom:12px;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:6px;"><?= e($desc) ?></div>
+            <?php if (!empty($iss['owner_note'])): ?>
+                <div style="font-size:13px;color:var(--ink-600);margin-bottom:8px;background:var(--surface);padding:8px 10px;border-radius:6px;">
+                    <b>ملاحظة:</b> <?= e($iss['owner_note']) ?>
+                </div>
+            <?php endif; ?>
+            <form method="post" style="margin-top:8px;">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="seq_reply">
+                <input type="hidden" name="issue_id" value="<?= (int)$iss['id'] ?>">
+                <div style="margin-bottom:8px;">
+                    <textarea name="reply" required rows="2" placeholder="اكتب ردك وتوضيحك هنا..." style="width:100%;padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;"></textarea>
+                </div>
+                <button type="submit" class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;border-radius:7px;padding:6px 14px;cursor:pointer;">ابعت الرد</button>
+            </form>
+        </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <!-- تقفيلاتي المرفوضة -->
 <?php if (!empty($myRejected)): ?>
 <div class="card">
     <div class="section-title">تقفيلاتي المرفوضة (اضغط تعديل لإعادة الإرسال)</div>
     <table>
-        <thead><tr>
-            <th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th>كاش</th><th>مصروفات</th><th>المحصّل</th><th>الفرق</th><th>سبب الرفض</th><th>إجراء</th>
-        </tr></thead>
+        <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th>المحصّل</th><th>الفرق</th><th>سبب الرفض</th><th>إجراء</th></tr></thead>
         <tbody>
         <?php foreach ($myRejected as $s): ?>
             <?php
-                $sid = (int)$s['id'];
-                $sExps = $rejectedExpensesMap[$sid] ?? [];
-                $sExpTotal = array_sum(array_column($sExps, 'amount'));
-                $collected = (float)$s['cash_total'] + $sExpTotal + (float)$s['visa_total'] + (float)$s['instapay_total'];
+                $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total'];
+                $isExpired = !empty($s['is_return_expired'])
+                    || !empty($s['return_expired_at'])
+                    || (isset($s['hours_left']) && (int)$s['hours_left'] < 0);
+                $hrsLeft = max(0, (int)($s['hours_left'] ?? 0));
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
-                <td><?= e($s['branch_name']) ?></td>
-                <td><?= number_format((float)$s['cash_total'],2) ?></td>
-                <td>
-                    <?php if ($sExpTotal > 0): ?>
-                        <span style="color:var(--neg);font-weight:600;"><?= number_format($sExpTotal,2) ?></span>
-                        <div style="font-size:11px;color:var(--ink-400);">
-                            <?php foreach ($sExps as $x): ?>
-                                <div><?= e($x['account_name'] ?: 'مصروف') ?>: <?= number_format((float)$x['amount'],2) ?><?= !empty($x['note']) ? ' (' . e($x['note']) . ')' : '' ?></div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <span style="color:var(--ink-300);">—</span>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
+                <td><?= e($s['branch_name']) ?></td>
                 <td><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="reject-reason"><?= e($s['reject_reason'] ?? '—') ?></span></td>
-                <td><button class="btn btn-sm" onclick='editShift(<?= (int)$s['id'] ?>)'>تعديل</button></td>
+                <td>
+                    <?php if ($isExpired): ?>
+                        <span class="badge" style="color:var(--neg);background:var(--neg-soft);">عدّت المهلة</span>
+                    <?php else: ?>
+                        <button class="btn btn-sm" onclick='editShift(<?= (int)$s['id'] ?>)'>تعديل</button>
+                        <?php if (isset($s['hours_left']) && $s['hours_left'] !== null): ?>
+                        <span style="font-size:12px;color:var(--ink-500);margin-inline-start:4px;">فاضل <?= $hrsLeft ?> ساعة</span>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -899,47 +995,42 @@ require_once __DIR__ . '/includes/header.php';
     <table>
         <thead><tr>
             <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
-            <th>كاش</th><th>فيزا</th><th>إنستا</th><th>مصروفات</th>
+            <th>كاش</th><th>فيزا</th><th>إنستا</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th><th>إجراءات</th>
         </tr></thead>
         <tbody>
         <?php
             foreach ($todayShifts as $s):
-                $sid=(int)$s['id'];
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sExps = $shiftExpensesMap[$sid] ?? [];
-                $sExpTotal = array_sum(array_column($sExps, 'amount'));
-                $sys=(float)$s['system_total']; $collected=$cash+$sExpTotal+$visa+$insta; $diff=(float)$s['difference'];
-                $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee'];
+                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; $diff=(float)$s['difference'];
+                $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
         ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
                 <td><?= number_format($insta,2) ?></td>
-                <td>
-                    <?php if ($sExpTotal > 0): ?>
-                        <span style="color:var(--neg);font-weight:600;"><?= number_format($sExpTotal,2) ?></span>
-                        <div style="font-size:11px;color:var(--ink-400);">
-                            <?php foreach ($sExps as $x): ?>
-                                <div><?= e($x['account_name'] ?: 'مصروف') ?>: <?= number_format((float)$x['amount'],2) ?><?= !empty($x['note']) ? ' (' . e($x['note']) . ')' : '' ?></div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <span style="color:var(--ink-300);">—</span>
-                    <?php endif; ?>
-                </td>
                 <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
                 <td class="<?= $diff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($diff,2) ?></td>
                 <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
                 <td>
                     <?php if (in_array($s['status'], ['submitted','resubmitted'], true) && (is_owner() || (int)$s['user_id'] === $uid)): ?>
+                        <?php if (is_owner()): ?>
+                            <button type="button" class="btn btn-sm" onclick="ownerEditShift(<?= (int)$s['id'] ?>)" title="تعديل الوردية">
+                                <i class="ti ti-edit"></i> تعديل
+                            </button>
+                        <?php endif; ?>
                         <form method="post" style="display:inline;"
                               onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -962,7 +1053,6 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($sumCash,2) ?></td>
                 <td><?= number_format($sumVisa,2) ?></td>
                 <td><?= number_format($sumInsta,2) ?></td>
-                <td style="color:var(--neg);"><?= number_format($sumExp,2) ?></td>
                 <td><?= number_format($sumColl,2) ?></td>
                 <td class="<?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($sumDiff,2) ?></td>
                 <td colspan="3"></td>
@@ -979,45 +1069,56 @@ require_once __DIR__ . '/includes/header.php';
     <table>
         <thead><tr>
             <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
-            <th>كاش</th><th>فيزا</th><th>إنستا</th><th>مصروفات</th>
+            <th>كاش</th><th>فيزا</th><th>إنستا</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th>
+            <?php if (is_owner()): ?><th data-xt-skip>الإجراءات</th><?php endif; ?>
         </tr></thead>
         <tbody>
         <?php foreach ($archiveShifts as $s): ?>
             <?php
-                $sid=(int)$s['id'];
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sExps = $shiftExpensesMap[$sid] ?? [];
-                $sExpTotal = array_sum(array_column($sExps, 'amount'));
-                $sys=(float)$s['system_total']; $collected=$cash+$sExpTotal+$visa+$insta;
-                $sl = $statusLabels[$s['status']] ?? ['—','#666','#eee'];
+                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta;
+                $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent);"><?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?></td>
+                <td style="font-weight:600;color:var(--accent-text);">
+                    <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
+                    <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
+                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
                 <td><?= number_format($insta,2) ?></td>
-                <td>
-                    <?php if ($sExpTotal > 0): ?>
-                        <span style="color:var(--neg);font-weight:600;"><?= number_format($sExpTotal,2) ?></span>
-                        <div style="font-size:11px;color:var(--ink-400);">
-                            <?php foreach ($sExps as $x): ?>
-                                <div><?= e($x['account_name'] ?: 'مصروف') ?>: <?= number_format((float)$x['amount'],2) ?><?= !empty($x['note']) ? ' (' . e($x['note']) . ')' : '' ?></div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <span style="color:var(--ink-300);">—</span>
-                    <?php endif; ?>
-                </td>
                 <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
+                <?php if (is_owner()): ?>
+                <td>
+                    <?php if (in_array($s['status'], ['submitted','resubmitted'], true)): ?>
+                        <button type="button" class="btn btn-sm" onclick="ownerEditShift(<?= (int)$s['id'] ?>)" title="تعديل الوردية">
+                            <i class="ti ti-edit"></i> تعديل
+                        </button>
+                        <form method="post" style="display:inline;"
+                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="action" value="delete_shift">
+                            <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
+                            <button class="btn btn-sm" style="background:var(--neg-soft);color:var(--neg);" title="مسح التقفيلة">
+                                <i class="ti ti-trash"></i> مسح
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <span style="color:var(--ink-300);">—</span>
+                    <?php endif; ?>
+                </td>
+                <?php endif; ?>
             </tr>
         <?php endforeach; ?>
         </tbody>
@@ -1025,12 +1126,9 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=2"></script>
 <script>
     const denoms = <?= json_encode($denominations) ?>;
     const methods = ['visa','instapay'];
-    const rejectedExpenses = <?= json_encode($rejectedExpensesMap, JSON_UNESCAPED_UNICODE) ?>;
 
     // تبديل تبويبات التقفيل
     function ctTab(btn) {
@@ -1038,51 +1136,6 @@ require_once __DIR__ . '/includes/header.php';
         document.querySelectorAll('.ct-pane').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(btn.dataset.pane).classList.add('active');
-    }
-
-    function addExpRow(accountId, amount, note) {
-        const tpl = document.getElementById('expRowTpl');
-        if (!tpl) return;
-        const tbody = document.getElementById('expRowsTbody');
-        const clone = tpl.content.cloneNode(true);
-        const tr = clone.querySelector('tr');
-        const num = tbody.querySelectorAll('tr').length + 1;
-        const numCell = tr.querySelector('.exp-row-num');
-        if (numCell) numCell.textContent = num;
-
-        if (amount) {
-            tr.querySelector('.exp-amt').value = amount;
-        }
-        if (note) {
-            tr.querySelector('.exp-note').value = note;
-        }
-        tbody.appendChild(tr);
-
-        if (window.acctreeScan) {
-            window.acctreeScan();
-        }
-        if (accountId) {
-            const actRoot = tr.querySelector('[data-acctree]');
-            if (actRoot && window.acctreeSet) {
-                window.acctreeSet(actRoot, accountId);
-            }
-        }
-        calc();
-    }
-
-    function removeExpRow(btn) {
-        const tr = btn.closest('tr');
-        if (tr) {
-            const tbody = tr.closest('tbody');
-            tr.remove();
-            if (tbody) {
-                tbody.querySelectorAll('tr').forEach((row, idx) => {
-                    const cell = row.querySelector('.exp-row-num');
-                    if (cell) cell.textContent = idx + 1;
-                });
-            }
-            calc();
-        }
     }
 
     function calc() {
@@ -1102,40 +1155,28 @@ require_once __DIR__ . '/includes/header.php';
             document.querySelectorAll('.'+m+'-amt').forEach(a => t += parseFloat(a.value)||0);
             mt[m] = t;
         });
-
-        let expTotal = 0;
-        document.querySelectorAll('.exp-amt').forEach(a => {
-            expTotal += parseFloat(a.value) || 0;
-        });
-
         // إجمالي الكاش + تفصيله
         document.getElementById('t_cash').textContent = cash.toFixed(2);
         const cb = document.getElementById('cashBreak');
         if (cb) cb.innerHTML = breakParts.join('<br>');
 
-        // إجمالي المصروفات
-        const te = document.getElementById('t_expenses');
-        if (te) te.textContent = expTotal.toFixed(2) + ' ج.م';
-
-        const collected = cash + expTotal + mt.visa + mt.instapay;
+        const collected = cash + mt.visa + mt.instapay;
         const sys = parseFloat(document.getElementById('systemTotal').value) || 0;
         const diff = collected - sys;
 
         // ملخص التفاصيل
-        setTxt('s_system', sys.toFixed(2) + ' ج.م');
-        setTxt('s_cash', cash.toFixed(2) + ' ج.م');
-        setTxt('s_expenses', expTotal.toFixed(2) + ' ج.م');
-        setTxt('s_visa', mt.visa.toFixed(2) + ' ج.م');
-        setTxt('s_instapay', mt.instapay.toFixed(2) + ' ج.م');
-        setTxt('s_collected', collected.toFixed(2) + ' ج.م');
+        setTxt('s_system', sys.toFixed(2));
+        setTxt('s_cash', cash.toFixed(2));
+        setTxt('s_visa', mt.visa.toFixed(2));
+        setTxt('s_instapay', mt.instapay.toFixed(2));
+        setTxt('s_collected', collected.toFixed(2));
 
-        // الملخص الجانبي في تابات الدفع والمصروفات
-        setTxtAll('side_system', sys.toFixed(2) + ' ج.م');
-        setTxtAll('side_cash', cash.toFixed(2) + ' ج.م');
-        setTxtAll('side_expenses', expTotal.toFixed(2) + ' ج.م');
-        setTxtAll('side_visa', mt.visa.toFixed(2) + ' ج.م');
-        setTxtAll('side_instapay', mt.instapay.toFixed(2) + ' ج.م');
-        setTxtAll('side_collected', collected.toFixed(2) + ' ج.م');
+        // الملخص الجانبي في تابات الدفع (نفس الأرقام)
+        setTxtAll('side_system', sys.toFixed(2));
+        setTxtAll('side_cash', cash.toFixed(2));
+        setTxtAll('side_visa', mt.visa.toFixed(2));
+        setTxtAll('side_instapay', mt.instapay.toFixed(2));
+        setTxtAll('side_collected', collected.toFixed(2));
 
         // بوكس الفرق
         const dv = document.getElementById('s_diff');
@@ -1163,6 +1204,16 @@ require_once __DIR__ . '/includes/header.php';
 
     // فتح وقفل بوب أب التقفيل
     function openShiftModal() {
+        if (document.getElementById('formAction').value === 'submit_shift') {
+            const cName = document.getElementById('cashierName');
+            if (cName && cName.dataset.self) cName.value = cName.dataset.self;
+            const mTitle = document.getElementById('shiftModalTitle');
+            if (mTitle) mTitle.textContent = 'تقفيل وردية جديدة';
+            const sBtn = document.getElementById('shiftSubmitBtn');
+            if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+            const oNotice = document.getElementById('ownerEditNotice');
+            if (oNotice) oNotice.style.display = 'none';
+        }
         document.getElementById('shiftModal').classList.add('open');
         document.body.style.overflow = 'hidden';
     }
@@ -1171,31 +1222,53 @@ require_once __DIR__ . '/includes/header.php';
         document.body.style.overflow = '';
     }
 
-    // تعديل وردية مرفوضة: نجيب تفاصيلها بـ AJAX بسيط
-    function editShift(id) {
+    // تعديل وردية: نجيب تفاصيلها بـ AJAX بسيط
+    function editShift(id, action = 'resubmit_shift') {
         fetch('shift_data.php?id=' + id)
             .then(r => r.json())
             .then(data => {
                 if (data.error) { alert(data.error); return; }
-                document.getElementById('formAction').value = 'resubmit_shift';
+                document.getElementById('formAction').value = action;
                 document.getElementById('shiftId').value = id;
                 document.querySelector('[name="branch_id"]').value = data.branch_id;
                 document.querySelector('[name="business_date"]').value = data.business_date;
                 document.getElementById('shiftName').value = data.shift_name || '';
                 document.getElementById('systemTotal').value = data.system_total;
+
+                const cName = document.getElementById('cashierName');
+                if (cName && data.cashier_name) {
+                    cName.value = data.cashier_name;
+                }
+                const mTitle = document.getElementById('shiftModalTitle');
+                const sBtn = document.getElementById('shiftSubmitBtn');
+                const oNotice = document.getElementById('ownerEditNotice');
+                const oCName = document.getElementById('ownerEditCashierName');
+                const sName = data.shift_name ? data.shift_name : id;
+
+                if (action === 'owner_edit_shift') {
+                    if (mTitle) mTitle.textContent = 'تعديل وردية ' + sName;
+                    if (sBtn) sBtn.innerHTML = '<i class="ti ti-edit"></i> <span>حفظ التعديل</span>';
+                    if (oNotice) {
+                        if (oCName) oCName.textContent = data.cashier_name || '';
+                        oNotice.style.display = 'block';
+                    }
+                } else {
+                    if (mTitle) mTitle.textContent = 'تعديل الوردية المرجوعة';
+                    if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+                    if (oNotice) oNotice.style.display = 'none';
+                }
+
                 // تصفير ثم ملء الفئات
                 denoms.forEach(d => {
                     const inp = document.querySelector('.denom-input[data-denom="'+d+'"]');
-                    const cnt = data.cash[d] || 0;
-                    inp.value = cnt > 0 ? cnt : '';
-                });
-                // تصفير ثم ملء السطور
-                methods.forEach(m => {
-                    for (let i=1;i<=10;i++){
-                        const amt = document.querySelector('[name="'+m+'['+i+']"]');
-                        const ref = document.querySelector('[name="'+m+'_ref['+i+']"]');
-                        if(amt) amt.value=''; if(ref) ref.value='';
+                    if (inp) {
+                        const cnt = data.cash[d] || 0;
+                        inp.value = cnt > 0 ? cnt : '';
                     }
+                });
+                // تصفير ثم ملء السطور (تصفير كل خانات السطور في الفورم)
+                document.querySelectorAll('.pay-table input.ref, .pay-table input.amt').forEach(inp => {
+                    inp.value = '';
                 });
                 (data.lines||[]).forEach(ln => {
                     const amt = document.querySelector('[name="'+ln.method+'['+ln.line_no+']"]');
@@ -1203,19 +1276,6 @@ require_once __DIR__ . '/includes/header.php';
                     if(amt) amt.value = ln.amount;
                     if(ref) ref.value = ln.reference || '';
                 });
-
-                // ملء المصروفات للوردية المرفوضة
-                const tbody = document.getElementById('expRowsTbody');
-                tbody.innerHTML = '';
-                const exps = rejectedExpenses[id] || [];
-                exps.forEach(ex => {
-                    addExpRow(ex.account_id, ex.amount, ex.note);
-                });
-                const currentCount = tbody.querySelectorAll('tr').length;
-                for (let i = currentCount + 1; i <= 10; i++) {
-                    addExpRow();
-                }
-
                 document.getElementById('cancelEdit').style.display = 'inline-flex';
                 calc();
                 openShiftModal();
@@ -1223,18 +1283,25 @@ require_once __DIR__ . '/includes/header.php';
             .catch(() => alert('تعذّر تحميل بيانات الوردية.'));
     }
 
+    function ownerEditShift(id) {
+        editShift(id, 'owner_edit_shift');
+    }
+
     function resetForm() {
         document.getElementById('shiftForm').reset();
         document.getElementById('formAction').value = 'submit_shift';
         document.getElementById('shiftId').value = '';
         document.getElementById('cancelEdit').style.display = 'none';
-        const tbody = document.getElementById('expRowsTbody');
-        if (tbody) {
-            tbody.innerHTML = '';
-            for (let i = 1; i <= 10; i++) {
-                addExpRow();
-            }
+        const cName = document.getElementById('cashierName');
+        if (cName && cName.dataset.self) {
+            cName.value = cName.dataset.self;
         }
+        const mTitle = document.getElementById('shiftModalTitle');
+        if (mTitle) mTitle.textContent = 'تقفيل وردية جديدة';
+        const sBtn = document.getElementById('shiftSubmitBtn');
+        if (sBtn) sBtn.innerHTML = '<i class="ti ti-lock"></i> <span>تقفيل وإرسال للمراجعة</span>';
+        const oNotice = document.getElementById('ownerEditNotice');
+        if (oNotice) oNotice.style.display = 'none';
         calc();
         closeShiftModal();
     }
@@ -1276,6 +1343,19 @@ require_once __DIR__ . '/includes/header.php';
             if (next.select) next.select();   // يحدد المحتوى عشان الكتابة فوقه على طول
         });
     })();
+
+    <?php if ($autoOpenShiftId > 0): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        editShift(<?= (int)$autoOpenShiftId ?>);
+    });
+    <?php endif; ?>
+
+    <?php if (!empty($_GET['seq_issue'])): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('seq_card_<?= (int)$_GET['seq_issue'] ?>');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+    <?php endif; ?>
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

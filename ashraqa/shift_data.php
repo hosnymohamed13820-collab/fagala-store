@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('cashier');
+require_once __DIR__ . '/finance.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -17,12 +18,22 @@ if ($id <= 0) {
 }
 
 $pdo = db();
-$st = $pdo->prepare('SELECT * FROM shifts WHERE id=? AND user_id=? AND status="rejected"');
-$st->execute([$id, $uid]);
+if (is_owner()) {
+    $st = $pdo->prepare('SELECT s.*, u.full_name AS cashier_name FROM shifts s LEFT JOIN users u ON u.id = s.user_id WHERE s.id=? AND s.status IN ("submitted","resubmitted")');
+    $st->execute([$id]);
+} else {
+    $st = $pdo->prepare('SELECT s.*, u.full_name AS cashier_name FROM shifts s LEFT JOIN users u ON u.id = s.user_id WHERE s.id=? AND s.user_id=? AND s.status="rejected"');
+    $st->execute([$id, $uid]);
+}
 $shift = $st->fetch();
 
 if (!$shift) {
     echo json_encode(['error' => 'الوردية غير متاحة للتعديل']);
+    exit;
+}
+
+if (!is_owner() && is_shift_return_expired((int)$shift['id'])) {
+    echo json_encode(['error' => 'الوقت المسموح لتعديل الوردية دي عدّى.']);
     exit;
 }
 
@@ -31,7 +42,9 @@ $cash = [];
 $c = $pdo->prepare('SELECT denomination, count FROM shift_cash WHERE shift_id=?');
 $c->execute([$id]);
 foreach ($c as $row) {
-    $cash[(int)$row['denomination']] = (int) $row['count'];
+    $val = (float) $row['denomination'];
+    $k = ($val == (int)$val) ? (int)$val : (string)$val;
+    $cash[$k] = (int) $row['count'];
 }
 
 // سطور الدفع
@@ -51,6 +64,7 @@ echo json_encode([
     'branch_id'       => (int) $shift['branch_id'],
     'business_date'   => $shift['business_date'],
     'shift_name'      => $shift['shift_name'] ?? '',
+    'cashier_name'    => (string) ($shift['cashier_name'] ?? ''),
     'system_total'    => (float) $shift['system_total'],
     'cash'            => $cash,
     'lines'           => $lines,

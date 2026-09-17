@@ -20,13 +20,13 @@ require_once __DIR__ . '/includes/header.php';
     .pc-sess { display:flex; gap:10px; align-items:center; margin-bottom:16px; }
     .pc-sess input { flex:1; padding:12px; border:1px solid var(--line); border-radius:10px;
                      font-size:20px; text-align:center; letter-spacing:3px; font-weight:700; }
-    #qrBox { display:flex; justify-content:center; padding:18px; background:#fff;
+    #qrBox { display:flex; justify-content:center; padding:18px; background:var(--surface);
              border-radius:14px; border:1px solid var(--line); min-height:200px; align-items:center; }
     .pc-steps { font-size:14px; color:var(--ink-800); line-height:2; margin-top:16px; }
 </style>
 <div class="pc-wrap">
     <div class="card">
-        <div class="section-title">🖥️ اقتران الموبايل كسكانر للكمبيوتر</div>
+        <div class="section-title"><i class="ti ti-device-desktop"></i> اقتران الموبايل كسكانر للكمبيوتر</div>
         <div class="pc-sess">
             <label for="pcSession" style="font-size:13px;color:var(--ink-500);">كود الاقتران:</label>
             <input type="text" id="pcSession" placeholder="PC1" aria-label="كود الاقتران"

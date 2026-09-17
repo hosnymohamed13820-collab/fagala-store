@@ -5,19 +5,60 @@
  *
  * تقارير: المبيعات | الخزينة | العهد | الموردين | الرواتب | الحضور
  * - كل تقرير بفلتر فترة (من/إلى).
- * - تصدير CSV لأي تقرير.
+ * - تصدير إكسل (.xlsx) لأي تقرير — الجرد له تصدير CSV خاص بيه.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('reports');
+require_module_access('reports');
 require_once __DIR__ . '/finance.php';
 
 $pdo = db();
 
-$type = $_GET['type'] ?? 'sales';
-$from = $_GET['from'] ?? date('Y-m-01');           // أول الشهر افتراضياً
-$to   = $_GET['to']   ?? date('Y-m-d');
-if (!strtotime($from)) $from = date('Y-m-01');
-if (!strtotime($to))   $to   = date('Y-m-d');
+// قراءة التقارير المسموحة للمستخدم بناءً على أجزاء مديول التقارير
+$repParts = module_parts()['reports'] ?? [];
+$allowedTypes = [];
+foreach ($repParts as $k => $label) {
+    if (can('reports:' . $k)) {
+        $allowedTypes[$k] = $label;
+    }
+}
+
+// لو المستخدم مالوش أي تقرير مسموح (حزام أمان إضافي)
+if (empty($allowedTypes)) {
+    http_response_code(403);
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+        . '<h2>🚫 غير مصرّح</h2>'
+        . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+        . '<a href="logout.php">تسجيل الخروج</a></div>');
+}
+
+// تحديد نوع التقرير النشط: لو طلب نوع مسموح يفتحه، لو مالوش صلاحيته (أو مبعتش) يتحوّل لأول نوع مسموح له
+$requestedType = (string)($_GET['type'] ?? '');
+if (isset($allowedTypes[$requestedType])) {
+    $type = $requestedType;
+} else {
+    $type = (string) array_key_first($allowedTypes);
+}
+
+const SALREP_GRACE_DAYS = 5;
+if ($type === 'salaries') {
+    // نفس منطق فترة الرواتب: الشهر بيقفل يوم ٢٥، ومهلة ٥ أيام قبل ما
+    // التقرير يقلب للشهر الجديد — عشان اللي بيصرف يوم ٣ أو ٤ يلاقي
+    // الفترة اللي لسه بيشتغل عليها مفتوحة قدامه.
+    $salAnchor = (int) date('j') <= SALREP_GRACE_DAYS
+        ? strtotime('first day of last month')
+        : strtotime('first day of this month');
+    $defaultTo   = date('Y-m-25', $salAnchor);
+    $defaultFrom = date('Y-m-26', strtotime('-1 month', $salAnchor));
+    $from = $_GET['from'] ?? $defaultFrom;
+    $to   = $_GET['to']   ?? $defaultTo;
+    if (!strtotime($from)) $from = $defaultFrom;
+    if (!strtotime($to))   $to   = $defaultTo;
+} else {
+    $from = $_GET['from'] ?? date('Y-m-01');           // أول الشهر افتراضياً
+    $to   = $_GET['to']   ?? date('Y-m-d');
+    if (!strtotime($from)) $from = date('Y-m-01');
+    if (!strtotime($to))   $to   = date('Y-m-d');
+}
 $export = isset($_GET['export']);
 
 // =====================================================================
@@ -33,6 +74,11 @@ $export = isset($_GET['export']);
 // =====================================================================
 if (($_GET['ajax'] ?? '') === 'je_details') {
     header('Content-Type: application/json; charset=utf-8');
+    if (!can('reports:jtotals') && !can('reports:treasury')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'غير مصرّح لك بالوصول لتفاصيل القيود.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     try {
         $accId = (int) ($_GET['acc'] ?? 0);          // 0 = «بدون قيد»
         $dFrom = $_GET['from'] ?? date('Y-m-01');
@@ -65,12 +111,14 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
             "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
                     je.running_balance, je.notes, je.ref_type,
                     t.name AS treasury, u.full_name AS by_name,
-                    cb.name AS branch_name
+                    cb.name AS branch_name,
+                    tfrom.name AS transfer_from_name,
+                    tto.name AS transfer_to_name
                FROM journal_entries je
                JOIN treasuries t ON t.id = je.treasury_id
                LEFT JOIN users u ON u.id = je.created_by
                LEFT JOIN treasury_movements tm
-                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                      ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                LEFT JOIN accounts ja ON ja.id = je.account_id
                LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -80,9 +128,11 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+               LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+               LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+               LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
               WHERE je.entry_date BETWEEN ? AND ? AND $accCond $branchCond
-              ORDER BY je.entry_date, je.id
-              LIMIT 500"
+              ORDER BY je.entry_date, je.id"
         );
         $st->execute($args);
 
@@ -94,6 +144,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                 'id'       => (int) $r['id'],
                 'date'     => $r['entry_date'],
                 'desc'     => (string) $r['description'],
+                'path'     => je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null),
                 'kind'     => $kinds[$r['ref_type']] ?? '—',
                 'treasury' => (string) $r['treasury'],
                 'branch'   => (string) ($r['branch_name'] ?? '—'),
@@ -115,6 +166,11 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
 $ajax = $_GET['ajax'] ?? '';
 if ($ajax !== '') {
     header('Content-Type: application/json; charset=utf-8');
+    if (!can('reports:noprice')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'غير مصرّح لك بالوصول لهذه العمليات.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     require_once __DIR__ . '/price_draft_lib.php';
     $uid = current_user()['id'] ?? null;
 
@@ -215,6 +271,50 @@ if ($ajax !== '') {
 }
 
 /**
+ * جلب معرّف الحساب المختار وجميع الحسابات المتفرعة منه (النسل) من شجرة الحسابات.
+ * تضمن إن اختيار رأس قيد يطابق حركات كل أبنائه وتفرعاته.
+ *
+ * @param int $rootId معرّف الحساب المختار
+ * @return int[] مصفوفة معرّفات الحسابات (الأب + النسل)
+ */
+function rep_account_family_ids(int $rootId): array
+{
+    // 🔴 بيرجّع [$rootId] على الأقل — مايرجّعش [] أبداً. مصفوفة فاضية معناها
+    //    `IN ()` وده خطأ صياغة في SQL بيوقّع الصفحة (يوصلها `entry_code=0`).
+    if ($rootId <= 0) return [$rootId];
+
+    // 🔴 بنقرا من `accounts` مباشرةً مش من `accounts_tree()`: الشجرة بتفلتر
+    //    `is_active = 1`، والفلتر هنا شغال على **بيانات تاريخية**. لو تصنيف
+    //    اتوقف، حركاته القديمة لازم تفضل تبان لما تفلتر برأس القيد بتاعه،
+    //    وإلا التقرير بينقص فلوس في صمت.
+    static $byParent = null;
+    if ($byParent === null) {
+        $byParent = [];
+        try {
+            foreach (db()->query('SELECT id, parent_id FROM accounts') as $a) {
+                $byParent[(int) ($a['parent_id'] ?? 0)][] = (int) $a['id'];
+            }
+        } catch (Throwable $ex) {
+            $byParent = [];
+        }
+    }
+    $family = [$rootId];
+    $visited = [$rootId => true];
+    $queue = [$rootId];
+    while (!empty($queue)) {
+        $curr = array_shift($queue);
+        foreach ($byParent[$curr] ?? [] as $childId) {
+            if (!isset($visited[$childId])) {
+                $visited[$childId] = true;
+                $family[] = $childId;
+                $queue[] = $childId;
+            }
+        }
+    }
+    return $family;
+}
+
+/**
  * بيانات كل تقرير: بترجّع ['title','headers'=>[],'rows'=>[[]],'totals'=>[]]
  */
 function build_report(PDO $pdo, string $type, string $from, string $to): array
@@ -246,26 +346,29 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // «الفرق» بالظبط — فلو الكارت سيستم والعمود مجموع وسايل،
                 // الكارت مش هيطابق عموده. خلّينا الاتنين سيستم.
                 $tCollected += (float)$r['system_total']; $tDiff += (float)$r['difference'];
+                $visaInsta = (float)$r['visa_total'] + (float)$r['instapay_total'];
                 $rows[] = [$r['business_date'], $r['branch'], $r['cashier'],
                     number_format((float)$r['cash_total'],2), number_format((float)$r['visa_total'],2),
                     number_format((float)$r['instapay_total'],2),
+                    number_format($visaInsta,2),
                     number_format((float)$r['system_total'],2), number_format((float)$r['difference'],2),
                     $stMap[$r['status']] ?? $r['status']];
             }
-            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','الفرع','الكاشير','كاش','فيزا','إنستا','المحصّل','الفرق','الحالة'],
+            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','الفرع','الكاشير','كاش','فيزا','إنستا','فيزا + إنستا','المحصّل','الفرق','الحالة'],
                 'rows'=>$rows,
                 // الترتيب مقصود: المحصل · الكاش · الفيزا · الإنستا ·
                 // الفيزا+الإنستا · الفرق — نفس ترتيب شاشة تقفيل الكاشير.
-                // كارت الفيزا+الإنستا بيجمع عمودين (cols) مش عمود واحد.
+                // كارت الفيزا+الإنستا كان بيجمع عمودين (cols)؛ بقى عمود
+                // حقيقي في الجدول فبيشاور عليه بـcol زي باقي الكروت.
                 'sum_cards'=>[
-                    ['label'=>'المحصل',        'col'=>6],
+                    ['label'=>'المحصل',        'col'=>7],
                     ['label'=>'الكاش',         'col'=>3],
                     ['label'=>'الفيزا',        'col'=>4],
                     ['label'=>'الإنستا',       'col'=>5],
-                    ['label'=>'الفيزا + الإنستا','cols'=>[4,5]],
-                    ['label'=>'الفرق',         'col'=>7, 'signed'=>true],
+                    ['label'=>'الفيزا + الإنستا','col'=>6],
+                    ['label'=>'الفرق',         'col'=>8, 'signed'=>true],
                 ],
-                'totals'=>['','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
+                'totals'=>['','','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
 
         case 'treasury':
             // فلتر اختياري بالقيد
@@ -277,10 +380,12 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         u.full_name AS by_name,
                         COALESCE(ja.name, ec.name) AS entry_code_name,
                         je.notes,
-                        cb.name AS cost_branch_name
+                        cb.name AS cost_branch_name,
+                        tfrom.name AS transfer_from_name,
+                        tto.name AS transfer_to_name
                  FROM journal_entries je JOIN treasuries t ON t.id=je.treasury_id
                  LEFT JOIN users u ON u.id=je.created_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
                  LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -290,6 +395,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                  LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                  LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                  LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+                 LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                 LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                 LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                  WHERE je.entry_date BETWEEN ? AND ?";
             $paramsT = [$from, $to];
             if ($entryFilter !== null) {
@@ -298,8 +406,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // مش صرف/استلام، واللي اتحدّد قيدها من بوب أب التعديل.
                 // العرض بقى COALESCE فالفلتر لازم يبقى نفسه، وإلا يفلتر
                 // صفوف بتبان في الشاشة بقيد صح.
-                $sqlT .= " AND COALESCE(je.account_id, tm.entry_code_id) = ?";
-                $paramsT[] = $entryFilter;
+                // الحساب المختار أو أي حساب من نسله
+                $familyIds = rep_account_family_ids($entryFilter);
+                $placeholders = implode(',', array_fill(0, count($familyIds), '?'));
+                $sqlT .= " AND COALESCE(je.account_id, tm.entry_code_id) IN ($placeholders)";
+                foreach ($familyIds as $fid) {
+                    $paramsT[] = $fid;
+                }
             }
             if ($branchFilter !== null) {
                 $sqlT .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id) = ?";
@@ -308,7 +421,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $sqlT .= " ORDER BY je.id DESC";
             $st = $pdo->prepare($sqlT);
             $st->execute($paramsT);
-            $rows=[]; $tDr=0; $tCr=0;
+            $rows=[]; $rowPaths=[]; $tDr=0; $tCr=0;
             foreach ($st as $r) {
                 $tDr+=(float)$r['debit']; $tCr+=(float)$r['credit'];
                 $rows[]=[$r['entry_date'], $r['treasury'], $r['description'], $r['entry_code_name'] ?? '—',
@@ -316,12 +429,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     number_format((float)$r['debit'],2), number_format((float)$r['credit'],2),
                     number_format((float)$r['running_balance'],2), $r['by_name'] ?? '—',
                     (string)($r['notes'] ?? '')];
+                $rowPaths[]=je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
             }
             // notes_col = رقم عمود الملاحظات. الجدول بيقصّه بـ ellipsis
             // ويحط النص الكامل في tooltip، والتصدير بياخده كامل من $rows.
             return ['title'=>'تقرير الخزينة',
                 'headers'=>['التاريخ','الخزينة','البيان','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                'rows'=>$rows,'notes_col'=>9,
+                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>9,
                 // الصافي = مدين − دائن (مش العكس). القيمة السالبة معناها
                 // دخل أكتر من اللي خرج.
                 'sum_cards'=>[
@@ -363,21 +477,26 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     "SELECT je.entry_date, je.description, je.debit, je.credit,
                             je.running_balance, je.notes,
                             u.full_name AS by_name,
-                            COALESCE(ja.name, ec.name) AS entry_code_name
+                            COALESCE(ja.name, ec.name) AS entry_code_name,
+                            tfrom.name AS transfer_from_name,
+                            tto.name AS transfer_to_name
                        FROM journal_entries je
                        LEFT JOIN users u ON u.id = je.created_by
                        LEFT JOIN treasury_movements tm
                               ON tm.id = je.ref_id
-                             AND je.ref_type IN ('receipt','disbursement')
+                             AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                        LEFT JOIN accounts ja ON ja.id = je.account_id
+                       LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                       LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                       LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                       WHERE je.treasury_id = ?
                         AND je.entry_date BETWEEN ? AND ?
                       ORDER BY je.entry_date, je.id"
                 );
                 $st->execute([(int)$trId, $from, $to]);
 
-                $rows = []; $tDr = 0; $tCr = 0;
+                $rows = []; $rowPaths = []; $tDr = 0; $tCr = 0;
                 foreach ($st as $r) {
                     $tDr += (float)$r['debit'];
                     $tCr += (float)$r['credit'];
@@ -388,13 +507,14 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                         number_format((float)$r['running_balance'],2),
                         $r['by_name'] ?? '—',
                         (string)($r['notes'] ?? '')];
+                    $rowPaths[] = je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
                 }
                 // المصروف = مدين (خارج من العهدة) · المستلم = دائن (داخل).
                 // الكروت بتتحسب من نفس الصفوف الظاهرة، فبتتغيّر مع
                 // التاريخ والفرع وأي فلتر على الجدول.
                 return ['title'=>'كشف عهدة: '.$branchName,
                     'headers'=>['التاريخ','البيان','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                    'rows'=>$rows, 'notes_col'=>7,
+                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>7,
                     'sum_cards'=>[
                         ['label'=>'إجمالي المصروف', 'col'=>3],
                         ['label'=>'إجمالي المستلم', 'col'=>4],
@@ -433,11 +553,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $entryFilter    = isset($_GET['entry_code']) && $_GET['entry_code'] !== '' ? (int)$_GET['entry_code'] : null;
             $userFilter     = isset($_GET['user']) && $_GET['user'] !== '' ? (int)$_GET['user'] : (isset($_GET['created_by']) && $_GET['created_by'] !== '' ? (int)$_GET['created_by'] : null);
 
+            $hasRevCols = treasury_movements_has_reverse_cols($pdo);
+            $revSelect = $hasRevCols ? ', tm.reversed_at' : ', NULL AS reversed_at';
             $sqlExp =
                 "SELECT tm.movement_date, t.name AS treasury, tm.amount,
                         COALESCE(a.name, '— بدون قيد —') AS entry_name,
                         cb.name AS cost_branch, u.full_name AS by_name,
-                        tm.description, tm.notes
+                        tm.description, tm.notes{$revSelect}
                    FROM treasury_movements tm
                    JOIN treasuries t  ON t.id = tm.treasury_id
                    LEFT JOIN accounts a  ON a.id = tm.entry_code_id
@@ -455,8 +577,12 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $paramsExp[] = $treasuryFilter;
             }
             if ($entryFilter !== null) {
-                $sqlExp .= " AND tm.entry_code_id = ?";
-                $paramsExp[] = $entryFilter;
+                $familyIds = rep_account_family_ids($entryFilter);
+                $placeholders = implode(',', array_fill(0, count($familyIds), '?'));
+                $sqlExp .= " AND tm.entry_code_id IN ($placeholders)";
+                foreach ($familyIds as $fid) {
+                    $paramsExp[] = $fid;
+                }
             }
             if ($userFilter !== null) {
                 $sqlExp .= " AND tm.created_by = ?";
@@ -466,11 +592,20 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $st = $pdo->prepare($sqlExp);
             $st->execute($paramsExp);
 
-            $rows = []; $tExp = 0.0;
-            foreach ($st as $r) {
-                $tExp += (float) $r['amount'];
+            $rows = []; $reversedRows = []; $tExp = 0.0;
+            foreach ($st as $i => $r) {
+                $isRev = !empty($r['reversed_at']);
+                if (!$isRev) {
+                    $tExp += (float) $r['amount'];
+                } else {
+                    $reversedRows[$i] = true;
+                }
+                $desc = (string) ($r['description'] ?: '—');
+                if ($isRev) {
+                    $desc .= ' (اتعكس)';
+                }
                 $rows[] = [$r['movement_date'], $r['entry_name'],
-                    $r['description'] ?: '—', $r['treasury'],
+                    $desc, $r['treasury'],
                     $r['cost_branch'] ?? '—',
                     number_format((float)$r['amount'], 2),
                     $r['by_name'] ?? '—', (string)($r['notes'] ?? '')];
@@ -478,6 +613,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             return ['title'=>'تقرير المصاريف',
                 'headers'=>['التاريخ','القيد','البيان','الخزينة','الفرع','المبلغ','بواسطة','الملاحظات'],
                 'rows'=>$rows, 'notes_col'=>7,
+                'reversed_rows'=>$reversedRows,
                 'sum_cards'=>[
                     ['label'=>'إجمالي المصاريف', 'col'=>5],
                     ['label'=>'عدد الحركات',     'col'=>5, 'count'=>true],
@@ -499,7 +635,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                    FROM journal_entries je
                    LEFT JOIN treasury_movements tm
                           ON tm.id = je.ref_id
-                         AND je.ref_type IN ('receipt','disbursement')
+                         AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                    LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                    LEFT JOIN accounts ja ON ja.id = je.account_id
                    LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
@@ -540,6 +676,146 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'totals'=>['إجمالي:', '', $tCnt, number_format($tDr,2), number_format($tCr,2),
                            number_format($tDr-$tCr,2)]];
 
+        case 'deficits':
+            // تقرير العجوزات — يجمع فروق الورديات (عجز وزيادة) وعجز العهد بعتبة التسامح
+            // فروق الورديات: s.difference <> 0 (عجز لو سالب، زيادة لو موجب)
+            // عجز العهدة: مسجل في custody_deficits (معمولة أصلاً بعد تطبيق العتبة عند الإقفال في close_custody)
+            // تماسك الصف: اسم الكاشير من users (shifts.user_id) واسم الموظف من employees (custody_deficits.employee_id)
+            $statusFilter = $_GET['status'] ?? ''; // 'within' أو 'exceeded' أو فارغ (الكل)
+            $tolerance = custody_tolerance();
+
+            $stMap = [
+                'submitted'   => 'مستلمة',
+                'approved'    => 'معتمدة',
+                'rejected'    => 'مرفوضة',
+                'resubmitted' => 'معاد إرسال',
+                'pending'     => 'معلق',
+                'recovered'   => 'مسترد',
+                'waived'      => 'معفى',
+            ];
+
+            $st = $pdo->prepare(
+                "SELECT s.business_date AS deficit_date,
+                        b.name AS branch_name,
+                        u.full_name AS person_name,
+                        'shift' AS source_type,
+                        s.id AS shift_id,
+                        s.shift_name AS shift_name,
+                        s.difference AS diff_amount,
+                        s.status AS record_status,
+                        s.id AS sort_id
+                   FROM shifts s
+                   LEFT JOIN branches b ON b.id = s.branch_id
+                   LEFT JOIN users u ON u.id = s.user_id
+                  WHERE s.difference <> 0
+                    AND s.business_date BETWEEN ? AND ?
+
+                   UNION ALL
+
+                 SELECT DATE(cd.created_at) AS deficit_date,
+                        b.name AS branch_name,
+                        e.full_name AS person_name,
+                        'custody_deficit' AS source_type,
+                        NULL AS shift_id,
+                        NULL AS shift_name,
+                        cd.amount AS diff_amount,
+                        cd.status AS record_status,
+                        cd.id AS sort_id
+                   FROM custody_deficits cd
+                   LEFT JOIN branches b ON b.id = cd.branch_id
+                   LEFT JOIN employees e ON e.id = cd.employee_id
+                  WHERE DATE(cd.created_at) BETWEEN ? AND ?
+
+                  ORDER BY deficit_date DESC, sort_id DESC"
+            );
+            $st->execute([$from, $to, $from, $to]);
+
+            $rows = [];
+            $tShortage = 0.0;
+            $tOver     = 0.0;
+            $tExceeded = 0.0;
+
+            foreach ($st as $r) {
+                $collectionStatus = $stMap[$r['record_status']] ?? ($r['record_status'] ?: '—');
+
+                if ($r['source_type'] === 'custody_deficit') {
+                    // صفوف العهدة: معمولة بعد تطبيق العتبة في save_custody_review()
+                    // فحالتها دايماً «تجاوز العتبة» والمتجاوز = المبلغ نفسه.
+                    // متطبّقش العتبة عليها تاني هنا.
+                    // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
+                    // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
+                    $amount = (float) $r['diff_amount'];
+                    $statusLabel = 'تجاوز العتبة';
+
+                    if ($statusFilter === 'within') {
+                        continue;
+                    }
+
+                    $movementType = 'عجز عهدة';
+                    $shiftNo      = '—';
+                    $shortageVal  = number_format($amount, 2);
+                    $overVal      = '—';
+                    $tolVal       = '—';
+                    $exceededVal  = number_format($amount, 2);
+
+                    $tShortage += $amount;
+                    $tExceeded += $amount;
+                } else {
+                    // صفوف الوردية: نطبق دالة العتبة الموحدة shift_variance_status()
+                    $diff = (float) $r['diff_amount'];
+                    $vs = shift_variance_status($diff, $tolerance);
+
+                    if ($statusFilter === 'within' && $vs['over_limit']) {
+                        continue;
+                    }
+                    if ($statusFilter === 'exceeded' && !$vs['over_limit']) {
+                        continue;
+                    }
+
+                    $movementType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
+                    $shiftNo      = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? (string) $r['shift_name'] : '#' . $r['shift_id'];
+                    $shortageVal  = $vs['kind'] === 'shortage' ? number_format($vs['amount'], 2) : '—';
+                    $overVal      = $vs['kind'] === 'over' ? number_format($vs['amount'], 2) : '—';
+                    $tolVal       = number_format($vs['tolerance'], 2);
+                    $exceededVal  = number_format($vs['exceeded'], 2);
+                    $statusLabel  = $vs['status_label'];
+
+                    if ($vs['kind'] === 'shortage') {
+                        $tShortage += $vs['amount'];
+                    } elseif ($vs['kind'] === 'over') {
+                        $tOver += $vs['amount'];
+                    }
+                    $tExceeded += $vs['exceeded'];
+                }
+
+                $rows[] = [
+                    (string) $r['deficit_date'],
+                    $r['branch_name'] ?? '—',
+                    $r['person_name'] ?? '—',
+                    $movementType,
+                    $shiftNo,
+                    $shortageVal,
+                    $overVal,
+                    $tolVal,
+                    $exceededVal,
+                    $statusLabel,
+                    $collectionStatus,
+                ];
+            }
+
+            return [
+                'title'     => 'تقرير العجوزات',
+                'headers'   => ['التاريخ', 'الفرع', 'الموظف', 'نوع الحركة', 'رقم الوردية', 'العجز', 'الزيادة', 'العتبة', 'اللي بيتخصم', 'الحالة', 'حالة التحصيل'],
+                'rows'      => $rows,
+                'sum_cards' => [
+                    ['label' => 'إجمالي العجز',    'col' => 5],
+                    ['label' => 'إجمالي الزيادة',   'col' => 6],
+                    ['label' => 'إجمالي اللي بيتخصم', 'col' => 8],
+                    ['label' => 'عدد الحالات',     'col' => 8, 'count' => true],
+                ],
+                'totals'    => ['', '', '', '', 'إجمالي:', number_format($tShortage, 2), number_format($tOver, 2), '', number_format($tExceeded, 2), '', ''],
+            ];
+
         case 'suppliers':
             $st = $pdo->prepare(
                 "SELECT si.invoice_date, s.name AS supplier, si.invoice_no, si.total_amount,
@@ -562,23 +838,241 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
         case 'salaries':
             $st = $pdo->prepare(
-                "SELECT s.salary_month, e.full_name, s.base_salary, s.total_advances,
-                        s.total_penalties, s.total_deficits, s.net_salary, s.status
-                 FROM salaries s JOIN employees e ON e.id=s.employee_id
-                 WHERE s.paid_at BETWEEN ? AND DATE_ADD(?, INTERVAL 1 DAY) OR s.salary_month BETWEEN ? AND ?
+                "SELECT s.id, s.salary_month, s.period_from, s.period_to, s.work_hours,
+                        s.base_salary, s.total_bonuses, s.total_advances, s.total_penalties,
+                        s.total_deficits, s.total_cashier_deficits, s.net_salary, s.status, s.paid_at,
+                        e.full_name,
+                        b.name AS branch_name,
+                        GROUP_CONCAT(DISTINCT t.name ORDER BY je.id DESC SEPARATOR '، ') AS treasury_name
+                 FROM salaries s
+                 JOIN employees e ON e.id = s.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 LEFT JOIN journal_entries je ON je.ref_type = 'salary' AND je.ref_id = s.id
+                 LEFT JOIN treasuries t ON t.id = je.treasury_id
+                 WHERE s.paid_at >= ? AND s.paid_at < DATE_ADD(?, INTERVAL 1 DAY)
+                   AND s.reversed_at IS NULL
+                 GROUP BY s.id
                  ORDER BY s.id DESC"
             );
-            $st->execute([$from, $to, substr($from,0,7), substr($to,0,7)]);
-            $rows=[]; $tNet=0;
+            $st->execute([$from, $to]);
+            $rows = [];
+            $details = [];
+            $tNet = 0;
+            $treasuriesList = [];
+
             foreach ($st as $r) {
-                $tNet+=(float)$r['net_salary'];
-                $rows[]=[$r['salary_month'], $r['full_name'], number_format((float)$r['base_salary'],2),
-                    number_format((float)$r['total_advances'],2), number_format((float)$r['total_penalties'],2),
-                    number_format((float)$r['total_deficits'],2), number_format((float)$r['net_salary'],2),
-                    $r['status']==='paid'?'مدفوع':'مسودة'];
+                $net = (float) $r['net_salary'];
+                $tNet += $net;
+                $tName = $r['treasury_name'] ? $r['treasury_name'] : '—';
+                if (!empty($r['treasury_name'])) {
+                    $parts = explode('، ', $r['treasury_name']);
+                    foreach ($parts as $p) {
+                        $p = trim($p);
+                        if ($p !== '' && $p !== '—' && !in_array($p, $treasuriesList, true)) {
+                            $treasuriesList[] = $p;
+                        }
+                    }
+                }
+
+                $bName = $r['branch_name'] ?: '—';
+                $statusLabel = ($r['status'] === 'paid') ? 'مدفوع' : 'مسودة';
+
+                // صف التصدير لإكسل (يحتوي على عمود الخزينة وباقي الحسابات)
+                $rows[] = [
+                    $r['salary_month'] ?? '—',
+                    $r['full_name'],
+                    $bName,
+                    $tName,
+                    number_format((float)$r['base_salary'], 2),
+                    number_format((float)$r['total_bonuses'], 2),
+                    number_format((float)$r['total_advances'], 2),
+                    number_format((float)$r['total_penalties'], 2),
+                    number_format((float)$r['total_deficits'], 2),
+                    number_format((float)$r['total_cashier_deficits'], 2),
+                    number_format($net, 2),
+                    $statusLabel,
+                ];
+
+                // بيانات واجهة القائمة والتفصيل
+                $base      = (float)$r['base_salary'];
+                $bonuses   = (float)$r['total_bonuses'];
+                $advances  = (float)$r['total_advances'];
+                $penalties = (float)$r['total_penalties'];
+                $deficits  = (float)$r['total_deficits'];
+                $cDeficits = (float)$r['total_cashier_deficits'];
+
+                $entitlement = $base + $bonuses;
+                $deductions  = $advances + $penalties + $deficits + $cDeficits;
+
+                $pFromFmt = $r['period_from'] ? date('j/n', strtotime($r['period_from'])) : '';
+                $pToFmt   = $r['period_to']   ? date('j/n', strtotime($r['period_to'])) : '';
+                $periodStr = ($pFromFmt && $pToFmt) ? ($pFromFmt . ' ← ' . $pToFmt) : ($r['salary_month'] ?? '');
+                $hoursStr  = ($r['work_hours'] !== null && (float)$r['work_hours'] > 0) ? (number_format((float)$r['work_hours'], 2) . ' ساعة') : '';
+
+                $metaParts = array_filter([$bName !== '—' ? $bName : '', $periodStr, $hoursStr]);
+                $subLine = implode(' · ', $metaParts);
+
+                $details[] = [
+                    'id'                     => (int)$r['id'],
+                    'full_name'              => $r['full_name'],
+                    'net_salary'             => $net,
+                    'net_salary_fmt'         => number_format($net, 2),
+                    'status'                 => $r['status'],
+                    'status_label'           => $statusLabel,
+                    'branch_name'            => $bName,
+                    'treasury_name'          => $tName,
+                    'sub_line'               => $subLine,
+                    'base_salary'            => $base,
+                    'total_bonuses'          => $bonuses,
+                    'total_entitlement'      => $entitlement,
+                    'total_advances'         => $advances,
+                    'total_penalties'        => $penalties,
+                    'total_deficits'         => $deficits,
+                    'total_cashier_deficits' => $cDeficits,
+                    'total_deductions'       => $deductions,
+                    'entitlement_fmt'        => number_format($entitlement, 2),
+                    'bonuses_fmt'            => number_format($bonuses, 2),
+                    'advances_fmt'           => number_format($advances, 2),
+                    'penalties_fmt'          => number_format($penalties, 2),
+                    'deficits_fmt'           => number_format($deficits, 2),
+                    'cdeficits_fmt'          => number_format($cDeficits, 2),
+                    'deductions_fmt'         => number_format($deductions, 2),
+                ];
             }
-            return ['title'=>'تقرير الرواتب','headers'=>['الشهر','الموظف','الأساسي','سلف','جزاءات','عجز عهدة','الصافي','الحالة'],
-                'rows'=>$rows,'totals'=>['','','','','','','إجمالي صافي: '.number_format($tNet,2),'']];
+
+            return [
+                'title'      => 'تقرير الرواتب',
+                'layout'     => 'master_detail',
+                'headers'    => ['الشهر', 'الموظف', 'الفرع', 'خزينة الصرف', 'الأساسي', 'مكافآت', 'سلف', 'جزاءات', 'عجز عهدة', 'عجز كاشير', 'الصافي', 'الحالة'],
+                'rows'       => $rows,
+                'totals'     => ['إجمالي:', '', '', '', '', '', '', '', '', '', number_format($tNet, 2), ''],
+                'details'    => $details,
+                'treasuries' => $treasuriesList,
+                'count'      => count($details),
+                'total_net'  => $tNet,
+            ];
+
+        case 'advances':
+            $st = $pdo->prepare(
+                "SELECT a.id, a.employee_id, a.amount, a.advance_date, a.status,
+                        a.notes, a.monthly_deduction,
+                        COALESCE(a.remaining, a.amount) AS remaining_amount,
+                        a.adv_type,
+                        e.full_name,
+                        b.name AS branch_name
+                 FROM employee_advances a
+                 JOIN employees e ON e.id = a.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 WHERE a.advance_date BETWEEN ? AND ?
+                 ORDER BY e.full_name ASC, a.advance_date DESC, a.id DESC"
+            );
+            $st->execute([$from, $to]);
+
+            $typeMap = [
+                'monthly'  => 'سلفة شهر',
+                'standing' => 'مستديمة',
+            ];
+            $statusMap = [
+                'pending'   => 'معلّقة',
+                'deducted'  => 'اتخصمت',
+                'cancelled' => 'ملغاة',
+            ];
+
+            $rows = [];
+            $employees = [];
+            $branchesList = [];
+            $tAmount = 0;
+            $tRemaining = 0;
+
+            foreach ($st as $r) {
+                $empId = (int)$r['employee_id'];
+                $amount = (float)$r['amount'];
+                $remaining = (float)$r['remaining_amount'];
+                $monthlyDed = (float)$r['monthly_deduction'];
+                $bName = $r['branch_name'] ? $r['branch_name'] : '—';
+                $tName = $typeMap[$r['adv_type']] ?? $r['adv_type'];
+                $sName = $statusMap[$r['status']] ?? $r['status'];
+
+                // 🔴 المتبقي بيتجمع من **المعلّقة بس**. السلفة اللي اتخصمت
+                //    أو اتلغت مالهاش متبقي على الموظف — لو جمعناها، التقرير
+                //    هيقول إن موظف سدّد سلفته بالكامل لسه عليه فلوس.
+                //    (`remaining` بتفضل بقيمتها في الصفوف الملغاة.)
+                $isOwed = ($r['status'] === 'pending');
+
+                $tAmount += $amount;
+                if ($isOwed) $tRemaining += $remaining;
+
+                if ($bName !== '—' && !in_array($bName, $branchesList, true)) {
+                    $branchesList[] = $bName;
+                }
+
+                // صف التصدير لإكسل
+                $rows[] = [
+                    $r['advance_date'],
+                    $r['full_name'],
+                    $bName,
+                    $tName,
+                    number_format($amount, 2),
+                    number_format($remaining, 2),
+                    number_format($monthlyDed, 2),
+                    $sName,
+                    (string)($r['notes'] ?? ''),
+                ];
+
+                if (!isset($employees[$empId])) {
+                    $employees[$empId] = [
+                        'id'                  => $empId,
+                        'full_name'           => $r['full_name'],
+                        'branch_name'         => $bName,
+                        'total_remaining'     => 0.0,
+                        'total_remaining_fmt' => '0.00',
+                        'pending_count'       => 0,
+                        'advances'            => [],
+                    ];
+                }
+
+                // نفس القاعدة: المعلّقة بس هي اللي عليه
+                if ($isOwed) {
+                    $employees[$empId]['total_remaining'] += $remaining;
+                    $employees[$empId]['pending_count']++;
+                }
+
+                $employees[$empId]['advances'][] = [
+                    'id'                    => (int)$r['id'],
+                    'advance_date'          => $r['advance_date'],
+                    'adv_type'              => $r['adv_type'],
+                    'type_label'            => $tName,
+                    'amount'                => $amount,
+                    'amount_fmt'            => number_format($amount, 2),
+                    'remaining'             => $remaining,
+                    'remaining_fmt'         => number_format($remaining, 2),
+                    'monthly_deduction'     => $monthlyDed,
+                    'monthly_deduction_fmt' => number_format($monthlyDed, 2),
+                    'status'                => $r['status'],
+                    'status_label'          => $sName,
+                    'notes'                 => (string)($r['notes'] ?? ''),
+                ];
+            }
+
+            foreach ($employees as &$emp) {
+                $emp['total_remaining_fmt'] = number_format($emp['total_remaining'], 2);
+            }
+            unset($emp);
+
+            $details = array_values($employees);
+
+            return [
+                'title'           => 'تقرير السلف',
+                'layout'          => 'master_detail',
+                'report_subtype'  => 'advances',
+                'headers'         => ['التاريخ', 'الموظف', 'الفرع', 'النوع', 'المبلغ الأصلي', 'المتبقي', 'القسط الشهري', 'الحالة', 'الملاحظات'],
+                'rows'            => $rows,
+                'totals'          => ['إجمالي:', '', '', '', number_format($tAmount, 2), number_format($tRemaining, 2), '', '', ''],
+                'details'         => $details,
+                'branches'        => $branchesList,
+                'count'           => count($details),
+                'total_remaining' => $tRemaining,
+            ];
 
         case 'attendance':
             $st = $pdo->prepare(
@@ -601,6 +1095,145 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             return ['title'=>'تقرير الحضور','headers'=>['التاريخ','الموظف','حضور','انصراف','ساعات العمل','الحالة'],
                 'rows'=>$rows,'totals'=>['','','','','إجمالي: '.minutes_to_hhmm($tMin),'']];
 
+        case 'attendance_totals':
+            $st = $pdo->prepare(
+                "SELECT e.full_name, b.name AS branch_name,
+                        COUNT(CASE WHEN a.work_hours > 0 THEN 1 END) AS attend_days,
+                        COALESCE(SUM(a.work_hours), 0) AS total_hours
+                 FROM attendance a
+                 JOIN employees e ON e.id = a.employee_id
+                 LEFT JOIN branches b ON b.id = e.branch_id
+                 WHERE a.att_date BETWEEN ? AND ?
+                 GROUP BY e.id, e.full_name, b.name
+                 HAVING attend_days > 0
+                 ORDER BY e.full_name"
+            );
+            $st->execute([$from, $to]);
+            $rows = []; $tDays = 0; $tMin = 0;
+            foreach ($st as $r) {
+                $days = (int) $r['attend_days'];
+                $mins = (int) round((float) $r['total_hours'] * 60);
+                $tDays += $days;
+                $tMin += $mins;
+                $rows[] = [
+                    $r['full_name'],
+                    !empty($r['branch_name']) ? $r['branch_name'] : '—',
+                    $days,
+                    minutes_to_hhmm($mins),
+                ];
+            }
+            return ['title' => 'تقرير إجمالي الحضور', 'headers' => ['الموظف', 'الفرع', 'أيام الحضور', 'إجمالي الساعات'],
+                'rows' => $rows, 'totals' => ['إجمالي:', '', $tDays, minutes_to_hhmm($tMin)]];
+
+        case 'receiving':
+            // تقرير استلام الفواتير: مين استلم ومين اعتمد
+            $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+            $statusFilter = isset($_GET['status']) && $_GET['status'] !== '' ? trim($_GET['status']) : null;
+
+            $supervisorId = (int) setting('receiving_supervisor_id', '0');
+            $supervisorName = '—';
+            if ($supervisorId > 0) {
+                $supStmt = $pdo->prepare("SELECT full_name FROM users WHERE id=?");
+                $supStmt->execute([$supervisorId]);
+                $supervisorName = $supStmt->fetchColumn() ?: '—';
+            }
+
+            $sqlRec =
+                "SELECT r.id AS receipt_id, r.group_id, r.distribution_id, r.status,
+                        r.started_at, r.received_at, r.approved_at,
+                        b.name AS branch_name,
+                        d.invoice_no, s.name AS supplier_name,
+                        g.name AS group_name,
+                        u_start.full_name AS started_by_name,
+                        u_rec.full_name AS received_by_name,
+                        u_app.full_name AS approved_by_name
+                 FROM receipts r
+                 JOIN branches b ON b.id = r.branch_id
+                 LEFT JOIN invoice_distribution d ON d.id = r.distribution_id
+                 LEFT JOIN suppliers s ON s.id = d.supplier_id
+                 LEFT JOIN invoice_groups g ON g.id = r.group_id
+                 LEFT JOIN users u_start ON u_start.id = r.started_by
+                 LEFT JOIN users u_rec ON u_rec.id = r.received_by
+                 LEFT JOIN users u_app ON u_app.id = r.approved_by
+                 WHERE (r.created_at BETWEEN ? AND ? OR r.received_at BETWEEN ? AND ? OR r.approved_at BETWEEN ? AND ?)";
+            $paramsRec = [
+                $from . ' 00:00:00', $to . ' 23:59:59',
+                $from . ' 00:00:00', $to . ' 23:59:59',
+                $from . ' 00:00:00', $to . ' 23:59:59',
+            ];
+            if ($branchFilter !== null) {
+                $sqlRec .= " AND r.branch_id = ?";
+                $paramsRec[] = $branchFilter;
+            }
+            if ($statusFilter !== null) {
+                $sqlRec .= " AND r.status = ?";
+                $paramsRec[] = $statusFilter;
+            }
+            $sqlRec .= " ORDER BY r.id DESC";
+
+            $st = $pdo->prepare($sqlRec);
+            $st->execute($paramsRec);
+
+            $statusMap = [
+                'sent'      => 'موزعة (بانتظار البدء)',
+                'receiving' => 'جاري الاستلام',
+                'received'  => 'تم الاستلام (بانتظار الاعتماد)',
+                'approved'  => 'معتمدة',
+            ];
+
+            $rows = [];
+            $cntApproved = 0; $cntReceived = 0; $cntReceiving = 0; $cntSent = 0;
+            foreach ($st as $r) {
+                $docLabel = '';
+                if (!empty($r['invoice_no'])) {
+                    $docLabel = 'فاتورة #' . $r['invoice_no'];
+                } elseif (!empty($r['group_name'])) {
+                    $docLabel = 'مجموعة: ' . $r['group_name'];
+                } else {
+                    $docLabel = 'إذن #' . $r['receipt_id'];
+                }
+
+                $stVal = (string)$r['status'];
+                if ($stVal === 'approved') $cntApproved++;
+                elseif ($stVal === 'received') $cntReceived++;
+                elseif ($stVal === 'receiving') $cntReceiving++;
+                else $cntSent++;
+
+                $rows[] = [
+                    $docLabel,
+                    $r['supplier_name'] ?: '—',
+                    $r['branch_name'],
+                    $statusMap[$stVal] ?? $stVal,
+                    $r['started_by_name'] ?: '—',
+                    $r['started_at'] ? date('Y-m-d H:i', strtotime($r['started_at'])) : '—',
+                    $r['received_by_name'] ?: '—',
+                    $r['received_at'] ? date('Y-m-d H:i', strtotime($r['received_at'])) : '—',
+                    $r['approved_by_name'] ?: '—',
+                    $r['approved_at'] ? date('Y-m-d H:i', strtotime($r['approved_at'])) : '—',
+                ];
+            }
+
+            return [
+                'title' => 'تقرير استلام الفواتير (مسؤول الاستلامات في الإعدادات: ' . $supervisorName . ')',
+                'headers' => [
+                    'المستند / الفاتورة',
+                    'المورد',
+                    'الفرع',
+                    'الحالة',
+                    'بدء الاستلام بواسطة',
+                    'تاريخ البدء',
+                    'المستلم (مراجعة الكميات)',
+                    'تاريخ الاستلام',
+                    'المعتمد (اعتماد الكميات)',
+                    'تاريخ الاعتماد',
+                ],
+                'rows' => $rows,
+                'sum_cards' => [
+                    ['label' => 'إجمالي الإشعارات', 'count' => true],
+                ],
+                'totals' => ['إجمالي: ' . count($rows) . ' (معتمدة: ' . $cntApproved . ' · مستلمة: ' . $cntReceived . ' · جاري: ' . $cntReceiving . ' · جديدة: ' . $cntSent . ')', '', '', '', '', '', '', '', '', ''],
+            ];
+
         default:
             return ['title'=>'','headers'=>[],'rows'=>[],'totals'=>[]];
     }
@@ -608,24 +1241,193 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
 $report = build_report($pdo, $type, $from, $to);
 
-// تصدير CSV (للتقارير العادية — الجرد له تصدير خاص بيه تحت)
-if ($export && $type !== 'stocktake') {
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $type . '_' . $from . '_' . $to . '.csv"');
-    echo "\xEF\xBB\xBF"; // BOM للعربي في إكسل
-    $out = fopen('php://output', 'w');
-    fputcsv($out, $report['headers']);
-    foreach ($report['rows'] as $row) fputcsv($out, $row);
-    if (!empty($report['totals'])) fputcsv($out, $report['totals']);
-    fclose($out);
+// تصدير إكسل (للتقارير العادية — الجرد له تصدير خاص بيه تحت)
+//
+// 🔴 كان CSV واتغيّر لـ.xlsx حقيقي — والسبب إن الـCSV مايقدرش يحل
+//    التلات مشاكل مع بعض:
+//      · العربي: محتاج BOM عشان إكسل يقراه UTF-8.
+//      · الأعمدة: إكسل على ويندوز العربي فاصل قوايمه **فاصلة منقوطة**،
+//        فالملف كان بينزل كله في عمود واحد.
+//      · الأرقام: مترندرة بـ`number_format` يعني «2,100.00» — وإكسل
+//        بيقراها نص فمش بتتجمع.
+//    والحل اللي جرّبناه (`sep=,`) ظبّط الأعمدة **وكسر العربي**: إكسل
+//    لما بيشوف `sep=` بيتجاهل الـBOM ويقرا بترميز ويندوز، فالعربي
+//    بيطلع طلاسم. حل واحد منهم بيكسر التاني — فمفيش CSV يظبط.
+//
+//    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
+//    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
+//    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
+if ($export && $type !== 'stocktake' && $type !== 'customers') {
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx(mb_substr((string)($report['title'] ?? 'تقرير'), 0, 30));
+
+    /**
+     * الأرقام في `rows` مترندرة للعرض — «2,100.00». هنا بنرجّعها رقم
+     * حقيقي عشان تدخل الخلية كرقم، فتتجمع وتترتب في إكسل.
+     * أي نص فيه فاصلة (زي الملاحظات) بيعدّي زي ما هو.
+     */
+    $xlCell = static function ($v) {
+        $s = trim((string) $v);
+        if ($s === '' || $s === '—') return $s;
+        if (preg_match('/^-?\d{1,3}(,\d{3})*(\.\d+)?$/', $s)) {
+            return (float) str_replace(',', '', $s);
+        }
+        return $s;
+    };
+
+    $x->addRow($report['headers'], true);
+
+    $descCol = ($type === 'treasury') ? 2 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 1 : -1);
+    foreach ($report['rows'] as $ri => $row) {
+        if ($descCol >= 0 && !empty($report['row_paths'][$ri])) {
+            $row[$descCol] = (string)$row[$descCol] !== ''
+                ? ($row[$descCol] . ' — ' . $report['row_paths'][$ri])
+                : $report['row_paths'][$ri];
+        }
+        $x->addRow(array_map($xlCell, $row));
+    }
+    if (!empty($report['totals'])) $x->addRow(array_map($xlCell, $report['totals']), true);
+
+    $x->download($type . '_' . $from . '_' . $to . '.xlsx');
     exit;
 }
 
 $reportTypes = [
     'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
-    'suppliers'=>'الموردين','salaries'=>'الرواتب','attendance'=>'الحضور',
-    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع',
+    'deficits'=>'العجوزات',
+    'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
+    'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
 ];
+
+// بيانات تقرير «داتا العملاء»
+$custRows = []; $custReady = true; $custMsg = ''; $custBranches = []; $custBranchName = '';
+if ($type === 'customers') {
+    try {
+        $pdo->query("SELECT 1 FROM book_reservations LIMIT 1");
+    } catch (Throwable $e) {
+        $custReady = false;
+        $custMsg = 'جدول الحجوزات مش موجود';
+    }
+
+    if ($custReady) {
+        try {
+            $custBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
+        } catch (Throwable $e) {
+            $custBranches = [];
+        }
+
+        $fromTs    = $from . ' 00:00:00';
+        $toTs      = $to . ' 23:59:59';
+        $selBranch = (int)($_GET['branch'] ?? 0);
+        $search    = trim((string)($_GET['q'] ?? ''));
+
+        if ($selBranch > 0) {
+            foreach ($custBranches as $cb) {
+                if ((int)$cb['id'] === $selBranch) {
+                    $custBranchName = $cb['name'];
+                    break;
+                }
+            }
+        }
+
+        $branchSql = $selBranch > 0 ? " AND r.branch_id = ?" : "";
+
+        if ($search === '') {
+            $sql = "SELECT
+                        latest.customer_name,
+                        CASE
+                            WHEN latest.customer_phone IS NOT NULL AND TRIM(latest.customer_phone) != ''
+                            THEN TRIM(latest.customer_phone)
+                            ELSE ''
+                        END AS customer_phone,
+                        grp.branches,
+                        grp.reservations_count,
+                        latest.created_at AS last_reservation_date
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN r.customer_phone IS NOT NULL AND TRIM(r.customer_phone) != ''
+                                THEN TRIM(r.customer_phone)
+                                ELSE CONCAT('__NAME__', TRIM(COALESCE(r.customer_name, 'بدون اسم')))
+                            END AS cust_key,
+                            MAX(r.id) AS max_id,
+                            COUNT(*) AS reservations_count,
+                            GROUP_CONCAT(DISTINCT COALESCE(b.name, '—') ORDER BY b.name SEPARATOR '، ') AS branches
+                        FROM book_reservations r
+                        LEFT JOIN branches b ON b.id = r.branch_id
+                        WHERE r.created_at >= ? AND r.created_at <= ? $branchSql
+                        GROUP BY cust_key
+                    ) grp
+                    JOIN book_reservations latest ON latest.id = grp.max_id
+                    ORDER BY latest.id DESC";
+
+            $args = [$fromTs, $toTs];
+            if ($selBranch > 0) $args[] = $selBranch;
+        } else {
+            $searchLike = '%' . $search . '%';
+            $sql = "SELECT
+                        latest.customer_name,
+                        CASE
+                            WHEN latest.customer_phone IS NOT NULL AND TRIM(latest.customer_phone) != ''
+                            THEN TRIM(latest.customer_phone)
+                            ELSE ''
+                        END AS customer_phone,
+                        grp.branches,
+                        grp.reservations_count,
+                        latest.created_at AS last_reservation_date
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN r.customer_phone IS NOT NULL AND TRIM(r.customer_phone) != ''
+                                THEN TRIM(r.customer_phone)
+                                ELSE CONCAT('__NAME__', TRIM(COALESCE(r.customer_name, 'بدون اسم')))
+                            END AS cust_key,
+                            MAX(r.id) AS max_id,
+                            COUNT(*) AS reservations_count,
+                            GROUP_CONCAT(DISTINCT COALESCE(b.name, '—') ORDER BY b.name SEPARATOR '، ') AS branches,
+                            MAX(CASE WHEN r.customer_name LIKE ? OR r.customer_phone LIKE ? THEN 1 ELSE 0 END) AS name_matched
+                        FROM book_reservations r
+                        LEFT JOIN branches b ON b.id = r.branch_id
+                        WHERE r.created_at >= ? AND r.created_at <= ? $branchSql
+                        GROUP BY cust_key
+                    ) grp
+                    JOIN book_reservations latest ON latest.id = grp.max_id
+                    WHERE (latest.customer_name LIKE ? OR latest.customer_phone LIKE ? OR grp.name_matched = 1)
+                    ORDER BY latest.id DESC";
+
+            $args = [$searchLike, $searchLike, $fromTs, $toTs];
+            if ($selBranch > 0) $args[] = $selBranch;
+            $args[] = $searchLike;
+            $args[] = $searchLike;
+        }
+
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute($args);
+            $custRows = $st->fetchAll();
+        } catch (Throwable $e) {
+            $custRows = [];
+        }
+
+        if ($export) {
+            require_once __DIR__ . '/xlsx_lib.php';
+            $x = new SimpleXlsx('داتا العملاء');
+            $x->setColumnTypes(['s', 's', 's', 'n', 's']);
+            $x->addRow(['الاسم', 'رقم التليفون', 'الفروع', 'عدد الحجوزات', 'تاريخ آخر حجز'], true);
+            foreach ($custRows as $r) {
+                $x->addRow([
+                    $r['customer_name'],
+                    !empty($r['customer_phone']) ? $r['customer_phone'] : '—',
+                    $r['branches'] ?: '—',
+                    (int)$r['reservations_count'],
+                    date('Y-m-d', strtotime($r['last_reservation_date'])),
+                ]);
+            }
+            $x->download('customers_' . $from . '_' . $to . '.xlsx');
+            exit;
+        }
+    }
+}
 
 // بيانات تقرير «أصناف بدون سعر بيع»
 $npRows = []; $npReady = true; $npMsg = '';
@@ -755,18 +1557,18 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .rep-tabs { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
-    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-hover); background:#fff;
+    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
         font-size:14px; font-weight:500; }
     .rep-tab.active { background:var(--accent); color:#fff; }
     .rep-tab:not(.active):hover { background:var(--bg); }
-    .filter-bar { background:#fff; border-radius:12px; padding:16px; margin-bottom:18px;
+    .filter-bar { background:var(--surface); border-radius:12px; padding:16px; margin-bottom:18px;
         display:flex; gap:10px; align-items:center; flex-wrap:wrap; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .filter-bar label { font-size:13px; color:var(--ink-500); }
     .filter-bar input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 18px; cursor:pointer; font-family:inherit; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
     .btn:hover { background:var(--accent-hover); }
-    .btn-csv { background:var(--pos); } .btn-csv:hover { background:#15835f; }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:var(--pos-fill); }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .rep-title { font-size:17px; color:var(--ink-900); font-weight:700; margin-bottom:4px; }
     /* كروت الإجماليات — بتتحسب من الصفوف الظاهرة في الجدول */
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
@@ -777,27 +1579,27 @@ require_once __DIR__ . '/includes/header.php';
     .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
     .sc-value.neg { color:var(--neg); }
     .sc-value.pos { color:var(--pos); }
-    .sum-cards.filtered .sum-card { border-color:var(--accent); background:var(--accent-soft); }
-    .sc-note { font-size:11px; color:var(--accent-hover); margin-top:4px; }
+    .sum-cards.filtered .sum-card { border-color:var(--accent-text); background:var(--accent-soft); }
+    .sc-note { font-size:11px; color:var(--accent-text); margin-top:4px; }
     /* أكورديون تفاصيل القيد */
     tr.acc-row { cursor:pointer; }
     tr.acc-row:hover { background:var(--bg); }
     tr.acc-row.open { background:var(--accent-soft); font-weight:600; }
-    .acc-caret { display:inline-block; color:var(--accent); font-size:11px;
+    .acc-caret { display:inline-block; color:var(--accent-text); font-size:11px;
         transition:transform .15s; }
     tr.acc-row.open .acc-caret { transform:rotate(-90deg); }
     tr.acc-body > td { background:var(--line-soft); padding:0; }
     .acc-inner { padding:12px 16px; }
-    .acc-inner table { width:100%; background:#fff; border-radius:9px; overflow:hidden; }
+    .acc-inner table { width:100%; background:var(--surface); border-radius:9px; overflow:hidden; }
     .acc-inner th { background:var(--line-soft); font-size:12px; }
     .acc-inner td, .acc-inner th { padding:7px 10px; font-size:12.5px; }
     .acc-msg { padding:14px; text-align:center; color:var(--ink-400); font-size:13px; }
     /* أزرار الفروع في تقرير العهدة */
     .br-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-    .br-tab { padding:8px 15px; border-radius:9px; background:#fff; border:1.5px solid var(--line);
+    .br-tab { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
         color:var(--ink-700); font-size:13px; text-decoration:none; }
-    .br-tab:hover { border-color:var(--accent); }
-    .br-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+    .br-tab:hover { border-color:var(--accent-text); }
+    .br-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; font-weight:600; }
     .rep-period { font-size:13px; color:var(--ink-500); margin-bottom:16px; }
     /* عمود الملاحظات — نص طويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل (مش من الخلية). */
@@ -807,11 +1609,60 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:10px 12px; text-align:right; font-size:13px; border-bottom:1px solid var(--line); white-space:nowrap; }
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
-    .empty { text-align:center; color:#bbb; padding:40px; font-size:15px; }
+    .empty { text-align:center; color:var(--ink-400); padding:40px; font-size:15px; }
+
+    /* قائمة وتفصيل الرواتب (Master-Detail) */
+    .sal-sum-cards { margin-bottom:16px; }
+    .sal-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+    .sal-input, .sal-select { padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-800); }
+    .sal-input { flex:1; min-width:160px; }
+    .sal-select { min-width:130px; }
+    .sal-input:focus, .sal-select:focus { outline:none; border-color:var(--accent); }
+    .sal-master-detail { display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
+    @media (max-width: 768px) {
+        .sal-master-detail { grid-template-columns:1fr; }
+    }
+    .sal-master-list { display:flex; flex-direction:column; gap:8px; max-height:750px; overflow-y:auto; padding-left:2px; }
+    .sal-card { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:12px 14px; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .15s; user-select:none; }
+    .sal-card:hover { border-color:var(--ink-300); background:var(--bg); }
+    .sal-card.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent); }
+    .sal-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .sal-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; }
+    .sal-card-name { font-weight:600; color:var(--ink-900); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sal-card-net { font-size:17px; font-weight:700; margin-bottom:4px; }
+    .sal-card-net.pos { color:var(--pos); }
+    .sal-card-sub { font-size:11.5px; color:var(--ink-500); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .sal-curr { font-size:11px; font-weight:normal; color:var(--ink-500); }
+    .sal-badge-paid { background:var(--pos-soft); color:var(--pos); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
+    .sal-badge-draft { background:var(--warn-soft); color:var(--warn); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
+    .sal-detail-panel { background:var(--surface); border:1.5px solid var(--line); border-radius:14px; padding:20px; }
+    .sal-detail-card { display:flex; flex-direction:column; gap:14px; }
+    .sal-detail-card[hidden] { display:none !important; }
+    .sal-detail-header { border-bottom:1.5px solid var(--line-soft); padding-bottom:12px; }
+    .sal-detail-name-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+    .sal-detail-name { font-size:18px; font-weight:700; color:var(--ink-900); margin:0; }
+    .sal-detail-sub { font-size:12.5px; color:var(--ink-500); margin-bottom:8px; }
+    .sal-detail-treasury-row { display:inline-flex; align-items:center; gap:6px; background:var(--line-soft); padding:4px 10px; border-radius:6px; font-size:12.5px; }
+    .sal-treasury-label { color:var(--ink-500); }
+    .sal-treasury-val { font-weight:600; color:var(--ink-800); }
+    .sal-breakdown { display:flex; flex-direction:column; gap:8px; }
+    .sal-line { display:flex; align-items:baseline; gap:8px; font-size:13.5px; }
+    .sal-line-label { color:var(--ink-700); white-space:nowrap; }
+    .sal-line-dots { flex:1; border-bottom:1px dotted var(--ink-300); height:1px; margin:0 4px; }
+    .sal-line-val { font-weight:600; color:var(--ink-900); white-space:nowrap; direction:ltr; text-align:left; }
+    .sal-line-val.pos { color:var(--pos); }
+    .sal-line-val.neg { color:var(--neg); }
+    .sal-divider { border-top:1px dashed var(--line); margin:4px 0; }
+    .sal-divider-solid { border-top:1.5px solid var(--line); margin:6px 0; }
+    .sal-subtotal .sal-line-label { font-weight:600; color:var(--ink-900); }
+    .sal-net-row { font-size:16px; margin-top:4px; }
+    .sal-net-row .sal-line-label { font-weight:700; color:var(--ink-900); font-size:16px; }
+    .sal-net-val { font-size:18px; font-weight:800; }
 </style>
 
 <div class="rep-tabs">
     <?php foreach ($reportTypes as $k=>$label): ?>
+        <?php if (!isset($allowedTypes[$k])) continue; ?>
         <a href="?type=<?= $k ?>&from=<?= e($from) ?>&to=<?= e($to) ?>"
            class="rep-tab <?= $type===$k?'active':'' ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
@@ -885,9 +1736,49 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'deficits'): $selDefStatus = $_GET['status'] ?? ''; ?>
+        <label>الحالة</label>
+        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">الكل</option>
+            <option value="within" <?= $selDefStatus==='within'?'selected':'' ?>>داخل العتبة</option>
+            <option value="exceeded" <?= $selDefStatus==='exceeded'?'selected':'' ?>>تجاوز العتبة</option>
+        </select>
+    <?php endif; ?>
+    <?php if ($type === 'customers'): $selCustBranch = (int)($_GET['branch'] ?? 0); ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($custBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= $selCustBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="q" value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="الاسم أو التليفون" aria-label="بحث بالاسم أو التليفون"
+               style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+    <?php endif; ?>
+    <?php if ($type === 'receiving'):
+        $recBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
+        $selRecBranch = (int)($_GET['branch'] ?? 0);
+        $selRecStatus = (string)($_GET['status'] ?? '');
+    ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($recBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= $selRecBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>الحالة</label>
+        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الحالات</option>
+            <option value="sent" <?= $selRecStatus === 'sent' ? 'selected' : '' ?>>موزعة (بانتظار البدء)</option>
+            <option value="receiving" <?= $selRecStatus === 'receiving' ? 'selected' : '' ?>>جاري الاستلام</option>
+            <option value="received" <?= $selRecStatus === 'received' ? 'selected' : '' ?>>تم الاستلام (بانتظار الاعتماد)</option>
+            <option value="approved" <?= $selRecStatus === 'approved' ? 'selected' : '' ?>>معتمدة</option>
+        </select>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?>&export=1" class="btn btn-csv">
-        <i class="ti ti-download"></i> تصدير CSV
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+        <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
 
@@ -943,7 +1834,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="type" value="stocktake">
             <div>
                 <label style="display:block;font-size:13px;color:var(--ink-500);margin-bottom:4px;">اختر جلسة الجرد</label>
-                <select name="session" onchange="this.form.submit()" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:280px;">
+                <select name="session" onchange="formSubmit(this.form)" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;min-width:280px;">
                     <option value="">— اختر —</option>
                     <?php foreach ($stkSessions as $s): ?>
                         <option value="<?= (int)$s['id'] ?>" <?= $stkSelSession===(int)$s['id']?'selected':'' ?>>
@@ -971,7 +1862,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <!-- البوب أب -->
                 <div id="sheetsModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;align-items:center;justify-content:center;">
-                    <div style="background:#fff;border-radius:16px;padding:24px;max-width:560px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+                    <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:560px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
                         <h3 style="color:var(--ink-900);font-size:17px;margin-bottom:14px;">اختر المحاضر</h3>
                         <div style="display:flex;gap:8px;margin-bottom:12px;">
                             <button type="button" class="btn btn-sm" onclick="toggleAllSheets(true)">اختيار الكل</button>
@@ -1031,7 +1922,7 @@ require_once __DIR__ . '/includes/header.php';
                        . '&sheet_ids=' . implode(',', array_map('intval', $stkSelSheets));
             ?>
             <div style="display:flex;gap:8px;">
-                <a href="?<?= $expQs ?>&fmt=csv" class="btn btn-csv"><i class="ti ti-download"></i> تصدير CSV</a>
+                <a href="?<?= $expQs ?>&fmt=csv" class="btn btn-csv"><i class="ti ti-download"></i> تصدير إكسل</a>
                 <a href="?<?= $expQs ?>&fmt=xlsx" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
             </div>
         </div>
@@ -1059,9 +1950,9 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= e($l['unit'] ?? '—') ?></td>
                         <td><?= $fmt($base) ?></td>
                         <td><?= $fmt($rev) ?></td>
-                        <td style="font-weight:600;color:var(--accent);"><?= $fmt($fin) ?></td>
+                        <td style="font-weight:600;color:var(--accent-text);"><?= $fmt($fin) ?></td>
                         <td><?= $fmt($sys) ?></td>
-                        <td style="color:<?= $diff!==null&&$diff<0?'var(--neg)':($diff>0?'var(--pos)':'#666') ?>;"><?= $fmt($diff) ?></td>
+                        <td style="color:<?= $diff!==null&&$diff<0?'var(--neg)':($diff>0?'var(--pos)':'var(--ink-500)') ?>;"><?= $fmt($diff) ?></td>
                         <td><?= $cost!==null?number_format($cost,2):'—' ?></td>
                         <td style="color:var(--ink-500);font-size:12px;"><?= e($l['counter_name'] ?? '—') ?></td>
                     </tr>
@@ -1082,7 +1973,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php else: ?>
 
 <style>
-    .np-bar { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:14px;
+    .np-bar { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:14px;
         display:flex; gap:10px; align-items:center; flex-wrap:wrap;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .np-bar input[type=text], .np-bar input[type=number] {
@@ -1091,7 +1982,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-search-wrap { position:relative; flex:1 1 280px; min-width:220px; }
     .np-search-wrap input { width:100%; box-sizing:border-box; }
     .np-sugg { position:absolute; top:calc(100% + 4px); right:0; left:0; z-index:40;
-        background:#fff; border:1.5px solid var(--line); border-radius:10px;
+        background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:300px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,0.12); display:none; }
     .np-sugg div { padding:9px 12px; cursor:pointer; font-size:13px; border-bottom:1px solid var(--line-soft); }
     .np-sugg div:last-child { border-bottom:none; }
@@ -1102,15 +1993,15 @@ require_once __DIR__ . '/includes/header.php';
     .np-table td.np-name { white-space:normal; min-width:180px; }
     .np-table input { padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         font-family:inherit; font-size:13px; width:100px; text-align:left; direction:ltr; }
-    .np-table input:focus { outline:none; border-color:var(--accent); }
-    .np-table input.np-dirty { border-color:var(--pos); background:#f2fdf8; }
-    .np-table tr.np-nocost td { background:#fff9ec; }
+    .np-table input:focus { outline:none; border-color:var(--accent-text); }
+    .np-table input.np-dirty { border-color:var(--pos); background:var(--surface); }
+    .np-table tr.np-nocost td { background:var(--line-soft); }
     .np-x { background:none; border:none; cursor:pointer; color:var(--neg); font-size:16px; padding:2px 6px; }
 
     .np-modal { position:fixed; inset:0; background:rgba(20,16,50,0.55); z-index:200;
         display:none; align-items:center; justify-content:center; padding:16px; }
     .np-modal.on { display:flex; }
-    .np-box { background:#fff; border-radius:14px; width:min(820px,100%); max-height:88vh;
+    .np-box { background:var(--surface); border-radius:14px; width:min(820px,100%); max-height:88vh;
         display:flex; flex-direction:column; overflow:hidden; }
     .np-box header { padding:14px 18px; border-bottom:1px solid var(--line);
         display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -1124,7 +2015,7 @@ require_once __DIR__ . '/includes/header.php';
     .np-row label { flex:1; cursor:pointer; display:flex; gap:10px; align-items:center; }
     .np-muted { color:var(--ink-500); font-size:12px; }
     .btn[disabled] { opacity:.5; cursor:not-allowed; }
-    .btn-ghost { background:#fff; color:var(--accent-hover); border:1.5px solid var(--line); }
+    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
     .btn-ghost:hover { background:var(--bg); }
     .np-note { font-size:12px; color:var(--ink-500); margin-top:10px; line-height:1.7; }
 </style>
@@ -1140,7 +2031,7 @@ require_once __DIR__ . '/includes/header.php';
     <input type="number" id="npPct" step="0.5" style="width:90px;" placeholder="%">
     <button class="btn" id="npApply"><i class="ti ti-percentage"></i> تطبيق النسبة</button>
 
-    <button class="btn btn-ghost" id="npZeroBtn"><i class="ti ti-list-search"></i> أصناف أسعار بيعها 0</button>
+    <button class="btn btn-ghost" id="npZeroBtn"><i class="ti ti-filter"></i> أصناف أسعار بيعها 0</button>
 </div>
 
 <!-- ===================== الجدول ===================== -->
@@ -1181,7 +2072,7 @@ require_once __DIR__ . '/includes/header.php';
         النسبة بتتحسب على <b>سعر التكلفة</b> مش على السعر القديم (تكلفة 100 + نسبة 3 = 103).
         الأصناف اللي تكلفتها صفر بتتلوّن بالأصفر وبتتخطّى في النسبة الموحدة — اكتب سعرها بإيدك.
         <br>
-        ⚠️ السعر ده بيتحفظ <b>عندنا بس</b> — زي الاستلامات بالظبط. عشان يوصل نظام الشركة،
+        <i class="ti ti-alert-triangle"></i> السعر ده بيتحفظ <b>عندنا بس</b> — زي الاستلامات بالظبط. عشان يوصل نظام الشركة،
         اسحب ملف «تقرير الأسعار» وارفعه هناك.
     </p>
 </div>
@@ -1510,6 +2401,37 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php endif; ?>
 
+<?php elseif ($type === 'customers'): ?>
+<?php /* ===== تقرير «داتا العملاء» — الواجهة (سطر لكل تليفون، والاسم وآخر تاريخ من نفس آخر حجز) ===== */ ?>
+<div class="card">
+    <div class="rep-title">داتا العملاء<?= $custBranchName !== '' ? ' — ' . e($custBranchName) : '' ?></div>
+    <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($custRows)) ?> عميل</div>
+    <?php if (!$custReady): ?>
+        <div class="empty" style="color:var(--neg);"><?= e($custMsg) ?></div>
+    <?php elseif (!$custRows): ?>
+        <div class="empty">مفيش حجوزات في الفترة دي.</div>
+    <?php else: ?>
+    <div style="overflow-x:auto;">
+    <table>
+        <thead><tr>
+            <th>الاسم</th><th>رقم التليفون</th><th>الفروع</th><th>عدد الحجوزات</th><th>تاريخ آخر حجز</th>
+        </tr></thead>
+        <tbody>
+        <?php foreach ($custRows as $r): ?>
+            <tr>
+                <td><?= e((string)$r['customer_name']) ?></td>
+                <td dir="ltr" style="text-align:right;"><?= $r['customer_phone'] !== '' ? e($r['customer_phone']) : '—' ?></td>
+                <td><?= e((string)($r['branches'] ?: '—')) ?></td>
+                <td><?= (int)$r['reservations_count'] ?></td>
+                <td><?= e(date('Y-m-d', strtotime((string)$r['last_reservation_date']))) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
+</div>
+
 <?php else: ?>
 <div class="card">
     <div class="rep-title"><?= e($report['title']) ?></div>
@@ -1517,6 +2439,584 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (!empty($report['note'])): ?>
         <div class="empty"><?= e($report['note']) ?></div>
     <?php endif; ?>
+
+    <?php if (($report['layout'] ?? '') === 'master_detail'): ?>
+        <?php if (($report['report_subtype'] ?? '') === 'advances'): ?>
+            <?php if (empty($report['details'])): ?>
+                <div class="empty">لا توجد بيانات في هذه الفترة.</div>
+            <?php else: ?>
+                <div class="sum-cards sal-sum-cards" id="advSummaryCards">
+                    <div class="sum-card">
+                        <div class="sc-label">عدد الموظفين</div>
+                        <div class="sc-value" id="advCountCard"><?= number_format($report['count']) ?></div>
+                    </div>
+                    <div class="sum-card">
+                        <div class="sc-label">إجمالي المتبقي</div>
+                        <div class="sc-value" id="advRemainingCard" style="color:var(--ink-900);"><?= number_format($report['total_remaining'], 2) ?></div>
+                    </div>
+                </div>
+
+                <div class="sal-filter-bar">
+                    <input type="text" id="advSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                    <select id="advBranchFilter" class="sal-select">
+                        <option value="">كل الفروع</option>
+                        <?php foreach ($report['branches'] as $br): ?>
+                            <option value="<?= e($br) ?>"><?= e($br) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select id="advTypeFilter" class="sal-select">
+                        <option value="">كل الأنواع</option>
+                        <option value="monthly">سلفة شهر</option>
+                        <option value="standing">مستديمة</option>
+                    </select>
+                    <select id="advStatusFilter" class="sal-select">
+                        <option value="">كل الحالات</option>
+                        <option value="pending">معلّقة</option>
+                        <option value="deducted">اتخصمت</option>
+                        <option value="cancelled">ملغاة</option>
+                    </select>
+                </div>
+
+                <div class="sal-master-detail">
+                    <!-- القائمة (يمين) -->
+                    <div class="sal-master-list" id="advMasterList">
+                        <?php foreach ($report['details'] as $idx => $d): ?>
+                            <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                                 data-id="<?= $d['id'] ?>"
+                                 data-name="<?= e($d['full_name']) ?>"
+                                 data-branch="<?= e($d['branch_name']) ?>"
+                                 data-remaining="<?= $d['total_remaining'] ?>"
+                                 data-pending="<?= $d['pending_count'] ?>"
+                                 tabindex="0"
+                                 role="button"
+                                 aria-pressed="<?= $idx === 0 ? 'true' : 'false' ?>">
+                                <div class="sal-card-header">
+                                    <div class="sal-card-name"><?= e($d['full_name']) ?></div>
+                                    <?php if ($d['pending_count'] > 0): ?>
+                                        <span class="badge" style="background:var(--warn-soft);color:var(--warn);padding:2px 8px;border-radius:6px;font-size:11.5px;font-weight:600;">
+                                            <?= $d['pending_count'] ?> معلّقة
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge" style="background:var(--pos-soft);color:var(--pos);padding:2px 8px;border-radius:6px;font-size:11.5px;font-weight:600;">
+                                            لا توجد معلّقة
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="sal-card-net" style="font-size:17px;font-weight:700;color:var(--ink-900);margin-bottom:4px;">
+                                    <span class="adv-card-emp-rem"><?= e($d['total_remaining_fmt']) ?></span> <span class="sal-curr">ج.م</span>
+                                </div>
+                                <?php if ($d['branch_name'] !== '—'): ?>
+                                    <div class="sal-card-sub">
+                                        <?= e($d['branch_name']) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                        <div id="advEmptyList" class="empty" style="display:none;padding:24px 12px;">
+                            مفيش موظف مطابق للفلتر.
+                        </div>
+                    </div>
+
+                    <!-- التفصيل (شمال) -->
+                    <div class="sal-detail-panel" id="advDetailPanel">
+                        <?php foreach ($report['details'] as $idx => $d): ?>
+                            <div class="sal-detail-card" id="advDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                                <div class="sal-detail-header">
+                                    <div class="sal-detail-name-row">
+                                        <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
+                                        <?php if ($d['branch_name'] !== '—'): ?>
+                                            <span class="badge" style="background:var(--line-soft);color:var(--ink-700);padding:4px 10px;border-radius:6px;font-size:12.5px;">
+                                                <?= e($d['branch_name']) ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="sal-detail-sub">
+                                        عدد السلف: <?= count($d['advances']) ?> · المعلّقة: <?= $d['pending_count'] ?>
+                                    </div>
+                                </div>
+
+                                <div style="overflow-x:auto;">
+                                    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
+                                        <thead>
+                                            <tr style="background:var(--line-soft);">
+                                                <th style="padding:8px 10px;text-align:right;">التاريخ</th>
+                                                <th style="padding:8px 10px;text-align:right;">النوع</th>
+                                                <th style="padding:8px 10px;text-align:right;">الأصل</th>
+                                                <th style="padding:8px 10px;text-align:right;">المتبقي</th>
+                                                <th style="padding:8px 10px;text-align:right;">القسط الشهري</th>
+                                                <th style="padding:8px 10px;text-align:right;">الحالة</th>
+                                                <th style="padding:8px 10px;text-align:right;">الملاحظات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($d['advances'] as $adv): ?>
+                                                <tr class="adv-item-row"
+                                                    data-type="<?= e($adv['adv_type']) ?>"
+                                                    data-status="<?= e($adv['status']) ?>"
+                                                    data-remaining="<?= $adv['remaining'] ?>">
+                                                    <td style="padding:9px 10px;"><?= e($adv['advance_date']) ?></td>
+                                                    <td style="padding:9px 10px;">
+                                                        <span class="badge" style="background:<?= $adv['adv_type'] === 'monthly' ? 'var(--accent-soft)' : 'var(--line-soft)' ?>;color:<?= $adv['adv_type'] === 'monthly' ? 'var(--accent-text)' : 'var(--ink-700)' ?>;">
+                                                            <?= e($adv['type_label']) ?>
+                                                        </span>
+                                                    </td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['amount_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;font-weight:600;direction:ltr;text-align:right;color:var(--ink-900);"><?= e($adv['remaining_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['monthly_deduction_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;">
+                                                        <?php if ($adv['status'] === 'pending'): ?>
+                                                            <span class="badge" style="background:var(--warn-soft);color:var(--warn);">معلّقة</span>
+                                                        <?php elseif ($adv['status'] === 'deducted'): ?>
+                                                            <span class="badge" style="background:var(--pos-soft);color:var(--pos);">اتخصمت</span>
+                                                        <?php else: ?>
+                                                            <span class="badge" style="background:var(--bg);color:var(--ink-400);border:1px solid var(--line);">ملغاة</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td style="padding:9px 10px;color:var(--ink-600);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= e($adv['notes']) ?>">
+                                                        <?= e($adv['notes'] ?: '—') ?>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="sal-divider-solid"></div>
+
+                                <div class="sal-line sal-net-row" style="margin-top:8px;">
+                                    <span class="sal-line-label" style="font-size:15px;">إجمالي المتبقي</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val sal-net-val" style="color:var(--ink-900);font-size:18px;">
+                                        <span class="adv-detail-total-rem"><?= e($d['total_remaining_fmt']) ?></span> <span class="sal-curr">ج.م</span>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+
+                        <div id="advDetailEmpty" class="sal-detail-card" hidden>
+                            <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                (function () {
+                    var masterList = document.getElementById('advMasterList');
+                    if (!masterList) return;
+                    var cards = Array.from(masterList.querySelectorAll('.sal-card'));
+                    var searchInput = document.getElementById('advSearch');
+                    var branchSelect = document.getElementById('advBranchFilter');
+                    var typeSelect = document.getElementById('advTypeFilter');
+                    var statusSelect = document.getElementById('advStatusFilter');
+                    var countEl = document.getElementById('advCountCard');
+                    var remEl = document.getElementById('advRemainingCard');
+                    var summaryBox = document.getElementById('advSummaryCards');
+                    var emptyListEl = document.getElementById('advEmptyList');
+                    var emptyDetailEl = document.getElementById('advDetailEmpty');
+                    var detailPanel = document.getElementById('advDetailPanel');
+
+                    function norm(str) {
+                        return String(str || '').toLowerCase()
+                            .replace(/[أإآ]/g, 'ا')
+                            .replace(/ة/g, 'ه')
+                            .replace(/ى/g, 'ي')
+                            .replace(/[\u064B-\u065F]/g, '')
+                            .trim();
+                    }
+
+                    function selectCard(card) {
+                        cards.forEach(function (c) {
+                            c.classList.remove('active');
+                            c.setAttribute('aria-pressed', 'false');
+                        });
+                        if (detailPanel) {
+                            var allDetails = detailPanel.querySelectorAll('.sal-detail-card');
+                            allDetails.forEach(function (d) { d.hidden = true; });
+                        }
+
+                        if (!card) {
+                            if (emptyDetailEl) emptyDetailEl.hidden = false;
+                            return;
+                        }
+
+                        card.classList.add('active');
+                        card.setAttribute('aria-pressed', 'true');
+                        var targetId = 'advDetail_' + card.dataset.id;
+                        var targetDetail = document.getElementById(targetId);
+                        if (targetDetail) {
+                            targetDetail.hidden = false;
+                        }
+                        if (emptyDetailEl) emptyDetailEl.hidden = true;
+                    }
+
+                    function applyFilter() {
+                        var q = searchInput ? norm(searchInput.value) : '';
+                        var br = branchSelect ? (branchSelect.value || '').trim() : '';
+                        var tp = typeSelect ? (typeSelect.value || '').trim() : '';
+                        var st = statusSelect ? (statusSelect.value || '').trim() : '';
+
+                        var visibleCount = 0;
+                        var visibleRemaining = 0;
+                        var firstVisible = null;
+                        var activeVisible = false;
+
+                        cards.forEach(function (card) {
+                            var cardName = norm(card.dataset.name);
+                            var cardBr = card.dataset.branch || '';
+
+                            var matchName = !q || cardName.indexOf(q) !== -1;
+                            var matchBr = !br || cardBr === br;
+
+                            // فلترة بنود السلف لهذا الموظف
+                            var targetId = 'advDetail_' + card.dataset.id;
+                            var targetDetail = document.getElementById(targetId);
+                            var empMatchingRem = 0;
+                            var empMatchingCount = 0;
+
+                            if (targetDetail) {
+                                var itemRows = targetDetail.querySelectorAll('.adv-item-row');
+                                itemRows.forEach(function (row) {
+                                    var rowType = row.dataset.type || '';
+                                    var rowStatus = row.dataset.status || '';
+                                    var rowRem = parseFloat(row.dataset.remaining || '0');
+
+                                    var matchType = !tp || rowType === tp;
+                                    var matchStatus = !st || rowStatus === st;
+
+                                    if (matchType && matchStatus) {
+                                        row.hidden = false;
+                                        empMatchingCount++;
+                                        empMatchingRem += rowRem;
+                                    } else {
+                                        row.hidden = true;
+                                    }
+                                });
+
+                                var detailRemEl = targetDetail.querySelector('.adv-detail-total-rem');
+                                if (detailRemEl) {
+                                    detailRemEl.textContent = empMatchingRem.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                            }
+
+                            // الموظف يظهر لو طابق الاسم والفرع وعنده سلف مطابقة لفلتر النوع والحالة
+                            var match = matchName && matchBr && empMatchingCount > 0;
+                            card.hidden = !match;
+
+                            if (match) {
+                                visibleCount++;
+                                visibleRemaining += empMatchingRem;
+                                var cardRemEl = card.querySelector('.adv-card-emp-rem');
+                                if (cardRemEl) {
+                                    cardRemEl.textContent = empMatchingRem.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                }
+                                if (!firstVisible) firstVisible = card;
+                                if (card.classList.contains('active')) activeVisible = true;
+                            }
+                        });
+
+                        if (countEl) countEl.textContent = visibleCount.toLocaleString('en-US');
+                        if (remEl) remEl.textContent = visibleRemaining.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                        var isFiltered = Boolean(q || br || tp || st);
+                        if (summaryBox) {
+                            if (isFiltered) summaryBox.classList.add('filtered');
+                            else summaryBox.classList.remove('filtered');
+                        }
+
+                        if (visibleCount === 0) {
+                            if (emptyListEl) emptyListEl.style.display = 'block';
+                            selectCard(null);
+                        } else {
+                            if (emptyListEl) emptyListEl.style.display = 'none';
+                            if (!activeVisible && firstVisible) {
+                                selectCard(firstVisible);
+                            }
+                        }
+                    }
+
+                    masterList.addEventListener('click', function (e) {
+                        var card = e.target.closest('.sal-card');
+                        if (!card || card.hidden) return;
+                        selectCard(card);
+                    });
+
+                    masterList.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            var card = e.target.closest('.sal-card');
+                            if (card && !card.hidden) {
+                                e.preventDefault();
+                                selectCard(card);
+                            }
+                        }
+                    });
+
+                    if (searchInput) searchInput.addEventListener('input', applyFilter);
+                    if (branchSelect) branchSelect.addEventListener('change', applyFilter);
+                    if (typeSelect) typeSelect.addEventListener('change', applyFilter);
+                    if (statusSelect) statusSelect.addEventListener('change', applyFilter);
+                })();
+                </script>
+            <?php endif; ?>
+        <?php else: ?>
+        <?php if (empty($report['details'])): ?>
+            <div class="empty">لا توجد بيانات في هذه الفترة.</div>
+        <?php else: ?>
+            <div class="sum-cards sal-sum-cards" id="salSummaryCards">
+                <div class="sum-card">
+                    <div class="sc-label">عدد الموظفين</div>
+                    <div class="sc-value" id="salCountCard"><?= number_format($report['count']) ?></div>
+                </div>
+                <div class="sum-card">
+                    <div class="sc-label">إجمالي الصافي</div>
+                    <div class="sc-value pos" id="salNetCard"><?= number_format($report['total_net'], 2) ?></div>
+                </div>
+            </div>
+
+            <div class="sal-filter-bar">
+                <input type="text" id="salSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                <select id="salTreasuryFilter" class="sal-select">
+                    <option value="">كل الخزائن</option>
+                    <?php foreach ($report['treasuries'] as $tr): ?>
+                        <option value="<?= e($tr) ?>"><?= e($tr) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <select id="salStatusFilter" class="sal-select">
+                    <option value="">كل الحالات</option>
+                    <option value="paid">مدفوع</option>
+                    <option value="draft">مسودة</option>
+                </select>
+            </div>
+
+            <div class="sal-master-detail">
+                <!-- القائمة (يمين) -->
+                <div class="sal-master-list" id="salMasterList">
+                    <?php foreach ($report['details'] as $idx => $d): ?>
+                        <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                             data-id="<?= $d['id'] ?>"
+                             data-name="<?= e($d['full_name']) ?>"
+                             data-treasury="<?= e($d['treasury_name']) ?>"
+                             data-status="<?= e($d['status']) ?>"
+                             data-net="<?= $d['net_salary'] ?>"
+                             tabindex="0"
+                             role="button"
+                             aria-pressed="<?= $idx === 0 ? 'true' : 'false' ?>">
+                            <div class="sal-card-header">
+                                <div class="sal-card-name"><?= e($d['full_name']) ?></div>
+                                <span class="badge sal-badge-<?= e($d['status']) ?>">
+                                    <?= e($d['status_label']) ?>
+                                </span>
+                            </div>
+                            <div class="sal-card-net pos"><?= e($d['net_salary_fmt']) ?> <span class="sal-curr">ج.م</span></div>
+                            <?php if ($d['branch_name'] !== '—' || $d['treasury_name'] !== '—'): ?>
+                                <div class="sal-card-sub">
+                                    <?= e(implode(' · ', array_filter([$d['branch_name'] !== '—' ? $d['branch_name'] : '', $d['treasury_name'] !== '—' ? $d['treasury_name'] : '']))) ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <div id="salEmptyList" class="empty" style="display:none;padding:24px 12px;">
+                        مفيش موظف مطابق للفلتر.
+                    </div>
+                </div>
+
+                <!-- التفصيل (شمال) -->
+                <div class="sal-detail-panel" id="salDetailPanel">
+                    <?php foreach ($report['details'] as $idx => $d): ?>
+                        <div class="sal-detail-card" id="salDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                            <div class="sal-detail-header">
+                                <div class="sal-detail-name-row">
+                                    <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
+                                    <span class="badge sal-badge-<?= e($d['status']) ?>">
+                                        <?= e($d['status_label']) ?>
+                                    </span>
+                                </div>
+                                <?php if (!empty($d['sub_line'])): ?>
+                                    <div class="sal-detail-sub"><?= e($d['sub_line']) ?></div>
+                                <?php endif; ?>
+                                <div class="sal-detail-treasury-row">
+                                    <span class="sal-treasury-label">خزينة الصرف:</span>
+                                    <span class="sal-treasury-val"><?= e($d['treasury_name']) ?></span>
+                                </div>
+                            </div>
+
+                            <div class="sal-breakdown">
+                                <div class="sal-line">
+                                    <span class="sal-line-label">الاستحقاق قبل الخصم</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val"><?= e($d['entitlement_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">المكافآت</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_bonuses'] > 0 ? 'pos' : '' ?>"><?= e($d['bonuses_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">السلف</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_advances'] > 0 ? 'neg' : '' ?>"><?= e($d['advances_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">الجزاءات</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_penalties'] > 0 ? 'neg' : '' ?>"><?= e($d['penalties_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">عجز العهدة</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_deficits'] > 0 ? 'neg' : '' ?>"><?= e($d['deficits_fmt']) ?></span>
+                                </div>
+                                <div class="sal-line">
+                                    <span class="sal-line-label">عجز الكاشير</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_cashier_deficits'] > 0 ? 'neg' : '' ?>"><?= e($d['cdeficits_fmt']) ?></span>
+                                </div>
+
+                                <div class="sal-divider-solid"></div>
+
+                                <div class="sal-line sal-subtotal">
+                                    <span class="sal-line-label">إجمالي الخصومات</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val <?= $d['total_deductions'] > 0 ? 'neg' : '' ?>"><?= e($d['deductions_fmt']) ?></span>
+                                </div>
+
+                                <div class="sal-line sal-net-row">
+                                    <span class="sal-line-label">الصافي</span>
+                                    <span class="sal-line-dots"></span>
+                                    <span class="sal-line-val pos sal-net-val"><?= e($d['net_salary_fmt']) ?> <span class="sal-curr">ج.م</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+
+                    <div id="salDetailEmpty" class="sal-detail-card" hidden>
+                        <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+            (function () {
+                var masterList = document.getElementById('salMasterList');
+                if (!masterList) return;
+                var cards = Array.from(masterList.querySelectorAll('.sal-card'));
+                var searchInput = document.getElementById('salSearch');
+                var treasurySelect = document.getElementById('salTreasuryFilter');
+                var statusSelect = document.getElementById('salStatusFilter');
+                var countEl = document.getElementById('salCountCard');
+                var netEl = document.getElementById('salNetCard');
+                var summaryBox = document.getElementById('salSummaryCards');
+                var emptyListEl = document.getElementById('salEmptyList');
+                var emptyDetailEl = document.getElementById('salDetailEmpty');
+                var detailPanel = document.getElementById('salDetailPanel');
+
+                function norm(str) {
+                    return String(str || '').toLowerCase()
+                        .replace(/[أإآ]/g, 'ا')
+                        .replace(/ة/g, 'ه')
+                        .replace(/ى/g, 'ي')
+                        .replace(/[\u064B-\u065F]/g, '')
+                        .trim();
+                }
+
+                function selectCard(card) {
+                    cards.forEach(function (c) {
+                        c.classList.remove('active');
+                        c.setAttribute('aria-pressed', 'false');
+                    });
+                    if (detailPanel) {
+                        var allDetails = detailPanel.querySelectorAll('.sal-detail-card');
+                        allDetails.forEach(function (d) { d.hidden = true; });
+                    }
+
+                    if (!card) {
+                        if (emptyDetailEl) emptyDetailEl.hidden = false;
+                        return;
+                    }
+
+                    card.classList.add('active');
+                    card.setAttribute('aria-pressed', 'true');
+                    var targetId = 'salDetail_' + card.dataset.id;
+                    var targetDetail = document.getElementById(targetId);
+                    if (targetDetail) {
+                        targetDetail.hidden = false;
+                    }
+                    if (emptyDetailEl) emptyDetailEl.hidden = true;
+                }
+
+                function applyFilter() {
+                    var q = searchInput ? norm(searchInput.value) : '';
+                    var tr = treasurySelect ? (treasurySelect.value || '').trim() : '';
+                    var st = statusSelect ? (statusSelect.value || '').trim() : '';
+
+                    var visibleCount = 0;
+                    var visibleNet = 0;
+                    var firstVisible = null;
+                    var activeVisible = false;
+
+                    cards.forEach(function (card) {
+                        var cardName = norm(card.dataset.name);
+                        var cardTr = card.dataset.treasury || '';
+                        var cardSt = card.dataset.status || '';
+
+                        var matchName = !q || cardName.indexOf(q) !== -1;
+                        var matchTr = !tr || cardTr === tr || cardTr.indexOf(tr) !== -1;
+                        var matchSt = !st || cardSt === st;
+
+                        var match = matchName && matchTr && matchSt;
+                        card.hidden = !match;
+
+                        if (match) {
+                            visibleCount++;
+                            visibleNet += parseFloat(card.dataset.net || '0');
+                            if (!firstVisible) firstVisible = card;
+                            if (card.classList.contains('active')) activeVisible = true;
+                        }
+                    });
+
+                    if (countEl) countEl.textContent = visibleCount.toLocaleString('en-US');
+                    if (netEl) netEl.textContent = visibleNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                    var isFiltered = Boolean(q || tr || st);
+                    if (summaryBox) {
+                        if (isFiltered) summaryBox.classList.add('filtered');
+                        else summaryBox.classList.remove('filtered');
+                    }
+
+                    if (visibleCount === 0) {
+                        if (emptyListEl) emptyListEl.style.display = 'block';
+                        selectCard(null);
+                    } else {
+                        if (emptyListEl) emptyListEl.style.display = 'none';
+                        if (!activeVisible && firstVisible) {
+                            selectCard(firstVisible);
+                        }
+                    }
+                }
+
+                masterList.addEventListener('click', function (e) {
+                    var card = e.target.closest('.sal-card');
+                    if (!card || card.hidden) return;
+                    selectCard(card);
+                });
+
+                masterList.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        var card = e.target.closest('.sal-card');
+                        if (card && !card.hidden) {
+                            e.preventDefault();
+                            selectCard(card);
+                        }
+                    }
+                });
+
+                if (searchInput) searchInput.addEventListener('input', applyFilter);
+                if (treasurySelect) treasurySelect.addEventListener('change', applyFilter);
+                if (statusSelect) statusSelect.addEventListener('change', applyFilter);
+            })();
+            </script>
+        <?php endif; ?>
+    <?php endif; ?>
+    <?php else: ?>
     <?php if (!empty($report['sum_cards']) && !empty($report['rows'])): ?>
         <?php /* الكروت بتتحسب في المتصفح من الصفوف الظاهرة في الجدول.
                  القيم الابتدائية سيرفر-سايد عشان الكروت تبان صح حتى لو
@@ -1534,8 +3034,9 @@ require_once __DIR__ . '/includes/header.php';
                 if (!empty($cd['count'])) {          // كارت عدّاد مش مجموع
                     $t = count($report['rows']);
                 }
-                foreach ($report['rows'] as $rw) {
+                foreach ($report['rows'] as $ri => $rw) {
                     if (!empty($cd['count'])) break;
+                    if (!empty($report['reversed_rows'][$ri])) continue;
                     foreach ($cols as $cx) {
                         $t += (float) str_replace([',', '—'], '', (string)($rw[$cx] ?? '0'));
                     }
@@ -1560,7 +3061,7 @@ require_once __DIR__ . '/includes/header.php';
     // مباشرةً فمابيتأثرش بالقص ده.
     $noteCol = $report['notes_col'] ?? -1;
     ?>
-    <table>
+    <table data-xt-min="1">
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>
@@ -1572,12 +3073,35 @@ require_once __DIR__ . '/includes/header.php';
                 $isAcc   = !empty($report['accordion']) && $rowMeta !== null;
                 $accId   = is_array($rowMeta) ? (int)$rowMeta['acc'] : (int)$rowMeta;
                 $brId    = is_array($rowMeta) ? (int)($rowMeta['branch'] ?? 0) : 0;
+                $trClasses = [];
+                if ($isAcc) $trClasses[] = 'acc-row';
+                if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
+                $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $isAcc ? ' class="acc-row" data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
                         <td><span class="acc-caret">&#9656;</span> <?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 5 && $cell !== '—'): ?>
+                        <td style="color:var(--neg);font-weight:600;"><?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 6 && $cell !== '—'): ?>
+                        <td style="color:var(--pos);font-weight:600;"><?= e((string)$cell) ?></td>
+                    <?php elseif ($type === 'deficits' && $ci === 9): ?>
+                        <td>
+                            <?php if ($cell === 'تجاوز العتبة'): ?>
+                                <span class="badge" style="background:var(--neg-soft);color:var(--neg);padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600;"><?= e((string)$cell) ?></span>
+                            <?php else: ?>
+                                <span class="badge" style="background:var(--line-soft);color:var(--ink-600);padding:3px 8px;border-radius:6px;font-size:12px;"><?= e((string)$cell) ?></span>
+                            <?php endif; ?>
+                        </td>
+                    <?php elseif (!empty($report['row_paths'][$ri]) && (($type === 'treasury' && $ci === 2) || ($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '' && $ci === 1))): ?>
+                        <td>
+                            <?= e((string)$cell) ?>
+                            <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                <?= e($report['row_paths'][$ri]) ?>
+                            </div>
+                        </td>
                     <?php else: ?>
                         <td><?= e((string)$cell) ?></td>
                     <?php endif; ?>
@@ -1594,6 +3118,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    <?php endif; ?>
     <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -1648,6 +3173,7 @@ require_once __DIR__ . '/includes/header.php';
                 continue;
             }
             for (var r = 0; r < rows.length; r++) {
+                if (rows[r].classList.contains('is-reversed')) continue;
                 for (var c = 0; c < cols.length; c++) {
                     var cell = rows[r].cells[cols[c]];
                     if (cell) sum += num(cell.textContent);
@@ -1767,7 +3293,16 @@ function jeToggle(tr) {
             tr.dataset.loaded = '1';
             return;
         }
-        var h = '<div class="acc-inner"><table><thead><tr>' +
+        var exportUrl = 'journal_account_export.php?acc=' + encodeURIComponent(tr.dataset.acc) +
+                        '&branch=' + encodeURIComponent(branchId) +
+                        '&from='   + encodeURIComponent(p.get('from') || '') +
+                        '&to='     + encodeURIComponent(p.get('to')   || '');
+        var h = '<div class="acc-inner">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">' +
+                '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
+                '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
+                '</div>' +
+                '<div style="overflow-x:auto;"><table><thead><tr>' +
                 '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                 '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                 '</tr></thead><tbody>';
@@ -1780,14 +3315,16 @@ function jeToggle(tr) {
                                                    maximumFractionDigits: 2 }) : '—';
         };
         d.rows.forEach(function (r) {
-            h += '<tr><td>' + esc(r.date) + '</td><td>' + esc(r.desc) + '</td>' +
+            var descHtml = esc(r.desc) + (r.path ? '<div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">' + esc(r.path) + '</div>' : '');
+            h += '<tr><td>' + esc(r.date) + '</td><td>' + descHtml + '</td>' +
                  '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
                  '<td>' + esc(r.branch || '—') + '</td>' +
                  '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +
                  '<td>' + f(r.balance) + '</td><td>' + esc(r.by) + '</td>' +
                  '<td>' + (r.notes ? esc(r.notes) : '—') + '</td></tr>';
         });
-        cell.innerHTML = h + '</tbody></table></div>';
+        h += '</tbody></table></div></div>';
+        cell.innerHTML = h;
         tr.dataset.loaded = '1';
     }).catch(function (ex) {
         cell.innerHTML = '<div class="acc-msg">' + (ex.message || 'الاتصال فشل') + '</div>';

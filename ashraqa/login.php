@@ -45,6 +45,22 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <!-- PWA -->
     <link rel="manifest" href="manifest.json?v=3">
     <meta name="theme-color" content="#16233d">
+    <script>
+        // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
+        // لو نزل تحت، الصفحة هتومض أبيض قبل ما تسود.
+        // نسخة طبق الأصل من includes/header.php — لو غيّرت واحد غيّر التاني.
+        (function () {
+            var t;
+            try { t = localStorage.getItem('fagala-theme'); } catch (e) {}
+            if (t !== 'dark' && t !== 'light') {
+                t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)
+                    ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-theme', t);
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+        })();
+    </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -58,13 +74,59 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --ink-900:#16233d; --ink-800:#22334f; --ink-700:#3b4e6d;
-            --ink-500:#6d7f9a; --ink-400:#94a3b8; --ink-300:#c3ccd8;
-            --accent:#2f5d8a; --accent-hover:#254a6f; --accent-soft:#eaf1f8;
-            --accent-ring:rgba(47,93,138,.16);
-            --bg:#f5f6f8; --surface:#ffffff; --line:#e3e7ed; --line-soft:#eff2f6;
-            --neg:#9d3b38; --neg-soft:#f7eceb;
-            --r-sm:8px; --r:10px; --r-lg:14px;
+            --ink-900: #16233d; --ink-800: #22334f; --ink-700: #3b4e6d;
+            --ink-500: #6d7f9a; --ink-400: #94a3b8; --ink-300: #c3ccd8;
+            --accent:       #1e6fbf;
+            --accent-hover: #185a9c;
+            --accent-soft:  #e8f1fb;
+            --accent-ring:  rgba(30,111,191,.20);
+            --accent-text: #1e6fbf;
+            --bg:        #f5f6f8;
+            --surface:   #ffffff;
+            --line:      #e3e7ed;
+            --line-soft: #eff2f6;
+            --neg:       #c0332e;
+            --neg-soft:  #fdeceb;
+
+            /* خلفية الكارت وحافته — متغيّرين عشان يقلبوا في الوضع الليلي.
+               الشفافية مقصودة: الكارت عايم فوق التوهجات اللي في body::before. */
+            --card-bg:   rgba(255,255,255,.97);
+            --card-line: rgba(255,255,255,.55);
+
+            color-scheme: light;
+
+            --r-sm: 8px; --r: 10px; --r-lg: 14px;
+        }
+
+        /* الوضع الليلي — القيم دي **منسوخة من assets/fagala.css**.
+           الصفحة دي مابتقراش الملف ده فمحتاجة نسختها الخاصة.
+           🔴 لو غيّرت لون في fagala.css، غيّره هنا معاه أو الصفحتين هيتفرقوا.
+           كل القيم اتفحص تباينها ومعدّية AA. */
+        :root[data-theme="dark"] {
+            --ink-900: #eef2f8;
+            --ink-800: #dbe3ee;
+            --ink-700: #bcc8d8;
+            --ink-500: #8494ac;
+            --ink-400: #6b7b95;
+            --ink-300: #4a5a75;
+
+            --bg:        #0f1826;
+            --surface:   #16202f;
+            --line:      #263243;
+            --line-soft: #1b2635;
+
+            --accent-soft: #14263c;
+            --accent-ring: rgba(122,184,240,.22);
+            --accent-text: #7ab8f0;
+
+            --neg:      #ff8a80;
+            --neg-soft: #3a1a18;
+
+            /* الكارت بيبقى غامق وحافته خط فاتح خفيف بدل الأبيض */
+            --card-bg:   rgba(22,32,47,.97);
+            --card-line: rgba(255,255,255,.09);
+
+            color-scheme: dark;
         }
         /* إيقاف الأصفر بتاع autofill */
         input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
@@ -89,7 +151,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             content: '';
             position: fixed; inset: 0;
             background:
-                radial-gradient(48% 42% at 22% 18%, rgba(47,93,138,.55) 0%, transparent 62%),
+                radial-gradient(48% 42% at 22% 18%, rgba(30,111,191,.45) 0%, transparent 62%),
                 radial-gradient(42% 38% at 82% 78%, rgba(214,175,106,.16) 0%, transparent 60%),
                 radial-gradient(60% 55% at 60% 8%,  rgba(60,110,160,.28) 0%, transparent 65%);
             pointer-events: none;
@@ -111,10 +173,10 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             position: relative;
             z-index: 2;
             margin: auto;
-            background: rgba(255,255,255,.97);
+            background: var(--card-bg);
             backdrop-filter: blur(18px);
             -webkit-backdrop-filter: blur(18px);
-            border: 1px solid rgba(255,255,255,.55);
+            border: 1px solid var(--card-line);
             border-radius: 18px;
             box-shadow: 0 28px 70px rgba(0,0,0,.42), 0 2px 0 rgba(255,255,255,.5) inset;
             width: 100%;
@@ -176,7 +238,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             font-size: 15px;
             font-family: inherit;
             transition: border-color .15s, box-shadow .15s;
-            background: #fff;
+            background: var(--surface);
             color: var(--ink-800);
         }
         .field input:focus {
@@ -187,10 +249,10 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         .btn-login {
             width: 100%;
             padding: 13px;
-            background: linear-gradient(180deg, #35688f 0%, var(--accent) 100%);
+            background: linear-gradient(180deg, #3d8ad4 0%, var(--accent) 100%);
             color: #fff;
             border: none;
-            box-shadow: 0 6px 16px rgba(47,93,138,.32);
+            box-shadow: 0 6px 16px rgba(30,111,191,.30);
             border-radius: 10px;
             font-size: 16px;
             font-weight: 600;
@@ -240,10 +302,10 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
 
         <!-- زر تثبيت التطبيق (يظهر لما المتصفح يسمح) -->
         <button id="installBtn" type="button"
-                style="display:none;width:100%;margin-top:14px;padding:12px;background:#fff;color:var(--accent);
+                style="display:none;width:100%;margin-top:14px;padding:12px;background:var(--surface);color:var(--accent-text);
                        border:1.5px solid var(--accent);border-radius:10px;font-family:inherit;font-size:15px;
                        font-weight:600;cursor:pointer;">
-            📲 نزّل التطبيق على جهازك
+            <i class="ti ti-device-mobile"></i> نزّل التطبيق على جهازك
         </button>
         <p id="iosHint" style="display:none;margin-top:12px;font-size:12px;color:var(--ink-500);text-align:center;line-height:1.7;">
             لتثبيت التطبيق على الآيفون: افتح من Safari، اضغط زر المشاركة ⬆️، ثم "إضافة إلى الشاشة الرئيسية".
@@ -254,7 +316,9 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         // تسجيل الـ Service Worker (لازم للـ PWA)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch(() => {});
+                // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
+                // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
+                navigator.serviceWorker.register('sw.js?v=28').catch(() => {});
             });
         }
 

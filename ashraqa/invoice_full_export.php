@@ -10,6 +10,11 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('invoices');
+
+// الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+// فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/xlsx_lib.php';
 

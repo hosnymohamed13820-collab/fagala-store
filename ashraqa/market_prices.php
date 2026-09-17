@@ -148,16 +148,16 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('market') ?>
 
 <style>
-    .mk-head { background:#fff; border-radius:12px; padding:16px; margin-bottom:14px;
+    .mk-head { background:var(--surface); border-radius:12px; padding:16px; margin-bottom:14px;
         display:flex; gap:12px; align-items:center; flex-wrap:wrap;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .mk-stat { font-size:13px; color:var(--ink-500); }
     .mk-stat b { color:var(--ink-900); }
     .mk-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
-    .mk-f { padding:8px 15px; border-radius:9px; background:#fff; border:1.5px solid var(--line);
-        color:var(--ink-700,#4a4a68); font-size:13px; text-decoration:none; }
-    .mk-f.on { background:var(--accent); border-color:var(--accent); color:#fff; }
-    .mk-card { background:#fff; border-radius:12px; padding:14px 16px; margin-bottom:10px;
+    .mk-f { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
+        color:var(--ink-700,var(--accent-text)); font-size:13px; text-decoration:none; }
+    .mk-f.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
+    .mk-card { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:10px;
         box-shadow:0 1px 6px rgba(124,111,247,0.06); }
     .mk-our { font-size:14px; font-weight:600; color:var(--ink-900); }
     .mk-sub { font-size:12px; color:var(--ink-500); margin-top:3px; }
@@ -165,14 +165,18 @@ require_once __DIR__ . '/includes/header.php';
     .mk-opt { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
         padding:7px 0; font-size:13px; }
     .mk-badge { padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; }
-    .mk-strong { background:var(--pos); }
-    .mk-maybe  { background:#e0a516; }
-    .mk-weak   { background:#b9b7c9; }
-    .mk-linked { background:#eefaf4; border:1.5px solid var(--pos); }
+    .mk-strong { background:var(--pos-fill); }
+    .mk-maybe  { background:var(--warn-fill); }
+    .mk-weak   { background:var(--ink-200); }
+    .mk-linked { background:var(--line-soft); border:1.5px solid var(--pos); }
     .mk-ign    { opacity:.55; }
+    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
+        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
+    .btn:hover { background:var(--accent-hover); }
+    .btn[disabled] { opacity:.5; cursor:not-allowed; }
     .btn-sm { padding:6px 13px; font-size:12px; border-radius:8px; border:none; cursor:pointer;
         font-family:inherit; background:var(--accent); color:#fff; }
-    .btn-sm.ghost { background:#fff; border:1.5px solid var(--line); color:var(--ink-700,#4a4a68); }
+    .btn-sm.ghost { background:var(--surface); border:1.5px solid var(--line); color:var(--ink-700,var(--accent-text)); }
     .btn-sm[disabled] { opacity:.5; cursor:not-allowed; }
     .mk-search { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px;
         font-family:inherit; font-size:13px; }
@@ -254,7 +258,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($filter === 'unlinked' && $books['total'] > 0): ?>
-<div class="mk-card" style="background:#f7f6ff;border:1.5px dashed var(--accent);">
+<div class="mk-card" style="background:var(--surface);border:1.5px dashed var(--accent);">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button class="btn" id="mkBulk"><i class="ti ti-wand"></i> أكّد كل المطابقات القوية</button>
         <span class="mk-stat" id="mkBulkMsg" style="flex:1;">
@@ -500,13 +504,13 @@ require_once __DIR__ . '/includes/header.php';
         if (term.length < 2) return;
         t = setTimeout(async () => {
             const box = card.querySelector('.mk-mres');
-            box.innerHTML = '<div style="color:#999;">بيدوّر…</div>';
+            box.innerHTML = '<div style="color:var(--ink-400);">بيدوّر…</div>';
             try {
                 const d = await api('search', null, 'term=' + encodeURIComponent(term));
                 box.innerHTML = d.rows.length ? d.rows.map(r =>
                     '<div data-pick="' + r.market_id + '">' + esc(r.name) +
                     ' — <b>' + Number(r.price).toFixed(2) + '</b></div>').join('')
-                    : '<div style="color:#999;">مفيش نتائج</div>';
+                    : '<div style="color:var(--ink-400);">مفيش نتائج</div>';
             } catch (e) { box.innerHTML = '<div style="color:var(--neg);">' + esc(e.message) + '</div>'; }
         }, 350);
     });

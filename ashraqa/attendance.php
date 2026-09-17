@@ -32,15 +32,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
         // إحداثيات البصمة (من المتصفح)
         $lat = ($_POST['lat'] ?? '') !== '' ? (float)$_POST['lat'] : null;
         $lng = ($_POST['lng'] ?? '') !== '' ? (float)$_POST['lng'] : null;
+        $acc = ($_POST['acc'] ?? '') !== '' ? (float)$_POST['acc'] : null;
         try {
             if ($action === 'clock_in' || $action === 'clock_out') {
-                $geo = evaluate_geofence($employee, $lat, $lng);
-                $geo['lat'] = $lat; $geo['lng'] = $lng;
+                $geo = evaluate_geofence($employee, $lat, $lng, $acc);
+                if ($reason = geofence_block_reason($employee, $lat, $lng, $geo)) {
+                    throw new RuntimeException($reason);
+                }
+                $geo['lat'] = $lat; $geo['lng'] = $lng; $geo['acc'] = $acc;
                 $act = $action === 'clock_in' ? 'in' : 'out';
 
                 // ---------------------------------------------------------------
                 //  وردية عدّت منتصف الليل:
-                //  لو انصراف، وإحنا في أول ساعتين من اليوم، وفيه دخول امبارح
+                //  لو انصراف، وإحنا قبل بداية اليوم المحاسبي، وفيه دخول امبارح
                 //  من غير خروج → نسجّل الانصراف على تاريخ امبارح مش النهاردة.
                 //
                 //  من غير ده، الانصراف كان هيتسجّل على يوم جديد ملوش دخول،
@@ -48,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
                 // ---------------------------------------------------------------
                 $forceDate = null;
 
-                if ($act === 'out' && (int)date('G') < 2) {
+                if ($act === 'out' && (int)date('G') < business_day_start_hour()) {
                     $yd = date('Y-m-d', strtotime('-1 day'));
                     $chk = $pdo->prepare(
                         'SELECT 1 FROM attendance
@@ -63,9 +67,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
 
                 $res = clock_attendance((int)$employee['id'], $act, null, $forceDate, $geo);
                 $where = '';
+                // بقت مستحيلة من بريف ٣ (١٥ سبتمبر) — البرّه بيترفض قبل ما يوصل هنا
                 if (!empty($res['outside'])) {
                     $where = ' (تنبيه: كنت خارج نطاق الفرع بمسافة ' . (int)$res['dist'] . ' متر — تم إبلاغ الموارد البشرية)';
                     $flashType = 'error';
+                } elseif (!empty($res['uncertain'])) {
+                    $grace = (int)setting('geofence_uncertain_grace', '3');
+                    $prev = geofence_consecutive_uncertain((int)$employee['id'], (int)($geo['radius'] ?: 50));
+                    $rem = max(0, $grace - ($prev + 1));
+                    $where = ' (اتسجّل، بس موقعك مش دقيق (±' . (int)$acc . ' م). فاضل ' . $rem . ' مرة وبعدها مش هيتسجّل — افتح إعدادات المتصفح وخلّي الموقع «دقيق».)';
+                    $flashType = 'warning';
                 }
                 if ($action === 'clock_in') {
                     $flash = 'تم تسجيل الحضور.' . $where;
@@ -89,10 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
             $flashType = 'error';
         }
     }
-    // PRG: تحويل لصفحة GET بعد الـ POST عشان الـ Refresh ما يعيدش الإرسال
+    // PRG: تحويل لصفحة GET بعد الـ POST عشان الـ Refresh ما يعيدش الإرسال والحفاظ على الفلاتر
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
-    header('Location: ' . $_SERVER['PHP_SELF']);
+    header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
     exit;
 }
 
@@ -106,8 +117,27 @@ if (isset($_SESSION['flash'])) {
 // سجل اليوم
 $today = date('Y-m-d');
 $todayAtt = null;
-$myMonthAtt = [];
-$myMonth = $_GET['month'] ?? date('Y-m');
+$myPeriodAtt = [];
+
+// فترة سجل الحضور للموظف (افتراضياً الشهر الحالي)
+$attFrom = $_GET['from'] ?? null;
+$attTo   = $_GET['to']   ?? null;
+if ($attFrom !== null && $attTo !== null) {
+    if (!strtotime($attFrom)) $attFrom = date('Y-m-01');
+    if (!strtotime($attTo))   $attTo   = date('Y-m-t');
+} elseif (isset($_GET['month']) && preg_match('/^\d{4}-\d{2}$/', (string)$_GET['month'])) {
+    $attFrom = $_GET['month'] . '-01';
+    $attTo   = date('Y-m-t', strtotime($attFrom));
+} else {
+    // نفس فترة المرتب: من ٢٦ الشهر اللي فات لـ٢٥ الشهر ده — عشان اللي
+    // الموظف بيشوفه هنا يبقى هو اللي مرتبه هيتحسب عليه، مش شهر تقويمي.
+    //
+    // 🔴 بتقلب على الفترة الجديدة **يوم ١** من غير أي مهلة — عكس شاشة
+    // الرواتب اللي ليها مهلة ٥ أيام. ده مقصود: الموظف عايز يتابع فترته
+    // الجارية، والأونر عايز يخلّص صرف الفترة اللي فاتت.
+    $attFrom = date('Y-m-26', strtotime('first day of last month'));
+    $attTo   = date('Y-m-25');
+}
 
 // ---------------------------------------------------------------------------
 //  الورديات اللي بتعدّي منتصف الليل
@@ -115,12 +145,11 @@ $myMonth = $_GET['month'] ?? date('Y-m');
 //  المشكلة: الساعة 00:00 الصفحة كانت بتقلب ليوم جديد، فالموظف اللي لسه
 //  شغال (مسجّل دخول امبارح ومسجلش خروج) مايلاقيش زرار الانصراف.
 //
-//  الحل: في أول ساعتين من اليوم الجديد، لو فيه دخول امبارح من غير خروج،
-//  نفضل نعرض يوم امبارح لحد ما يسجل خروج.
-//
-//  GRACE_HOURS = 2  →  لحد الساعة 02:00 صباحًا.
+//  الحل: قبل بداية اليوم المحاسبي (business_day_start من الإعدادات)،
+//  لو فيه دخول امبارح من غير خروج، نفضل نعرض يوم امبارح لحد ما يسجل خروج.
+//  والتغيير بيتم من صفحة الإعدادات.
 // ---------------------------------------------------------------------------
-$GRACE_HOURS = 2;
+$GRACE_HOURS = business_day_start_hour();
 $attDate     = $today;   // اليوم اللي الصفحة شغالة عليه فعليًا
 $isCarryOver = false;    // هل احنا بنكمل وردية امبارح؟
 
@@ -147,10 +176,10 @@ if ($employee) {
     $a = $pdo->prepare('SELECT * FROM attendance WHERE employee_id=? AND att_date=?');
     $a->execute([(int)$employee['id'], $attDate]);
     $todayAtt = $a->fetch();
-    // سجل الشهر
-    $m = $pdo->prepare("SELECT * FROM attendance WHERE employee_id=? AND DATE_FORMAT(att_date,'%Y-%m')=? ORDER BY att_date DESC");
-    $m->execute([(int)$employee['id'], $myMonth]);
-    $myMonthAtt = $m->fetchAll();
+    // سجل الفترة
+    $m = $pdo->prepare("SELECT * FROM attendance WHERE employee_id=? AND att_date BETWEEN ? AND ? ORDER BY att_date DESC");
+    $m->execute([(int)$employee['id'], $attFrom, $attTo]);
+    $myPeriodAtt = $m->fetchAll();
 }
 
 $page_title    = 'تسجيل الحضور';
@@ -169,28 +198,28 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .att-wrap { max-width:480px; margin:0 auto; }
-    .att-card { background:#fff; border-radius:16px; padding:26px; box-shadow:0 2px 12px rgba(124,111,247,0.08); margin-bottom:18px; }
+    .att-card { background:var(--surface); border-radius:16px; padding:26px; box-shadow:0 2px 12px rgba(124,111,247,0.08); margin-bottom:18px; }
     .att-date { text-align:center; color:var(--ink-500); font-size:14px; margin-bottom:6px; }
     .att-name { text-align:center; color:var(--ink-900); font-size:20px; font-weight:700; margin-bottom:22px; }
     .exp-row { display:flex; justify-content:space-around; margin-bottom:18px; }
     .exp-col { text-align:center; }
     .exp-col .l { color:var(--ink-500); font-size:13px; margin-bottom:4px; }
-    .exp-col .v { color:var(--accent); font-size:22px; font-weight:700; }
+    .exp-col .v { color:var(--accent-text); font-size:22px; font-weight:700; }
     .act-row { display:flex; justify-content:space-around; padding:18px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin-bottom:18px; }
     .act-col { text-align:center; }
     .act-col .l { color:var(--ink-700); font-size:13px; margin-bottom:4px; }
     .act-col .v { color:var(--ink-900); font-size:26px; font-weight:700; }
-    .act-col .v.empty { color:#d0cce5; }
+    .act-col .v.empty { color:var(--accent); }
     .worked { text-align:center; margin-bottom:22px; }
     .worked .l { color:var(--ink-500); font-size:14px; letter-spacing:1px; }
     .worked .v { color:var(--pos); font-size:32px; font-weight:800; }
     .clock-btn { width:100%; padding:18px; border:none; border-radius:14px; font-size:18px;
         font-weight:700; font-family:inherit; cursor:pointer; color:#fff; margin-bottom:12px;
         display:flex; align-items:center; justify-content:center; gap:10px; }
-    .btn-in  { background:var(--pos); } .btn-in:hover { background:#15835f; }
-    .btn-out { background:var(--neg); } .btn-out:hover { background:#c93f3e; }
+    .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:var(--pos-fill); }
+    .btn-out { background:var(--neg-fill); } .btn-out:hover { background:var(--neg-fill); }
     .btn-done { background:var(--line-soft); color:var(--ink-500); cursor:default; }
-    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:#fff; color:var(--accent);
+    .btn-request { width:100%; padding:14px; border:1.5px solid var(--accent); background:var(--surface); color:var(--accent-text);
         border-radius:14px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer; }
     .btn-request:hover { background:var(--bg); }
     .no-emp { text-align:center; color:var(--ink-500); padding:40px; }
@@ -198,7 +227,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:420px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:420px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
@@ -207,7 +236,9 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn:hover { background:var(--accent-hover); }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
+    .btn-cancel:hover { background:var(--line); color:var(--ink-500); }
 </style>
 
 <?php if ($flash): ?>
@@ -263,6 +294,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="action" value="clock_in">
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
+                <input type="hidden" name="acc" class="geo-acc">
                 <button type="submit" class="clock-btn btn-in"><i class="ti ti-login"></i> تسجيل الحضور</button>
             </form>
         <?php elseif (!$actOut): ?>
@@ -271,6 +303,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="action" value="clock_out">
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
+                <input type="hidden" name="acc" class="geo-acc">
                 <button type="submit" class="clock-btn btn-out"><i class="ti ti-logout"></i> تسجيل الانصراف</button>
             </form>
         <?php else: ?>
@@ -317,13 +350,14 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         const hint = document.getElementById('geoHint');
         const latEl = form.querySelector('.geo-lat');
         const lngEl = form.querySelector('.geo-lng');
+        const accEl = form.querySelector('.geo-acc');
         let submitting = false;
 
         function showHint(txt, color) {
             if (!hint) return;
             hint.style.display = 'block';
             hint.style.color = color || 'var(--ink-500)';
-            hint.textContent = txt;
+            hint.innerHTML = txt;
         }
 
         form.addEventListener('submit', function(e){
@@ -338,23 +372,48 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             const origHtml = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<i class="ti ti-loader"></i> جاري تحديد موقعك...';
-            showHint('برجاء السماح بالوصول للموقع', 'var(--warn)');
+            showHint('بندوّر على موقعك بدقة...', 'var(--warn)');
 
-            navigator.geolocation.getCurrentPosition(
-                function(pos){
-                    latEl.value = pos.coords.latitude.toFixed(7);
-                    lngEl.value = pos.coords.longitude.toFixed(7);
-                    submitting = true;
-                    form.submit();
-                },
-                function(err){
-                    // فشل/رفض تحديد الموقع → نرسل من غير إحداثيات (السيرفر بيسجّل بدون تقييم)
+            let watchId = null;
+            let timeoutId = null;
+            let bestPos = null;
+
+            function doSubmit() {
+                if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                if (timeoutId !== null) clearTimeout(timeoutId);
+                if (submitting) return;
+                
+                if (bestPos) {
+                    latEl.value = bestPos.coords.latitude.toFixed(7);
+                    lngEl.value = bestPos.coords.longitude.toFixed(7);
+                    if (accEl) accEl.value = bestPos.coords.accuracy.toFixed(2);
+                } else {
+                    latEl.value = ''; lngEl.value = '';
+                    if (accEl) accEl.value = '';
                     btn.disabled = false;
                     btn.innerHTML = origHtml;
-                    showHint('تعذّر تحديد الموقع — سيتم التسجيل بدون تحديد المكان', 'var(--neg)');
-                    latEl.value = ''; lngEl.value = '';
-                    submitting = true;
-                    form.submit();
+                    showHint('تعذّر تحديد الموقع — بنبعت عشان نتأكد', 'var(--neg)');
+                }
+                
+                submitting = true;
+                form.submit();
+            }
+
+            timeoutId = setTimeout(doSubmit, 8000);
+
+            watchId = navigator.geolocation.watchPosition(
+                function(pos){
+                    if (!bestPos || pos.coords.accuracy < bestPos.coords.accuracy) {
+                        bestPos = pos;
+                        showHint('بندوّر على موقعك بدقة...<br>الدقة: ±' + Math.round(pos.coords.accuracy) + ' م', 'var(--warn)');
+                    }
+                    if (pos.coords.accuracy <= 50) {
+                        doSubmit();
+                    }
+                },
+                function(err){
+                    // فشل أو رفض
+                    if (!bestPos) doSubmit();
                 },
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
@@ -364,34 +423,76 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 
 <?php if ($employee): ?>
 <?php
-    $monthTotalHours = 0.0;
-    foreach ($myMonthAtt as $a) {
-        $monthTotalHours += (float) ($a['work_hours'] ?? 0);
+    $periodTotalHours = 0.0;
+    $completeDays     = 0;   // أيام فيها حضور وانصراف
+    $missingDays      = 0;   // أيام تسجيلها ناقص (واحد بس من الاتنين)
+    $noneDays         = 0;   // مفيش دخول ولا خروج (باستثناء الإجازات والعطلات)
+    $seenDates        = [];  // الأيام اللي ليها صف في الجدول
+    foreach ($myPeriodAtt as $a) {
+        $periodTotalHours += (float) ($a['work_hours'] ?? 0);
+        $seenDates[(string) $a['att_date']] = true;
+        $st     = $a['status'] ?? '';
+        $hasIn  = !empty($a['check_in']);
+        $hasOut = !empty($a['check_out']);
+        if ($hasIn && $hasOut)      { $completeDays++; }
+        elseif ($hasIn || $hasOut)  { $missingDays++;  }
+        elseif ($st !== 'leave' && $st !== 'holiday') { $noneDays++; }
     }
-    $monthTotalDays = (int) floor($monthTotalHours / 6);
+
+    // -----------------------------------------------------------------
+    //  الأيام اللي **مالهاش صف خالص** في الجدول بتتعد كأيام بدون تسجيل.
+    //
+    //  مابنعملش صفوف فاضية في `attendance` لكل يوم في الشهر — ده الجدول
+    //  اللي المرتبات بتتحسب منه، وكتابة يومية فيه مقابل حاجة نقدر نحسبها
+    //  هنا مخاطرة مالهاش داعي. الحساب بيدّي نفس النتيجة بالظبط.
+    //
+    //  🔴 وبنعد لحد النهاردة بس — أيام الفترة اللي لسه ما جاتش ماتتحسبش،
+    //  وإلا الموظف يوم ١ هيلاقي ٣٠ يوم «مفيش فيها تسجيل».
+    // -----------------------------------------------------------------
+    $countUntil = min($attTo, $today);
+    for ($d = strtotime($attFrom); $d <= strtotime($countUntil); $d = strtotime('+1 day', $d)) {
+        if (!isset($seenDates[date('Y-m-d', $d)])) {
+            $noneDays++;
+        }
+    }
 ?>
-<div class="card" style="background:#fff;border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
-    <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل حضوري</div>
-    <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
-        <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>
-        <input type="month" name="month" value="<?= e($myMonth) ?>" onchange="this.form.submit()"
-               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+<div class="card" style="background:var(--surface);border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
+    <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
+    <form method="get" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من:</label>
+        <input type="date" name="from" value="<?= e($attFrom) ?>" onchange="formSubmit(this.form)"
+               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى:</label>
+        <input type="date" name="to" value="<?= e($attTo) ?>" onchange="formSubmit(this.form)"
+               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+        <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
-    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--accent);"><?= number_format($monthTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
+            <div style="font-size:18px;font-weight:700;color:var(--accent-text);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
         </div>
-        <div style="flex:1;min-width:140px;background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي أيام العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $monthTotalDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام سجّلت فيها حضور وانصراف</div>
+            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $completeDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+             title="دول الأيام اللي نسيت فيها تسجّل دخول أو خروج — اطلب تصحيح من الزرار اللي فوق">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام تسجيلها ناقص</div>
+            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $missingDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        </div>
+        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+             title="أيام مالكش فيها تسجيل خالص — لو فيها شغل اطلب تصحيح">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام مفيش تسجيل خالص</div>
+            <div style="font-size:18px;font-weight:700;color:var(--neg);"><?= $noneDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
         </div>
     </div>
 
-    <?php if (empty($myMonthAtt)): ?>
-        <div style="text-align:center;color:#bbb;padding:24px;">لا يوجد سجل لهذا الشهر.</div>
+    <?php if (empty($myPeriodAtt)): ?>
+        <div style="text-align:center;color:var(--ink-400);padding:24px;">لا يوجد سجل لهذه الفترة.</div>
     <?php else: ?>
+    <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
         <thead><tr>
             <?php foreach (['التاريخ','الحضور','الانصراف','ساعات العمل','الحالة'] as $h): ?>
@@ -399,24 +500,49 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             <?php endforeach; ?>
         </tr></thead>
         <tbody>
-        <?php
-            $sm = ['present'=>['حاضر','var(--pos)','var(--pos-soft)'],'absent'=>['غائب','var(--neg)','var(--neg-soft)'],
-                   'leave'=>['إجازة','var(--warn)','var(--warn-soft)'],'holiday'=>['عطلة','#666','#eee']];
-            foreach ($myMonthAtt as $a): $sb = $sm[$a['status']] ?? ['—','#666','#eee'];
-        ?>
+        <?php foreach ($myPeriodAtt as $a): ?>
             <?php
+                $st         = $a['status'] ?? '';
                 $inOutside  = !empty($a['check_in_outside']);
                 $outOutside = !empty($a['check_out_outside']);
+                $rowHasIn   = !empty($a['check_in']);
+                $rowHasOut  = !empty($a['check_out']);
+                $rowMissing = ($rowHasIn || $rowHasOut) && !($rowHasIn && $rowHasOut);
+
+                // تحديد الحالة المعروضة والشارة بالترتيب: الإجازة والعطلة ليهم الأولوية
+                if ($st === 'leave') {
+                    $sb = ['إجازة', 'var(--warn)', 'var(--warn-soft)'];
+                } elseif ($st === 'holiday') {
+                    $sb = ['عطلة', 'var(--ink-500)', 'var(--line-soft)'];
+                } elseif ($rowHasIn && $rowHasOut) {
+                    $sb = ['حاضر', 'var(--pos)', 'var(--pos-soft)'];
+                } elseif ($rowHasIn || $rowHasOut) {
+                    $sb = ['تسجيل ناقص', 'var(--warn)', 'var(--warn-soft)'];
+                } else {
+                    $sb = ['مفيش تسجيل', 'var(--neg)', 'var(--neg-soft)'];
+                }
             ?>
-            <tr>
+            <tr<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= e($a['att_date']) ?></td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
-                    <?= e($a['check_in'] ? substr($a['check_in'],0,5) : '—') ?>
-                    <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php if ($rowHasIn): ?>
+                        <?= e(substr($a['check_in'],0,5)) ?>
+                        <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php elseif ($rowMissing): ?>
+                        <span style="color:var(--warn);font-weight:600;">ناقص</span>
+                    <?php else: ?>
+                        <?= e('—') ?>
+                    <?php endif; ?>
                 </td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
-                    <?= e($a['check_out'] ? substr($a['check_out'],0,5) : '—') ?>
-                    <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php if ($rowHasOut): ?>
+                        <?= e(substr($a['check_out'],0,5)) ?>
+                        <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                    <?php elseif ($rowMissing): ?>
+                        <span style="color:var(--warn);font-weight:600;">ناقص</span>
+                    <?php else: ?>
+                        <?= e('—') ?>
+                    <?php endif; ?>
                 </td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= number_format((float)$a['work_hours'],2) ?></td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
@@ -426,6 +552,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
     <?php endif; ?>
 </div>
 <?php endif; ?>

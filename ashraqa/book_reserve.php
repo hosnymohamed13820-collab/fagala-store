@@ -93,14 +93,14 @@ require_once __DIR__ . '/includes/header.php';
                     font-weight:600; }
     .rs-fld input, .rs-fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
-    .rs-fld input:focus, .rs-fld select:focus { outline:none; border-color:var(--accent); }
+    .rs-fld input:focus, .rs-fld select:focus { outline:none; border-color:var(--accent-text); }
 
     .rs-bar { display:flex; gap:10px; align-items:center; margin:6px 0 12px; position:relative;
               flex-wrap:wrap; }
     .rs-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .rs-bar input.main:focus { outline:none; border-color:var(--accent); }
-    .rs-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .rs-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .rs-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
     .rs-sug.show { display:block; }
@@ -112,7 +112,7 @@ require_once __DIR__ . '/includes/header.php';
     .rs-table { width:100%; border-collapse:collapse; }
     .rs-table th, .rs-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; }
-    .rs-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .rs-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .rs-table .nm { text-align:right; font-weight:500; min-width:210px; }
     .rs-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
     .rs-table td .rm { color:var(--neg); cursor:pointer; opacity:.5; }
@@ -121,8 +121,8 @@ require_once __DIR__ . '/includes/header.php';
     .pill { display:inline-block; padding:4px 13px; border-radius:20px; font-size:12.5px;
             font-weight:700; white-space:nowrap; }
     .pill.yes { background:rgba(34,197,94,.13); color:var(--pos); }
-    .pill.no  { background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
-    .pill.st-open { background:var(--accent-soft); color:var(--accent); }
+    .pill.no  { background:var(--warn-soft); color:var(--warn); }
+    .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
     .pill.st-delivered { background:rgba(34,197,94,.13); color:var(--pos); }
     .pill.st-cancelled { background:var(--line-soft); color:var(--ink-500); }
 
@@ -130,14 +130,14 @@ require_once __DIR__ . '/includes/header.php';
              font-size:14px; font-family:inherit; text-align:center; }
     .q-inp:focus { outline:none; border-color:var(--pos); }
 
-    .rs-empty { text-align:center; color:#bbb; padding:36px 20px; font-size:14.5px; }
+    .rs-empty { text-align:center; color:var(--ink-400); padding:36px 20px; font-size:14.5px; }
     .rs-status { font-size:13px; min-height:20px; margin-bottom:8px; }
     .rs-list-row { display:flex; justify-content:space-between; align-items:center; gap:12px;
                    flex-wrap:wrap; padding:12px 16px; border:1px solid var(--line-soft);
                    border-radius:11px; margin-bottom:8px; text-decoration:none; color:inherit; }
-    .rs-list-row:hover { border-color:var(--accent); background:var(--accent-soft); }
-    .rs-warn { padding:12px 18px; background:var(--warn-soft,#fff7e6); border-radius:10px;
-               border:1.5px solid var(--warn,#d97706); color:var(--warn,#d97706);
+    .rs-list-row:hover { border-color:var(--accent-text); background:var(--accent-soft); }
+    .rs-warn { padding:12px 18px; background:var(--warn-soft,var(--line-soft)); border-radius:10px;
+               border:1.5px solid var(--warn,var(--warn)); color:var(--warn,var(--warn));
                font-size:13.5px; margin-bottom:16px; line-height:1.8; }
 </style>
 
@@ -185,7 +185,7 @@ require_once __DIR__ . '/includes/header.php';
                         </form>
                     <?php endforeach; ?>
                 <?php endif; ?>
-                <a class="btn" style="background:var(--ink-800);padding:9px 16px;font-size:13px;"
+                <a class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:9px 16px;font-size:13px;"
                    href="book_reserve.php"><i class="ti ti-plus"></i> حجز جديد</a>
             </div>
         </div>
@@ -215,7 +215,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php else: // ===== حجز جديد ===== ?>
     <div class="card" style="margin-bottom:16px;">
-        <div class="section-title">🔖 حجز جديد</div>
+        <div class="section-title"><i class="ti ti-bookmark"></i> حجز جديد</div>
 
         <div class="rs-grid">
             <div class="rs-fld">
@@ -259,7 +259,7 @@ require_once __DIR__ . '/includes/header.php';
                    enterkeyhint="search"
                    oninput="onType()"
                    onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-            <button type="button" class="btn" style="background:var(--ink-800);padding:11px 16px;"
+            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
                     onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
                 <i class="ti ti-camera" style="font-size:18px;"></i>
             </button>
@@ -285,10 +285,10 @@ require_once __DIR__ . '/includes/header.php';
                     flex-wrap:wrap;margin-top:16px;">
             <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
             <span style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+                <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                     <i class="ti ti-trash"></i> تفريغ
                 </button>
-                <button type="button" class="btn" id="saveBtn" style="background:var(--pos);" onclick="saveRes()">
+                <button type="button" class="btn" id="saveBtn" style="background:var(--pos-fill);" onclick="saveRes()">
                     <i class="ti ti-bookmark"></i> احفظ الحجز
                 </button>
             </span>
@@ -407,7 +407,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.code === row.code)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,#d97706)');
+            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusQty(row.code);
             return;
         }

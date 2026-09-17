@@ -10,6 +10,9 @@
  * ولازم يطابق اللي في سكربت الوكيل. مفيش جلسة دخول هنا لأن الوكيل
  * برنامج مش متصفح.
  */
+// سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
 require_once __DIR__ . '/config.php';
 
 // ★ غيّر المفتاح ده لمفتاح طويل عشوائي (32 حرف على الأقل)

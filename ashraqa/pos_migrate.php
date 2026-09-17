@@ -121,6 +121,33 @@ if ($shiftId > 0 && $doRun) {
         /* ---------- 5. الترحيل: فاتورة فاتورة ---------- */
         $ok = 0; $fail = 0;
 
+        $stLines = $pdo->prepare(
+            'SELECT * FROM pos_invoice_lines WHERE invoice_id = ? ORDER BY line_no'
+        );
+        $stUpdateSuccess = $pdo->prepare(
+            "UPDATE pos_invoices SET
+                status = 'migrated', sql_sth_id = ?, sql_sth_id_ref = ?,
+                sql_ath_id = ?, sql_doc_no = ?, sql_ps_id = ?,
+                migrated_at = NOW(), migrate_error = NULL
+             WHERE id = ?"
+        );
+        $stLogSuccess = $pdo->prepare(
+            "INSERT INTO pos_migration_log
+                (shift_id, invoice_id, branch_id, mode, result,
+                 sth_id, sth_id_ref, ath_id, stil_id, atg_id, doc_no, ps_id,
+                 sql_dump, duration_ms, created_by)
+             VALUES (?,?,?,'live','success',?,?,?,?,?,?,?,?,?,?)"
+        );
+        $stUpdateFail = $pdo->prepare(
+            "UPDATE pos_invoices SET status='failed', migrate_error=? WHERE id=?"
+        );
+        $stLogFail = $pdo->prepare(
+            "INSERT INTO pos_migration_log
+                (shift_id, invoice_id, branch_id, mode, result,
+                 sql_dump, error_msg, created_by)
+             VALUES (?,?,?,'live','failed',?,?,?)"
+        );
+
         foreach ($invoices as $idx => $inv) {
 
             // ★★ العدادات بتتقري من جديد قبل كل فاتورة ★★
@@ -136,11 +163,8 @@ if ($shiftId > 0 && $doRun) {
                 $read, $ym, (int)$cfg['branch_id'], $saleDay, $px
             );
 
-            $ln = $pdo->prepare(
-                'SELECT * FROM pos_invoice_lines WHERE invoice_id = ? ORDER BY line_no'
-            );
-            $ln->execute([(int)$inv['id']]);
-            $lines = $ln->fetchAll();
+            $stLines->execute([(int)$inv['id']]);
+            $lines = $stLines->fetchAll();
 
             if (!$lines) {
                 $results[] = [
@@ -172,26 +196,14 @@ if ($shiftId > 0 && $doRun) {
                 $ms  = (int)round((microtime(true) - $t0) * 1000);
 
                 // تحديث الفاتورة عندنا
-                $pdo->prepare(
-                    "UPDATE pos_invoices SET
-                        status = 'migrated', sql_sth_id = ?, sql_sth_id_ref = ?,
-                        sql_ath_id = ?, sql_doc_no = ?, sql_ps_id = ?,
-                        migrated_at = NOW(), migrate_error = NULL
-                     WHERE id = ?"
-                )->execute([
+                $stUpdateSuccess->execute([
                     $built['ids']['sth_id'], $built['ids']['sth_id_ref'],
                     $built['ids']['ath_id'], $built['ids']['doc_no'],
                     $built['ids']['ps_id'], (int)$inv['id'],
                 ]);
 
                 // السجل
-                $pdo->prepare(
-                    "INSERT INTO pos_migration_log
-                        (shift_id, invoice_id, branch_id, mode, result,
-                         sth_id, sth_id_ref, ath_id, stil_id, atg_id, doc_no, ps_id,
-                         sql_dump, duration_ms, created_by)
-                     VALUES (?,?,?,'live','success',?,?,?,?,?,?,?,?,?,?)"
-                )->execute([
+                $stLogSuccess->execute([
                     $shiftId, (int)$inv['id'], (int)$cfg['branch_id'],
                     $built['ids']['sth_id'], $built['ids']['sth_id_ref'],
                     $built['ids']['ath_id'], $built['ids']['stil_id'],
@@ -213,16 +225,9 @@ if ($shiftId > 0 && $doRun) {
             } catch (Throwable $e) {
                 $fail++;
 
-                $pdo->prepare(
-                    "UPDATE pos_invoices SET status='failed', migrate_error=? WHERE id=?"
-                )->execute([$e->getMessage(), (int)$inv['id']]);
+                $stUpdateFail->execute([$e->getMessage(), (int)$inv['id']]);
 
-                $pdo->prepare(
-                    "INSERT INTO pos_migration_log
-                        (shift_id, invoice_id, branch_id, mode, result,
-                         sql_dump, error_msg, created_by)
-                     VALUES (?,?,?,'live','failed',?,?,?)"
-                )->execute([
+                $stLogFail->execute([
                     $shiftId, (int)$inv['id'], (int)$cfg['branch_id'],
                     implode(";\n", $all), $e->getMessage(),
                     (int)current_user()['id'],
@@ -282,30 +287,30 @@ $shifts = $pdo->query(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ترحيل البيانات</title>
 <style>
-  body{font-family:Tahoma,Arial,sans-serif;background:#f4f6f8;margin:0;padding:24px;color:#1f2933}
+  body{font-family:Tahoma,Arial,sans-serif;background:var(--line-soft);margin:0;padding:24px;color:var(--ink-900)}
   .wrap{max-width:900px;margin:0 auto}
   h1{font-size:22px;margin:0 0 18px}
-  .danger{background:#fef2f2;border:2px solid var(--neg);border-radius:10px;
-          padding:15px 18px;margin-bottom:20px;color:#991b1b}
+  .danger{background:var(--surface);border:2px solid var(--neg);border-radius:10px;
+          padding:15px 18px;margin-bottom:20px;color:var(--neg)}
   .danger b{display:block;margin-bottom:6px;font-size:15px}
-  .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;
+  .card{background:var(--surface);border-radius:12px;padding:20px;margin-bottom:16px;
         box-shadow:0 1px 6px rgba(0,0,0,.06)}
-  .card h2{font-size:16px;margin:0 0 14px;color:#374151}
+  .card h2{font-size:16px;margin:0 0 14px;color:var(--ink-700)}
   table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{padding:9px 10px;text-align:right;border-bottom:1px solid #eef1f4}
-  th{background:#f9fafb;color:var(--ink-500)}
-  .btn{background:#6366f1;color:#fff;padding:9px 18px;border-radius:8px;
+  th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--ink-400)}
+  th{background:var(--surface);color:var(--ink-500)}
+  .btn{background:var(--accent);color:#fff;padding:9px 18px;border-radius:8px;
        text-decoration:none;font-size:14px;border:0;cursor:pointer;font-family:inherit}
-  .btn-red{background:var(--neg)}
-  .btn:disabled{background:#d1d5db;cursor:not-allowed}
-  .err{background:#fef2f2;border:2px solid var(--neg);color:#991b1b;
+  .btn-red{background:var(--neg-fill)}
+  .btn:disabled{background:var(--ink-200);cursor:not-allowed}
+  .err{background:var(--surface);border:2px solid var(--neg);color:var(--neg);
        padding:14px;border-radius:10px;margin-bottom:16px}
-  .ok-row{color:#059669;font-weight:bold}
+  .ok-row{color:var(--pos);font-weight:bold}
   .bad-row{color:var(--neg);font-weight:bold}
   input[type=text]{padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;
                    font-family:inherit;font-size:14px;width:180px}
   .sum{display:flex;gap:14px;margin-bottom:14px}
-  .sum div{flex:1;background:#f9fafb;border-radius:9px;padding:12px;text-align:center}
+  .sum div{flex:1;background:var(--surface);border-radius:9px;padding:12px;text-align:center}
   .sum .n{font-size:22px;font-weight:bold}
 </style>
 </head>
@@ -315,7 +320,7 @@ $shifts = $pdo->query(
   <h1>ترحيل البيانات لنظام الشركة</h1>
 
   <div class="danger">
-    <b>⚠️ الصفحة دي بتكتب فعليًا في نظام الشركة</b>
+    <b><i class="ti ti-alert-triangle"></i> الصفحة دي بتكتب فعليًا في نظام الشركة</b>
     قبل الترحيل، تأكد إن الكاشير خلّص كل الفواتير المعلّقة (رحّلها أو لغاها)،
     وإنه واقف ومش بيضرب فواتير دلوقتي.
   </div>
@@ -328,7 +333,7 @@ $shifts = $pdo->query(
     <div class="card">
       <h2>نتيجة الترحيل</h2>
       <div class="sum">
-        <div><div class="n" style="color:#059669"><?= $summary['ok'] ?></div>نجحت</div>
+        <div><div class="n" style="color:var(--pos)"><?= $summary['ok'] ?></div>نجحت</div>
         <div><div class="n" style="color:var(--neg)"><?= $summary['fail'] ?></div>فشلت</div>
         <div><div class="n"><?= $summary['total'] ?></div>الإجمالي</div>
       </div>
@@ -348,8 +353,8 @@ $shifts = $pdo->query(
         <?php endforeach; ?>
       </table>
       <?php if ($summary['fail'] > 0): ?>
-        <p style="color:#991b1b;font-size:13px;margin-top:14px">
-          ⚠️ الفواتير اللي نجحت اتكتبت فعليًا في نظام الشركة.
+        <p style="color:var(--neg);font-size:13px;margin-top:14px">
+          <i class="ti ti-alert-triangle"></i> الفواتير اللي نجحت اتكتبت فعليًا في نظام الشركة.
           الفواتير اللي فشلت لم تُكتب (تم التراجع).
           صلّح المشكلة وارجع رحّل الوردية تاني — اللي اترحّل مش هيتكرر.
         </p>

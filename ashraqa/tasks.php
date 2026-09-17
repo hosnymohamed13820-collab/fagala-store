@@ -75,12 +75,19 @@ if (isset($_SESSION['flash'])) {
 
 // ===== تحميل البيانات =====
 // المهام الواردة لي (أنا مستهدف فيها)
+// 🔴 المهمة المقفولة **مابتظهرش هنا خالص**. أول ما حد من المستهدفين
+//    يعلّمها «تمت»، بتتقفل للكل وتختفي من قايمة كل واحد فيهم.
+//    قبل كده ماكانش فيه أي كود بيقفل مهمة، فالقايمة كانت بتتخم بحاجات
+//    خلصت من شهور — وموظف اتنقل لفرع تاني كان بيفضل شايف مهام فرعه
+//    القديم للأبد.
+//    السجل مابيضيعش: اللي عمل المهمة بيفضل شايفها في قايمة «اللي
+//    أصدرتها» تحت بحالتها.
 $inbox = $pdo->prepare(
     "SELECT t.*, tt.status AS my_status, tt.done_at, u.full_name AS creator
      FROM task_targets tt
      JOIN tasks t ON t.id = tt.task_id
      LEFT JOIN users u ON u.id = t.created_by
-     WHERE tt.user_id = ?
+     WHERE tt.user_id = ? AND t.status <> 'closed'
      ORDER BY (tt.status='pending') DESC, FIELD(t.priority,'urgent','important','normal'), t.id DESC
      LIMIT 200"
 );
@@ -148,7 +155,7 @@ $active_module = 'tasks';
 require_once __DIR__ . '/includes/header.php';
 
 $prioBadge = function($p) {
-    $map = ['normal'=>['عادي','#666','#eef'], 'important'=>['مهم','var(--warn)','var(--warn-soft)'], 'urgent'=>['عاجل','var(--neg)','var(--neg-soft)']];
+    $map = ['normal'=>['عادي','var(--ink-500)','var(--accent-soft)'], 'important'=>['مهم','var(--warn)','var(--warn-soft)'], 'urgent'=>['عاجل','var(--neg)','var(--neg-soft)']];
     $b = $map[$p] ?? $map['normal'];
     return '<span style="padding:2px 10px;border-radius:20px;font-size:12px;color:'.$b[1].';background:'.$b[2].';">'.$b[0].'</span>';
 };
@@ -158,12 +165,12 @@ $prioBadge = function($p) {
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error { background:var(--neg-soft); color:var(--neg); }
-    .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid #eee; margin-bottom:20px; flex-wrap:wrap; }
+    .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid var(--line); margin-bottom:20px; flex-wrap:wrap; }
     .t-tab { padding:10px 18px; text-decoration:none; color:var(--ink-500); font-size:14px; border-bottom:2px solid transparent; }
-    .t-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
-    .card { background:#fff; border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
+    .t-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); font-weight:600; }
+    .card { background:var(--surface); border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
     .task-item { display:block; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; text-decoration:none; color:inherit; transition:.15s; }
-    .task-item:hover { border-color:#c9c2f5; background:var(--line-soft); }
+    .task-item:hover { border-color:var(--accent); background:var(--line-soft); }
     .task-item.pending { border-right:4px solid var(--accent); }
     .task-item.done { opacity:.6; }
     .ti-title { font-weight:600; color:var(--ink-900); font-size:15px; }
@@ -173,18 +180,20 @@ $prioBadge = function($p) {
     .fld input, .fld select, .fld textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
     .fld textarea { min-height:90px; resize:vertical; }
     .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
+    .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 14px; font-size:13px; }
-    .btn-done { background:var(--pos); }
-    .btn-ghost { background:var(--accent-soft); color:var(--accent); }
+    .btn-done { background:var(--pos-fill); }
+    .btn-ghost { background:var(--accent-soft); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
     .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
     .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
-    .scope-opt.active { border-color:var(--accent); background:var(--bg); color:var(--accent); font-weight:600; }
-    .checklist { max-height:260px; overflow-y:auto; border:1.5px solid #eee; border-radius:10px; padding:10px; }
+    .scope-opt.active { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
+    .checklist { max-height:260px; overflow-y:auto; border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .checklist label { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:14px; cursor:pointer; border-radius:6px; }
     .checklist label:hover { background:var(--line-soft); }
     .checklist input { width:auto; }
     .comment { padding:10px 14px; background:var(--line-soft); border-radius:10px; margin-bottom:8px; }
-    .comment .who { font-size:12px; color:var(--accent); font-weight:600; margin-bottom:3px; }
+    .comment .who { font-size:12px; color:var(--accent-text); font-weight:600; margin-bottom:3px; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; }
     .tgt-chip { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; margin:3px; }
     .tgt-chip.done { background:var(--pos-soft); color:var(--pos); }
@@ -195,7 +204,7 @@ $prioBadge = function($p) {
 
 <?php if ($openTask): ?>
     <!-- ===== تفاصيل مهمة ===== -->
-    <a href="tasks.php" style="color:var(--accent);text-decoration:none;font-size:14px;">→ رجوع للمهام</a>
+    <a href="tasks.php" style="color:var(--accent-text);text-decoration:none;font-size:14px;">→ رجوع للمهام</a>
     <div class="card" style="margin-top:14px;">
         <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:10px;">
             <div>
@@ -225,8 +234,8 @@ $prioBadge = function($p) {
         <?php if (!empty($openShortage)): $shr = $openShortage['request']; ?>
             <div style="margin-top:18px;padding:16px;background:rgba(34,197,94,0.06);border:1.5px solid rgba(34,197,94,0.25);border-radius:12px;">
                 <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-700);margin-bottom:12px;">
-                    <span>🛒 <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
-                    <span><b>المطلوب منه:</b> <?= e($shr['to_name']) ?></span>
+                    <span><i class="ti ti-shopping-cart"></i> <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
+                    <span><b>المطلوب منه:</b> <?= e(($shr['source'] ?? 'branch') === 'purchase' ? 'المشتريات' : ($shr['to_name'] ?? '—')) ?></span>
                     <span><b>الطالب:</b> <?= e($shr['requester'] ?? '—') ?></span>
                 </div>
                 <div style="overflow-x:auto;">
@@ -268,14 +277,14 @@ $prioBadge = function($p) {
 
     <!-- المرفقات -->
     <div class="card">
-        <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;">📎 المرفقات (إثبات التنفيذ)</div>
+        <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;"><i class="ti ti-paperclip"></i> المرفقات (إثبات التنفيذ)</div>
         <?php if (empty($openAttachments)): ?>
             <div class="empty" style="padding:12px;">مفيش مرفقات بعد.</div>
         <?php else: foreach ($openAttachments as $a): ?>
             <a href="task_file.php?id=<?= (int)$a['id'] ?>" target="_blank"
                style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;text-decoration:none;color:inherit;">
                 <i class="ti <?= strpos((string)$a['mime'], 'pdf') !== false ? 'ti-file-type-pdf' : 'ti-photo' ?>"
-                   style="font-size:22px;color:var(--accent);"></i>
+                   style="font-size:22px;color:var(--accent-text);"></i>
                 <span style="flex:1;min-width:0;">
                     <span style="display:block;font-size:14px;font-weight:500;color:var(--ink-900);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= e($a['orig_name']) ?></span>
                     <span style="font-size:12px;color:var(--ink-500);">
@@ -340,7 +349,7 @@ $prioBadge = function($p) {
                     <div class="ti-meta">
                         من: <?= e($t['creator'] ?? '—') ?>
                         <?php if ($t['due_date']): ?> · موعد: <?= e($t['due_date']) ?><?php endif; ?>
-                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent);">⏳ مطلوبة</span>' ?>
+                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent-text);">⏳ مطلوبة</span>' ?>
                     </div>
                 </a>
             <?php endforeach; endif; ?>

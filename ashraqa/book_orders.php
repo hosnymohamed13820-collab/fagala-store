@@ -96,8 +96,8 @@ require_once __DIR__ . '/includes/header.php';
               flex-wrap:wrap; }
     .bo-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .bo-bar input.main:focus { outline:none; border-color:var(--accent); }
-    .bo-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .bo-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .bo-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
     .bo-sug.show { display:block; }
@@ -112,7 +112,7 @@ require_once __DIR__ . '/includes/header.php';
     .bo-table { width:100%; border-collapse:collapse; }
     .bo-table th, .bo-table td { padding:9px 10px; border-bottom:1px solid var(--line-soft);
                                  text-align:center; font-size:13.5px; white-space:nowrap; }
-    .bo-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .bo-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .bo-table th.sup-e, .bo-table td.sup-e { border-left:2px solid var(--line); }
     .bo-table .nm { text-align:right; font-weight:500; min-width:210px; white-space:normal; }
     .bo-table .nm .pub { display:block; font-size:11.5px; color:var(--ink-500); font-weight:400; }
@@ -127,12 +127,12 @@ require_once __DIR__ . '/includes/header.php';
     .q-ind { font-size:12px; margin-right:4px; }
 
     .tag-no { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px;
-              font-weight:700; background:rgba(217,119,6,.13); color:var(--warn,#d97706); }
+              font-weight:700; background:var(--warn-soft); color:var(--warn); }
 
-    .bo-empty { text-align:center; color:#bbb; padding:40px 20px; font-size:15px; }
+    .bo-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .bo-status { font-size:13px; min-height:20px; margin-bottom:10px; }
     .bo-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-                background:var(--ink-900,#16233d); color:#fff; padding:13px 24px; border-radius:12px;
+                background:var(--ink-900,var(--ink-900)); color:#fff; padding:13px 24px; border-radius:12px;
                 font-size:14px; z-index:400; opacity:0; pointer-events:none; transition:opacity .2s; }
     .bo-toast.show { opacity:1; }
 </style>
@@ -140,7 +140,7 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('books') ?>
 
 <div class="card" style="margin-bottom:16px;">
-    <div class="section-title">📚 طلبيات الكتب</div>
+    <div class="section-title"><i class="ti ti-book"></i> طلبيات الكتب</div>
 
     <!-- البحث والإضافة -->
     <div class="bo-bar">
@@ -160,9 +160,11 @@ require_once __DIR__ . '/includes/header.php';
                     <th style="width:34px;">#</th>
                     <th>الكود</th>
                     <th class="nm">اسم الكتاب</th>
+                    <th>إجمالي المحجوز</th>
                     <?php foreach ($suppliers as $s): ?>
                         <th class="sup-e"><?= e($s['name']) ?></th>
                     <?php endforeach; ?>
+                    <th>إجمالي الطلبيات</th>
                     <th style="width:34px;"></th>
                 </tr>
             </thead>
@@ -173,7 +175,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;
                 flex-wrap:wrap;margin-top:14px;">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
-        <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+        <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
             <i class="ti ti-trash"></i> تفريغ الشاشة
         </button>
     </div>
@@ -192,7 +194,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="bo-copybar">
         <?php foreach ($suppliers as $s): ?>
             <button type="button" class="btn cpy" data-sup="<?= (int)$s['id'] ?>" disabled
-                    style="background:var(--pos);"
+                    style="background:var(--pos-fill);"
                     onclick="copyOrder(<?= (int)$s['id'] ?>, this)">
                 <i class="ti ti-copy"></i> طلبية <?= e($s['name']) ?>
                 <span class="cnt" data-sup="<?= (int)$s['id'] ?>" style="opacity:.8;font-size:12px;">(0)</span>
@@ -211,7 +213,7 @@ require_once __DIR__ . '/includes/header.php';
 <script>
     const CSRF      = <?= json_encode(csrf_token()) ?>;
     const SUPPLIERS = <?= json_encode(array_map(fn($s) => ['id' => (int)$s['id'], 'name' => $s['name']], $suppliers), JSON_UNESCAPED_UNICODE) ?>;
-    const NCOLS     = 4 + SUPPLIERS.length;
+    const NCOLS     = 6 + SUPPLIERS.length;
 
     let added    = [];   // الكتب المضافة للشاشة
     let lastRows = [];   // آخر نتايج بحث (عشان الاختيار بالرقم مش بلزق JSON في الـHTML)
@@ -307,7 +309,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.id === row.id)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,#d97706)');
+            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusFirstQty(row.id);
             return;
         }
@@ -323,7 +325,7 @@ require_once __DIR__ . '/includes/header.php';
             setStatus('✓ اتضاف ' + row.name, 'var(--pos)');
         } else {
             setStatus('⚠️ ' + row.name + ' ملوش طلبية — اتضاف فاضي، اكتب هتجيب منه كام من كل مورد',
-                      'var(--warn,#d97706)');
+                      'var(--warn,var(--warn))');
         }
         render();
         focusFirstQty(row.id);
@@ -358,9 +360,14 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         body.innerHTML = added.map((r, i) => {
+            const resVal = parseFloat(r.reserved) || 0;
+            const resText = (resVal > 0) ? ((resVal === Math.round(resVal)) ? String(Math.round(resVal)) : String(resVal)) : '—';
+
+            let ordTotal = 0;
             let tds = '';
             SUPPLIERS.forEach(s => {
                 const kReq = r.id + ':' + s.id + ':req';
+                ordTotal += parseFloat(qty[kReq]) || 0;
                 tds += '<td class="sup-e">' +
                     '<input type="number" class="q-inp" min="0" step="1" ' +
                         'aria-label="' + esc(s.name) + ' — الكمية المطلوبة" ' +
@@ -369,6 +376,9 @@ require_once __DIR__ . '/includes/header.php';
                         'oninput="onQty(this)" onblur="saveQty(this)">' +
                     '<span class="q-ind"></span></td>';
             });
+
+            const ordText = (ordTotal === Math.round(ordTotal)) ? String(Math.round(ordTotal)) : String(ordTotal);
+            const isWarn = (ordTotal < resVal);
 
             return '<tr>' +
                 '<td>' + (i + 1) + '</td>' +
@@ -379,7 +389,9 @@ require_once __DIR__ . '/includes/header.php';
                         (r.term ? (r.publisher ? ' · ' : '') + esc(r.term) : '') +
                         (r.has_order ? '' : ' <span class="tag-no">ملوش طلبية</span>') +
                     '</span></td>' +
+                '<td style="font-weight:600;">' + resText + '</td>' +
                 tds +
+                '<td id="ord_total_' + r.id + '" style="font-weight:700;' + (isWarn ? 'color:var(--warn);' : '') + '">' + ordText + '</td>' +
                 '<td><span class="rm" title="شيل من الشاشة" onclick="removeRow(' + r.id + ')">✕</span></td>' +
             '</tr>';
         }).join('');
@@ -392,6 +404,24 @@ require_once __DIR__ . '/includes/header.php';
     function onQty(inp) {
         qty[inp.dataset.book + ':' + inp.dataset.sup + ':' + inp.dataset.field] = inp.value.trim();
         updateCounts();   // العدّاد بيتحرك مع الكتابة، مش مستني الحفظ
+
+        // تحديث خلية إجمالي الطلبيات للصف ده لحظياً بدون إعادة رسم كاملة (حفظ الفوكس)
+        const bookId = inp.dataset.book;
+        const b = added.find(r => String(r.id) === String(bookId));
+        let ordTotal = 0;
+        SUPPLIERS.forEach(s => {
+            ordTotal += parseFloat(qty[bookId + ':' + s.id + ':req']) || 0;
+        });
+        const resVal = b ? (parseFloat(b.reserved) || 0) : 0;
+        const cell = document.getElementById('ord_total_' + bookId);
+        if (cell) {
+            cell.textContent = (ordTotal === Math.round(ordTotal)) ? String(Math.round(ordTotal)) : String(ordTotal);
+            if (ordTotal < resVal) {
+                cell.style.color = 'var(--warn)';
+            } else {
+                cell.style.color = '';
+            }
+        }
     }
 
     function saveQty(inp) {

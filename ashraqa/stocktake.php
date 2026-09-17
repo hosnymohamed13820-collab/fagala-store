@@ -491,19 +491,20 @@ require_once __DIR__ . '/includes/header.php';
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .flash.merged  { background:var(--warn-soft); color:var(--warn); }
-    .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
         font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
     .btn:hover { background:var(--accent-hover); }
     .btn-sm { padding:7px 13px; font-size:13px; }
-    .btn-green { background:var(--pos); } .btn-green:hover { background:#15835f; }
-    .btn-red { background:var(--neg); } .btn-red:hover { background:#c93f3e; }
-    .btn-ghost { background:var(--bg); color:var(--accent-hover); }
+    .btn-green { background:var(--pos-fill); } .btn-green:hover { background:var(--pos-fill); }
+    .btn-red { background:var(--neg-fill); } .btn-red:hover { background:var(--neg-fill); }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
     .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px; }
-    .dot.on { background:var(--pos); } .dot.off { background:#bbb; }
+    .dot.on { background:var(--pos-fill); } .dot.off { background:var(--ink-300); }
     .hdr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-bottom:8px; }
     .hdr-item .l { font-size:12px; color:var(--ink-500); } .hdr-item .v { font-size:15px; color:var(--ink-900); font-weight:600; }
     table { width:100%; border-collapse:collapse; }
@@ -511,32 +512,33 @@ require_once __DIR__ . '/includes/header.php';
     th { color:var(--ink-500); font-weight:600; }
     td { color:var(--ink-800); }
     .diff-neg { color:var(--neg); font-weight:600; } .diff-pos { color:var(--pos); font-weight:600; } .diff-zero { color:var(--ink-500); }
-    .empty { text-align:center; color:#bbb; padding:24px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px; }
     .form-inline .fld { display:flex; flex-direction:column; gap:4px; }
     .form-inline label { font-size:12px; color:var(--ink-500); }
     .form-inline input, .form-inline select { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45); z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
-    .sheet-link { color:var(--accent); font-weight:600; text-decoration:none; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
+    .btn-cancel:hover { background:var(--line); }
+    .sheet-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
-    .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:#fff; border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
-    .status-chip:hover { border-color:#c9c2f5; }
-    .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+    .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
+    .status-chip:hover { border-color:var(--accent); }
+    .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent-text); font-weight:600; }
     .tree-section { border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
     .tree-head { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; background:var(--line-soft); user-select:none; }
     .tree-head:hover { background:var(--accent-soft); }
-    .tree-caret { color:var(--accent); font-size:13px; transition:transform .15s; display:inline-block; }
+    .tree-caret { color:var(--accent-text); font-size:13px; transition:transform .15s; display:inline-block; }
     .tree-section.open .tree-caret { transform:rotate(90deg); }
     .tree-name { font-weight:600; color:var(--ink-900); font-size:15px; flex:1; }
-    .tree-count { font-size:12px; color:var(--ink-500); background:#eceafb; padding:3px 10px; border-radius:20px; }
+    .tree-count { font-size:12px; color:var(--ink-500); background:var(--line-soft); padding:3px 10px; border-radius:20px; }
     .tree-body { display:none; padding:4px 8px 8px; overflow-x:auto; }
     .tree-section.open .tree-body { display:block; }
     .sheet-link:hover { text-decoration:underline; }
@@ -549,8 +551,8 @@ require_once __DIR__ . '/includes/header.php';
         z-index: 9999; padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 500;
         box-shadow: 0 6px 24px rgba(0,0,0,0.18); max-width: 90%; text-align: center;
         animation: toastIn 0.25s ease; }
-    .stk-toast.success { background: var(--pos); color: #fff; }
-    .stk-toast.error { background: var(--neg); color: #fff; }
+    .stk-toast.success { background:var(--pos-fill); color: #fff; }
+    .stk-toast.error { background:var(--neg-fill); color: #fff; }
     @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
 </style>
 
@@ -573,7 +575,7 @@ require_once __DIR__ . '/includes/header.php';
                 <strong style="color:var(--pos);">نشط<span class="dot on"></span></strong>
                 <?php if ($session['has_balance']): ?><span style="color:var(--ink-500);font-size:13px;">— رصيد مرفوع</span><?php endif; ?>
             <?php else: ?>
-                <strong style="color:#888;">متوقف<span class="dot off"></span></strong>
+                <strong style="color:var(--ink-400);">متوقف<span class="dot off"></span></strong>
             <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -584,7 +586,7 @@ require_once __DIR__ . '/includes/header.php';
                 <form method="post" style="display:inline;" onsubmit="return confirm('إعادة فتح آخر جرد مقفول؟ كل المحاضر هترجع زي ما هي.')">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_session">
-                    <button class="btn" style="background:var(--warn);"><i class="ti ti-rotate"></i> إعادة فتح آخر جرد</button>
+                    <button class="btn" style="background:var(--warn-fill);"><i class="ti ti-rotate"></i> إعادة فتح آخر جرد</button>
                 </form>
             <?php endif; ?>
             <?php if ($session): ?>
@@ -618,7 +620,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="delete_sheet">
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
-                <button type="submit" class="btn btn-sm" style="background:var(--neg);"><i class="ti ti-trash"></i> مسح المحضر</button>
+                <button type="submit" class="btn btn-sm" style="background:var(--neg-fill);"><i class="ti ti-trash"></i> مسح المحضر</button>
             </form>
         <?php endif; ?>
     </div>
@@ -702,7 +704,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="text" id="nameSearch" autocomplete="off" placeholder="اكتب جزء من اسم الصنف..." aria-label="بحث باسم الصنف"
                    oninput="searchByName(this.value)"
                    style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
-            <div id="searchResults" style="display:none;position:absolute;z-index:50;background:#fff;border:1.5px solid var(--line);
+            <div id="searchResults" style="display:none;position:absolute;z-index:50;background:var(--surface);border:1.5px solid var(--line);
                  border-radius:9px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:4px;"></div>
         </div>
         <form method="post" class="form-inline" id="addLineForm" onsubmit="return validateScan(this)">
@@ -714,7 +716,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="code" id="codeInput" maxlength="14" required autofocus autocomplete="off"
                            style="width:160px;" oninput="lookupName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;">📷</button>
+                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
@@ -820,14 +822,14 @@ require_once __DIR__ . '/includes/header.php';
                 fetch('stocktake.php?search=' + encodeURIComponent(term))
                     .then(r => r.json())
                     .then(items => {
-                        if (!items.length) { box.innerHTML='<div style="padding:10px;color:#bbb;">مفيش نتائج</div>'; box.style.display='block'; return; }
+                        if (!items.length) { box.innerHTML='<div style="padding:10px;color:var(--ink-400);">مفيش نتائج</div>'; box.style.display='block'; return; }
                         box.innerHTML = items.map(it => {
                             var prices = '';
                             if (it.sale != null) prices += '<span style="color:var(--pos);">بيع: '+it.sale+'</span> ';
                             if (it.cost != null) prices += '<span style="color:var(--warn);">تكلفة: '+it.cost+'</span>';
-                            return '<div onclick="pickItem(\''+it.code+'\')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line-soft);font-size:14px;" '+
+                            return '<div onclick="pickItem(\''+escapeHtml(it.code)+'\')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--line-soft);font-size:14px;" '+
                             'onmouseover="this.style.background=\'var(--accent-soft)\'" onmouseout="this.style.background=\'\'">'+
-                            '<div><strong>'+it.code+'</strong> — '+it.name+'</div>'+
+                            '<div><strong>'+escapeHtml(it.code)+'</strong> — '+escapeHtml(it.name)+'</div>'+
                             (prices ? '<div style="font-size:12px;margin-top:3px;">'+prices+'</div>' : '')+
                             '</div>';
                         }).join('');
@@ -880,9 +882,9 @@ require_once __DIR__ . '/includes/header.php';
         function showStkPopup(title, html) {
             var ov = document.createElement('div');
             ov.style.cssText = 'position:fixed;inset:0;background:rgba(30,27,75,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
-            ov.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
-                + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;">⚠️ ' + title + '</h3>'
-                + '<p style="color:#444;font-size:14px;line-height:1.8;">' + html + '</p>'
+            ov.innerHTML = '<div style="background:var(--surface);border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
+                + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> ' + title + '</h3>'
+                + '<p style="color:var(--ink-600);font-size:14px;line-height:1.8;">' + html + '</p>'
                 + '<button style="margin-top:16px;padding:9px 28px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;">تمام</button></div>';
             ov.querySelector('button').onclick = function(){ ov.remove(); var ci=document.getElementById('codeInput'); if(ci) ci.focus(); };
             document.body.appendChild(ov);
@@ -937,7 +939,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_review">
                     <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
-                    <button class="btn" style="background:var(--warn);"><i class="ti ti-rotate"></i> إرجاع للمراجعة</button>
+                    <button class="btn" style="background:var(--warn-fill);"><i class="ti ti-rotate"></i> إرجاع للمراجعة</button>
                 </form>
                 <?php endif; ?>
             <?php endif; ?>
@@ -962,7 +964,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="code" id="revCode" maxlength="14" required autocomplete="off"
                            placeholder="اضرب أو اكتب الكود" style="width:160px;" oninput="lookupRevName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('revCode')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;">📷</button>
+                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
@@ -1047,9 +1049,9 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="number" aria-label="الكمية بالمراجعة" step="0.001" min="0" value="<?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?>"
                                    data-line="<?= (int)$cl['id'] ?>"
                                    enterkeyhint="done" onkeydown="if(isEnterKey(event)){event.preventDefault();saveReviewQty(this);}"
-                                   style="width:90px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;color:var(--accent);">
+                                   style="width:90px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;color:var(--accent-text);">
                         <?php else: ?>
-                            <span style="font-weight:700;color:var(--accent);"><?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?></span>
+                            <span style="font-weight:700;color:var(--accent-text);"><?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -1073,7 +1075,7 @@ require_once __DIR__ . '/includes/header.php';
                 fd.append('sheet_id','<?= (int)$openSheet['id'] ?>');
                 fd.append('line_id', input.dataset.line);
                 fd.append('review_qty', input.value);
-                input.style.borderColor = '#f0a500';
+                input.style.borderColor = 'var(--warn)';
                 fetch('stocktake.php', { method:'POST', body: fd })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -1090,7 +1092,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<input type="hidden" name="line_id" value="'+lineId+'">'
                     + '<input type="hidden" name="sheet_id" value="'+sheetId+'">'
                     + '<input type="hidden" name="from_review" value="1">';
-                document.body.appendChild(f); f.submit();
+                document.body.appendChild(f); formSubmit(f);
             }
         </script>
         <?php endif; ?>
@@ -1116,7 +1118,7 @@ require_once __DIR__ . '/includes/header.php';
             <?= $isReviewing ? 'عدّل الكمية النهائية واضغط Enter (يحفظ فوراً)، أو عدّل الكل واضغط "تم الانتهاء".' : '' ?>
         </p>
         <?php if (empty($diffLines)): ?>
-            <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. 🎉</div>
+            <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. <i class="ti ti-confetti"></i></div>
         <?php endif; ?>
         <input type="text" id="reviewSearch" placeholder="🔍 ابحث في الأصناف المفرّقة..."
                onkeyup="filterTable('reviewSearch','reviewTable')"
@@ -1134,7 +1136,7 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                 <?php foreach ($diffLines as $cl): ?>
                     <?php
-                        $bg = ['less'=>'background:#fdeeee;','more'=>'background:#fff7e6;'][$cl['_state']] ?? '';
+                        $bg = ['less'=>'background:var(--line-soft);','more'=>'background:var(--line-soft);'][$cl['_state']] ?? '';
                         $final = $cl['final_qty']!==null ? (float)$cl['final_qty'] : $cl['_review'];
                     ?>
                     <tr style="<?= $bg ?>">
@@ -1173,7 +1175,7 @@ require_once __DIR__ . '/includes/header.php';
                 fd.append('sheet_id', '<?= (int)$openSheet['id'] ?>');
                 fd.append('line_id', input.dataset.line);
                 fd.append('final_qty', input.value);
-                input.style.borderColor = '#f0a500';
+                input.style.borderColor = 'var(--warn)';
                 fetch('stocktake.php', { method:'POST', body: fd })
                     .then(function(r){ return r.json(); })
                     .then(function(d){
@@ -1191,7 +1193,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<input type="hidden" name="line_id" value="'+lineId+'">'
                     + '<input type="hidden" name="sheet_id" value="'+sheetId+'">'
                     + '<input type="hidden" name="from_review" value="1">';
-                document.body.appendChild(f); f.submit();
+                document.body.appendChild(f); formSubmit(f);
             }
         </script>
         <?php endif; ?>
@@ -1201,7 +1203,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- أداة الأكواد المربوطة داخل المحضر (متاحة للجارد والمراجع) -->
     <div class="card">
         <div class="section-title" style="cursor:pointer;" onclick="var b=document.getElementById('linkedBoxInner');b.style.display=b.style.display==='none'?'block':'none';">
-            🔗 معرفة الأكواد المربوطة (اضغط للفتح/الإغلاق)
+            <i class="ti ti-link"></i> معرفة الأكواد المربوطة (اضغط للفتح/الإغلاق)
         </div>
         <div id="linkedBoxInner" style="display:none;">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1210,7 +1212,7 @@ require_once __DIR__ . '/includes/header.php';
                        enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked('linkedCodeInput2','linkedResult2');}"
                        style="flex:1;min-width:200px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
                 <button type="button" onclick="openBarcodeScanner('linkedCodeInput2')" title="مسح بالكاميرا"
-                        style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                        style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
                 <button type="button" class="btn" onclick="lookupLinked('linkedCodeInput2','linkedResult2')"><i class="ti ti-link"></i> عرض</button>
             </div>
             <div id="linkedResult2" style="margin-top:14px;"></div>
@@ -1256,7 +1258,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td style="white-space:normal;"><?= e($ln['item_name']) ?></td>
                     <td><?= e($ln['unit'] ?? '—') ?></td>
                     <td><?= rtrim(rtrim(number_format((float)$ln['count_qty'],3),'0'),'.') ?></td>
-                    <td style="font-weight:600;color:var(--accent);"><?= rtrim(rtrim(number_format($base,3),'0'),'.') ?></td>
+                    <td style="font-weight:600;color:var(--accent-text);"><?= rtrim(rtrim(number_format($base,3),'0'),'.') ?></td>
                     <td><?= $sys!==null ? rtrim(rtrim(number_format($sys,3),'0'),'.') : '—' ?></td>
                     <td class="<?= $diffCls ?>"><?= $diff!==null ? rtrim(rtrim(number_format($diff,3),'0'),'.') : '—' ?></td>
                     <td><?= $cost!==null ? number_format($cost,2) : '—' ?></td>
@@ -1295,14 +1297,14 @@ require_once __DIR__ . '/includes/header.php';
 <?php else: ?>
     <!-- أداة: الأكواد المربوطة ببعض (استعلام مستقل عن الجرد) -->
     <div class="card">
-        <div class="section-title">🔗 الأكواد المربوطة (اضرب كود يطلعلك كل الأكواد المربوطة بيه)</div>
+        <div class="section-title"><i class="ti ti-link"></i> الأكواد المربوطة (اضرب كود يطلعلك كل الأكواد المربوطة بيه)</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <input type="text" id="linkedCodeInput" autocomplete="off"
                    placeholder="اضرب أو اكتب الكود ودوس Enter..."
                    enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked();}"
                    style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
             <button type="button" onclick="openBarcodeScanner('linkedCodeInput')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button type="button" class="btn" onclick="lookupLinked()"><i class="ti ti-link"></i> عرض المربوط</button>
         </div>
         <div id="linkedResult" style="margin-top:14px;"></div>
@@ -1317,7 +1319,7 @@ require_once __DIR__ . '/includes/header.php';
                    placeholder="اضرب أو اكتب كود الصنف بالظبط..."
                    style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
             <button type="button" onclick="openBarcodeScanner('sheetItemSearch')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;">📷</button>
+                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button class="btn"><i class="ti ti-search"></i> بحث</button>
             <?php if ($searchTerm !== ''): ?>
                 <a href="stocktake.php" class="btn btn-ghost" style="text-decoration:none;">مسح</a>
@@ -1341,13 +1343,13 @@ require_once __DIR__ . '/includes/header.php';
                            : ($sr['review_qty'] !== null ? (float)$sr['review_qty'] : (float)$sr['base_qty']);
                         $qOut = rtrim(rtrim(number_format($q,3),'0'),'.');
                         $stMap2 = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                        $bb = $stMap2[$sr['sheet_status']] ?? ['—','#666','#eee'];
+                        $bb = $stMap2[$sr['sheet_status']] ?? ['—','var(--ink-500)','var(--line)'];
                     ?>
                     <tr>
                         <td><?= e($sr['entered_code']) ?></td>
                         <td style="white-space:normal;font-weight:500;"><?= e($sr['item_name']) ?></td>
                         <td><?= e($sr['unit'] ?? '—') ?></td>
-                        <td style="font-weight:600;color:var(--accent);"><?= $qOut ?></td>
+                        <td style="font-weight:600;color:var(--accent-text);"><?= $qOut ?></td>
                         <td>#<?= (int)$sr['sheet_no'] ?><?= $sr['place_note'] ? ' — '.e($sr['place_note']) : '' ?></td>
                         <td><?= e($sr['counter_name'] ?? '—') ?></td>
                         <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;color:<?=$bb[1]?>;background:<?=$bb[2]?>;"><?= e($bb[0]) ?></span></td>
@@ -1387,7 +1389,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="status-chip" data-status="open" onclick="filterByStatus(this)">مفتوح</button>
             <button type="button" class="status-chip" data-status="reviewing" onclick="filterByStatus(this)">مراجعة</button>
             <button type="button" class="status-chip" data-status="done" onclick="filterByStatus(this)">منتهي</button>
-            <span id="sheetsCount" style="margin-inline-start:auto;font-size:13px;color:var(--accent);font-weight:600;background:var(--accent-soft);padding:5px 12px;border-radius:20px;"></span>
+            <span id="sheetsCount" style="margin-inline-start:auto;font-size:13px;color:var(--accent-text);font-weight:600;background:var(--accent-soft);padding:5px 12px;border-radius:20px;"></span>
         </div>
         <div id="sheetsTree">
         <?php foreach ($sheetGroups as $section => $groupSheets): ?>
@@ -1408,7 +1410,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php foreach ($groupSheets as $sh): ?>
                             <?php
                                 $stMap = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                                $b = $stMap[$sh['status']] ?? ['—','#666','#eee'];
+                                $b = $stMap[$sh['status']] ?? ['—','var(--ink-500)','var(--line)'];
                                 $searchStr = '#'.(int)$sh['sheet_no'].' '.($sh['sheet_no']).' '.($sh['place_note'] ?: ($sh['branch_name'] ?? '')).' '.($sh['counter_name'] ?? '').' '.($sh['reviewer_name'] ?? '');
                             ?>
                             <tr class="sheet-row" onclick="openSheet(<?= (int)$sh['id'] ?>)" style="cursor:pointer;" title="اضغط لفتح المحضر" data-status="<?= e($sh['status']) ?>" data-search="<?= e(mb_strtolower($searchStr)) ?>">
@@ -1422,7 +1424,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td onclick="event.stopPropagation();">
                                     <?php if ($sh['status'] === 'done'): ?>
                                         <a href="stocktake_export.php?sheet=<?= (int)$sh['id'] ?>" class="btn btn-sm" style="text-decoration:none;font-size:12px;padding:4px 10px;">تقرير</a>
-                                    <?php else: ?><span style="color:#ccc;">—</span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-300);">—</span><?php endif; ?>
                                 </td>
                                 <?php if ($owner): ?>
                                 <td onclick="event.stopPropagation();">
@@ -1433,7 +1435,7 @@ require_once __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="sheet_id" value="<?= (int)$sh['id'] ?>">
                                             <button type="submit" style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12px;">حذف</button>
                                         </form>
-                                    <?php else: ?><span style="color:#ccc;" title="مايتمسحش لأنه منتهي">🔒</span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-300);" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
                                 </td>
                                 <?php endif; ?>
                             </tr>
@@ -1530,7 +1532,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="text" name="place_note" placeholder="مثلاً: مخزن أول، رف 3..." aria-label="ملاحظة المكان" <?= $owner?'':'required' ?>>
                     <?php if ($owner): ?>
                         <p style="font-size:12px;color:var(--ink-500);margin-top:6px;">
-                            <a href="stocktake_places.php" style="color:var(--accent);">عرّف أقسام وأرفف ثابتة</a> عشان تظهر كقائمة للجميع.
+                            <a href="stocktake_places.php" style="color:var(--accent-text);">عرّف أقسام وأرفف ثابتة</a> عشان تظهر كقائمة للجميع.
                         </p>
                     <?php endif; ?>
                 <?php endif; ?>
@@ -1552,10 +1554,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['notfound'])): ?>
 <div id="notfoundModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
-        <div style="font-size:48px;margin-bottom:8px;">⚠️</div>
+    <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+        <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">الكود غير موجود</h3>
-        <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
+        <p style="color:var(--ink-600);font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكود <strong style="color:var(--ink-900);"><?= e($_GET['notfound']) ?></strong> مش موجود في قاعدة بيانات الأصناف.
             راجع الكود وحاول تاني.
         </p>
@@ -1579,10 +1581,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['badqty'])): ?>
 <div id="badqtyModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
-        <div style="font-size:48px;margin-bottom:8px;">🚫</div>
+    <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
+        <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-ban"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">كمية غير منطقية</h3>
-        <p style="color:#555;font-size:15px;line-height:1.7;margin-bottom:20px;">
+        <p style="color:var(--ink-600);font-size:15px;line-height:1.7;margin-bottom:20px;">
             الكمية <strong style="color:var(--neg);"><?= e($_GET['badqty']) ?></strong> كبيرة جداً ومش منطقية.
             غالباً السكانر ضرب الكود في خانة الكمية بالغلط. الصنف <strong>ما اتسجّلش</strong>. حاول تاني.
         </p>
@@ -1745,14 +1747,14 @@ require_once __DIR__ . '/includes/header.php';
                     + '</tr></thead><tbody>';
                 d.codes.forEach(c => {
                     const isSearched = c.code === code;
-                    const rowBg = isSearched ? 'background:#fdf6e3;' : '';
+                    const rowBg = isSearched ? 'background:var(--warn-soft);' : '';
                     const typeBadge = c.is_base
                         ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--pos);background:var(--pos-soft);">أساسي</span>'
                         : '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--ink-700);background:var(--line-soft);">فرعي</span>';
                     const priceTxt = c.price !== null && c.price !== undefined ? Number(c.price).toFixed(2) + ' ج.م' : '—';
                     const unitTxt = rtrimZeros(Number(c.unit));
                     html += '<tr style="' + rowBg + 'border-bottom:1px solid var(--line);">'
-                        + '<td style="padding:9px 10px;font-weight:600;color:var(--accent);">' + escapeHtml(c.code)
+                        + '<td style="padding:9px 10px;font-weight:600;color:var(--accent-text);">' + escapeHtml(c.code)
                         + (isSearched ? ' <span style="font-size:11px;color:var(--warn);">(اللي ضربته)</span>' : '') + '</td>'
                         + '<td style="padding:9px 10px;">' + unitTxt + '</td>'
                         + '<td style="padding:9px 10px;">' + typeBadge + '</td>'

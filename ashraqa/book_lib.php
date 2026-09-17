@@ -39,19 +39,21 @@ function book_tabs_bar(string $active): string
 {
     $tabs = [
         'shortage' => ['طلب نواقص',   'ti-shopping-cart', 'shortage.php'],
-        'books'    => ['طلبيات الكتب', 'ti-book',          'book_orders.php'],
-        'reserve'  => ['حجز الكتب',    'ti-bookmark',      'book_reserve.php'],
-        'market'   => ['أسعار السوق',  'ti-tag',           'market_prices.php'],
+        'breq'     => ['طلبات الفروع', 'ti-list-details',  'branch_requests.php'],
+        'pgroup'   => ['تجميع الحجوزات', 'ti-stack-2',     'purchase_groups.php'],
+        'books'    => ['طلبيات الكتب', 'ti-list',          'book_orders.php'],
+        'reserve'  => ['حجز الكتب',    'ti-user-check',    'book_reserve.php'],
+        'market'   => ['أسعار السوق',  'ti-discount',      'market_prices.php'],
     ];
 
     $css = '<style>
         .bk-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
         .bk-tab { display:inline-flex; align-items:center; gap:7px; padding:11px 20px;
-                  border:1.5px solid var(--line); border-radius:11px; background:#fff;
-                  color:var(--ink-700,#4a4a68); font-size:14px; font-weight:600;
+                  border:1.5px solid var(--line); border-radius:11px; background:var(--surface);
+                  color:var(--ink-700,var(--accent-text)); font-size:14px; font-weight:600;
                   text-decoration:none; transition:all .15s; }
-        .bk-tab:hover { border-color:var(--accent); color:var(--accent); }
-        .bk-tab.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+        .bk-tab:hover { border-color:var(--accent-text); color:var(--accent-text); }
+        .bk-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }
         .bk-tab i { font-size:17px; }
     </style>';
 
@@ -171,8 +173,32 @@ function book_catalog_with_orders(string $term = '', int $limit = 500): array
         }
     } catch (Throwable $ex) { /* الجدول لسه مش موجود */ }
 
+    // إجمالي النسخ المحجوزة للعملاء ولسه ماوصلتش في كل الفروع — استعلام واحد مجمّع
+    $reserved = [];
+    try {
+        $st = $pdo->prepare(
+            "SELECT bc.id AS book_id,
+                    SUM(GREATEST(rl.qty - rl.allocated_qty, 0)) AS total_reserved
+             FROM book_catalog bc
+             LEFT JOIN hq_codes hc ON hc.code = bc.code
+             JOIN book_reservation_lines rl ON (
+                 (rl.item_id > 0 AND hc.item_id IS NOT NULL AND rl.item_id = hc.item_id)
+                 OR
+                 ((rl.item_id = 0 OR hc.item_id IS NULL) AND rl.code = bc.code)
+             )
+             JOIN book_reservations r ON r.id = rl.reservation_id AND r.status = 'open'
+             WHERE bc.id IN ($ph)
+             GROUP BY bc.id"
+        );
+        $st->execute($ids);
+        foreach ($st->fetchAll() as $r) {
+            $reserved[(int) $r['book_id']] = (float) $r['total_reserved'];
+        }
+    } catch (Throwable $ex) { /* الجداول لسه مش موجودة يرجع صفر */ }
+
     foreach ($books as &$b) {
         $b['sup'] = $bySupplier[(int) $b['id']] ?? [];
+        $b['reserved'] = $reserved[(int) $b['id']] ?? 0.0;
     }
     unset($b);
 

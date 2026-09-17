@@ -10,7 +10,7 @@
  * كل العمليات بتمر من finance.php (المصدر الوحيد للحقيقة).
  */
 require_once __DIR__ . '/auth.php';
-require_permission('treasury');
+require_permission('treasury:statement');
 require_once __DIR__ . '/finance.php';
 
 $pdo       = db();
@@ -22,11 +22,44 @@ $costBranches = cost_branches_list();
 
 // صلاحية تعديل (القيد + البيان) بعد الحفظ — الأونر بس، زي ما كان
 // `set_entry_account` بالظبط قبل التعديل ده. الملاحظات مفتوحة لأي حد
-// وصل للشاشة (الشاشة نفسها محمية بـ require_permission('treasury')).
+// وصل للشاشة (الشاشة نفسها محمية بـ require_permission('treasury:statement')).
 // ⚠️ لو عايز المحاسب يعدّل البيان والقيد كمان: غيّر السطر ده لـ
-//    $canEditEntry = is_owner() || can('treasury');
+//    $canEditEntry = is_owner() || can('treasury:statement');
 $canEditEntry = is_owner();
 $canEditNotes = true;
+$canReverse   = can('treasury:reverse');
+
+// =====================================================================
+//  AJAX — قيد عكسي لحركة صرف أو استلام
+//  حارس الصلاحية: treasury:reverse في أول سطر.
+// =====================================================================
+if (($_GET['ajax'] ?? '') === 'je_reverse') {
+    header('Content-Type: application/json; charset=utf-8');
+    try {
+        if (!can('treasury:reverse')) {
+            throw new RuntimeException('غير مصرح لك بعمل قيد عكسي.');
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            throw new RuntimeException('طلب غير صالح.');
+        }
+        $body = json_decode(file_get_contents('php://input') ?: '', true);
+        if (!is_array($body)) throw new RuntimeException('بيانات غير صالحة.');
+        if (!csrf_verify((string) ($body['csrf'] ?? ''))) {
+            throw new RuntimeException('انتهت صلاحية الجلسة — اعمل ريفريش وحاول تاني.');
+        }
+
+        $jid = (int) ($body['id'] ?? 0);
+        if ($jid <= 0) throw new RuntimeException('قيد غير صحيح.');
+
+        $revEntryId = reverse_treasury_movement($jid, $uid);
+
+        echo json_encode(['ok' => true, 'reversal_entry_id' => $revEntryId], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
 
 // =====================================================================
 //  AJAX — تعديل قيد بعد الحفظ (من غير أي ريفريش للصفحة)
@@ -34,7 +67,7 @@ $canEditNotes = true;
 //  جسم JSON فيه csrf، والرد JSON.
 //
 //  🔴 المبالغ مش موجودة هنا خالص — لا في المدخلات ولا في الاستعلام.
-//     التعديل = القيد · البيان · الملاحظات وبس.
+//     التعديل = القيد · البيان · الملاحظات · والتاريخ بقيد عكسي.
 // =====================================================================
 if (($_GET['ajax'] ?? '') === 'je_edit') {
     header('Content-Type: application/json; charset=utf-8');
@@ -52,8 +85,8 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
         if ($jid <= 0) throw new RuntimeException('قيد غير صحيح.');
 
         // الصف الحالي — عشان اللي مالوش صلاحية يعدّل الملاحظة بس
-        // من غير ما يقدر يغيّر البيان أو القيد بتزوير الطلب.
-        $cur = $pdo->prepare('SELECT account_id, description FROM journal_entries WHERE id = ?');
+        // من غير ما يقدر يغيّر البيان أو القيد أو التاريخ بتزوير الطلب.
+        $cur = $pdo->prepare('SELECT account_id, description, entry_date, ref_type, ref_id FROM journal_entries WHERE id = ?');
         $cur->execute([$jid]);
         $curRow = $cur->fetch();
         if (!$curRow) throw new RuntimeException('القيد ده مش موجود.');
@@ -61,19 +94,47 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
         if ($canEditEntry) {
             $accountId = ($body['account_id'] ?? '') !== '' && $body['account_id'] !== null
                 ? (int) $body['account_id'] : null;
-            $desc = (string) ($body['description'] ?? '');
+            $desc    = (string) ($body['description'] ?? '');
+            $reqDate = isset($body['date']) ? trim((string) $body['date']) : (string) $curRow['entry_date'];
         } else {
             // مالوش صلاحية → القيم القديمة زي ما هي، مهما بعت في الطلب
             $accountId = $curRow['account_id'] !== null ? (int) $curRow['account_id'] : null;
             $desc      = (string) $curRow['description'];
+            $reqDate   = (string) $curRow['entry_date'];
         }
 
+        // الترتيب مهم: update_journal_entry الأول عشان البيان والحساب
+        // والملاحظة يبقوا نهائيين على القيد الأصلي، وبعدين change_movement_date
+        // عشان القيد الجديد ياخد القيم المحدّثة.
         $res = update_journal_entry(
             $jid, $accountId, $desc,
             (string) ($body['notes'] ?? ''),
             $uid
         );
-        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
+
+        $dateChanged = false;
+        if ($canEditEntry && $reqDate !== '' && $reqDate !== (string) $curRow['entry_date']) {
+            if ((string) ($curRow['ref_type'] ?? '') === 'reversal') {
+                throw new RuntimeException('الحركة دي اتعكست — مينفعش تغيّر تاريخها.');
+            }
+            $refId = (int) ($curRow['ref_id'] ?? 0);
+            if ($refId > 0 && treasury_movements_has_reverse_cols($pdo)) {
+                $chkRev = $pdo->prepare('SELECT reversed_at FROM treasury_movements WHERE id = ?');
+                $chkRev->execute([$refId]);
+                $revAt = $chkRev->fetchColumn();
+                if ($revAt !== false && $revAt !== null) {
+                    throw new RuntimeException('الحركة دي اتعكست — مينفعش تغيّر تاريخها.');
+                }
+            }
+
+            $dateRes = change_movement_date($jid, $reqDate, $uid);
+            if (!empty($dateRes['changed'])) {
+                $dateChanged = true;
+                $res['date_res'] = $dateRes;
+            }
+        }
+
+        echo json_encode(['ok' => true, 'date_changed' => $dateChanged] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -119,6 +180,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid);
                     $flash = 'تم صرف العهدة للفرع (الخزينة نقصت وعهدة الفرع زادت).';
                 }
+                elseif ($action === 'disbursement' && $opType === 'employee_custody') {
+                    $empId = (int) ($_POST['employee_id'] ?? 0);
+                    if ($empId <= 0) throw new RuntimeException('اختر الموظف للعهدة.');
+                    issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid);
+                    $flash = 'تم صرف العهدة للموظف (الخزينة نقصت وعهدة الموظف زادت).';
+                }
                 elseif ($action === 'receipt' && $opType === 'advance') {
                     $empId = (int) ($_POST['employee_id'] ?? 0);
                     if ($empId <= 0) throw new RuntimeException('اختر الموظف لرد السلفة.');
@@ -131,11 +198,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     receive_custody($bId, $amount, $tid, $date, $desc ?: null, $uid);
                     $flash = 'تم استلام العهدة من الفرع (الخزينة زادت وعهدة الفرع نقصت).';
                 }
+                elseif ($opType === 'supplier') {
+                    $suppId = (int) ($_POST['supplier_id'] ?? 0);
+                    if ($suppId <= 0) {
+                        throw new RuntimeException('اختر المورد.');
+                    }
+                    $stSupp = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? AND is_active = 1 LIMIT 1');
+                    $stSupp->execute([$suppId]);
+                    $supp = $stSupp->fetch();
+                    if (!$supp) {
+                        throw new RuntimeException('المورد غير موجود أو غير نشط.');
+                    }
+                    sync_dynamic_accounts();
+                    $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
+                    $stAcc->execute([$suppId]);
+                    $accId = (int) $stAcc->fetchColumn();
+                    if (!$accId) {
+                        throw new RuntimeException('المورد ده مالوش حساب في شجرة الحسابات — اتأكد إن فيه أب «موردين» في التعريفات.');
+                    }
+                    $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
+                        ? (int) $_POST['cost_branch_id'] : null;
+                    if (empty($costBranchId)) {
+                        throw new RuntimeException('اختار الفرع.');
+                    }
+                    $opDesc = $desc !== ''
+                        ? $desc
+                        : (($action === 'disbursement' ? 'صرف للمورد ' : 'استلام من المورد ') . $supp['name']);
+                    treasury_movement(
+                        $tid, $action, $amount, $date, $opDesc, $uid,
+                        $accId, $costBranchId, $notes !== '' ? $notes : null
+                    );
+                    $flash = ($action === 'disbursement')
+                        ? 'تم تسجيل الصرف للمورد.'
+                        : 'تم تسجيل الاستلام من المورد.';
+                }
                 else {
+                    // القيد والفرع إجباريين في الاستلام والصرف العادي
+                    if (empty($entryCodeId)) {
+                        throw new RuntimeException('اختار القيد.');
+                    }
                     // فرع التكلفة (تحليلي) — اسمه cost_branch_id في الفورم عشان
                     // ما يتعارضش مع branch_id بتاع صرف/استلام العهدة.
                     $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
                         ? (int) $_POST['cost_branch_id'] : null;
+                    if (empty($costBranchId)) {
+                        throw new RuntimeException('اختار الفرع.');
+                    }
                     treasury_movement($tid, $action, $amount, $date, $desc ?: null, $uid,
                                       $entryCodeId, $costBranchId, $notes ?: null);
                     $flash = ($action === 'receipt') ? 'تم تسجيل الاستلام.' : 'تم تسجيل الصرف.';
@@ -175,25 +283,58 @@ $treasuries = $pdo->query(
      FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
      WHERE t.is_active = 1
-     ORDER BY FIELD(t.type, "cash","main","visa","instapay","card","branch_custody"), t.name'
+     ORDER BY FIELD(t.type, "cash","main","visa","instapay","card","branch_custody","employee_custody"), t.name'
 )->fetchAll();
 
 $totalBalance = array_sum(array_column($treasuries, 'balance'));
+// «خزينة الكاش الفعلي» = الخزينة الرئيسية + خزينة الكاش، وبس. (نفس حسبة الداشبورد س 35-44)
+$realCash = 0.0;
+foreach ($treasuries as $t) {
+    if (in_array($t['type'], ['main', 'cash'], true)) {
+        $realCash += (float) $t['balance'];
+    }
+}
 
 // الموظفون (لقائمة السلفة)
 $employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+// الموردون (للصرف والاستلام)
+$suppliers = $pdo->query('SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
 // الفروع (لصرف العهدة من الخزينة)
 $branchesForCustody = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
 
+// ===== فلتر التاريخ لكشف الحساب (الافتراضي: أول الشهر الحالي ← النهارده) =====
+// 🔴 الاسم stFrom/stTo مش from/to عن قصد: معالج التحويل فوق (سطر ١٦٠) بيستخدم
+//    $from و$to لأرقام الخزائن. تسمية زي بعض هنا = فخ صامت لأي تعديل جاي.
+$stFrom = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']))
+    ? $_GET['from']
+    : date('Y-m-01');
+$stTo = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']))
+    ? $_GET['to']
+    : date('Y-m-d');
+
+// الكشف بيعرض **كل** حركات الفترة. كان محدود بآخر ٣٠٠ (المجمّع) و٢٠٠ (خزينة
+// واحدة) — والشهر فيه ~٤٠٠ قيد، فمحمد كان بيفتح الشهر يلاقي نصه (١٥ سبتمبر ٢٠٢٦).
+// الحد ده حزام أمان بس لو حد اختار فترة سنين — مش المفروض يتلمس في شهر عادي.
+$stMaxRows = 5000;
+
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = $_GET['treasury'] ?? '';
+$selectedTreasuryId = (ctype_digit((string)$selectedParam) && (int)$selectedParam > 0)
+    ? (int)$selectedParam
+    : null;
 $statement  = [];
 $selectedTreasury = null;
 $isAllStatement = ($selectedParam === 'all');
+$totalDebit  = 0.0;
+$totalCredit = 0.0;
+$totalNet    = 0.0;
+$totalCount  = 0;   // عدد حركات الفترة كلها — الجدول محدود بـLIMIT، الكروت لأ
+
+$tmRevSelect = treasury_movements_has_reverse_cols($pdo) ? ', tm.reversed_at' : ', NULL AS reversed_at';
 
 if ($isAllStatement) {
     // كشف مجمّع لكل الخزائن (مع اسم الخزينة في كل حركة)
-    $st = $pdo->query(
+    $st = $pdo->prepare(
         "SELECT je.*, t.name AS treasury_name, u.full_name AS by_name,
                 COALESCE(ja.name, ec.name) AS entry_code_name,
                 CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
@@ -203,12 +344,14 @@ if ($isAllStatement) {
                     ELSE NULL
                 END AS supplier_name,
                 eu.full_name AS edited_by_name,
-                cb.name AS cost_branch_name
+                cb.name AS cost_branch_name,
+                tfrom.name AS transfer_from_name,
+                tto.name AS transfer_to_name{$tmRevSelect}
          FROM journal_entries je
          JOIN treasuries t ON t.id = je.treasury_id
          LEFT JOIN users u ON u.id = je.created_by
          LEFT JOIN users eu ON eu.id = je.edited_by
-         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+         LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
          LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
          LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
          LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -220,9 +363,29 @@ if ($isAllStatement) {
          LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
          LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
          LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
-         ORDER BY je.id DESC LIMIT 300"
+         LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+         LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+         LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
+         WHERE je.entry_date BETWEEN ? AND ?
+         ORDER BY je.id DESC LIMIT {$stMaxRows}"
     );
+    $st->execute([$stFrom, $stTo]);
     $statement = $st->fetchAll();
+
+    // حساب الكروت باستعلام تجميعي منفصل (SUM) على نفس الفترة من غير LIMIT
+    $sumSt = $pdo->prepare(
+        "SELECT COALESCE(SUM(je.debit), 0) AS total_debit,
+                COALESCE(SUM(je.credit), 0) AS total_credit,
+                COUNT(*) AS cnt
+         FROM journal_entries je
+         WHERE je.entry_date BETWEEN ? AND ?"
+    );
+    $sumSt->execute([$stFrom, $stTo]);
+    $sumRow = $sumSt->fetch();
+    $totalDebit  = (float) ($sumRow['total_debit'] ?? 0);
+    $totalCredit = (float) ($sumRow['total_credit'] ?? 0);
+    $totalNet    = $totalDebit - $totalCredit;
+    $totalCount  = (int) ($sumRow['cnt'] ?? 0);
 } else {
     $selectedId = (int) $selectedParam;
     if ($selectedId > 0) {
@@ -240,11 +403,13 @@ if ($isAllStatement) {
                             ELSE NULL
                         END AS supplier_name,
                         eu.full_name AS edited_by_name,
-                        cb.name AS cost_branch_name
+                        cb.name AS cost_branch_name,
+                        tfrom.name AS transfer_from_name,
+                        tto.name AS transfer_to_name{$tmRevSelect}
                  FROM journal_entries je
                  LEFT JOIN users u ON u.id = je.created_by
                  LEFT JOIN users eu ON eu.id = je.edited_by
-                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement')
+                 LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
                  LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
                  LEFT JOIN accounts ec_p ON ec_p.id = ec.parent_id
                  LEFT JOIN accounts ja ON ja.id = je.account_id
@@ -256,12 +421,30 @@ if ($isAllStatement) {
                  LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                  LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
                  LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
-                 WHERE je.treasury_id = ?
+                 LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
+                 LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
+                 LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
+                 WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?
                  ORDER BY je.id DESC
-                 LIMIT 200"
+                 LIMIT {$stMaxRows}"
             );
-            $st->execute([$selectedId]);
+            $st->execute([$selectedId, $stFrom, $stTo]);
             $statement = $st->fetchAll();
+
+            // حساب الكروت باستعلام تجميعي منفصل (SUM) على نفس الفترة من غير LIMIT
+            $sumSt = $pdo->prepare(
+                "SELECT COALESCE(SUM(je.debit), 0) AS total_debit,
+                        COALESCE(SUM(je.credit), 0) AS total_credit,
+                        COUNT(*) AS cnt
+                 FROM journal_entries je
+                 WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?"
+            );
+            $sumSt->execute([$selectedId, $stFrom, $stTo]);
+            $sumRow = $sumSt->fetch();
+            $totalDebit  = (float) ($sumRow['total_debit'] ?? 0);
+            $totalCredit = (float) ($sumRow['total_credit'] ?? 0);
+            $totalNet    = $totalDebit - $totalCredit;
+            $totalCount  = (int) ($sumRow['cnt'] ?? 0);
         }
     }
 }
@@ -273,6 +456,7 @@ require_once __DIR__ . '/includes/header.php';
 $typeIcons = [
     'cash' => 'ti-cash', 'visa' => 'ti-credit-card', 'instapay' => 'ti-device-mobile',
     'card' => 'ti-credit-card', 'branch_custody' => 'ti-building-store',
+    'employee_custody' => 'ti-users',
     // ti-building-bank موجودة في tabler-subset.css (بتتستخدم في أيقونة موديول الخزينة)
     'main' => 'ti-building-bank',
 ];
@@ -285,7 +469,7 @@ $typeIcons = [
 function je_code_cell(array $row): string {
     if (!empty($row['entry_code_name'])) {
         return '<span class="je-code" style="padding:2px 9px;border-radius:20px;font-size:12px;'
-             . 'color:var(--accent-hover);background:var(--bg);">'
+             . 'color:var(--accent-text);background:var(--bg);">'
              . e($row['entry_code_name']) . '</span>';
     }
     return '<span class="je-code" style="color:var(--ink-300);">—</span>';
@@ -296,20 +480,47 @@ function je_code_cell(array $row): string {
  * النص الطويل بيتقص بـ ellipsis والنص الكامل في الـ title (tooltip)،
  * والتصدير بياخد النص كامل من الداتا مش من الخلية.
  */
-function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): string {
+function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool $canReverse = false, string $treasuryName = ''): string {
     $notes = (string) ($row['notes'] ?? '');
+    $refType = (string) ($row['ref_type'] ?? '');
+    $isReversed = !empty($row['reversed_at']);
+    $isReversal = ($refType === 'reversal');
+
     $out = '<span class="je-note" title="' . e($notes) . '">'
          . ($notes !== '' ? e($notes) : '<span style="color:var(--ink-300);">—</span>')
          . '</span>';
 
     if ($canEditEntry || $canEditNotes) {
         $out .= '<button type="button" class="je-edit" title="تعديل القيد والبيان والملاحظات"'
-              . ' data-id="'   . (int) $row['id'] . '"'
-              . ' data-acc="'  . ($row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
-              . ' data-desc="' . e((string) $row['description']) . '"'
-              . ' data-notes="' . e($notes) . '"'
+              . ' data-id="'       . (int) ($row['id'] ?? 0) . '"'
+              . ' data-acc="'      . (isset($row['account_id']) && $row['account_id'] !== null ? (int) $row['account_id'] : '') . '"'
+              . ' data-desc="'     . e((string) ($row['description'] ?? '')) . '"'
+              . ' data-notes="'    . e($notes) . '"'
+              . ' data-date="'     . e((string) ($row['entry_date'] ?? '')) . '"'
+              . ' data-reftype="'  . e($refType) . '"'
+              . ' data-reversed="' . ($isReversed ? '1' : '0') . '"'
               . ' onclick="jeOpen(this)"><i class="ti ti-pencil"></i></button>';
     }
+
+    if ($canReverse && in_array($refType, ['receipt', 'disbursement'], true) && !$isReversed) {
+        $tName = (string) ($row['treasury_name'] ?? $treasuryName);
+        $amt = ((float) ($row['debit'] ?? 0) > 0) ? (float) $row['debit'] : (float) ($row['credit'] ?? 0);
+        $out .= '<button type="button" class="je-rev" title="قيد عكسي"'
+              . ' data-id="'       . (int) $row['id'] . '"'
+              . ' data-type="'     . e($refType) . '"'
+              . ' data-amount="'   . number_format($amt, 2) . '"'
+              . ' data-treasury="' . e($tName) . '"'
+              . ' data-date="'     . e(substr((string) $row['entry_date'], 0, 10)) . '"'
+              . ' onclick="jeReverse(this)"><i class="ti ti-refresh"></i></button>';
+    }
+
+    if ($isReversed) {
+        $out .= '<span class="je-edited" title="اتعكس ' . e((string) $row['reversed_at']) . '">اتعكس</span>';
+    }
+    if ($isReversal) {
+        $out .= '<span class="je-edited">قيد عكسي</span>';
+    }
+
     if (!empty($row['edited_at'])) {
         $who = !empty($row['edited_by_name']) ? ' — ' . $row['edited_by_name'] : '';
         $out .= '<span class="je-edited" title="اتعدّل ' . e($row['edited_at']) . e($who) . '">معدّل</span>';
@@ -335,18 +546,32 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     .btn:hover { background:var(--accent-hover); }
     .btn-white { background:rgba(255,255,255,0.18); }
     .btn-white:hover { background:rgba(255,255,255,0.28); }
+    /* خزينة الكاش الفعلي — نفس كارت الداشبورد س 161-168 */
+    .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
+    .tre-box .tre-val { font-size:26px; font-weight:800; color:var(--ink-900); }
+    .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
+    .tre-box.realcash {
+        border:2px solid var(--pos);
+        background:linear-gradient(135deg,var(--pos-soft) 0%,#fff 70%);
+        display:flex; align-items:center; justify-content:space-between;
+        gap:16px; padding:16px 22px;
+        margin-bottom:16px;
+    }
+    .tre-box.realcash .tre-top { margin-bottom:0; font-size:14px; color:var(--pos); }
+    .tre-box.realcash .tre-val { font-size:30px; }
     .treasuries-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:24px; }
     .treasury-card {
-        background:#fff; border-radius:14px; padding:18px; cursor:pointer;
+        background:var(--surface); border-radius:14px; padding:18px; cursor:pointer;
         border:2px solid transparent; transition:border-color .15s, transform .1s;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); text-decoration:none; display:block;
     }
     .treasury-card:hover { transform:translateY(-2px); }
-    .treasury-card.selected { border-color:var(--accent); }
+    .treasury-card.selected { border-color:var(--accent-text); }
     .treasury-card .tc-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
     .treasury-card .tc-icon {
         width:40px; height:40px; background:var(--bg); border-radius:10px;
-        display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:21px;
+        display:flex; align-items:center; justify-content:center; color:var(--accent-text); font-size:21px;
     }
     .treasury-card .tc-name { font-size:15px; font-weight:600; color:var(--ink-900); }
     .treasury-card .tc-type { font-size:12px; color:var(--ink-500); }
@@ -359,22 +584,35 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     td { color:var(--ink-800); }
     .amt-debit  { color:var(--neg); font-weight:500; }
     .amt-credit { color:var(--pos); font-weight:500; }
-    .empty { text-align:center; color:#bbb; padding:30px; font-size:14px; }
+    .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
     .section-title { font-size:17px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
+    /* شريط الفلتر وكروت الإجماليات لكشف الحساب */
+    .filter-bar { background:var(--line-soft); border-radius:12px; padding:12px 16px; margin-bottom:16px;
+        display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .filter-bar label { font-size:13px; color:var(--ink-700); font-weight:500; }
+    .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); }
+    .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent-text); }
+    .btn-filter { padding:8px 16px; font-size:13px; }
+    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
+    .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:12px 16px; }
+    .sc-label { font-size:12px; color:var(--ink-500); margin-bottom:5px; }
+    .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
+    .sc-cur { font-size:13px; font-weight:400; color:var(--ink-500); }
     /* Modal */
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:#fff; border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .form-row input, .form-row select, .form-row textarea {
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent); background:#fff; }
+    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:#666; }
+    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
+    .btn-cancel:hover { background:var(--line); }
     /* عمود الملاحظات: النص الطويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل من الداتا مش من الخلية. */
     .je-c-notes { white-space:nowrap; }
@@ -383,7 +621,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         color:var(--ink-700); font-size:13px; }
     .je-edit { background:none; border:none; cursor:pointer; color:var(--ink-400);
         padding:3px 5px; border-radius:6px; font-size:15px; vertical-align:middle; }
-    .je-edit:hover { background:var(--bg); color:var(--accent); }
+    .je-edit:hover { background:var(--bg); color:var(--accent-text); }
+    .je-rev { background:none; border:none; cursor:pointer; color:var(--ink-400);
+        padding:3px 5px; border-radius:6px; font-size:15px; vertical-align:middle; }
+    .je-rev:hover { background:var(--bg); color:var(--accent-text); }
     .je-edited { font-size:11px; color:var(--ink-400); background:var(--line-soft);
         padding:1px 7px; border-radius:20px; margin-right:4px; vertical-align:middle; }
     .je-locked { font-size:12px; color:var(--ink-500); background:var(--line-soft);
@@ -403,13 +644,18 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
         <button class="btn btn-white" onclick="openModal('receiptModal')"><i class="ti ti-arrow-down-left"></i> استلام</button>
         <button class="btn btn-white" onclick="openModal('disburseModal')"><i class="ti ti-arrow-up-right"></i> صرف</button>
         <button class="btn btn-white" onclick="openModal('transferModal')"><i class="ti ti-transfer"></i> تحويل</button>
-        <a href="?treasury=all" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
+        <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
     </div>
+</div>
+
+<div class="tre-box realcash" title="الخزينة الرئيسية + خزينة الكاش">
+    <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
+    <div class="tre-val"><?= money_fmt($realCash) ?> <span class="tre-cur">ج.م</span></div>
 </div>
 
 <div class="treasuries-grid">
     <?php foreach ($treasuries as $t): ?>
-        <a href="?treasury=<?= (int)$t['id'] ?>"
+        <a href="?treasury=<?= (int)$t['id'] ?>&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>"
            class="treasury-card <?= (!$isAllStatement && $selectedTreasury && (int)$selectedTreasury['id'] === (int)$t['id']) ? 'selected' : '' ?>">
             <div class="tc-top">
                 <div class="tc-icon"><i class="ti <?= e($typeIcons[$t['type']] ?? 'ti-cash') ?>"></i></div>
@@ -429,9 +675,44 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     <div class="card">
         <div class="section-title">
             كشف حساب مجمّع — كل الخزائن
-            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 300 حركة)</span>
+            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
             <a href="treasury.php" class="btn btn-sm" style="float:left;font-size:13px;padding:5px 12px;text-decoration:none;">عرض الخزائن</a>
         </div>
+
+        <form method="get" class="filter-bar">
+            <input type="hidden" name="treasury" value="all">
+            <label>من</label>
+            <input type="date" name="from" value="<?= e($stFrom) ?>">
+            <label>إلى</label>
+            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
+        </form>
+
+        <div class="sum-cards st-cards">
+            <div class="sum-card">
+                <div class="sc-label">إجمالي المدين</div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">إجمالي الدائن</div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">الصافي (مدين − دائن)</div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+        </div>
+        <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
+            <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
+        </div>
+
+        <?php if ($totalCount > $stMaxRows): ?>
+            <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
+                الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
+                آخر <?= number_format($stMaxRows) ?> منهم بس (صغّر الفترة عشان تشوف الباقي)، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+            </div>
+        <?php endif; ?>
+
         <?php if (empty($statement)): ?>
             <div class="empty">لا توجد حركات بعد.</div>
         <?php else: ?>
@@ -444,7 +725,15 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
                         <td style="font-weight:500;"><?= e($row['treasury_name']) ?></td>
-                        <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td class="je-c-desc">
+                            <?= e($row['description']) ?>
+                            <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
+                            <?php if ($tPath !== ''): ?>
+                                <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                    <?= e($tPath) ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
@@ -454,7 +743,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
-                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes) ?></td>
+                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -465,8 +754,43 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
     <div class="card">
         <div class="section-title">
             كشف حساب: <?= e($selectedTreasury['name']) ?>
-            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(آخر 200 حركة)</span>
+            <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
         </div>
+
+        <form method="get" class="filter-bar">
+            <input type="hidden" name="treasury" value="<?= (int)$selectedTreasury['id'] ?>">
+            <label>من</label>
+            <input type="date" name="from" value="<?= e($stFrom) ?>">
+            <label>إلى</label>
+            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
+        </form>
+
+        <div class="sum-cards st-cards">
+            <div class="sum-card">
+                <div class="sc-label">إجمالي المدين</div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= money_fmt($totalDebit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">إجمالي الدائن</div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= money_fmt($totalCredit) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+            <div class="sum-card">
+                <div class="sc-label">الصافي (مدين − دائن)</div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= money_fmt($totalNet) ?> <span class="sc-cur">جنيه</span></div>
+            </div>
+        </div>
+        <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
+            <i class="ti ti-filter"></i> الأرقام دي <b>للصفوف الظاهرة بس</b> (<span class="st-fc"></span>).
+        </div>
+
+        <?php if ($totalCount > $stMaxRows): ?>
+            <div style="font-size:12.5px;color:var(--ink-500);margin:-8px 0 14px;">
+                الفترة دي فيها <?= number_format($totalCount) ?> حركة — الجدول بيعرض
+                آخر <?= number_format($stMaxRows) ?> منهم بس (صغّر الفترة عشان تشوف الباقي)، لكن <b>الكروت فوق محسوبة على الفترة كلها</b>.
+            </div>
+        <?php endif; ?>
+
         <?php if (empty($statement)): ?>
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
@@ -480,7 +804,15 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
-                        <td class="je-c-desc"><?= e($row['description']) ?></td>
+                        <td class="je-c-desc">
+                            <?= e($row['description']) ?>
+                            <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
+                            <?php if ($tPath !== ''): ?>
+                                <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                                    <?= e($tPath) ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
@@ -490,7 +822,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
                         <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
-                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes) ?></td>
+                        <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -506,10 +838,11 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes): stri
 <!-- ===== Modals ===== -->
 <?php
 // قوائم الخزائن لإعادة الاستخدام
-function treasury_options(array $treasuries): string {
+function treasury_options(array $treasuries, ?int $selectedId = null): string {
     $html = '';
     foreach ($treasuries as $t) {
-        $html .= '<option value="' . (int)$t['id'] . '">'
+        $html .= '<option value="' . (int)$t['id'] . '"'
+               . ($selectedId === (int)$t['id'] ? ' selected' : '') . '>'
                . e($t['name']) . ' (' . e(treasury_type_label($t['type'])) . ')</option>';
     }
     return $html;
@@ -523,18 +856,19 @@ $receiptTreasuries = array_values(array_filter(
     $centralForTransfer,
     fn(array $t): bool => (int)($t['show_in_receipts'] ?? 1) === 1
 ));
-$receiptOpts = treasury_options($receiptTreasuries);
+// الخزينة اللي كشفها مفتوح بتتختار لوحدها — لو مش في القايمة بتتجاهل
+$receiptOpts = treasury_options($receiptTreasuries, $selectedTreasuryId);
 $today = date('Y-m-d');
 ?>
 
 <div class="modal-bg" id="receiptModal">
     <div class="modal">
         <h3>استلام نقدية</h3>
-        <form method="post">
+        <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
             <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
-            <div class="form-row">
+            <div class="form-row" id="receiptAccountRow">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id') ?>
             </div>
@@ -555,14 +889,31 @@ $today = date('Y-m-d');
                 <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
             </div>
 
-            <!-- نوع الاستلام: عادي / رد سلفة / استلام عهدة -->
+            <!-- نوع الاستلام: عادي / مورد / رد سلفة / استلام عهدة -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label>نوع الاستلام</label>
                 <select name="op_type" id="receiptType" onchange="toggleReceiptType()">
                     <option value="normal">استلام عادي</option>
+                    <option value="supplier">استلام من مورد</option>
                     <option value="advance">رد سلفة من موظف</option>
                     <option value="custody">استلام عهدة من فرع</option>
                 </select>
+                <div id="recSupplierBox" style="display:none;margin-top:12px;">
+                    <input type="text" id="recSuppSearch" placeholder="ابحث باسم المورد..."
+                           oninput="filterRecSupps()" autocomplete="off"
+                           style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
+                    <div id="recSuppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                        <?php foreach ($suppliers as $s): ?>
+                            <div class="rec-supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                 onclick="pickRecSupp(this)"
+                                 style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                <?= e($s['name']) ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <input type="hidden" name="supplier_id" id="recSuppId" value="">
+                    <div id="recSuppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                </div>
                 <div id="recAdvanceBox" style="display:none;margin-top:12px;">
                     <input type="text" id="recEmpSearch" placeholder="ابحث باسم الموظف..."
                            oninput="filterRecEmps()" autocomplete="off"
@@ -619,6 +970,11 @@ $today = date('Y-m-d');
             foreach ($disbTreasuries as $t) {
                 if ($t['type'] === 'main') { $defaultDisb = (int) $t['id']; break; }
             }
+            // الخزينة اللي كشفها مفتوح تغلب الرئيسية — لو موجودة في القايمة
+            // (خزينة الكاش مش فيها، فبترجع للرئيسية)
+            foreach ($disbTreasuries as $t) {
+                if ($selectedTreasuryId === (int) $t['id']) { $defaultDisb = $selectedTreasuryId; break; }
+            }
             ?>
             <div id="disbFormBody">
                 <div class="form-row">
@@ -632,7 +988,7 @@ $today = date('Y-m-d');
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="disburseAccountRow">
                     <label>القيد</label>
                     <?= acctree_field('entry_code_id') ?>
                 </div>
@@ -653,14 +1009,34 @@ $today = date('Y-m-d');
                     <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
                 </div>
 
-                <!-- نوع الصرف: عادي / سلفة موظف / عهدة فرع -->
+                <!-- نوع الصرف: عادي / مورد / سلفة موظف / عهدة فرع -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                     <label>نوع الصرف</label>
                     <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
                         <option value="normal">صرف عادي</option>
+                        <option value="supplier">صرف لمورد</option>
                         <option value="advance">سلفة لموظف</option>
                         <option value="custody">عهدة لفرع</option>
+                        <option value="employee_custody">عهدة لموظف</option>
                     </select>
+
+                    <!-- صرف لمورد -->
+                    <div id="supplierBox" style="display:none;margin-top:12px;">
+                        <input type="text" id="suppSearch" placeholder="ابحث باسم المورد..."
+                               oninput="filterSupps()" autocomplete="off"
+                               style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
+                        <div id="suppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                            <?php foreach ($suppliers as $s): ?>
+                                <div class="supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                     onclick="pickSupp(this)"
+                                     style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                    <?= e($s['name']) ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="supplier_id" id="suppId" value="">
+                        <div id="suppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                    </div>
 
                     <!-- سلفة موظف -->
                     <div id="advanceBox" style="display:none;margin-top:12px;">
@@ -705,10 +1081,11 @@ $today = date('Y-m-d');
             <div id="disbConfirmBox" style="display:none;">
                 <div style="background:var(--line-soft);padding:16px;border-radius:12px;border:1.5px solid var(--line);margin-bottom:18px;line-height:1.7;font-size:14px;color:var(--ink-800);">
                     انت على وشك تسجيل مصروف بقيمة <b id="disbConfirmAmount"></b> جنيه من خزينة «<span id="disbConfirmTreasury"></span>».<br>
+                    <span id="disbConfirmNormal">القيد: <b id="disbConfirmAccount"></b> · الفرع: <b id="disbConfirmBranch"></b><br></span>
                     متأكد إن المبلغ ده هيتخصم من الخزينة دي؟
                 </div>
                 <div class="modal-actions">
-                    <button type="button" class="btn" onclick="confirmDisburse()">تأكيد الصرف</button>
+                    <button type="button" class="btn" id="disbConfirmBtn" onclick="confirmDisburse()">تأكيد الصرف</button>
                     <button type="button" class="btn btn-cancel" onclick="cancelDisburseConfirm()">إلغاء</button>
                 </div>
             </div>
@@ -719,7 +1096,7 @@ $today = date('Y-m-d');
 <div class="modal-bg" id="transferModal">
     <div class="modal">
         <h3>تحويل بين خزينتين</h3>
-        <form method="post">
+        <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="transfer">
             <div class="form-row"><label>من خزينة</label><select name="from_treasury_id" required><?= $transferOpts ?></select></div>
@@ -743,12 +1120,19 @@ $today = date('Y-m-d');
         <h3>تعديل القيد</h3>
 
         <div class="je-locked">
-            <b>المبلغ والتاريخ والخزينة مايتعدلوش من هنا.</b><br>
-            تصحيح مبلغ بيتعمل بقيد عكسي عشان الرصيد التراكمي في الكشف يفضل مظبوط.
+            <b>المبلغ والخزينة مايتعدلوش من هنا.</b><br>
+            تعديل التاريخ بيتم بقيد عكسي تلقائياً عشان الرصيد التراكمي في الكشف يفضل مظبوط.
         </div>
 
         <?php if ($canEditEntry): ?>
         <div class="form-row" style="margin-top:14px;">
+            <label>التاريخ</label>
+            <input type="date" id="jeDate" aria-label="التاريخ">
+            <div id="jeDateHint" style="display:none;font-size:12px;color:var(--ink-500);margin-top:4px;">
+                تاريخ القيد ده جاي من الموديول بتاعه (وردية / عهدة / راتب / تحويل / فاتورة مورد) ويتعدّل من هناك.
+            </div>
+        </div>
+        <div class="form-row">
             <label>القيد</label>
             <?= acctree_field('je_account', null, '— بدون قيد —', 'all', 'jeAccount') ?>
         </div>
@@ -775,7 +1159,7 @@ $today = date('Y-m-d');
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=2"></script>
+<script src="assets/acctree.js?v=3"></script>
 <script>
     function openModal(id){
         if (id === 'disburseModal') resetDisburseModal();
@@ -794,8 +1178,58 @@ $today = date('Y-m-d');
         });
     });
 
+    // القيد والفرع إجباريين في الاستلام/الصرف العادي بس (السلفة والعهدة والمورد ليهم فحصهم).
+    // خانة القيد input hidden — `required` مابيشتغلش عليها، فالفحص هنا.
+    // والسيرفر بيرفض برضو (treasury.php — «اختار القيد.» / «اختار الفرع.»).
+    function normalOpMissing(form, typeSelectId){
+        const op = document.getElementById(typeSelectId).value;
+        if (op === 'supplier') {
+            if (!form.querySelector('input[name="supplier_id"]').value) return 'اختار المورد.';
+            if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
+            return '';
+        }
+        if (op === 'advance' || op === 'employee_custody') {
+            if (!form.querySelector('input[name="employee_id"]').value) return 'اختار الموظف.';
+            return '';
+        }
+        if (op === 'custody') {
+            if (!form.querySelector('select[name="branch_id"]').value) return 'اختار الفرع.';
+            return '';
+        }
+        if (op !== 'normal') return '';
+        if (!form.querySelector('input[name="entry_code_id"]').value) return 'اختار القيد.';
+        if (!form.querySelector('select[name="cost_branch_id"]').value) return 'اختار الفرع.';
+        return '';
+    }
+    function handleReceiptSubmit(e){
+        const missing = normalOpMissing(document.getElementById('receiptForm'), 'receiptType');
+        if (missing) { e.preventDefault(); alert(missing); return false; }
+        return true;
+    }
+    // تأكيد التحويل — أي تحويل بين خزينتين
+    function handleTransferSubmit(e){
+        const form = document.getElementById('transferForm');
+        const from = form.querySelector('select[name="from_treasury_id"]');
+        const to   = form.querySelector('select[name="to_treasury_id"]');
+        if (from.value === to.value) {
+            e.preventDefault();
+            alert('مينفعش تحوّل لنفس الخزينة.');
+            return false;
+        }
+        const amtVal = parseFloat(form.querySelector('input[name="amount"]').value) || 0;
+        const amt = amtVal.toLocaleString('en-US', {
+            minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
+            maximumFractionDigits: 2
+        });
+        const msg = 'تحويل ' + amt + ' ج من «' + from.options[from.selectedIndex].text.trim()
+                  + '» إلى «' + to.options[to.selectedIndex].text.trim() + '» — متأكد؟';
+        if (!confirm(msg)) { e.preventDefault(); return false; }
+        return true;
+    }
+
     // تأكيد صرف النقدية قبل الإرسال
     let disbConfirmed = false;
+    let disbSending = false;
     function handleDisburseSubmit(e){
         if (!disbConfirmed) {
             e.preventDefault();
@@ -810,28 +1244,64 @@ $today = date('Y-m-d');
                 minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
                 maximumFractionDigits: 2
             });
+            const missing = normalOpMissing(form, 'disburseType');
+            if (missing) { alert(missing); return false; }
             const treSelect = form.querySelector('select[name="treasury_id"]');
             const treName = treSelect && treSelect.selectedIndex >= 0
                 ? treSelect.options[treSelect.selectedIndex].text.trim()
                 : '';
             document.getElementById('disbConfirmAmount').textContent = formattedAmt;
             document.getElementById('disbConfirmTreasury').textContent = treName;
+            // القيد والفرع في التأكيد — عشان لو القيد غلط ياخد باله قبل ما الفلوس تتسجّل
+            const opType = document.getElementById('disburseType').value;
+            const isNormal = opType === 'normal';
+            const isSupplier = opType === 'supplier';
+            document.getElementById('disbConfirmNormal').style.display = (isNormal || isSupplier) ? '' : 'none';
+            if (isNormal) {
+                const accLabel = form.querySelector('.act-label');
+                const brSelect = form.querySelector('select[name="cost_branch_id"]');
+                document.getElementById('disbConfirmAccount').textContent = accLabel ? accLabel.textContent.trim() : '';
+                document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
+            } else if (isSupplier) {
+                const suppChosenText = document.getElementById('suppChosen').textContent.replace('تم اختيار:', '').trim();
+                const brSelect = form.querySelector('select[name="cost_branch_id"]');
+                document.getElementById('disbConfirmAccount').textContent = 'مورد: ' + suppChosenText;
+                document.getElementById('disbConfirmBranch').textContent = brSelect.options[brSelect.selectedIndex].text.trim();
+            } else if (opType === 'advance' || opType === 'employee_custody') {
+                const empChosenText = document.getElementById('empChosen').textContent.replace('تم اختيار:', '').trim();
+                document.getElementById('disbConfirmNormal').style.display = '';
+                document.getElementById('disbConfirmAccount').textContent = (opType === 'employee_custody' ? 'عهدة موظف: ' : 'سلفة: ') + empChosenText;
+                document.getElementById('disbConfirmBranch').textContent = '—';
+            }
             document.getElementById('disbFormBody').style.display = 'none';
             document.getElementById('disbConfirmBox').style.display = 'block';
             return false;
         }
     }
+    /* 🔴 حارس الإرسال المزدوج — دي شاشة صرف فلوس. دوستين بسرعة =
+       إرسالين = صرفين. `formSubmit` بيبعت الحدث بس، مابيمنعش التكرار. */
+    function setDisbSending(sending){
+        disbSending = sending;
+        const btn = document.getElementById('disbConfirmBtn');
+        if (!btn) return;
+        btn.disabled = sending;
+        btn.textContent = sending ? 'جاري الصرف…' : 'تأكيد الصرف';
+    }
     function confirmDisburse(){
+        if (disbSending) return;
         disbConfirmed = true;
-        document.getElementById('disburseForm').submit();
+        setDisbSending(true);
+        formSubmit(document.getElementById('disburseForm'));
     }
     function cancelDisburseConfirm(){
         disbConfirmed = false;
+        setDisbSending(false);
         document.getElementById('disbConfirmBox').style.display = 'none';
         document.getElementById('disbFormBody').style.display = 'block';
     }
     function resetDisburseModal(){
         disbConfirmed = false;
+        setDisbSending(false);
         const confirmBox = document.getElementById('disbConfirmBox');
         const formBody = document.getElementById('disbFormBody');
         if (confirmBox) confirmBox.style.display = 'none';
@@ -841,25 +1311,43 @@ $today = date('Y-m-d');
     // نوع الصرف: إظهار/إخفاء الأقسام
     function toggleDisburseType(){
         const t = document.getElementById('disburseType').value;
-        document.getElementById('advanceBox').style.display = (t === 'advance') ? 'block' : 'none';
+        const accRow = document.getElementById('disburseAccountRow');
+        if (accRow) accRow.style.display = (t === 'normal') ? '' : 'none';
+        document.getElementById('supplierBox').style.display = (t === 'supplier') ? 'block' : 'none';
+        document.getElementById('advanceBox').style.display = (t === 'advance' || t === 'employee_custody') ? 'block' : 'none';
         document.getElementById('custodyBox').style.display = (t === 'custody') ? 'block' : 'none';
-        if (t !== 'advance') {
+        if (t !== 'supplier') {
+            document.getElementById('suppId').value = '';
+            document.getElementById('suppChosen').textContent = '';
+        }
+        if (t !== 'advance' && t !== 'employee_custody') {
             document.getElementById('empId').value = '';
             document.getElementById('empChosen').textContent = '';
         }
         if (t !== 'custody') {
             document.getElementById('custodyBranch').value = '';
         }
-        // فرع التكلفة للصرف العادي بس — السلفة والعهدة ليهم موظف/فرع محدد أصلاً
+        // فرع التكلفة للصرف العادي وللمورد — السلفة والعهدة ليهم موظف/فرع محدد أصلاً
         const cb = document.getElementById('disburseCostBranchRow');
-        cb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') cb.querySelector('select').value = '';
-        // الملاحظات للصرف العادي بس — السلفة والعهدة بيمروا على دوال
-        // تانية (disburse_advance / issue_disbursement_order) لسه ما
-        // اتضافلهاش الملاحظات. بنخفيها بدل ما المحاسب يكتب وتضيع.
+        cb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') cb.querySelector('select').value = '';
+        // الملاحظات للصرف العادي وللمورد
         const nb = document.getElementById('disburseNotesRow');
-        nb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') nb.querySelector('textarea').value = '';
+        nb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
+    }
+    function filterSupps(){
+        const q = (document.getElementById('suppSearch').value || '').trim().toLowerCase();
+        document.querySelectorAll('.supp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+    function pickSupp(el){
+        document.getElementById('suppId').value = el.dataset.id;
+        document.getElementById('suppChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.supp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
     }
     function filterEmps(){
         const q = (document.getElementById('empSearch').value || '').trim().toLowerCase();
@@ -878,18 +1366,35 @@ $today = date('Y-m-d');
     // الاستلام: نوع الاستلام
     function toggleReceiptType(){
         const t = document.getElementById('receiptType').value;
+        const accRow = document.getElementById('receiptAccountRow');
+        if (accRow) accRow.style.display = (t === 'normal') ? '' : 'none';
+        document.getElementById('recSupplierBox').style.display = (t === 'supplier') ? 'block' : 'none';
         document.getElementById('recAdvanceBox').style.display = (t === 'advance') ? 'block' : 'none';
         document.getElementById('recCustodyBox').style.display = (t === 'custody') ? 'block' : 'none';
+        if (t !== 'supplier') { document.getElementById('recSuppId').value=''; document.getElementById('recSuppChosen').textContent=''; }
         if (t !== 'advance') { document.getElementById('recEmpId').value=''; document.getElementById('recEmpChosen').textContent=''; }
         if (t !== 'custody') { document.getElementById('recCustodyBranch').value=''; }
-        // فرع التكلفة للاستلام العادي بس
+        // فرع التكلفة للاستلام العادي وللمورد
         const cb = document.getElementById('receiptCostBranchRow');
-        cb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') cb.querySelector('select').value = '';
-        // نفس سبب الصرف — الملاحظات للاستلام العادي بس
+        cb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') cb.querySelector('select').value = '';
+        // نفس سبب الصرف — الملاحظات للاستلام العادي وللمورد
         const nb = document.getElementById('receiptNotesRow');
-        nb.style.display = (t === 'normal') ? '' : 'none';
-        if (t !== 'normal') nb.querySelector('textarea').value = '';
+        nb.style.display = (t === 'normal' || t === 'supplier') ? '' : 'none';
+        if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
+    }
+    function filterRecSupps(){
+        const q = (document.getElementById('recSuppSearch').value || '').trim().toLowerCase();
+        document.querySelectorAll('.rec-supp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+    function pickRecSupp(el){
+        document.getElementById('recSuppId').value = el.dataset.id;
+        document.getElementById('recSuppChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.rec-supp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
     }
     function filterRecEmps(){
         const q = (document.getElementById('recEmpSearch').value || '').trim().toLowerCase();
@@ -917,16 +1422,39 @@ $today = date('Y-m-d');
     const JE_CSRF   = <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>;
     const JE_CAN_ED = <?= $canEditEntry ? 'true' : 'false' ?>;
     let jeCurrentId = 0;
+    let jeCurrentDate = '';
+    let jeCurrentRefType = '';
 
     function jeOpen(btn){
         jeCurrentId = parseInt(btn.dataset.id, 10) || 0;
         if (!jeCurrentId) return;
+
+        jeCurrentDate = btn.dataset.date || '';
+        jeCurrentRefType = btn.dataset.reftype || '';
 
         const err = document.getElementById('jeError');
         err.style.display = 'none';
         err.textContent = '';
 
         if (JE_CAN_ED) {
+            const dateInput = document.getElementById('jeDate');
+            const dateHint  = document.getElementById('jeDateHint');
+            if (dateInput) {
+                dateInput.value = jeCurrentDate;
+                const canChangeDate = (jeCurrentRefType === 'receipt' || jeCurrentRefType === 'disbursement')
+                    && btn.dataset.reversed !== '1'
+                    && jeCurrentRefType !== 'reversal';
+                dateInput.disabled = !canChangeDate;
+                if (dateHint) {
+                    if (btn.dataset.reversed === '1' || jeCurrentRefType === 'reversal') {
+                        dateHint.textContent = 'الحركة دي اتعكست — مينفعش تغيّر تاريخها.';
+                        dateHint.style.display = 'block';
+                    } else {
+                        dateHint.textContent = 'تغيير التاريخ متاح لحركات الصرف والاستلام اليدوي بس. باقي الحركات بتعدّل من الموديول بتاعها.';
+                        dateHint.style.display = canChangeDate ? 'none' : 'block';
+                    }
+                }
+            }
             // acctreeSet بتضبط القيمة والاسم الظاهر مع بعض
             acctreeSet(document.getElementById('jeAccount'), btn.dataset.acc || '');
             document.getElementById('jeDesc').value = btn.dataset.desc || '';
@@ -957,6 +1485,26 @@ $today = date('Y-m-d');
                 err.style.display = 'block';
                 return;
             }
+
+            const dateInput = document.getElementById('jeDate');
+            if (dateInput && !dateInput.disabled) {
+                const newDate = dateInput.value.trim();
+                if (!newDate) {
+                    err.textContent = 'التاريخ مايصحّش يكون فاضي.';
+                    err.style.display = 'block';
+                    return;
+                }
+                if (newDate !== jeCurrentDate) {
+                    const msg = 'تغيير التاريخ هيعمل قيد عكسي بالتاريخ القديم (' + jeCurrentDate + ') '
+                              + 'وقيد جديد بالتاريخ الجديد (' + newDate + ').\n'
+                              + 'الصف القديم هيفضل ظاهر في الكشف مع علامة «معدّل».\n\n'
+                              + 'متأكد إنك عايز تغيّر التاريخ؟';
+                    if (!confirm(msg)) {
+                        return;
+                    }
+                }
+                payload.date = newDate;
+            }
         }
 
         btn.disabled = true;
@@ -970,6 +1518,11 @@ $today = date('Y-m-d');
             });
             const data = await res.json();
             if (!data.ok) throw new Error(data.error || 'حصل خطأ.');
+
+            if (data.date_changed) {
+                location.reload();
+                return;
+            }
 
             jeApplyRow(data);
             closeModal('jeModal');
@@ -993,7 +1546,7 @@ $today = date('Y-m-d');
             if (d.entry_code) {
                 span.textContent = d.entry_code;
                 span.style.cssText = 'padding:2px 9px;border-radius:20px;font-size:12px;'
-                                   + 'color:var(--accent-hover);background:var(--bg);';
+                                   + 'color:var(--accent-text);background:var(--bg);';
             } else {
                 span.textContent = '—';
                 span.style.cssText = 'color:var(--ink-300);';
@@ -1031,6 +1584,128 @@ $today = date('Y-m-d');
         tr.style.backgroundColor = 'var(--pos-soft)';
         setTimeout(() => { tr.style.backgroundColor = ''; }, 900);
     }
+
+    async function jeReverse(btn) {
+        const id = parseInt(btn.dataset.id, 10) || 0;
+        if (!id) return;
+        const type = btn.dataset.type || '';
+        const op = (type === 'disbursement') ? 'صرف' : 'استلام';
+        const revOp = (type === 'disbursement') ? 'استلام' : 'صرف';
+        const amt = btn.dataset.amount || '';
+        const tre = btn.dataset.treasury || '';
+        const dt = btn.dataset.date || '';
+
+        const msg = 'عكس ' + op + ' ' + amt + ' ج من «' + tre + '»؟\n'
+                  + 'هيتعمل ' + revOp + ' بنفس المبلغ بتاريخ ' + dt + '.';
+        if (!confirm(msg)) return;
+
+        btn.disabled = true;
+        try {
+            const res = await fetch('treasury.php?ajax=je_reverse', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: id, csrf: JE_CSRF })
+            });
+            const data = await res.json();
+            if (data.ok) {
+                location.reload();
+            } else {
+                alert(data.error || 'حدث خطأ أثناء عكس القيد.');
+                btn.disabled = false;
+            }
+        } catch (e) {
+            alert('تعذر الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.');
+            btn.disabled = false;
+        }
+    }
+</script>
+
+<script>
+/* =====================================================================
+   كروت الكشف تمشي مع الفلتر — RULES.md قسم ٦
+   ---------------------------------------------------------------------
+   الصفوف الظاهرة ← الجدول ← الكروت. الكارت بيجمع من الـDOM، فمستحيل
+   يقول رقم والجدول اللي تحته يقول تاني.
+
+   🔴 بس فيه تفصيلة هنا مش موجودة في أي شاشة تانية:
+      الجدول ده **مقصوص** — بيعرض آخر ٣٠٠ حركة بس، والكروت من السيرفر
+      محسوبة على **الفترة كلها** (وفيه رسالة تحت بتقول كده).
+      فلو جمعنا الظاهر على طول، الشاشة هتفتح من غير أي فلتر وتقول
+      إجمالي ٣٠٠ حركة بدل الشهر كله — وده أوحش من المشكلة الأصلية.
+
+      عشان كده: فيه فلتر شغّال ← اجمع الظاهر ووري السطر التحذيري.
+                 مفيش فلتر     ← رجّع رقم السيرفر واخفي السطر.
+   ===================================================================== */
+(function () {
+    function num(txt) {
+        var v = parseFloat(String(txt).replace(/,/g, '').replace(/[^\d.\-]/g, ''));
+        return isNaN(v) ? 0 : v;
+    }
+    function fmt(v) {
+        return v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    }
+    /* بنكتب في العقدة النصية الأولى بس عشان <span>جنيه</span> مايتمسحش */
+    function setVal(el, v) {
+        if (el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = fmt(v) + ' ';
+        else el.textContent = fmt(v);
+    }
+
+    /* الكروت متكررة (كل الخزائن / خزينة محددة) — بنربط كل بلوك
+       بالجدول اللي بعده، عشان الاتنين يشتغلوا من غير id مكرر. */
+    var blocks = document.querySelectorAll('.st-cards');
+    for (var b = 0; b < blocks.length; b++) {
+        (function (box) {
+            var note = box.parentNode.querySelector('.st-filter-note');
+            var table = null, n = box.nextElementSibling;
+            while (n) { if (n.tagName === 'TABLE') { table = n; break; }
+                        table = n.querySelector && n.querySelector('table');
+                        if (table) break; n = n.nextElementSibling; }
+            if (!table) return;
+
+            var cells = {};
+            var scs = box.querySelectorAll('[data-sc]');
+            for (var i = 0; i < scs.length; i++) cells[scs[i].dataset.sc] = scs[i];
+
+            /* أرقام الأعمدة بالاسم مش بالعد */
+            var dIdx = -1, cIdx = -1, ths = table.querySelectorAll('thead th');
+            for (var t = 0; t < ths.length; t++) {
+                var h = ths[t].textContent.trim();
+                if (h === 'مدين') dIdx = t;
+                if (h === 'دائن') cIdx = t;
+            }
+            if (dIdx < 0 || cIdx < 0) return;
+
+            document.addEventListener('xtable:filter', function (ev) {
+                /* 🔴 الحدث بيطلع لفوق والصفحة فيها أكتر من جدول */
+                if (!ev.detail || ev.detail.table !== table) return;
+
+                if (!ev.detail.active) {
+                    /* الفلتر اتقفل — رجّع رقم السيرفر (الفترة كلها) */
+                    for (var k in cells) if (cells.hasOwnProperty(k)) {
+                        setVal(cells[k], parseFloat(cells[k].dataset.server) || 0);
+                    }
+                    if (note) note.style.display = 'none';
+                    return;
+                }
+
+                var d = 0, c = 0, rows = ev.detail.rows;
+                for (var r = 0; r < rows.length; r++) {
+                    d += num(rows[r].cells[dIdx] ? rows[r].cells[dIdx].textContent : '');
+                    c += num(rows[r].cells[cIdx] ? rows[r].cells[cIdx].textContent : '');
+                }
+                if (cells.debit)  setVal(cells.debit, d);
+                if (cells.credit) setVal(cells.credit, c);
+                if (cells.net)    setVal(cells.net, d - c);
+
+                if (note) {
+                    var fc = note.querySelector('.st-fc');
+                    if (fc) fc.textContent = ev.detail.shown + ' من ' + ev.detail.total;
+                    note.style.display = '';
+                }
+            });
+        })(blocks[b]);
+    }
+})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

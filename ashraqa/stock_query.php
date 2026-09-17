@@ -9,7 +9,14 @@
  * تابعة لموديول التقارير.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('reports');
+require_module_access('reports');
+if (!can('reports:stock')) {
+    http_response_code(403);
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+        . '<h2>🚫 غير مصرّح</h2>'
+        . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+        . '<a href="logout.php">تسجيل الخروج</a></div>');
+}
 require_once __DIR__ . '/stock_query_lib.php';
 
 // ===== AJAX =====
@@ -72,9 +79,9 @@ require_once __DIR__ . '/includes/header.php';
               flex-wrap:wrap; }
     .sq-bar input.main { flex:1; min-width:260px; padding:12px 16px; border:1.5px solid var(--line);
                          border-radius:10px; font-size:15px; font-family:inherit; }
-    .sq-bar input.main:focus { outline:none; border-color:var(--accent); }
+    .sq-bar input.main:focus { outline:none; border-color:var(--accent-text); }
     /* نتائج البحث المنسدلة */
-    .sq-sug { position:absolute; top:100%; right:0; left:0; background:#fff; z-index:50;
+    .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
     .sq-sug.show { display:block; }
@@ -87,10 +94,10 @@ require_once __DIR__ . '/includes/header.php';
     .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
                   padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
     .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
-                 background:#fff; color:var(--ink-700,#4a4a68); font-size:13.5px; font-weight:600;
+                 background:var(--surface); color:var(--ink-700,var(--accent-text)); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
-    .sq-filter:hover { border-color:var(--accent); color:var(--accent); }
-    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
+    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .sq-sub { display:none; align-items:center; gap:6px; }
     .sq-sub.show { display:inline-flex; }
     .sq-sub select, .sq-sub input { padding:8px 12px; border:1.5px solid var(--line); border-radius:9px;
@@ -100,11 +107,11 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table { width:100%; border-collapse:collapse; }
     .sq-table th, .sq-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
                                   text-align:center; font-size:13px; white-space:nowrap; }
-    .sq-table th { background:var(--line-soft); color:var(--accent-hover); font-weight:600; }
+    .sq-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .sq-table th.admin, .sq-table td.admin { background:var(--accent-soft); font-weight:700; }
     .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
     .sq-table .code-cell { font-family:monospace; color:var(--ink-500); font-size:12px; }
-    .sq-table .zero { color:#c9c9d4; }
+    .sq-table .zero { color:var(--ink-400); }
     .sq-table .pos { color:var(--pos); font-weight:600; }
     .sq-table tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
     .sq-table tbody tr:hover td { background:rgba(124,111,247,0.04); }
@@ -112,14 +119,14 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table td .rm:hover { opacity:1; }
 
     .sq-status { font-size:13px; min-height:20px; margin-bottom:10px; }
-    .sq-empty { text-align:center; color:#bbb; padding:40px 20px; font-size:15px; }
+    .sq-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .sq-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;
                gap:12px; margin-bottom:12px; }
     .sq-meta .tools { display:flex; gap:10px; }
 </style>
 
 <div class="card">
-    <div class="section-title">📦 استعلام أرصدة الأصناف</div>
+    <div class="section-title"><i class="ti ti-package"></i> استعلام أرصدة الأصناف</div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">
@@ -128,7 +135,7 @@ require_once __DIR__ . '/includes/header.php';
                enterkeyhint="search"
                oninput="onType()"
                onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-        <button type="button" class="btn" style="background:var(--ink-800);padding:11px 16px;"
+        <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
                 onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
             <i class="ti ti-camera" style="font-size:18px;"></i>
         </button>
@@ -162,10 +169,10 @@ require_once __DIR__ . '/includes/header.php';
     <div class="sq-meta">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
         <span class="tools">
-            <button type="button" class="btn" style="background:var(--ink-800);" onclick="exportCsv()">
+            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);" onclick="exportCsv()">
                 <i class="ti ti-download"></i> تصدير
             </button>
-            <button type="button" class="btn" style="background:var(--neg);" onclick="clearAll()">
+            <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
         </span>

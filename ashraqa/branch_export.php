@@ -9,7 +9,20 @@
  * المدخلات: ?invoice=STH_ID&branch=BRANCH_ID
  */
 require_once __DIR__ . '/auth.php';
-require_permission('invoices');
+
+// عاشور معاه invoices:ashraqa بس — يسحب ملف إشراقة وبس.
+// من غير القيد ده كان يقدر يغيّر ?branch ويسحب ملف أي فرع تاني.
+if (!can('invoices') && can('invoices:ashraqa')) {
+    $ashraqaOnly = true;
+} else {
+    require_permission('invoices');
+    $ashraqaOnly = false;
+}
+
+// الملف بياخد وقت على الفواتير الكبيرة، والجلسة بتفضل مقفولة طول ما هو شغال
+// فأي حفظ AJAX للمستخدم نفسه بيستنى في الطابور. الجلسة اتقريت خلاص، فنقفلها.
+if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';   // الأصناف الممنوعة من ملف الفرع
 require_once __DIR__ . '/group_lib.php';        // فلتر مجموعة الأصناف
@@ -30,6 +43,11 @@ if ($invoiceId === null || $branchId <= 0) {
     die('بيانات غير مكتملة.');
 }
 
+if ($ashraqaOnly && $branchId !== 5) { // branch 403
+    http_response_code(403);
+    die('غير مصرح.');
+}
+
 $pdo = db();
 
 // سجل التوزيع (الهيدر في MySQL) لهذه الفاتورة
@@ -40,6 +58,25 @@ if (!$invHeader) {
 }
 $dist = ensure_distribution_record($invHeader);
 $distId = (int) $dist['id'];
+
+if ($ashraqaOnly) {
+    // 🔴 المردودات مابتظهرش لعاشور (doc_type 6). الشرط جوّه $ashraqaOnly
+    //    بس — باقي الفروع بتصدّر المردودات عادي زي ما هي.
+    if ((int) ($invHeader['doc_type'] ?? 0) === 6) {
+        http_response_code(403);
+        die('غير مصرح.');
+    }
+    $stCheck = $pdo->prepare(
+        'SELECT 1 FROM invoice_distribution_lines
+          WHERE distribution_id = ? AND branch_id = 5 AND amount > 0
+          LIMIT 1'
+    );
+    $stCheck->execute([$distId]);
+    if (!$stCheck->fetchColumn()) {
+        http_response_code(403);
+        die('غير مصرح.');
+    }
+}
 
 // اسم الفرع (لاسم الملف)
 $bStmt = $pdo->prepare('SELECT name FROM branches WHERE id = ?');
@@ -126,10 +163,12 @@ $content = implode("\r\n", $lines) . "\r\n";
 $safeBranch = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $branchName);
 $filename = 'dist_' . $invHeader['inv_no'] . '_' . $safeBranch . '.txt';
 
+$skipReceiving = !empty($_GET['skip_receiving']);
+
 // تسجيل إن الفرع ده اتصدّر (بيحدّد حالة الفاتورة: تم التقسيم / تم التوزيع)
 try {
     mark_branch_exported($distId, $branchId, current_user()['id'] ?? null);
-    refresh_invoice_status($distId, $invoiceId, $_GET['suffix'] ?? null);
+    refresh_invoice_status($distId, $invoiceId, $_GET['suffix'] ?? null, !$skipReceiving);
 } catch (Throwable $ex) {
     // فشل التسجيل مايمنعش التصدير نفسه
     error_log('branch_export: تعذّر تسجيل التصدير — ' . $ex->getMessage());

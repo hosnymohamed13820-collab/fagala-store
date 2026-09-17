@@ -63,6 +63,16 @@ $page_title = 'أقسام وأرفف الجرد';
 $active_module = 'stocktake';
 require_once __DIR__ . '/includes/header.php';
 ?>
+
+<style>
+    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
+        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
+    .btn:hover { background:var(--accent-hover); }
+    .btn[disabled] { opacity:.5; cursor:not-allowed; }
+    .btn-sm { padding:6px 12px; font-size:13px; }
+    .btn-ghost { background:var(--bg); color:var(--accent-text); }
+    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
+</style>
 <div class="page-head"><h1>أقسام وأرفف الجرد</h1></div>
 
 <?php if ($flash): ?>
@@ -71,7 +81,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="card">
     <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:8px;">إضافة أقسام/أرفف</h3>
-    <p style="color:#555;font-size:14px;line-height:1.8;">
+    <p style="color:var(--ink-600);font-size:14px;line-height:1.8;">
         اكتب كل قسم/رف في سطر. مثلاً:<br>
         <span style="color:var(--ink-500);">الأقلام - الرف الأول<br>الأقلام - الرف الثاني<br>الكشاكيل - الرف الأول</span>
     </p>
@@ -92,7 +102,7 @@ require_once __DIR__ . '/includes/header.php';
     <form method="post" onsubmit="return confirm('مسح جميع الأقسام والأرفف (<?= count($places) ?>) دفعة واحدة؟ مش هينفع ترجعهم.')" style="margin-bottom:14px;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="delete_all">
-        <button type="submit" class="btn" style="background:var(--neg);"><i class="ti ti-trash"></i> مسح جميع الأقسام والأرفف</button>
+        <button type="submit" class="btn" style="background:var(--neg-fill);"><i class="ti ti-trash"></i> مسح جميع الأقسام والأرفف</button>
     </form>
     <table>
         <thead><tr><th>الترتيب</th><th>الاسم</th><th>الحالة</th><th>إجراءات</th></tr></thead>
@@ -101,7 +111,7 @@ require_once __DIR__ . '/includes/header.php';
             <tr style="<?= $p['is_active']?'':'opacity:0.5;' ?>">
                 <td><?= (int)$p['sort_order'] ?></td>
                 <td style="font-weight:500;"><?= e($p['name']) ?></td>
-                <td><?= $p['is_active'] ? '<span style="color:var(--pos);">مفعّل</span>' : '<span style="color:#999;">مخفي</span>' ?></td>
+                <td><?= $p['is_active'] ? '<span style="color:var(--pos);">مفعّل</span>' : '<span style="color:var(--ink-400);">مخفي</span>' ?></td>
                 <td>
                     <div style="display:flex;gap:6px;">
                         <form method="post" style="display:inline;">

@@ -19,6 +19,7 @@
  * =====================================================================
  */
 require_once __DIR__ . '/receiving_lib.php';
+require_once __DIR__ . '/agent_lib.php';   // bal_table() — مصدر الأرصدة
 require_once __DIR__ . '/stocktake_lib.php';   // البحث بالاسم الاحتياطي (stk_search_by_name)
 
 /**
@@ -43,6 +44,23 @@ function hq_codes_ready(): bool
 function stock_local_ready(): bool
 {
     return hq_codes_ready() && hq_balances_ready();
+}
+
+/**
+ * وضع «المرآة بس» — يمنع أي نداء على الجسر في الطلب ده.
+ *
+ * ليه: الجسر واقف (شوف RULES.md قسم ٥)، وكل نداء عليه بيستنى الاتصال
+ * يفشل الأول. طلب النواقص بيبحث بالباركود عشرات المرات في الجلسة،
+ * فبقى بطيء لدرجة إنه «مش راضي يشتغل».
+ *
+ * الشاشات اللي بتشغّله بتقبل إن الصنف اللي مش في المرآة يرجع فاضي —
+ * أحسن من إنها تستنى جسر واقف.
+ */
+function stock_mirror_only(?bool $set = null): bool
+{
+    static $on = false;
+    if ($set !== null) $on = $set;
+    return $on;
 }
 
 /**
@@ -96,12 +114,16 @@ function stock_extra_stores(array $known): array
     if (stock_local_ready()) {
         try {
             $rows = db()->query(
-                'SELECT b.sto_id, s.name
-                 FROM hq_balances b
+                // ⚠️ النص ده كان بعلامات **مفردة**، فـ" . bal_table() . "
+                //    كان بينزل في الـSQL كنص حرفي بدل اسم الجدول —
+                //    الاستعلام كان بيرمي استثناء كل مرة والـcatch تحت
+                //    بيبلعه في صمت، فالمخازن الزيادة عمرها ما ظهرت.
+                "SELECT b.sto_id, s.name
+                 FROM " . bal_table() . " b
                  LEFT JOIN hq_stores s ON s.sto_id = b.sto_id
                  GROUP BY b.sto_id, s.name
                  HAVING SUM(b.balance) > 0.0001
-                 ORDER BY b.sto_id'
+                 ORDER BY b.sto_id"
             )->fetchAll();
 
             $out = [];
@@ -120,6 +142,9 @@ function stock_extra_stores(array $known): array
             // نكمّل على الجسر
         }
     }
+
+    // 🔴 وضع المرآة بس: مفيش رجوع للجسر.
+    if (stock_mirror_only()) return [];
 
     // ٢) الجسر (احتياطي)
     try {
@@ -171,6 +196,23 @@ function stock_item_by_code(string $code): ?array
             $r = $st->fetch();
             if ($r) {
                 $iid = (int) $r['item_id'];
+                if (stock_mirror_only()) {
+                    // وضع المرآة: قراءة الأرصدة من الجدول المحلي مباشرة
+                    $stBal = db()->prepare(
+                        "SELECT sto_id, balance FROM " . bal_table() . " WHERE item_id = ?"
+                    );
+                    $stBal->execute([$iid]);
+                    $byStore = [];
+                    foreach ($stBal->fetchAll() as $bRow) {
+                        $byStore[(int) $bRow['sto_id']] = (float) $bRow['balance'];
+                    }
+                    return stock_build_row(
+                        $iid,
+                        $byStore,
+                        (string) $r['code'],
+                        (string) ($r['name'] ?? '')
+                    );
+                }
                 $bal = sqlsrv_fetch_item_balances_all([$iid]);
                 return stock_build_row(
                     $iid,
@@ -185,6 +227,9 @@ function stock_item_by_code(string $code): ?array
             // نكمّل على الجسر
         }
     }
+
+    // 🔴 وضع المرآة بس: مفيش رجوع للجسر.
+    if (stock_mirror_only()) return null;
 
     // ٢) الجسر (احتياطي)
     $sql = "SELECT TOP 1 LTRIM(RTRIM(c." . STK_IC_CODE . ")) AS code,
@@ -265,6 +310,9 @@ function stock_search_by_name(string $term, int $limit = 50): array
             // نكمّل على الجسر
         }
     }
+
+    // 🔴 وضع المرآة بس: مفيش رجوع للجسر.
+    if (stock_mirror_only()) return [];
 
     // ٢) الجسر (احتياطي)
     $found = stk_search_by_name($term, $limit);
@@ -367,7 +415,7 @@ function stock_filter_items(string $mode, int $stoId = 0, float $threshold = 0, 
                     "SELECT c.item_id
                      FROM (SELECT DISTINCT item_id FROM hq_codes WHERE item_id > 0) c
                      LEFT JOIN (SELECT item_id, SUM(balance) AS t
-                                FROM hq_balances GROUP BY item_id) b
+                                FROM " . bal_table() . " GROUP BY item_id) b
                             ON b.item_id = c.item_id
                      WHERE COALESCE(b.t, 0) $cmp
                      ORDER BY c.item_id
@@ -416,7 +464,7 @@ function stock_filter_items(string $mode, int $stoId = 0, float $threshold = 0, 
 
         try {
             $st = db()->prepare(
-                "SELECT item_id FROM hq_balances
+                "SELECT item_id FROM " . bal_table() . "
                  GROUP BY item_id
                  HAVING $having
                  ORDER BY item_id
@@ -441,6 +489,9 @@ function stock_filter_items(string $mode, int $stoId = 0, float $threshold = 0, 
             // نكمّل على الجسر
         }
     }
+
+    // 🔴 وضع المرآة بس: مفيش رجوع للجسر.
+    if (stock_mirror_only()) return [];
 
     // =============== ٢) الجسر (احتياطي) ===============
     $tbl    = SQLSRV_PREFIX . 'COM_STO_ITEMS';

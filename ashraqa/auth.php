@@ -12,6 +12,10 @@
  * الأونر (role is_owner = 1) بياخد كل الصلاحيات تلقائياً.
  */
 
+// سجل الأخطاء — **قبل** config.php عشان يمسك أخطاء config نفسه.
+// بيتفرّج بس ومابيغيّرش سلوك أي صفحة (شوف القواعد في errlog_lib.php).
+require_once __DIR__ . '/errlog_lib.php';
+errlog_install();
 require_once __DIR__ . '/config.php';
 
 // ===== بدء الجلسة بإعدادات آمنة =====
@@ -23,14 +27,40 @@ if (session_status() === PHP_SESSION_NONE) {
         || (($_SERVER['SERVER_PORT'] ?? '') == 443)
         || (strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
+    // ---------------------------------------------------------------
+    //  مدة الجلسة
+    //
+    //  كانت 'lifetime' => 0 يعني الكوكي بتموت بقفل المتصفح، وPHP بيمسح
+    //  السيشن من السيرفر بعد ٢٤ دقيقة خمول (الافتراضي). فأي وقت بعيد عن
+    //  الجهاز أو قفلة نت = خروج تلقائي.
+    //
+    //  🔴 ده مالوش علاقة بإشعارات الموبايل — الاشتراك متخزّن في المتصفح
+    //  و logout() مابيمسحهوش، فالإشعار بيوصل حتى والمتصفح مقفول وحتى لو
+    //  المستخدم عامل خروج.
+    // ---------------------------------------------------------------
+    $sessLifetime = 30 * 24 * 60 * 60;   // ٣٠ يوم
+    @ini_set('session.gc_maxlifetime', (string) $sessLifetime);
+
     session_set_cookie_params([
-        'lifetime' => 0,
+        'lifetime' => $sessLifetime,
         'path'     => '/',
         'httponly' => true,
         'secure'   => $isHttps,
         'samesite' => 'Lax',
     ]);
     session_start();
+
+    // تجديد متدحرج: كل طلب من مستخدم داخل بيمدّد الكوكي من جديد، فاللي
+    // بيستعمل النظام عمره ما يتقفل عليه.
+    if (!empty($_SESSION['user']['id']) && !headers_sent()) {
+        setcookie(session_name(), session_id(), [
+            'expires'  => time() + $sessLifetime,
+            'path'     => '/',
+            'httponly' => true,
+            'secure'   => $isHttps,
+            'samesite' => 'Lax',
+        ]);
+    }
 }
 
 /**
@@ -44,21 +74,83 @@ function all_modules(): array
         'price_inquiry' => ['label' => 'استعلام الأسعار',   'icon' => 'ti-scan',          'url' => 'price_inquiry.php'],
         'remote_scan'   => ['label' => 'سكانر الكمبيوتر',   'icon' => 'ti-device-mobile', 'url' => 'remote_scan.php'],
         'cashier'       => ['label' => 'تقفيل الكاشير',     'icon' => 'ti-lock-dollar',    'url' => 'cashier.php'],
-        'custody'       => ['label' => 'عهدة الفرع',        'icon' => 'ti-cash',           'url' => 'custody.php'],
+        'custody'       => ['label' => 'العهد',             'icon' => 'ti-cash',           'url' => 'custody.php'],
         'review'        => ['label' => 'مراجعة المحاسب',    'icon' => 'ti-user-check',        'url' => 'review.php'],
         'treasury'      => ['label' => 'الخزينة وكشف الحساب','icon' => 'ti-building-bank',    'url' => 'treasury.php'],
         'hr'            => ['label' => 'الموارد البشرية',   'icon' => 'ti-users',            'url' => 'hr.php'],
-        'attendance'    => ['label' => 'تسجيل الحضور',      'icon' => 'ti-clock-hour-4',     'url' => 'attendance.php'],
+        'attendance'        => ['label' => 'تسجيل الحضور',      'icon' => 'ti-clock-hour-4',     'url' => 'attendance.php'],
         'tasks'         => ['label' => 'المهام',            'icon' => 'ti-inbox',         'url' => 'tasks.php'],
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
         'invoices'      => ['label' => 'الاستلامات',        'icon' => 'ti-package-import',     'url' => 'invoices.php'],
+        'receiving'     => ['label' => 'استلام الفواتير',   'icon' => 'ti-truck',              'url' => 'receiving.php'],
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
         'analysis'      => ['label' => 'تحليل الموسم',     'icon' => 'ti-calculator'   , 'url' => 'analysis.php'],
         'reports'       => ['label' => 'التقارير',          'icon' => 'ti-chart-bar',        'url' => 'reports.php'],
         'definitions'   => ['label' => 'التعريفات',         'icon' => 'ti-adjustments',     'url' => 'definitions.php'],
         'settings'      => ['label' => 'الإعدادات',         'icon' => 'ti-settings',         'url' => 'settings.php'],
+        'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
+    ];
+}
+
+/**
+ * سجل أجزاء المديولات المركّبة (module:part).
+ *
+ * ملاحظة: مديول «طلب النواقص» (shortage) لسه مش متجزّأ في المرحلة دي عشان ما يدّيش إحساس كاذب بالتحكم.
+ * الأسماء المحجوزة ليه مستقبلاً:
+ *   - shortage:orders     (طلبات الفروع)
+ *   - shortage:purchases  (مشتريات الإدارة)
+ * وإضافتها هنا هتكون سطر واحد بس لما يتم تقسيم الشاشة في مرحلتها.
+ *
+ * @return array<string, array<string, string>>
+ */
+function module_parts(): array
+{
+    return [
+        'custody' => [
+            'employee' => 'عهدة الموظف',
+            'branch'   => 'عهدة الفرع',
+        ],
+        'hr' => [
+            'employees'  => 'الموظفون',
+            'advances'   => 'السلف',
+            'bonuses'    => 'المكافآت',
+            'penalties'  => 'الجزاءات',
+            'leaves'     => 'الإجازات',
+            'salaries'   => 'الرواتب',
+            'attendance' => 'الحضور والانصراف',
+            'requests'   => 'طلبات التصحيح',
+        ],
+        'reports' => [
+            'sales'      => 'المبيعات',
+            'treasury'   => 'الخزينة',
+            'expenses'   => 'المصاريف',
+            'jtotals'    => 'إجماليات القيود',
+            'custody'    => 'العهد',
+            'deficits'   => 'العجوزات',
+            'suppliers'  => 'الموردين',
+            'salaries'   => 'الرواتب',
+            'advances'   => 'السلف',
+            'attendance'        => 'الحضور',
+            'attendance_totals' => 'إجمالي الحضور',
+            'stocktake'  => 'الجرد',
+            'noprice'    => 'أصناف بدون سعر بيع',
+            'stock'      => 'استعلام أرصدة الأصناف',
+            'customers'  => 'داتا العملاء',
+            'receiving'  => 'استلام الفواتير',
+        ],
+        'invoices' => [
+            'problems' => 'مشاكل الفواتير',
+            'ashraqa'  => 'فواتير إشراقة',
+        ],
+        'receiving' => [
+            'diffs' => 'صفحة الفروقات',
+        ],
+        'treasury' => [
+            'statement' => 'الخزينة وكشف الحساب',
+            'reverse'   => 'قيد عكسي',
+        ],
     ];
 }
 
@@ -125,13 +217,28 @@ function attempt_login(string $username, string $password): bool
 
     // نجاح: تخزين بيانات الجلسة
     session_regenerate_id(true); // حماية ضد session fixation
+
+    $permsVer = 1;
+    try {
+        $stVer = db()->prepare('SELECT perms_version FROM users WHERE id = ?');
+        $stVer->execute([(int) $user['id']]);
+        $v = $stVer->fetchColumn();
+        if ($v !== false && $v !== null) {
+            $permsVer = (int) $v;
+        }
+    } catch (Throwable $e) {
+        // لو العمود لسه ما اتضافش على السيرفر، بنكمّل بالقيمة الافتراضية
+        $permsVer = 1;
+    }
+
     $_SESSION['user'] = [
-        'id'        => (int) $user['id'],
-        'username'  => $user['username'],
-        'full_name' => $user['full_name'],
-        'role_id'   => (int) $user['role_id'],
-        'branch_id' => $user['branch_id'] !== null ? (int) $user['branch_id'] : null,
-        'is_owner'  => (int) $user['is_owner'] === 1,
+        'id'            => (int) $user['id'],
+        'username'      => $user['username'],
+        'full_name'     => $user['full_name'],
+        'role_id'       => (int) $user['role_id'],
+        'branch_id'     => $user['branch_id'] !== null ? (int) $user['branch_id'] : null,
+        'is_owner'      => (int) $user['is_owner'] === 1,
+        'perms_version' => $permsVer,
     ];
 
     // تحميل صلاحيات المستخدم في الجلسة (مرة واحدة)
@@ -207,25 +314,72 @@ function is_owner(): bool
 }
 
 /**
- * هل المستخدم الحالي ليه صلاحية المديول ده؟
- * الأونر بياخد true دايماً.
+ * هل المستخدم الحالي ليه صلاحية المفتاح ده؟
+ * المفتاح ممكن يكون مديول بسيط ('cashier') أو مفتاح مركّب ('hr:salaries').
+ *
+ * القواعد:
+ * - الأونر: true دايماً.
+ * - مفتاح مركب ('module:part'): true لو معاه المديول كامل ('module') أو الجزء بالظبط ('module:part').
+ * - مديول بسيط ('hr'): true لو معاه المديول كامل بالظبط. (معاه 'hr:salaries' بس → false).
  */
 function can(string $moduleKey): bool
 {
-    // سكانر الكمبيوتر بيتبع صلاحية استعلام الأسعار (نفس الجمهور — أي موظف)
-    if ($moduleKey === 'remote_scan') $moduleKey = 'price_inquiry';
-
     if (!is_logged_in()) {
         return false;
     }
     if (is_owner()) {
         return true;
     }
-    return in_array($moduleKey, $_SESSION['permissions'] ?? [], true);
+
+    $perms = $_SESSION['permissions'] ?? [];
+
+    // لو مفتاح مركّب: مسموح لو معاه المديول كامل كـ wildcard أو معاه الجزء بالتحديد
+    if (str_contains($moduleKey, ':')) {
+        [$mod] = explode(':', $moduleKey, 2);
+        return in_array($mod, $perms, true) || in_array($moduleKey, $perms, true);
+    }
+
+    // مديول بسيط: تطابق تام فقط (can('hr') ترجع true لو معاه 'hr' بس مش لو معاه جزء)
+    return in_array($moduleKey, $perms, true);
+}
+
+/**
+ * هل المستخدم الحالي يقدر يفتح المديول ده أصلاً؟
+ * بترجّع true لو:
+ *  1. أونر
+ *  2. عنده المديول كامل (زي can($moduleKey))
+ *  3. عنده أي جزء من المديول (أي مفتاح يبدأ بـ "$moduleKey:")
+ *
+ * دي معمولة للقايمة الجانبية وحراسة الصفحة الرئيسية للمديول.
+ */
+function can_module(string $moduleKey): bool
+{
+    if (!is_logged_in()) {
+        return false;
+    }
+    if (is_owner()) {
+        return true;
+    }
+
+    $perms = $_SESSION['permissions'] ?? [];
+    if (in_array($moduleKey, $perms, true)) {
+        return true;
+    }
+
+    $prefix = $moduleKey . ':';
+    $prefixLen = strlen($prefix);
+    foreach ($perms as $p) {
+        if (strncmp((string) $p, $prefix, $prefixLen) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
  * يفرض تسجيل الدخول — لو مش داخل يحوّله لصفحة الدخول.
+ * كمان بيتأكد إن الحساب لسه نشط وإن الصلاحيات متزامنة مع أحدث إصدار.
  * يتحط في أول كل صفحة محمية.
  */
 function require_login(): void
@@ -233,6 +387,43 @@ function require_login(): void
     if (!is_logged_in()) {
         header('Location: login.php');
         exit;
+    }
+
+    $userId = (int) ($_SESSION['user']['id'] ?? 0);
+    if ($userId <= 0) {
+        logout();
+        header('Location: login.php');
+        exit;
+    }
+
+    try {
+        $st = db()->prepare('SELECT is_active, perms_version FROM users WHERE id = ?');
+        $st->execute([$userId]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        // لو المستخدم اتمسح أو حسابه اتعطّل وهو شغال، يطرد فوراً
+        if (!$row || empty($row['is_active'])) {
+            logout();
+            header('Location: login.php');
+            exit;
+        }
+
+        // لو رقم إصدار الصلاحيات اتغير (الأونر عدّل صلاحياته)، نحدّث الجلسة فوراً من غير خروج
+        if (isset($row['perms_version'])) {
+            $currentVer = (int) $row['perms_version'];
+            $sessionVer = (int) ($_SESSION['user']['perms_version'] ?? 0);
+            if ($sessionVer !== $currentVer) {
+                load_permissions($userId);
+                $_SESSION['user']['perms_version'] = $currentVer;
+            }
+        }
+    } catch (Throwable $ex) {
+        // =====================================================================
+        //  حزام أمان حاسم: الدالة دي بتشتغل في أول كل ريكوست لكل الـ ٤٩ مستخدم.
+        //  لو الاستعلام رمى أي خطأ (مثلاً ملف SQL لسه ما اتنفّذش على السيرفر
+        //  والعمود perms_version لسه مش موجود، أو فيه عطل لحظي)، بنبلع الخطأ
+        //  بهدوء ونكمّل بالسلوك العادي من غير ما نوقّع الموقع في وش الناس.
+        // =====================================================================
     }
 }
 
@@ -253,13 +444,29 @@ function require_permission(string $moduleKey): void
 }
 
 /**
+ * يفرض صلاحية الوصول للمديول (سواء المديول كامل أو أي جزء منه) — لو مالوش يمنعه تماماً.
+ * نفس سلوك require_permission بس بتستعمل can_module().
+ */
+function require_module_access(string $moduleKey): void
+{
+    require_login();
+    if (!can_module($moduleKey)) {
+        http_response_code(403);
+        die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+            . '<h2>🚫 غير مصرّح</h2>'
+            . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+            . '<a href="logout.php">تسجيل الخروج</a></div>');
+    }
+}
+
+/**
  * أول مديول متاح للمستخدم (للتوجيه بعد الدخول).
  * لو مفيش، بيرجّع dashboard.
  */
 function first_allowed_module(): string
 {
     foreach (all_modules() as $key => $mod) {
-        if (can($key)) {
+        if (can_module($key)) {
             return $mod['url'];
         }
     }
