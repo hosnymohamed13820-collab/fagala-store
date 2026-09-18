@@ -108,8 +108,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                // الفرق المجمع = (كاش + وسائل) − السيستم
-                $collected = $cashTotal + $methodTotals['visa'] + $methodTotals['instapay'];
+                // حساب المصروفات النثرية من الدرج
+                $rawExpAmounts  = $_POST['exp_amount'] ?? [];
+                $rawExpAccounts = $_POST['exp_account_id'] ?? [];
+                $rawExpNotes    = $_POST['exp_note'] ?? [];
+                $expenses = [];
+                if (is_array($rawExpAmounts)) {
+                    foreach ($rawExpAmounts as $k => $rawAmt) {
+                        $amt = (float) $rawAmt;
+                        if ($amt <= 0) continue;
+                        $accId = !empty($rawExpAccounts[$k]) ? (int) $rawExpAccounts[$k] : null;
+                        $note  = isset($rawExpNotes[$k]) ? trim((string)$rawExpNotes[$k]) : '';
+                        if (mb_strlen($note) > 255) {
+                            $note = mb_substr($note, 0, 255);
+                        }
+                        $expenses[] = [
+                            'account_id' => $accId,
+                            'amount'     => $amt,
+                            'note'       => $note !== '' ? $note : null,
+                        ];
+                    }
+                }
+
+                // حساب إجمالي المصروفات النثرية من الدرج
+                $expTotal = array_sum(array_column($expenses, 'amount'));
+
+                // الفرق المجمع = (كاش في الدرج + مصروفات الدرج + وسائل الدفع) − السيستم
+                $collected  = $cashTotal + $expTotal + $methodTotals['visa'] + $methodTotals['instapay'];
                 $difference = $collected - $systemTotal;
 
                 $pdo->beginTransaction();
@@ -126,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new RuntimeException('لا يمكن تعديل هذه الوردية (لازم تكون مستنية مراجعة).');
                         }
 
-                        // قراءة الفئات والسطور القديمة قبل المسح (للسجل)
+                        // قراءة الفئات والسطور والمصروفات القديمة قبل المسح (للسجل)
                         $oldCashSt = $pdo->prepare('SELECT denomination, count, subtotal FROM shift_cash WHERE shift_id=?');
                         $oldCashSt->execute([$shiftId]);
                         $oldCash = $oldCashSt->fetchAll();
@@ -135,10 +160,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $oldLinesSt->execute([$shiftId]);
                         $oldLines = $oldLinesSt->fetchAll();
 
+                        $oldExpSt = $pdo->prepare('SELECT account_id, amount, note FROM shift_expenses WHERE shift_id=?');
+                        $oldExpSt->execute([$shiftId]);
+                        $oldExp = $oldExpSt->fetchAll();
+
                         $before = [
-                            'shift' => $oldShift,
-                            'cash'  => $oldCash,
-                            'lines' => $oldLines,
+                            'shift'    => $oldShift,
+                            'cash'     => $oldCash,
+                            'lines'    => $oldLines,
+                            'expenses' => $oldExp,
                         ];
 
                         $pdo->prepare(
@@ -148,9 +178,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         )->execute([$branchId, $bizDate, $shiftName, $cashTotal, $methodTotals['visa'],
                             $methodTotals['instapay'], $systemTotal, $difference, $shiftId]);
 
-                        // مسح الفئات والسطور القديمة
+                        // مسح الفئات والسطور والمصروفات القديمة
                         $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                        $pdo->prepare('DELETE FROM shift_expenses WHERE shift_id=?')->execute([$shiftId]);
                     } elseif ($action === 'resubmit_shift') {
                         // تعديل وردية مرفوضة موجودة
                         $shiftId = (int) ($_POST['shift_id'] ?? 0);
@@ -173,6 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // امسح التفاصيل القديمة
                         $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                        $pdo->prepare('DELETE FROM shift_expenses WHERE shift_id=?')->execute([$shiftId]);
                     } else {
                         // وردية جديدة
                         $pdo->prepare(
@@ -193,6 +225,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insL = $pdo->prepare('INSERT INTO shift_payment_lines (shift_id, method, line_no, reference, amount) VALUES (?, ?, ?, ?, ?)');
                     foreach ($lines as $ln) {
                         $insL->execute([$shiftId, $ln[0], $ln[1], $ln[2] ?: null, $ln[3]]);
+                    }
+                    // حفظ بنود المصروفات
+                    if (!empty($expenses)) {
+                        $insE = $pdo->prepare('INSERT INTO shift_expenses (shift_id, account_id, amount, note) VALUES (?, ?, ?, ?)');
+                        foreach ($expenses as $exp) {
+                            $insE->execute([$shiftId, $exp['account_id'], $exp['amount'], $exp['note']]);
+                        }
                     }
 
                     if ($action === 'owner_edit_shift') {
@@ -481,6 +520,9 @@ foreach ($archiveShifts as $as) $allCashierShiftIds[] = (int)$as['id'];
 foreach ($myRejected as $mr) $allCashierShiftIds[] = (int)$mr['id'];
 $allCashierShiftIds = array_values(array_unique(array_filter($allCashierShiftIds)));
 
+// جلب مصروفات الورديات المعروضة باستعلام مجمّع واحد
+$shiftExpensesMap = shift_expenses_for_shifts($allCashierShiftIds, $pdo);
+
 $shiftEditBadges = [];
 if (!empty($allCashierShiftIds)) {
     try {
@@ -513,7 +555,13 @@ $sumCash   = array_sum(array_column($todayShifts, 'cash_total'));
 $sumVisa   = array_sum(array_column($todayShifts, 'visa_total'));
 $sumInsta  = array_sum(array_column($todayShifts, 'instapay_total'));
 $sumSys    = array_sum(array_column($todayShifts, 'system_total'));
-$sumColl   = $sumCash + $sumVisa + $sumInsta;
+$sumExp    = 0.0;
+foreach ($todayShifts as $ts) {
+    $sid = (int)$ts['id'];
+    $sExps = $shiftExpensesMap[$sid] ?? [];
+    $sumExp += array_sum(array_column($sExps, 'amount'));
+}
+$sumColl   = $sumCash + $sumExp + $sumVisa + $sumInsta;
 $sumVI     = $sumVisa + $sumInsta;   // الفيزا + الإنستا (من غير الكاش)
 $sumDiff   = $sumColl - $sumSys;
 
@@ -578,19 +626,9 @@ require_once __DIR__ . '/includes/header.php';
     .ct-tab:hover:not(.active) { color:var(--accent-text); }
     .ct-pane { display:none; }
     .ct-pane.active { display:block; }
-    /* 🔴 table-layout:fixed مش رفاهية — من غيرها المتصفح بيسأل كل <input>
-       عايز عرض قد إيه، والـinput بيرد «٢٠ حرف» (~175px) حتى وهو فاضي.
-       الجدول بيطلع عايز ~446px والمتاح ليه ~438px، فخانة المبلغ كانت
-       بتتزنق بره ويظهر سكرول أفقي.
-       ⚠️ `min-width:0` اللي تحت في قسم الموبايل ماحلّتش دي — الـmin-width
-          مالهاش تأثير على حساب أعمدة الجدول في وضع auto. */
     .pay-table { width:100%; border-collapse:collapse; table-layout:fixed; }
     .pay-table td { padding:4px; border:none; }
-    /* مع fixed العرض بيتقرا من أول صف = <thead>، فلازم يتحط على th و td
-       مع بعض. على td لوحده مابيشتغلش. */
     .pay-table td:first-child, .pay-table th:first-child { width:34px; }
-    /* المبلغ: أطول رقم واقعي 55057.75 محتاج ~87px، و110 فيها هامش.
-       السيريال مالوش عرض — بياخد الباقي لوحده. */
     .pay-table td:last-child, .pay-table th:last-child { width:110px; }
     .pay-table th { padding:4px 6px 8px; text-align:right; font-size:12px; color:var(--ink-500); font-weight:600; border:none; }
     .pay-table input { width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; box-sizing:border-box; }
@@ -611,7 +649,6 @@ require_once __DIR__ . '/includes/header.php';
     .shift-modal-body { padding:20px 22px; }
     .modal-x { background:none; border:none; font-size:28px; color:var(--ink-400); cursor:pointer; line-height:1; padding:0 6px; }
     .modal-x:hover { color:var(--neg); }
-    /* إصلاح العرض على الموبايل: منع المحتوى من تجاوز عرض الشاشة */
     .shift-modal-box { overflow-x:hidden; }
     .shift-modal-body { max-width:100%; }
     .shift-modal-body input, .shift-modal-body select { max-width:100%; box-sizing:border-box; }
@@ -625,18 +662,19 @@ require_once __DIR__ . '/includes/header.php';
         .side-summary { margin-top:14px; }
         .cash-total-box, .side-summary .sum-detail { padding:12px; }
         .denom-line input { width:70px; }
-        /* الشاشة ضيقة — نضيّق المبلغ شوية عشان السيريال ياخد مساحة مقروءة */
         .pay-table td:last-child, .pay-table th:last-child { width:88px; }
         .pay-table input { padding:7px 8px; font-size:13px; }
     }
-    /* بطاقات ملخص اليوم */
-    .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
-    @media (max-width:900px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
+    /* بطاقات ملخص اليوم: ٧ كروت متساوية */
+    .stat-cards { display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:18px; }
+    @media (max-width:1100px){ .stat-cards { grid-template-columns:repeat(4,1fr); } }
+    @media (max-width:760px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
     @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
     .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
     .stat-card .value { font-size:17px; font-weight:700; color:var(--accent-text); }
     .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
+    .stat-card .value.exp-val { color:var(--neg); }
     .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
@@ -726,7 +764,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · الفرق.
+<?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · المصروفات · الفرق.
          كارت «الفيزا + الإنستا» = الوسائل غير النقدية، الكاش مش داخل فيه. */ ?>
 <div class="stat-cards">
     <div class="stat-card">
@@ -752,6 +790,11 @@ require_once __DIR__ . '/includes/header.php';
     <div class="stat-card">
         <div class="label">الفيزا + الإنستا</div>
         <div class="value"><?= number_format($sumVI,2) ?></div>
+        <div class="sub">ج.م</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">إجمالي المصروفات</div>
+        <div class="value exp-val"><?= number_format($sumExp,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="stat-card">
@@ -806,6 +849,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="ct-tab active" data-pane="pane_cash" onclick="ctTab(this)">كاش</button>
             <button type="button" class="ct-tab" data-pane="pane_visa" onclick="ctTab(this)">فيزا</button>
             <button type="button" class="ct-tab" data-pane="pane_instapay" onclick="ctTab(this)">إنستا باي</button>
+            <button type="button" class="ct-tab" data-pane="pane_expenses" onclick="ctTab(this)">مصروفات من الدرج</button>
             <button type="button" class="ct-tab" data-pane="pane_summary" onclick="calc();ctTab(this)">الملخص</button>
         </div>
 
@@ -864,7 +908,8 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="sdt">تفاصيل التقفيل</div>
                         <table>
                             <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
-                            <tr><td class="k">كاش</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">كاش في الدرج</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">مصروفات الدرج</td><td class="v" style="color:var(--neg);"><span class="side_expenses">0.00</span> ج.م</td></tr>
                             <tr><td class="k">فيزا</td><td class="v"><span class="side_visa">0.00</span> ج.م</td></tr>
                             <tr><td class="k">إنستا باي</td><td class="v"><span class="side_instapay">0.00</span> ج.م</td></tr>
                             <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span class="side_collected">0.00</span> ج.م</td></tr>
@@ -874,6 +919,71 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
         <?php endforeach; ?>
+
+        <!-- مصروفات من الدرج -->
+        <div class="ct-pane" id="pane_expenses">
+            <div class="pay-with-summary">
+                <div class="pay-method">
+                    <h4>مصروفات من الدرج</h4>
+                    <table class="repeatable pay-table" style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr>
+                                <th style="width:34px;text-align:center;">#</th>
+                                <th style="width:170px;">تصنيف المصروف</th>
+                                <th style="width:110px;">المبلغ</th>
+                                <th>ملاحظة / بيان</th>
+                                <th style="width:36px;text-align:center;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="expRowsTbody">
+                            <?php for ($i = 1; $i <= $rowsPerMethod; $i++): ?>
+                                <tr>
+                                    <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
+                                    <td style="padding:4px;">
+                                        <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
+                                    </td>
+                                    <td style="padding:4px;">
+                                        <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
+                                               placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
+                                    </td>
+                                    <td style="padding:4px;">
+                                        <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
+                                               style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;">
+                                    </td>
+                                    <td style="padding:4px;text-align:center;">
+                                        <button type="button" onclick="removeExpRow(this)" title="حذف المصروف"
+                                                style="background:none;border:none;cursor:pointer;color:var(--neg);font-size:16px;padding:4px 6px;border-radius:6px;line-height:1;">
+                                            <i class="ti ti-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endfor; ?>
+                        </tbody>
+                    </table>
+                    <div style="margin-top:10px;">
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="addExpRow()" style="padding:5px 12px;font-size:13px;">
+                            <i class="ti ti-plus"></i> إضافة سطر مصروف
+                        </button>
+                    </div>
+                    <p style="font-size:12px;color:var(--ink-500);margin-top:8px;">
+                        المصروفات النثرية التي صُرفت مباشرة من الدرج (بنزين، إكراميات، مياه، إلخ).
+                    </p>
+                </div>
+                <div class="side-summary">
+                    <div class="sum-detail">
+                        <div class="sdt">تفاصيل التقفيل</div>
+                        <table>
+                            <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">كاش في الدرج</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">مصروفات الدرج</td><td class="v" style="color:var(--neg);"><span class="side_expenses">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">فيزا</td><td class="v"><span class="side_visa">0.00</span> ج.م</td></tr>
+                            <tr><td class="k">إنستا باي</td><td class="v"><span class="side_instapay">0.00</span> ج.م</td></tr>
+                            <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span class="side_collected">0.00</span> ج.م</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- الملخص (شامل السيستم) -->
         <div class="ct-pane" id="pane_summary">
@@ -888,7 +998,8 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="sdt">تفاصيل التقفيل</div>
                     <table>
                         <tr><td class="k">مبيعات السيستم</td><td class="v"><span id="s_system">0.00</span> ج.م</td></tr>
-                        <tr><td class="k">كاش</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
+                        <tr><td class="k">كاش في الدرج</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
+                        <tr><td class="k">مصروفات الدرج</td><td class="v" style="color:var(--neg);"><span id="s_expenses">0.00</span> ج.م</td></tr>
                         <tr><td class="k">فيزا</td><td class="v"><span id="s_visa">0.00</span> ج.م</td></tr>
                         <tr><td class="k">إنستا باي</td><td class="v"><span id="s_instapay">0.00</span> ج.م</td></tr>
                         <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span id="s_collected">0.00</span> ج.م</td></tr>
@@ -911,6 +1022,30 @@ require_once __DIR__ . '/includes/header.php';
     </div>
   </div>
 </div>
+
+<!-- قالب سطر المصروف الديناميكي -->
+<template id="expRowTpl">
+    <tr>
+        <td class="exp-row-num" style="color:var(--ink-500);font-size:13px;text-align:center;"></td>
+        <td style="padding:4px;">
+            <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
+        </td>
+        <td style="padding:4px;">
+            <input type="number" step="0.01" min="0" name="exp_amount[]" class="amt exp-amt"
+                   placeholder="0" oninput="calc()" style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;text-align:center;">
+        </td>
+        <td style="padding:4px;">
+            <input type="text" name="exp_note[]" class="exp-note" placeholder="ملاحظة (بنزين، مياه...)"
+                   style="width:100%;padding:8px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;">
+        </td>
+        <td style="padding:4px;text-align:center;">
+            <button type="button" onclick="removeExpRow(this)" title="حذف المصروف"
+                    style="background:none;border:none;cursor:pointer;color:var(--neg);font-size:16px;padding:4px 6px;border-radius:6px;line-height:1;">
+                <i class="ti ti-trash"></i>
+            </button>
+        </td>
+    </tr>
+</template>
 
 <!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
 <?php if (!empty($mySeqIssues)): ?>
@@ -951,7 +1086,10 @@ require_once __DIR__ . '/includes/header.php';
         <tbody>
         <?php foreach ($myRejected as $s): ?>
             <?php
-                $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total'];
+                $sid = (int)$s['id'];
+                $sExps = $shiftExpensesMap[$sid] ?? [];
+                $sExpTotal = array_sum(array_column($sExps, 'amount'));
+                $collected = (float)$s['cash_total'] + $sExpTotal + (float)$s['visa_total'] + (float)$s['instapay_total'];
                 $isExpired = !empty($s['is_return_expired'])
                     || !empty($s['return_expired_at'])
                     || (isset($s['hours_left']) && (int)$s['hours_left'] < 0);
@@ -995,15 +1133,18 @@ require_once __DIR__ . '/includes/header.php';
     <table>
         <thead><tr>
             <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
-            <th>كاش</th><th>فيزا</th><th>إنستا</th>
+            <th>كاش</th><th>فيزا</th><th>إنستا</th><th>مصروفات</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th><th>إجراءات</th>
         </tr></thead>
         <tbody>
         <?php
             foreach ($todayShifts as $s):
+                $sid=(int)$s['id'];
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; $diff=(float)$s['difference'];
+                $sExps = $shiftExpensesMap[$sid] ?? [];
+                $sExpTotal = array_sum(array_column($sExps, 'amount'));
+                $sys=(float)$s['system_total']; $collected=$cash+$sExpTotal+$visa+$insta; $diff=(float)$s['difference'];
                 $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
         ?>
             <tr>
@@ -1020,6 +1161,18 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
                 <td><?= number_format($insta,2) ?></td>
+                <td>
+                    <?php if ($sExpTotal > 0): ?>
+                        <span style="color:var(--neg);font-weight:600;"><?= number_format($sExpTotal,2) ?></span>
+                        <div style="font-size:11px;color:var(--ink-400);">
+                            <?php foreach ($sExps as $x): ?>
+                                <div><?= e($x['account_name'] ?: 'مصروف') ?>: <?= number_format((float)$x['amount'],2) ?><?= !empty($x['note']) ? ' (' . e($x['note']) . ')' : '' ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <span style="color:var(--ink-300);">—</span>
+                    <?php endif; ?>
+                </td>
                 <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
                 <td class="<?= $diff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($diff,2) ?></td>
                 <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
@@ -1053,6 +1206,7 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($sumCash,2) ?></td>
                 <td><?= number_format($sumVisa,2) ?></td>
                 <td><?= number_format($sumInsta,2) ?></td>
+                <td style="color:var(--neg);"><?= number_format($sumExp,2) ?></td>
                 <td><?= number_format($sumColl,2) ?></td>
                 <td class="<?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($sumDiff,2) ?></td>
                 <td colspan="3"></td>
@@ -1069,16 +1223,19 @@ require_once __DIR__ . '/includes/header.php';
     <table>
         <thead><tr>
             <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
-            <th>كاش</th><th>فيزا</th><th>إنستا</th>
+            <th>كاش</th><th>فيزا</th><th>إنستا</th><th>مصروفات</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th>
             <?php if (is_owner()): ?><th data-xt-skip>الإجراءات</th><?php endif; ?>
         </tr></thead>
         <tbody>
         <?php foreach ($archiveShifts as $s): ?>
             <?php
+                $sid=(int)$s['id'];
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta;
+                $sExps = $shiftExpensesMap[$sid] ?? [];
+                $sExpTotal = array_sum(array_column($sExps, 'amount'));
+                $sys=(float)$s['system_total']; $collected=$cash+$sExpTotal+$visa+$insta;
                 $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
             ?>
             <tr>
@@ -1095,6 +1252,18 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
                 <td><?= number_format($insta,2) ?></td>
+                <td>
+                    <?php if ($sExpTotal > 0): ?>
+                        <span style="color:var(--neg);font-weight:600;"><?= number_format($sExpTotal,2) ?></span>
+                        <div style="font-size:11px;color:var(--ink-400);">
+                            <?php foreach ($sExps as $x): ?>
+                                <div><?= e($x['account_name'] ?: 'مصروف') ?>: <?= number_format((float)$x['amount'],2) ?><?= !empty($x['note']) ? ' (' . e($x['note']) . ')' : '' ?></div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <span style="color:var(--ink-300);">—</span>
+                    <?php endif; ?>
+                </td>
                 <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
@@ -1126,6 +1295,8 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<?= acctree_data(true) ?>
+<script src="assets/acctree.js?v=2"></script>
 <script>
     const denoms = <?= json_encode($denominations) ?>;
     const methods = ['visa','instapay'];
@@ -1136,6 +1307,51 @@ require_once __DIR__ . '/includes/header.php';
         document.querySelectorAll('.ct-pane').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(btn.dataset.pane).classList.add('active');
+    }
+
+    function addExpRow(accountId, amount, note) {
+        const tpl = document.getElementById('expRowTpl');
+        if (!tpl) return;
+        const tbody = document.getElementById('expRowsTbody');
+        const clone = tpl.content.cloneNode(true);
+        const tr = clone.querySelector('tr');
+        const num = tbody.querySelectorAll('tr').length + 1;
+        const numCell = tr.querySelector('.exp-row-num');
+        if (numCell) numCell.textContent = num;
+
+        if (amount) {
+            tr.querySelector('.exp-amt').value = amount;
+        }
+        if (note) {
+            tr.querySelector('.exp-note').value = note;
+        }
+        tbody.appendChild(tr);
+
+        if (window.acctreeScan) {
+            window.acctreeScan();
+        }
+        if (accountId) {
+            const actRoot = tr.querySelector('[data-acctree]');
+            if (actRoot && window.acctreeSet) {
+                window.acctreeSet(actRoot, accountId);
+            }
+        }
+        calc();
+    }
+
+    function removeExpRow(btn) {
+        const tr = btn.closest('tr');
+        if (tr) {
+            const tbody = tr.closest('tbody');
+            tr.remove();
+            if (tbody) {
+                tbody.querySelectorAll('tr').forEach((row, idx) => {
+                    const cell = row.querySelector('.exp-row-num');
+                    if (cell) cell.textContent = idx + 1;
+                });
+            }
+            calc();
+        }
     }
 
     function calc() {
@@ -1155,18 +1371,25 @@ require_once __DIR__ . '/includes/header.php';
             document.querySelectorAll('.'+m+'-amt').forEach(a => t += parseFloat(a.value)||0);
             mt[m] = t;
         });
+
+        let expTotal = 0;
+        document.querySelectorAll('.exp-amt').forEach(a => {
+            expTotal += parseFloat(a.value) || 0;
+        });
+
         // إجمالي الكاش + تفصيله
         document.getElementById('t_cash').textContent = cash.toFixed(2);
         const cb = document.getElementById('cashBreak');
         if (cb) cb.innerHTML = breakParts.join('<br>');
 
-        const collected = cash + mt.visa + mt.instapay;
+        const collected = cash + expTotal + mt.visa + mt.instapay;
         const sys = parseFloat(document.getElementById('systemTotal').value) || 0;
         const diff = collected - sys;
 
         // ملخص التفاصيل
         setTxt('s_system', sys.toFixed(2));
         setTxt('s_cash', cash.toFixed(2));
+        setTxt('s_expenses', expTotal.toFixed(2));
         setTxt('s_visa', mt.visa.toFixed(2));
         setTxt('s_instapay', mt.instapay.toFixed(2));
         setTxt('s_collected', collected.toFixed(2));
@@ -1174,6 +1397,7 @@ require_once __DIR__ . '/includes/header.php';
         // الملخص الجانبي في تابات الدفع (نفس الأرقام)
         setTxtAll('side_system', sys.toFixed(2));
         setTxtAll('side_cash', cash.toFixed(2));
+        setTxtAll('side_expenses', expTotal.toFixed(2));
         setTxtAll('side_visa', mt.visa.toFixed(2));
         setTxtAll('side_instapay', mt.instapay.toFixed(2));
         setTxtAll('side_collected', collected.toFixed(2));
@@ -1276,6 +1500,21 @@ require_once __DIR__ . '/includes/header.php';
                     if(amt) amt.value = ln.amount;
                     if(ref) ref.value = ln.reference || '';
                 });
+
+                // ملء المصروفات
+                const tbody = document.getElementById('expRowsTbody');
+                if (tbody) {
+                    tbody.innerHTML = '';
+                    const exps = data.expenses || [];
+                    exps.forEach(ex => {
+                        addExpRow(ex.account_id, ex.amount, ex.note);
+                    });
+                    const currentCount = tbody.querySelectorAll('tr').length;
+                    for (let i = currentCount + 1; i <= 10; i++) {
+                        addExpRow();
+                    }
+                }
+
                 document.getElementById('cancelEdit').style.display = 'inline-flex';
                 calc();
                 openShiftModal();
@@ -1292,6 +1531,13 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('formAction').value = 'submit_shift';
         document.getElementById('shiftId').value = '';
         document.getElementById('cancelEdit').style.display = 'none';
+        const tbody = document.getElementById('expRowsTbody');
+        if (tbody) {
+            tbody.innerHTML = '';
+            for (let i = 1; i <= 10; i++) {
+                addExpRow();
+            }
+        }
         const cName = document.getElementById('cashierName');
         if (cName && cName.dataset.self) {
             cName.value = cName.dataset.self;

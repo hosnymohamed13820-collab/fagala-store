@@ -269,6 +269,7 @@ $allReviewShiftIds = [];
 foreach ($pending as $ps) $allReviewShiftIds[] = (int)$ps['id'];
 foreach ($history as $hs) $allReviewShiftIds[] = (int)$hs['id'];
 $allReviewShiftIds = array_values(array_unique(array_filter($allReviewShiftIds)));
+$shiftExpensesMap = shift_expenses_for_shifts($allReviewShiftIds, $pdo);
 
 $shiftEditBadges = [];
 if (!empty($allReviewShiftIds)) {
@@ -436,7 +437,8 @@ function shift_cashier_amounts(array $s): array {
     .sc-title { font-size:16px; color:var(--ink-900); }
     .sc-title b { color:var(--accent-text); }
     .sc-sub { color:var(--ink-500); font-size:13px; }
-    .sc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+    .sc-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+    .sc-stats.cst-stats { grid-template-columns:repeat(4,1fr); }
     .sc-stat { background:var(--line-soft); border-radius:10px; padding:12px; text-align:center; }
     .sc-stat .l { font-size:12px; color:var(--ink-500); margin-bottom:4px; }
     .sc-stat .v { font-size:16px; font-weight:700; color:var(--ink-900); }
@@ -527,7 +529,14 @@ function shift_cashier_amounts(array $s): array {
     <?php if (empty($pending)): ?>
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش ورديات في انتظار المراجعة.</div>
     <?php else: ?>
-        <?php foreach ($pending as $s): $amt = shift_cashier_amounts($s); $diff = ($amt['cash']+$amt['visa']+$amt['instapay']) - $amt['system']; ?>
+        <?php foreach ($pending as $s): 
+            $sid = (int)$s['id'];
+            $amt = shift_cashier_amounts($s); 
+            $sExps = $shiftExpensesMap[$sid] ?? [];
+            $expTotal = array_sum(array_column($sExps, 'amount'));
+            $collected = $amt['cash'] + $expTotal + $amt['visa'] + $amt['instapay'];
+            $diff = $collected - $amt['system'];
+        ?>
             <div class="shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
@@ -548,6 +557,8 @@ function shift_cashier_amounts(array $s): array {
                             "date"=>$s["business_date"],
                             "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
                             "system"=>$amt["system"],
+                            "expenses"=>$sExps,
+                            "expenses_total"=>$expTotal,
                             "empCash"  => $empCash[(int)$s["id"]]  ?? (object)[],
                             "empLines" => $empLines[(int)$s["id"]] ?? (object)[],
                         ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
@@ -555,7 +566,8 @@ function shift_cashier_amounts(array $s): array {
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">كاش الدرج</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">مصروفات الدرج</div><div class="v" style="<?= $expTotal > 0 ? 'color:var(--neg);' : '' ?>"><?= number_format($expTotal,2) ?></div></div>
                     <div class="sc-stat"><div class="l">فيزا + إنستا باي</div><div class="v"><?= number_format($amt['visa']+$amt['instapay'],2) ?></div></div>
                     <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= number_format($diff,2) ?></div></div>
                 </div>
@@ -587,7 +599,7 @@ function shift_cashier_amounts(array $s): array {
                     </div>
                 </div>
 
-                <div class="sc-stats">
+                <div class="sc-stats cst-stats">
                     <div class="sc-stat"><div class="l">أول المدة</div><div class="v"><?= number_format($cOpening,2) ?></div></div>
                     <div class="sc-stat"><div class="l">المصروفات</div><div class="v"><?= number_format($cExpenses,2) ?></div></div>
                     <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format($cExpected,2) ?></div></div>
@@ -650,7 +662,7 @@ function shift_cashier_amounts(array $s): array {
                         <?= $isDone?'معتمدة':'مرفوضة' ?>
                     </span>
                 </div>
-                <div class="sc-stats">
+                <div class="sc-stats cst-stats">
                     <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format((float)$c['closing_balance'],2) ?></div></div>
                     <div class="sc-stat"><div class="l">الكاشير عدّ</div><div class="v"><?= number_format((float)($c['counted_cash'] ?? 0),2) ?></div></div>
                     <div class="sc-stat">
@@ -675,7 +687,14 @@ function shift_cashier_amounts(array $s): array {
     <?php if (empty($history)): ?>
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش سجل بعد.</div>
     <?php else: ?>
-        <?php foreach ($history as $s): $amt = shift_cashier_amounts($s); $isDone = $s['status']==='approved'; ?>
+        <?php foreach ($history as $s): 
+            $sid = (int)$s['id'];
+            $amt = shift_cashier_amounts($s); 
+            $sExps = $shiftExpensesMap[$sid] ?? [];
+            $expTotal = array_sum(array_column($sExps, 'amount'));
+            $diff = ($amt['cash'] + $expTotal + $amt['visa'] + $amt['instapay']) - $amt['system'];
+            $isDone = $s['status']==='approved'; 
+        ?>
             <div class="shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
@@ -688,9 +707,10 @@ function shift_cashier_amounts(array $s): array {
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">كاش الدرج</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">مصروفات الدرج</div><div class="v" style="<?= $expTotal > 0 ? 'color:var(--neg);' : '' ?>"><?= number_format($expTotal,2) ?></div></div>
                     <div class="sc-stat"><div class="l">فيزا+إنستا</div><div class="v"><?= number_format($amt['visa']+$amt['instapay'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">الفرق</div><div class="v"><?= number_format(($amt['cash']+$amt['visa']+$amt['instapay'])-$amt['system'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= number_format($diff,2) ?></div></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -793,6 +813,7 @@ function shift_cashier_amounts(array $s): array {
                 <button type="button" class="rv-ptab active" onclick="rvPtab(this,'rp_cash')">كاش</button>
                 <button type="button" class="rv-ptab" onclick="rvPtab(this,'rp_visa')">فيزا</button>
                 <button type="button" class="rv-ptab" onclick="rvPtab(this,'rp_instapay')">إنستا باي</button>
+                <button type="button" class="rv-ptab" onclick="rvPtab(this,'rp_expenses')">مصروفات الدرج (<span id="rv_tab_exp_t">0.00</span>)</button>
                 <button type="button" class="rv-ptab" id="rv_cmp_tab" onclick="rvCompare(this)">قارن</button>
             </div>
 
@@ -841,6 +862,29 @@ function shift_cashier_amounts(array $s): array {
                 <div class="rv-total">إجمالي <?= $ml ?>: <span id="rv_<?= $mk ?>_t">0.00</span> ج.م</div>
             </div>
             <?php endforeach; ?>
+
+            <!-- مصروفات الدرج -->
+            <div class="rv-ppane" id="rp_expenses">
+                <div style="margin-bottom:10px;font-size:13px;color:var(--ink-700);">
+                    المصروفات النثرية المسجلة من قِبل الكاشير (صُرفت من الدرج):
+                </div>
+                <table class="pay-table" style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr>
+                            <th style="padding:6px 8px;text-align:right;font-size:12px;color:var(--ink-500);font-weight:600;">تصنيف المصروف</th>
+                            <th style="padding:6px 8px;text-align:center;font-size:12px;color:var(--ink-500);font-weight:600;width:100px;">المبلغ</th>
+                            <th style="padding:6px 8px;text-align:right;font-size:12px;color:var(--ink-500);font-weight:600;">ملاحظة / بيان</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rv_exp_body">
+                        <!-- Dynamic rows from openReview -->
+                    </tbody>
+                </table>
+                <div class="rv-total" style="color:var(--neg);">إجمالي المصروفات: <span id="rv_exp_t">0.00</span> ج.م</div>
+                <div style="margin-top:12px;background:var(--line-soft);padding:10px 14px;border-radius:9px;font-size:12px;color:var(--ink-600);line-height:1.7;">
+                    ℹ️ <b>آلية الترحيل المالي:</b> عند الاعتماد، يدخل إجمالي الكاش المبيوع (كاش الدرج + المصروفات) كاستلام مبيعات في الخزينة، ثم يُصرف كل بند مصروف كقيد صرف مستقل من نفس الخزينة النقدية بحسابه الخاص.
+                </div>
+            </div>
 
             <!-- مقارنة -->
             <div class="rv-ppane" id="rp_compare">
@@ -1085,15 +1129,43 @@ function shift_cashier_amounts(array $s): array {
         document.querySelectorAll('.rv-ppane').forEach(p=>p.classList.remove('active'));
         document.getElementById(pane).classList.add('active');
     }
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
     function openReview(data) {
         rvEmp = data;
         document.getElementById('rvForm').reset();
         document.getElementById('rv_shift_id').value = data.id;
         document.getElementById('rvTitle').textContent = 'مراجعة — ' + data.branch + ' — وردية' + (data.no ? ' #' + data.no : '');
 
+        // ملء بيانات مصروفات الدرج
+        var expBody = document.getElementById('rv_exp_body');
+        var expTotal = parseFloat(data.expenses_total) || 0;
+        var tabExpT = document.getElementById('rv_tab_exp_t');
+        if (tabExpT) tabExpT.textContent = expTotal.toFixed(2);
+        var expT = document.getElementById('rv_exp_t');
+        if (expT) expT.textContent = expTotal.toFixed(2);
+
+        if (expBody) {
+            expBody.innerHTML = '';
+            var exps = data.expenses || [];
+            if (exps.length === 0) {
+                expBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--ink-400);padding:16px;">لا توجد مصروفات مسجلة لهذه الوردية.</td></tr>';
+            } else {
+                exps.forEach(function(x) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML = '<td style="padding:7px 8px;font-weight:500;">' + (x.account_name ? escHtml(x.account_name) : '<span style="color:var(--ink-400);">— بدون تصنيف —</span>') + '</td>'
+                                 + '<td style="padding:7px 8px;text-align:center;font-weight:700;color:var(--neg);">' + (parseFloat(x.amount)||0).toFixed(2) + ' ج.م</td>'
+                                 + '<td style="padding:7px 8px;color:var(--ink-600);">' + (x.note ? escHtml(x.note) : '—') + '</td>';
+                    expBody.appendChild(tr);
+                });
+            }
+        }
+
         // تصفير الحالة — كل وردية بتبدأ مقفولة
         rvRevealed = false;
-        rvOpen = { 'كاش': false, 'فيزا': false, 'إنستا باي': false };
+        rvOpen = { 'كاش في الدرج': false, 'فيزا': false, 'إنستا باي': false };
         document.getElementById('cmp_locked').style.display  = '';
         document.getElementById('cmp_table').style.display   = 'none';
         document.getElementById('cmp_msg').style.display     = 'none';
@@ -1134,15 +1206,18 @@ function shift_cashier_amounts(array $s): array {
         document.getElementById('rv_acc_instapay').value = insta;
         // جدول المقارنة
         var sys = parseFloat(document.getElementById('rv_acc_system').value)||0;
+        var expTotal = parseFloat(rvEmp.expenses_total)||0;
         var rows = [
-            ['كاش', rvEmp.cash, cash],
+            ['كاش في الدرج', rvEmp.cash, cash],
+            ['مصروفات من الدرج', expTotal, expTotal],
+            ['إجمالي الكاش المبيوع', (rvEmp.cash||0) + expTotal, cash + expTotal],
             ['فيزا', rvEmp.visa, visa],
             ['إنستا باي', rvEmp.instapay, insta],
             ['السيستم', rvEmp.system, sys],
         ];
-        var empTotal = (rvEmp.cash||0)+(rvEmp.visa||0)+(rvEmp.instapay||0);
-        var accTotal = cash+visa+insta;
-        rows.push(['الإجمالي', empTotal, accTotal]);
+        var empTotal = (rvEmp.cash||0) + expTotal + (rvEmp.visa||0) + (rvEmp.instapay||0);
+        var accTotal = cash + expTotal + visa + insta;
+        rows.push(['الإجمالي المحصّل', empTotal, accTotal]);
 
         // ★ بند الفرق: (الإجمالي − السيستم) لكل طرف.
         //   ده الرقم اللي بيظهر في التقفيل، وكان ناقص من المقارنة —
@@ -1184,7 +1259,7 @@ function shift_cashier_amounts(array $s): array {
                       + '<td class="' + (ok ? 'cmp-ok' : 'cmp-bad') + '">' + (ok ? '✓ مطابق' : df.toFixed(2)) + '</td>'
                       + '</tr>';
                 if (isOpen) {
-                    if (r[0] === 'كاش') html += rvRenderCashDetail();
+                    if (r[0] === 'كاش في الدرج' || r[0] === 'كاش') html += rvRenderCashDetail();
                     else if (r[0] === 'فيزا') html += rvRenderLinesDetail('visa');
                     else if (r[0] === 'إنستا باي') html += rvRenderLinesDetail('instapay');
                 }

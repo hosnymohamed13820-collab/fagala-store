@@ -957,23 +957,20 @@ $today = date('Y-m-d');
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="disbursement">
             <?php
-            /* كل خزينة كيان مستقل — الصرف متاح من أي خزينة.
-               خزينة الكاش وحدها مستثناة: بتستقبل مبيعات الفروع وبتحوّل
-               للرئيسية وبس. متشالة من القايمة هنا، و`treasury_movement()`
-               في finance.php بترفضها كمان كطبقة تانية لو جه طلب متزوّر.
-               الافتراضي = الرئيسية، لأنها اللي بيطلع منها معظم الصرف. */
+            /* في فرع إشراقة: الصرف متاح من أي خزينة مركزية بما فيها خزينة الكاش. */
             $disbTreasuries = array_values(array_filter(
                 $centralForTransfer,
-                static fn(array $t): bool => $t['type'] !== 'cash' && (int)($t['show_in_receipts'] ?? 1) === 1
+                static fn(array $t): bool => (int)($t['show_in_receipts'] ?? 1) === 1
             ));
             $defaultDisb = null;
-            foreach ($disbTreasuries as $t) {
-                if ($t['type'] === 'main') { $defaultDisb = (int) $t['id']; break; }
-            }
-            // الخزينة اللي كشفها مفتوح تغلب الرئيسية — لو موجودة في القايمة
-            // (خزينة الكاش مش فيها، فبترجع للرئيسية)
+            // الخزينة اللي كشفها مفتوح تغلب لو متاحة في القائمة
             foreach ($disbTreasuries as $t) {
                 if ($selectedTreasuryId === (int) $t['id']) { $defaultDisb = $selectedTreasuryId; break; }
+            }
+            if ($defaultDisb === null) {
+                foreach ($disbTreasuries as $t) {
+                    if ($t['type'] === 'main' || $t['type'] === 'cash') { $defaultDisb = (int) $t['id']; break; }
+                }
             }
             ?>
             <div id="disbFormBody">

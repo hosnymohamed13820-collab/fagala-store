@@ -68,4 +68,5 @@ echo json_encode([
     'system_total'    => (float) $shift['system_total'],
     'cash'            => $cash,
     'lines'           => $lines,
+    'expenses'        => shift_expenses_list($id, $pdo),
 ], JSON_UNESCAPED_UNICODE);
