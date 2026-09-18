@@ -117,6 +117,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $code = trim((string)($_POST['code'] ?? ''));
         $res = receipt_resolve_scanned_code($pdo, $receiptId, $code);
+        if (!empty($res['ok'])) {
+            // لا نرسل كمية الموزع لشاشة المسح للحفاظ على مبدأ الاستلام الأعمى
+            unset($res['distributed_qty']);
+        }
         echo json_encode($res);
         exit;
     }
@@ -160,13 +164,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newQty = (float) $stScanned->fetchColumn();
 
         echo json_encode([
-            'ok'              => true,
-            'item_code'       => $targetCode,
-            'scanned_code'    => $code,
-            'item_name'       => $targetName,
-            'scanned_qty'     => $newQty,
-            'added_qty'       => $qty,
-            'distributed_qty' => $res['distributed_qty']
+            'ok'           => true,
+            'item_code'    => $targetCode,
+            'scanned_code' => $code,
+            'item_name'    => $targetName,
+            'scanned_qty'  => $newQty,
+            'added_qty'    => $qty,
+        ]);
+        exit;
+    }
+
+    // تعديل كمية مستلمة مباشرة لصنف (تصحيح خطأ أو إنقاص كمية زيادة)
+    if ($action === 'update_qty') {
+        if ($receipt['status'] === 'approved') {
+            echo json_encode(['ok' => false, 'error' => 'لا يمكن التعديل بعد اعتماد الاستلام النهائي.']);
+            exit;
+        }
+        if (!$canManageAll && $userBranchId !== null && (int)$receipt['branch_id'] !== $userBranchId) {
+            echo json_encode(['ok' => false, 'error' => 'غير مصرح لك بتعديل استلام فرع آخر.']);
+            exit;
+        }
+
+        $code = trim((string)($_POST['code'] ?? ''));
+        $qty  = (float)($_POST['qty'] ?? 0);
+        if ($qty < 0) $qty = 0;
+
+        if ($code === '') {
+            echo json_encode(['ok' => false, 'error' => 'كود الصنف مطلوب.']);
+            exit;
+        }
+
+        // جلب أصناف الفاتورة للفرع للتحقق وجلب الاسم الصحيح
+        $items = receipt_items_for_branch($pdo, $receiptId);
+        $foundItem = null;
+        foreach ($items as $it) {
+            if ((string)$it['item_code'] === $code) {
+                $foundItem = $it;
+                break;
+            }
+        }
+        if (!$foundItem) {
+            echo json_encode(['ok' => false, 'error' => 'الصنف غير موجود في فاتورة هذا الفرع.']);
+            exit;
+        }
+
+        $ins = $pdo->prepare(
+            'INSERT INTO receipt_lines (receipt_id, item_code, item_name, scanned_qty, updated_by)
+             VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+                 scanned_qty = VALUES(scanned_qty),
+                 updated_by  = VALUES(updated_by)'
+        );
+        $ins->execute([$receiptId, $code, $foundItem['item_name'], $qty, $uid]);
+
+        echo json_encode([
+            'ok'          => true,
+            'item_code'   => $code,
+            'scanned_qty' => $qty,
         ]);
         exit;
     }
@@ -850,7 +904,6 @@ require_once __DIR__ . '/includes/header.php';
                     <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">اسم الصنف</label>
                     <input type="text" id="codeName" readonly placeholder="هيظهر بعد الكود..."
                            style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;background:var(--surface);color:var(--text);cursor:default;">
-                    <div id="codeDistInfo" style="display:none;font-size:12px;color:var(--accent-text);margin-top:4px;font-weight:600;"></div>
                 </div>
 
                 <div style="width:100px;">
@@ -875,7 +928,7 @@ require_once __DIR__ . '/includes/header.php';
                         <tr>
                             <th>كود الصنف</th>
                             <th>اسم الصنف</th>
-                            <th style="width:110px;">الكمية المستلمة</th>
+                            <th style="width:130px;">الكمية المستلمة</th>
                         </tr>
                     </thead>
                     <tbody id="lastScannedTbody">
@@ -885,7 +938,20 @@ require_once __DIR__ . '/includes/header.php';
                             <tr>
                                 <td><code><?= e($sh['item_code']) ?></code></td>
                                 <td><?= e($sh['item_name']) ?></td>
-                                <td><b style="color:var(--pos);"><?= (float)$sh['scanned_qty'] ?></b></td>
+                                <td>
+                                    <div style="display:inline-flex;align-items:center;gap:6px;">
+                                        <input type="number" step="1" min="0"
+                                               class="rc-qty-edit-input"
+                                               data-code="<?= e($sh['item_code']) ?>"
+                                               value="<?= (float)$sh['scanned_qty'] ?>"
+                                               title="اضغط للتعديل، ويتم الحفظ تلقائياً"
+                                               onfocus="this.select()"
+                                               onchange="saveQtyEdit(this)"
+                                               onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                                               style="width:75px;padding:3px 6px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);">
+                                        <span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>
+                                    </div>
+                                </td>
                             </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
@@ -901,7 +967,7 @@ require_once __DIR__ . '/includes/header.php';
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                 <div>
                     <h3 style="margin:0;font-size:16px;">جدول مطابقة وفروقات الفرع</h3>
-                    <span style="font-size:12px;color:var(--ink-400);">الفروقات بين الكمية الموزعة والكمية المستلمة فعلياً بالكاميرا.</span>
+                    <span style="font-size:12px;color:var(--ink-400);">يمكنك تعديل الكمية المستلمة في الجدول مباشرة لتصحيح أي خطأ أو زيادة قبل الاعتماد.</span>
                 </div>
 
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -925,28 +991,51 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <table class="rc-table">
+            <table class="rc-table" id="diffsTable">
                 <thead>
                     <tr>
                         <th style="width:160px;">كود الصنف</th>
                         <th>اسم الصنف</th>
                         <th style="width:110px;">الموزّع</th>
-                        <th style="width:110px;">المستلم</th>
-                        <th style="width:110px;">الفرق</th>
+                        <th style="width:130px;">المستلم</th>
+                        <th style="width:130px;">الفرق</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($items as $it):
+                    <?php 
+                    $canEditQty = ($status !== 'approved');
+                    $totalDist = 0.0;
+                    $totalScan = 0.0;
+                    foreach ($items as $it):
                         $distQ = (float)$it['distributed_qty'];
                         $scanQ = (float)$it['scanned_qty'];
                         $diff  = $distQ - $scanQ;
+                        $totalDist += $distQ;
+                        $totalScan += $scanQ;
                     ?>
-                        <tr>
+                        <tr data-item-code="<?= e($it['item_code']) ?>" data-dist="<?= $distQ ?>">
                             <td><code><?= e($it['item_code']) ?></code></td>
                             <td><?= e($it['item_name']) ?></td>
-                            <td><?= $distQ ?></td>
-                            <td><b><?= $scanQ ?></b></td>
+                            <td><span class="dist-val"><?= $distQ ?></span></td>
                             <td>
+                                <?php if ($canEditQty): ?>
+                                    <div style="display:inline-flex;align-items:center;gap:6px;">
+                                        <input type="number" step="1" min="0" 
+                                               class="rc-qty-edit-input"
+                                               data-code="<?= e($it['item_code']) ?>"
+                                               value="<?= $scanQ ?>"
+                                               title="اضغط للتعديل، ويتم الحفظ تلقائياً"
+                                               onfocus="this.select()"
+                                               onchange="saveQtyEdit(this)"
+                                               onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                                               style="width:75px;padding:4px 8px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text);">
+                                        <span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>
+                                    </div>
+                                <?php else: ?>
+                                    <b><?= $scanQ ?></b>
+                                <?php endif; ?>
+                            </td>
+                            <td class="diff-val-cell">
                                 <?php if ($diff == 0): ?>
                                     <span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span>
                                 <?php elseif ($diff > 0): ?>
@@ -958,6 +1047,23 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
+                <tfoot>
+                    <tr style="background:var(--bg);font-weight:bold;border-top:2px solid var(--line);">
+                        <td colspan="2" style="text-align:right;">الإجمالي:</td>
+                        <td id="totalDistCell"><?= $totalDist ?></td>
+                        <td id="totalScanCell"><?= $totalScan ?></td>
+                        <td id="totalDiffCell">
+                            <?php $totDiff = $totalDist - $totalScan; ?>
+                            <?php if ($totDiff == 0): ?>
+                                <span style="color:var(--pos);">0 <i class="ti ti-check"></i></span>
+                            <?php elseif ($totDiff > 0): ?>
+                                <span style="color:var(--neg);">-<?= $totDiff ?> (عجز)</span>
+                            <?php else: ?>
+                                <span style="color:var(--accent-text);">+<?= abs($totDiff) ?> (زيادة)</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
     <?php endif; ?>
@@ -1011,10 +1117,8 @@ function liveLookup(code, callback) {
     clearTimeout(lookupTimer);
     code = (code || '').trim();
     var nameBox = document.getElementById('codeName');
-    var distBox = document.getElementById('codeDistInfo');
     if (!code) {
         if (nameBox) nameBox.value = '';
-        if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
         if (callback) callback(false);
         return;
     }
@@ -1032,15 +1136,10 @@ function liveLookup(code, callback) {
             .then(function(d) {
                 if (d.ok) {
                     if (nameBox) nameBox.value = d.item_name;
-                    if (distBox) {
-                        distBox.textContent = 'الموزّع للفرع: ' + d.distributed_qty + ' | المستلم حالياً: ' + d.scanned_qty;
-                        distBox.style.display = 'block';
-                    }
                     showAlert('', false);
                     if (callback) callback(true, d);
                 } else {
                     if (nameBox) nameBox.value = '';
-                    if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
                     showAlert(d.error || 'الصنف ده مش في الفاتورة', true);
                     if (callback) callback(false, d);
                 }
@@ -1091,7 +1190,6 @@ function handleManualScan(e) {
     var codeBox = document.getElementById('codeInput');
     var qtyBox  = document.getElementById('qtyInput');
     var nameBox = document.getElementById('codeName');
-    var distBox = document.getElementById('codeDistInfo');
     var addBtn  = document.getElementById('addBtn');
 
     var code = (codeBox ? codeBox.value : '').trim();
@@ -1117,10 +1215,9 @@ function handleManualScan(e) {
         .then(function(d) {
             if (addBtn) addBtn.disabled = false;
             if (d.ok) {
-                showAlert('تم استلام: ' + d.item_name + ' (الكمية المستلمة: ' + d.scanned_qty + ' من أصل ' + d.distributed_qty + ')', false);
+                showAlert('تم استلام: ' + d.item_name + ' (إجمالي المستلم: ' + d.scanned_qty + ')', false);
                 if (codeBox) { codeBox.value = ''; codeBox.focus(); }
                 if (nameBox) nameBox.value = '';
-                if (distBox) { distBox.textContent = ''; distBox.style.display = 'none'; }
                 if (qtyBox) qtyBox.value = '1';
                 updateLastScannedTable(d.item_code, d.item_name, d.scanned_qty);
             } else {
@@ -1153,15 +1250,108 @@ function updateLastScannedTable(code, name, scannedQty) {
     }
 
     if (existingRow) {
-        var qtyCell = existingRow.querySelector('b');
-        if (qtyCell) qtyCell.textContent = scannedQty;
+        var inp = existingRow.querySelector('input.rc-qty-edit-input');
+        if (inp) inp.value = scannedQty;
         tbody.prepend(existingRow);
     } else {
         var tr = document.createElement('tr');
         tr.innerHTML = '<td><code>' + escapeHtml(code) + '</code></td>' +
                        '<td>' + escapeHtml(name) + '</td>' +
-                       '<td><b style="color:var(--pos);">' + scannedQty + '</b></td>';
+                       '<td><div style="display:inline-flex;align-items:center;gap:6px;">' +
+                       '<input type="number" step="1" min="0" class="rc-qty-edit-input" data-code="' + escapeHtml(code) + '" value="' + scannedQty + '" ' +
+                       'title="اضغط للتعديل، ويتم الحفظ تلقائياً" onfocus="this.select()" onchange="saveQtyEdit(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}" ' +
+                       'style="width:75px;padding:3px 6px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);">' +
+                       '<span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>' +
+                       '</div></td>';
         tbody.prepend(tr);
+    }
+}
+
+// تعديل مباشر للكمية المستلمة (تصحيح خطأ أو إنقاص زيادة)
+function saveQtyEdit(input) {
+    var tr = input.closest('tr');
+    var code = input.dataset.code;
+    var distQ = parseFloat(tr ? tr.dataset.dist : 0) || 0;
+    var newQty = parseFloat(input.value);
+
+    if (isNaN(newQty) || newQty < 0) {
+        newQty = 0;
+        input.value = 0;
+    }
+
+    input.style.borderColor = 'var(--accent)';
+    var indicator = tr ? tr.querySelector('.save-indicator') : null;
+    if (indicator) indicator.style.display = 'none';
+
+    var fd = new FormData();
+    fd.append('action', 'update_qty');
+    fd.append('receipt_id', receiptId);
+    fd.append('code', code);
+    fd.append('qty', newQty);
+    fd.append('csrf', csrfToken);
+
+    fetch('receiving.php?r=' + receiptId, { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.ok) {
+                input.style.borderColor = 'var(--pos)';
+                setTimeout(function(){ input.style.borderColor = 'var(--line)'; }, 1500);
+                if (indicator) {
+                    indicator.style.display = 'inline';
+                    setTimeout(function(){ indicator.style.display = 'none'; }, 2500);
+                }
+
+                // تحديث عمود الفرق فوراً إن وجد في نفس الجدول
+                var diffCell = tr ? tr.querySelector('.diff-val-cell') : null;
+                if (diffCell) {
+                    var diff = distQ - newQty;
+                    if (diff === 0) {
+                        diffCell.innerHTML = '<span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span>';
+                    } else if (diff > 0) {
+                        diffCell.innerHTML = '<span style="color:var(--neg);font-weight:bold;">-' + diff + ' (عجز)</span>';
+                    } else {
+                        diffCell.innerHTML = '<span style="color:var(--accent-text);font-weight:bold;">+' + Math.abs(diff) + ' (زيادة)</span>';
+                    }
+                }
+
+                // تحديث الإجماليات في الفوتر إن وجد
+                recalcDiffTotals();
+            } else {
+                input.style.borderColor = 'var(--neg)';
+                alert(d.error || 'تعذر حفظ الكمية.');
+            }
+        })
+        .catch(function() {
+            input.style.borderColor = 'var(--neg)';
+            alert('تعذر الاتصال بالخادم لحفظ التعديل.');
+        });
+}
+
+function recalcDiffTotals() {
+    var table = document.getElementById('diffsTable');
+    if (!table) return;
+    var totDist = 0, totScan = 0;
+    table.querySelectorAll('tbody tr').forEach(function(row) {
+        var d = parseFloat(row.dataset.dist) || 0;
+        var inp = row.querySelector('.rc-qty-edit-input');
+        var s = inp ? (parseFloat(inp.value) || 0) : 0;
+        totDist += d;
+        totScan += s;
+    });
+    var dCell = document.getElementById('totalDistCell');
+    var sCell = document.getElementById('totalScanCell');
+    var diffCell = document.getElementById('totalDiffCell');
+    if (dCell) dCell.textContent = totDist;
+    if (sCell) sCell.textContent = totScan;
+    if (diffCell) {
+        var totDiff = totDist - totScan;
+        if (totDiff === 0) {
+            diffCell.innerHTML = '<span style="color:var(--pos);">0 <i class="ti ti-check"></i></span>';
+        } else if (totDiff > 0) {
+            diffCell.innerHTML = '<span style="color:var(--neg); font-weight:bold;">-' + totDiff + ' (عجز)</span>';
+        } else {
+            diffCell.innerHTML = '<span style="color:var(--accent-text); font-weight:bold;">+' + Math.abs(totDiff) + ' (زيادة)</span>';
+        }
     }
 }
 
