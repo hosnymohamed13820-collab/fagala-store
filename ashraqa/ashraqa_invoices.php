@@ -96,13 +96,11 @@ foreach ($rows as $r) {
     $ashraqaDocNos[$key] = $did;
     $ashraqaCodesByDoc[$key][$code] = true;
 
-    // توافق مع السجلات القديمة التي تحوي NULL
-    if ($cb === '*' && $dt === '*') {
-        $ashraqaDocNos[$no . '|*|*'] = $did;
-        $ashraqaCodesByDoc[$no . '|*|*'][$code] = true;
-        $ashraqaDocNos[$no] = $did;
-        $ashraqaCodesByDoc[$no][$code] = true;
-    }
+    // دائماً نسجّل برقم الفاتورة المجرد وبالمفتاح العام كاحتياطي وتوافق للبحث
+    $ashraqaDocNos[$no] = $did;
+    $ashraqaCodesByDoc[$no][$code] = true;
+    $ashraqaDocNos[$no . '|*|*'] = $did;
+    $ashraqaCodesByDoc[$no . '|*|*'][$code] = true;
 }
 
 /**
@@ -174,15 +172,17 @@ if ($ilkAjax !== '') {
             ], JSON_UNESCAPED_UNICODE);
 
         } elseif ($ilkAjax === 'history') {
-            $res = ilk_item_history((string) ($_GET['code'] ?? ''), (int) ($_GET['item_id'] ?? 0));
+            $searchCode = trim((string) ($_GET['code'] ?? ''));
+            $res = ilk_item_history($searchCode, (int) ($_GET['item_id'] ?? 0));
 
             // 🔴🔴 الفلترة دي **في السيرفر قبل json_encode** — مش إخفاء في
             //     الجافاسكربت. ilk_item_history بترجّع كل الفواتير ومعاها
             //     توزيع كل الفروع واسم المورد، وعاشور مالوش شوف ده.
             $rows = [];
             foreach ($res['rows'] ?? [] as $row) {
-                $docNo = (string) ($row['doc_no'] ?? $row['inv_no'] ?? '');
-                if (!isset($ashraqaDocNos[$docNo])) continue;   // فاتورة مالهاش إشراقة
+                $docNo  = (string) ($row['doc_no'] ?? $row['inv_no'] ?? '');
+                $distId = ash_dist_for($row, $ashraqaDocNos) ?? ($ashraqaDocNos[$docNo] ?? null);
+                if ($distId === null) continue;   // فاتورة مالهاش توزيع لإشراقة
                 if (!empty($row['is_return'])) continue;        // مردود — مايظهرش لعاشور
 
                 // ⚠️ `dist` قايمة [['branch_id','name','qty'], …] مش خريطة
@@ -193,6 +193,15 @@ if ($ilkAjax !== '') {
                         $ashQty = (float) ($b['qty'] ?? 0);
                         break;
                     }
+                }
+                // احتياطي: لو ilk_distribution_map ما جابتهاش، نقراها من مصفوفة التوزيع المباشرة
+                if ($ashQty <= 0 && $distId > 0) {
+                    $rowCode = (string) ($row['item_code'] ?? '');
+                    $ashQty = (float) (
+                        $ashraqaQtysByDist[$distId][$rowCode]
+                        ?? ($ashraqaQtysByDist[$distId][$searchCode]
+                        ?? ($ashraqaQtysByDist[$distId]['#' . (int)($row['item_id'] ?? 0)] ?? 0))
+                    );
                 }
                 if ($ashQty <= 0) continue;
 

@@ -115,7 +115,7 @@ function ilk_item_history(string $code, int $itemId = 0): array
     }
 
     $st = $pdo->prepare(
-        "SELECT l.sth_id, l.suffix, l.item_code, l.item_name,
+        "SELECT l.sth_id, l.suffix, l.item_id, l.item_code, l.item_name,
                 l.quantity, l.unit_price, l.cost_price,
                 h.doc_no, h.doc_type, h.supplier_name, h.invoice_date, h.company_branch
          FROM hq_invoice_lines l
@@ -140,6 +140,12 @@ function ilk_item_history(string $code, int $itemId = 0): array
     $codes = array_values(array_unique(array_map(
         fn($l) => (string) $l['item_code'], $lines
     )));
+    if ($code !== '') $codes[] = $code;
+    if ($itemId > 0) $codes[] = '#' . $itemId;
+    foreach ($lines as $l) {
+        if (!empty($l['item_id'])) $codes[] = '#' . (int) $l['item_id'];
+    }
+    $codes = array_values(array_unique(array_filter($codes)));
     $dist = ilk_distribution_map($docNos, $codes);
 
     // ---- أسماء الفروع ----
@@ -166,6 +172,17 @@ function ilk_item_history(string $code, int $itemId = 0): array
         $fallbackKey = $docNo . '|*|*|' . $iCode;
         $oldKey = $docNo . '|' . $iCode;
         $d      = $dist[$fullKey] ?? ($dist[$fallbackKey] ?? ($dist[$oldKey] ?? []));
+        if (empty($d) && !empty($l['item_id'])) {
+            $hCode = '#' . (int) $l['item_id'];
+            $d = $dist[$docNo . '|' . $cb . '|' . $dt . '|' . $hCode]
+              ?? ($dist[$docNo . '|*|*|' . $hCode]
+              ?? ($dist[$docNo . '|' . $hCode] ?? []));
+        }
+        if (empty($d) && $code !== '') {
+            $d = $dist[$docNo . '|' . $cb . '|' . $dt . '|' . $code]
+              ?? ($dist[$docNo . '|*|*|' . $code]
+              ?? ($dist[$docNo . '|' . $code] ?? []));
+        }
         $dTotal = 0.0;
         $perBranch = [];
         foreach ($d as $bid => $q) {
@@ -179,21 +196,24 @@ function ilk_item_history(string $code, int $itemId = 0): array
         usort($perBranch, fn($a, $b) => $b['qty'] <=> $a['qty']);
 
         $rows[] = [
-            'doc_no'     => $docNo,
-            'sth_id'     => (int) $l['sth_id'],
-            'suffix'     => (string) $l['suffix'],
-            'is_return'  => $isRet,
-            'type_label' => $isRet ? 'مردود شراء' : 'فاتورة شراء',
-            'date'       => (string) ($l['invoice_date'] ?? ''),
-            'supplier'   => (string) ($l['supplier_name'] ?? ''),
-            'item_code'  => $iCode,
-            'item_name'  => (string) ($l['item_name'] ?? ''),
-            'qty'        => $qty,
-            'unit_price' => (float) $l['unit_price'],
-            'cost_price' => (float) $l['cost_price'],
-            'dist'       => $perBranch,
-            'dist_total' => $dTotal,
-            'in_store'   => round($qty - $dTotal, 3),   // اللي فضل في المخزن
+            'doc_no'         => $docNo,
+            'sth_id'         => (int) $l['sth_id'],
+            'suffix'         => (string) $l['suffix'],
+            'company_branch' => ($l['company_branch'] !== null && $l['company_branch'] !== '') ? (int) $l['company_branch'] : null,
+            'doc_type'       => ($l['doc_type'] !== null && $l['doc_type'] !== '') ? (int) $l['doc_type'] : null,
+            'is_return'      => $isRet,
+            'type_label'     => $isRet ? 'مردود شراء' : 'فاتورة شراء',
+            'date'           => (string) ($l['invoice_date'] ?? ''),
+            'supplier'       => (string) ($l['supplier_name'] ?? ''),
+            'item_id'        => (int) ($l['item_id'] ?? 0),
+            'item_code'      => $iCode,
+            'item_name'      => (string) ($l['item_name'] ?? ''),
+            'qty'            => $qty,
+            'unit_price'     => (float) $l['unit_price'],
+            'cost_price'     => (float) $l['cost_price'],
+            'dist'           => $perBranch,
+            'dist_total'     => $dTotal,
+            'in_store'       => round($qty - $dTotal, 3),   // اللي فضل في المخزن
         ];
 
         $tot['invoices']++;
@@ -257,9 +277,14 @@ function ilk_distribution_map(array $docNos, array $codes): array
         $key = $doc . '|' . $cb . '|' . $dt . '|' . $code;
         $out[$key][(int) $r['branch_id']] = (float) $r['qty'];
 
-        if ($cb === '*' && $dt === '*') {
-            $oldKey = $doc . '|' . $code;
+        // دائماً نسجّل المفتاح القديم والمفتاح العام كاحتياطي للمطابقة
+        $oldKey = $doc . '|' . $code;
+        if (!isset($out[$oldKey][(int) $r['branch_id']])) {
             $out[$oldKey][(int) $r['branch_id']] = (float) $r['qty'];
+        }
+        $fallbackKey = $doc . '|*|*|' . $code;
+        if (!isset($out[$fallbackKey][(int) $r['branch_id']])) {
+            $out[$fallbackKey][(int) $r['branch_id']] = (float) $r['qty'];
         }
     }
     return $out;
