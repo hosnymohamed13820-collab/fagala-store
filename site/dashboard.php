@@ -255,16 +255,16 @@ require_once __DIR__ . '/includes/header.php';
 <div class="treasury-grid">
     <div class="tre-box main">
         <div class="tre-top"><i class="ti ti-building-bank"></i> الخزائن المركزية (بدون عهد الفروع)</div>
-        <div class="tre-val"><?= money_fmt($mainTotal) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= ltr_out(money_fmt($mainTotal)) ?> <span class="tre-cur">ج.م</span></div>
     </div>
     <div class="tre-box realcash" title="الخزينة الرئيسية + خزينة الكاش">
         <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
-        <div class="tre-val"><?= money_fmt($realCash) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= ltr_out(money_fmt($realCash)) ?> <span class="tre-cur">ج.م</span></div>
     </div>
     <?php foreach ($centralTreasuries as $t): ?>
         <div class="tre-box">
             <div class="tre-top"><i class="ti <?= e($typeIcons[$t['type']]??'ti-cash') ?>"></i> <?= e($t['name']) ?></div>
-            <div class="tre-val"><?= money_fmt((float)$t['balance']) ?> <span class="tre-cur">ج.م</span></div>
+            <div class="tre-val"><?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tre-cur">ج.م</span></div>
         </div>
     <?php endforeach; ?>
 </div>

@@ -175,6 +175,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
                     } else {
                         // وردية جديدة
+                        // 🔴 نفس الفرع + نفس اليوم + نفس رقم الوردية = تقفيل اتبعت قبل كده.
+                        //    حصل إن نفس الوردية اتبعتت ٣ مرات بنفس الثانية ودخلت الإجمالي
+                        //    ٣ مرات (21,003 بدل 7,001). الجدول مافيهوش مفتاح فريد، فالحماية هنا.
+                        if ($shiftName !== '' && $shiftName !== null) {
+                            $dup = $pdo->prepare(
+                                'SELECT id FROM shifts
+                                 WHERE branch_id = ? AND business_date = ? AND shift_name = ?
+                                 LIMIT 1'
+                            );
+                            $dup->execute([$branchId, $bizDate, $shiftName]);
+                            if ($dup->fetchColumn()) {
+                                throw new RuntimeException(
+                                    'الوردية رقم ' . $shiftName . ' في نفس الفرع واليوم اتقفلت خلاص. '
+                                    . 'لو عايز تعدّلها كلّم المحاسب يرجّعها لك.'
+                                );
+                            }
+                        }
+
                         $pdo->prepare(
                             'INSERT INTO shifts (user_id, branch_id, business_date, shift_name, cash_total, visa_total,
                                 wallet_total, instapay_total, system_total, difference, status)
