@@ -165,6 +165,21 @@ $filename = 'dist_' . $invHeader['inv_no'] . '_' . $safeBranch . '.txt';
 
 $skipReceiving = !empty($_GET['skip_receiving']);
 
+// 🔴 المجموعة بتاعت الفاتورة دي اتبعتت خلاص؟ يبقى الأصناف موجودة في كارت
+//    المجموعة والفرع شايفها — مانعملش كارت مفرد كمان، عشان مايستلمهاش مرتين.
+//    الملف نفسه بينزل عادي — ده تقرير، مش إرسال.
+$stGrpRcv = $pdo->prepare(
+    "SELECT 1
+     FROM invoice_group_items gi
+     JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+     JOIN receipts r ON r.group_id = gi.group_id
+     WHERE d.id = ? LIMIT 1"
+);
+$stGrpRcv->execute([$distId]);
+if ($stGrpRcv->fetchColumn()) {
+    $skipReceiving = true;
+}
+
 // تسجيل إن الفرع ده اتصدّر (بيحدّد حالة الفاتورة: تم التقسيم / تم التوزيع)
 try {
     mark_branch_exported($distId, $branchId, current_user()['id'] ?? null);

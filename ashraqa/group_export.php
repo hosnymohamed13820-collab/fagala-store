@@ -58,6 +58,12 @@ $distIds    = [];
 //    الفلتر ده الملف هيطلع بأصناف الفاتورة كلها بدل أصناف المجموعة.
 $grpIsItems = group_is_items($groupId);
 
+// 🔴 الفواتير اللي اتبعتت لوحدها خلاص: الفرع رفع ملفها على برنامجه، فلو
+//    نزلت تاني في الملف المجمّع الكميات هتتحسب **مرتين في المخزن**.
+//    نفس القاعدة بالظبط اللي بتشيلها من كارت المجموعة.
+require_once __DIR__ . '/receiving_flow_lib.php';
+$soloDistIds = receiving_solo_dist_ids(group_code_dist_ids($groupId, '__any__'));
+
 $q = $pdo->prepare(
     'SELECT notes AS item_code, SUM(amount) AS qty
      FROM invoice_distribution_lines
@@ -74,6 +80,11 @@ foreach ($invoices as $inv) {
 
     $dist   = ensure_distribution_record($header);
     $distId = (int) $dist['id'];
+
+    // اتبعتت لوحدها خلاص → مش بتنزل في الملف، **ومانسجّلش عليها تصدير تاني**
+    // (مابنحطهاش في $distIds فالحلقة اللي تحت بتعدّيها لوحدها).
+    if (isset($soloDistIds[$distId])) continue;
+
     $distIds[$sth] = $distId;
 
     // الأصناف المسموحة من الفاتورة دي (فاضي = كلها)
@@ -99,7 +110,9 @@ foreach ($invoices as $inv) {
 
 if (empty($qtyByCode)) {
     http_response_code(404);
-    die('لا توجد كميات موزّعة لهذا الفرع في المجموعة.');
+    die($soloDistIds
+        ? 'كل فواتير المجموعة اللي فيها كميات للفرع ده اتبعتت لوحدها خلاص — مفيش حاجة جديدة تنزل.'
+        : 'لا توجد كميات موزّعة لهذا الفرع في المجموعة.');
 }
 
 // ⚠️ (١) الأصناف اليتيمة: كود اتوزّع وبعدين اتشال من فاتورة الشركة.
@@ -143,7 +156,7 @@ foreach ($invoices as $inv) {
     if (!isset($distIds[$sth])) continue;
     try {
         mark_branch_exported($distIds[$sth], $branchId, current_user()['id'] ?? null);
-        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, !$skipReceiving);
+        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, false /* الملف المجمّع = كارت مجموعة واحد. السطر ١٥٦ هو اللي بيفتحها */);
     } catch (Throwable $ex) {
         error_log('group_export: تعذّر تسجيل التصدير للفاتورة ' . $sth . ' — ' . $ex->getMessage());
     }

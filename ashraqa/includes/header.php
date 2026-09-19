@@ -71,8 +71,8 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= e($storeName) ?></title>
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json?v=3">
-    <meta name="theme-color" content="#16233d">
+    <link rel="manifest" href="manifest.json?v=4">
+    <meta name="theme-color" content="#4d1620">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
         // لو نزل تحت الـCSS، كل صفحة هتومض أبيض ربع ثانية قبل ما تسود.
@@ -105,9 +105,9 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="الفجالة">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
-    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
+    <link rel="icon" href="favicon.ico?v=4" sizes="any">
     <script>
         // 🔴 الـ?v= مش زيادة — كاش الاستضافة (LiteSpeed) كان بيمسك `sw.js`
         // من غير كويري ويرجّع نسخة قديمة، فالمتصفح يفضل يسجّل service worker
@@ -128,6 +128,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/fagala.css?v=8">
+    <link rel="stylesheet" href="assets/ashraqa-theme.css?v=1">
 </head>
 <body>
 <?php /* 🔴 شريط الأرشيف — بيبان على النسخة المحلية **بس**.
@@ -146,7 +147,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <span class="dot"><img src="icon-192.png?v=3" alt=""></span>
+            <span class="dot"><img src="icon-192.png?v=4" alt=""></span>
             <span><?= e($storeName) ?></span>
         </div>
         <nav class="sidebar-nav">

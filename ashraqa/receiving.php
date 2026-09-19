@@ -393,12 +393,7 @@ require_once __DIR__ . '/includes/header.php';
 .pill-approved { background: var(--pos); color: #fff; }
 
 .receiving-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 16px;
     margin-bottom: 14px;
-    box-shadow: var(--shadow-sm);
 }
 .clickable-card {
     cursor: pointer;
@@ -449,10 +444,11 @@ require_once __DIR__ . '/includes/header.php';
     padding: 8px 12px;
     border-bottom: 1px solid var(--line-soft);
     text-align: right;
+    vertical-align: middle;
 }
 .rc-table th {
-    background: var(--bg);
-    color: var(--ink-600);
+    background: var(--line-soft);
+    color: var(--ink-700);
     font-weight: 600;
 }
 .scan-box-wrap {
@@ -461,6 +457,20 @@ require_once __DIR__ . '/includes/header.php';
     border-radius: var(--r);
     padding: 16px;
     margin-bottom: 16px;
+}
+/* ==================================================================
+   الموبايل: زرار الكاميرا كان بيطلع برّه مربع المسح.
+   السبب: الـinput جوه flex عنده min-width:auto — مابيصغّرش عن عرضه
+   الافتراضي، فالزرار بيتزقّ لبرّه الحدود بدل ما الخانة تصغّر.
+   الحل: (١) نسمح للخانات تصغّر، (٢) على الموبايل كل خانة تاخد سطر.
+   الـ!important ضروري لأن الأبعاد متكتوبة inline في الـHTML.
+   ================================================================== */
+#barcodeScanForm input { min-width: 0; }
+
+@media (max-width: 560px) {
+    #barcodeScanForm > div { flex: 1 1 100% !important; min-width: 0 !important; }
+    #barcodeScanForm #qtyInput { width: 100% !important; }
+    #barcodeScanForm #addBtn  { width: 100%; }
 }
 .scan-alert {
     padding: 10px 14px;
@@ -523,7 +533,7 @@ require_once __DIR__ . '/includes/header.php';
 
     if (empty($allReceipts)):
     ?>
-        <div class="receiving-card" style="text-align:center;padding:36px 20px;color:var(--ink-500);">
+        <div class="card receiving-card" style="text-align:center;padding:36px 20px;color:var(--ink-500);">
             <i class="ti ti-inbox" style="font-size:36px;display:block;margin-bottom:8px;"></i>
             لا توجد فواتير أو بضائع جاهزة للاستلام حالياً.
         </div>
@@ -543,6 +553,24 @@ require_once __DIR__ . '/includes/header.php';
         }
         $gIds = array_keys($gIds);
         $singleDistIds = array_keys($singleDistIds);
+
+        // اسم المجموعة للفواتير المفردة (لو كانت أصلاً من مجموعة) — للعرض بس
+        $soloGroupName = [];   // [dist_id => group_name]
+        if ($singleDistIds) {
+            $sPh = implode(',', array_fill(0, count($singleDistIds), '?'));
+            $stSG = $pdo->prepare(
+                "SELECT d.id AS dist_id, MAX(g.name) AS gname
+                 FROM invoice_distribution d
+                 JOIN invoice_group_items gi ON gi.invoice_no = d.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+                 JOIN invoice_groups g ON g.id = gi.group_id
+                 WHERE d.id IN ($sPh)
+                 GROUP BY d.id"
+            );
+            $stSG->execute($singleDistIds);
+            foreach ($stSG->fetchAll() as $sg) {
+                $soloGroupName[(int) $sg['dist_id']] = (string) $sg['gname'];
+            }
+        }
 
         // ربط المجموعات بسجلات التوزيع الخاصة بها باستعلام واحد مجمّع
         $groupDistsMap = []; // [group_id => [dist_id, ...]]
@@ -619,6 +647,7 @@ require_once __DIR__ . '/includes/header.php';
                     'group_id'        => $gid,
                     'distribution_id' => $did,
                     'title'           => $title,
+                    'group_note'      => ($gid === 0 && !empty($soloGroupName[$did])) ? $soloGroupName[$did] : '',
                     'created_at'      => $rc['created_at'],
                     'branches'        => [],
                 ];
@@ -648,12 +677,15 @@ require_once __DIR__ . '/includes/header.php';
                 }
             }
     ?>
-        <div class="receiving-card clickable-card" data-url="<?= e($cardTargetUrl) ?>">
+        <div class="card receiving-card clickable-card" data-url="<?= e($cardTargetUrl) ?>">
             <div class="rc-header">
                 <div>
                     <h3 style="margin:0 0 4px 0;font-size:16px;">
                         <?= e($hdr['title']) ?>
                     </h3>
+                    <?php if (!empty($hdr['group_note'])): ?>
+                        <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">من مجموعة: <?= e($hdr['group_note']) ?></div>
+                    <?php endif; ?>
                     <span style="font-size:12px;color:var(--ink-400);">تاريخ التجهيز: <?= date('Y-m-d H:i', strtotime($hdr['created_at'])) ?></span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;">
@@ -751,7 +783,7 @@ require_once __DIR__ . '/includes/header.php';
     $receipt = receipt_get($pdo, $receiptId);
     if (!$receipt):
 ?>
-        <div class="receiving-card" style="text-align:center;color:var(--neg);padding:24px;">
+        <div class="card receiving-card" style="text-align:center;color:var(--neg);padding:24px;">
             <i class="ti ti-alert-triangle"></i> سجل الاستلام المطلوب غير موجود.
             <div style="margin-top:12px;"><a href="receiving.php" class="btn btn-ghost btn-sm">← رجوع للقائمة</a></div>
         </div>
@@ -763,7 +795,7 @@ require_once __DIR__ . '/includes/header.php';
     // حماية الأمان (الحالة 205): موظف الفرع يفتح استلام فرع آخر ← رفض فوري وممنوع ظهور أي كميات
     if (!$canManageAll && $userBranchId !== null && (int)$receipt['branch_id'] !== $userBranchId):
 ?>
-        <div class="receiving-card" style="text-align:center;color:var(--neg);padding:36px 20px;">
+        <div class="card receiving-card" style="text-align:center;color:var(--neg);padding:36px 20px;">
             <i class="ti ti-ban" style="font-size:36px;display:block;margin-bottom:8px;"></i>
             <b style="font-size:16px;">غير مصرح لك بالوصول لاستلام فرع آخر.</b>
             <div style="margin-top:16px;"><a href="receiving.php" class="btn btn-ghost btn-sm">← الرجوع لاستلامات فرعك</a></div>
@@ -824,7 +856,7 @@ require_once __DIR__ . '/includes/header.php';
             $rejecterName = $stRej->fetchColumn() ?: 'الإدارة';
         }
     ?>
-        <div class="receiving-card" style="border: 2px solid var(--neg); background: var(--neg-soft); color: var(--neg); padding: 14px 18px; margin-bottom: 16px;">
+        <div class="card receiving-card" style="border: 2px solid var(--neg); background: var(--neg-soft); color: var(--neg); padding: 14px 18px; margin-bottom: 16px;">
             <div style="font-weight: bold; font-size: 15px; margin-bottom: 6px; display:flex; align-items:center; gap:8px;">
                 <i class="ti ti-alert-triangle" style="font-size:20px;"></i>
                 تم رفض الاستلام السابق بواسطة <?= e($rejecterName) ?> بتاريخ <?= date('Y-m-d H:i', strtotime($receipt['rejected_at'])) ?>
@@ -842,7 +874,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- ================================================================= -->
         <!--  المرحلة 1 (الحالة sent): جدول كود واسم الصنف وبس. بدون كميات ولا أسعار.  -->
         <!-- ================================================================= -->
-        <div class="receiving-card">
+        <div class="card receiving-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <div>
                     <b>قائمة الأصناف المتوقعة للفرع</b>
@@ -919,7 +951,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- آخر الأصناف الممسوحة -->
-        <div class="receiving-card">
+        <div class="card receiving-card">
             <h4 style="margin:0 0 10px 0;font-size:14px;">آخر الأصناف الممسوحة</h4>
             <div id="lastScannedListContainer">
                 <?php $scannedHistory = receipt_last_scanned($pdo, $receiptId, 20); ?>
@@ -963,7 +995,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- ================================================================= -->
         <!--  المرحلة 3 و 4: شاشة الفروقات الخاصة بالفرع بعد الانتهاء من المسح  -->
         <!-- ================================================================= -->
-        <div class="receiving-card">
+        <div class="card receiving-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                 <div>
                     <h3 style="margin:0;font-size:16px;">جدول مطابقة وفروقات الفرع</h3>
