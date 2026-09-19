@@ -14,6 +14,35 @@ require_once __DIR__ . '/push_lib.php';
 require_once __DIR__ . '/group_lib.php';
 
 /**
+ * الفواتير اللي ليها كارت استلام **مفرد** من وسط قايمة سجلات توزيع.
+ *
+ * 🔴 ده المصدر الوحيد لقاعدة الاستبعاد. بيتستعمل في مكانين لازم يتفقوا:
+ *    - receiving_ctx_dist_ids()  → أصناف كارت المجموعة وفروقاتها
+ *    - group_export.php          → محتوى الملف المجمّع
+ *    لو الاتنين اختلفوا، الفرع هيستلم حاجة والملف فيه حاجة تانية.
+ *
+ * @param  array $distIds سجلات التوزيع اللي عايزين نفحصها
+ * @return array [dist_id => true] — اللي ليه كارت مفرد
+ */
+function receiving_solo_dist_ids(array $distIds): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $distIds), fn($x) => $x > 0)));
+    if (!$ids) return [];
+
+    $in  = implode(',', $ids);
+    $out = [];
+    foreach (
+        db()->query(
+            "SELECT DISTINCT distribution_id FROM receipts
+             WHERE group_id = 0 AND distribution_id IN ($in)"
+        )->fetchAll(PDO::FETCH_COLUMN) as $d
+    ) {
+        $out[(int) $d] = true;
+    }
+    return $out;
+}
+
+/**
  * جلب معرفات سجلات التوزيع لسياق الفاتورة أو المجموعة.
  */
 function receiving_ctx_dist_ids(int $distId, int $groupId): array
@@ -25,15 +54,10 @@ function receiving_ctx_dist_ids(int $distId, int $groupId): array
 
         // 🔴 الفاتورة اللي اتبعتت لوحدها (ليها كارت مفرد) بتخرج من كارت
         //    المجموعة — عشان الفرع يستلم كل صنف **مرة واحدة** مش مرتين.
-        //    قرار محمد ١٩ سبتمبر ٢٠٢٦.
-        $in = implode(',', $ids);
-        $solo = db()->query(
-            "SELECT DISTINCT distribution_id FROM receipts
-             WHERE group_id = 0 AND distribution_id IN ($in)"
-        )->fetchAll(PDO::FETCH_COLUMN);
-
+        //    قرار محمد ١٩ سبتمبر ٢٠٢٦. نفس القاعدة في الملف المجمّع.
+        $solo = receiving_solo_dist_ids($ids);
         if ($solo) {
-            $ids = array_values(array_diff($ids, array_map('intval', $solo)));
+            $ids = array_values(array_filter($ids, fn($x) => empty($solo[$x])));
         }
         return $ids;
     }
