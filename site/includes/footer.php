@@ -20,7 +20,7 @@
         }
     });
 </script>
-<script src="assets/app.js?v=6"></script>
+<script src="assets/app.js?v=7"></script>
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
      لاستثناء جدول: <table data-xt-off> -->

@@ -280,3 +280,75 @@ window.isEnterKey = function (ev) {
     return k === 'Enter' || k === 'Go' || k === 'Search'
         || k === 'Done'  || k === 'Next';
 };
+
+/* ============================================================
+ * خانات الفلوس — فاصلة الآلاف وانت بتكتب
+ * ------------------------------------------------------------
+ *  الاستعمال: <input type="text" inputmode="decimal" data-money ...>
+ *  و`moneyVal(el)` بترجّع الرقم النضيف لأي حساب أو رسالة تأكيد.
+ *
+ *  🔴 ليه type="text" مش type="number"؟
+ *     خانة type="number" **مابتعرضش فاصلة** أصلاً — المتصفح بيعتبر
+ *     "10,000" قيمة غلط ويرجّع value فاضية. مفيش حل تاني.
+ *     inputmode="decimal" بيرجّع لوحة الأرقام على الموبايل زي ما كانت.
+ *
+ *  🔴 الكيرسر: من غير حساب مكانه، أول ما تتحط فاصلة الكيرسر بيطير
+ *     لآخر الخانة وتبقى مستحيل تتعدّل من النص. بنعدّ الأرقام اللي
+ *     قبل الكيرسر وبنرجّعه على نفس الرقم بعد التنسيق.
+ * ============================================================ */
+window.moneyVal = function (el) {
+    if (!el) return 0;
+    var n = parseFloat(String(el.value || '').replace(/,/g, '').trim());
+    return isFinite(n) ? n : 0;
+};
+
+window.moneyFormat = function (raw) {
+    var s = String(raw);
+    // أرقام عربية (٠١٢٣) → إنجليزية، عشان الخانة ماتاكلش اللي كتبه
+    s = s.replace(/[\u0660-\u0669]/g, function (d) { return String(d.charCodeAt(0) - 0x0660); });
+    s = s.replace(/[^\d.]/g, '');          // أرقام ونقطة بس
+    var i = s.indexOf('.');                 // نقطة عشرية واحدة لا أكتر
+    if (i !== -1) s = s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, '');
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.join('.');                 // الكسور من غير فواصل
+};
+
+window.initMoneyInputs = function (root) {
+    (root || document).querySelectorAll('input[data-money]').forEach(function (el) {
+        if (el.dataset.moneyReady) return;
+        el.dataset.moneyReady = '1';
+
+        el.addEventListener('input', function () {
+            var before  = el.value.slice(0, el.selectionStart || 0);
+            var keptBef = (before.match(/[\d.]/g) || []).length;
+            el.value = window.moneyFormat(el.value);
+            var pos = 0, seen = 0;
+            while (pos < el.value.length && seen < keptBef) {
+                if (/[\d.]/.test(el.value[pos])) seen++;
+                pos++;
+            }
+            try { el.setSelectionRange(pos, pos); } catch (e) {}
+        });
+
+        /* 🔴 شبكة أمان: أي إرسال بيشيل الفواصل قبل ما القيمة تروح للسيرفر.
+           PHP بتقرا (float)"10,000" = 10 — صرف عشرة آلاف يتسجّل عشرة.
+           والسيرفر بيشيلها كمان (money_post) — الاتنين مقصودين. */
+        var form = el.form;
+        if (form && !form.dataset.moneyHook) {
+            form.dataset.moneyHook = '1';
+            form.addEventListener('submit', function () {
+                var mons = form.querySelectorAll('input[data-money]');
+                mons.forEach(function (m) { m.value = String(m.value || '').replace(/,/g, ''); });
+                /* لو الإرسال اتلغى (تأكيد/تحقق) الفواصل ترجع للعرض.
+                   الفورم بيتسلّم للمتصفح قبل ما الـtimeout ده يشتغل،
+                   فاللي راح للسيرفر يفضل من غير فواصل. */
+                setTimeout(function () {
+                    mons.forEach(function (m) { m.value = window.moneyFormat(m.value); });
+                }, 0);
+            });
+        }
+    });
+};
+
+document.addEventListener('DOMContentLoaded', function () { window.initMoneyInputs(); });

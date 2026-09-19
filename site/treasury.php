@@ -157,7 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // موجودة في finance.php لو حد تاني بينديها.
             if ($action === 'receipt' || $action === 'disbursement') {
                 $tid    = (int) ($_POST['treasury_id'] ?? 0);
-                $amount = (float) ($_POST['amount'] ?? 0);
+                $amount = money_post('amount');
+                if ($amount <= 0) throw new RuntimeException('المبلغ لازم يكون أكبر من صفر.');
                 $date   = $_POST['date'] ?? date('Y-m-d');
                 $desc   = trim($_POST['description'] ?? '');
                 $opType = $_POST['op_type'] ?? 'normal';  // normal / advance / custody
@@ -252,7 +253,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             elseif ($action === 'transfer') {
                 $from   = (int) ($_POST['from_treasury_id'] ?? 0);
                 $to     = (int) ($_POST['to_treasury_id'] ?? 0);
-                $amount = (float) ($_POST['amount'] ?? 0);
+                $amount = money_post('amount');
+                if ($amount <= 0) throw new RuntimeException('المبلغ لازم يكون أكبر من صفر.');
                 $date   = $_POST['date'] ?? date('Y-m-d');
                 $notes  = trim($_POST['notes'] ?? '');
                 transfer_between_treasuries($from, $to, $amount, $date, $notes ?: null, $uid);
@@ -881,7 +883,8 @@ $today = date('Y-m-d');
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+                   autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
             <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الاستلام" aria-label="البيان"></div>
             <div class="form-row" id="receiptNotesRow">
@@ -1001,7 +1004,8 @@ $today = date('Y-m-d');
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+                <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+                       autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
                 <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
                 <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الصرف" aria-label="البيان"></div>
                 <div class="form-row" id="disburseNotesRow">
@@ -1101,7 +1105,8 @@ $today = date('Y-m-d');
             <input type="hidden" name="action" value="transfer">
             <div class="form-row"><label>من خزينة</label><select name="from_treasury_id" required><?= $transferOpts ?></select></div>
             <div class="form-row"><label>إلى خزينة</label><select name="to_treasury_id" required><?= $transferOpts ?></select></div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+                   autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
             <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
             <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" aria-label="ملاحظات"></div>
             <div class="modal-actions">
@@ -1202,6 +1207,8 @@ $today = date('Y-m-d');
         return '';
     }
     function handleReceiptSubmit(e){
+        const amt = moneyVal(document.getElementById('receiptForm').querySelector('input[name="amount"]'));
+        if (amt <= 0) { e.preventDefault(); alert('اكتب مبلغ أكبر من صفر.'); return false; }
         const missing = normalOpMissing(document.getElementById('receiptForm'), 'receiptType');
         if (missing) { e.preventDefault(); alert(missing); return false; }
         return true;
@@ -1216,7 +1223,8 @@ $today = date('Y-m-d');
             alert('مينفعش تحوّل لنفس الخزينة.');
             return false;
         }
-        const amtVal = parseFloat(form.querySelector('input[name="amount"]').value) || 0;
+        const amtVal = moneyVal(form.querySelector('input[name="amount"]'));
+        if (amtVal <= 0) { e.preventDefault(); alert('اكتب مبلغ أكبر من صفر.'); return false; }
         const amt = amtVal.toLocaleString('en-US', {
             minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
             maximumFractionDigits: 2
@@ -1239,7 +1247,8 @@ $today = date('Y-m-d');
                 return false;
             }
             const amtInput = form.querySelector('input[name="amount"]');
-            const amtVal = parseFloat(amtInput.value) || 0;
+            const amtVal = moneyVal(amtInput);
+            if (amtVal <= 0) { alert('اكتب مبلغ أكبر من صفر.'); return false; }
             const formattedAmt = amtVal.toLocaleString('en-US', {
                 minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
                 maximumFractionDigits: 2
