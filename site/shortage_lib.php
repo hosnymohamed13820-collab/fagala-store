@@ -14,10 +14,19 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/push_lib.php';
 
-/** مسؤول متابعة النواقص من الإعدادات (0 = مش متحدد) */
-function shortage_supervisor_id(): int
-{
-    return (int) setting('shortage_supervisor_id', 0);
+/** مسؤول متابعة النواقص من الإعدادات (0 = مش متحدد)
+ *
+ * 🔴 الحارس مش زيادة: `config.php` **مش في الريبو** وبيعرّف دوال.
+ *    نسخة إشراقة من config.php فيها نفس الدالة دي بالحرف، فالملف ده
+ *    كان بيوقّع `nag_check.php` بـ«Cannot redeclare» — ٦٧ مرة من
+ *    ١٧ لـ٢٠ سبتمبر ٢٠٢٦ والإشعارات واقفة عندهم طول المدة دي.
+ *    أي دالة جديدة هنا لازم يبقى معاها نفس الحارس.
+ */
+if (!function_exists('shortage_supervisor_id')) {
+    function shortage_supervisor_id(): int
+    {
+        return (int) setting('shortage_supervisor_id', 0);
+    }
 }
 
 /** مسؤول المشتريات من الإعدادات (0 = مش متحدد) */
