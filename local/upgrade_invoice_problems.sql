@@ -11,9 +11,15 @@ CREATE TABLE IF NOT EXISTS `u834909335_fagala`.`invoice_problems` (
   `short_qty`       DECIMAL(14,3) NOT NULL DEFAULT 0.000 COMMENT 'ناقص',
   `over_qty`        DECIMAL(14,3) NOT NULL DEFAULT 0.000 COMMENT 'زيادة',
   `note`            TEXT DEFAULT NULL,
+  `dismissed_at`    TIMESTAMP NULL DEFAULT NULL COMMENT 'اتشال بإيد المستخدم — المزامنة التلقائية ماترجعوش',
   `created_by`      INT UNSIGNED DEFAULT NULL,
   `created_at`      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_problem` (`distribution_id`, `item_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- إضافة عمود الاستبعاد إذا كان الجدول موجوداً مسبقاً
+ALTER TABLE `u834909335_fagala`.`invoice_problems`
+  ADD COLUMN IF NOT EXISTS `dismissed_at` TIMESTAMP NULL DEFAULT NULL
+  COMMENT 'اتشال بإيد المستخدم — المزامنة التلقائية ماترجعوش';

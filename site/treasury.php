@@ -848,8 +848,8 @@ function treasury_options(array $treasuries, ?int $selectedId = null): string {
     return $html;
 }
 $opts = treasury_options($treasuries);
-// قائمة التحويل: الخزائن المركزية فقط (بدون عهد الفروع — العهد بتتم بإذن صرف/استلام)
-$centralForTransfer = array_filter($treasuries, fn($t) => $t['type'] !== 'branch_custody');
+// قائمة التحويل: الخزائن المركزية فقط (بدون عهد الفروع والموظفين — العهد بتتم بإذن صرف/استلام)
+$centralForTransfer = array_filter($treasuries, fn($t) => !in_array($t['type'], ['branch_custody', 'employee_custody'], true));
 $transferOpts = treasury_options($centralForTransfer);
 // قوائم الاستلام والصرف: الخزائن المركزية المفعّل ظهورها في الإيصالات فقط
 $receiptTreasuries = array_values(array_filter(

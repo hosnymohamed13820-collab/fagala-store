@@ -1568,7 +1568,7 @@ function save_custody_review(
                 $ecId    = $cl['entry_code_id'] !== null ? (int) $cl['entry_code_id'] : null;
 
                 post_journal($cashId, $expAmt, 0, 'مصروف عهدة موظف (' . $empName . '): ' . $expDesc,
-                             $expDate, 'custody_expense', (int)$cl['id'], $userId, $pdo, $ecId);
+                             $expDate, 'custody_expense_main', (int)$cl['id'], $userId, $pdo, $ecId);
                 post_journal($custodyTreasuryId, 0, $expAmt, 'تسوية مصروف عهدة موظف: ' . $expDesc,
                              $expDate, 'custody_expense_settle', (int)$cl['id'], $userId, $pdo, $ecId);
             }

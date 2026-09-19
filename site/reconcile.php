@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $treasuries = $pdo->query(
     "SELECT t.*, b.name AS branch_name FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
-     WHERE t.is_active = 1 AND t.type <> 'branch_custody'
+     WHERE t.is_active = 1 AND t.type NOT IN ('branch_custody', 'employee_custody')
      ORDER BY FIELD(t.type,'cash','main','visa','instapay','card'), t.name"
 )->fetchAll();
 
@@ -57,7 +57,7 @@ $recons = $pdo->query(
      ORDER BY r.id DESC LIMIT 50"
 )->fetchAll();
 
-$typeLabel = ['cash'=>'كاش','visa'=>'فيزا','instapay'=>'إنستا باي','card'=>'كارت','main'=>'رئيسية','branch_custody'=>'عهدة فرع'];
+$typeLabel = ['cash'=>'كاش','visa'=>'فيزا','instapay'=>'إنستا باي','card'=>'كارت','main'=>'رئيسية','branch_custody'=>'عهدة فرع','employee_custody'=>'عهدة موظف'];
 
 $page_title    = 'التسويات';
 $active_module = 'reconcile';

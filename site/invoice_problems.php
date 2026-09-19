@@ -59,17 +59,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cur = $stCur->fetch();
 
             if ($cur) {
-                // تحديث السجل القائم
+                // تحديث السجل القائم وإلغاء حالة الحذف لو كانت موجودة
                 if ($field === 'short_qty') {
                     $num = max(0, (float) $val);
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET short_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name) WHERE id = ?');
+                    $upd = $pdo->prepare('UPDATE invoice_problems SET short_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name), dismissed_at = NULL WHERE id = ?');
                     $upd->execute([$num, $name, $cur['id']]);
                 } elseif ($field === 'over_qty') {
                     $num = max(0, (float) $val);
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET over_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name) WHERE id = ?');
+                    $upd = $pdo->prepare('UPDATE invoice_problems SET over_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name), dismissed_at = NULL WHERE id = ?');
                     $upd->execute([$num, $name, $cur['id']]);
                 } else { // note
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET note = ?, item_name = COALESCE(NULLIF(?, ""), item_name), created_by = COALESCE(created_by, ?) WHERE id = ?');
+                    $upd = $pdo->prepare('UPDATE invoice_problems SET note = ?, item_name = COALESCE(NULLIF(?, ""), item_name), created_by = COALESCE(created_by, ?), dismissed_at = NULL WHERE id = ?');
                     $upd->execute([$val !== '' ? $val : null, $name, $uid, $cur['id']]);
                 }
                 echo json_encode(['ok' => true, 'source' => $cur['source']], JSON_UNESCAPED_UNICODE);
@@ -93,8 +93,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $did  = (int) ($_POST['distribution_id'] ?? 0);
             $code = trim((string) ($_POST['item_code'] ?? ''));
             if ($did > 0 && $code !== '') {
-                $del = $pdo->prepare('DELETE FROM invoice_problems WHERE distribution_id = ? AND item_code = ?');
-                $del->execute([$did, $code]);
+                $st = $pdo->prepare('SELECT source FROM invoice_problems WHERE distribution_id = ? AND item_code = ? LIMIT 1');
+                $st->execute([$did, $code]);
+                $src = $st->fetchColumn();
+                if ($src === 'auto') {
+                    $del = $pdo->prepare('UPDATE invoice_problems SET dismissed_at = NOW() WHERE distribution_id = ? AND item_code = ?');
+                    $del->execute([$did, $code]);
+                } else {
+                    $del = $pdo->prepare('DELETE FROM invoice_problems WHERE distribution_id = ? AND item_code = ?');
+                    $del->execute([$did, $code]);
+                }
             }
             echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             exit;
@@ -103,8 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'delete_invoice_problems') {
             $did = (int) ($_POST['distribution_id'] ?? 0);
             if ($did > 0) {
-                $del = $pdo->prepare('DELETE FROM invoice_problems WHERE distribution_id = ?');
-                $del->execute([$did]);
+                $pdo->prepare("UPDATE invoice_problems SET dismissed_at = NOW() WHERE distribution_id = ? AND source = 'auto'")->execute([$did]);
+                $pdo->prepare("DELETE FROM invoice_problems WHERE distribution_id = ? AND source = 'manual'")->execute([$did]);
             }
             echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             exit;
@@ -201,7 +209,7 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
 
     // جلب المشاكل الحالية المسجلة لهذه الفاتورة
     $stExist = $pdo->prepare(
-        "SELECT item_code, source, short_qty, over_qty, note
+        "SELECT item_code, source, short_qty, over_qty, note, dismissed_at
          FROM invoice_problems
          WHERE distribution_id = ?"
     );
@@ -236,6 +244,10 @@ function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
         $itemName = $mergedItems[$code]['item_name'] ?? '';
 
         if (isset($existing[$code])) {
+            // لو الصنف شاله المستخدم يدوياً نتخطاه ولا نرجعه
+            if ($existing[$code]['dismissed_at'] !== null) {
+                continue;
+            }
             // لو الصنف موجود يدوي: نحدّث الكميات فقط ونسيب source و note زي ما هما
             if ($existing[$code]['source'] === 'manual') {
                 $updManual->execute([$shortQty, $itemName, $distId, $code]);
@@ -304,6 +316,14 @@ function sync_all_invoice_problems_auto(PDO $pdo): void
         }
     }
 
+    $stDismissed = $pdo->query("SELECT distribution_id, item_code FROM invoice_problems WHERE dismissed_at IS NOT NULL");
+    $dismissedKeys = [];
+    if ($stDismissed) {
+        foreach ($stDismissed->fetchAll() as $d) {
+            $dismissedKeys[$d['distribution_id'] . ':' . $d['item_code']] = true;
+        }
+    }
+
     $insAuto = $pdo->prepare(
         "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, short_qty, over_qty)
          VALUES (?, ?, ?, 'auto', ?, 0)
@@ -324,6 +344,11 @@ function sync_all_invoice_problems_auto(PDO $pdo): void
         $name = (string) $r['item_name'];
         $sq   = (float) $r['return_qty'];
         $k    = $did . ':' . $code;
+
+        // لو الصنف اتشال بإيد المستخدم نتخطاه تماماً ولا نرجعه ولا نحدثه
+        if (isset($dismissedKeys[$k])) {
+            continue;
+        }
 
         // مثال محمد بالحرف: قلم روتو في الفاتورة ١٢، اللي جه ١٠، المردود ٢
         // العمود short_qty = الناقص (١٢ - ١٠ = ٢)، مش ١٠ ومش ١٢
@@ -394,12 +419,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 
 .prob-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 18px;
     margin-bottom: 16px;
-    box-shadow: var(--shadow-sm);
 }
 .modal-bg {
     display: none;
@@ -419,7 +439,7 @@ require_once __DIR__ . '/includes/header.php';
     border-radius: var(--r);
     width: 100%;
     padding: 20px;
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow);
     border: 1px solid var(--line);
     color: var(--text);
 }
@@ -440,14 +460,14 @@ require_once __DIR__ . '/includes/header.php';
     font-size: 13px;
 }
 .prob-table th, .prob-table td {
-    padding: 8px 10px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--line-soft);
     text-align: right;
     vertical-align: middle;
 }
 .prob-table th {
     background: var(--line-soft);
-    color: var(--accent-text);
+    color: var(--ink-700);
     font-weight: 600;
 }
 .prob-table tbody tr.inv-row {
@@ -579,6 +599,7 @@ require_once __DIR__ . '/includes/header.php';
          WHERE (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
            AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
            AND (d.doc_type IS NULL OR d.doc_type <> 6)
+           AND p.dismissed_at IS NULL
            AND (p.short_qty > 0 OR p.over_qty > 0 OR (p.note IS NOT NULL AND p.note <> ''))
          GROUP BY d.id, d.invoice_no, d.dist_date, supplier_name, u.full_name
          ORDER BY d.id DESC"
@@ -587,7 +608,7 @@ require_once __DIR__ . '/includes/header.php';
     ?>
 
     <!-- شريط اختيار فاتورة لفتحها وإضافة مشاكل لها -->
-    <div class="prob-card" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div class="card prob-card" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
         <div>
             <div style="font-size:14px;font-weight:700;color:var(--ink-900);margin-bottom:3px;display:flex;align-items:center;gap:6px;">
                 <i class="ti ti-file-invoice" style="color:var(--accent);"></i> فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل
@@ -662,12 +683,12 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if (empty($problemInvoices)): ?>
-        <div class="prob-card" style="text-align:center;padding:40px 20px;color:var(--ink-400);">
+        <div class="card prob-card" style="text-align:center;padding:40px 20px;color:var(--ink-400);">
             <i class="ti ti-circle-check" style="font-size:38px;color:var(--pos);display:block;margin-bottom:8px;"></i>
             لا توجد مشاكل أو فروقات مسجلة في فواتير الإدارة حالياً.
         </div>
     <?php else: ?>
-        <div class="prob-card">
+        <div class="card prob-card">
             <h3 style="margin:0 0 12px 0;font-size:15px;">قائمة فواتير الإدارة التي بها مشاكل (<?= count($problemInvoices) ?> فاتورة)</h3>
             <table class="prob-table">
                 <thead>
@@ -806,7 +827,7 @@ require_once __DIR__ . '/includes/header.php';
 
     if (!$distHeader):
     ?>
-        <div class="prob-card" style="text-align:center;color:var(--neg);padding:30px;">
+        <div class="card prob-card" style="text-align:center;color:var(--neg);padding:30px;">
             <i class="ti ti-alert-triangle"></i> الفاتورة المطلوبة غير موجودة أو ليست من فواتير مشتريات الإدارة.
             <div style="margin-top:12px;"><a href="invoice_problems.php" class="btn btn-ghost btn-sm">← الرجوع للقائمة</a></div>
         </div>
@@ -846,7 +867,7 @@ require_once __DIR__ . '/includes/header.php';
             "SELECT p.*, u.full_name AS recorder_name
              FROM invoice_problems p
              LEFT JOIN users u ON u.id = p.created_by
-             WHERE p.distribution_id = ?"
+             WHERE p.distribution_id = ? AND p.dismissed_at IS NULL"
         );
         $stProblems->execute([$selectedDistId]);
         $problemsMap = [];
@@ -895,7 +916,7 @@ require_once __DIR__ . '/includes/header.php';
 
         $problemsOnlyCount = count(array_filter($itemsList, fn($it) => $it['has_problem']));
     ?>
-        <div class="prob-card">
+        <div class="card prob-card">
             <div class="prob-header">
                 <div>
                     <h2 style="margin:0 0 6px 0;font-size:18px;">

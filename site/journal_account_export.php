@@ -107,6 +107,7 @@ $kinds = [
     'custody_surplus'      => 'فائض عهدة',
     'custody_deficit'      => 'عجز عهدة',
     'custody_expense'      => 'مصروف عهدة',
+    'custody_expense_main' => 'تسوية مصروف عهدة موظف',
     'disbursement_order'   => 'إذن صرف',
 ];
 

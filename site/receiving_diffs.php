@@ -73,26 +73,22 @@ require_once __DIR__ . '/includes/header.php';
     font-size: 12px;
 }
 .diff-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 16px;
     margin-bottom: 16px;
-    box-shadow: var(--shadow-sm);
 }
 .diff-table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 12px;
+    margin-top: 10px;
     font-size: 13px;
 }
 .diff-table th, .diff-table td {
-    padding: 8px 10px;
-    border: 1px solid var(--line);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line-soft);
     text-align: center;
+    vertical-align: middle;
 }
 .diff-table th {
-    background: var(--bg);
+    background: var(--line-soft);
     color: var(--ink-700);
     font-weight: 600;
 }
@@ -127,7 +123,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if ($groupId <= 0 && $distId <= 0): ?>
         <!-- قايمة لاختيار الفاتورة أو المجموعة -->
-        <div class="diff-card">
+        <div class="card diff-card">
             <h3 style="font-size:15px;margin-top:0;">اختر فاتورة أو مجموعة لعرض فروقاتها:</h3>
             <?php
             $stAvailable = $pdo->query(
@@ -278,7 +274,7 @@ require_once __DIR__ . '/includes/header.php';
         uasort($itemsMap, fn($a, $b) => strcmp($a['item_name'], $b['item_name']));
     ?>
 
-        <div class="diff-card">
+        <div class="card diff-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <h3 style="margin:0;font-size:16px;">
                     <?= e($title) ?>
@@ -289,8 +285,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($itemsMap)): ?>
                 <p style="color:var(--ink-400);text-align:center;padding:24px 0;">لا توجد أصناف موزعة في هذا السياق.</p>
             <?php else: ?>
-                <div style="overflow-x:auto;">
-                    <table class="diff-table">
+                <table class="diff-table">
                         <thead>
                             <tr>
                                 <th class="th-item" style="width:140px;">كود الصنف</th>
@@ -382,7 +377,6 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
-                </div>
             <?php endif; ?>
         </div>
 

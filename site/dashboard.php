@@ -28,10 +28,10 @@ $treasuries = $pdo->query(
     "SELECT t.*, b.name AS branch_name
      FROM treasuries t LEFT JOIN branches b ON b.id = t.branch_id
      WHERE t.is_active = 1
-     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody'), t.name"
+     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody','employee_custody'), t.name"
 )->fetchAll();
 
-$centralTreasuries = array_filter($treasuries, fn($t) => $t['type'] !== 'branch_custody');
+$centralTreasuries = array_filter($treasuries, fn($t) => !in_array($t['type'], ['branch_custody', 'employee_custody'], true));
 // الخزينة الرئيسية = إجمالي الخزائن الفرعية (نظرة كلية، مش خزينة فعلية)
 $mainTotal = 0.0;
 // «خزينة الكاش الفعلي» = الخزينة الرئيسية + خزينة الكاش، وبس.

@@ -330,8 +330,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id > 0) {
                 $chk = $pdo->prepare("SELECT type FROM treasuries WHERE id=?");
                 $chk->execute([$id]);
-                if ($chk->fetchColumn() === 'branch_custody') {
-                    $flash = 'خزائن عهد الفروع تُدار مع الفرع نفسه.'; $flashType = 'error';
+                if (in_array($chk->fetchColumn(), ['branch_custody', 'employee_custody'], true)) {
+                    $flash = 'خزائن العهد تُدار مع الفرع أو الموظف نفسه.'; $flashType = 'error';
                 } else {
                     $pdo->prepare('UPDATE treasuries SET is_active = 1 - is_active WHERE id = ?')->execute([$id]);
                     $flash = 'تم تحديث حالة الخزينة.';
@@ -344,8 +344,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id > 0) {
                 $chk = $pdo->prepare("SELECT type FROM treasuries WHERE id=?");
                 $chk->execute([$id]);
-                if ($chk->fetchColumn() === 'branch_custody') {
-                    $flash = 'خزائن عهد الفروع تُدار مع الفرع نفسه.'; $flashType = 'error';
+                if (in_array($chk->fetchColumn(), ['branch_custody', 'employee_custody'], true)) {
+                    $flash = 'خزائن العهد تُدار مع الفرع أو الموظف نفسه.'; $flashType = 'error';
                 } else {
                     $pdo->prepare('UPDATE treasuries SET show_in_receipts = 1 - COALESCE(show_in_receipts, 1) WHERE id = ?')->execute([$id]);
                     $flash = 'تم تحديث ظهور الخزينة في الإيصالات.';
@@ -409,7 +409,7 @@ $accWalk(0, 0);
 $treasuries = $pdo->query(
     "SELECT t.*, b.name AS branch_name FROM treasuries t
      LEFT JOIN branches b ON b.id = t.branch_id
-     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody'), t.name"
+     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody','employee_custody'), t.name"
 )->fetchAll();
 $activeBranches = array_filter($branches, fn($b) => $b['is_active']);
 // المستخدمون المتاحون للربط بموظف (لتسجيل الحضور)
@@ -734,7 +734,7 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
             <?php foreach ($treasuries as $t): ?>
                 <?php
-                $isCustody = $t['type'] === 'branch_custody';
+                $isCustody = in_array($t['type'], ['branch_custody', 'employee_custody'], true);
                 $tid       = (int) $t['id'];
                 $roles     = [];
                 if ($closingTreasuryId !== null && $tid === $closingTreasuryId) $roles[] = 'تقفيل الكاشير';
@@ -754,7 +754,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td>
                         <?php
                         $typeLabels = ['cash'=>'كاش','visa'=>'فيزا','instapay'=>'إنستا باي',
-                            'card'=>'كارت','branch_custody'=>'عهدة فرع',
+                            'card'=>'كارت','branch_custody'=>'عهدة فرع','employee_custody'=>'عهدة موظف',
                             'main'=>'رئيسية'];
                         echo e($typeLabels[$t['type']] ?? $t['type']);
                         if ($isCustody && $t['branch_name']) echo ' (' . e($t['branch_name']) . ')';
