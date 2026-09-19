@@ -458,6 +458,20 @@ require_once __DIR__ . '/includes/header.php';
     padding: 16px;
     margin-bottom: 16px;
 }
+/* ==================================================================
+   الموبايل: زرار الكاميرا كان بيطلع برّه مربع المسح.
+   السبب: الـinput جوه flex عنده min-width:auto — مابيصغّرش عن عرضه
+   الافتراضي، فالزرار بيتزقّ لبرّه الحدود بدل ما الخانة تصغّر.
+   الحل: (١) نسمح للخانات تصغّر، (٢) على الموبايل كل خانة تاخد سطر.
+   الـ!important ضروري لأن الأبعاد متكتوبة inline في الـHTML.
+   ================================================================== */
+#barcodeScanForm input { min-width: 0; }
+
+@media (max-width: 560px) {
+    #barcodeScanForm > div { flex: 1 1 100% !important; min-width: 0 !important; }
+    #barcodeScanForm #qtyInput { width: 100% !important; }
+    #barcodeScanForm #addBtn  { width: 100%; }
+}
 .scan-alert {
     padding: 10px 14px;
     border-radius: var(--r-sm);
@@ -540,6 +554,24 @@ require_once __DIR__ . '/includes/header.php';
         $gIds = array_keys($gIds);
         $singleDistIds = array_keys($singleDistIds);
 
+        // اسم المجموعة للفواتير المفردة (لو كانت أصلاً من مجموعة) — للعرض بس
+        $soloGroupName = [];   // [dist_id => group_name]
+        if ($singleDistIds) {
+            $sPh = implode(',', array_fill(0, count($singleDistIds), '?'));
+            $stSG = $pdo->prepare(
+                "SELECT d.id AS dist_id, MAX(g.name) AS gname
+                 FROM invoice_distribution d
+                 JOIN invoice_group_items gi ON gi.invoice_no = d.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+                 JOIN invoice_groups g ON g.id = gi.group_id
+                 WHERE d.id IN ($sPh)
+                 GROUP BY d.id"
+            );
+            $stSG->execute($singleDistIds);
+            foreach ($stSG->fetchAll() as $sg) {
+                $soloGroupName[(int) $sg['dist_id']] = (string) $sg['gname'];
+            }
+        }
+
         // ربط المجموعات بسجلات التوزيع الخاصة بها باستعلام واحد مجمّع
         $groupDistsMap = []; // [group_id => [dist_id, ...]]
         $allDistIdsToQuery = $singleDistIds;
@@ -615,6 +647,7 @@ require_once __DIR__ . '/includes/header.php';
                     'group_id'        => $gid,
                     'distribution_id' => $did,
                     'title'           => $title,
+                    'group_note'      => ($gid === 0 && !empty($soloGroupName[$did])) ? $soloGroupName[$did] : '',
                     'created_at'      => $rc['created_at'],
                     'branches'        => [],
                 ];
@@ -650,6 +683,9 @@ require_once __DIR__ . '/includes/header.php';
                     <h3 style="margin:0 0 4px 0;font-size:16px;">
                         <?= e($hdr['title']) ?>
                     </h3>
+                    <?php if (!empty($hdr['group_note'])): ?>
+                        <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">من مجموعة: <?= e($hdr['group_note']) ?></div>
+                    <?php endif; ?>
                     <span style="font-size:12px;color:var(--ink-400);">تاريخ التجهيز: <?= date('Y-m-d H:i', strtotime($hdr['created_at'])) ?></span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;">

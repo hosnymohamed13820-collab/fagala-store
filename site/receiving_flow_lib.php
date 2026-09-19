@@ -19,7 +19,23 @@ require_once __DIR__ . '/group_lib.php';
 function receiving_ctx_dist_ids(int $distId, int $groupId): array
 {
     if ($groupId > 0) {
-        return group_code_dist_ids($groupId, '__any__');
+        $ids = group_code_dist_ids($groupId, '__any__');
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn($x) => $x > 0)));
+        if (!$ids) return [];
+
+        // 🔴 الفاتورة اللي اتبعتت لوحدها (ليها كارت مفرد) بتخرج من كارت
+        //    المجموعة — عشان الفرع يستلم كل صنف **مرة واحدة** مش مرتين.
+        //    قرار محمد ١٩ سبتمبر ٢٠٢٦.
+        $in = implode(',', $ids);
+        $solo = db()->query(
+            "SELECT DISTINCT distribution_id FROM receipts
+             WHERE group_id = 0 AND distribution_id IN ($in)"
+        )->fetchAll(PDO::FETCH_COLUMN);
+
+        if ($solo) {
+            $ids = array_values(array_diff($ids, array_map('intval', $solo)));
+        }
+        return $ids;
     }
     return $distId > 0 ? [$distId] : [];
 }

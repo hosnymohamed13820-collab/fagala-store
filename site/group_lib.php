@@ -1514,7 +1514,7 @@ function group_refresh_statuses(int $groupId, ?int $userId = null): void
             $header = sqlsrv_fetch_invoice_header($sth, $suffix ?: null);
             if (!$header) continue;
             $dist = ensure_distribution_record($header, null);
-            refresh_invoice_status((int) $dist['id'], $sth, $suffix ?: null);
+            refresh_invoice_status((int) $dist['id'], $sth, $suffix ?: null, false /* group_refresh_statuses() بتتنده مع كل حفظ كمية في المجموعة — مش إرسال */);
         } catch (Throwable $ex) {
             // فاتورة واحدة فشلت ما توقفش الباقي
             error_log('group: فشل تحديث حالة الفاتورة ' . $sth . ' — ' . $ex->getMessage());

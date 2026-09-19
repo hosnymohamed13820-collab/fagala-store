@@ -882,7 +882,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
             clear_invoice_status_manual($distId);
             $invId = $_POST['invoice_id'] ?? null;
             if ($invId !== null && $invId !== '') {
-                refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null);
+                refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null, false /* تغيير الحالة اليدوي. السطر ٨٩٢ بينده receiving_open بنفسه */);
             }
             $cur = $pdo->prepare('SELECT status FROM invoice_distribution WHERE id = ?');
             $cur->execute([$distId]);
@@ -1309,7 +1309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autos
         // تحديث حالة الفاتورة (مخزّنة عشان القائمة تفتح بسرعة)
         $invId = $_POST['invoice_id'] ?? null;
         if ($invId !== null && $invId !== '') {
-            refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null);
+            refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null, false /* autosave = حفظ كمية، مش إرسال */);
         }
 
         echo json_encode(['ok' => true, 'remaining' => $res['remaining'], 'branch_total' => $branchTotal], JSON_UNESCAPED_UNICODE);
@@ -3278,26 +3278,45 @@ require_once __DIR__ . '/includes/header.php';
             <p style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
                 أو نزّل ملف كل فاتورة لوحدها — زي ما لو فتحتها من تاب الفواتير.
             </p>
+            <?php
+                // كل فواتير المجموعة اللي ليها كارت استلام مفرد — استعلام واحد قبل الحلقة
+                $grpSoloOpened = [];
+                $allGrpDistIds = array_values(array_filter(array_map('intval', $grpData['dist_ids'] ?? []), fn($x) => $x > 0));
+                if ($allGrpDistIds) {
+                    $in = implode(',', $allGrpDistIds);
+                    foreach ($pdo->query("SELECT DISTINCT distribution_id FROM receipts WHERE group_id = 0 AND distribution_id IN ($in)")->fetchAll(PDO::FETCH_COLUMN) as $d) {
+                        $grpSoloOpened[(int) $d] = true;
+                    }
+                }
+
+                // إجمالي كميات الفروع لكل فواتير المجموعة — استعلام واحد مجمّع بدلاً من prepare جوه الحلقة (قاعدة ١)
+                $grpBtMap = [];
+                if ($allGrpDistIds) {
+                    $in = implode(',', $allGrpDistIds);
+                    $qBt = $pdo->query(
+                        "SELECT distribution_id, branch_id, SUM(amount) AS t
+                         FROM invoice_distribution_lines
+                         WHERE distribution_id IN ($in)
+                         GROUP BY distribution_id, branch_id
+                         HAVING SUM(amount) > 0"
+                    );
+                    foreach ($qBt->fetchAll() as $r) {
+                        $grpBtMap[(int)$r['distribution_id']][(int)$r['branch_id']] = (float) $r['t'];
+                    }
+                }
+            ?>
             <?php foreach ($grpInvoices as $gi): ?>
                 <?php
                     $sth  = (int) $gi['sth_id'];
                     $did  = (int) ($grpData['dist_ids'][$sth] ?? 0);
-                    $bt   = [];
-                    if ($did > 0) {
-                        $q = $pdo->prepare(
-                            'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
-                             WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
-                        );
-                        $q->execute([$did]);
-                        foreach ($q->fetchAll() as $r) $bt[(int)$r['branch_id']] = (float) $r['t'];
-                    }
+                    $bt   = $grpBtMap[$did] ?? [];
                     // فيه أي فرع اتوزّعله حاجة في الفاتورة دي؟
                     $anyB = false;
                     foreach ($activeBranches as $b) {
                         if ((float)($bt[(int)$b['id']] ?? 0) > 0) { $anyB = true; break; }
                     }
                 ?>
-                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;" data-receiving-open="<?= $isGrpReceivingOpened ? '1' : '0' ?>">
+                <div style="border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;" data-receiving-open="<?= ($isGrpReceivingOpened || !empty($grpSoloOpened[$did])) ? '1' : '0' ?>">
                     <div style="font-weight:600;color:var(--ink-900);font-size:14px;margin-bottom:10px;">
                         فاتورة <?= e($gi['invoice_no']) ?>
                         <span style="font-weight:400;color:var(--ink-500);font-size:13px;">
@@ -6003,14 +6022,16 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
         e.preventDefault();
         var targetUrl = link.href;
-        var msg = 'هل تريد توزيع هذه الفاتورة وإرسالها لموديول استلام الفروع؟\n\n'
+        var isGrp = link.classList.contains('grp-combo');
+        var headMsg = isGrp
+            ? 'هل تريد إرسال المجموعة كلها لموديول استلام الفروع؟'
+            : 'هل تريد إرسال الفاتورة دي لوحدها لموديول استلام الفروع؟';
+        var msg = headMsg + '\n\n'
                 + '• الضغط على "موافق": إرسال لموديول الاستلام وتنبيه الفروع وبدء المتابعة.\n'
                 + '• الضغط على "إلغاء": تنزيل الملف فقط كتقرير دون إرساله للاستلام وبدون إشعارات.';
 
         if (confirm(msg)) {
-            document.querySelectorAll('[data-receiving-open]').forEach(function (c) {
-                c.setAttribute('data-receiving-open', '1');
-            });
+            card.setAttribute('data-receiving-open', '1');
             window.location.href = targetUrl;
         } else {
             var sep = targetUrl.indexOf('?') !== -1 ? '&' : '?';

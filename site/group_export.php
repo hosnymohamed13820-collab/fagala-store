@@ -143,7 +143,7 @@ foreach ($invoices as $inv) {
     if (!isset($distIds[$sth])) continue;
     try {
         mark_branch_exported($distIds[$sth], $branchId, current_user()['id'] ?? null);
-        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, !$skipReceiving);
+        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, false /* الملف المجمّع = كارت مجموعة واحد. السطر ١٥٦ هو اللي بيفتحها */);
     } catch (Throwable $ex) {
         error_log('group_export: تعذّر تسجيل التصدير للفاتورة ' . $sth . ' — ' . $ex->getMessage());
     }

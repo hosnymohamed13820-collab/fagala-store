@@ -1167,28 +1167,17 @@ function recalc_invoice_status(?int $distributionId, array $items, bool $autoOpe
         $status = (string) $row['status'];
     }
 
-    // الحالة بقت «تم التوزيع» ← نفتح الاستلام للفروع (لو الفاتورة مفردة مش جوه مجموعة).
-    // مكان النداء هنا عن قصد: ده الطريق الوحيد اللي كل الحالات
-    // بتعدّي منه — تحميل ملف الفرع، والمجموعة، والتغيير اليدوي.
-    // الاستلام موجود خلاص؟ INSERT IGNORE بيتجاهله ومفيش إشعار مكرر.
+    // 🔴 الحالة بقت «تم التوزيع» ← نفتح الاستلام.
+    //    مين بيقرر فاتورة ولا مجموعة؟ **اللي نده الدالة**، مش الدالة دي:
+    //      • branch_export.php  (ملف فاتورة واحدة) → بيبعت true  → كارت فاتورة
+    //      • group_export.php   (الملف المجمّع)     → بيبعت false → المجموعة
+    //        هي اللي بتفتح كارتها بنفسها بعد الحلقة
+    //    زمان كان فيه استعلام هنا بيشوف الفاتورة في مجموعة ولا لأ ويمنع
+    //    الكارت المفرد — واللي خلّى **المجموعة بس** هي اللي بتوصل للفروع.
     if ($status === 'done' && $autoOpenReceiving) {
         try {
-            // فحص ما إذا كانت الفاتورة تتبع مجموعة فواتير نشطة (invoice_group_items)
-            $stGrp = $pdo->prepare(
-                "SELECT 1
-                 FROM invoice_group_items gi
-                 JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
-                 WHERE d.id = ?
-                 LIMIT 1"
-            );
-            $stGrp->execute([$distributionId]);
-            $inGroup = (bool) $stGrp->fetchColumn();
-
-            // إذا كانت الفاتورة جزءاً من مجموعة، لا يتم فتح استلام مفرد لها
-            if (!$inGroup) {
-                require_once __DIR__ . '/receiving_flow_lib.php';
-                receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
-            }
+            require_once __DIR__ . '/receiving_flow_lib.php';
+            receiving_open($pdo, 0, $distributionId, (int) ($_SESSION['user']['id'] ?? 0));
         } catch (Throwable $ex) {
             error_log('receiving: تعذّر فتح الاستلام للتوزيع ' . $distributionId . ' — ' . $ex->getMessage());
         }
@@ -2512,7 +2501,10 @@ function reservation_pull_apply(
         foreach ($itemQty as $c => $q) {
             $recalcItems[] = ['item_code' => $c, 'quantity' => $q];
         }
-        recalc_invoice_status($distributionId, $recalcItems);
+        // 🔴 false عن قصد: سحب الحجوزات ده **حفظ كميات**، مش إرسال للاستلام.
+        //    وكمان إحنا جوّه transaction — لو فتحنا الاستلام هنا والـtransaction
+        //    رجعت، الإشعارات تكون راحت للفروع والصفوف اتمسحت.
+        recalc_invoice_status($distributionId, $recalcItems, false);
 
         $pdo->commit();
         return ['ok' => true, 'allocated_count' => count($cleanAlloc)];

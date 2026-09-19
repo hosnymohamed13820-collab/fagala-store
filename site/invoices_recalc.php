@@ -51,7 +51,7 @@ foreach ($rows as $r) {
             continue;
         }
 
-        $st = recalc_invoice_status($distId, $items);
+        $st = recalc_invoice_status($distId, $items, false /* بيلف على كل الفواتير — لو ساب true ممكن يبعت عشرات الكروت مرة واحدة للفروع */);
         $counts[$st] = ($counts[$st] ?? 0) + 1;
 
     } catch (Throwable $ex) {
