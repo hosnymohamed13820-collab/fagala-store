@@ -1,94 +1,176 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  deploy.sh — رفع الملفات المتغيّرة للسيرفر بأمر واحد (عن طريق WinSCP)
+#  deploy.sh — رفع الملفات المتغيّرة للسيرفر بأمر واحد (SSH)
 #
-#  ليه مش زرار Synchronize في WinSCP:
-#    الجلسة المحفوظة مالهاش أي استثناء (FileMask = *.*).
-#    • site/config.php وهمي ٣٠ بايت — Synchronize بيكتبه فوق الحقيقي
-#      والموقع كله بيقف. **حصل ٣٠ أغسطس ٢٠٢٦** (RULES §٨).
-#    • ولو «مسح الملفات» متعلّم، فولدر ashraqa/ (نظام إشراقة كله) بيتمسح
-#      لأنه مش موجود في site/.
+#  بيرفع **الموقعين**:
+#    site/     →  /domains/hosnimanagement.com/public_html
+#    ashraqa/  →  /domains/hosnimanagement.com/public_html/ashraqa
 #
-#  السكربت ده:
-#    ١) بيحسب الملفات اللي **محتواها** مختلف عن public_html/ (نسخة الميرورينج)
-#    ٢) 🔴 مستحيل يرفع config.php — مش في القايمة أصلاً، وفيه فحص صريح كمان
-#    ٣) 🔴 مابيمسحش أي حاجة على السيرفر — put بس
-#    ٤) بيشغّل tests/run_all.sh الأول — لو فشل مابيرفعش
-#    ٥) بيرفع **الملفات الجديدة الأول**: auth.php بيعمل require لـerrlog_lib.php؛
-#       لو auth.php وصل قبله الموقع كله بيقف لحد ما التاني يوصل
-#    ٦) بعد الرفع بينزّل نفس الملفات تاني في public_html/ ويقارنها — لو
-#       ملف وصل ناقص بيقول
+#  ليه مش WinSCP زي الأول:
+#    ١٩ سبتمبر ٢٠٢٦ الرفع وقف على شهادة TLS مش معروفة (*.hstgr.io) —
+#    WinSCP سأل سؤال تفاعلي والسكربت مات ومفيش حاجة اترفعت. الـSSH
+#    مربوط بمفتاح، مافيش فيه سؤال، وأسرع.
+#
+#  ليه مش زرار Synchronize في WinSCP (السبب الأصلي، لسه قايم):
+#    • config.php الوهمي ٣٠ بايت بيكتب فوق الحقيقي والموقع يقف
+#      (**حصل ٣٠ أغسطس ٢٠٢٦** — RULES §٨).
+#    • ولو «مسح الملفات» متعلّم، فولدر ashraqa/ بيتمسح بالكامل.
+#
+#  🔴 الفرق المهم عن النسخة القديمة: المقارنة بقت بـ**بصمة الملف على
+#     السيرفر نفسه**، مش بنسخة `public_html/` المحلية. النسخة المحلية
+#     بتقدم من غير ما حد ياخد باله (كانت متأخرة ٣ أسابيع في إشراقة)،
+#     وساعتها السكربت يا بيرفع ملفات مالهاش لزمة يا بيفوّت ملف متغيّر.
+#
+#  الضمانات:
+#    ١) 🔴 مستحيل يرفع config.php — مستثنى من القايمة وفيه فحص تاني بعدها
+#    ٢) 🔴 مابيمسحش أي حاجة على السيرفر — رفع بس
+#    ٣) بيشغّل tests/run_all.sh الأول — لو فشل مابيرفعش
+#    ٤) بعد الرفع بيقارن البصمات تاني — الملف اللي وصل ناقص بيتمسك
+#    ٥) بيشغّل `php -l` على السيرفر لكل ملف PHP اترفع
+#    ٦) بيعرض آخر سطور سجل الأخطاء
 #
 #  الاستعمال:
-#    bash tests/local/deploy.sh          ← يعرض القايمة بس (من غير رفع)
-#    bash tests/local/deploy.sh --yes    ← يرفع
+#    bash tests/local/deploy.sh                 ← عرض بس (الموقعين)
+#    bash tests/local/deploy.sh --yes           ← رفع (الموقعين)
+#    bash tests/local/deploy.sh --yes fagala    ← موقع واحد
+#    bash tests/local/deploy.sh --yes ashraqa
+#
+#  متطلبات: مفتاح ~/.ssh/fagala_hostinger
 # =====================================================================
 set -u
 cd "$(dirname "$0")/../.."
 
-WINSCP="/c/Program Files (x86)/WinSCP/WinSCP.com"
-# الجلسة: **Site محفوظ** في WinSCP مش Workspace.
-# ⚠️ اتجرّب ١٥ سبتمبر ٢٠٢٦: `open "My Workspace/0000"` بيطلّع
-#    «Host "My Workspace" does not exist» — السكربتات مابتفتحش جلسات الـWorkspace.
-#    لازم Site متسجّل بالاسم ده (Login → New Site → Save as → fagala-ftp،
-#    وعلّم Save password).
-SESSION="${WINSCP_SITE:-fagala-ftp}"
-REMOTE="/domains/hosnimanagement.com/public_html"
-SNAP="public_html"                                  # نسخة الميرورينج
+SSH_KEY="${FAGALA_SSH_KEY:-$HOME/.ssh/fagala_hostinger}"
+SSH_HOST="${FAGALA_SSH_HOST:-u834909335@91.108.101.22}"
+SSH_PORT="${FAGALA_SSH_PORT:-65002}"
+BASE="domains/hosnimanagement.com/public_html"
+SNAP="public_html"          # نسخة مرجعية محلية — بتتحدّث بعد الرفع
 
-GO=0; [ "${1:-}" = "--yes" ] && GO=1
+SSH=(ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 
-[ -x "$WINSCP" ] || { echo "❌ مش لاقي WinSCP.com في $WINSCP"; exit 1; }
-[ -d "$SNAP" ]   || { echo "❌ مفيش $SNAP/ — اعمل ميرورينج الأول"; exit 1; }
-
-# اتأكد إن الـSite موجود في WinSCP قبل أي حاجة (من غير اتصال)
-SITE_KEY="HKCU:\\Software\\Martin Prikryl\\WinSCP 2\\Sessions\\"
-if ! powershell -NoProfile -Command "exit [int](-not (Test-Path ('$SITE_KEY' + [uri]::EscapeDataString('$SESSION'))))" 2>/dev/null; then
-    echo "❌ مفيش Site اسمه «$SESSION» في WinSCP."
-    echo "   افتح WinSCP → New Site → نفس بيانات السيرفر → Save → الاسم: $SESSION → علّم Save password"
-    [ "${1:-}" = "--yes" ] && exit 1
-fi
-
-# ---------- ١) القايمة ----------
-NEW=(); CHANGED=()
-while IFS= read -r f; do
-    rel="${f#site/}"
-    case "$rel" in
-        config.php|config.php.*)            continue ;;   # 🔴 عمره ما يترفع
-        uploads/*|data/*|downloads/*|logs/*) continue ;;   # بتاعة السيرفر
-    esac
-    if [ ! -f "$SNAP/$rel" ]; then
-        NEW+=("$rel")
-    elif ! cmp -s "$f" "$SNAP/$rel"; then
-        CHANGED+=("$rel")
-    fi
-done < <(git ls-files --cached --others --exclude-standard site/)
-
-# حزام أمان تاني — لو config.php دخل القايمة بأي طريقة
-for x in "${NEW[@]:-}" "${CHANGED[@]:-}"; do
-    case "$(basename "$x")" in config.php|config.php.*)
-        echo "❌🔴 config.php في القايمة — وقفت. ده مايحصلش أبداً، شوف السكربت."; exit 1 ;;
+GO=0; ONLY=""
+for a in "$@"; do
+    case "$a" in
+        --yes)            GO=1 ;;
+        fagala|site)      ONLY="fagala" ;;
+        ashraqa)          ONLY="ashraqa" ;;
+        *) echo "❌ خيار مش معروف: $a"; exit 1 ;;
     esac
 done
 
-total=$(( ${#NEW[@]} + ${#CHANGED[@]} ))
-if [ "$total" -eq 0 ]; then
-    echo "✅ مفيش حاجة تترفع — site/ مطابق لـ$SNAP/"
-    echo "   (لو رفعت بإيدك من غير ميرورينج، $SNAP/ ممكن يكون قديم)"
-    exit 0
+[ -f "$SSH_KEY" ] || { echo "❌ مفيش مفتاح SSH في $SSH_KEY"; exit 1; }
+
+# ---------------------------------------------------------------------
+#  تحذير لو فيه شغل نصّ كمّل
+#  🔴 السكربت بيرفع **الملفات اللي على الجهاز**، مش آخر كوميت. لو أجي
+#     (أو أي حد) لسه شغال، الرفع هياخد شغله وهو نصّه. حصل قرب يحصل
+#     ١٩ سبتمبر ٢٠٢٦ — بريف ٢١ كان شغال وإحنا بنرفع بريف ٢٠.
+# ---------------------------------------------------------------------
+DIRTY="$(git status --porcelain 2>/dev/null)"
+if [ -n "$DIRTY" ]; then
+    echo "⚠️  فيه ملفات مش متكوميتة — الرفع بياخد اللي على الجهاز مش آخر كوميت:"
+    echo "$DIRTY" | sed 's/^/     /'
+    echo "     🔴 اتأكد إن مفيش شغل لسه شغّال قبل ما تكمّل."
+    echo
 fi
 
-echo "═══ هيترفع ($total) ═══"
-for x in "${NEW[@]:-}";     do [ -n "$x" ] && echo "  🆕 $x"; done
-for x in "${CHANGED[@]:-}"; do [ -n "$x" ] && echo "  ↻  $x"; done
+# ---------------------------------------------------------------------
+#  ١) قايمة المرشحين لكل موقع
+# ---------------------------------------------------------------------
+list_candidates() {           # $1 = فولدر المصدر (site | ashraqa)
+    local src="$1" f rel
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        case "$rel" in
+            config.php|config.php.*)            continue ;;   # 🔴 عمره ما يترفع
+            uploads/*|data/*|downloads/*|logs/*) continue ;;   # بتاعة السيرفر
+        esac
+        printf '%s\n' "$rel"
+    done < <(git ls-files --cached --others --exclude-standard "$src/") | sort -u
+}
+
+# ---------------------------------------------------------------------
+#  ٢) مين مختلف فعلاً عن السيرفر — بصمة السيرفر هي المرجع
+#     نداء SSH **واحد** لكل موقع مهما كان عدد الملفات.
+# ---------------------------------------------------------------------
+diff_vs_server() {            # $1 = المصدر · $2 = المسار على السيرفر
+    local src="$1" remote="$2" cand="$3" out="$4"
+    local remote_sums local_sums
+
+    remote_sums="$(mktemp)"; local_sums="$(mktemp)"
+
+    # بصمات السيرفر: الملف اللي مش موجود بيطلع بصمة فاضية وبيتحسب «جديد»
+    # shellcheck disable=SC2016
+    "${SSH[@]}" "$SSH_HOST" "cd '$remote' 2>/dev/null && xargs -d '\n' -r md5sum -- 2>/dev/null" \
+        < "$cand" > "$remote_sums" 2>/dev/null
+
+    (cd "$src" && xargs -d '\n' -r md5sum -- < "$cand" 2>/dev/null) > "$local_sums"
+
+    # قارن: نطبع اللي بصمته مختلفة أو مش موجودة على السيرفر
+    # 🔴 الصيغتين مختلفتين: md5sum على ويندوز بيطلع «بصمة *اسم» (وضع
+    #    ثنائي) وعلى السيرفر «بصمة  اسم» (مسافتين). لازم نفصل على أول
+    #    مسافة ونشيل النجمة، مش نفصل على مسافتين.
+    awk '
+        function fname(l,   p, f) { p = index(l, " "); f = substr(l, p+1); sub(/^[ *]+/, "", f); return f }
+        function fhash(l,   p)    { p = index(l, " "); return substr(l, 1, p-1) }
+        NR==FNR { sum[fname($0)] = fhash($0); next }
+        { f = fname($0); if (sum[f] != fhash($0)) print f }
+    ' "$remote_sums" "$local_sums" | sort > "$out"
+
+    rm -f "$remote_sums" "$local_sums"
+}
+
+# ---------------------------------------------------------------------
+#  ٣) حزام الأمان — config.php عمره ما يعدّي
+# ---------------------------------------------------------------------
+guard_config() {              # $1 = ملف القايمة
+    if grep -qE '(^|/)config\.php' "$1"; then
+        echo "❌🔴 config.php في القايمة — وقفت. ده مايحصلش أبداً، شوف السكربت."
+        exit 1
+    fi
+}
+
+# ---------------------------------------------------------------------
+#  بناء القوايم
+# ---------------------------------------------------------------------
+declare -A SRC_OF REMOTE_OF LIST_OF
+SITES=()
+[ "$ONLY" = "ashraqa" ] || SITES+=("fagala")
+[ "$ONLY" = "fagala" ]  || SITES+=("ashraqa")
+
+SRC_OF[fagala]="site";      REMOTE_OF[fagala]="$BASE"
+SRC_OF[ashraqa]="ashraqa";  REMOTE_OF[ashraqa]="$BASE/ashraqa"
+
+TOTAL=0
+for s in "${SITES[@]}"; do
+    src="${SRC_OF[$s]}"
+    [ -d "$src" ] || { echo "❌ مفيش فولدر $src/"; exit 1; }
+    cand="$(mktemp)"; lst="$(mktemp)"
+    list_candidates "$src" > "$cand"
+    guard_config "$cand"
+    diff_vs_server "$src" "${REMOTE_OF[$s]}" "$cand" "$lst"
+    guard_config "$lst"
+    LIST_OF[$s]="$lst"
+    n=$(wc -l < "$lst" | tr -d ' ')
+    TOTAL=$(( TOTAL + n ))
+    rm -f "$cand"
+
+    echo "═══ $s ($n) ═══"
+    if [ "$n" -gt 0 ]; then sed 's/^/  ↻  /' "$lst"; else echo "  ✅ مطابق للسيرفر"; fi
+done
+
 echo "  🔒 config.php مستثنى · مفيش مسح على السيرفر"
+
+if [ "$TOTAL" -eq 0 ]; then echo; echo "✅ مفيش حاجة تترفع."; exit 0; fi
 
 if [ "$GO" -ne 1 ]; then
     echo; echo "ده عرض بس. للرفع:  bash tests/local/deploy.sh --yes"
     exit 0
 fi
 
-# ---------- ٢) الفحوصات قبل الرفع ----------
+# ---------------------------------------------------------------------
+#  ٤) الفحوصات قبل الرفع
+# ---------------------------------------------------------------------
 echo; echo "═══ الفحوصات ═══"
 export PYTHONIOENCODING=utf-8
 # run_all.sh من غير php بيفشل — وده بيمنع الرفع وانت فاكر إن الكود غلط
@@ -99,44 +181,81 @@ if ! bash tests/run_all.sh > /tmp/deploy_checks.log 2>&1; then
 fi
 echo "  ✅ كل الفحوصات عدّت"
 
-# ---------- ٣) سكربت WinSCP ----------
-# 🔴 -a (مسار كامل) مش اختياري: WinSCP.com مابيشتغلش من فولدر الريبو،
-#    فالمسار النسبي «site\x.php» مابيتلاقاش. أول رفع حقيقي (١٥ سبتمبر
-#    ٢٠٢٦) وقف بـ«does not exist» عند أول ملف — ومفيش حاجة اترفعت.
-winpath() { cygpath -wa "$1"; }
-SCRIPT="$(mktemp -t deploy_XXXX.txt)"
-{
-    echo "option batch abort"
-    echo "option confirm off"
-    echo "open \"$SESSION\""
-    # الجداد الأول (auth.php بيعتمد على errlog_lib.php)
-    for x in "${NEW[@]:-}" "${CHANGED[@]:-}"; do
-        [ -n "$x" ] || continue
-        echo "put -nopreservetime \"$(winpath "site/$x")\" \"$REMOTE/$x\""
-    done
-    # نزّلهم تاني في النسخة المحلية — ده اللي بيأكّد إنهم وصلوا كاملين
-    for x in "${NEW[@]:-}" "${CHANGED[@]:-}"; do
-        [ -n "$x" ] || continue
-        mkdir -p "$SNAP/$(dirname "$x")"
-        echo "get \"$REMOTE/$x\" \"$(winpath "$SNAP/$x")\""
-    done
-    echo "exit"
-} > "$SCRIPT"
-
+# ---------------------------------------------------------------------
+#  ٥) الرفع — tar عبر SSH: اتصال واحد لكل موقع مهما كان العدد
+#     (scp بيفتح اتصال لكل ملف — ٣٢ ملف كانوا بياخدوا دقايق)
+#     🔴 tar هنا **بيفك بس** — مفيش --delete ولا أي مسح.
+# ---------------------------------------------------------------------
 echo; echo "═══ الرفع ═══"
-if ! "$WINSCP" /script="$(winpath "$SCRIPT")" /log="$(winpath /tmp/deploy_winscp.log)"; then
-    rm -f "$SCRIPT"
-    echo "❌ WinSCP وقف في النص. اللوج: /tmp/deploy_winscp.log"
-    echo "   🔴 شوف اتنزّل إيه وماتنزلش إيه قبل ما تعيد."
-    exit 1
-fi
-rm -f "$SCRIPT"
-
-# ---------- ٤) التأكيد ----------
-echo; echo "═══ التأكيد ═══"
-bad=0
-for x in "${NEW[@]:-}" "${CHANGED[@]:-}"; do
-    [ -n "$x" ] || continue
-    if cmp -s "site/$x" "$SNAP/$x"; then echo "  ✅ $x"; else echo "  🔴 $x — اللي على السيرفر مش مطابق"; bad=1; fi
+for s in "${SITES[@]}"; do
+    lst="${LIST_OF[$s]}"
+    n=$(wc -l < "$lst" | tr -d ' ')
+    [ "$n" -gt 0 ] || continue
+    if ! tar -czf - -C "${SRC_OF[$s]}" -T "$lst" \
+         | "${SSH[@]}" "$SSH_HOST" "mkdir -p '${REMOTE_OF[$s]}' && tar -xzf - -C '${REMOTE_OF[$s]}'"; then
+        echo "❌ الرفع وقف في $s — 🔴 شوف وصل إيه قبل ما تعيد."; exit 1
+    fi
+    echo "  ⬆️  $s — $n ملف"
 done
-[ "$bad" -eq 0 ] && echo "✅ $total ملف اترفعوا واتأكد إنهم وصلوا كاملين" || { echo "❌ فيه ملف مش مطابق"; exit 1; }
+
+# ---------------------------------------------------------------------
+#  ٦) التأكيد — البصمة تاني بعد الرفع
+# ---------------------------------------------------------------------
+echo; echo "═══ التأكيد ═══"
+BAD=0
+for s in "${SITES[@]}"; do
+    lst="${LIST_OF[$s]}"
+    n=$(wc -l < "$lst" | tr -d ' ')
+    [ "$n" -gt 0 ] || continue
+    still="$(mktemp)"
+    diff_vs_server "${SRC_OF[$s]}" "${REMOTE_OF[$s]}" "$lst" "$still"
+    m=$(wc -l < "$still" | tr -d ' ')
+    if [ "$m" -eq 0 ]; then
+        echo "  ✅ $s — $n ملف مطابقين بالبصمة"
+    else
+        echo "  🔴 $s — $m ملف مش مطابق:"; sed 's/^/     /' "$still"; BAD=1
+    fi
+    rm -f "$still"
+done
+[ "$BAD" -eq 0 ] || { echo "❌ فيه ملف مش مطابق."; exit 1; }
+
+# ---------------------------------------------------------------------
+#  ٧) فحص بنية PHP على السيرفر + سجل الأخطاء
+# ---------------------------------------------------------------------
+echo; echo "═══ على السيرفر ═══"
+for s in "${SITES[@]}"; do
+    lst="${LIST_OF[$s]}"
+    php_files="$(grep '\.php$' "$lst" || true)"
+    [ -n "$php_files" ] || continue
+    bad="$(printf '%s\n' "$php_files" \
+        | "${SSH[@]}" "$SSH_HOST" "cd '${REMOTE_OF[$s]}' && while IFS= read -r f; do php -l \"\$f\" >/dev/null 2>&1 || echo \"\$f\"; done")"
+    if [ -n "$bad" ]; then
+        echo "  🔴 $s — ملفات فيها خطأ بنية:"; printf '%s\n' "$bad" | sed 's/^/     /'; BAD=1
+    else
+        echo "  ✅ $s — كل ملفات PHP سليمة"
+    fi
+done
+[ "$BAD" -eq 0 ] || { echo "❌ فيه ملف مكسور على السيرفر — صلّحه فوراً."; exit 1; }
+
+ERR="$("${SSH[@]}" "$SSH_HOST" "tail -5 '$BASE/error_log' 2>/dev/null" || true)"
+if [ -n "$ERR" ]; then
+    echo "  ⚠️  آخر سطور سجل الأخطاء:"; printf '%s\n' "$ERR" | sed 's/^/     /'
+else
+    echo "  ✅ سجل الأخطاء فاضي"
+fi
+
+# ---------------------------------------------------------------------
+#  ٨) تحديث النسخة المرجعية المحلية (public_html/) — مرجع للقراءة بس
+# ---------------------------------------------------------------------
+for s in "${SITES[@]}"; do
+    lst="${LIST_OF[$s]}"; src="${SRC_OF[$s]}"
+    sub=""; [ "$s" = "ashraqa" ] && sub="ashraqa/"
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        mkdir -p "$SNAP/$sub$(dirname "$rel")"
+        cp "$src/$rel" "$SNAP/$sub$rel"
+    done < "$lst"
+    rm -f "$lst"
+done
+
+echo; echo "✅ $TOTAL ملف اترفعوا واتأكدوا."
