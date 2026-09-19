@@ -27,13 +27,16 @@
 #    ٣) بيشغّل tests/run_all.sh الأول — لو فشل مابيرفعش
 #    ٤) بعد الرفع بيقارن البصمات تاني — الملف اللي وصل ناقص بيتمسك
 #    ٥) بيشغّل `php -l` على السيرفر لكل ملف PHP اترفع
-#    ٦) بيعرض آخر سطور سجل الأخطاء
+#    ٦) 🔴 بيقرا **سجل أخطاء الموقع** (logs/errors.log.php) للموقعين
+#       ويعرض اللي حصل في آخر ٢٤ ساعة. مش error_log بتاع PHP —
+#       الاستضافة مابتكتبش واحد أصلاً.
 #
 #  الاستعمال:
 #    bash tests/local/deploy.sh                 ← عرض بس (الموقعين)
 #    bash tests/local/deploy.sh --yes           ← رفع (الموقعين)
 #    bash tests/local/deploy.sh --yes fagala    ← موقع واحد
 #    bash tests/local/deploy.sh --yes ashraqa
+#    bash tests/local/deploy.sh --errors        ← سجل الأخطاء بس (من غير رفع)
 #
 #  متطلبات: مفتاح ~/.ssh/fagala_hostinger
 # =====================================================================
@@ -48,15 +51,21 @@ SNAP="public_html"          # نسخة مرجعية محلية — بتتحدّ�
 
 SSH=(ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR)
 
-GO=0; ONLY=""
+GO=0; ONLY=""; ERRORS_ONLY=0
 for a in "$@"; do
     case "$a" in
         --yes)            GO=1 ;;
+        --errors)         ERRORS_ONLY=1 ;;
         fagala|site)      ONLY="fagala" ;;
         ashraqa)          ONLY="ashraqa" ;;
         *) echo "❌ خيار مش معروف: $a"; exit 1 ;;
     esac
 done
+
+# آخر ٢٤ ساعة — المدى اللي بيبيّن «فيه حاجة اتكسرت ومحدش واخد باله»
+SINCE="$(date -d '24 hours ago' '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)"
+# run_all.sh وقارئ السجل الاتنين محتاجينه — بيتعرّف هنا عشان كل المسارات
+export PHP_BIN="${PHP_BIN:-/d/php-8.5.10-nts-Win32-vs17-x64/php.exe}"
 
 [ -f "$SSH_KEY" ] || { echo "❌ مفيش مفتاح SSH في $SSH_KEY"; exit 1; }
 
@@ -121,6 +130,41 @@ diff_vs_server() {            # $1 = المصدر · $2 = المسار على ا
 }
 
 # ---------------------------------------------------------------------
+#  سجل أخطاء الموقع (logs/errors.log.php) — الموقعين
+#
+#  🔴 ده **مش** error_log بتاع PHP. الاستضافة مابتكتبش واحد أصلاً
+#     (اتأكدنا ٢٠ سبتمبر — مفيش الملف خالص)، فالفحص القديم اللي كان
+#     بيعمل tail عليه كان بيقول «فاضي» على طول ويطمّنك وهو مش شايف حاجة.
+#     السجل الحقيقي بيكتبه `errlog_lib.php` جوه `logs/errors.log.php`.
+#
+#  ليه ده جوه الرفع: غلطة قاتلة في إشراقة فضلت شغالة **٦٧ مرة على مدى
+#  تلات أيام** والإشعارات واقفة، ومحدش عرف غير لما اتفتح السجل بالصدفة.
+# ---------------------------------------------------------------------
+report_errors() {             # $1 = من امتى (فاضي = كل السجل)
+    local since="${1:-}" s sub dir n
+    echo; echo "═══ سجل الأخطاء (آخر ٢٤ ساعة) ═══"
+    for s in "${SITES[@]}"; do
+        sub=""; [ "$s" = "ashraqa" ] && sub="ashraqa/"
+        dir="$SNAP/${sub}logs"
+        mkdir -p "$dir"
+        scp -q -i "$SSH_KEY" -P "$SSH_PORT" -o LogLevel=ERROR \
+            "$SSH_HOST:$BASE/${sub}logs/errors.log.php" "$dir/" 2>/dev/null || true
+        if [ ! -f "$dir/errors.log.php" ]; then
+            echo "  ⚠️  $s — مالقيتش سجل (logs/errors.log.php)"
+            continue
+        fi
+        out="$("$PHP_BIN" tests/local/read_server_errors.php "$dir" 6 "$since" 2>&1)"
+        if printf '%s' "$out" | grep -q '^✅'; then
+            echo "  ✅ $s — مفيش أخطاء جديدة"
+        else
+            n="$(printf '%s' "$out" | sed -n 's/.*غلطات مختلفة: \([0-9]*\).*/\1/p' | head -1)"
+            echo "  🔴 $s — ${n:-؟} غلطة:"
+            printf '%s\n' "$out" | sed '1,2d' | sed 's/^/     /'
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------
 #  ٣) حزام الأمان — config.php عمره ما يعدّي
 # ---------------------------------------------------------------------
 guard_config() {              # $1 = ملف القايمة
@@ -140,6 +184,12 @@ SITES=()
 
 SRC_OF[fagala]="site";      REMOTE_OF[fagala]="$BASE"
 SRC_OF[ashraqa]="ashraqa";  REMOTE_OF[ashraqa]="$BASE/ashraqa"
+
+# `--errors` لوحدها: اقرا السجل وامشي — من غير أي مقارنة ولا رفع
+if [ "$ERRORS_ONLY" -eq 1 ]; then
+    report_errors "$SINCE"
+    exit 0
+fi
 
 TOTAL=0
 for s in "${SITES[@]}"; do
@@ -173,8 +223,8 @@ fi
 # ---------------------------------------------------------------------
 echo; echo "═══ الفحوصات ═══"
 export PYTHONIOENCODING=utf-8
-# run_all.sh من غير php بيفشل — وده بيمنع الرفع وانت فاكر إن الكود غلط
-export PHP_BIN="${PHP_BIN:-/d/php-8.5.10-nts-Win32-vs17-x64/php.exe}"
+# ⚠️ run_all.sh من غير php بيفشل — وده بيمنع الرفع وانت فاكر إن الكود غلط.
+#    PHP_BIN متعرّف فوق مرة واحدة لكل المسارات.
 if ! bash tests/run_all.sh > /tmp/deploy_checks.log 2>&1; then
     tail -20 /tmp/deploy_checks.log
     echo "❌ فيه فحص فشل — مارفعتش حاجة."; exit 1
@@ -237,12 +287,7 @@ for s in "${SITES[@]}"; do
 done
 [ "$BAD" -eq 0 ] || { echo "❌ فيه ملف مكسور على السيرفر — صلّحه فوراً."; exit 1; }
 
-ERR="$("${SSH[@]}" "$SSH_HOST" "tail -5 '$BASE/error_log' 2>/dev/null" || true)"
-if [ -n "$ERR" ]; then
-    echo "  ⚠️  آخر سطور سجل الأخطاء:"; printf '%s\n' "$ERR" | sed 's/^/     /'
-else
-    echo "  ✅ سجل الأخطاء فاضي"
-fi
+report_errors "$SINCE"
 
 # ---------------------------------------------------------------------
 #  ٨) تحديث النسخة المرجعية المحلية (public_html/) — مرجع للقراءة بس
