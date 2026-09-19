@@ -46,7 +46,7 @@ SSH_PORT="${FAGALA_SSH_PORT:-65002}"
 BASE="domains/hosnimanagement.com/public_html"
 SNAP="public_html"          # نسخة مرجعية محلية — بتتحدّث بعد الرفع
 
-SSH=(ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
+SSH=(ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR)
 
 GO=0; ONLY=""
 for a in "$@"; do
