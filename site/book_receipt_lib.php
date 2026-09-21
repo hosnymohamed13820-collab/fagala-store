@@ -33,37 +33,12 @@ function book_receipt_layout(array $data): array
     $r     = $data['res'] ?? [];
     $lines = $data['lines'] ?? [];
 
-    $store  = (string) setting('store_name', 'مكتبات الفجالة ستور');
     $branch = trim((string)($r['branch_name'] ?? ''));
     $phone  = trim((string)($r['branch_phone'] ?? ''));
     $by     = trim((string)($r['reserved_by'] ?? '')) ?: trim((string)($r['creator'] ?? ''));
     $ts     = !empty($r['created_at']) ? strtotime((string)$r['created_at']) : time();
     $when   = date('Y-m-d', $ts);
     $time   = date('h:i', $ts) . (date('A', $ts) === 'AM' ? ' ص' : ' م');
-
-    $nKinds = count($lines);
-    $nCopies = 0;
-    foreach ($lines as $l) {
-        $nCopies += (float)($l['qty'] ?? 0);
-    }
-
-    // 🔴 العدد في العربي مش بيتصرّف زي الإنجليزي. «1 أصناف» و«2 نسخة»
-    //    غلط، والورقة دي بتتسلّم للعميل في إيده. القاعدة:
-    //    ١ = مفرد · ٢ = مثنى · ٣–١٠ = جمع قلة · ١١+ = مفرد بعد الرقم.
-    $arCount = static function (float $n, string $one, string $two, string $few, string $many): string {
-        $i = (int) round($n);
-        if (abs($n - $i) > 0.001) {          // كمية كسرية — نسيبها رقم
-            return rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.') . ' ' . $many;
-        }
-        if ($i === 1) return $one;
-        if ($i === 2) return $two;
-        if ($i >= 3 && $i <= 10) return $i . ' ' . $few;
-        return $i . ' ' . $many;
-    };
-
-    $summary = $arCount($nKinds,  'صنف واحد',   'صنفين',   'أصناف', 'صنف')
-             . ' · '
-             . $arCount($nCopies, 'نسخة واحدة', 'نسختين',  'نسخ',   'نسخة');
 
     // مساعد داخلي لإضافة kv مع تجاهل الفاضي أو '—'
     $kv = static function (array &$out, string $k, $v, string $dir = 'rtl'): void {
@@ -89,7 +64,6 @@ function book_receipt_layout(array $data): array
     if ($stamp) {
         $c1[] = $stamp;
     }
-    $c1[] = ['t' => 'h1', 'v' => $store];
     $c1[] = ['t' => 'h2', 'v' => 'إيصال حجز كتب'];
     $c1[] = ['t' => 'rule', 's' => 'double'];
 
@@ -111,9 +85,6 @@ function book_receipt_layout(array $data): array
         $qStr = rtrim(rtrim(number_format((float)($l['qty'] ?? 0), 2, '.', ''), '0'), '.');
         $c1[] = ['t' => 'row', 'r' => trim((string)($l['item_name'] ?? '')), 'l' => $qStr];
     }
-    $c1[] = ['t' => 'rule', 's' => 'solid'];
-
-    $c1[] = ['t' => 'line', 'v' => $summary];
     $c1[] = ['t' => 'rule', 's' => 'double'];
 
     $depositFormatted = number_format((float)($r['deposit'] ?? 0), 2);
@@ -159,7 +130,6 @@ function book_receipt_layout(array $data): array
     }
     $c2[] = ['t' => 'rule', 's' => 'solid'];
 
-    $c2[] = ['t' => 'line', 'v' => $summary];
     $kv($c2, 'المقدم', $depositFormatted, 'ltr');
     $c2[] = ['t' => 'gap', 'n' => 2];
 
