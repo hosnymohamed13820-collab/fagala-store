@@ -59,9 +59,13 @@ function Log($msg) {
 
 # أبعاد ورق الإيصالات الحراري (الوحدة: 1/100 بوصة — Display)
 $script:PaperWidth     = 315   # 80mm
-$script:PrintableLeft  = 20    # هامش يمين/شمال
-$script:PrintWidth     = 275   # عرض النص القابل للطباعة
-$script:PrintableRight = $script:PrintableLeft + $script:PrintWidth # 295
+# 🔴 أول تجربة على الإبسون (إشراقة، ٢١ سبتمبر) قصّت أول حرف من كل كلمة
+#    على اليمين: «حجز رقم» طلعت «جز رقم». الطابعة بتبدأ الرسم من أول
+#    المساحة القابلة للطباعة (~٧٢مم = ٢٨٣ وحدة) مش من حرف الورقة،
+#    فالحافة اليمين كانت عند ٢٩٥ = بره المساحة بـ٣مم. دلوقتي ٢٧٠.
+$script:PrintableLeft  = 8     # هامش شمال
+$script:PrintWidth     = 262   # عرض النص — الحافة اليمين عند ٢٧٠ بأمان
+$script:PrintableRight = $script:PrintableLeft + $script:PrintWidth # 270
 
 # =====================================================================
 #  دوال رسم وتخطيط الإيصال
@@ -258,11 +262,26 @@ function Render-Copy($g, $copy, [bool]$isDraw) {
     return $y
 }
 
+# 🔴 كل نسخة **أمر طباعة منفصل** مش صفحة تانية في نفس الأمر.
+#    جرّبنا صفحتين في أمر واحد على الإبسون والإيصالين طلعوا لازقين —
+#    الدرايفر بيقص في آخر **الأمر** مش آخر كل صفحة. أمرين = قصّتين.
 function Print-Receipt($payload, [string]$targetPrinter, [string]$pdfFile) {
     if (-not $payload -or $payload.v -ne 1) {
         throw "نسخة تخطيط مش مدعومة (إصدار التخطيط غير صالح)"
     }
+    $n = 0
+    foreach ($copy in $payload.copies) {
+        $n++
+        # في وضع الاختبار كل نسخة ملف PDF لوحدها عشان التانية ماتكتبش فوق الأولى
+        $outFile = ""
+        if ($pdfFile -ne "") {
+            $outFile = [System.IO.Path]::ChangeExtension($pdfFile, $null).TrimEnd('.') + "_$n.pdf"
+        }
+        Print-OneCopy $copy $targetPrinter $outFile
+    }
+}
 
+function Print-OneCopy($copy, [string]$targetPrinter, [string]$pdfFile) {
     $doc = New-Object System.Drawing.Printing.PrintDocument
     $doc.PrinterSettings.PrinterName = $targetPrinter
 
@@ -274,36 +293,25 @@ function Print-Receipt($payload, [string]$targetPrinter, [string]$pdfFile) {
     }
 
     try {
-        # مرحلة ١: قياس الارتفاع الكلي الفعلي بدقة لمنع إهدار رول الورق
-        # بنقيس كل نسخة لوحدها وبناخد الأطول — مقاس الورق واحد للصفحتين.
+        # مرحلة ١: قياس الارتفاع عشان الورق مايتهدرش
         $measG = $doc.PrinterSettings.CreateMeasurementGraphics()
-        $totalHeight = 0
-        foreach ($c in $payload.copies) {
-            $h = Render-Copy $measG $c $false
-            if ($h -gt $totalHeight) { $totalHeight = $h }
-        }
+        $h = Render-Copy $measG $copy $false
         $measG.Dispose()
 
-        # ضبط مقاس الورق بالارتفاع المحسوب
-        $paperHeight = [int][Math]::Ceiling($totalHeight)
-        $paperSize = New-Object System.Drawing.Printing.PaperSize("Receipt", $script:PaperWidth, $paperHeight)
-        $doc.DefaultPageSettings.PaperSize = $paperSize
+        $paperHeight = [int][Math]::Ceiling($h)
+        $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize("Receipt", $script:PaperWidth, $paperHeight)
 
-        # ضبط ملف الخرج في حال طباعة PDF
         if ($pdfFile -ne "") {
             $doc.PrinterSettings.PrintToFile = $true
             $doc.PrinterSettings.PrintFileName = $pdfFile
         }
 
-        # مرحلة ٢: الرسم والطباعة
-        $script:copyIndex = 0
-        $script:allCopies = $payload.copies
+        # مرحلة ٢: الرسم
+        $script:currentCopy = $copy
         $doc.add_PrintPage({
             param($sender, $e)
-            Render-Copy $e.Graphics $script:allCopies[$script:copyIndex] $true | Out-Null
-            $script:copyIndex++
-            # في نسخة تانية؟ يبقى صفحة تانية — وهنا بتيجي القصّة.
-            $e.HasMorePages = ($script:copyIndex -lt $script:allCopies.Count)
+            Render-Copy $e.Graphics $script:currentCopy $true | Out-Null
+            $e.HasMorePages = $false
         })
 
         $doc.Print()
