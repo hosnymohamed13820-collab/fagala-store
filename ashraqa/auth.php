@@ -141,7 +141,6 @@ function module_parts(): array
             'advances'   => 'السلف',
             'bonuses'    => 'المكافآت',
             'penalties'  => 'الجزاءات',
-            'leaves'     => 'الإجازات',
             'salaries'   => 'الرواتب',
             'attendance' => 'الحضور والانصراف',
             'requests'   => 'طلبات التصحيح',

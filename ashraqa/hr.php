@@ -3,7 +3,7 @@
  * hr.php — الموارد البشرية (للإدارة)
  * نظام الفجالة ستور المالي
  *
- * تبويبات: نظرة عامة | السلف | المكافآت | الجزاءات | الإجازات | الرواتب | طلبات التصحيح
+ * تبويبات: نظرة عامة | السلف | المكافآت | الجزاءات | الرواتب | طلبات التصحيح
  * - الرواتب بتصرف من الخزينة وبتضيف المكافآت وتخصم السلف والجزاءات وعجز العهدة.
  * - طلبات تصحيح الحضور تتعتمد/ترفض هنا.
  */
@@ -212,7 +212,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $actionMap = [
             'add_bonus'                => 'bonuses',
             'add_penalty'              => 'penalties',
-            'add_leave'                => 'leaves',
             'add_advance'              => 'advances',
             'add_opening_balance'      => 'advances',
             'update_advance_deduction' => 'advances',
@@ -255,17 +254,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO employee_penalties (employee_id, amount, penalty_date, reason, status) VALUES (?,?,?,?,"pending")')
                     ->execute([$empId,$amount,$date,$reason ?: null]);
                 $flash = 'تم تسجيل الجزاء.'; $tab='penalties';
-            }
-            elseif ($action === 'add_leave') {
-                $empId = (int)($_POST['employee_id'] ?? 0);
-                $start = $_POST['start_date'] ?? date('Y-m-d');
-                $end   = $_POST['end_date'] ?? $start;
-                $type  = $_POST['leave_type'] ?? 'annual';
-                $days  = max(1, (int)((strtotime($end)-strtotime($start))/86400)+1);
-                if ($empId<=0) throw new RuntimeException('اختر الموظف.');
-                $pdo->prepare('INSERT INTO employee_leaves (employee_id, start_date, end_date, leave_type, days) VALUES (?,?,?,?,?)')
-                    ->execute([$empId,$start,$end,$type,$days]);
-                $flash = 'تم تسجيل الإجازة.'; $tab='leaves';
             }
             elseif ($action === 'update_advance_deduction') {
                 $advId = (int)($_POST['advance_id'] ?? 0);
@@ -767,6 +755,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hrQuery = [];
     parse_str(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY) ?? '', $hrQuery);
     $hrQuery['tab'] = $tab;
+    if (!empty($_POST['rstatus'])) {
+        $hrQuery['rstatus'] = (string)$_POST['rstatus'];
+    }
     header('Location: hr.php?' . http_build_query($hrQuery));
     exit;
 }
@@ -946,12 +937,6 @@ if ($tab === 'penalties') {
         }
     }
 }
-$leaves = [];
-if ($tab === 'leaves') {
-    $leaves = $pdo->query(
-        "SELECT l.*, e.full_name FROM employee_leaves l JOIN employees e ON e.id=l.employee_id ORDER BY l.id DESC LIMIT 100"
-    )->fetchAll();
-}
 $salaries = [];
 $confirmRevSalary = null;
 $confirmRevJe = null;
@@ -1027,15 +1012,24 @@ if ($tab === 'salaries') {
 }
 $requests = [];
 $pendingReqCount = 0;
+$reqStatus = 'pending';
 if ($tab === 'requests') {
-    $requests = $pdo->query(
-        "SELECT r.*, e.full_name FROM attendance_requests r JOIN employees e ON e.id=r.employee_id ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100"
-    )->fetchAll();
-    foreach ($requests as $r) {
-        if ($r['status'] === 'pending') {
-            $pendingReqCount++;
-        }
+    // الافتراضي «المعلّق» — ده اللي المستخدم جاي عشانه، وهو اللي الشارة بتعدّه.
+    $reqStatus = $_GET['rstatus'] ?? 'pending';
+    if (!in_array($reqStatus, ['pending', 'approved', 'rejected', 'all'], true)) {
+        $reqStatus = 'pending';
     }
+
+    $reqSql = "SELECT r.*, e.full_name FROM attendance_requests r
+               JOIN employees e ON e.id=r.employee_id";
+    $reqArgs = [];
+    if ($reqStatus !== 'all') { $reqSql .= " WHERE r.status = ?"; $reqArgs[] = $reqStatus; }
+    $reqSql .= " ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100";
+    $st = $pdo->prepare($reqSql); $st->execute($reqArgs); $requests = $st->fetchAll();
+
+    $pendingReqCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM attendance_requests WHERE status='pending'"
+    )->fetchColumn();
 } elseif (isset($allowedTabs['requests'])) {
     // لو المستخدم معاه صلاحية طلبات التصحيح وهو في تاب تاني، نحسب العدّاد للشريط
     $pendingReqCount = (int) $pdo->query("SELECT COUNT(*) FROM attendance_requests WHERE status='pending'")->fetchColumn();
@@ -1761,32 +1755,6 @@ $statusBadge = function($st) {
         <?php endif; ?>
     </div>
 
-<?php elseif ($tab === 'leaves'): ?>
-    <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($leaves) ?> إجازة</span>
-        <button class="btn" onclick="document.getElementById('leaveModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة إجازة</button>
-    </div>
-    <div class="card">
-        <?php if (empty($leaves)): ?>
-            <div class="empty">لا توجد إجازات.</div>
-        <?php else: ?>
-        <table>
-            <thead><tr><th>الموظف</th><th>من</th><th>إلى</th><th>النوع</th><th>الأيام</th></tr></thead>
-            <tbody>
-            <?php foreach ($leaves as $l): ?>
-                <tr>
-                    <td style="font-weight:500;"><?= e($l['full_name']) ?></td>
-                    <td><?= e($l['start_date']) ?></td>
-                    <td><?= e($l['end_date']) ?></td>
-                    <td><?= e($leaveLabels[$l['leave_type']] ?? $l['leave_type']) ?></td>
-                    <td><?= (int)$l['days'] ?></td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-        <?php endif; ?>
-    </div>
-
 <?php elseif ($tab === 'salaries'): ?>
     <!-- فلترة فترة الحضور -->
     <div class="card" style="margin-bottom:18px;">
@@ -1870,7 +1838,7 @@ $statusBadge = function($st) {
             <div class="sum-cards" id="salSumCards">
                 <div class="sum-card">
                     <div class="sc-label">إجمالي الصافي</div>
-                    <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">جنيه</span></div>
+                    <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">ج.م</span></div>
                     <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف</div>
                 </div>
             </div>
@@ -2290,6 +2258,12 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'requests'): ?>
     <div class="card">
         <div class="section-title">طلبات تصحيح الحضور</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <a href="?tab=requests&rstatus=pending" class="btn btn-sm <?= $reqStatus === 'pending' ? '' : 'btn-cancel' ?>">معلّق</a>
+            <a href="?tab=requests&rstatus=approved" class="btn btn-sm <?= $reqStatus === 'approved' ? '' : 'btn-cancel' ?>">معتمد</a>
+            <a href="?tab=requests&rstatus=rejected" class="btn btn-sm <?= $reqStatus === 'rejected' ? '' : 'btn-cancel' ?>">مرفوض</a>
+            <a href="?tab=requests&rstatus=all" class="btn btn-sm <?= $reqStatus === 'all' ? '' : 'btn-cancel' ?>">الكل</a>
+        </div>
         <?php if (empty($requests)): ?>
             <div class="empty">لا توجد طلبات.</div>
         <?php else: ?>
@@ -2319,12 +2293,14 @@ $statusBadge = function($st) {
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="approve_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
+                                <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
                                 <button class="btn btn-sm btn-approve">اعتماد</button>
                             </form>
                             <form method="post" style="display:inline;">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="reject_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
+                                <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
                                 <button class="btn btn-sm btn-reject">رفض</button>
                             </form>
                         <?php else: ?>
@@ -2516,30 +2492,6 @@ $statusBadge = function($st) {
     </div>
 </div>
 
-<div class="modal-bg" id="leaveModal">
-    <div class="modal">
-        <h3>إضافة إجازة</h3>
-        <form method="post">
-            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="action" value="add_leave">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
-                <option value="">— اختر —</option>
-                <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
-            </select></div>
-            <div class="form-row"><label>من</label><input type="date" name="start_date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>إلى</label><input type="date" name="end_date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>النوع</label><select name="leave_type">
-                <option value="annual">سنوية</option><option value="sick">مرضية</option>
-                <option value="unpaid">بدون راتب</option><option value="other">أخرى</option>
-            </select></div>
-            <div class="modal-actions">
-                <button type="submit" class="btn">حفظ</button>
-                <button type="button" class="btn btn-cancel" onclick="document.getElementById('leaveModal').classList.remove('open')">إلغاء</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <div class="modal-bg" id="salaryModal">
     <div class="modal">
         <h3>صرف مرتب فردي</h3>
@@ -2657,6 +2609,7 @@ $statusBadge = function($st) {
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="update_request_time">
             <input type="hidden" name="request_id" id="editReqId" value="">
+            <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
             <div class="form-row">
                 <label>وقت الحضور المطلوب</label>
                 <input type="time" name="requested_in" id="editReqIn">
