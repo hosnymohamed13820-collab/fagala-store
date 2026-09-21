@@ -530,7 +530,46 @@ require_once __DIR__ . '/includes/header.php';
     );
     $stList->execute($params);
     $allReceipts = $stList->fetchAll();
+    ?>
 
+    <script>
+    /* 🔴 لازم تفضل فوق الكروت.
+           الكروت تحتيها بتتكتب في حلقة وبتزيد كل يوم. لو التعريف نزل
+           آخر الصفحة، اللي يكتب في خانة البحث قبل ما الصفحة تكمّل
+           مايحصلش حاجة وتتسجّل غلطة في سجل السيرفر.
+           (نفس بق `toggleSubtype` اللي اتصلح في بريف ٢٤.) */
+        function recvFilter() {
+            var box = document.getElementById('recvSearch');
+            if (!box) return;
+            var q = (box.value || '').trim().toLowerCase();
+            var cards = document.querySelectorAll('.receiving-card[data-s]');
+            var shown = 0;
+            for (var i = 0; i < cards.length; i++) {
+                var ok = !q || (cards[i].dataset.s || '').indexOf(q) !== -1;
+                cards[i].style.display = ok ? '' : 'none';
+                if (ok) shown++;
+            }
+            var emp = document.getElementById('recvEmpty');
+            if (emp) emp.style.display = (cards.length && !shown) ? '' : 'none';
+        }
+    </script>
+
+    <?php /* الخانة مالهاش لزمة لو مفيش استلامات أصلاً — كانت بتطلع
+             فوق رسالة «مفيش استلامات» وتبقى ضوضاء. */ ?>
+    <?php if (!empty($allReceipts)): ?>
+    <div class="card" style="padding:12px 14px;margin-bottom:14px;">
+        <input type="text" id="recvSearch" autocomplete="off" inputmode="search"
+               aria-label="بحث في الاستلامات"
+               placeholder="ابحث برقم الفاتورة أو اسم المجموعة…"
+               oninput="recvFilter()" onkeydown="if(event.key==='Enter')event.preventDefault();"
+               style="width:100%;padding:10px 12px;border:1px solid var(--line);
+                      border-radius:var(--r);font-size:14px;">
+        <div id="recvEmpty" style="display:none;color:var(--ink-500);
+                                   font-size:13px;padding:10px 2px;">مفيش نتائج</div>
+    </div>
+    <?php endif; ?>
+
+    <?php
     if (empty($allReceipts)):
     ?>
         <div class="card receiving-card" style="text-align:center;padding:36px 20px;color:var(--ink-500);">
@@ -641,7 +680,7 @@ require_once __DIR__ . '/includes/header.php';
             $key = $gid > 0 ? ('g_' . $gid) : ('d_' . $did);
             if (!isset($headersMap[$key])) {
                 $title = $gid > 0
-                    ? ('مجموعة فواتير #' . $gid . ' — ' . ($rc['group_name'] ?: 'بدون اسم'))
+                    ? ($rc['group_name'] ? ('مجموعة فواتير #' . $gid . ' — ' . $rc['group_name']) : ('مجموعة فواتير #' . $gid))
                     : ('فاتورة #' . ($rc['invoice_no'] ?: $did));
                 $headersMap[$key] = [
                     'group_id'        => $gid,
@@ -677,7 +716,9 @@ require_once __DIR__ . '/includes/header.php';
                 }
             }
     ?>
-        <div class="card receiving-card clickable-card" data-url="<?= e($cardTargetUrl) ?>">
+        <div class="card receiving-card clickable-card"
+             data-s="<?= e(mb_strtolower($hdr['title'])) ?>"
+             data-url="<?= e($cardTargetUrl) ?>">
             <div class="rc-header">
                 <div>
                     <h3 style="margin:0 0 4px 0;font-size:16px;">
