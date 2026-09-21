@@ -67,6 +67,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = $cDecision === 'approved'
                     ? 'تم اعتماد العهدة والفلوس دخلت الخزينة.'
                     : 'تم رفض العهدة ورجعت للكاشير. مفيش فلوس اتحرّكت.';
+
+                if ($cDecision === 'rejected') {
+                    // 🔴 الوردية بياخد صاحبها إشعار لما ترجع، والعهدة ماكانتش.
+                    //    فكانت بترجع للكاشير وهو مش عارف، وممكن تفضل أيام.
+                    //    النداء هنا **بعد** ما الحفظ نجح — `save_custody_review`
+                    //    جوّاها transaction، ولو بعتنا قبلها وهي رجعت يبقى بعتنا
+                    //    إشعار برفض ما حصلش.
+                    try {
+                        $stC = $pdo->prepare(
+                            'SELECT branch_id, employee_id FROM branch_custody WHERE id = ? LIMIT 1'
+                        );
+                        $stC->execute([$custodyId]);
+                        $cRow = $stC->fetch();
+
+                        $targets = [];
+                        if ($cRow) {
+                            if (!empty($cRow['employee_id'])) {
+                                // عهدة موظف — صاحبها وبس
+                                $stU = $pdo->prepare('SELECT user_id FROM employees WHERE id = ? LIMIT 1');
+                                $stU->execute([(int) $cRow['employee_id']]);
+                                $uidEmp = $stU->fetchColumn();
+                                if ($uidEmp) $targets = [(int) $uidEmp];
+                            } else {
+                                // عهدة فرع — مستخدمي الفرع
+                                require_once __DIR__ . '/shortage_lib.php';
+                                $targets = shortage_branch_user_ids((int) $cRow['branch_id']);
+                            }
+                        }
+
+                        // 🔴 المحاسب اللي رفض مايجيلوش إشعار من نفسه
+                        $targets = array_values(array_diff($targets, [(int) $uid]));
+
+                        if ($targets) {
+                            notify(
+                                $pdo,
+                                $targets,
+                                'custody_return',
+                                'العهدة رجعت للتعديل',
+                                'السبب: ' . ($cReason ?: 'بدون سبب') . ' — ظبّط المصاريف أو العدّ وقدّمها تاني',
+                                'custody.php'
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        // 🔴 الإشعار **عمره ما يوقّع الرفض**. الرفض اتحفظ خلاص.
+                        error_log('notify custody rejection error: ' . $e->getMessage());
+                    }
+                }
             } elseif (($_POST['action'] ?? '') === 'shift_date_branch') {
                 $shiftId = (int) ($_POST['shift_id'] ?? 0);
                 $bDate   = trim((string)($_POST['business_date'] ?? ''));
@@ -429,7 +476,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-pane { display:none; } .rv-pane.active { display:block; }
     /* كروت الورديات */
     .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
-        box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
+        max-width:980px; box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
     .shift-card.done { border-right-color:var(--pos); }
     .shift-card.rej { border-right-color:var(--neg); }
     .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
@@ -483,11 +530,14 @@ function shift_cashier_amounts(array $s): array {
     .cmp-sub-table th, .cmp-sub-table td { padding:6px 10px; text-align:center; border-bottom:1px solid var(--line-soft); }
     .cmp-sub-table th { background:var(--line-soft); color:var(--ink-500); font-weight:600; }
     .cmp-sub-table td { color:var(--ink-700); }
-    .rv-actions { display:flex; gap:8px; margin-top:14px; }
-    .btn-approve { background:var(--pos-fill); color:#fff; flex:1; }
-    .btn-approve:hover { background:var(--pos-fill); color:#fff; }
-    .btn-reject  { background:var(--neg-fill); color:#fff; flex:1; }
-    .btn-reject:hover { background:var(--neg-fill); color:#fff; }
+    .rv-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-start; }
+    /* الزراير كانت `flex:1` فبتاخد عرض الكارت كله. وكمان «رفض» كان
+       بنفس بروز «اعتماد» — والعين مابتفرقش بين اللي بيمشّي واللي بيرجّع.
+       دلوقتي: عرض طبيعي، و«رفض» مفرّغ مش مصمت. */
+    .btn-approve { background:var(--pos-fill); color:#fff; min-width:160px; }
+    .btn-reject  { background:transparent; color:var(--neg);
+                   border:1px solid var(--neg); min-width:120px; }
+    .btn-reject:hover { background:var(--neg-soft); color:var(--neg); }
     /* قسم عهد الفروع */
     .cst-row { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-bottom:4px; }
     .section-head { font-size:15px; font-weight:600; color:var(--ink-700); margin:26px 0 12px; }
@@ -554,10 +604,10 @@ function shift_cashier_amounts(array $s): array {
                     </div>
                 </div>
                 <div class="sc-stats">
-                    <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">فيزا + إنستا باي</div><div class="v"><?= number_format($amt['visa']+$amt['instapay'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= number_format($diff,2) ?></div></div>
+                    <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= ltr_out(number_format($amt['system'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= ltr_out(number_format($amt['cash'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">فيزا + إنستا باي</div><div class="v"><?= ltr_out(number_format($amt['visa']+$amt['instapay'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= ltr_out(number_format($diff,2)) ?></div></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -588,12 +638,12 @@ function shift_cashier_amounts(array $s): array {
                 </div>
 
                 <div class="sc-stats">
-                    <div class="sc-stat"><div class="l">أول المدة</div><div class="v"><?= number_format($cOpening,2) ?></div></div>
-                    <div class="sc-stat"><div class="l">المصروفات</div><div class="v"><?= number_format($cExpenses,2) ?></div></div>
-                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format($cExpected,2) ?></div></div>
+                    <div class="sc-stat"><div class="l">أول المدة</div><div class="v"><?= ltr_out(number_format($cOpening,2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">المصروفات</div><div class="v"><?= ltr_out(number_format($cExpenses,2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= ltr_out(number_format($cExpected,2)) ?></div></div>
                     <div class="sc-stat">
                         <div class="l">الكاشير عدّ</div>
-                        <div class="v <?= abs($cDiff)>=0.01?'red':'' ?>"><?= number_format($cCounted,2) ?></div>
+                        <div class="v <?= abs($cDiff)>=0.01?'red':'' ?>"><?= ltr_out(number_format($cCounted,2)) ?></div>
                     </div>
                 </div>
 
@@ -651,17 +701,17 @@ function shift_cashier_amounts(array $s): array {
                     </span>
                 </div>
                 <div class="sc-stats">
-                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= number_format((float)$c['closing_balance'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">الكاشير عدّ</div><div class="v"><?= number_format((float)($c['counted_cash'] ?? 0),2) ?></div></div>
+                    <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= ltr_out(number_format((float)$c['closing_balance'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">الكاشير عدّ</div><div class="v"><?= ltr_out(number_format((float)($c['counted_cash'] ?? 0),2)) ?></div></div>
                     <div class="sc-stat">
                         <div class="l">المحاسب استلم</div>
-                        <div class="v"><?= $isDone ? number_format((float)($c['accountant_counted'] ?? 0),2) : '—' ?></div>
+                        <div class="v"><?= $isDone ? ltr_out(number_format((float)($c['accountant_counted'] ?? 0),2)) : '—' ?></div>
                     </div>
                     <div class="sc-stat">
                         <div class="l"><?= $isDone ? 'الفرق' : 'سبب الرفض' ?></div>
                         <div class="v <?= $isDone && abs((float)$c['difference'])>=0.01 ? 'red' : '' ?>"
                              style="<?= $isDone ? '' : 'font-size:13px;font-weight:500;' ?>">
-                            <?= $isDone ? number_format((float)$c['difference'],2) : e($c['reject_reason'] ?? '—') ?>
+                            <?= $isDone ? ltr_out(number_format((float)$c['difference'],2)) : e($c['reject_reason'] ?? '—') ?>
                         </div>
                     </div>
                 </div>
@@ -687,10 +737,10 @@ function shift_cashier_amounts(array $s): array {
                     <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span>
                 </div>
                 <div class="sc-stats">
-                    <div class="sc-stat"><div class="l">السيستم</div><div class="v"><?= number_format($amt['system'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= number_format($amt['cash'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">فيزا+إنستا</div><div class="v"><?= number_format($amt['visa']+$amt['instapay'],2) ?></div></div>
-                    <div class="sc-stat"><div class="l">الفرق</div><div class="v"><?= number_format(($amt['cash']+$amt['visa']+$amt['instapay'])-$amt['system'],2) ?></div></div>
+                    <div class="sc-stat"><div class="l">السيستم</div><div class="v"><?= ltr_out(number_format($amt['system'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= ltr_out(number_format($amt['cash'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">فيزا+إنستا</div><div class="v"><?= ltr_out(number_format($amt['visa']+$amt['instapay'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">الفرق</div><div class="v"><?= ltr_out(number_format(($amt['cash']+$amt['visa']+$amt['instapay'])-$amt['system'],2)) ?></div></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -866,7 +916,7 @@ function shift_cashier_amounts(array $s): array {
                     <textarea name="reason" id="rv_reason" rows="2" placeholder="اكتب سبب الرجوع هنا..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;"></textarea>
                     <div class="rv-actions">
                         <button type="submit" class="btn-approve" onclick="return rvDecide('approved')" style="border:none;border-radius:9px;padding:11px;cursor:pointer;font-family:inherit;font-size:14px;">✓ اعتماد وإنشاء القيود</button>
-                        <button type="submit" class="btn-reject" onclick="return rvDecide('rejected')" style="border:none;border-radius:9px;padding:11px;cursor:pointer;font-family:inherit;font-size:14px;">↩ إرجاع للموظف</button>
+                        <button type="submit" class="btn-reject" onclick="return rvDecide('rejected')" style="border-radius:9px;padding:11px;cursor:pointer;font-family:inherit;font-size:14px;">↩ إرجاع للموظف</button>
                     </div>
                 </div>
             </div>

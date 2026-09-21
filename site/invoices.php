@@ -1935,7 +1935,22 @@ require_once __DIR__ . '/includes/header.php';
     .sf-btn.active span { background:var(--fill-strong-veil); color:var(--fill-strong-fg); }
     .no-match { padding:26px; text-align:center; color:var(--ink-400); }
 
-    .inv-table { width:100%; border-collapse:collapse; }
+    /* 🔴 `fixed` مش رفاهية: من غيرها المتصفح بيقيس كل خانة ظاهرة عشان
+           يحسب عرض الأعمدة — ومع ٢٠٠٠ فاتورة × ٨ أعمدة الفرد كان بياخد
+           ثانية كاملة. مع `fixed` الأعمدة بتتحدد من `<colgroup>` تحت،
+           والمتصفح مابيقيسش ولا خانة.
+       ⚠️ يعني الأعمدة مابتتوسّعش مع المحتوى — أي عمود جديد لازم
+          ياخد عرض في الـ`<colgroup>` وإلا هيطلع ضيّق. */
+    .inv-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    .inv-table .inv-supplier { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* 🔴 الصف ممكن يتخفي لـ٣ أسباب مستقلة: الفرع مطوي · المجموعة الفرعية
+           مطوية · الفلتر مخفيه. كل سبب خاصية لوحده، والمتصفح بيجمّعهم.
+           قبل كده الجافاسكربت كان بيقرا التلاتة ويحسب `style.display`
+           لكل صف — شغل زيادة على ٢٠٠٠ صف في كل فرد. */
+    .inv-table tr.inv-row[data-branch-collapsed],
+    .inv-table tr.inv-row[data-sub-collapsed],
+    .inv-table tr.inv-row[data-filter-hidden] { display: none; }
     .inv-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
     .inv-table tbody td { padding:11px 12px; text-align:center; border-bottom:1px solid var(--line-soft); }
     .inv-table .inv-row { cursor:pointer; transition:background 0.12s; }
@@ -3697,16 +3712,8 @@ require_once __DIR__ . '/includes/header.php';
                     // الرأس الفرعي: نخفيه/نظهره مع الفرع، ونسيبه مطوي لو كان مطوي
                     sib.style.display = collapsed ? 'none' : '';
                 } else if (sib.classList.contains('inv-row')) {
-                    if (collapsed) {
-                        sib.dataset.branchCollapsed = '1';
-                        sib.style.display = 'none';
-                    } else {
-                        delete sib.dataset.branchCollapsed;
-                        // نحترم طي المجموعة الفرعية والفلتر
-                        const subHidden = sib.dataset.subCollapsed === '1';
-                        const filtHidden = sib.dataset.filterHidden === '1';
-                        sib.style.display = (subHidden || filtHidden) ? 'none' : '';
-                    }
+                    if (collapsed) sib.dataset.branchCollapsed = '1';
+                    else           delete sib.dataset.branchCollapsed;
                 }
                 sib = sib.nextElementSibling;
             }
@@ -3719,13 +3726,8 @@ require_once __DIR__ . '/includes/header.php';
             let sib = head.nextElementSibling;
             while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
                 if (sib.classList.contains('inv-row')) {
-                    if (collapsed) {
-                        sib.dataset.subCollapsed = '1';
-                        sib.style.display = 'none';
-                    } else {
-                        delete sib.dataset.subCollapsed;
-                        sib.style.display = (sib.dataset.filterHidden === '1') ? 'none' : '';
-                    }
+                    if (collapsed) sib.dataset.subCollapsed = '1';
+                    else           delete sib.dataset.subCollapsed;
                 }
                 sib = sib.nextElementSibling;
             }
@@ -3760,6 +3762,16 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا توجد فواتير.</div>
         <?php else: ?>
         <table class="inv-table">
+            <colgroup>
+                <col style="width:48px;">
+                <col style="width:13%;">
+                <col style="width:12%;">
+                <col style="width:11%;">
+                <col>
+                <col style="width:13%;">
+                <col style="width:13%;">
+                <?php if ($tab==='posted'): ?><col style="width:13%;"><?php endif; ?>
+            </colgroup>
             <thead><tr>
                 <th>#</th><th>رقم الفاتورة</th><th>التاريخ</th>
                 <th>كود المورد</th><th>اسم المورد</th><th>الإجمالي</th><th>الصافي</th>
@@ -3835,7 +3847,7 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                         <td style="font-size:13px;"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td>
                         <td style="font-family:monospace;color:var(--ink-500);"><?= e($inv['supplier_code'] ?? '—') ?></td>
-                        <td style="font-weight:500;text-align:right;"><?= e($inv['supplier_name'] ?? '—') ?></td>
+                        <td class="inv-supplier" style="font-weight:500;text-align:right;" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td>
                         <td><?= number_format((float)$inv['total_amount'],2) ?></td>
                         <td><?= number_format((float)$inv['net_amount'],2) ?></td>
                         <?php if ($tab==='posted'): ?>
@@ -4025,22 +4037,21 @@ require_once __DIR__ . '/includes/header.php';
             const okSt = invFilter.st === 'all' || (r.dataset.st || 'new') === invFilter.st;
             const okScope = invFilter.scope === 'all' || (r.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && r.dataset.scope === 'branch');
             const hit  = okQ && okSt && okScope;
-            r.dataset.filterHidden = hit ? '0' : '1';
-            // صف يظهر لو عدّى الفلتر وفرعه مش مطوي
-            const visible = hit && r.dataset.branchCollapsed !== '1';
-            r.style.display = visible ? '' : 'none';
             if (hit) {
+                delete r.dataset.filterHidden;
                 shown++;
                 // ترقيم متسلسل للمعروض بس
                 const c = r.querySelector('td:first-child');
                 if (c) c.textContent = ++n;
+            } else {
+                r.dataset.filterHidden = '1';
             }
         });
         // رأس الفرع يفضل ظاهر لو مطوي عمداً؛ يتخفى بس لو الفلتر شال كل فواتيره
         document.querySelectorAll('.branch-head').forEach(h => {
             const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             const rows = branchRows(h);
-            const anyMatch = rows.some(r => r.dataset.filterHidden !== '1');
+            const anyMatch = rows.some(r => !r.dataset.filterHidden);
             h.style.display = (okScope && anyMatch) ? '' : 'none';
         });
         // نفس الشيء للرؤوس الفرعية (شراء/مردود)
@@ -4048,7 +4059,7 @@ require_once __DIR__ . '/includes/header.php';
             const okScope = invFilter.scope === 'all' || (h.dataset.scope === invFilter.scope) || (invFilter.scope === 'branches' && h.dataset.scope === 'branch');
             let any = false, sib = h.nextElementSibling;
             while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
-                if (sib.classList.contains('inv-row') && sib.dataset.filterHidden !== '1') { any = true; break; }
+                if (sib.classList.contains('inv-row') && !sib.dataset.filterHidden) { any = true; break; }
                 sib = sib.nextElementSibling;
             }
             // نخفيه بس لو فرعه مش مطوي (عشان ماينافسش طي الفرع)
