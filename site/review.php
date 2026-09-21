@@ -476,7 +476,7 @@ function shift_cashier_amounts(array $s): array {
     .rv-pane { display:none; } .rv-pane.active { display:block; }
     /* كروت الورديات */
     .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
-        max-width:980px; box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
+        max-width:980px; margin-inline:auto; box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
     .shift-card.done { border-right-color:var(--pos); }
     .shift-card.rej { border-right-color:var(--neg); }
     .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
@@ -487,7 +487,11 @@ function shift_cashier_amounts(array $s): array {
     .sc-stat { background:var(--line-soft); border-radius:10px; padding:12px; text-align:center; }
     .sc-stat .l { font-size:12px; color:var(--ink-500); margin-bottom:4px; }
     .sc-stat .v { font-size:16px; font-weight:700; color:var(--ink-900); }
-    .sc-stat .v.red { color:var(--neg); }
+    /* 🔴 الفرق كان بياخد `red` من `abs($diff)` — يعني الزيادة كانت
+           بتتلوّن زي العجز بالظبط، والمحاسب مابيفرقش بينهم.
+           دلوقتي اللون بيتبع الإشارة. */
+    .sc-stat .v.neg { color:var(--neg); }   /* ناقص عن المطلوب */
+    .sc-stat .v.pos { color:var(--pos); }   /* زيادة عن المطلوب */
     .btn-review { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 18px; cursor:pointer; font-family:inherit; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
     /* بوب أب */
     .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:9999; align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
@@ -607,7 +611,7 @@ function shift_cashier_amounts(array $s): array {
                     <div class="sc-stat"><div class="l">مبيعات السيستم</div><div class="v"><?= ltr_out(number_format($amt['system'],2)) ?></div></div>
                     <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= ltr_out(number_format($amt['cash'],2)) ?></div></div>
                     <div class="sc-stat"><div class="l">فيزا + إنستا باي</div><div class="v"><?= ltr_out(number_format($amt['visa']+$amt['instapay'],2)) ?></div></div>
-                    <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= abs($diff)>=0.01?'red':'' ?>"><?= ltr_out(number_format($diff,2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">الفرق</div><div class="v <?= $diff <= -0.01 ? 'neg' : ($diff >= 0.01 ? 'pos' : '') ?>"><?= ltr_out(number_format($diff,2)) ?></div></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -643,7 +647,7 @@ function shift_cashier_amounts(array $s): array {
                     <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= ltr_out(number_format($cExpected,2)) ?></div></div>
                     <div class="sc-stat">
                         <div class="l">الكاشير عدّ</div>
-                        <div class="v <?= abs($cDiff)>=0.01?'red':'' ?>"><?= ltr_out(number_format($cCounted,2)) ?></div>
+                        <div class="v <?= $cDiff <= -0.01 ? 'neg' : ($cDiff >= 0.01 ? 'pos' : '') ?>"><?= ltr_out(number_format($cCounted,2)) ?></div>
                     </div>
                 </div>
 
@@ -709,7 +713,10 @@ function shift_cashier_amounts(array $s): array {
                     </div>
                     <div class="sc-stat">
                         <div class="l"><?= $isDone ? 'الفرق' : 'سبب الرفض' ?></div>
-                        <div class="v <?= $isDone && abs((float)$c['difference'])>=0.01 ? 'red' : '' ?>"
+                        <?php /* 🔴 نفس منطق كروت الانتظار: اللون بالإشارة مش بـ`abs()`.
+                                 `difference = counted - expected` (finance.php:1425)
+                                 فالسالب عجز والموجب زيادة. */ ?>
+                        <div class="v <?= !$isDone ? '' : ((float)$c['difference'] <= -0.01 ? 'neg' : ((float)$c['difference'] >= 0.01 ? 'pos' : '')) ?>"
                              style="<?= $isDone ? '' : 'font-size:13px;font-weight:500;' ?>">
                             <?= $isDone ? ltr_out(number_format((float)$c['difference'],2)) : e($c['reject_reason'] ?? '—') ?>
                         </div>
