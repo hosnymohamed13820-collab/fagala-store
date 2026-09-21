@@ -186,12 +186,20 @@ require_once __DIR__ . '/includes/header.php';
     /* خزينة الكاش الفعلي — بيقف يمين الكارت الأزرق */
     .tre-box.realcash {
         flex:1 1 34%; border:2px solid var(--pos);
-        background:linear-gradient(135deg,var(--pos-soft) 0%,#fff 70%);
+        background:linear-gradient(135deg,var(--pos-soft) 0%,var(--surface) 70%);
         display:flex; align-items:center; justify-content:space-between;
         gap:16px; padding:16px 22px;
     }
     .tre-box.realcash .tre-top { margin-bottom:0; font-size:14px; color:var(--pos); }
     .tre-box.realcash .tre-val { font-size:30px; }
+    /* 🔴 الكارت ده كان أخضر مهما كانت القيمة — «خزينة الكاش الفعلي -82,131»
+           في إطار أخضر. اللون لازم يتبع الإشارة وإلا بيبقى بلا معنى.
+           و`#fff` كان مثبّت فالجراديانت كان بيبيّض في الوضع الليلي. */
+    .tre-box.realcash.neg {
+        border-color:var(--neg);
+        background:linear-gradient(135deg,var(--neg-soft) 0%,var(--surface) 70%);
+    }
+    .tre-box.realcash.neg .tre-top { color:var(--neg); }
     @media (max-width:820px){
         .tre-box.main, .tre-box.realcash { flex:1 1 100%; }
     }
@@ -255,16 +263,16 @@ require_once __DIR__ . '/includes/header.php';
 <div class="treasury-grid">
     <div class="tre-box main">
         <div class="tre-top"><i class="ti ti-building-bank"></i> الخزائن المركزية (بدون عهد الفروع)</div>
-        <div class="tre-val"><?= money_fmt($mainTotal) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= ltr_out(money_fmt($mainTotal)) ?> <span class="tre-cur">ج.م</span></div>
     </div>
-    <div class="tre-box realcash" title="الخزينة الرئيسية + خزينة الكاش">
+    <div class="tre-box realcash<?= $realCash < 0 ? ' neg' : '' ?>" title="الخزينة الرئيسية + خزينة الكاش">
         <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
-        <div class="tre-val"><?= money_fmt($realCash) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= ltr_out(money_fmt($realCash)) ?> <span class="tre-cur">ج.م</span></div>
     </div>
     <?php foreach ($centralTreasuries as $t): ?>
         <div class="tre-box">
             <div class="tre-top"><i class="ti <?= e($typeIcons[$t['type']]??'ti-cash') ?>"></i> <?= e($t['name']) ?></div>
-            <div class="tre-val"><?= money_fmt((float)$t['balance']) ?> <span class="tre-cur">ج.م</span></div>
+            <div class="tre-val"><?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tre-cur">ج.م</span></div>
         </div>
     <?php endforeach; ?>
 </div>
@@ -273,7 +281,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="summary-grid">
     <div class="sum-box">
         <div class="l"><i class="ti ti-cash-banknote"></i> إجمالي المبيعات</div>
-        <div class="v v-green"><?= money_fmt($totalSales) ?></div>
+        <div class="v v-green"><?= ltr_out(money_fmt($totalSales)) ?></div>
         <div class="u">ج.م — معتمدة</div>
     </div>
     <div class="sum-box">

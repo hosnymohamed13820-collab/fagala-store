@@ -44,7 +44,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <title>تسجيل الدخول — <?= e($storeName) ?></title>
     <!-- PWA -->
     <link rel="manifest" href="manifest.json?v=3">
-    <meta name="theme-color" content="#16233d">
+    <meta name="theme-color" content="#4d1620">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
         // لو نزل تحت، الصفحة هتومض أبيض قبل ما تسود.
@@ -58,13 +58,13 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             }
             document.documentElement.setAttribute('data-theme', t);
             var m = document.querySelector('meta[name="theme-color"]');
-            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            if (m) m.setAttribute('content', t === 'dark' ? '#2c0c12' : '#4d1620');
         })();
     </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="الفجالة">
+    <meta name="apple-mobile-web-app-title" content="إشراقة">
     <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
     <link rel="icon" href="favicon.ico?v=3" sizes="any">
@@ -76,11 +76,11 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         :root {
             --ink-900: #16233d; --ink-800: #22334f; --ink-700: #3b4e6d;
             --ink-500: #6d7f9a; --ink-400: #94a3b8; --ink-300: #c3ccd8;
-            --accent:       #1e6fbf;
-            --accent-hover: #185a9c;
-            --accent-soft:  #e8f1fb;
-            --accent-ring:  rgba(30,111,191,.20);
-            --accent-text: #1e6fbf;
+            --accent:       #6d1f2b;
+            --accent-hover: #55161f;
+            --accent-soft:  #fbedef;
+            --accent-ring:  rgba(109,31,43,.22);
+            --accent-text:  #6d1f2b;
             --bg:        #f5f6f8;
             --surface:   #ffffff;
             --line:      #e3e7ed;
@@ -115,9 +115,9 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             --line:      #263243;
             --line-soft: #1b2635;
 
-            --accent-soft: #14263c;
-            --accent-ring: rgba(122,184,240,.22);
-            --accent-text: #7ab8f0;
+            --accent-soft: #3a1620;
+            --accent-ring: rgba(240,168,180,.22);
+            --accent-text: #f0a8b4;
 
             --neg:      #ff8a80;
             --neg-soft: #3a1a18;
@@ -151,9 +151,9 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             content: '';
             position: fixed; inset: 0;
             background:
-                radial-gradient(48% 42% at 22% 18%, rgba(30,111,191,.45) 0%, transparent 62%),
+                radial-gradient(48% 42% at 22% 18%, rgba(109,31,43,.45) 0%, transparent 62%),
                 radial-gradient(42% 38% at 82% 78%, rgba(214,175,106,.16) 0%, transparent 60%),
-                radial-gradient(60% 55% at 60% 8%,  rgba(60,110,160,.28) 0%, transparent 65%);
+                radial-gradient(60% 55% at 60% 8%,  rgba(140,45,60,.28) 0%, transparent 65%);
             pointer-events: none;
         }
         /* طبقة 2: شبكة هندسية خفيفة (نمط معماري عربي مبسّط) */
@@ -249,10 +249,10 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         .btn-login {
             width: 100%;
             padding: 13px;
-            background: linear-gradient(180deg, #3d8ad4 0%, var(--accent) 100%);
+            background: linear-gradient(180deg, #852635 0%, var(--accent) 100%);
             color: #fff;
             border: none;
-            box-shadow: 0 6px 16px rgba(30,111,191,.30);
+            box-shadow: 0 6px 16px rgba(109,31,43,.30);
             border-radius: 10px;
             font-size: 16px;
             font-weight: 600;

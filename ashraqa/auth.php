@@ -105,6 +105,30 @@ function all_modules(): array
  *
  * @return array<string, array<string, string>>
  */
+/**
+ * عرض رقم/تليفون جوه نص عربي من غير ما ترتيبه أو إشارته تتقلب.
+ *
+ * 🔴 الأرقام اللاتينية جوه فقرة RTL بتتلخبط: التليفون بيتقطّع
+ *    («0 11 26857134») والسالب بتروح إشارته لآخر الرقم.
+ *    <bdi dir="ltr"> بتعزل الرقم وتخليه يتقرا زي ما هو.
+ *    الدالة دي **للنص الجوّاني اللي مالوش كلاس** — اللي له كلاس
+ *    متحلول من `fagala.css` (قاعدة الأرقام في آخر الملف).
+ *
+ * 🔴 مكانها هنا مش في `finance.php` عن قصد: `book_reserve.php`
+ *    بيستعملها وهو مابيعملش require لـfinance.php، فالصفحة وقعت
+ *    بـFatal على السيرفر (٢٠ سبتمبر ٢٠٢٦). `auth.php` بيتحمّل في
+ *    كل صفحة، فالدالة متاحة في أي مكان.
+ *
+ * ⚠️ الحارس مش زيادة: `config.php` (مش في الريبو) بيعرّف دوال —
+ *    وده وقّع إشراقة بـ«Cannot redeclare» ٦٧ مرة.
+ */
+if (!function_exists('ltr_out')) {
+    function ltr_out($value): string
+    {
+        return '<bdi dir="ltr">' . e((string) $value) . '</bdi>';
+    }
+}
+
 function module_parts(): array
 {
     return [

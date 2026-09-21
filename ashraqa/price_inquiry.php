@@ -126,7 +126,7 @@ require_once __DIR__ . '/includes/header.php';
         }
         resultCard.classList.remove('notfound');
         const price = data.price !== null && data.price !== undefined
-            ? Number(data.price).toFixed(2) + ' <span class="cur">جنيه</span>'
+            ? Number(data.price).toFixed(2) + ' <span class="cur">ج.م</span>'
             : '<span class="cur">السعر غير محدد</span>';
         resultContent.innerHTML =
             '<div class="res-name">' + escapeHtml(data.name) + '</div>' +

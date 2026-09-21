@@ -572,7 +572,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tbody>
                     <?php foreach ($denominations as $d): ?>
                         <tr>
-                            <td><?= $d ?> جنيه</td>
+                            <td><?= $d ?> ج.م</td>
                             <td><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count-emp" data-denom="<?= $d ?>"
                                        value="0" oninput="recalcEmp()"></td>
                             <td class="denom-sub" id="sub_emp_<?= $d ?>">0.00</td>
@@ -786,7 +786,7 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                 <?php foreach ($denominations as $d): ?>
                     <tr>
-                        <td><?= $d ?> جنيه</td>
+                        <td><?= $d ?> ج.م</td>
                         <td><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count" data-denom="<?= $d ?>"
                                    value="0" oninput="recalc()"></td>
                         <td class="denom-sub" id="sub_<?= $d ?>">0.00</td>

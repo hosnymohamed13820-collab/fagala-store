@@ -88,7 +88,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
             document.documentElement.setAttribute('data-theme', t);
             // شريط المتصفح في الموبايل لازم يقلب هو كمان
             var m = document.querySelector('meta[name="theme-color"]');
-            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            if (m) m.setAttribute('content', t === 'dark' ? '#2c0c12' : '#4d1620');
         })();
 
         // تبديل الوضع الليلي. بيتخزّن في localStorage فبيفضل مع اليوزر
@@ -99,12 +99,12 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
             r.setAttribute('data-theme', t);
             try { localStorage.setItem('fagala-theme', t); } catch (e) {}
             var m = document.querySelector('meta[name="theme-color"]');
-            if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            if (m) m.setAttribute('content', t === 'dark' ? '#2c0c12' : '#4d1620');
         }
     </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="الفجالة">
+    <meta name="apple-mobile-web-app-title" content="إشراقة">
     <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
     <link rel="icon" href="favicon.ico?v=4" sizes="any">
@@ -127,8 +127,8 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=8">
-    <link rel="stylesheet" href="assets/ashraqa-theme.css?v=1">
+    <link rel="stylesheet" href="assets/fagala.css?v=9">
+    <link rel="stylesheet" href="assets/ashraqa-theme.css?v=2">
 </head>
 <body>
 <script>

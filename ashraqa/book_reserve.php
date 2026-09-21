@@ -163,7 +163,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div style="font-size:13.5px;color:var(--ink-700);line-height:2;">
                     <b><?= e($r['customer_name']) ?></b>
-                    <?= $r['customer_phone'] ? ' · ' . e($r['customer_phone']) : '' ?><br>
+                    <?= $r['customer_phone'] ? ' · ' . ltr_out($r['customer_phone']) : '' ?><br>
                     الفرع: <?= e($r['branch_name'] ?: '—') ?>
                     · الحاجز: <?= e($r['reserved_by'] ?: ($r['creator'] ?: '—')) ?>
                     · المقدم: <b><?= number_format((float)$r['deposit'], 2) ?></b> ج<br>
@@ -318,7 +318,7 @@ require_once __DIR__ . '/includes/header.php';
             <a class="rs-list-row" href="book_reserve.php?view=<?= (int)$rr['id'] ?>">
                 <span>
                     <b>#<?= (int)$rr['id'] ?> — <?= e($rr['customer_name']) ?></b>
-                    <?= $rr['customer_phone'] ? ' · ' . e($rr['customer_phone']) : '' ?>
+                    <?= $rr['customer_phone'] ? ' · ' . ltr_out($rr['customer_phone']) : '' ?>
                     <br>
                     <span style="font-size:12.5px;color:var(--ink-500);">
                         <?= (int)$rr['n_books'] ?> كتاب · مقدم <?= number_format((float)$rr['deposit'], 2) ?> ج

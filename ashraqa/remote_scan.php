@@ -83,10 +83,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>سكانر الكمبيوتر — الفجالة ستور</title>
 <link rel="icon" href="favicon-32.png?v=3">
+<meta name="theme-color" content="#4d1620">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/fagala.css?v=9">
+<link rel="stylesheet" href="assets/ashraqa-theme.css?v=2">
+<!-- 🔴 الصفحة دي مستقلة عن includes/header.php عن قصد، فسكربت الثيم
+     مكرّر هنا. لولاه data-theme مابتتحطّش والوضع الليلي مابيشتغلش. -->
+<script>
+    // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
+    // لو نزل تحت الـCSS، كل صفحة هتومض أبيض ربع ثانية قبل ما تسود.
+    // وبيتنفّذ متزامن بقصد (مفيش defer/async) عشان يخلّص قبل أول رسم.
+    (function () {
+        var t;
+        try { t = localStorage.getItem('fagala-theme'); } catch (e) {}
+        if (t !== 'dark' && t !== 'light') {
+            // أول مرة: امشي ورا إعداد الجهاز نفسه
+            t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches)
+                ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        // شريط المتصفح في الموبايل لازم يقلب هو كمان
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', t === 'dark' ? '#2c0c12' : '#4d1620');
+    })();
+</script>
 <style>
+    /* 🔴 `--pos` و`--neg` **كانوا هنا** كـ`--pos:var(--pos)` — متغيّر بيشاور
+       على نفسه. ده «دورة» في CSS ونتيجتها إن المتغيّر يبقى **باطل** خالص،
+       فرقم العدّاد الكبير تحت (`.count b`) كان بيفقد لونه. ماكانش باين قبل
+       كده لأن الصفحة ماكانتش بتحمّل `fagala.css` أصلاً فكل حاجة كانت باطلة.
+       اتشالوا — `fagala.css` بيعرّفهم صح والصفحة بترثهم منه. */
     :root { --navy:var(--ink-900); --steel:var(--accent-text); --gold:var(--warn); --line:var(--ink-400);
-            --ink:var(--accent-text); --mut:var(--accent-text); --pos:var(--pos); --neg:var(--neg); }
+            --ink:var(--accent-text); --mut:var(--accent-text); }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'IBM Plex Sans Arabic',sans-serif; }
     html, body { overflow-x:hidden; }
     body { background:var(--line-soft); min-height:100vh; padding:16px; }
@@ -103,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
                   font-size:20px; text-align:center; letter-spacing:3px; font-weight:700;
                   color:var(--navy); min-width:0; }
     .go { width:100%; padding:16px; font-size:17px; border:none; border-radius:12px;
-          background:var(--navy); color:#fff; cursor:pointer; font-weight:700; }
+          background:var(--navy); color:var(--surface); cursor:pointer; font-weight:700; }
     .go:active { background:var(--steel); }
     #devList { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
     .dev { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
