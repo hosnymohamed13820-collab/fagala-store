@@ -3594,6 +3594,91 @@ require_once __DIR__ . '/includes/header.php';
         }
         ?>
 
+        <script>
+        /* 🔴 الدوال دي **لازم تفضل فوق الجدول**.
+               الجدول تحتيها `foreach` على كل الفواتير — في تاب «المرحّلة»
+               بيطلّع آلاف الصفوف. المتصفح بيرسمها ويسيب المستخدم يدوس
+               قبل ما يوصل للسكربت اللي في آخر الصفحة.
+               لما كانوا تحت، اللي يدوس على رأس فرع عشان يطويه كان بياخد
+               «toggleSubtype is not defined» والضغطة تضيع (اتسجّلت على
+               السيرفر ٢٠ سبتمبر ٢٠٢٦). متنقلهمش تحت تاني. */
+        // ===== حفظ حالة الأكورديونات لحد نهاية الجلسة =====
+        // sessionStorage بيتمسح لوحده مع إغلاق التاب أو تسجيل الخروج،
+        // فمش محتاجين تنضيف يدوي.
+        const ACC_KEY = 'fagala_acc_state';
+
+        function accLoad() {
+            try { return JSON.parse(sessionStorage.getItem(ACC_KEY) || '{}'); }
+            catch (e) { return {}; }
+        }
+
+        function accSave(key, collapsed) {
+            if (!key) return;
+            try {
+                const st = accLoad();
+                if (collapsed) st[key] = 1; else delete st[key];
+                sessionStorage.setItem(ACC_KEY, JSON.stringify(st));
+            } catch (e) { /* الوضع الخاص ممكن يمنع الكتابة — نتجاهل */ }
+        }
+
+        // إعادة الحالة المحفوظة بعد تحميل الصفحة
+        function accRestore() {
+            const st = accLoad();
+            if (!st || !Object.keys(st).length) return;
+
+            // الفروع الأول، بعدين الأنواع الفرعية — عشان الترتيب يتحسب صح
+            document.querySelectorAll('tr[data-branchhead]').forEach(h => {
+                if (st[h.dataset.acckey]) toggleBranch(h, true);
+            });
+            document.querySelectorAll('tr[data-subhead]').forEach(h => {
+                if (st[h.dataset.acckey]) toggleSubtype(h, true);
+            });
+        }
+
+        function toggleBranch(head, silent) {
+            const collapsed = head.classList.toggle('collapsed');
+            if (!silent) accSave(head.dataset.acckey, collapsed);
+            let sib = head.nextElementSibling;
+            while (sib && !sib.dataset.branchhead) {
+                if (sib.dataset.subhead) {
+                    // الرأس الفرعي: نخفيه/نظهره مع الفرع، ونسيبه مطوي لو كان مطوي
+                    sib.style.display = collapsed ? 'none' : '';
+                } else if (sib.classList.contains('inv-row')) {
+                    if (collapsed) {
+                        sib.dataset.branchCollapsed = '1';
+                        sib.style.display = 'none';
+                    } else {
+                        delete sib.dataset.branchCollapsed;
+                        // نحترم طي المجموعة الفرعية والفلتر
+                        const subHidden = sib.dataset.subCollapsed === '1';
+                        const filtHidden = sib.dataset.filterHidden === '1';
+                        sib.style.display = (subHidden || filtHidden) ? 'none' : '';
+                    }
+                }
+                sib = sib.nextElementSibling;
+            }
+        }
+
+        // طي/فرد مجموعة فرعية (فاتورة شراء / مردود شراء) داخل الفرع
+        function toggleSubtype(head, silent) {
+            const collapsed = head.classList.toggle('collapsed');
+            if (!silent) accSave(head.dataset.acckey, collapsed);
+            let sib = head.nextElementSibling;
+            while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
+                if (sib.classList.contains('inv-row')) {
+                    if (collapsed) {
+                        sib.dataset.subCollapsed = '1';
+                        sib.style.display = 'none';
+                    } else {
+                        delete sib.dataset.subCollapsed;
+                        sib.style.display = (sib.dataset.filterHidden === '1') ? 'none' : '';
+                    }
+                }
+                sib = sib.nextElementSibling;
+            }
+        }
+        </script>
+
         <!-- أزرار عزل فواتير الإدارة عن باقي الفروع -->
         <div class="scope-filters">
             <button type="button" class="scope-btn active" data-scope="admin" onclick="setScopeFilter('admin', this)">
@@ -3848,81 +3933,6 @@ require_once __DIR__ . '/includes/header.php';
             sib = sib.nextElementSibling;
         }
         return rows;
-    }
-    // ===== حفظ حالة الأكورديونات لحد نهاية الجلسة =====
-    // sessionStorage بيتمسح لوحده مع إغلاق التاب أو تسجيل الخروج،
-    // فمش محتاجين تنضيف يدوي.
-    const ACC_KEY = 'fagala_acc_state';
-
-    function accLoad() {
-        try { return JSON.parse(sessionStorage.getItem(ACC_KEY) || '{}'); }
-        catch (e) { return {}; }
-    }
-
-    function accSave(key, collapsed) {
-        if (!key) return;
-        try {
-            const st = accLoad();
-            if (collapsed) st[key] = 1; else delete st[key];
-            sessionStorage.setItem(ACC_KEY, JSON.stringify(st));
-        } catch (e) { /* الوضع الخاص ممكن يمنع الكتابة — نتجاهل */ }
-    }
-
-    // إعادة الحالة المحفوظة بعد تحميل الصفحة
-    function accRestore() {
-        const st = accLoad();
-        if (!st || !Object.keys(st).length) return;
-
-        // الفروع الأول، بعدين الأنواع الفرعية — عشان الترتيب يتحسب صح
-        document.querySelectorAll('tr[data-branchhead]').forEach(h => {
-            if (st[h.dataset.acckey]) toggleBranch(h, true);
-        });
-        document.querySelectorAll('tr[data-subhead]').forEach(h => {
-            if (st[h.dataset.acckey]) toggleSubtype(h, true);
-        });
-    }
-
-    function toggleBranch(head, silent) {
-        const collapsed = head.classList.toggle('collapsed');
-        if (!silent) accSave(head.dataset.acckey, collapsed);
-        let sib = head.nextElementSibling;
-        while (sib && !sib.dataset.branchhead) {
-            if (sib.dataset.subhead) {
-                // الرأس الفرعي: نخفيه/نظهره مع الفرع، ونسيبه مطوي لو كان مطوي
-                sib.style.display = collapsed ? 'none' : '';
-            } else if (sib.classList.contains('inv-row')) {
-                if (collapsed) {
-                    sib.dataset.branchCollapsed = '1';
-                    sib.style.display = 'none';
-                } else {
-                    delete sib.dataset.branchCollapsed;
-                    // نحترم طي المجموعة الفرعية والفلتر
-                    const subHidden = sib.dataset.subCollapsed === '1';
-                    const filtHidden = sib.dataset.filterHidden === '1';
-                    sib.style.display = (subHidden || filtHidden) ? 'none' : '';
-                }
-            }
-            sib = sib.nextElementSibling;
-        }
-    }
-
-    // طي/فرد مجموعة فرعية (فاتورة شراء / مردود شراء) داخل الفرع
-    function toggleSubtype(head, silent) {
-        const collapsed = head.classList.toggle('collapsed');
-        if (!silent) accSave(head.dataset.acckey, collapsed);
-        let sib = head.nextElementSibling;
-        while (sib && !sib.dataset.subhead && !sib.dataset.branchhead) {
-            if (sib.classList.contains('inv-row')) {
-                if (collapsed) {
-                    sib.dataset.subCollapsed = '1';
-                    sib.style.display = 'none';
-                } else {
-                    delete sib.dataset.subCollapsed;
-                    sib.style.display = (sib.dataset.filterHidden === '1') ? 'none' : '';
-                }
-            }
-            sib = sib.nextElementSibling;
-        }
     }
 
     let invFilter = { q: '', st: 'all', scope: 'admin' };

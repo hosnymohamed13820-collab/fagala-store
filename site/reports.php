@@ -3065,6 +3065,90 @@ require_once __DIR__ . '/includes/header.php';
     // مباشرةً فمابيتأثرش بالقص ده.
     $noteCol = $report['notes_col'] ?? -1;
     ?>
+    <script>
+    /* 🔴 الدالة دي **لازم تفضل فوق الجدول**.
+           الجدول تحتيها `foreach` على كل صفوف التقرير. المتصفح
+           بيرسمها ويسيب المستخدم يدوس قبل ما يوصل للسكربت اللي
+           في آخر الصفحة. لما كانت تحت، كان ممكن يحصل ReferenceError
+           والضغطة تضيع. متنقلهاش تحت تاني. */
+    /* =====================================================================
+       أكورديون تفاصيل القيد — تقرير إجماليات القيود
+       ---------------------------------------------------------------------
+       - مفيش ريفريش للصفحة ولا إعادة تحميل للتقرير.
+       - بيجيب التفاصيل مرة واحدة بس؛ الفتح التاني بيعرض المخزّن من غير طلب.
+       - بيبعت الـid الحقيقي للحساب مش الاسم.
+       ===================================================================== */
+    function jeToggle(tr) {
+        var body = tr.nextElementSibling;
+        if (!body || !body.classList.contains('acc-body')) return;
+
+        var open = body.style.display !== 'none';
+        if (open) {                       // اقفل
+            body.style.display = 'none';
+            tr.classList.remove('open');
+            return;
+        }
+        body.style.display = '';
+        tr.classList.add('open');
+
+        if (tr.dataset.loaded === '1') return;   // متحمّل خلاص — مفيش طلب تاني
+
+        var cell = body.firstElementChild;
+        cell.innerHTML = '<div class="acc-msg">جارِ التحميل…</div>';
+
+        var p = new URLSearchParams(location.search);
+        var branchId = tr.dataset.branch !== undefined ? tr.dataset.branch : '';
+        var url = 'reports.php?ajax=je_details&acc=' + encodeURIComponent(tr.dataset.acc) +
+                  '&branch=' + encodeURIComponent(branchId) +
+                  '&from='   + encodeURIComponent(p.get('from') || '') +
+                  '&to='     + encodeURIComponent(p.get('to')   || '');
+
+        fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+            if (!d.ok) throw new Error(d.error || 'حصل خطأ.');
+            if (!d.rows.length) {
+                cell.innerHTML = '<div class="acc-msg">مفيش حركات في الفترة دي.</div>';
+                tr.dataset.loaded = '1';
+                return;
+            }
+            var exportUrl = 'journal_account_export.php?acc=' + encodeURIComponent(tr.dataset.acc) +
+                            '&branch=' + encodeURIComponent(branchId) +
+                            '&from='   + encodeURIComponent(p.get('from') || '') +
+                            '&to='     + encodeURIComponent(p.get('to')   || '');
+            var h = '<div class="acc-inner">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">' +
+                    '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
+                    '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
+                    '</div>' +
+                    '<div style="overflow-x:auto;"><table><thead><tr>' +
+                    '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
+                    '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
+                    '</tr></thead><tbody>';
+            var esc = function (x) {
+                return String(x == null ? '' : x).replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            };
+            var f = function (v) {
+                return v ? v.toLocaleString('en-US', { minimumFractionDigits: 2,
+                                                       maximumFractionDigits: 2 }) : '—';
+            };
+            d.rows.forEach(function (r) {
+                var descHtml = esc(r.desc) + (r.path ? '<div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">' + esc(r.path) + '</div>' : '');
+                h += '<tr><td>' + esc(r.date) + '</td><td>' + descHtml + '</td>' +
+                     '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
+                     '<td>' + esc(r.branch || '—') + '</td>' +
+                     '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +
+                     '<td>' + f(r.balance) + '</td><td>' + esc(r.by) + '</td>' +
+                     '<td>' + (r.notes ? esc(r.notes) : '—') + '</td></tr>';
+            });
+            h += '</tbody></table></div></div>';
+            cell.innerHTML = h;
+            tr.dataset.loaded = '1';
+        }).catch(function (ex) {
+            cell.innerHTML = '<div class="acc-msg">' + (ex.message || 'الاتصال فشل') + '</div>';
+        });
+    }
+    </script>
+
     <table data-xt-min="1">
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
@@ -3255,85 +3339,6 @@ require_once __DIR__ . '/includes/header.php';
 
     refresh();
 })();
-</script>
-
-<script>
-/* =====================================================================
-   أكورديون تفاصيل القيد — تقرير إجماليات القيود
-   ---------------------------------------------------------------------
-   - مفيش ريفريش للصفحة ولا إعادة تحميل للتقرير.
-   - بيجيب التفاصيل مرة واحدة بس؛ الفتح التاني بيعرض المخزّن من غير طلب.
-   - بيبعت الـid الحقيقي للحساب مش الاسم.
-   ===================================================================== */
-function jeToggle(tr) {
-    var body = tr.nextElementSibling;
-    if (!body || !body.classList.contains('acc-body')) return;
-
-    var open = body.style.display !== 'none';
-    if (open) {                       // اقفل
-        body.style.display = 'none';
-        tr.classList.remove('open');
-        return;
-    }
-    body.style.display = '';
-    tr.classList.add('open');
-
-    if (tr.dataset.loaded === '1') return;   // متحمّل خلاص — مفيش طلب تاني
-
-    var cell = body.firstElementChild;
-    cell.innerHTML = '<div class="acc-msg">جارِ التحميل…</div>';
-
-    var p = new URLSearchParams(location.search);
-    var branchId = tr.dataset.branch !== undefined ? tr.dataset.branch : '';
-    var url = 'reports.php?ajax=je_details&acc=' + encodeURIComponent(tr.dataset.acc) +
-              '&branch=' + encodeURIComponent(branchId) +
-              '&from='   + encodeURIComponent(p.get('from') || '') +
-              '&to='     + encodeURIComponent(p.get('to')   || '');
-
-    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d.ok) throw new Error(d.error || 'حصل خطأ.');
-        if (!d.rows.length) {
-            cell.innerHTML = '<div class="acc-msg">مفيش حركات في الفترة دي.</div>';
-            tr.dataset.loaded = '1';
-            return;
-        }
-        var exportUrl = 'journal_account_export.php?acc=' + encodeURIComponent(tr.dataset.acc) +
-                        '&branch=' + encodeURIComponent(branchId) +
-                        '&from='   + encodeURIComponent(p.get('from') || '') +
-                        '&to='     + encodeURIComponent(p.get('to')   || '');
-        var h = '<div class="acc-inner">' +
-                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">' +
-                '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
-                '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
-                '</div>' +
-                '<div style="overflow-x:auto;"><table><thead><tr>' +
-                '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
-                '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
-                '</tr></thead><tbody>';
-        var esc = function (x) {
-            return String(x == null ? '' : x).replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        };
-        var f = function (v) {
-            return v ? v.toLocaleString('en-US', { minimumFractionDigits: 2,
-                                                   maximumFractionDigits: 2 }) : '—';
-        };
-        d.rows.forEach(function (r) {
-            var descHtml = esc(r.desc) + (r.path ? '<div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">' + esc(r.path) + '</div>' : '');
-            h += '<tr><td>' + esc(r.date) + '</td><td>' + descHtml + '</td>' +
-                 '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
-                 '<td>' + esc(r.branch || '—') + '</td>' +
-                 '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +
-                 '<td>' + f(r.balance) + '</td><td>' + esc(r.by) + '</td>' +
-                 '<td>' + (r.notes ? esc(r.notes) : '—') + '</td></tr>';
-        });
-        h += '</tbody></table></div></div>';
-        cell.innerHTML = h;
-        tr.dataset.loaded = '1';
-    }).catch(function (ex) {
-        cell.innerHTML = '<div class="acc-msg">' + (ex.message || 'الاتصال فشل') + '</div>';
-    });
-}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

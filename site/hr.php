@@ -1834,12 +1834,18 @@ $statusBadge = function($st) {
                     $salTotalNet += (float) $p['net_salary'];
                     $salTotalCount++;
                 }
+                $salSkipped = count($payrollData) - $salTotalCount;
             ?>
             <div class="sum-cards" id="salSumCards">
                 <div class="sum-card">
                     <div class="sc-label">إجمالي الصافي</div>
                     <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">ج.م</span></div>
-                    <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف</div>
+                    <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف محسوب</div>
+                    <?php if ($salSkipped > 0): ?>
+                        <div class="sc-sub" id="salUncalcNotice" style="color:var(--warn);">
+                            <?= $salSkipped ?> من غير ساعات متوقّعة — بيبانوا في الجدول ومش داخلين في الإجمالي
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
             <div style="overflow-x:auto;">
@@ -2934,7 +2940,7 @@ $statusBadge = function($st) {
         }
 
         window.salRefreshTotal = function () {
-            var total = 0, count = 0;
+            var total = 0, count = 0, skipped = 0;
             var trs = table.tBodies[0] ? table.tBodies[0].rows : [];
             for (var r = 0; r < trs.length; r++) {
                 var tr = trs[r];
@@ -2943,13 +2949,25 @@ $statusBadge = function($st) {
                 var cell = tr.cells[netIdx];
                 if (!cell) continue;
                 // «غير محدد» = موظف من غير ساعات منتظرة، مايتحسبش ومايتصرفش
-                if (cell.textContent.indexOf('غير محدد') !== -1) continue;
+                if (cell.textContent.indexOf('غير محدد') !== -1) {
+                    skipped++;
+                    continue;
+                }
                 total += num(cell.textContent);
                 count++;
             }
             valEl.firstChild.nodeValue =
                 total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ';
             cntEl.textContent = count;
+            var uncalcEl = document.getElementById('salUncalcNotice');
+            if (uncalcEl) {
+                if (skipped > 0) {
+                    uncalcEl.style.display = '';
+                    uncalcEl.textContent = skipped + ' من غير ساعات متوقّعة — بيبانوا في الجدول ومش داخلين في الإجمالي';
+                } else {
+                    uncalcEl.style.display = 'none';
+                }
+            }
         };
 
         // 🔴 شرط الجدول الصح — الحدث بيطلع لفوق، و`hr.php` فيه ١٠ جداول.
