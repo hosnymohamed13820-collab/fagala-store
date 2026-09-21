@@ -258,7 +258,9 @@ function Render-Copy($g, $copy, [bool]$isDraw) {
     $refY = [ref]$y
     Render-Blocks $g $copy.blocks $refY $isDraw
     $y = $refY.Value
-    $y += 15
+    # 🔴 مسافة فاضية تحت قبل القصّة. كانت ١٥ (~٤مم) والإبسون قص آخر
+    #    سطر من نصه — «احتفظ بالإيصال» طلعت مقطوعة. ٦٠ = ~١٥مم.
+    $y += 60
     return $y
 }
 
