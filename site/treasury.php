@@ -555,13 +555,21 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .tre-box .tre-cur { font-size:13px; color:var(--ink-400); font-weight:500; }
     .tre-box.realcash {
         border:2px solid var(--pos);
-        background:linear-gradient(135deg,var(--pos-soft) 0%,#fff 70%);
+        background:linear-gradient(135deg,var(--pos-soft) 0%,var(--surface) 70%);
         display:flex; align-items:center; justify-content:space-between;
         gap:16px; padding:16px 22px;
         margin-bottom:16px;
     }
     .tre-box.realcash .tre-top { margin-bottom:0; font-size:14px; color:var(--pos); }
     .tre-box.realcash .tre-val { font-size:30px; }
+    /* 🔴 الكارت ده كان أخضر مهما كانت القيمة — «خزينة الكاش الفعلي -82,131»
+           في إطار أخضر. اللون لازم يتبع الإشارة وإلا بيبقى بلا معنى.
+           و`#fff` كان مثبّت فالجراديانت كان بيبيّض في الوضع الليلي. */
+    .tre-box.realcash.neg {
+        border-color:var(--neg);
+        background:linear-gradient(135deg,var(--neg-soft) 0%,var(--surface) 70%);
+    }
+    .tre-box.realcash.neg .tre-top { color:var(--neg); }
     .treasuries-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:24px; }
     .treasury-card {
         background:var(--surface); border-radius:14px; padding:18px; cursor:pointer;
@@ -644,7 +652,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 <div class="summary-bar">
     <div>
         <div class="label">إجمالي الأرصدة (شامل عهد الفروع)</div>
-        <div class="value"><?= money_fmt($totalBalance) ?> <span style="font-size:16px;">جنيه</span></div>
+        <div class="value"><?= ltr_out(money_fmt($totalBalance)) ?> <span style="font-size:16px;">ج.م</span></div>
     </div>
     <div class="actions">
         <button class="btn btn-white" onclick="openModal('receiptModal')"><i class="ti ti-arrow-down-left"></i> استلام</button>
@@ -654,7 +662,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     </div>
 </div>
 
-<div class="tre-box realcash" title="الخزينة الرئيسية + خزينة الكاش">
+<div class="tre-box realcash<?= $realCash < 0 ? ' neg' : '' ?>" title="الخزينة الرئيسية + خزينة الكاش">
     <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
     <div class="tre-val"><?= ltr_out(money_fmt($realCash)) ?> <span class="tre-cur">ج.م</span></div>
 </div>
@@ -671,7 +679,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 </div>
             </div>
             <div class="tc-balance <?= $t['balance'] < 0 ? 'neg' : '' ?>">
-                <?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tc-cur">جنيه</span>
+                <?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tc-cur">ج.م</span>
             </div>
         </a>
     <?php endforeach; ?>
@@ -697,15 +705,15 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="sum-cards st-cards">
             <div class="sum-card">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
         </div>
         <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
@@ -747,7 +755,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
+                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
@@ -777,15 +785,15 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="sum-cards st-cards">
             <div class="sum-card">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="sum-card">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">جنيه</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
         </div>
         <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
@@ -827,7 +835,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= money_fmt((float)$row['running_balance']) ?></td>
+                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
@@ -1659,11 +1667,11 @@ $today = date('Y-m-d');
     function fmt(v) {
         return v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
     }
-    /* بنكتب في العقدة النصية الأولى بس عشان <span>جنيه</span> مايتمسحش */
+    /* بنكتب في العقدة النصية الأولى بس عشان <span>ج.م</span> مايتمسحش */
     function setVal(el, v) {
         /* 🔴 الرقم بقى جوه <bdi> عشان إشارة السالب ماتتقلبش. لازم نحدّثه
            هو بالذات — لو عدّينا على el.textContent كنا هنمسح وحدة العملة
-           اللي جنبه، والكارت يفضل رقم من غير «جنيه» بعد أول فلترة. */
+           اللي جنبه، والكارت يفضل رقم من غير «ج.م» بعد أول فلترة. */
         var bdi = el.querySelector('bdi');
         if (bdi) { bdi.textContent = fmt(v); return; }
         if (el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = fmt(v) + ' ';

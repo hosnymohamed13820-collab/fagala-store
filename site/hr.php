@@ -20,7 +20,7 @@ $hrParts = module_parts()['hr'] ?? [];
 // أجزاء صلاحيات مش تابات — دي مفاتيح لصفحات منفصلة بتتفتح بزرار من جوّه التاب.
 // فاضية دلوقتي بعد ما اتشالت صفحة رفع شيت الحضور. سيبها موجودة:
 // أي مفتاح جديد مش تاب لازم ينزل هنا وإلا هيطلع تاب فاضي بيرندر الحضور بالغلط.
-const HR_NON_TAB_PARTS = ['leaves'];
+const HR_NON_TAB_PARTS = [];
 
 $allowedTabs = [];
 foreach ($hrParts as $tabKey => $tabLabel) {
@@ -755,6 +755,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $hrQuery = [];
     parse_str(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY) ?? '', $hrQuery);
     $hrQuery['tab'] = $tab;
+    if (!empty($_POST['rstatus'])) {
+        $hrQuery['rstatus'] = (string)$_POST['rstatus'];
+    }
     header('Location: hr.php?' . http_build_query($hrQuery));
     exit;
 }
@@ -1009,15 +1012,24 @@ if ($tab === 'salaries') {
 }
 $requests = [];
 $pendingReqCount = 0;
+$reqStatus = 'pending';
 if ($tab === 'requests') {
-    $requests = $pdo->query(
-        "SELECT r.*, e.full_name FROM attendance_requests r JOIN employees e ON e.id=r.employee_id ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100"
-    )->fetchAll();
-    foreach ($requests as $r) {
-        if ($r['status'] === 'pending') {
-            $pendingReqCount++;
-        }
+    // الافتراضي «المعلّق» — ده اللي المستخدم جاي عشانه، وهو اللي الشارة بتعدّه.
+    $reqStatus = $_GET['rstatus'] ?? 'pending';
+    if (!in_array($reqStatus, ['pending', 'approved', 'rejected', 'all'], true)) {
+        $reqStatus = 'pending';
     }
+
+    $reqSql = "SELECT r.*, e.full_name FROM attendance_requests r
+               JOIN employees e ON e.id=r.employee_id";
+    $reqArgs = [];
+    if ($reqStatus !== 'all') { $reqSql .= " WHERE r.status = ?"; $reqArgs[] = $reqStatus; }
+    $reqSql .= " ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100";
+    $st = $pdo->prepare($reqSql); $st->execute($reqArgs); $requests = $st->fetchAll();
+
+    $pendingReqCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM attendance_requests WHERE status='pending'"
+    )->fetchColumn();
 } elseif (isset($allowedTabs['requests'])) {
     // لو المستخدم معاه صلاحية طلبات التصحيح وهو في تاب تاني، نحسب العدّاد للشريط
     $pendingReqCount = (int) $pdo->query("SELECT COUNT(*) FROM attendance_requests WHERE status='pending'")->fetchColumn();
@@ -1826,7 +1838,7 @@ $statusBadge = function($st) {
             <div class="sum-cards" id="salSumCards">
                 <div class="sum-card">
                     <div class="sc-label">إجمالي الصافي</div>
-                    <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">جنيه</span></div>
+                    <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">ج.م</span></div>
                     <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف</div>
                 </div>
             </div>
@@ -2246,6 +2258,12 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'requests'): ?>
     <div class="card">
         <div class="section-title">طلبات تصحيح الحضور</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+            <a href="?tab=requests&rstatus=pending" class="btn btn-sm <?= $reqStatus === 'pending' ? '' : 'btn-cancel' ?>">معلّق</a>
+            <a href="?tab=requests&rstatus=approved" class="btn btn-sm <?= $reqStatus === 'approved' ? '' : 'btn-cancel' ?>">معتمد</a>
+            <a href="?tab=requests&rstatus=rejected" class="btn btn-sm <?= $reqStatus === 'rejected' ? '' : 'btn-cancel' ?>">مرفوض</a>
+            <a href="?tab=requests&rstatus=all" class="btn btn-sm <?= $reqStatus === 'all' ? '' : 'btn-cancel' ?>">الكل</a>
+        </div>
         <?php if (empty($requests)): ?>
             <div class="empty">لا توجد طلبات.</div>
         <?php else: ?>
@@ -2275,12 +2293,14 @@ $statusBadge = function($st) {
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="approve_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
+                                <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
                                 <button class="btn btn-sm btn-approve">اعتماد</button>
                             </form>
                             <form method="post" style="display:inline;">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="reject_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
+                                <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
                                 <button class="btn btn-sm btn-reject">رفض</button>
                             </form>
                         <?php else: ?>
@@ -2589,6 +2609,7 @@ $statusBadge = function($st) {
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="update_request_time">
             <input type="hidden" name="request_id" id="editReqId" value="">
+            <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
             <div class="form-row">
                 <label>وقت الحضور المطلوب</label>
                 <input type="time" name="requested_in" id="editReqIn">
