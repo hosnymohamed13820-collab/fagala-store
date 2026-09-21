@@ -130,6 +130,26 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="stylesheet" href="assets/fagala.css?v=9">
 </head>
 <body>
+<script>
+/* 🔴 `toggleSidebar` و`toggleNotif` **لازم يتعرّفوا هنا، مش في الفوتر**.
+       زراير القايمة الجانبية والجرس في الترويسة دي نفسها. لما التعريف
+       كان في `includes/footer.php` (آخر الصفحة)، أي حد يدوس على القايمة
+       قبل ما الصفحة تخلص تحميل كان بياخد
+       «Uncaught ReferenceError: toggleSidebar is not defined»
+       والزرار مابيفتحش خالص. اتسجّلت ٩ مرات في سجل أخطاء السيرفر على
+       ٤ صفحات (الفواتير · الجرد · الحضور · حجز الكتب) — كلها صفحات
+       تقيلة بتاخد وقت لحد ما الفوتر يوصل.
+       التعريف هنا لأنه **قبل** أول زرار بينده عليه. */
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('open');
+        document.getElementById('overlay').classList.toggle('show');
+    }
+    function toggleNotif(e) {
+        e.stopPropagation();
+        const p = document.getElementById('notifPanel');
+        if (p) p.classList.toggle('open');
+    }
+</script>
 <?php /* 🔴 شريط الأرشيف — بيبان على النسخة المحلية **بس**.
          السبب: بعد التصفير، النسخة المحلية بتفضل بالبيانات القديمة
          كأرشيف. والتابين شكلهم واحد، فسهل جداً تفتكر إنك على الموقع

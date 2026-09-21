@@ -1777,6 +1777,6 @@ require_once __DIR__ . '/includes/header.php';
     }
 </script>
 
-<script src="assets/barcode_scanner.js?v=4"></script>
+<script src="assets/barcode_scanner.js?v=6"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

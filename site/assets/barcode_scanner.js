@@ -320,7 +320,17 @@
                     if (h) h.textContent = '⚠️ الكاميرا دي مشتغلتش، جرّب 🔄 تاني.';
                 });
         };
-        if (scanning) scanner.stop().then(go).catch(go); else go();
+        // 🔴 `go` بتنده `scanner.start()` واللي بترمي **synchronous** لو
+        //    المكتبة لسه جوّه انتقال حالة. جوه `.then()` الرمية دي بتبقى
+        //    promise مرفوضة من غير ما حد يمسكها، فكانت بتطلع في السجل
+        //    «Unhandled promise: Cannot transition to a new state».
+        const safeGo = function () {
+            try { go(); } catch (e) {
+                const h = document.getElementById('bcHint');
+                if (h) h.textContent = '⚠️ الكاميرا مشغولة، جرّب 🔄 تاني.';
+            }
+        };
+        if (scanning) scanner.stop().then(safeGo).catch(safeGo); else safeGo();
     }
 
     window.openBarcodeScanner = function (inputId, opts) {
@@ -376,7 +386,9 @@
         clearInterval(lockTimer); lockTimer = null;
         if (scanner && scanning) {
             scanner.stop().then(function () {
-                scanner.clear();
+                // `clear()` كمان بترمي synchronous جوه الـ`.then` — لو سابناها
+                //  تطلع، تبقى promise مرفوضة من غير ماسك.
+                try { scanner.clear(); } catch (e) {}
                 scanning = false;
                 if (modal) modal.style.display = 'none';
             }).catch(function () {

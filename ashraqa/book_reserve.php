@@ -332,7 +332,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 </div>
 
-<script src="assets/barcode_scanner.js?v=4"></script>
+<script src="assets/barcode_scanner.js?v=6"></script>
 <script>
     const CSRF = <?= json_encode(csrf_token()) ?>;
     let added = [];          // الكتب المضافة للحجز الحالي

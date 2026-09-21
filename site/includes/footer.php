@@ -3,15 +3,9 @@
 </div><!-- /.layout -->
 
 <script>
-    function toggleSidebar() {
-        document.getElementById('sidebar').classList.toggle('open');
-        document.getElementById('overlay').classList.toggle('show');
-    }
-    function toggleNotif(e) {
-        e.stopPropagation();
-        const p = document.getElementById('notifPanel');
-        if (p) p.classList.toggle('open');
-    }
+    /* 🔴 `toggleSidebar` و`toggleNotif` اتنقلوا لـ`includes/header.php`.
+       كانوا هنا، والفوتر بيوصل آخر الصفحة — فاللي يدوس على القايمة
+       قبل ما الصفحة تكمّل كان الزرار مابيشتغلش معاه. متنقلهمش تاني. */
     // اقفل قائمة الإشعارات لو دوست بره
     document.addEventListener('click', function(e) {
         const p = document.getElementById('notifPanel');

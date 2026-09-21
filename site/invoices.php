@@ -4296,7 +4296,14 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function grpFilterInvList() {
-        const q = (document.getElementById('grpInvFilter').value || '').trim().toLowerCase();
+        // 🔴 المجموعة نوع «فواتير كاملة» مابتطلّعش لوحة تحديد الأصناف
+        //    (`$allowItems` = false في `grp_picker`)، يعني `#grpInvFilter`
+        //    و`#grpInvEmpty` **مش موجودين في الصفحة أصلاً**. و`openGrpPicker`
+        //    بينده الدالة دي على طول، فكانت بترمي
+        //    «Cannot read properties of null» وتوقّف باقي فتح البوب أب.
+        const box = document.getElementById('grpInvFilter');
+        if (!box) return;
+        const q = (box.value || '').trim().toLowerCase();
         let shown = 0;
         const showBr = grpBranchesShown();
         document.querySelectorAll('#grpInvList .gi-invrow').forEach(function (r) {
@@ -4306,7 +4313,8 @@ require_once __DIR__ . '/includes/header.php';
             if (ok) shown++;
         });
         grpSyncGroupCounts('#grpInvList', 'gi-invrow');
-        document.getElementById('grpInvEmpty').style.display = shown ? 'none' : '';
+        const emp = document.getElementById('grpInvEmpty');
+        if (emp) emp.style.display = shown ? 'none' : '';
     }
 
     /** افتح أصناف فاتورة معيّنة */
@@ -6063,6 +6071,6 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 </script>
 <?php endif; ?>
 
-<script src="assets/barcode_scanner.js?v=4"></script>
+<script src="assets/barcode_scanner.js?v=6"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

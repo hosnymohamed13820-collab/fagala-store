@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
         <div class="count">أكواد اتبعتت<b id="rsCount">0</b></div>
         <div class="last" id="rsLast"></div>
     </div>
-<script src="assets/barcode_scanner.js?v=5"></script>
+<script src="assets/barcode_scanner.js?v=6"></script>
 <script>
     const CSRF = '<?= e(csrf_token()) ?>';
     let sent = 0, busy = false;

@@ -3028,7 +3028,11 @@ require_once __DIR__ . '/includes/header.php';
                 // كارت ممكن يجمع عمود واحد (col) أو أكتر (cols)
                 // cols = أعمدة بتتجمع · minus = أعمدة بتتطرح
                 // (الصافي = مدين − دائن)
-                $cols  = $cd['cols']  ?? [$cd['col']];
+                // 🔴 كارت العدّاد (`count`) مالوش عمود خالص — تقرير الإشعارات
+                //    مثلاً كارته `['label'=>..., 'count'=>true]` وبس.
+                //    `?? [$cd['col']]` بتتنفّذ قبل فحص `count` تحت، فكانت
+                //    بترمي «Undefined array key "col"» في كل فتحة للتقرير.
+                $cols  = $cd['cols'] ?? (isset($cd['col']) ? [$cd['col']] : []);
                 $minus = $cd['minus'] ?? [];
                 $t = 0.0;
                 if (!empty($cd['count'])) {          // كارت عدّاد مش مجموع
