@@ -11,11 +11,15 @@
  * ⚠️ المقدم (Deposit) بيتخزّن كرقم على الحجز بس — مفيش أي قيد يومية
  *    ولا حركة خزينة. ربطه بالخزينة قرار لسه ما اتحسمش.
  *
- * ⏳ إيصال الطباعة لسه ما اتعملش — شكله وطريقته اتأجّلوا لجلسة تانية.
+ * 🖨️ الإيصال بيتطبع من غير ما الموظف يشوف حاجة: الصفحة بترمي مهمة في
+ *    `print_queue` (شوف `book_receipt_lib.php`)، ووكيل PowerShell على
+ *    كمبيوتر الفرع بيسحبها ويرسمها على الطابعة الحرارية.
+ *    مفيش `window.print()` ولا بوب أب ولا تاب بيفتح — ده قرار محمد.
  */
 require_once __DIR__ . '/auth.php';
 require_permission('shortage');
 require_once __DIR__ . '/book_lib.php';
+require_once __DIR__ . '/book_receipt_lib.php';
 
 $uid      = (int) current_user()['id'];
 $myBranch = (int) (current_user()['branch_id'] ?? 0);
@@ -47,6 +51,16 @@ if ($ajax !== '') {
                     (array) ($body['lines'] ?? []),
                     $uid
                 );
+
+                // الطباعة ممنوع تفشّل الحفظ. الحجز اتعمله commit جوّه
+                // book_reservation_create() خلاص — لو الطابور وقع، الحجز
+                // محفوظ والموظف مايحسّش بحاجة. الخطأ بيروح لسجل الأخطاء.
+                try {
+                    book_receipt_enqueue($id, $uid);
+                } catch (Throwable $pex) {
+                    errlog_record('warning', 'الإيصال ما اتحطش في الطابور: ' . $pex->getMessage(), __FILE__, __LINE__);
+                }
+
                 echo json_encode(['ok' => true, 'id' => $id,
                     'msg' => 'اتحفظ الحجز رقم ' . $id], JSON_UNESCAPED_UNICODE);
                 break;
@@ -66,6 +80,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
         book_reservation_set_status((int) ($_POST['res'] ?? 0), (string) ($_POST['status'] ?? ''));
     }
     header('Location: book_reserve.php?view=' . (int) ($_POST['res'] ?? 0));
+    exit;
+}
+
+// ===== إعادة طباعة إيصال حجز (POST عادي + PRG) =====
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'reprint') {
+    $rid = (int) ($_POST['res'] ?? 0);
+    if (csrf_verify((string) ($_POST['csrf'] ?? ''))) {
+        // بيتحط مهمة جديدة في الطابور — القديمة ما بتتلمسش.
+        // كده بيفضل عندنا سجل بكل مرة اتطبع فيها الإيصال.
+        try {
+            book_receipt_enqueue($rid, $uid);
+        } catch (Throwable $pex) {
+            errlog_record('warning', 'إعادة الطباعة فشلت: ' . $pex->getMessage(), __FILE__, __LINE__);
+        }
+    }
+    header('Location: book_reserve.php?view=' . $rid);
     exit;
 }
 
@@ -207,9 +237,37 @@ require_once __DIR__ . '/includes/header.php';
             </tbody>
         </table>
 
-        <div style="margin-top:14px;padding:10px 14px;background:var(--line-soft);border-radius:9px;
-                    font-size:12.5px;color:var(--ink-500);">
-            <i class="ti ti-printer"></i> إيصال الطباعة لسه ما اتعملش — شكله وطريقته في الخطوة الجاية.
+        <?php $pr = book_receipt_status((int)$r['id']); ?>
+        <div style="margin-top:14px;display:flex;justify-content:space-between;
+                    align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;
+                    background:var(--line-soft);border-radius:9px;font-size:12.5px;">
+            <span>
+                <?php if ($pr['state'] === 'done'): ?>
+                    <?php
+                        $tsPr = !empty($pr['at']) ? strtotime((string)$pr['at']) : null;
+                        $timePr = $tsPr ? (date('h:i', $tsPr) . (date('A', $tsPr) === 'AM' ? ' ص' : ' م')) : '';
+                    ?>
+                    <span style="color:var(--pos);font-weight:bold;">
+                        ✓ الإيصال اتطبع<?= $timePr !== '' ? ' ' . e($timePr) : '' ?>
+                    </span>
+                <?php elseif ($pr['state'] === 'queued' || $pr['state'] === 'claimed'): ?>
+                    <span style="color:var(--ink-500);">⏳ الإيصال بيتطبع…</span>
+                <?php elseif ($pr['state'] === 'stuck'): ?>
+                    <span style="color:var(--warn);font-weight:bold;">الإيصال ما اتطبعش — الطابعة مقفولة أو الوكيل واقف</span>
+                <?php elseif ($pr['state'] === 'failed'): ?>
+                    <span style="color:var(--neg);font-weight:bold;">الإيصال ما اتطبعش. دوس «إعادة طباعة».</span>
+                <?php else: ?>
+                    <span style="color:var(--ink-500);">الإيصال ما اتطبعش لسه</span>
+                <?php endif; ?>
+            </span>
+            <form method="post" style="margin:0;">
+                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="action" value="reprint">
+                <input type="hidden" name="res" value="<?= (int)$r['id'] ?>">
+                <button class="btn" style="padding:8px 15px;font-size:13px;">
+                    <i class="ti ti-printer"></i> إعادة طباعة
+                </button>
+            </form>
         </div>
     </div>
 

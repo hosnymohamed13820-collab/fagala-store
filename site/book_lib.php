@@ -498,7 +498,7 @@ function book_reservation_get(int $resId): ?array
     if ($resId <= 0) return null;
     try {
         $st = db()->prepare(
-            'SELECT r.*, b.name AS branch_name, u.full_name AS creator
+            'SELECT r.*, b.name AS branch_name, b.phone AS branch_phone, u.full_name AS creator
              FROM book_reservations r
              LEFT JOIN branches b ON b.id = r.branch_id
              LEFT JOIN users u ON u.id = r.created_by
