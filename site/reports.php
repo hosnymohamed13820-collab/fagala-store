@@ -1140,7 +1140,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
             $sqlRec =
                 "SELECT r.id AS receipt_id, r.group_id, r.distribution_id, r.status,
-                        r.started_at, r.received_at, r.approved_at,
+                        r.created_at, r.started_at, r.received_at, r.approved_at,
                         b.name AS branch_name,
                         d.invoice_no, s.name AS supplier_name,
                         g.name AS group_name,
@@ -1199,39 +1199,66 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 elseif ($stVal === 'receiving') $cntReceiving++;
                 else $cntSent++;
 
+                // مدة الاستلام = من لما الموظف دوس «ابدأ» لحد ما دوس «خلصت».
+                // الاتنين من نفس المصدر (نفس الصف ونفس السيرفر)، فالفرق بينهم
+                // مابيتأثرش بفرق التوقيت — حتى لو العرض نفسه متزحلق ساعة.
+                // ملاحظة: لو المحاسب رفض الاستلام، الحالة بترجع receiving من غير ما
+                // started_at تتصفّر، ولما الفرع يخلّص تاني بتتسجل received_at جديدة،
+                // فبتتحسب المدة الكلية شاملة وقت الرفض وإعادة الاستلام.
+                $durTxt = '—';
+                if (!empty($r['started_at']) && !empty($r['received_at'])) {
+                    $secs = strtotime($r['received_at']) - strtotime($r['started_at']);
+                    // سالب = مستحيل منطقياً، بس ممكن يحصل لو حد عدّل في
+                    // الداتابيز بإيده. بنوريه '—' بدل ما نطلّع '-03:20'.
+                    $durTxt = $secs >= 0 ? minutes_to_hhmm((int) round($secs / 60)) : '—';
+                }
+
                 $rows[] = [
                     $docLabel,
                     $r['supplier_name'] ?: '—',
                     $r['branch_name'],
                     $statusMap[$stVal] ?? $stVal,
+                    $r['created_at'] ? date('Y-m-d H:i', strtotime($r['created_at'])) : '—',
                     $r['started_by_name'] ?: '—',
                     $r['started_at'] ? date('Y-m-d H:i', strtotime($r['started_at'])) : '—',
                     $r['received_by_name'] ?: '—',
                     $r['received_at'] ? date('Y-m-d H:i', strtotime($r['received_at'])) : '—',
+                    $durTxt,
                     $r['approved_by_name'] ?: '—',
                     $r['approved_at'] ? date('Y-m-d H:i', strtotime($r['approved_at'])) : '—',
                 ];
             }
 
+            $recHeaders = [
+                'المستند / الفاتورة',
+                'المورد',
+                'الفرع',
+                'الحالة',
+                'وصلت الفرع',
+                'بدء الاستلام بواسطة',
+                'تاريخ البدء',
+                'المستلم (مراجعة الكميات)',
+                'تاريخ الاستلام',
+                'مدة الاستلام',
+                'المعتمد (اعتماد الكميات)',
+                'تاريخ الاعتماد',
+            ];
+
+            // عدد الخانات لازم يساوي عدد العناوين بالظبط — في الشاشة وفي
+            // الإكسل. عشان كده بنبنيه من count($recHeaders) مش بالعد بالإيد.
+            $recTotals = array_fill(0, count($recHeaders), '');
+            $recTotals[0] = 'إجمالي: ' . count($rows) . ' (معتمدة: ' . $cntApproved
+                          . ' · مستلمة: ' . $cntReceived . ' · جاري: ' . $cntReceiving
+                          . ' · جديدة: ' . $cntSent . ')';
+
             return [
                 'title' => 'تقرير استلام الفواتير (مسؤول الاستلامات في الإعدادات: ' . $supervisorName . ')',
-                'headers' => [
-                    'المستند / الفاتورة',
-                    'المورد',
-                    'الفرع',
-                    'الحالة',
-                    'بدء الاستلام بواسطة',
-                    'تاريخ البدء',
-                    'المستلم (مراجعة الكميات)',
-                    'تاريخ الاستلام',
-                    'المعتمد (اعتماد الكميات)',
-                    'تاريخ الاعتماد',
-                ],
+                'headers' => $recHeaders,
                 'rows' => $rows,
                 'sum_cards' => [
                     ['label' => 'إجمالي الإشعارات', 'count' => true],
                 ],
-                'totals' => ['إجمالي: ' . count($rows) . ' (معتمدة: ' . $cntApproved . ' · مستلمة: ' . $cntReceived . ' · جاري: ' . $cntReceiving . ' · جديدة: ' . $cntSent . ')', '', '', '', '', '', '', '', '', ''],
+                'totals' => $recTotals,
             ];
 
         default:
