@@ -87,12 +87,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'reprint') {
     $rid = (int) ($_POST['res'] ?? 0);
     if (csrf_verify((string) ($_POST['csrf'] ?? ''))) {
-        // بيتحط مهمة جديدة في الطابور — القديمة ما بتتلمسش.
-        // كده بيفضل عندنا سجل بكل مرة اتطبع فيها الإيصال.
-        try {
-            book_receipt_enqueue($rid, $uid);
-        } catch (Throwable $pex) {
-            errlog_record('warning', 'إعادة الطباعة فشلت: ' . $pex->getMessage(), __FILE__, __LINE__);
+        // 🔴 رقم الحجز جاي من POST، والإيصال بيتطبع على طابعة **فرع
+        //    الحجز** مش فرع اللي دايس. من غير الشرط ده أي موظف يبعت
+        //    رقم حجز بتاع فرع تاني ويطلّع على طابعته ورقة فيها اسم
+        //    عميل وموبايله — ولا حتى يشوفها.
+        //    مسموح: اللي مالوش فرع (الإدارة) · نفس فرع الحجز ·
+        //    الحجز اللي من غير فرع · اللي عامل الحجز بنفسه.
+        $chk       = book_reservation_get($rid);
+        $resBranch = $chk ? (int) ($chk['res']['branch_id'] ?? 0) : 0;
+        $isMine    = $chk && (int) ($chk['res']['created_by'] ?? 0) === $uid;
+        $allowed   = $chk && ($myBranch === 0 || $resBranch === 0
+                              || $resBranch === $myBranch || $isMine);
+
+        if ($allowed) {
+            // بيتحط مهمة جديدة في الطابور — القديمة ما بتتلمسش.
+            // كده بيفضل عندنا سجل بكل مرة اتطبع فيها الإيصال.
+            try {
+                book_receipt_enqueue($rid, $uid);
+            } catch (Throwable $pex) {
+                errlog_record('warning', 'إعادة الطباعة فشلت: ' . $pex->getMessage(), __FILE__, __LINE__);
+            }
+        } elseif ($chk) {
+            errlog_record('warning', 'محاولة إعادة طباعة حجز فرع تاني — حجز ' . $rid
+                . ' فرعه ' . $resBranch . ' واليوزر فرعه ' . $myBranch, __FILE__, __LINE__);
         }
     }
     header('Location: book_reserve.php?view=' . $rid);
