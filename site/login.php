@@ -43,7 +43,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل الدخول — <?= e($storeName) ?></title>
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json?v=3">
+    <link rel="manifest" href="manifest.json?v=4">
     <meta name="theme-color" content="#16233d">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
@@ -65,9 +65,9 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="الفجالة">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
-    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
+    <link rel="icon" href="favicon.ico?v=4" sizes="any">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -277,7 +277,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
 <body>
     <div class="login-card">
         <div class="brand">
-            <div class="logo"><img src="icon-192.png?v=3" alt="" width="58" height="58"></div>
+            <div class="logo"><img src="icon-192.png?v=4" alt="" width="58" height="58"></div>
             <h1><?= e($storeName) ?></h1>
             <p>النظام المالي المتكامل</p>
         </div>
@@ -318,7 +318,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=28').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=32').catch(() => {});
             });
         }
 

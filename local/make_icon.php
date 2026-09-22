@@ -1,6 +1,6 @@
 <?php
 /**
- * make_icon.php — توليد أيقونات موقع إشراقة (حرف A) بنفس تصميم أيقونة الفجالة
+ * make_icon.php — توليد أيقونات موقعي الفجالة وإشراقة بنفس التصميم (حرف وشرطة تحته)
  *
  * 🔴 مكانه `local/` عن قصد — **مايترفعش على السيرفر**. ده أداة توليد بس،
  *    اللي بيترفع هو ملفات الـPNG اللي بتطلع منه.
@@ -12,9 +12,10 @@
  * ناعمة، لأن GD مابيعملش anti-aliasing للأشكال المصمتة.
  *
  * الاستعمال:
- *   php local/make_icon.php <المقاس> <ملف الخرج> <لون فوق> <لون تحت> <لون الحرف> [padding]
- *   مثال: php local/make_icon.php 192 out.png 0f3b34 072722 e8c88a
- *   الـpadding (نسبة من صفر لواحد) للأيقونة الـmaskable اللي محتاجة هامش أمان.
+ *   php local/make_icon.php <المقاس> <ملف الخرج> <لون فوق> <لون تحت> <لون الحرف> [الوضع: normal|maskable|badge] [الحرف: A|F|...]
+ *   مثال: php local/make_icon.php 192 out.png 0f3b34 072722 e8c88a normal A
+ *   الـmaskable من غير حواف مدوّرة وبحرف أصغر جوه منطقة الأمان.
+ *   الـbadge بخلفية شفافة تماماً وبحرف وشرطة أكبر لشريط إشعارات أندرويد.
  */
 declare(strict_types=1);
 
@@ -26,15 +27,18 @@ $out  = (string) ($out ?: 'icon.png');
 $top  = (string) ($top ?: '0f3b34');
 $bottom = (string) ($bottom ?: '072722');
 $fg   = (string) ($fg ?: 'e8c88a');
-/* الوضع: عادي (مربع بحواف مدوّرة) أو maskable.
+/* الوضع: عادي (مربع بحواف مدوّرة) أو maskable أو badge.
    الـmaskable بتتقص بماسك بيحدده نظام الموبايل، فلازم الخلفية تملا
    الكادر كله من غير حواف مدوّرة، والحرف يفضل في **منطقة الأمان** جوه
-   دايرة ٨٠٪ من العرض — عشان مايتقصّش. عشان كده الحرف بيصغّر مش الخلفية. */
-$maskable = (($argv[6] ?? '') === 'maskable');
-$cs   = $maskable ? 0.68 : 1.0;             // نسبة تصغير المحتوى
-$pad  = 0.0;
-$letter = 'A';
-$font   = 'C:/Windows/Fonts/georgiab.ttf';  // سيرافي عريض — أقرب حاجة للأصل
+   دايرة ٨٠٪ من العرض — عشان مايتقصّش. عشان كده الحرف بيصغّر مش الخلفية.
+   الـbadge لشريط إشعارات أندرويد: خلفية شفافة والحرف والشرطة بس بلون مصمت. */
+$mode     = (string) ($argv[6] ?? 'normal');
+$maskable = ($mode === 'maskable');
+$badge    = ($mode === 'badge');
+$cs       = $maskable ? 0.68 : ($badge ? 1.25 : 1.0);  // نسبة تصغير/تكبير المحتوى
+$pad      = 0.0;
+$letter   = (string) ($argv[7] ?? 'A');
+$font     = 'C:/Windows/Fonts/georgiab.ttf';  // سيرافي عريض — أقرب حاجة للأصل
 
 if (!is_file($font)) { fwrite(STDERR, "مفيش الخط: $font\n"); exit(2); }
 
@@ -59,22 +63,24 @@ $rad = $maskable ? 0 : (int) round($w * 0.225);
 [$tr,$tg,$tb] = hex2rgb($top);
 [$br,$bg2,$bb] = hex2rgb($bottom);
 
-/* الشكل: بنبني ماسك بالحواف المدوّرة وبنملاه بالتدرّج سطر بسطر */
-for ($y = $y0; $y <= $y1; $y++) {
-    $t = ($y - $y0) / max(1, $w - 1);
-    $r = (int) round($tr + ($br  - $tr)  * $t);
-    $g = (int) round($tg + ($bg2 - $tg)  * $t);
-    $b = (int) round($tb + ($bb  - $tb)  * $t);
-    $col = imagecolorallocate($im, $r, $g, $b);
+/* الشكل: بنبني ماسك بالحواف المدوّرة وبنملاه بالتدرّج سطر بسطر (في غير وضع badge) */
+if (!$badge) {
+    for ($y = $y0; $y <= $y1; $y++) {
+        $t = ($y - $y0) / max(1, $w - 1);
+        $r = (int) round($tr + ($br  - $tr)  * $t);
+        $g = (int) round($tg + ($bg2 - $tg)  * $t);
+        $b = (int) round($tb + ($bb  - $tb)  * $t);
+        $col = imagecolorallocate($im, $r, $g, $b);
 
-    // عرض السطر حسب الاستدارة
-    $dy = 0;
-    if ($y < $y0 + $rad)      $dy = $y0 + $rad - $y;
-    elseif ($y > $y1 - $rad)  $dy = $y - ($y1 - $rad);
-    $inset = 0;
-    if ($dy > 0) $inset = (int) round($rad - sqrt(max(0, $rad*$rad - $dy*$dy)));
+        // عرض السطر حسب الاستدارة
+        $dy = 0;
+        if ($y < $y0 + $rad)      $dy = $y0 + $rad - $y;
+        elseif ($y > $y1 - $rad)  $dy = $y - ($y1 - $rad);
+        $inset = 0;
+        if ($dy > 0) $inset = (int) round($rad - sqrt(max(0, $rad*$rad - $dy*$dy)));
 
-    imageline($im, $x0 + $inset, $y, $x1 - $inset, $y, $col);
+        imageline($im, $x0 + $inset, $y, $x1 - $inset, $y, $col);
+    }
 }
 
 // الحرف — متوسّط أفقياً، ومرفوع شوية عشان الخط اللي تحته
@@ -90,13 +96,13 @@ imagettftext($im, $fs, 0, $tx, $ty, $fcol, $font, $letter);
 
 // الخط اللي تحت الحرف — نفس فكرة أيقونة الفجالة
 $lw  = (int) round($w * 0.42 * $cs);
-$lh  = max(1, (int) round($w * 0.022 * $cs));
+$lh  = $badge ? (int) round($w * 0.045) : max(1, (int) round($w * 0.022 * $cs));
 $lx  = $x0 + (int) round(($w - $lw) / 2);
 $ly  = $y0 + (int) round($w * (0.5 + (0.760 - 0.5) * $cs));
 imagefilledrectangle($im, $lx, $ly, $lx + $lw, $ly + $lh, $fcol);
 
 // تصغير للمقاس المطلوب — ده اللي بيدّي الحواف الناعمة
-$fin = imagescale($im, $size, $size, IMG_BICUBIC);
+$fin = imagescale($im, $size, $size, $badge ? IMG_BILINEAR_FIXED : IMG_BICUBIC);
 imagesavealpha($fin, true);
 imagepng($fin, $out, 9);
 echo "✅ $out ({$size}x{$size})\n";

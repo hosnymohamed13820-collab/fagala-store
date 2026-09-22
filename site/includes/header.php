@@ -71,7 +71,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($pageTitle) ?> — <?= e($storeName) ?></title>
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json?v=3">
+    <link rel="manifest" href="manifest.json?v=4">
     <meta name="theme-color" content="#16233d">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
@@ -105,9 +105,9 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="الفجالة">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=3">
-    <link rel="icon" href="favicon.ico?v=3" sizes="any">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
+    <link rel="icon" href="favicon.ico?v=4" sizes="any">
     <script>
         // 🔴 الـ?v= مش زيادة — كاش الاستضافة (LiteSpeed) كان بيمسك `sw.js`
         // من غير كويري ويرجّع نسخة قديمة، فالمتصفح يفضل يسجّل service worker
@@ -115,7 +115,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=28').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=32').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -166,7 +166,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <span class="dot"><img src="icon-192.png?v=3" alt=""></span>
+            <span class="dot"><img src="icon-192.png?v=4" alt=""></span>
             <span><?= e($storeName) ?></span>
         </div>
         <nav class="sidebar-nav">
