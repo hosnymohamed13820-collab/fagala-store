@@ -28,19 +28,18 @@
 #       so an item that ran out disappears instead of staying stale)
 #    Rows are sent in chunks of $ChunkSize.
 #
-#  !!! PRICE COLUMN - READ THIS !!!
-#    Where Redux keeps the SALE price was not known when this was
-#    written. $PriceExpr below is EMPTY on purpose and the agent REFUSES
-#    to run until it is filled - sending 0 would show every item at
-#    zero on the site. Fill it from the result of diag_redux_prices.sql
-#    (e.g.  'i.SalePrice'  - it must be a column of Item i).
+#  PRICE COLUMN
+#    $PriceExpr = Item.selling_price (found with diag_redux_prices.sql on
+#    2026-09-22). selling_price2..8 are other price lists. If it is ever
+#    emptied the agent REFUSES to run - sending 0 would show every item
+#    at zero on the site.
 #
 #  NOTE: This file is deliberately ASCII-only (no Arabic text) so that
 #  Windows PowerShell can never mis-parse it because of file encoding.
 #
 #  SETUP:
 #    1) Put this file at  C:\fagala\agent_ashraqa_web.ps1
-#    2) Fill $PriceExpr below
+#    2) ($PriceExpr is already filled - nothing to edit)
 #    3) Test it manually from an ADMIN PowerShell window:
 #         powershell -ExecutionPolicy Bypass -File "C:\fagala\agent_ashraqa_web.ps1"
 #    4) If it prints "ALL OK", register the scheduled task
