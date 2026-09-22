@@ -20,6 +20,14 @@ if (can('invoices:ashraqa')) $allowedBranches[] = 5;
 foreach (br_inv_map() as $bk => $bi) {
     if (can('invoices:' . $bk)) $allowedBranches[] = (int) $bi['id'];
 }
+// موديول «فواتير الفروع»: الإدارة كل الفروع، وفرع البيع فرعه بس
+$brScope = br_inv_user_scope();
+if ($brScope === 'all') {
+    $allowedBranches = array_merge($allowedBranches, array_keys(br_inv_all_pages()));
+} elseif (is_int($brScope)) {
+    $allowedBranches[] = $brScope;
+}
+$allowedBranches = array_values(array_unique($allowedBranches));
 if (!can('invoices') && $allowedBranches) {
     $ashraqaOnly = true;
 } else {

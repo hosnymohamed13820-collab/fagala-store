@@ -9,7 +9,11 @@
  * - لا تعديل على الكميات أو التوزيع أو الحالات.
  */
 require_once __DIR__ . '/auth.php';
-require_permission('invoices:ashraqa');
+require_once __DIR__ . '/branch_invoices_lib.php';
+// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
+if (!br_inv_can_view(5, 'ashraqa')) {
+    require_permission('invoices:ashraqa');
+}
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/ashraqa_prices_lib.php';
 
@@ -1008,6 +1012,16 @@ require_once __DIR__ . '/includes/header.php';
                     الفواتير اللي اتوزّع منها كميات لإشراقة
                 </div>
             </div>
+            <?php // رجوع — للي معاه الاستلامات أو شايف كل الفروع بس. الموظف العادي مالوش مكان يرجعله.
+            $brSeeAll = can('invoices') || br_inv_user_scope() === 'all'; ?>
+            <?php if ($brSeeAll): ?>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <?php if (can('invoices')): ?>
+                <a href="invoices.php" class="btn btn-outline btn-sm"><i class="ti ti-arrow-right"></i> رجوع للاستلامات</a>
+                <?php endif; ?>
+                <a href="branch_invoices.php" class="btn btn-outline btn-sm"><i class="ti ti-building-store"></i> كل الفروع</a>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

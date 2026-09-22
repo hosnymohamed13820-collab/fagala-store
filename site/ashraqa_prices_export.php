@@ -9,7 +9,11 @@
  * المدخلات: ?invoice=STH_ID&suffix=26_07
  */
 require_once __DIR__ . '/auth.php';
-require_permission('invoices:ashraqa');
+require_once __DIR__ . '/branch_invoices_lib.php';
+// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
+if (!br_inv_can_view(5, 'ashraqa')) {
+    require_permission('invoices:ashraqa');
+}
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/ashraqa_prices_lib.php';
 

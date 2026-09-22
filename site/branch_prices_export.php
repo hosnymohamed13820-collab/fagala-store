@@ -19,7 +19,10 @@ if (!isset($BR_MAP[$BR_KEY])) {
     http_response_code(404);
     die('فرع غير معروف.');
 }
-require_permission('invoices:' . $BR_KEY);
+// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
+if (!br_inv_can_view((int) $BR_MAP[$BR_KEY]['id'], $BR_KEY)) {
+    require_permission('invoices:' . $BR_KEY);
+}
 $BR_INV = $BR_MAP[$BR_KEY];
 require_once __DIR__ . '/receiving_lib.php';
 

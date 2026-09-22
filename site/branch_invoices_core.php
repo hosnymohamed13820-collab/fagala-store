@@ -15,7 +15,10 @@ if (!isset($BR_INV) || !is_array($BR_INV) || empty($BR_INV['id']) || empty($BR_I
     exit;
 }
 require_once __DIR__ . '/auth.php';
-require_permission('invoices:' . $BR_INV['key']);
+// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
+if (!br_inv_can_view((int) $BR_INV['id'], (string) $BR_INV['key'])) {
+    require_permission('invoices:' . $BR_INV['key']);
+}
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/branch_invoices_lib.php';
 
@@ -24,7 +27,7 @@ $BR_NAME   = (string) $BR_INV['name'];
 $BR_NAME_H = htmlspecialchars($BR_NAME, ENT_QUOTES, 'UTF-8');
 $BR_SELF = basename((string) ($_SERVER['SCRIPT_NAME'] ?? $BR_INV['url']));
 $page_title    = 'فواتير ' . $BR_NAME;
-$active_module = 'invoices';
+$active_module = 'branch_invoices';
 $user          = current_user();
 $uid           = $user['id'] ?? null;
 $pdo           = db();
@@ -990,6 +993,16 @@ require_once __DIR__ . '/includes/header.php';
                     الفواتير اللي اتوزّع منها كميات لفرع <?= $BR_NAME_H ?>
                 </div>
             </div>
+            <?php // رجوع — للي معاه الاستلامات أو شايف كل الفروع بس. الموظف العادي مالوش مكان يرجعله.
+            $brSeeAll = can('invoices') || br_inv_user_scope() === 'all'; ?>
+            <?php if ($brSeeAll): ?>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <?php if (can('invoices')): ?>
+                <a href="invoices.php" class="btn btn-outline btn-sm"><i class="ti ti-arrow-right"></i> رجوع للاستلامات</a>
+                <?php endif; ?>
+                <a href="branch_invoices.php" class="btn btn-outline btn-sm"><i class="ti ti-building-store"></i> كل الفروع</a>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

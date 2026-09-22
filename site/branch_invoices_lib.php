@@ -28,6 +28,61 @@ function br_inv_map(): array
     ];
 }
 
+/**
+ * كل الصفحات اللي ليها فواتير فرع — الأربعة + إشراقة (ليها صفحتها بتاعتها).
+ * @return array<int, array{id:int,key:string,name:string,url:string}> [branch_id => …]
+ */
+function br_inv_all_pages(): array
+{
+    $out = [];
+    foreach (br_inv_map() as $b) {
+        $out[$b['id']] = ['id' => $b['id'], 'key' => $b['key'], 'name' => $b['name'], 'url' => $b['url']];
+    }
+    $out[5] = ['id' => 5, 'key' => 'ashraqa', 'name' => 'إشراقة', 'url' => 'ashraqa_invoices.php'];
+    ksort($out);
+    return $out;
+}
+
+/**
+ * موديول «فواتير الفروع» (branch_invoices) — اليوزر ده يشوف أنهي فرع؟
+ * قرار محمد ٢٢ سبتمبر ٢٠٢٦:
+ *   · فرعه **الإدارة** (in_receiving = 0) ← كل الفروع ('all')
+ *   · فرعه فرع بيع ← فرعه بس (رقمه)
+ *   · مش متسجّل على فرع ← ولا حاجة (null)
+ * مالوش الموديول أصلاً ← null.
+ *
+ * @return 'all'|int|null
+ */
+function br_inv_user_scope()
+{
+    static $done = false, $scope = null;
+    if ($done) return $scope;
+    $done = true;
+    if (!can('branch_invoices')) return $scope = null;
+    $bid = (int) (current_user()['branch_id'] ?? 0);
+    if ($bid <= 0) return $scope = null;
+    try {
+        $st = db()->prepare('SELECT in_receiving FROM branches WHERE id = ?');
+        $st->execute([$bid]);
+        $v = $st->fetchColumn();
+    } catch (Throwable $ex) {
+        $v = false;
+    }
+    // 🔴 فرع مش موجود أو غلط = فرعه بس (نقفل مش نفتح)
+    return $scope = ($v !== false && (int) $v === 0) ? 'all' : $bid;
+}
+
+/**
+ * يقدر يفتح فواتير الفرع ده؟ — الصلاحية القديمة (invoices أو invoices:<فرع>)
+ * **أو** موديول «فواتير الفروع» بنطاقه. بتتنده في كل صفحة وكل export.
+ */
+function br_inv_can_view(int $branchId, string $partKey): bool
+{
+    if (can('invoices:' . $partKey)) return true;   // الأونر والاستلامات الكاملة جوّاها
+    $scope = br_inv_user_scope();
+    return $scope === 'all' || $scope === $branchId;
+}
+
 /** أسعار بيع الفرع لأصناف توزيع واحد. @return array<string,float> [item_code => price] */
 function br_inv_get_prices(int $branchId, int $distributionId): array
 {
