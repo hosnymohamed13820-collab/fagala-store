@@ -2627,7 +2627,7 @@ require_once __DIR__ . '/includes/header.php';
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
-            <table class="lines-table" id="linesTable">
+            <table class="lines-table" id="linesTable" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
@@ -3140,7 +3140,7 @@ require_once __DIR__ . '/includes/header.php';
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
             <div class="lines-wrap">
-            <table class="lines-table" id="grpTable">
+            <table class="lines-table" id="grpTable" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>

@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <meta name="theme-color" content="#4d1620">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/fagala.css?v=9">
-<link rel="stylesheet" href="assets/ashraqa-theme.css?v=2">
+<link rel="stylesheet" href="assets/ashraqa-theme.css?v=3">
 <!-- 🔴 الصفحة دي مستقلة عن includes/header.php عن قصد، فسكربت الثيم
      مكرّر هنا. لولاه data-theme مابتتحطّش والوضع الليلي مابيشتغلش. -->
 <script>

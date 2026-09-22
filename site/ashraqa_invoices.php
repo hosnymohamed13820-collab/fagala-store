@@ -1427,7 +1427,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="ash-table-wrap">
-            <table class="ash-table">
+            <table class="ash-table" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
