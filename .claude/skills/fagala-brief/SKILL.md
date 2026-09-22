@@ -61,6 +61,7 @@ description: >
 ## `<action_safety>` الثابت
 ```
 🔴 **ماتعملش `git add` ولا `git commit`.**
+🔴 **اشتغل بنفسك — ممنوع sub-agents** (Task / subagent / browser agent). كل وكيل فرعي بيعيد قراية كل حاجة من الصفر.
 ```
 
 ---
