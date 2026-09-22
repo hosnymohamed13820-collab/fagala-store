@@ -19,9 +19,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/errlog_lib.php';
 errlog_install();
 
-// ===== التوكن السري — غيّره لقيمة طويلة عشوائية =====
-// ونفس القيمة بالظبط في agent_hq.ps1 عند جهاز الإدارة
-const HQ_SYNC_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';
+// ===== التوكن السري =====
+// 🔴 على موقع إشراقة اللي بيبعت هنا هو local/agent_ashraqa_web.ps1 (أصناف وأسعار
+//    وأرصدة إشراقة من Redux) — مش وكيل الإدارة. التوكن **مختلف** عن توكن الفجالة
+//    عن قصد (٢٢ سبتمبر ٢٠٢٦): كانوا نفس القيمة، فاللي معاه واحد كان يكتب على الموقعين.
+//    لازم يطابق $SyncToken في agent_ashraqa_web.ps1 بالحرف.
+const HQ_SYNC_TOKEN = 'ashweb_15c488c25181d22bec038b314ba6a679';
 
 const HQ_MAX_ROWS = 200000;
 
