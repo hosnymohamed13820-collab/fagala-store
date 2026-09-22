@@ -23,6 +23,7 @@ $pageTitle   = $page_title   ?? 'النظام المالي';
 $active      = $active_module ?? '';
 $modules     = all_modules();
 $vapidPublicKey = (string) setting('vapid_public_key', '');
+require_once __DIR__ . '/nav_icons.php';
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -115,7 +116,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=32').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=33').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -127,7 +128,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=9">
+    <link rel="stylesheet" href="assets/fagala.css?v=10">
 </head>
 <body>
 <script>
@@ -174,7 +175,7 @@ $vapidPublicKey = (string) setting('vapid_public_key', '');
                 <?php if (can_module($key)): // يظهر بس اللي ليه صلاحية ?>
                     <a href="<?= e($mod['url']) ?>"
                        class="nav-item <?= $active === $key ? 'active' : '' ?>">
-                        <i class="ti <?= e($mod['icon']) ?>"></i>
+                        <?= nav_icon($mod['icon']) ?>
                         <span><?= e($mod['label']) ?></span>
                     </a>
                 <?php endif; ?>

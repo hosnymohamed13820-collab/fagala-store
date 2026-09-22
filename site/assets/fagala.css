@@ -245,8 +245,8 @@
         }
 
         /* ===== الأيقونة داخل مربّع صغير — بتاخد الوهج الملوّن ===== */
-        .nav-item i {
-            font-size: 18px;
+        .nav-item i,
+        .nav-item .nicon {
             width: 32px; height: 32px;
             flex: 0 0 32px;
             display: inline-flex;
@@ -257,10 +257,19 @@
             color: var(--ink-300);
             transition: background .18s, color .18s, box-shadow .22s;
         }
+        .nav-item i {
+            font-size: 18px;
+        }
+        .nav-item .nicon {
+            box-sizing: border-box;
+            padding: 6px;
+            overflow: hidden;
+        }
 
         /* ===== المرور: وهج خفيف ===== */
         .nav-item:hover { color: #fff; background: rgba(255,255,255,.035); }
-        .nav-item:hover i {
+        .nav-item:hover i,
+        .nav-item:hover .nicon {
             background: rgba(93,150,208,.20);
             color: #cfe3f7;
             box-shadow: 0 4px 14px rgba(60,120,190,.30);
@@ -273,121 +282,439 @@
             font-weight: 600;
             border-right-color: #5d96d0;
         }
-        .nav-item.active i {
+        .nav-item.active i,
+        .nav-item.active .nicon {
             background: linear-gradient(160deg, #3d8ad4 0%, #1e6fbf 100%);
             color: #fff;
             box-shadow: 0 6px 18px rgba(60,120,190,.45), 0 0 0 1px rgba(255,255,255,.10) inset;
         }
 
         /* =================================================================
-           أنيميشن الأيقونات — كل موديول بحركة تناسب معناه.
-           بتشتغل عند المرور (hover) وعلى العنصر النشط.
+           حكايات الأيقونات — كل موديول بحركة تفاعلية تناسب معناه.
+           بتشتغل عند المرور (:hover) والتركيز (:focus-visible) فقط.
+           العنصر ساكن تماماً في وضع الراحة أو النشاط.
            ================================================================= */
 
-        /* الرئيسية: البلاطات بتتنفّس */
-        @keyframes ic-pulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.28);} }
-        /* استعلام الأسعار: خط المسح بيعدّي */
-        @keyframes ic-scan  { 0%{transform:translateY(-5px);opacity:.35;} 50%{transform:translateY(5px);opacity:1;} 100%{transform:translateY(-5px);opacity:.35;} }
-        /* تقفيل الكاشير: القفل بيتقفل */
-        @keyframes ic-lock  { 0%,100%{transform:rotate(0) scale(1);} 30%{transform:rotate(-22deg) scale(1.15);} 65%{transform:rotate(14deg) scale(1.15);} }
-        /* العهدة/الخزينة: الفلوس بتترص */
-        @keyframes ic-stack { 0%,100%{transform:translateY(0) scale(1);} 40%{transform:translateY(-6px) scale(1.12);} }
-        /* المراجعة: علامة الصح بتتأكد */
-        @keyframes ic-check { 0%{transform:scale(1) rotate(0);} 40%{transform:scale(1.4) rotate(-12deg);} 100%{transform:scale(1) rotate(0);} }
-        /* الموارد البشرية: الناس بتتلوّح */
-        @keyframes ic-wave  { 0%,100%{transform:rotate(0);} 20%{transform:rotate(-16deg);} 60%{transform:rotate(16deg);} }
-        /* الحضور: عقرب الساعة بيلف */
-        @keyframes ic-tick  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
-        /* الوارد: الجواب بينزل في الصندوق */
-        @keyframes ic-drop  { 0%{transform:translateY(-8px) scale(.85);opacity:.3;} 60%{transform:translateY(3px) scale(1.1);opacity:1;} 100%{transform:translateY(0) scale(1);} }
-        /* الإرسال: الطيارة بتطير */
-        @keyframes ic-fly   { 0%{transform:translate(0,0) rotate(0);} 40%{transform:translate(-9px,-8px) rotate(-18deg);} 55%{transform:translate(9px,7px) rotate(-18deg);opacity:0;} 60%{transform:translate(0,0) rotate(0);opacity:0;} 100%{transform:translate(0,0);opacity:1;} }
-        /* الموردون: المحل بيتهزّ */
-        @keyframes ic-shop  { 0%,100%{transform:translateY(0) scale(1);} 30%{transform:translateY(-5px) scale(1.14);} 60%{transform:translateY(0) scale(1.05);} }
-        /* الاستلامات: الكرتونة داخلة */
-        @keyframes ic-in    { 0%{transform:translateY(-9px) scale(.85);opacity:.3;} 60%{transform:translateY(3px) scale(1.12);opacity:1;} 100%{transform:translateY(0) scale(1);} }
-        /* الجرد: الصناديق بتتعدّ */
-        @keyframes ic-count { 0%,100%{transform:rotate(0) scale(1);} 25%{transform:rotate(-15deg) scale(1.16);} 65%{transform:rotate(12deg) scale(1.16);} }
-        /* التقارير: الأعمدة بتطلع */
-        @keyframes ic-bars  { 0%,100%{transform:scaleY(1);} 45%{transform:scaleY(1.5);} }
-        /* التعريفات: المفاتيح بتتظبط */
-        @keyframes ic-tune  { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 60%{transform:translateX(5px);} }
-        /* الإعدادات: الترس بيلف */
-        @keyframes ic-gear  { 0%{transform:rotate(0);} 100%{transform:rotate(360deg);} }
-        /* سكانر الكمبيوتر: اهتزاز خفيف — الموبايل بيرن */
-        @keyframes ic-ring  { 0%,100%{transform:rotate(0) scale(1);} 20%{transform:rotate(-12deg) scale(1.08);} 40%{transform:rotate(12deg) scale(1.08);} 60%{transform:rotate(-8deg) scale(1.04);} 80%{transform:rotate(8deg) scale(1.04);} }
-        /* طلب نواقص: دحرجة لقدّام ورجوع */
-        @keyframes ic-cart  { 0%,100%{transform:translateX(0) rotate(0);} 35%{transform:translateX(-6px) rotate(-5deg);} 70%{transform:translateX(2px) rotate(2deg);} }
-        /* تحليل الموسم: نبضة + ميلة بسيطة */
-        @keyframes ic-calc  { 0%,100%{transform:scale(1) rotate(0);} 40%{transform:scale(1.22) rotate(-8deg);} 70%{transform:scale(1.05) rotate(4deg);} }
+        /* 1. الإعدادات (ti-settings): الترس بيلف حوالين مركزه (والدايرة اللي جوه ثابتة) */
+        @keyframes ni-spin-gear {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        .nav-item:hover .nicon-settings .nicon-part-gear,
+        .nav-item:focus-visible .nicon-settings .nicon-part-gear {
+            animation: ni-spin-gear 1.5s linear infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
 
-        .nav-item i::before { display: inline-block !important; transform-origin: center; will-change: transform; }
+        /* 2. استعلام الأسعار (ti-scan): إطار السكانر ثابت، وشرطة أفقية جواه بتنزل وتطلع */
+        @keyframes ni-scan-laser {
+            0%, 100% { transform: translateY(-5px); }
+            50%      { transform: translateY(5px); }
+        }
+        .nav-item:hover .nicon-scan .nicon-part-laser,
+        .nav-item:focus-visible .nicon-scan .nicon-part-laser {
+            animation: ni-scan-laser 1.2s ease-in-out infinite;
+        }
 
-        .nav-item:hover i.ti-layout-dashboard::before { animation: ic-pulse .8s ease infinite; }
-        .nav-item:hover i.ti-scan::before             { animation: ic-scan 1s ease-in-out infinite; }
-        .nav-item:hover i.ti-lock-dollar::before      { animation: ic-lock .8s ease infinite; }
-        .nav-item:hover i.ti-cash::before,
-        .nav-item:hover i.ti-building-bank::before    { animation: ic-stack .8s ease infinite; }
-        .nav-item:hover i.ti-user-check::before       { animation: ic-check .7s ease infinite; }
-        .nav-item:hover i.ti-users::before            { animation: ic-wave .9s ease infinite; }
-        .nav-item:hover i.ti-clock-hour-4::before     { animation: ic-tick 1.5s linear infinite; }
-        .nav-item:hover i.ti-inbox::before            { animation: ic-drop .9s ease infinite; }
-        .nav-item:hover i.ti-send::before             { animation: ic-fly 1.1s ease infinite; }
-        .nav-item:hover i.ti-building-store::before   { animation: ic-shop .8s ease infinite; }
-        .nav-item:hover i.ti-package-import::before   { animation: ic-in .9s ease infinite; }
-        .nav-item:hover i.ti-packages::before         { animation: ic-count .9s ease infinite; }
-        .nav-item:hover i.ti-chart-bar::before        { animation: ic-bars .8s ease infinite; }
-        .nav-item:hover i.ti-adjustments::before      { animation: ic-tune .9s ease infinite; }
-        .nav-item:hover i.ti-settings::before         { animation: ic-gear 1.4s linear infinite; }
-        .nav-item:hover i.ti-device-mobile::before   { animation: ic-ring .7s ease infinite; }
-        .nav-item:hover i.ti-shopping-cart::before   { animation: ic-cart .8s ease infinite; }
-        .nav-item:hover i.ti-calculator::before      { animation: ic-calc .8s ease infinite; }
+        /* 3. طلب نواقص (ti-shopping-cart): مربعات صغيرة بتقع جوه العربية ← العربية بتطلع يمين وتختفي ← ترجع من الشمال فاضية */
+        @keyframes ni-cart-drive {
+            0%, 35%  { transform: translateX(0); opacity: 1; }
+            58%      { transform: translateX(28px); opacity: 1; }
+            59%      { transform: translateX(28px); opacity: 0; }
+            60%      { transform: translateX(-28px); opacity: 0; }
+            70%      { transform: translateX(-28px); opacity: 1; }
+            100%     { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes ni-cart-box1 {
+            0%        { transform: translateY(-8px); opacity: 0; }
+            15%, 35%  { transform: translateY(0); opacity: 1; }
+            58%       { transform: translate(28px, 0); opacity: 1; }
+            59%, 100% { transform: translateY(-8px); opacity: 0; }
+        }
+        @keyframes ni-cart-box2 {
+            0%, 15%   { transform: translateY(-8px); opacity: 0; }
+            30%, 35%  { transform: translateY(0); opacity: 1; }
+            58%       { transform: translate(28px, 0); opacity: 1; }
+            59%, 100% { transform: translateY(-8px); opacity: 0; }
+        }
+        .nav-item .nicon-shopping-cart .nicon-part-box1,
+        .nav-item .nicon-shopping-cart .nicon-part-box2 {
+            opacity: 0;
+        }
+        .nav-item:hover .nicon-shopping-cart .nicon-part-cart,
+        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-cart {
+            animation: ni-cart-drive 1.6s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-shopping-cart .nicon-part-box1,
+        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-box1 {
+            animation: ni-cart-box1 1.6s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-shopping-cart .nicon-part-box2,
+        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-box2 {
+            animation: ni-cart-box2 1.6s ease-in-out infinite;
+        }
 
-        /* ===== حركات دورية للعنصر النشط =====
-           الحركة بتحصل في أول ربع الدورة والباقي سكون — يعني نبضة
-           كل 3 ثواني بدل حركة مستمرة مزعجة. */
-        @keyframes icp-pulse { 0%,25%,100%{transform:scale(1);} 12%{transform:scale(1.28);} }
-        @keyframes icp-scan  { 0%,30%,100%{transform:translateY(0);opacity:1;} 8%{transform:translateY(-5px);opacity:.4;} 20%{transform:translateY(5px);opacity:1;} }
-        @keyframes icp-lock  { 0%,25%,100%{transform:rotate(0) scale(1);} 8%{transform:rotate(-22deg) scale(1.15);} 17%{transform:rotate(14deg) scale(1.15);} }
-        @keyframes icp-stack { 0%,25%,100%{transform:translateY(0) scale(1);} 11%{transform:translateY(-6px) scale(1.12);} }
-        @keyframes icp-check { 0%,25%,100%{transform:scale(1) rotate(0);} 10%{transform:scale(1.4) rotate(-12deg);} }
-        @keyframes icp-wave  { 0%,25%,100%{transform:rotate(0);} 6%{transform:rotate(-16deg);} 16%{transform:rotate(16deg);} }
-        @keyframes icp-tick  { 0%{transform:rotate(0);} 40%,100%{transform:rotate(360deg);} }
-        @keyframes icp-drop  { 0%,28%,100%{transform:translateY(0) scale(1);opacity:1;} 5%{transform:translateY(-8px) scale(.85);opacity:.3;} 18%{transform:translateY(3px) scale(1.1);opacity:1;} }
-        @keyframes icp-fly   { 0%,32%,100%{transform:translate(0,0) rotate(0);opacity:1;} 12%{transform:translate(-9px,-8px) rotate(-18deg);} 18%{transform:translate(9px,7px) rotate(-18deg);opacity:0;} 22%{opacity:0;} }
-        @keyframes icp-shop  { 0%,25%,100%{transform:translateY(0) scale(1);} 8%{transform:translateY(-5px) scale(1.14);} 17%{transform:translateY(0) scale(1.05);} }
-        @keyframes icp-in    { 0%,28%,100%{transform:translateY(0) scale(1);opacity:1;} 5%{transform:translateY(-9px) scale(.85);opacity:.3;} 18%{transform:translateY(3px) scale(1.12);opacity:1;} }
-        @keyframes icp-count { 0%,25%,100%{transform:rotate(0) scale(1);} 7%{transform:rotate(-15deg) scale(1.16);} 17%{transform:rotate(12deg) scale(1.16);} }
-        @keyframes icp-bars  { 0%,25%,100%{transform:scaleY(1);} 12%{transform:scaleY(1.5);} }
-        @keyframes icp-tune  { 0%,25%,100%{transform:translateX(0);} 7%{transform:translateX(-5px);} 16%{transform:translateX(5px);} }
-        @keyframes icp-gear  { 0%{transform:rotate(0);} 45%,100%{transform:rotate(360deg);} }
-        @keyframes icp-ring  { 0%,25%,100%{transform:rotate(0) scale(1);} 6%{transform:rotate(-12deg) scale(1.08);} 12%{transform:rotate(12deg) scale(1.08);} 18%{transform:rotate(-8deg) scale(1.04);} 22%{transform:rotate(8deg) scale(1.04);} }
-        @keyframes icp-cart  { 0%,25%,100%{transform:translateX(0) rotate(0);} 9%{transform:translateX(-6px) rotate(-5deg);} 18%{transform:translateX(2px) rotate(2deg);} }
-        @keyframes icp-calc  { 0%,25%,100%{transform:scale(1) rotate(0);} 10%{transform:scale(1.22) rotate(-8deg);} 18%{transform:scale(1.05) rotate(4deg);} }
+        /* 4. الرئيسية (ti-layout-dashboard): المربعات الأربعة بتنور واحد ورا التاني */
+        @keyframes ni-pulse-tile {
+            0%, 100% { opacity: 0.3; }
+            50%      { opacity: 1; }
+        }
+        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile1,
+        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile1 {
+            animation: ni-pulse-tile 1.2s ease-in-out infinite 0s;
+        }
+        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile2,
+        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile2 {
+            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.3s;
+        }
+        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile3,
+        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile3 {
+            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.6s;
+        }
+        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile4,
+        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile4 {
+            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.9s;
+        }
 
-        .nav-item.active i.ti-layout-dashboard::before { animation: icp-pulse 3s ease infinite; }
-        .nav-item.active i.ti-scan::before             { animation: icp-scan  3s ease-in-out infinite; }
-        .nav-item.active i.ti-lock-dollar::before      { animation: icp-lock  3s ease infinite; }
-        .nav-item.active i.ti-cash::before,
-        .nav-item.active i.ti-building-bank::before    { animation: icp-stack 3s ease infinite; }
-        .nav-item.active i.ti-user-check::before       { animation: icp-check 3s ease infinite; }
-        .nav-item.active i.ti-users::before            { animation: icp-wave  3s ease infinite; }
-        .nav-item.active i.ti-clock-hour-4::before     { animation: icp-tick  3s ease-in-out infinite; }
-        .nav-item.active i.ti-inbox::before            { animation: icp-drop  3s ease infinite; }
-        .nav-item.active i.ti-send::before             { animation: icp-fly   3s ease infinite; }
-        .nav-item.active i.ti-building-store::before   { animation: icp-shop  3s ease infinite; }
-        .nav-item.active i.ti-package-import::before   { animation: icp-in    3s ease infinite; }
-        .nav-item.active i.ti-packages::before         { animation: icp-count 3s ease infinite; }
-        .nav-item.active i.ti-chart-bar::before        { animation: icp-bars  3s ease infinite; }
-        .nav-item.active i.ti-adjustments::before      { animation: icp-tune  3s ease infinite; }
-        .nav-item.active i.ti-settings::before         { animation: icp-gear  3s ease-in-out infinite; }
-        .nav-item.active i.ti-device-mobile::before   { animation: icp-ring 3s ease infinite; }
-        .nav-item.active i.ti-shopping-cart::before   { animation: icp-cart 3s ease infinite; }
-        .nav-item.active i.ti-calculator::before      { animation: icp-calc 3s ease infinite; }
+        /* 5. سكانر الكمبيوتر (ti-device-mobile): الموبايل ثابت وموجتين بيطلعوا من جنبه */
+        @keyframes ni-wave-signal {
+            0%   { opacity: 0; transform: scale(0.6); }
+            50%  { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.25); }
+        }
+        .nav-item .nicon-device-mobile .nicon-part-wave1,
+        .nav-item .nicon-device-mobile .nicon-part-wave2 {
+            opacity: 0;
+        }
+        .nav-item:hover .nicon-device-mobile .nicon-part-wave1,
+        .nav-item:focus-visible .nicon-device-mobile .nicon-part-wave1 {
+            animation: ni-wave-signal 1.0s ease-out infinite;
+            transform-box: fill-box;
+            transform-origin: left center;
+        }
+        .nav-item:hover .nicon-device-mobile .nicon-part-wave2,
+        .nav-item:focus-visible .nicon-device-mobile .nicon-part-wave2 {
+            animation: ni-wave-signal 1.0s ease-out infinite 0.35s;
+            transform-box: fill-box;
+            transform-origin: left center;
+        }
+
+        /* 6. تقفيل الكاشير (ti-lock-dollar): الحلقة بتطلع لفوق وترجع تقفل، وعلامة الدولار بتنبض */
+        @keyframes ni-unlock-shackle {
+            0%, 100% { transform: translateY(0); }
+            40%, 60% { transform: translateY(-3.5px); }
+        }
+        @keyframes ni-pulse-dollar {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(1.25); }
+        }
+        .nav-item:hover .nicon-lock-dollar .nicon-part-shackle,
+        .nav-item:focus-visible .nicon-lock-dollar .nicon-part-shackle {
+            animation: ni-unlock-shackle 1.3s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-lock-dollar .nicon-part-dollar,
+        .nav-item:focus-visible .nicon-lock-dollar .nicon-part-dollar {
+            animation: ni-pulse-dollar 1.3s ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 7. العهد (ti-cash): الورقة بتتزحلق يمين وشمال، والدايرة بتلف */
+        @keyframes ni-slide-bill {
+            0%, 100% { transform: translateX(0); }
+            50%      { transform: translateX(2.5px); }
+        }
+        @keyframes ni-spin-coin {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        .nav-item:hover .nicon-cash .nicon-part-bill,
+        .nav-item:focus-visible .nicon-cash .nicon-part-bill {
+            animation: ni-slide-bill 1.3s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-cash .nicon-part-coin,
+        .nav-item:focus-visible .nicon-cash .nicon-part-coin {
+            animation: ni-spin-coin 1.3s linear infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 8. مراجعة المحاسب (ti-user-check): علامة الصح بتترسم بـ stroke-dashoffset */
+        @keyframes ni-draw-check {
+            0%       { stroke-dashoffset: 14; }
+            45%, 80% { stroke-dashoffset: 0; }
+            100%     { stroke-dashoffset: 14; }
+        }
+        .nav-item:hover .nicon-user-check .nicon-part-check,
+        .nav-item:focus-visible .nicon-user-check .nicon-part-check {
+            animation: ni-draw-check 1.3s ease-in-out infinite;
+        }
+
+        /* 9. الخزينة وكشف الحساب (ti-building-bank): السقف المثلث بينزل مكانه، والعواميد بتطلع من تحت واحد ورا التاني */
+        @keyframes ni-drop-roof {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-2.5px); }
+        }
+        @keyframes ni-rise-col {
+            0%, 100% { transform: scaleY(1); }
+            50%      { transform: scaleY(0.2); }
+        }
+        .nav-item:hover .nicon-building-bank .nicon-part-roof,
+        .nav-item:focus-visible .nicon-building-bank .nicon-part-roof {
+            animation: ni-drop-roof 1.3s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-building-bank .nicon-part-col1,
+        .nav-item:focus-visible .nicon-building-bank .nicon-part-col1 {
+            animation: ni-rise-col 1.3s ease-in-out infinite 0s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+        .nav-item:hover .nicon-building-bank .nicon-part-col2,
+        .nav-item:focus-visible .nicon-building-bank .nicon-part-col2 {
+            animation: ni-rise-col 1.3s ease-in-out infinite 0.18s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+        .nav-item:hover .nicon-building-bank .nicon-part-col3,
+        .nav-item:focus-visible .nicon-building-bank .nicon-part-col3 {
+            animation: ni-rise-col 1.3s ease-in-out infinite 0.36s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+
+        /* 10. الموارد البشرية (ti-users): الشخص اللي ورا بيطل من ورا الأولاني */
+        @keyframes ni-peek-user {
+            0%, 100% { transform: translate(0, 0); }
+            50%      { transform: translate(2.5px, -1px); }
+        }
+        .nav-item:hover .nicon-users .nicon-part-user-back,
+        .nav-item:focus-visible .nicon-users .nicon-part-user-back {
+            animation: ni-peek-user 1.2s ease-in-out infinite;
+        }
+
+        /* 11. تسجيل الحضور (ti-clock-hour-4): عقرب الدقايق بيلف لفة كاملة، وعقرب الساعات بيتحرك شوية */
+        @keyframes ni-spin-minute {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        @keyframes ni-nudge-hour {
+            0%, 100% { transform: rotate(0deg); }
+            50%      { transform: rotate(25deg); }
+        }
+        .nav-item:hover .nicon-clock-hour-4 .nicon-part-minute,
+        .nav-item:focus-visible .nicon-clock-hour-4 .nicon-part-minute {
+            animation: ni-spin-minute 1.3s linear infinite;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+        .nav-item:hover .nicon-clock-hour-4 .nicon-part-hour,
+        .nav-item:focus-visible .nicon-clock-hour-4 .nicon-part-hour {
+            animation: ni-nudge-hour 1.3s ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: left bottom;
+        }
+
+        /* 12. المهام (ti-inbox): ورقة صغيرة بتنزل من فوق وتدخل الصندوق */
+        @keyframes ni-drop-paper {
+            0%        { transform: translateY(-5px); opacity: 0; }
+            20%       { opacity: 1; }
+            70%       { transform: translateY(7px); opacity: 1; }
+            85%, 100% { transform: translateY(7px); opacity: 0; }
+        }
+        .nav-item .nicon-inbox .nicon-part-paper {
+            opacity: 0;
+        }
+        .nav-item:hover .nicon-inbox .nicon-part-paper,
+        .nav-item:focus-visible .nicon-inbox .nicon-part-paper {
+            animation: ni-drop-paper 1.2s ease-in infinite;
+        }
+
+        /* 13. إصدار المهام (ti-send): الطيارة الورق بتطير لفوق يمين وتختفي، وترجع من تحت شمال */
+        @keyframes ni-fly-plane {
+            0%       { transform: translate(0, 0); opacity: 1; }
+            45%      { transform: translate(22px, -22px); opacity: 1; }
+            46%      { transform: translate(-22px, 22px); opacity: 0; }
+            60%      { transform: translate(-22px, 22px); opacity: 1; }
+            100%     { transform: translate(0, 0); opacity: 1; }
+        }
+        .nav-item:hover .nicon-send .nicon-part-plane,
+        .nav-item:focus-visible .nicon-send .nicon-part-plane {
+            animation: ni-fly-plane 1.4s ease-in-out infinite;
+        }
+
+        /* 14. الموردون (ti-building-store): المظلة اللي فوق بتتهز كأن فيه هوا */
+        @keyframes ni-flutter-awning {
+            0%, 100% { transform: rotate(0deg) skewX(0deg); }
+            25%      { transform: rotate(-2.5deg) skewX(-2deg); }
+            75%      { transform: rotate(2.5deg) skewX(2deg); }
+        }
+        .nav-item:hover .nicon-building-store .nicon-part-awning,
+        .nav-item:focus-visible .nicon-building-store .nicon-part-awning {
+            animation: ni-flutter-awning 1.1s ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: top center;
+        }
+
+        /* 15. الاستلامات (ti-package-import): السهم بيدخل الصندوق من برّه */
+        @keyframes ni-import-arrow {
+            0%, 100% { transform: translateX(0); }
+            50%      { transform: translateX(-3.5px); }
+        }
+        .nav-item:hover .nicon-package-import .nicon-part-arrow,
+        .nav-item:focus-visible .nicon-package-import .nicon-part-arrow {
+            animation: ni-import-arrow 1.1s ease-in-out infinite;
+        }
+
+        /* 16. استلام الفواتير (ti-truck): العجلتين بيلفوا والعربية بتهتز وخطوط سرعة ورا */
+        @keyframes ni-truck-bounce {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-1px); }
+        }
+        @keyframes ni-spin-wheel {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+        @keyframes ni-speed-lines {
+            0%, 100% { opacity: 0.2; transform: translateX(0); }
+            50%      { opacity: 1; transform: translateX(-2px); }
+        }
+        .nav-item .nicon-truck .nicon-part-lines {
+            opacity: 0;
+        }
+        .nav-item:hover .nicon-truck .nicon-part-body,
+        .nav-item:focus-visible .nicon-truck .nicon-part-body {
+            animation: ni-truck-bounce 0.9s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-truck .nicon-part-wheel1,
+        .nav-item:hover .nicon-truck .nicon-part-wheel2,
+        .nav-item:focus-visible .nicon-truck .nicon-part-wheel1,
+        .nav-item:focus-visible .nicon-truck .nicon-part-wheel2 {
+            animation: ni-spin-wheel 0.9s linear infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+        .nav-item:hover .nicon-truck .nicon-part-lines,
+        .nav-item:focus-visible .nicon-truck .nicon-part-lines {
+            animation: ni-speed-lines 0.9s ease-in-out infinite;
+        }
+
+        /* 17. الجرد (ti-packages): الصناديق بتتحط فوق بعض واحد ورا التاني */
+        @keyframes ni-stack-box {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-2.5px); }
+        }
+        .nav-item:hover .nicon-packages .nicon-part-box-bl,
+        .nav-item:focus-visible .nicon-packages .nicon-part-box-bl {
+            animation: ni-stack-box 1.2s ease-in-out infinite 0s;
+        }
+        .nav-item:hover .nicon-packages .nicon-part-box-br,
+        .nav-item:focus-visible .nicon-packages .nicon-part-box-br {
+            animation: ni-stack-box 1.2s ease-in-out infinite 0.2s;
+        }
+        .nav-item:hover .nicon-packages .nicon-part-box-top,
+        .nav-item:focus-visible .nicon-packages .nicon-part-box-top {
+            animation: ni-stack-box 1.2s ease-in-out infinite 0.4s;
+        }
+
+        /* 18. تحليل الموسم (ti-calculator): الزراير بتنور واحد ورا التاني كأن حد بيكتب رقم */
+        @keyframes ni-press-btn {
+            0%, 100% { opacity: 0.35; stroke-width: 2.5; }
+            50%      { opacity: 1; stroke-width: 3.5; }
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn1,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn1 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 0s;
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn2,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn2 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 0.2s;
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn3,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn3 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 0.4s;
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn4,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn4 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 0.6s;
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn5,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn5 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 0.8s;
+        }
+        .nav-item:hover .nicon-calculator .nicon-part-btn6,
+        .nav-item:focus-visible .nicon-calculator .nicon-part-btn6 {
+            animation: ni-press-btn 1.2s ease-in-out infinite 1.0s;
+        }
+
+        /* 19. التقارير (ti-chart-bar): العواميد بتطلع من تحت لطولها واحد ورا التاني */
+        @keyframes ni-grow-bar {
+            0%, 100% { transform: scaleY(1); }
+            50%      { transform: scaleY(0.35); }
+        }
+        .nav-item:hover .nicon-chart-bar .nicon-part-bar1,
+        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar1 {
+            animation: ni-grow-bar 1.2s ease-in-out infinite 0s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+        .nav-item:hover .nicon-chart-bar .nicon-part-bar2,
+        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar2 {
+            animation: ni-grow-bar 1.2s ease-in-out infinite 0.2s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+        .nav-item:hover .nicon-chart-bar .nicon-part-bar3,
+        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar3 {
+            animation: ni-grow-bar 1.2s ease-in-out infinite 0.4s;
+            transform-box: fill-box;
+            transform-origin: bottom center;
+        }
+
+        /* 20. التعريفات (ti-adjustments): المقابض الصغيرة بتتحرك على الخطوط كل واحدة في اتجاه */
+        @keyframes ni-slide-knob1 {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(3.5px); }
+        }
+        @keyframes ni-slide-knob2 {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-4px); }
+        }
+        @keyframes ni-slide-knob3 {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(4px); }
+        }
+        .nav-item:hover .nicon-adjustments .nicon-part-knob1,
+        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob1 {
+            animation: ni-slide-knob1 1.2s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-adjustments .nicon-part-knob2,
+        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob2 {
+            animation: ni-slide-knob2 1.2s ease-in-out infinite;
+        }
+        .nav-item:hover .nicon-adjustments .nicon-part-knob3,
+        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob3 {
+            animation: ni-slide-knob3 1.2s ease-in-out infinite;
+        }
+
+        /* 21. سجل الأخطاء (ti-alert-triangle): علامة التعجب بترمش */
+        @keyframes ni-flash-exclamation {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%      { opacity: 0.15; transform: scale(0.85); }
+        }
+        .nav-item:hover .nicon-alert-triangle .nicon-part-exclamation,
+        .nav-item:focus-visible .nicon-alert-triangle .nicon-part-exclamation {
+            animation: ni-flash-exclamation 0.9s ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
 
         /* احترام تفضيل تقليل الحركة — تسكت الأيقونات لو المستخدم مقفل الحركات في نظامه */
         @media (prefers-reduced-motion: reduce) {
-            .nav-item i::before, .nav-item.active i::before { animation: none !important; }
+            .nav-item i::before,
+            .nav-item .nicon * {
+                animation: none !important;
+            }
         }
 
         /* نقطة ذهبية صغيرة على العنصر النشط */
