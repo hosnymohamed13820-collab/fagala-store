@@ -10,17 +10,11 @@
  */
 require_once __DIR__ . '/auth.php';
 
-// عاشور معاه invoices:ashraqa بس — يسحب ملف إشراقة وبس. ونفس الكلام لكاشير
-// أي فرع معاه invoices:<فرعه> بس (بريف ٣٧) — يسحب ملف فرعه وبس.
-// من غير القيد ده كان يقدر يغيّر ?branch ويسحب ملف أي فرع تاني.
-// ($ashraqaOnly اسمه قديم — معناه دلوقتي «يوزر فرع مقيّد».)
+// موظف معاه «فواتير الفروع» من غير «الاستلامات» — يسحب ملف فرعه وبس
+// (والإدارة كل الفروع). من غير القيد ده كان يقدر يغيّر ?branch ويسحب ملف
+// أي فرع تاني. ($ashraqaOnly اسمه قديم — معناه «يوزر فرع مقيّد».)
 require_once __DIR__ . '/branch_invoices_lib.php';
 $allowedBranches = [];
-if (can('invoices:ashraqa')) $allowedBranches[] = 5;
-foreach (br_inv_map() as $bk => $bi) {
-    if (can('invoices:' . $bk)) $allowedBranches[] = (int) $bi['id'];
-}
-// موديول «فواتير الفروع»: الإدارة كل الفروع، وفرع البيع فرعه بس
 $brScope = br_inv_user_scope();
 if ($brScope === 'all') {
     $allowedBranches = array_merge($allowedBranches, array_keys(br_inv_all_pages()));

@@ -73,14 +73,28 @@ function br_inv_user_scope()
 }
 
 /**
- * يقدر يفتح فواتير الفرع ده؟ — الصلاحية القديمة (invoices أو invoices:<فرع>)
- * **أو** موديول «فواتير الفروع» بنطاقه. بتتنده في كل صفحة وكل export.
+ * يقدر يفتح فواتير الفرع ده؟ — الأونر، أو موديول «فواتير الفروع» بنطاقه.
+ * 🔴 «الاستلامات» مالهاش دعوة (قرار محمد ٢٢ سبتمبر ٢٠٢٦: الموديولين
+ *    مبقوش مربوطين). بتتنده في كل صفحة وكل export.
  */
-function br_inv_can_view(int $branchId, string $partKey): bool
+function br_inv_can_view(int $branchId): bool
 {
-    if (can('invoices:' . $partKey)) return true;   // الأونر والاستلامات الكاملة جوّاها
+    if (is_owner()) return true;
     $scope = br_inv_user_scope();
     return $scope === 'all' || $scope === $branchId;
+}
+
+/** زي require_permission بالظبط — نفس رسالة الصد. */
+function br_inv_require(int $branchId): void
+{
+    require_login();
+    if (!br_inv_can_view($branchId)) {
+        http_response_code(403);
+        die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+            . '<h2>🚫 غير مصرّح</h2>'
+            . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+            . '<a href="logout.php">تسجيل الخروج</a></div>');
+    }
 }
 
 /** أسعار بيع الفرع لأصناف توزيع واحد. @return array<string,float> [item_code => price] */

@@ -15,10 +15,8 @@ if (!isset($BR_INV) || !is_array($BR_INV) || empty($BR_INV['id']) || empty($BR_I
     exit;
 }
 require_once __DIR__ . '/auth.php';
-// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
-if (!br_inv_can_view((int) $BR_INV['id'], (string) $BR_INV['key'])) {
-    require_permission('invoices:' . $BR_INV['key']);
-}
+// موديول «فواتير الفروع» بنطاقه (أو الأونر) — «الاستلامات» مالهاش دعوة
+br_inv_require((int) $BR_INV['id']);
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/branch_invoices_lib.php';
 
@@ -993,8 +991,8 @@ require_once __DIR__ . '/includes/header.php';
                     الفواتير اللي اتوزّع منها كميات لفرع <?= $BR_NAME_H ?>
                 </div>
             </div>
-            <?php // رجوع — للي معاه الاستلامات أو شايف كل الفروع بس. الموظف العادي مالوش مكان يرجعله.
-            $brSeeAll = can('invoices') || br_inv_user_scope() === 'all'; ?>
+            <?php // رجوع — للأونر والإدارة بس (قرار محمد). موظف الفرع مالوش مكان يرجعله.
+            $brSeeAll = is_owner() || br_inv_user_scope() === 'all'; ?>
             <?php if ($brSeeAll): ?>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <?php if (can('invoices')): ?>

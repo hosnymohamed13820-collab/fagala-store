@@ -10,10 +10,8 @@
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/branch_invoices_lib.php';
-// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
-if (!br_inv_can_view(5, 'ashraqa')) {
-    require_permission('invoices:ashraqa');
-}
+// موديول «فواتير الفروع» بنطاقه (أو الأونر) — «الاستلامات» مالهاش دعوة
+br_inv_require(5);
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/ashraqa_prices_lib.php';
 

@@ -42,8 +42,8 @@ if ($as === 'owner') {
     // عاشور مش موجود في النسخة المحلية (الداتا قبل ما يتعمل).
     // require_login() بيتأكد من المستخدم في القاعدة مع كل صفحة، فلازم يوزر حقيقي:
     // ashraqa_cli_test (id 66) في القاعدة المحلية بس، بباسورد عشوائي مش محفوظ.
-    $_SESSION['user'] = ['id' => 66, 'username' => 'ashraqa_cli_test', 'full_name' => 'اختبار إشراقة', 'is_owner' => 0, 'branch_id' => 5, 'perms_version' => 1];
-    $_SESSION['permissions'] = ['invoices:ashraqa'];
+    $_SESSION['user'] = ['id' => 66, 'username' => 'ashraqa_cli_test', 'full_name' => 'اختبار إشراقة', 'is_owner' => 0, 'branch_id' => 5, 'perms_version' => 2];
+    $_SESSION['permissions'] = ['branch_invoices'];   // فواتير الفروع (بقت موديول لوحده ٢٢ سبتمبر)
 }
 
 register_shutdown_function(function () {

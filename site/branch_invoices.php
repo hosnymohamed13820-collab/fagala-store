@@ -7,7 +7,7 @@
  *   · فرع بيع      ← صفحة فرعه على طول (إشراقة ← ashraqa_invoices.php)
  *   · الإدارة      ← قايمة بكل الفروع
  *   · من غير فرع   ← ولا حاجة
- * والأونر واللي معاه الاستلامات كاملة ← القايمة كمان.
+ * والأونر ← القايمة كمان. («الاستلامات» مالهاش دعوة.)
  * الحماية الحقيقية في صفحات الفروع نفسها (br_inv_can_view) مش هنا.
  */
 require_once __DIR__ . '/auth.php';
@@ -15,7 +15,7 @@ require_once __DIR__ . '/branch_invoices_lib.php';
 
 $pages = br_inv_all_pages();
 $scope = br_inv_user_scope();
-$full  = can('invoices');   // الأونر جوّاها
+$full  = is_owner();
 
 if (!$full && !can('branch_invoices')) {
     require_permission('branch_invoices');   // بيصد بالشكل المعتاد

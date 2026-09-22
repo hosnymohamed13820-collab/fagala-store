@@ -10,10 +10,8 @@
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/branch_invoices_lib.php';
-// الصلاحية القديمة أو موديول «فواتير الفروع» بنطاقه — ولو لأ require_permission بيصد بالشكل المعتاد
-if (!br_inv_can_view(5, 'ashraqa')) {
-    require_permission('invoices:ashraqa');
-}
+// موديول «فواتير الفروع» بنطاقه (أو الأونر) — «الاستلامات» مالهاش دعوة
+br_inv_require(5);
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/ashraqa_prices_lib.php';
 
@@ -1012,8 +1010,8 @@ require_once __DIR__ . '/includes/header.php';
                     الفواتير اللي اتوزّع منها كميات لإشراقة
                 </div>
             </div>
-            <?php // رجوع — للي معاه الاستلامات أو شايف كل الفروع بس. الموظف العادي مالوش مكان يرجعله.
-            $brSeeAll = can('invoices') || br_inv_user_scope() === 'all'; ?>
+            <?php // رجوع — للأونر والإدارة بس (قرار محمد). موظف الفرع مالوش مكان يرجعله.
+            $brSeeAll = is_owner() || br_inv_user_scope() === 'all'; ?>
             <?php if ($brSeeAll): ?>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <?php if (can('invoices')): ?>

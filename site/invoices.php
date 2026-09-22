@@ -12,22 +12,6 @@
  * - الهيدر بيتزامن مع الموردين تلقائياً (ensure_distribution_record).
  */
 require_once __DIR__ . '/auth.php';
-// مين معاه جزء إشراقة بس (مش الموديول كامل) بيتحوّل لصفحته.
-// من غير ده القايمة بتوريله «الاستلامات» والصفحة بتصده — لينك ميت.
-if (!can('invoices') && can('invoices:ashraqa')) {
-    header('Location: ashraqa_invoices.php');
-    exit;
-}
-// ونفس الكلام لكاشير أي فرع معاه جزء فرعه بس (بريف ٣٧)
-if (!can('invoices')) {
-    require_once __DIR__ . '/branch_invoices_lib.php';
-    foreach (br_inv_map() as $bk => $bi) {
-        if (can('invoices:' . $bk)) {
-            header('Location: ' . $bi['url']);
-            exit;
-        }
-    }
-}
 require_permission('invoices');
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';       // الفواتير المجمّعة
@@ -1624,10 +1608,6 @@ $active_module = 'invoices';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<?php /* 🔴 الباب الوحيد لصفحة فواتير إشراقة لأي حد معاه «الاستلامات» كامل
-         (والأونر منهم). التحويل اللي فوق بيشتغل لمين معاه الجزء بس —
-         والأونر `can('invoices')` بترجّعله true، فالتحويل مابيلمسوش
-         وكانت الصفحة مالهاش أي لينك من أي مكان. */ ?>
 <div style="display:flex;justify-content:flex-end;margin-bottom:10px;gap:8px;">
     <?php if (can('invoices:problems')): ?>
     <a href="invoice_problems.php" class="btn btn-sm"
@@ -1635,18 +1615,7 @@ require_once __DIR__ . '/includes/header.php';
         <i class="ti ti-alert-circle"></i> مشاكل الفواتير
     </a>
     <?php endif; ?>
-    <a href="ashraqa_invoices.php" class="btn btn-sm"
-       title="الفواتير اللي اتوزّع منها كمية لفرع إشراقة">
-        <i class="ti ti-building-store"></i> فواتير إشراقة
-    </a>
-    <?php // صفحات فواتير الفروع (بريف ٣٧) — نفس صفحة إشراقة لكل فرع
-    require_once __DIR__ . '/branch_invoices_lib.php';
-    foreach (br_inv_map() as $bi): ?>
-    <a href="<?= e($bi['url']) ?>" class="btn btn-sm"
-       title="الفواتير اللي اتوزّع منها كمية لفرع <?= e($bi['name']) ?>">
-        <i class="ti ti-building-store"></i> فواتير <?= e($bi['name']) ?>
-    </a>
-    <?php endforeach; ?>
+    <?php /* فواتير الفروع بقت موديول لوحده (branch_invoices.php) — مالهاش زراير هنا */ ?>
 </div>
 
 <!-- إشعار إضافة الصنف لمشاكل الفواتير -->

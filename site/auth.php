@@ -142,12 +142,7 @@ function module_parts(): array
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',
-            'ashraqa'  => 'فواتير إشراقة',
-            // بريف ٣٧ — صفحة لكل فرع (branch_invoices_lib.php → br_inv_map)
-            'fagala'   => 'فواتير الفجالة',
-            'degla'    => 'فواتير دجلة',
-            'bonjour'  => 'فواتير بونجور',
-            'abc'      => 'فواتير اي بي سي',
+            // فواتير الفروع (إشراقة وإخواتها) بقت موديول لوحده: branch_invoices
         ],
         'receiving' => [
             'diffs' => 'صفحة الفروقات',
