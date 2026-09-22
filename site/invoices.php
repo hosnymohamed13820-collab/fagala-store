@@ -18,6 +18,16 @@ if (!can('invoices') && can('invoices:ashraqa')) {
     header('Location: ashraqa_invoices.php');
     exit;
 }
+// ونفس الكلام لكاشير أي فرع معاه جزء فرعه بس (بريف ٣٧)
+if (!can('invoices')) {
+    require_once __DIR__ . '/branch_invoices_lib.php';
+    foreach (br_inv_map() as $bk => $bi) {
+        if (can('invoices:' . $bk)) {
+            header('Location: ' . $bi['url']);
+            exit;
+        }
+    }
+}
 require_permission('invoices');
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';       // الفواتير المجمّعة
@@ -1629,6 +1639,14 @@ require_once __DIR__ . '/includes/header.php';
        title="الفواتير اللي اتوزّع منها كمية لفرع إشراقة">
         <i class="ti ti-building-store"></i> فواتير إشراقة
     </a>
+    <?php // صفحات فواتير الفروع (بريف ٣٧) — نفس صفحة إشراقة لكل فرع
+    require_once __DIR__ . '/branch_invoices_lib.php';
+    foreach (br_inv_map() as $bi): ?>
+    <a href="<?= e($bi['url']) ?>" class="btn btn-sm"
+       title="الفواتير اللي اتوزّع منها كمية لفرع <?= e($bi['name']) ?>">
+        <i class="ti ti-building-store"></i> فواتير <?= e($bi['name']) ?>
+    </a>
+    <?php endforeach; ?>
 </div>
 
 <!-- إشعار إضافة الصنف لمشاكل الفواتير -->

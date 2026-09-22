@@ -10,9 +10,17 @@
  */
 require_once __DIR__ . '/auth.php';
 
-// عاشور معاه invoices:ashraqa بس — يسحب ملف إشراقة وبس.
+// عاشور معاه invoices:ashraqa بس — يسحب ملف إشراقة وبس. ونفس الكلام لكاشير
+// أي فرع معاه invoices:<فرعه> بس (بريف ٣٧) — يسحب ملف فرعه وبس.
 // من غير القيد ده كان يقدر يغيّر ?branch ويسحب ملف أي فرع تاني.
-if (!can('invoices') && can('invoices:ashraqa')) {
+// ($ashraqaOnly اسمه قديم — معناه دلوقتي «يوزر فرع مقيّد».)
+require_once __DIR__ . '/branch_invoices_lib.php';
+$allowedBranches = [];
+if (can('invoices:ashraqa')) $allowedBranches[] = 5;
+foreach (br_inv_map() as $bk => $bi) {
+    if (can('invoices:' . $bk)) $allowedBranches[] = (int) $bi['id'];
+}
+if (!can('invoices') && $allowedBranches) {
     $ashraqaOnly = true;
 } else {
     require_permission('invoices');
@@ -43,7 +51,7 @@ if ($invoiceId === null || $branchId <= 0) {
     die('بيانات غير مكتملة.');
 }
 
-if ($ashraqaOnly && $branchId !== 5) { // branch 403
+if ($ashraqaOnly && !in_array($branchId, $allowedBranches, true)) { // branch 403
     http_response_code(403);
     die('غير مصرح.');
 }
@@ -68,10 +76,11 @@ if ($ashraqaOnly) {
     }
     $stCheck = $pdo->prepare(
         'SELECT 1 FROM invoice_distribution_lines
-          WHERE distribution_id = ? AND branch_id = 5 AND amount > 0
+          WHERE distribution_id = ? AND branch_id = ? AND amount > 0
           LIMIT 1'
     );
-    $stCheck->execute([$distId]);
+    // $branchId اتأكدنا فوق إنه من فروع اليوزر ($allowedBranches)
+    $stCheck->execute([$distId, $branchId]);
     if (!$stCheck->fetchColumn()) {
         http_response_code(403);
         die('غير مصرح.');
