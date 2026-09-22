@@ -468,9 +468,46 @@ function book_reservation_create(array $data, array $lines, int $userId): int
 }
 
 /**
+ * نطاق الحجوزات اللي اليوزر يشوفها.
+ * @return int|null  null = يشوف الكل · رقم = فرعه بس (+ اللي عامله بنفسه)
+ *
+ * 🔴 قرار محمد (٢٢ سبتمبر ٢٠٢٦): «كل واحد يقدر يشوف حجوزاته بس».
+ *    الإدارة والأونر بيشوفوا الكل لأنهم اللي بيشتروا لكل الفروع.
+ *    «الإدارة» = فرع مالوش عمود في الاستلامات (in_receiving = 0).
+ */
+function book_res_scope(bool $isOwner, int $branchId): ?int
+{
+    if ($isOwner || $branchId <= 0) return null;
+
+    static $cache = [];
+    if (!array_key_exists($branchId, $cache)) {
+        try {
+            $st = db()->prepare('SELECT in_receiving FROM branches WHERE id = ?');
+            $st->execute([$branchId]);
+            $v = $st->fetchColumn();
+            // 🔴 فرع مش موجود = نقفل مش نفتح. الغلط هنا يبقى إن
+            //    موظف مايشوفش حاجة، مش إنه يشوف عملاء فروع تانية.
+            $cache[$branchId] = ($v === false) ? $branchId : ((int) $v === 0 ? null : $branchId);
+        } catch (Throwable $ex) {
+            $cache[$branchId] = $branchId;
+        }
+    }
+    return $cache[$branchId];
+}
+
+/** اليوزر ده يقدر يفتح/يعدّل/يطبع الحجز ده؟ */
+function book_res_can_access(array $res, ?int $scope, int $uid): bool
+{
+    if ($scope === null) return true;
+    return (int) ($res['branch_id'] ?? 0) === $scope
+        || (int) ($res['created_by'] ?? 0) === $uid;
+}
+
+/**
  * قائمة الحجوزات (الأحدث أولاً) مع عدد الكتب — استعلام واحد.
  */
-function book_reservations_list(string $status = 'open', int $limit = 100): array
+function book_reservations_list(string $status = 'open', int $limit = 100,
+                                ?int $scope = null, int $uid = 0): array
 {
     try {
         $sql = 'SELECT r.*, b.name AS branch_name, u.full_name AS creator,
@@ -478,10 +515,19 @@ function book_reservations_list(string $status = 'open', int $limit = 100): arra
                 FROM book_reservations r
                 LEFT JOIN branches b ON b.id = r.branch_id
                 LEFT JOIN users u ON u.id = r.created_by';
+        $where = [];
         $args = [];
         if ($status !== '' && $status !== 'all') {
-            $sql .= ' WHERE r.status = ?';
+            $where[] = 'r.status = ?';
             $args[] = $status;
+        }
+        if ($scope !== null) {
+            $where[] = '(r.branch_id = ? OR r.created_by = ?)';
+            $args[] = $scope;
+            $args[] = $uid;
+        }
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
         }
         $sql .= ' ORDER BY r.id DESC LIMIT ' . (int) $limit;
         $st = db()->prepare($sql);

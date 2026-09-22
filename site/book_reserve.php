@@ -24,6 +24,9 @@ require_once __DIR__ . '/book_receipt_lib.php';
 $uid      = (int) current_user()['id'];
 $myBranch = (int) (current_user()['branch_id'] ?? 0);
 
+// نطاق الحجوزات — شوف book_res_scope() في book_lib.php
+$resScope = book_res_scope(is_owner(), $myBranch);
+
 // ===== AJAX =====
 $ajax = $_GET['ajax'] ?? '';
 if ($ajax !== '') {
@@ -46,8 +49,13 @@ if ($ajax !== '') {
                 if (!csrf_verify((string) ($body['csrf'] ?? ''))) {
                     throw new RuntimeException('انتهت صلاحية الجلسة — اعمل ريفريش وحاول تاني.');
                 }
+                $resIn = (array) ($body['res'] ?? []);
+                // 🔴 موظف الفرع بيحجز لفرعه بس — مهما الواجهة بعتت إيه.
+                if ($resScope !== null) {
+                    $resIn['branch_id'] = $resScope;
+                }
                 $id = book_reservation_create(
-                    (array) ($body['res'] ?? []),
+                    $resIn,
                     (array) ($body['lines'] ?? []),
                     $uid
                 );
@@ -76,10 +84,14 @@ if ($ajax !== '') {
 
 // ===== تغيير حالة حجز (POST عادي + PRG) =====
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
+    $sid = (int) ($_POST['res'] ?? 0);
     if (csrf_verify((string) ($_POST['csrf'] ?? ''))) {
-        book_reservation_set_status((int) ($_POST['res'] ?? 0), (string) ($_POST['status'] ?? ''));
+        $chk = book_reservation_get($sid);
+        if ($chk && book_res_can_access($chk['res'], $resScope, $uid)) {
+            book_reservation_set_status($sid, (string) ($_POST['status'] ?? ''));
+        }
     }
-    header('Location: book_reserve.php?view=' . (int) ($_POST['res'] ?? 0));
+    header('Location: book_reserve.php?view=' . $sid);
     exit;
 }
 
@@ -98,9 +110,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
         //    وهو بيعيد طباعة حجز إشراقة. اتمسكت في أول تجربة ٢١ سبتمبر.
         $chk       = book_reservation_get($rid);
         $resBranch = $chk ? (int) ($chk['res']['branch_id'] ?? 0) : 0;
-        $isMine    = $chk && (int) ($chk['res']['created_by'] ?? 0) === $uid;
-        $allowed   = $chk && (is_owner() || $myBranch === 0 || $resBranch === 0
-                              || $resBranch === $myBranch || $isMine);
+        $allowed   = $chk && book_res_can_access($chk['res'], $resScope, $uid);
 
         if ($allowed) {
             // بيتحط مهمة جديدة في الطابور — القديمة ما بتتلمسش.
@@ -122,8 +132,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
 $branches   = db()->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name')->fetchAll();
 $viewId     = (int) ($_GET['view'] ?? 0);
 $viewing    = $viewId > 0 ? book_reservation_get($viewId) : null;
+// 🔴 حجز فرع تاني = كأنه مش موجود. مانقولش «ممنوع» عشان
+//    مانأكّدش إن الرقم ده موجود أصلاً.
+if ($viewing && !book_res_can_access($viewing['res'], $resScope, $uid)) {
+    $viewing = null;
+}
 $statusFilt = (string) ($_GET['st'] ?? 'open');
-$recent     = book_reservations_list($statusFilt, 60);
+$recent     = book_reservations_list($statusFilt, 60, $resScope, $uid);
 $catReady   = books_cat_ready();
 
 $page_title    = 'حجز الكتب';
@@ -315,10 +330,10 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="rs-fld">
                 <label>الفرع</label>
-                <select id="cBranch">
+                <select id="cBranch" <?= $resScope !== null ? 'disabled' : '' ?>>
                     <option value="0">— اختار الفرع —</option>
                     <?php foreach ($branches as $b): ?>
-                        <option value="<?= (int)$b['id'] ?>" <?= $myBranch === (int)$b['id'] ? 'selected' : '' ?>>
+                        <option value="<?= (int)$b['id'] ?>" <?= ($resScope ?? $myBranch) === (int)$b['id'] ? 'selected' : '' ?>>
                             <?= e($b['name']) ?>
                         </option>
                     <?php endforeach; ?>

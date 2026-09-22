@@ -15,6 +15,10 @@ require_once __DIR__ . '/auth.php';
 require_permission('shortage');
 require_once __DIR__ . '/book_lib.php';
 
+$uid      = (int) current_user()['id'];
+$myBranch = (int) (current_user()['branch_id'] ?? 0);
+$resScope = book_res_scope(is_owner(), $myBranch);
+
 // (١) الفروع النشطة
 $branches = db()->query(
     'SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name'
@@ -32,14 +36,22 @@ $stLines = db()->query(
 )->fetchAll();
 
 // (٣) سطور حجوزات الكتب المفتوحة (استعلام واحد للصفحة كلها)
-$resLines = db()->query(
-    "SELECT l.id, l.reservation_id, l.item_id, l.code, l.item_name, l.qty, l.allocated_qty, l.stage,
+$resSql = "SELECT l.id, l.reservation_id, l.item_id, l.code, l.item_name, l.qty, l.allocated_qty, l.stage,
             r.branch_id, r.customer_name, r.customer_phone, r.created_at
      FROM book_reservation_lines l
      JOIN book_reservations r ON r.id = l.reservation_id
-     WHERE r.status = 'open'
-     ORDER BY r.created_at ASC, l.id ASC"
-)->fetchAll();
+     WHERE r.status = 'open'";
+$resParams = [];
+if ($resScope !== null) {
+    $resSql .= " AND (r.branch_id = ? OR r.created_by = ?)";
+    $resParams[] = $resScope;
+    $resParams[] = $uid;
+}
+$resSql .= " ORDER BY r.created_at ASC, l.id ASC";
+
+$stmt = db()->prepare($resSql);
+$stmt->execute($resParams);
+$resLines = $stmt->fetchAll();
 
 // تجميع النواقص حسب الفرع الطالب
 $shortagesByBranch = [];
