@@ -65,7 +65,7 @@ $AgentVer  = 'ashweb-1.0'
 
 # SQL expression for the SALE price, as a column of Item i.
 # EMPTY = the agent refuses to run (see the header).
-$PriceExpr = ''
+$PriceExpr = 'i.selling_price'   # retail price (2..8 are other price lists) - checked 2026-09-22
 
 # Rows per HTTP request
 $ChunkSize = 5000
