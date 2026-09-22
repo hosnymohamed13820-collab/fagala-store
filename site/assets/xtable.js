@@ -319,9 +319,8 @@
                     sb.type = 'button';
                     sb.className = 'xt-sort';
                     sb.title = 'ترتيب';
-                    // رمز نصّي مش أيقونة — ti-arrows-sort مش موجود في
-                    // tabler-subset.css (CONTEXT §٢١) وكان هيطلع مربع فاضي.
-                    sb.textContent = '\u21C5';
+                    // SVG جوه الملف — مش محتاج الخط.
+                    sb.innerHTML = '<svg class="xt-sort-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="xt-sort-up" d="M7 9l5 -5l5 5"/><path class="xt-sort-down" d="M7 15l5 5l5 -5"/></svg>';
                     sb.addEventListener('click', function (e) {
                         e.stopPropagation();
                         sortBy(st, idx);
@@ -1044,10 +1043,17 @@
         '.xt-tools button:hover{color:var(--accent,#2f5d8a);background:var(--accent-soft,#eaf1f8);}',
         'th.xt-active .xt-filt{color:var(--accent,#2f5d8a);}',
         'th.xt-active{background:var(--accent-soft,#eaf1f8) !important;}',
-        '.xt-sort{font-size:12px !important;font-weight:700;}',
-        'th.xt-asc .xt-sort,th.xt-desc .xt-sort{color:var(--accent,#2f5d8a);}',
-        'th.xt-asc .xt-sort:after{content:" \\2191";}',
-        'th.xt-desc .xt-sort:after{content:" \\2193";}',
+        '.xt-sort{display:inline-flex;align-items:center;justify-content:center;}',
+        '.xt-sort-icon{display:block;}',
+        '.xt-sort-up,.xt-sort-down{transition:transform .25s var(--ic-spring,cubic-bezier(.34,1.56,.64,1)),opacity .2s ease;}',
+        '.xt-sort:hover .xt-sort-up{transform:translateY(-2px);}',
+        '.xt-sort:hover .xt-sort-down{transform:translateY(2px);}',
+        'th.xt-asc .xt-sort{color:var(--accent,#2f5d8a);}',
+        'th.xt-asc .xt-sort-up{opacity:1;}',
+        'th.xt-asc .xt-sort-down{opacity:.3;}',
+        'th.xt-desc .xt-sort{color:var(--accent,#2f5d8a);}',
+        'th.xt-desc .xt-sort-up{opacity:.3;}',
+        'th.xt-desc .xt-sort-down{opacity:1;}',
 
         'tr.xt-out{display:none !important;}',
         'tr.xt-sumrow td{background:var(--accent-soft,#eaf1f8);font-weight:700;',

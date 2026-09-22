@@ -89,6 +89,10 @@
             --sidebar-hover: var(--ink-800);
             --text: var(--ink-800);
             --muted: var(--ink-500);
+
+            /* منحنيات الحركة للأيقونات (بريف ٣٦) */
+            --ic-ease:   cubic-bezier(.45, 0, .2, 1);     /* حركة رايحة جاية */
+            --ic-spring: cubic-bezier(.34, 1.56, .64, 1); /* نطة/ظهور فيها ارتداد خفيف */
         }
 
         /* =====================================================================
@@ -264,12 +268,16 @@
             box-sizing: border-box;
             padding: 6px;
             overflow: hidden;
+            transition: transform .25s var(--ic-spring);
+        }
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon {
+            transform: scale(1.08);
         }
 
         /* ===== المرور: وهج خفيف ===== */
         .nav-item:hover { color: #fff; background: rgba(255,255,255,.035); }
-        .nav-item:hover i,
-        .nav-item:hover .nicon {
+        .nav-item:is(:hover, :focus-visible, .ic-finish) i,
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon {
             background: rgba(93,150,208,.20);
             color: #cfe3f7;
             box-shadow: 0 4px 14px rgba(60,120,190,.30);
@@ -300,21 +308,19 @@
             from { transform: rotate(0deg); }
             to   { transform: rotate(360deg); }
         }
-        .nav-item:hover .nicon-settings .nicon-part-gear,
-        .nav-item:focus-visible .nicon-settings .nicon-part-gear {
-            animation: ni-spin-gear 1.5s linear infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-settings .nicon-part-gear {
+            animation: ni-spin-gear 1.1s linear infinite;
             transform-box: fill-box;
             transform-origin: center;
         }
 
         /* 2. استعلام الأسعار (ti-scan): إطار السكانر ثابت، وشرطة أفقية جواه بتنزل وتطلع */
         @keyframes ni-scan-laser {
-            0%, 100% { transform: translateY(-5px); }
-            50%      { transform: translateY(5px); }
+            0%, 100% { transform: translateY(-2.5px); }
+            50%      { transform: translateY(2.5px); }
         }
-        .nav-item:hover .nicon-scan .nicon-part-laser,
-        .nav-item:focus-visible .nicon-scan .nicon-part-laser {
-            animation: ni-scan-laser 1.2s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-scan .nicon-part-laser {
+            animation: ni-scan-laser 1.0s var(--ic-ease) infinite;
         }
 
         /* 3. طلب نواقص (ti-shopping-cart): مربعات صغيرة بتقع جوه العربية ← العربية بتطلع يمين وتختفي ← ترجع من الشمال فاضية */
@@ -342,17 +348,14 @@
         .nav-item .nicon-shopping-cart .nicon-part-box2 {
             opacity: 0;
         }
-        .nav-item:hover .nicon-shopping-cart .nicon-part-cart,
-        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-cart {
-            animation: ni-cart-drive 1.6s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-shopping-cart .nicon-part-cart {
+            animation: ni-cart-drive 1.2s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-shopping-cart .nicon-part-box1,
-        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-box1 {
-            animation: ni-cart-box1 1.6s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-shopping-cart .nicon-part-box1 {
+            animation: ni-cart-box1 1.2s var(--ic-spring) infinite;
         }
-        .nav-item:hover .nicon-shopping-cart .nicon-part-box2,
-        .nav-item:focus-visible .nicon-shopping-cart .nicon-part-box2 {
-            animation: ni-cart-box2 1.6s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-shopping-cart .nicon-part-box2 {
+            animation: ni-cart-box2 1.2s var(--ic-spring) infinite;
         }
 
         /* 4. الرئيسية (ti-layout-dashboard): المربعات الأربعة بتنور واحد ورا التاني */
@@ -360,42 +363,36 @@
             0%, 100% { opacity: 0.3; }
             50%      { opacity: 1; }
         }
-        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile1,
-        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile1 {
-            animation: ni-pulse-tile 1.2s ease-in-out infinite 0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-layout-dashboard .nicon-part-tile1 {
+            animation: ni-pulse-tile 1.0s var(--ic-ease) infinite 0s;
         }
-        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile2,
-        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile2 {
-            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.3s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-layout-dashboard .nicon-part-tile2 {
+            animation: ni-pulse-tile 1.0s var(--ic-ease) infinite 0.25s;
         }
-        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile3,
-        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile3 {
-            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.6s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-layout-dashboard .nicon-part-tile3 {
+            animation: ni-pulse-tile 1.0s var(--ic-ease) infinite 0.5s;
         }
-        .nav-item:hover .nicon-layout-dashboard .nicon-part-tile4,
-        .nav-item:focus-visible .nicon-layout-dashboard .nicon-part-tile4 {
-            animation: ni-pulse-tile 1.2s ease-in-out infinite 0.9s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-layout-dashboard .nicon-part-tile4 {
+            animation: ni-pulse-tile 1.0s var(--ic-ease) infinite 0.75s;
         }
 
         /* 5. سكانر الكمبيوتر (ti-device-mobile): الموبايل ثابت وموجتين بيطلعوا من جنبه */
         @keyframes ni-wave-signal {
             0%   { opacity: 0; transform: scale(0.6); }
             50%  { opacity: 1; transform: scale(1); }
-            100% { opacity: 0; transform: scale(1.25); }
+            100% { opacity: 0; transform: scale(1.15); }
         }
         .nav-item .nicon-device-mobile .nicon-part-wave1,
         .nav-item .nicon-device-mobile .nicon-part-wave2 {
             opacity: 0;
         }
-        .nav-item:hover .nicon-device-mobile .nicon-part-wave1,
-        .nav-item:focus-visible .nicon-device-mobile .nicon-part-wave1 {
-            animation: ni-wave-signal 1.0s ease-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-device-mobile .nicon-part-wave1 {
+            animation: ni-wave-signal 1.0s var(--ic-ease) infinite;
             transform-box: fill-box;
             transform-origin: left center;
         }
-        .nav-item:hover .nicon-device-mobile .nicon-part-wave2,
-        .nav-item:focus-visible .nicon-device-mobile .nicon-part-wave2 {
-            animation: ni-wave-signal 1.0s ease-out infinite 0.35s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-device-mobile .nicon-part-wave2 {
+            animation: ni-wave-signal 1.0s var(--ic-ease) infinite 0.35s;
             transform-box: fill-box;
             transform-origin: left center;
         }
@@ -403,19 +400,17 @@
         /* 6. تقفيل الكاشير (ti-lock-dollar): الحلقة بتطلع لفوق وترجع تقفل، وعلامة الدولار بتنبض */
         @keyframes ni-unlock-shackle {
             0%, 100% { transform: translateY(0); }
-            40%, 60% { transform: translateY(-3.5px); }
+            40%, 60% { transform: translateY(-2.5px); }
         }
         @keyframes ni-pulse-dollar {
             0%, 100% { transform: scale(1); }
-            50%      { transform: scale(1.25); }
+            50%      { transform: scale(1.12); }
         }
-        .nav-item:hover .nicon-lock-dollar .nicon-part-shackle,
-        .nav-item:focus-visible .nicon-lock-dollar .nicon-part-shackle {
-            animation: ni-unlock-shackle 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-lock-dollar .nicon-part-shackle {
+            animation: ni-unlock-shackle 1.1s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-lock-dollar .nicon-part-dollar,
-        .nav-item:focus-visible .nicon-lock-dollar .nicon-part-dollar {
-            animation: ni-pulse-dollar 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-lock-dollar .nicon-part-dollar {
+            animation: ni-pulse-dollar 1.1s var(--ic-spring) infinite;
             transform-box: fill-box;
             transform-origin: center;
         }
@@ -429,13 +424,11 @@
             from { transform: rotate(0deg); }
             to   { transform: rotate(360deg); }
         }
-        .nav-item:hover .nicon-cash .nicon-part-bill,
-        .nav-item:focus-visible .nicon-cash .nicon-part-bill {
-            animation: ni-slide-bill 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-cash .nicon-part-bill {
+            animation: ni-slide-bill 1.1s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-cash .nicon-part-coin,
-        .nav-item:focus-visible .nicon-cash .nicon-part-coin {
-            animation: ni-spin-coin 1.3s linear infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-cash .nicon-part-coin {
+            animation: ni-spin-coin 1.1s linear infinite;
             transform-box: fill-box;
             transform-origin: center;
         }
@@ -446,9 +439,8 @@
             45%, 80% { stroke-dashoffset: 0; }
             100%     { stroke-dashoffset: 14; }
         }
-        .nav-item:hover .nicon-user-check .nicon-part-check,
-        .nav-item:focus-visible .nicon-user-check .nicon-part-check {
-            animation: ni-draw-check 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-user-check .nicon-part-check {
+            animation: ni-draw-check 1.0s var(--ic-spring) infinite;
         }
 
         /* 9. الخزينة وكشف الحساب (ti-building-bank): السقف المثلث بينزل مكانه، والعواميد بتطلع من تحت واحد ورا التاني */
@@ -460,25 +452,21 @@
             0%, 100% { transform: scaleY(1); }
             50%      { transform: scaleY(0.2); }
         }
-        .nav-item:hover .nicon-building-bank .nicon-part-roof,
-        .nav-item:focus-visible .nicon-building-bank .nicon-part-roof {
-            animation: ni-drop-roof 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-building-bank .nicon-part-roof {
+            animation: ni-drop-roof 1.1s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-building-bank .nicon-part-col1,
-        .nav-item:focus-visible .nicon-building-bank .nicon-part-col1 {
-            animation: ni-rise-col 1.3s ease-in-out infinite 0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-building-bank .nicon-part-col1 {
+            animation: ni-rise-col 1.1s var(--ic-spring) infinite 0s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
-        .nav-item:hover .nicon-building-bank .nicon-part-col2,
-        .nav-item:focus-visible .nicon-building-bank .nicon-part-col2 {
-            animation: ni-rise-col 1.3s ease-in-out infinite 0.18s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-building-bank .nicon-part-col2 {
+            animation: ni-rise-col 1.1s var(--ic-spring) infinite 0.18s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
-        .nav-item:hover .nicon-building-bank .nicon-part-col3,
-        .nav-item:focus-visible .nicon-building-bank .nicon-part-col3 {
-            animation: ni-rise-col 1.3s ease-in-out infinite 0.36s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-building-bank .nicon-part-col3 {
+            animation: ni-rise-col 1.1s var(--ic-spring) infinite 0.36s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
@@ -488,9 +476,8 @@
             0%, 100% { transform: translate(0, 0); }
             50%      { transform: translate(2.5px, -1px); }
         }
-        .nav-item:hover .nicon-users .nicon-part-user-back,
-        .nav-item:focus-visible .nicon-users .nicon-part-user-back {
-            animation: ni-peek-user 1.2s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-users .nicon-part-user-back {
+            animation: ni-peek-user 1.0s var(--ic-ease) infinite;
         }
 
         /* 11. تسجيل الحضور (ti-clock-hour-4): عقرب الدقايق بيلف لفة كاملة، وعقرب الساعات بيتحرك شوية */
@@ -500,34 +487,31 @@
         }
         @keyframes ni-nudge-hour {
             0%, 100% { transform: rotate(0deg); }
-            50%      { transform: rotate(25deg); }
+            50%      { transform: rotate(20deg); }
         }
-        .nav-item:hover .nicon-clock-hour-4 .nicon-part-minute,
-        .nav-item:focus-visible .nicon-clock-hour-4 .nicon-part-minute {
-            animation: ni-spin-minute 1.3s linear infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-clock-hour-4 .nicon-part-minute {
+            animation: ni-spin-minute 1.1s linear infinite;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
-        .nav-item:hover .nicon-clock-hour-4 .nicon-part-hour,
-        .nav-item:focus-visible .nicon-clock-hour-4 .nicon-part-hour {
-            animation: ni-nudge-hour 1.3s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-clock-hour-4 .nicon-part-hour {
+            animation: ni-nudge-hour 1.1s var(--ic-ease) infinite;
             transform-box: fill-box;
             transform-origin: left bottom;
         }
 
         /* 12. المهام (ti-inbox): ورقة صغيرة بتنزل من فوق وتدخل الصندوق */
         @keyframes ni-drop-paper {
-            0%        { transform: translateY(-5px); opacity: 0; }
+            0%        { transform: translateY(-3px); opacity: 0; }
             20%       { opacity: 1; }
-            70%       { transform: translateY(7px); opacity: 1; }
-            85%, 100% { transform: translateY(7px); opacity: 0; }
+            70%       { transform: translateY(3px); opacity: 1; }
+            85%, 100% { transform: translateY(3px); opacity: 0; }
         }
         .nav-item .nicon-inbox .nicon-part-paper {
             opacity: 0;
         }
-        .nav-item:hover .nicon-inbox .nicon-part-paper,
-        .nav-item:focus-visible .nicon-inbox .nicon-part-paper {
-            animation: ni-drop-paper 1.2s ease-in infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-inbox .nicon-part-paper {
+            animation: ni-drop-paper 1.0s var(--ic-spring) infinite;
         }
 
         /* 13. إصدار المهام (ti-send): الطيارة الورق بتطير لفوق يمين وتختفي، وترجع من تحت شمال */
@@ -538,9 +522,8 @@
             60%      { transform: translate(-22px, 22px); opacity: 1; }
             100%     { transform: translate(0, 0); opacity: 1; }
         }
-        .nav-item:hover .nicon-send .nicon-part-plane,
-        .nav-item:focus-visible .nicon-send .nicon-part-plane {
-            animation: ni-fly-plane 1.4s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-send .nicon-part-plane {
+            animation: ni-fly-plane 1.2s var(--ic-ease) infinite;
         }
 
         /* 14. الموردون (ti-building-store): المظلة اللي فوق بتتهز كأن فيه هوا */
@@ -549,9 +532,8 @@
             25%      { transform: rotate(-2.5deg) skewX(-2deg); }
             75%      { transform: rotate(2.5deg) skewX(2deg); }
         }
-        .nav-item:hover .nicon-building-store .nicon-part-awning,
-        .nav-item:focus-visible .nicon-building-store .nicon-part-awning {
-            animation: ni-flutter-awning 1.1s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-building-store .nicon-part-awning {
+            animation: ni-flutter-awning 1.0s var(--ic-ease) infinite;
             transform-box: fill-box;
             transform-origin: top center;
         }
@@ -559,11 +541,10 @@
         /* 15. الاستلامات (ti-package-import): السهم بيدخل الصندوق من برّه */
         @keyframes ni-import-arrow {
             0%, 100% { transform: translateX(0); }
-            50%      { transform: translateX(-3.5px); }
+            50%      { transform: translateX(-2.5px); }
         }
-        .nav-item:hover .nicon-package-import .nicon-part-arrow,
-        .nav-item:focus-visible .nicon-package-import .nicon-part-arrow {
-            animation: ni-import-arrow 1.1s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-package-import .nicon-part-arrow {
+            animation: ni-import-arrow 1.0s var(--ic-ease) infinite;
         }
 
         /* 16. استلام الفواتير (ti-truck): العجلتين بيلفوا والعربية بتهتز وخطوط سرعة ورا */
@@ -582,21 +563,17 @@
         .nav-item .nicon-truck .nicon-part-lines {
             opacity: 0;
         }
-        .nav-item:hover .nicon-truck .nicon-part-body,
-        .nav-item:focus-visible .nicon-truck .nicon-part-body {
-            animation: ni-truck-bounce 0.9s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-truck .nicon-part-body {
+            animation: ni-truck-bounce 0.9s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-truck .nicon-part-wheel1,
-        .nav-item:hover .nicon-truck .nicon-part-wheel2,
-        .nav-item:focus-visible .nicon-truck .nicon-part-wheel1,
-        .nav-item:focus-visible .nicon-truck .nicon-part-wheel2 {
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-truck .nicon-part-wheel1,
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-truck .nicon-part-wheel2 {
             animation: ni-spin-wheel 0.9s linear infinite;
             transform-box: fill-box;
             transform-origin: center;
         }
-        .nav-item:hover .nicon-truck .nicon-part-lines,
-        .nav-item:focus-visible .nicon-truck .nicon-part-lines {
-            animation: ni-speed-lines 0.9s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-truck .nicon-part-lines {
+            animation: ni-speed-lines 0.9s var(--ic-ease) infinite;
         }
 
         /* 17. الجرد (ti-packages): الصناديق بتتحط فوق بعض واحد ورا التاني */
@@ -604,17 +581,14 @@
             0%, 100% { transform: translateY(0); }
             50%      { transform: translateY(-2.5px); }
         }
-        .nav-item:hover .nicon-packages .nicon-part-box-bl,
-        .nav-item:focus-visible .nicon-packages .nicon-part-box-bl {
-            animation: ni-stack-box 1.2s ease-in-out infinite 0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-packages .nicon-part-box-bl {
+            animation: ni-stack-box 1.0s var(--ic-spring) infinite 0s;
         }
-        .nav-item:hover .nicon-packages .nicon-part-box-br,
-        .nav-item:focus-visible .nicon-packages .nicon-part-box-br {
-            animation: ni-stack-box 1.2s ease-in-out infinite 0.2s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-packages .nicon-part-box-br {
+            animation: ni-stack-box 1.0s var(--ic-spring) infinite 0.2s;
         }
-        .nav-item:hover .nicon-packages .nicon-part-box-top,
-        .nav-item:focus-visible .nicon-packages .nicon-part-box-top {
-            animation: ni-stack-box 1.2s ease-in-out infinite 0.4s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-packages .nicon-part-box-top {
+            animation: ni-stack-box 1.0s var(--ic-spring) infinite 0.4s;
         }
 
         /* 18. تحليل الموسم (ti-calculator): الزراير بتنور واحد ورا التاني كأن حد بيكتب رقم */
@@ -622,29 +596,23 @@
             0%, 100% { opacity: 0.35; stroke-width: 2.5; }
             50%      { opacity: 1; stroke-width: 3.5; }
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn1,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn1 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn1 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0s;
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn2,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn2 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 0.2s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn2 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0.18s;
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn3,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn3 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 0.4s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn3 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0.36s;
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn4,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn4 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 0.6s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn4 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0.54s;
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn5,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn5 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 0.8s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn5 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0.72s;
         }
-        .nav-item:hover .nicon-calculator .nicon-part-btn6,
-        .nav-item:focus-visible .nicon-calculator .nicon-part-btn6 {
-            animation: ni-press-btn 1.2s ease-in-out infinite 1.0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-calculator .nicon-part-btn6 {
+            animation: ni-press-btn 1.1s var(--ic-ease) infinite 0.9s;
         }
 
         /* 19. التقارير (ti-chart-bar): العواميد بتطلع من تحت لطولها واحد ورا التاني */
@@ -652,21 +620,18 @@
             0%, 100% { transform: scaleY(1); }
             50%      { transform: scaleY(0.35); }
         }
-        .nav-item:hover .nicon-chart-bar .nicon-part-bar1,
-        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar1 {
-            animation: ni-grow-bar 1.2s ease-in-out infinite 0s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-chart-bar .nicon-part-bar1 {
+            animation: ni-grow-bar 1.0s var(--ic-spring) infinite 0s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
-        .nav-item:hover .nicon-chart-bar .nicon-part-bar2,
-        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar2 {
-            animation: ni-grow-bar 1.2s ease-in-out infinite 0.2s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-chart-bar .nicon-part-bar2 {
+            animation: ni-grow-bar 1.0s var(--ic-spring) infinite 0.2s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
-        .nav-item:hover .nicon-chart-bar .nicon-part-bar3,
-        .nav-item:focus-visible .nicon-chart-bar .nicon-part-bar3 {
-            animation: ni-grow-bar 1.2s ease-in-out infinite 0.4s;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-chart-bar .nicon-part-bar3 {
+            animation: ni-grow-bar 1.0s var(--ic-spring) infinite 0.4s;
             transform-box: fill-box;
             transform-origin: bottom center;
         }
@@ -674,27 +639,24 @@
         /* 20. التعريفات (ti-adjustments): المقابض الصغيرة بتتحرك على الخطوط كل واحدة في اتجاه */
         @keyframes ni-slide-knob1 {
             0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(3.5px); }
+            50%      { transform: translateY(2.5px); }
         }
         @keyframes ni-slide-knob2 {
             0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-4px); }
+            50%      { transform: translateY(-2.5px); }
         }
         @keyframes ni-slide-knob3 {
             0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(4px); }
+            50%      { transform: translateY(2.5px); }
         }
-        .nav-item:hover .nicon-adjustments .nicon-part-knob1,
-        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob1 {
-            animation: ni-slide-knob1 1.2s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-adjustments .nicon-part-knob1 {
+            animation: ni-slide-knob1 1.0s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-adjustments .nicon-part-knob2,
-        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob2 {
-            animation: ni-slide-knob2 1.2s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-adjustments .nicon-part-knob2 {
+            animation: ni-slide-knob2 1.0s var(--ic-ease) infinite;
         }
-        .nav-item:hover .nicon-adjustments .nicon-part-knob3,
-        .nav-item:focus-visible .nicon-adjustments .nicon-part-knob3 {
-            animation: ni-slide-knob3 1.2s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-adjustments .nicon-part-knob3 {
+            animation: ni-slide-knob3 1.0s var(--ic-ease) infinite;
         }
 
         /* 21. سجل الأخطاء (ti-alert-triangle): علامة التعجب بترمش */
@@ -702,9 +664,8 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50%      { opacity: 0.15; transform: scale(0.85); }
         }
-        .nav-item:hover .nicon-alert-triangle .nicon-part-exclamation,
-        .nav-item:focus-visible .nicon-alert-triangle .nicon-part-exclamation {
-            animation: ni-flash-exclamation 0.9s ease-in-out infinite;
+        .nav-item:is(:hover, :focus-visible, .ic-finish) .nicon-alert-triangle .nicon-part-exclamation {
+            animation: ni-flash-exclamation 0.9s var(--ic-ease) infinite;
             transform-box: fill-box;
             transform-origin: center;
         }
@@ -712,9 +673,291 @@
         /* احترام تفضيل تقليل الحركة — تسكت الأيقونات لو المستخدم مقفل الحركات في نظامه */
         @media (prefers-reduced-motion: reduce) {
             .nav-item i::before,
-            .nav-item .nicon * {
+            .nav-item .nicon,
+            .nav-item .nicon *,
+            .aicon,
+            .aicon * {
                 animation: none !important;
+                transition: none !important;
             }
+        }
+
+        /* =================================================================
+           حكايات أيقونات الموقع — بريف ٣٦
+           أيقونات العمل التفاعلية (Inline SVG داخل <i>).
+           حركة نقية بـ CSS على الهوفر أو التركيز، وic-finish يضمن إكمال اللفة.
+           ================================================================= */
+        .ti.has-aicon::before { content: none !important; }
+        .aicon {
+            width: 1em;
+            height: 1em;
+            display: inline-block;
+            vertical-align: -0.15em;
+            overflow: hidden;
+            transition: transform .25s var(--ic-spring);
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon {
+            transform: scale(1.08);
+        }
+
+        /* 1. جرس (ti-bell): الجرس بيتمرجح والشرطوطة تتحرك عكسه */
+        @keyframes ai-bell-swing {
+            0%, 100% { transform: rotate(0deg); }
+            20%      { transform: rotate(-12deg); }
+            45%      { transform: rotate(10deg); }
+            70%      { transform: rotate(-6deg); }
+            85%      { transform: rotate(3deg); }
+        }
+        @keyframes ai-bell-clapper {
+            0%, 100% { transform: translateX(0); }
+            20%      { transform: translateX(1.5px); }
+            45%      { transform: translateX(-1.5px); }
+            70%      { transform: translateX(1px); }
+            85%      { transform: translateX(-0.5px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-bell .aicon-part-bell,
+        .aicon-bell.aicon-ring-once .aicon-part-bell {
+            animation: ai-bell-swing 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: top center;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-bell .aicon-part-clapper,
+        .aicon-bell.aicon-ring-once .aicon-part-clapper {
+            animation: ai-bell-clapper 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: top center;
+        }
+
+        /* 2. سلة المهملات (ti-trash): الغطا بيترفع ويميل وينزل */
+        @keyframes ai-trash-lid {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            40%      { transform: translateY(-2.5px) rotate(-10deg); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-trash .aicon-part-lid {
+            animation: ai-trash-lid 0.7s var(--ic-spring) 1;
+            transform-box: fill-box;
+            transform-origin: right bottom;
+        }
+
+        /* 3. علامة الصح (ti-check): الصح بيترسم */
+        @keyframes ai-check-draw {
+            0%   { stroke-dashoffset: 24; }
+            100% { stroke-dashoffset: 0; }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-check .aicon-part-check {
+            animation: ai-check-draw 0.6s var(--ic-spring) 1;
+        }
+
+        /* 4. صح جوه دايرة (ti-circle-check): الدايرة ثابتة والصح بيترسم جواها */
+        @keyframes ai-circle-check-draw {
+            0%   { stroke-dashoffset: 16; }
+            100% { stroke-dashoffset: 0; }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-circle-check .aicon-part-check {
+            animation: ai-circle-check-draw 0.6s var(--ic-spring) 1;
+        }
+
+        /* 5. زائد (ti-plus): بتلف ٩٠° */
+        @keyframes ai-plus-spin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(90deg); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-plus .aicon-part-cross {
+            animation: ai-plus-spin 0.6s var(--ic-spring) 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 6. إغلاق (ti-x): بتلف ٩٠° وتصغر شوية */
+        @keyframes ai-x-turn {
+            0%   { transform: rotate(0deg) scale(1); }
+            50%  { transform: rotate(45deg) scale(0.88); }
+            100% { transform: rotate(90deg) scale(1); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-x .aicon-part-x {
+            animation: ai-x-turn 0.6s var(--ic-spring) 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 7. تحميل لأسفل (ti-download): السهم بينزل يدخل الصينية */
+        @keyframes ai-download-arrow {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(2.5px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-download .aicon-part-arrow {
+            animation: ai-download-arrow 0.7s var(--ic-spring) 1;
+        }
+
+        /* 8. رفع لأعلى (ti-upload): السهم بيطلع من الصينية */
+        @keyframes ai-upload-arrow {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-2.5px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-upload .aicon-part-arrow {
+            animation: ai-upload-arrow 0.7s var(--ic-spring) 1;
+        }
+
+        /* 9. تحديث ودوران (ti-refresh, ti-rotate): لفة كاملة مرة واحدة */
+        @keyframes ai-rotate-spin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-refresh .aicon-part-arrows,
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-rotate .aicon-part-arrows {
+            animation: ai-rotate-spin 0.8s linear 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 10. بحث (ti-search): العدسة بتتحرك حركة دايرية صغيرة كأنها بتدوّر */
+        @keyframes ai-search-lens {
+            0%, 100% { transform: translate(0, 0); }
+            25%      { transform: translate(1.5px, -1.5px); }
+            50%      { transform: translate(2px, 1.5px); }
+            75%      { transform: translate(-1.5px, 1px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-search .aicon-part-lens {
+            animation: ai-search-lens 0.8s var(--ic-ease) 1;
+        }
+
+        /* 11. فلترة (ti-filter): القمع بيضيق ويرجع، ونقطة بتنقط من تحت */
+        @keyframes ai-filter-funnel {
+            0%, 100% { transform: scale(1); }
+            40%      { transform: scale(0.9, 1.05); }
+        }
+        @keyframes ai-filter-drop {
+            0%   { transform: translateY(-2px); opacity: 0; }
+            45%  { opacity: 1; }
+            100% { transform: translateY(2.5px); opacity: 0; }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-filter .aicon-part-funnel {
+            animation: ai-filter-funnel 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: top center;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-filter .aicon-part-drop {
+            animation: ai-filter-drop 0.8s var(--ic-ease) 1;
+        }
+
+        /* 12. تعديل وقلم (ti-edit, ti-pencil): القلم بيتحرك يمين وشمال كأنه بيكتب */
+        @keyframes ai-pencil-write {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25%      { transform: translate(1.5px, -1.5px) rotate(4deg); }
+            75%      { transform: translate(-1.5px, 1.5px) rotate(-4deg); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-edit .aicon-part-pencil,
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-pencil .aicon-part-pencil {
+            animation: ai-pencil-write 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: bottom left;
+        }
+
+        /* 13. قفل (ti-lock): الحلقة بتطلع لفوق وترجع */
+        @keyframes ai-lock-shackle {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-2.5px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-lock .aicon-part-shackle {
+            animation: ai-lock-shackle 0.7s var(--ic-spring) 1;
+        }
+
+        /* 14. كاميرا (ti-camera): العدسة بتقفل وتفتح (scale) + فلاش خفيف */
+        @keyframes ai-camera-lens {
+            0%, 100% { transform: scale(1); }
+            50%      { transform: scale(0.75); }
+        }
+        @keyframes ai-camera-flash {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50%      { opacity: 1; transform: scale(1.15); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-camera .aicon-part-lens {
+            animation: ai-camera-lens 0.7s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-camera .aicon-part-flash {
+            animation: ai-camera-flash 0.7s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 15. تقويم (ti-calendar): الورقة بتتقلب (rotateX خفيف) */
+        @keyframes ai-calendar-flip {
+            0%, 100% { transform: perspective(80px) rotateX(0deg); }
+            50%      { transform: perspective(80px) rotateX(-20deg); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-calendar .aicon-part-page {
+            animation: ai-calendar-flip 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: top center;
+        }
+
+        /* 16. تنبيه (ti-alert-triangle): علامة التعجب بترمش */
+        @keyframes ai-alert-flash {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%      { opacity: 0.2; transform: scale(0.9); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-alert-triangle .aicon-part-exclamation {
+            animation: ai-alert-flash 0.8s var(--ic-ease) 1;
+            transform-box: fill-box;
+            transform-origin: center;
+        }
+
+        /* 17. إرسال (ti-send): الطيارة بتطير يمين فوق وترجع */
+        @keyframes ai-plane-fly {
+            0%       { transform: translate(0, 0); opacity: 1; }
+            45%      { transform: translate(14px, -14px); opacity: 1; }
+            46%      { transform: translate(-14px, 14px); opacity: 0; }
+            60%      { transform: translate(-14px, 14px); opacity: 1; }
+            100%     { transform: translate(0, 0); opacity: 1; }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-send .aicon-part-plane {
+            animation: ai-plane-fly 0.9s var(--ic-ease) 1;
+        }
+
+        /* 18. ملف جدول / فاتورة (ti-file-spreadsheet, ti-file-invoice): السطور بتترسم ورا بعض */
+        @keyframes ai-line-draw {
+            0%   { stroke-dashoffset: 10; }
+            100% { stroke-dashoffset: 0; }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-spreadsheet .aicon-part-line1,
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-invoice .aicon-part-line1 {
+            animation: ai-line-draw 0.7s var(--ic-spring) 1 0s;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-spreadsheet .aicon-part-line2,
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-invoice .aicon-part-line2 {
+            animation: ai-line-draw 0.7s var(--ic-spring) 1 0.15s;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-spreadsheet .aicon-part-line3,
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-file-invoice .aicon-part-line3 {
+            animation: ai-line-draw 0.7s var(--ic-spring) 1 0.3s;
+        }
+
+        /* 19. رابط (ti-link): الحلقتين بيبعدوا ويقربوا */
+        @keyframes ai-link-part2 {
+            0%, 100% { transform: translate(0, 0); }
+            50%      { transform: translate(1.5px, -1.5px); }
+        }
+        @keyframes ai-link-part3 {
+            0%, 100% { transform: translate(0, 0); }
+            50%      { transform: translate(-1.5px, 1.5px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-link .aicon-part-link2 {
+            animation: ai-link-part2 0.7s var(--ic-ease) 1;
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-link .aicon-part-link3 {
+            animation: ai-link-part3 0.7s var(--ic-ease) 1;
+        }
+
+        /* 20. سهم لأسفل (ti-chevron-down): بينزل ويطلع (نطة) */
+        @keyframes ai-chevron-bounce {
+            0%, 100% { transform: translateY(0); }
+            40%      { transform: translateY(2.5px); }
+            70%      { transform: translateY(-1px); }
+        }
+        :is(a, button, .btn, label, th, [role="button"]):is(:hover, :focus-visible, .ic-finish) .aicon-chevron-down .aicon-part-chevron {
+            animation: ai-chevron-bounce 0.6s var(--ic-spring) 1;
         }
 
         /* نقطة ذهبية صغيرة على العنصر النشط */
