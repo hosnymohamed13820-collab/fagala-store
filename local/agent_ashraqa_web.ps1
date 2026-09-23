@@ -58,9 +58,9 @@ $SyncToken = 'ashweb_15c488c25181d22bec038b314ba6a679'
 # the HQ agent plays on the main site, so it reports as 'hq'.
 # A failed beat never fails the sync (it only gets logged).
 $BeatUrl   = 'https://ashraqa.hosnimanagement.com/sync_beat.php'
-$BeatToken = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc'   # = BEAT_TOKEN in ashraqa/sync_beat.php
+$BeatToken = $SyncToken   # same token; = SYNC_AGENT_TOKENS['hq'] in ashraqa/sync_tokens.php
 $AgentKey  = 'hq'
-$AgentVer  = 'ashweb-1.0'
+$AgentVer  = 'ashweb-1.1'
 
 # SQL expression for the SALE price, as a column of Item i.
 # EMPTY = the agent refuses to run (see the header).

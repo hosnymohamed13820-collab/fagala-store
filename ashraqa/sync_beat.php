@@ -9,7 +9,7 @@
  *  واقف ولا الوكيل واقف ولا ببساطة مفيش بيع جديد. النبضة بتفصل
  *  "شغّال ومفيش حركة" عن "واقف".
  *
- *  الأمان: توكن في الهيدر (مش في الـURL عشان مايتسجّلش في لوجات
+ *  الأمان: توكن سري لكل وكيل في الهيدر (مش في الـURL عشان مايتسجّلش في لوجات
  *  السيرفر بالنص الصريح) + POST بس.
  *
  *  مثال:
@@ -20,8 +20,7 @@
  */
 declare(strict_types=1);
 
-// نفس التوكن اللي في sync_hq.php — الوكلاء كلهم بيستخدموه
-const BEAT_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';
+require_once __DIR__ . '/sync_tokens.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -40,9 +39,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 $token = (string) ($_SERVER['HTTP_X_SYNC_TOKEN'] ?? '');
-if (!hash_equals(BEAT_TOKEN, $token)) {
-    beat_die('Unauthorized.', 401);
-}
 
 $raw = file_get_contents('php://input');
 if ($raw === false || strlen($raw) > 4096) {
@@ -56,6 +52,8 @@ $agent = trim((string) ($in['agent'] ?? ''));
 if ($agent === '' || !preg_match('/^[a-z0-9_]{2,32}$/', $agent)) {
     beat_die('Bad agent key.');
 }
+
+if (!synctok_ok($agent, $token, array_keys(SYNC_AGENT_TOKENS))) beat_die('Unauthorized.', 401);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/agent_lib.php';

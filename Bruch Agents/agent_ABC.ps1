@@ -21,9 +21,9 @@
 #
 #  ASCII-only (no Arabic) so Windows PowerShell never mis-parses it.
 #
-#  SETUP PER BRANCH - only the four lines under SETTINGS change.
+#  SETUP PER BRANCH - only the six lines under SETTINGS change.
 #    1) Put this file at  C:\fagala\agent_branch.ps1
-#    2) Set $AgentKey + $SqlDatabase for THIS branch (table below)
+#    2) Set $AgentKey + $SqlDatabase + $MyStoId + $SyncToken for THIS branch (table below)
 #    3) Test from an ADMIN PowerShell:
 #         powershell -ExecutionPolicy Bypass -File "C:\fagala\agent_ABC.ps1"
 #    4) If it prints "finished OK", register the scheduled task
@@ -57,6 +57,12 @@ $SqlDatabase = 'Anzmah_ABCStore'
 #   Store map: 1 Main | 2 Fagala-Zahraa | 3 Bonjour | 4 Mobile | 5 Degla | 6 ABC
 $MyStoId     = 6
 
+# This branch's OWN secret token (since 2026-09-22 every agent has its own).
+# The site checks it against $AgentKey, so one branch PC can no longer
+# post data under another branch's name.
+# Must equal SYNC_AGENT_TOKENS[$AgentKey] in site/sync_tokens.php.
+$SyncToken   = 'abc_6916c3971bb821d05bbc45979f91075499f30fef'
+
 # Authentication: $true = Windows Auth (no user/pass), $false = SQL login
 $UseWindowsAuth = $true
 $SqlUser     = 'sa'
@@ -66,8 +72,7 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$SyncToken  = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc'
-$AgentVer   = '1.0'
+$AgentVer   = '1.1'
 
 # Send everything (ignore the delta) once every N runs, so a lost
 # update can never stay lost forever. 180 runs x 5 min = ~15 hours.

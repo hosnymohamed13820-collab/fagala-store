@@ -55,7 +55,7 @@ ALTER ROLE [db_datareader] ADD MEMBER [NT AUTHORITY\SYSTEM];
 ### الوكلاء الموجودين
 | الوكيل | الجهاز | القاعدة | التوكن | بيبعت |
 |--------|--------|---------|--------|-------|
-| agent_hq.ps1 | الإدارة | Anzmah_FagalaHQ | hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc | أصناف، أسعار، أكواد، مخازن، فواتير، أرصدة، غير مرحّلة، **تصنيفات، أصناف اتشرت** |
+| agent_hq.ps1 | الإدارة | Anzmah_FagalaHQ | site/sync_tokens.php | أصناف، أسعار، أكواد، مخازن، فواتير، أرصدة، غير مرحّلة، **تصنيفات، أصناف اتشرت** |
 | fagala_scanner_agent.ps1 | أي كمبيوتر | — | AGENT_KEY في scan_pull.php | بيسحب أكواد السكانر (مش بيبعت) |
 | agent_ashraqa.ps1 | اشراقة | ReduxSalesPUB2 | (توكن اشراقة المنفصل) | أرصدة اشراقة |
 

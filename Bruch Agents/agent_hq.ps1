@@ -28,10 +28,10 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 # tell a dead PC from a quiet sales day.
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.0'
+$AgentVer  = '2.1'
 
-# Secret token - MUST match the one inside sync_hq.php exactly
-$SyncToken = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc'
+# Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
+$SyncToken = 'hq_48c4cfd7ec51ede3faf01c94aba41504e95f7b9b'
 
 # Local SQL Server connection
 $SqlServer   = 'localhost'

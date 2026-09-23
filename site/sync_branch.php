@@ -20,7 +20,7 @@
  */
 declare(strict_types=1);
 
-const BRANCH_SYNC_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';
+require_once __DIR__ . '/sync_tokens.php';
 const BRANCH_MAX_ROWS   = 60000;
 
 header('Content-Type: application/json; charset=utf-8');
@@ -38,8 +38,6 @@ function br_die(string $msg, int $code = 400): void
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') br_die('POST only.', 405);
 
 $token = (string) ($_SERVER['HTTP_X_SYNC_TOKEN'] ?? '');
-if (!hash_equals(BRANCH_SYNC_TOKEN, $token)) br_die('Unauthorized.', 401);
-
 $raw = file_get_contents('php://input');
 if ($raw === false || $raw === '') br_die('Empty payload.');
 
@@ -48,6 +46,9 @@ if (!is_array($in)) br_die('Bad JSON.');
 
 $agent = trim((string) ($in['agent'] ?? ''));
 if (!preg_match('/^[a-z0-9_]{2,32}$/', $agent)) br_die('Bad agent key.');
+
+// التوكن لازم يكون بتاع الوكيل ده بالذات — مش أي توكن صحيح (مراجعة ٢٢ سبتمبر ٢٠٢٦)
+if (!synctok_ok($agent, $token, SYNC_BRANCH_AGENTS)) br_die('Unauthorized.', 401);
 
 $kind = trim((string) ($in['kind'] ?? ''));
 if ($kind === '') $kind = 'balances';

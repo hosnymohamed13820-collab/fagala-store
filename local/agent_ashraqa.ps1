@@ -62,15 +62,13 @@ $SyncToken = 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS'
 # cannot tell "PC is off" apart from "no stock changed".
 $BeatUrl  = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey = 'ashraqa'      # must match agent_status.agent_key on the site
-$AgentVer = '1.3'
+$AgentVer = '1.4'
 
-# !!! IMPORTANT - THIS IS A DIFFERENT TOKEN ON PURPOSE !!!
-# sync_beat.php is shared by all six agents, so it checks ONE common
-# token (BEAT_TOKEN). That is NOT the Ashraqa token above.
-# If you paste $SyncToken here, the heartbeat gets 401 Unauthorized and
-# Ashraqa shows as DEAD on the site while the sync itself works fine.
-# This value must equal BEAT_TOKEN inside sync_beat.php.
-$BeatToken = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc'
+# Heartbeat token: the beat now uses the agent's own secret token, and the
+# website verifies that it belongs to 'ashraqa'.
+# If $SyncToken changes, it must be updated in sync_ashraqa.php AND
+# SYNC_AGENT_TOKENS['ashraqa'] in site/sync_tokens.php.
+$BeatToken = $SyncToken
 
 # ----- Delta (only send what changed) -----
 # Without this, every run uploads the whole catalogue. That is fine at
@@ -137,7 +135,7 @@ function Send-Beat {
 
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
 
-        # NOTE: $BeatToken here, NOT $SyncToken - see the settings block.
+        # Beat token equals $SyncToken - verified against SYNC_AGENT_TOKENS['ashraqa'].
         $null = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
                 -ContentType 'application/json; charset=utf-8' `
                 -Headers @{ 'X-Sync-Token' = $BeatToken } -TimeoutSec 20

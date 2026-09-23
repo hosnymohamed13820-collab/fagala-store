@@ -18,10 +18,7 @@ declare(strict_types=1);
 // سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
 require_once __DIR__ . '/errlog_lib.php';
 errlog_install();
-
-// ===== التوكن السري — غيّره لقيمة طويلة عشوائية =====
-// ونفس القيمة بالظبط في agent_hq.ps1 عند جهاز الإدارة
-const HQ_SYNC_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';
+require_once __DIR__ . '/sync_tokens.php';
 
 const HQ_MAX_ROWS = 200000;
 
@@ -40,7 +37,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && isset($_GET['watermarks'])) 
     // التوكن من الهيدر بس. كان بييجي في الـURL (?token=) وده بيتسجّل
     // في لوجات السيرفر بالنص الصريح.
     $token = (string) ($_SERVER['HTTP_X_SYNC_TOKEN'] ?? '');
-    if (!hash_equals(HQ_SYNC_TOKEN, $token)) hq_die('Unauthorized.', 401);
+    if (!synctok_ok('hq', (string) $token, ['hq'])) hq_die('Unauthorized.', 401);
     require_once __DIR__ . '/config.php';
     try {
         $pdo = db();
@@ -68,7 +65,7 @@ $token = $_SERVER['HTTP_X_SYNC_TOKEN'] ?? '';
 $payload = json_decode($raw, true);
 if (!is_array($payload)) hq_die('Invalid JSON.');
 if ($token === '' && isset($payload['token'])) $token = (string) $payload['token'];
-if (!hash_equals(HQ_SYNC_TOKEN, (string) $token)) hq_die('Unauthorized.', 401);
+if (!synctok_ok('hq', (string) $token, ['hq'])) hq_die('Unauthorized.', 401);
 
 // 3) نوع الدفعة (items / stores) — كل نوع ليه معالجة
 $kind = (string) ($payload['kind'] ?? '');
