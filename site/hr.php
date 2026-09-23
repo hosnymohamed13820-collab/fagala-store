@@ -528,8 +528,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             elseif ($action === 'pay_salary') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $month = trim((string)($_POST['salary_month'] ?? date('Y-m')));
+                if (!preg_match('/^\d{4}-\d{2}$/', $month)
+                    || !checkdate((int) substr($month, 5, 2), 1, (int) substr($month, 0, 4))) {
+                    throw new RuntimeException('اختر شهراً صحيحاً.');
+                }
                 $from  = trim((string)($_POST['period_from'] ?? '')) ?: null;
                 $to    = trim((string)($_POST['period_to'] ?? '')) ?: null;
+                if ($from !== null) $from = fin_valid_date($from, false);
+                if ($to   !== null) $to   = fin_valid_date($to, false);
+                if ($from !== null && $to !== null && $from > $to) {
+                    throw new RuntimeException('بداية فترة الحضور بعد نهايتها.');
+                }
                 $treasuryId = (int)($_POST['treasury_id'] ?? 0);
                 $date = trim((string)($_POST['date'] ?? date('Y-m-d')));
                 if (!strtotime($date)) {
@@ -584,11 +593,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('اختر موظفاً واحداً على الأقل.');
                 }
                 $month = trim((string)($_POST['salary_month'] ?? ''));
-                if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+                if (!preg_match('/^\d{4}-\d{2}$/', $month)
+                    || !checkdate((int) substr($month, 5, 2), 1, (int) substr($month, 0, 4))) {
                     throw new RuntimeException('اختر شهراً صحيحاً.');
                 }
                 $from  = trim((string)($_POST['period_from'] ?? '')) ?: null;
                 $to    = trim((string)($_POST['period_to'] ?? '')) ?: null;
+                if ($from !== null) $from = fin_valid_date($from, false);
+                if ($to   !== null) $to   = fin_valid_date($to, false);
+                if ($from !== null && $to !== null && $from > $to) {
+                    throw new RuntimeException('بداية فترة الحضور بعد نهايتها.');
+                }
                 $treasuryId = (int)($_POST['treasury_id'] ?? 0);
                 if ($treasuryId <= 0) {
                     throw new RuntimeException('اختر خزينة الصرف.');
@@ -1292,7 +1307,7 @@ if ($tab === 'salaries') {
 
         $cashierTake = $cashierDefCalc;
         if ($adj !== null && $adj['cashier_take'] !== null && is_numeric($adj['cashier_take'])) {
-            $cashierTake = max(0.0, (float)$adj['cashier_take']);
+            $cashierTake = min(max(0.0, (float)$adj['cashier_take']), $cashierDefCalc);
         }
 
         $cashierApplied  = min($cashierTake, $pot);
@@ -1306,7 +1321,7 @@ if ($tab === 'salaries') {
         //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
         //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
         $cashierCarry = cashier_deficit_carry_enabled()
-            ? ($cashierDefCalc - $cashierApplied)
+            ? max(0.0, $cashierDefCalc - $cashierApplied)
             : 0.0;
 
         $carryToAdvance  = round(($penFull - $penApplied)
@@ -2797,6 +2812,7 @@ $statusBadge = function($st) {
         var cashierInp = tr.querySelector('.cashier-take-input');
         var cashierBadge = tr.querySelector('.cashier-take-edited-badge');
         var cashierTake = cashierInp ? (cashierInp.value.trim() === '' ? (parseFloat(cashierInp.dataset.calc) || 0) : (parseFloat(cashierInp.value) || 0)) : (parseFloat(tr.dataset.cashierTake) || 0);
+        cashierTake = Math.min(cashierTake, cashierDefCalc);
         if (cashierInp && cashierBadge) {
             var cCalc = parseFloat(cashierInp.dataset.calc) || 0;
             if (cashierInp.value.trim() !== '' && Math.abs(parseFloat(cashierInp.value) - cCalc) > 0.005) {
@@ -2868,7 +2884,7 @@ $statusBadge = function($st) {
         deficitsApplied = Math.max(0, deficitsApplied);
         pot -= deficitsApplied;
 
-        // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+        // ٤) عجز الكاشير = min(المخصوم — وسقفه المحسوب —, الوعاء)
         var cashierApplied = Math.min(cashierTake, pot);
         cashierApplied = Math.max(0, cashierApplied);
         pot -= cashierApplied;
@@ -2877,7 +2893,7 @@ $statusBadge = function($st) {
 
         var tableEl = tr.closest('table.sal-tbl');
         var cashierCarryEnabled = !tableEl || tableEl.dataset.cashierDeficitCarry !== '0';
-        var cashierCarry = cashierCarryEnabled ? (cashierDefCalc - cashierApplied) : 0;
+        var cashierCarry = cashierCarryEnabled ? Math.max(0, cashierDefCalc - cashierApplied) : 0;
 
         var carryToAdvance = (penalties - penaltiesApplied) + (deficits - deficitsApplied) + cashierCarry;
         carryToAdvance = Math.max(0, carryToAdvance);

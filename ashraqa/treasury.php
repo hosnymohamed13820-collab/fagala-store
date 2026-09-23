@@ -159,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tid    = (int) ($_POST['treasury_id'] ?? 0);
                 $amount = money_post('amount');
                 if ($amount <= 0) throw new RuntimeException('المبلغ لازم يكون أكبر من صفر.');
-                $date   = $_POST['date'] ?? date('Y-m-d');
+                $date   = fin_valid_date((string) ($_POST['date'] ?? date('Y-m-d')));
                 $desc   = trim($_POST['description'] ?? '');
                 $opType = $_POST['op_type'] ?? 'normal';  // normal / advance / custody
                 $entryCodeId = ($_POST['entry_code_id'] ?? '') !== '' ? (int) $_POST['entry_code_id'] : null;
@@ -255,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $to     = (int) ($_POST['to_treasury_id'] ?? 0);
                 $amount = money_post('amount');
                 if ($amount <= 0) throw new RuntimeException('المبلغ لازم يكون أكبر من صفر.');
-                $date   = $_POST['date'] ?? date('Y-m-d');
+                $date   = fin_valid_date((string) ($_POST['date'] ?? date('Y-m-d')));
                 $notes  = trim($_POST['notes'] ?? '');
                 transfer_between_treasuries($from, $to, $amount, $date, $notes ?: null, $uid);
                 $flash = 'تم التحويل بنجاح.';

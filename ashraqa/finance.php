@@ -33,6 +33,32 @@ function money_post(string $key, float $default = 0.0): float
 }
 
 /**
+ * تاريخ Y-m-d صحيح أو استثناء. بترجّع التاريخ بعد trim.
+ * $withRange = true ← كمان مايبقاش بعد النهاردة ولا أقدم من ٤٠٠ يوم.
+ */
+function fin_valid_date(string $date, bool $withRange = true): string
+{
+    $date = trim($date);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        throw new InvalidArgumentException('التاريخ غير صالح.');
+    }
+    [$y, $m, $d] = explode('-', $date);
+    if (!checkdate((int) $m, (int) $d, (int) $y)) {
+        throw new InvalidArgumentException('التاريخ غير صالح.');
+    }
+    if ($withRange) {
+        // مدى تاريخ الحركة — قرار محمد ٢٣ سبتمبر ٢٠٢٦ (بريف ٣٩)
+        if ($date > date('Y-m-d')) {
+            throw new InvalidArgumentException('مينفعش تسجّل حركة بتاريخ لسه ماجاش.');
+        }
+        if ($date < date('Y-m-d', strtotime('-400 days'))) {
+            throw new InvalidArgumentException('التاريخ أقدم من ٤٠٠ يوم.');
+        }
+    }
+    return $date;
+}
+
+/**
  * تسجيل حركة في كشف الحساب + تحديث رصيد الخزينة (ذرّياً).
  *
  * @param int    $treasuryId  معرّف الخزينة
@@ -130,6 +156,7 @@ function transfer_between_treasuries(
     ?string $notes = null,
     ?int $userId = null
 ): int {
+    $date = fin_valid_date($date);
     if ($amount <= 0) {
         throw new InvalidArgumentException('مبلغ التحويل لازم يكون أكبر من صفر.');
     }
@@ -447,6 +474,7 @@ function treasury_movement(
     ?int $branchId = null,
     ?string $notes = null
 ): int {
+    $date = fin_valid_date($date);
     if ($amount <= 0) {
         throw new InvalidArgumentException('المبلغ لازم يكون أكبر من صفر.');
     }
@@ -2801,7 +2829,7 @@ function compute_salary(
     $cashierDefCalc = round($cashierDefCalc, 2);
 
     $cashierDeficits = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
-        ? round((float)$cashierTakeOverride, 2)
+        ? min(round((float)$cashierTakeOverride, 2), $cashierDefCalc)
         : $cashierDefCalc;
 
     // ---------------------------------------------------------------
@@ -2815,7 +2843,7 @@ function compute_salary(
     // ١) السلف      = min(المحسوب, سقف رصيد السجل, الوعاء)  ← الوعاء -= اللي اتخصم
     // ٢) الجزاءات    = min(الجزاءات, الوعاء)                 ← الوعاء -= اللي اتخصم
     // ٣) عجز العهدة  = min(عجز العهدة, الوعاء)               ← الوعاء -= اللي اتخصم
-    // ٤) عجز الكاشير = min(المخصوم, الوعاء)                  ← الوعاء -= اللي اتخصم
+    // ٤) عجز الكاشير = min(المخصوم — وسقفه المحسوب —, الوعاء)  ← الوعاء -= اللي اتخصم
     //
     // الصافي = الوعاء (لازم >= 0 دايماً)
     // المرحّل = (الجزاءات − المخصوم) + (عجز العهدة − المخصوم) + (عجز الكاشير المحسوب − المخصوم)
@@ -2840,9 +2868,9 @@ function compute_salary(
     $defApplied = max(0.0, round($defApplied, 2));
     $pot -= $defApplied;
 
-    // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+    // ٤) عجز الكاشير = min(المخصوم — وسقفه المحسوب —, الوعاء)
     $cashierTake = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
-        ? round((float)$cashierTakeOverride, 2)
+        ? min(round((float)$cashierTakeOverride, 2), $cashierDefCalc)
         : $cashierDefCalc;
     $cashierApplied = min($cashierTake, $pot);
     $cashierApplied = max(0.0, round($cashierApplied, 2));
@@ -2854,7 +2882,7 @@ function compute_salary(
     //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
     //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
     $cashierCarry = cashier_deficit_carry_enabled()
-        ? ($cashierDefCalc - $cashierApplied)
+        ? max(0.0, $cashierDefCalc - $cashierApplied)
         : 0.0;
 
     $carryToAdvance = round(($penaltiesFull - $penApplied)
@@ -3103,10 +3131,10 @@ function pay_salary(
         $defApplied = max(0.0, round($defApplied, 2));
         $pot -= $defApplied;
 
-        // ٤) عجز الكاشير = min(المخصوم, الوعاء)
+        // ٤) عجز الكاشير = min(المخصوم — وسقفه المحسوب —, الوعاء)
         $cashierCalcTotal = (float)($calc['cashier_deficits_calc'] ?? 0.0);
         $cashierTake = ($cashierTakeOverride !== null && $cashierTakeOverride >= 0)
-            ? round((float)$cashierTakeOverride, 2)
+            ? min(round((float)$cashierTakeOverride, 2), $cashierCalcTotal)
             : $cashierCalcTotal;
         $cashierApplied = min($cashierTake, $pot);
         $cashierApplied = max(0.0, round($cashierApplied, 2));
@@ -3119,7 +3147,7 @@ function pay_salary(
         //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
         //    ⚠️ المتغيّر هنا اسمه $cashierCalcTotal (مش $cashierDefCalc زي compute_salary).
         $cashierCarry = cashier_deficit_carry_enabled()
-            ? ($cashierCalcTotal - $cashierApplied)
+            ? max(0.0, $cashierCalcTotal - $cashierApplied)
             : 0.0;
 
         $carryToAdvance = round(($penaltiesFull - $penApplied)
