@@ -26,8 +26,9 @@ if (!$canBranchCustody && !$canEmployeeCustody) {
     require_permission('custody'); // 403
 }
 
-// صلاحية إصدار إذون الصرف: الأونر أو من له صلاحية treasury (المحاسب)
-$canIssue = is_owner() || can('treasury:statement');
+// صلاحية إصدار إذون الصرف: الأونر أو من له صلاحية حركة الخزينة (صرف واستلام)
+// إذن الصرف بيطلّع فلوس ← صلاحية الحركة مش صلاحية العرض (بريف ٥١ — بعد بريف ٤١)
+$canIssue = is_owner() || can('treasury:operate');
 
 // تحديد التاب النشط:
 // عهدة الموظف هي الافتراضية، وعهدة الفرع لمن لديه الصلاحية فقط

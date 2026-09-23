@@ -686,6 +686,9 @@ function change_movement_date(
         throw new InvalidArgumentException('التاريخ غير صالح.');
     }
 
+    // نفس مدى حركة الخزينة (بريف ٣٩): مش بعد النهاردة ولا أقدم من ٤٠٠ يوم (بريف ٥١)
+    $newDate = fin_valid_date($newDate);
+
     $pdo = db();
     $pdo->beginTransaction();
     try {

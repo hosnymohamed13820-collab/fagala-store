@@ -322,9 +322,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $empId = (int)($_POST['employee_id'] ?? 0);
                 $amount = (float)($_POST['amount'] ?? 0);
                 $date = trim((string)($_POST['advance_date'] ?? date('Y-m-d')));
-                if (!strtotime($date)) {
-                    $date = date('Y-m-d');
-                }
+                // فاضي = النهاردة زي الأول. مكتوب غلط أو برّه المدى = رفض صريح (بريف ٥١)
+                $date = fin_valid_date($date !== '' ? $date : date('Y-m-d'));
                 $advType = trim((string)($_POST['adv_type'] ?? 'standing'));
                 if (!in_array($advType, ['monthly', 'standing'], true)) {
                     $advType = 'standing';
@@ -381,9 +380,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($direction !== 'debit' && $direction !== 'credit') {
                     throw new RuntimeException('الاتجاه يجب أن يكون «عليه» (debit) أو «له» (credit).');
                 }
-                if (!strtotime($date)) {
-                    throw new RuntimeException('التاريخ غير صالح.');
-                }
+                // شكل وتاريخ حقيقي بس — من غير مدى: تسوية سجل الموظف ممكن تبقى على رصيد قديم (بريف ٥١)
+                $date = fin_valid_date($date, false);
                 if ($description === '') {
                     throw new RuntimeException('البيان مطلوب.');
                 }
@@ -419,9 +417,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('اختر شهراً صحيحاً.');
                 }
                 $date = trim((string)($_POST['date'] ?? ''));
-                if (!strtotime($date)) {
-                    $date = date('Y-m-d');
-                }
+                // فاضي = النهاردة زي الأول. مكتوب غلط أو برّه المدى = رفض صريح (بريف ٥١)
+                $date = fin_valid_date($date !== '' ? $date : date('Y-m-d'));
                 $bonusesPost        = (array)($_POST['bonuses'] ?? []);
                 $leaveDaysArr       = (array)($_POST['leave_days'] ?? []);
                 $dueDaysArr         = (array)($_POST['due_days'] ?? []);
@@ -541,9 +538,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $treasuryId = (int)($_POST['treasury_id'] ?? 0);
                 $date = trim((string)($_POST['date'] ?? date('Y-m-d')));
-                if (!strtotime($date)) {
-                    $date = date('Y-m-d');
-                }
+                // فاضي = النهاردة زي الأول. مكتوب غلط أو برّه المدى = رفض صريح (بريف ٥١)
+                $date = fin_valid_date($date !== '' ? $date : date('Y-m-d'));
                 $leaveDaysOverride = null;
                 if (isset($_POST['leave_days']) && trim((string)$_POST['leave_days']) !== '') {
                     if (!is_owner()) {
@@ -609,9 +605,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('اختر خزينة الصرف.');
                 }
                 $date = trim((string)($_POST['date'] ?? ''));
-                if (!strtotime($date)) {
-                    $date = date('Y-m-d');
-                }
+                // فاضي = النهاردة زي الأول. مكتوب غلط أو برّه المدى = رفض صريح (بريف ٥١)
+                $date = fin_valid_date($date !== '' ? $date : date('Y-m-d'));
 
                 $leaveDaysArr       = (array)($_POST['leave_days'] ?? []);
                 $dueDaysArr         = (array)($_POST['due_days'] ?? []);
