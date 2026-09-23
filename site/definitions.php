@@ -502,7 +502,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td>
                         <button class="btn btn-sm btn-ghost"
                             onclick='openBranch(<?= json_encode($b, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
-                        <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد؟')">
+                        <form method="post" style="display:inline;" data-confirm="تأكيد؟">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_branch">
                             <input type="hidden" name="id" value="<?= (int)$b['id'] ?>">
@@ -632,7 +632,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td>
                         <button class="btn btn-sm btn-ghost"
                             onclick='openEmp(<?= json_encode($emp, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
-                        <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد؟')">
+                        <form method="post" style="display:inline;" data-confirm="تأكيد؟">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_employee">
                             <input type="hidden" name="id" value="<?= (int)$emp['id'] ?>">
@@ -779,7 +779,7 @@ require_once __DIR__ . '/includes/header.php';
                                 : 'تأكيد؟';
                             ?>
                             <form method="post" style="display:inline;"
-                                  onsubmit='return confirm(<?= json_encode($confirmMsg, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>
+                                  data-confirm="<?= e($confirmMsg) ?>"<?= ($roles && $t['is_active']) ? ' data-confirm-danger' : '' ?>>
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="toggle_treasury">
                                 <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
@@ -877,7 +877,7 @@ require_once __DIR__ . '/includes/header.php';
                                 "parent_id" => $c["parent_id"] !== null ? (int)$c["parent_id"] : null,
                                 "type" => $c["type"],
                             ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
-                        <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد؟')">
+                        <form method="post" style="display:inline;" data-confirm="تأكيد؟">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_category">
                             <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
@@ -1019,14 +1019,14 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function useMyLocation(){
-        if (!navigator.geolocation) { alert('المتصفح لا يدعم تحديد الموقع.'); return; }
+        if (!navigator.geolocation) { fgToast('المتصفح لا يدعم تحديد الموقع.', 'err'); return; }
         navigator.geolocation.getCurrentPosition(
             function(pos){
                 const lat = pos.coords.latitude, lng = pos.coords.longitude;
                 if (bMap) bMap.setView([lat, lng], 17);
                 setPoint(lat, lng);
             },
-            function(){ alert('تعذّر تحديد موقعك. تأكد من السماح بالوصول للموقع.'); },
+            function(){ fgToast('تعذّر تحديد موقعك. تأكد من السماح بالوصول للموقع.', 'err'); },
             { enableHighAccuracy: true, timeout: 10000 }
         );
     }

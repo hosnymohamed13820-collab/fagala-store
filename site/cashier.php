@@ -781,7 +781,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="button" class="modal-x" onclick="closeShiftModal()">&times;</button>
     </div>
     <div class="shift-modal-body">
-    <form method="post" id="shiftForm">
+    <form method="post" id="shiftForm" data-busy="جاري تسليم الوردية...">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="submit_shift" id="formAction">
         <input type="hidden" name="shift_id" value="" id="shiftId">
@@ -1044,7 +1044,7 @@ require_once __DIR__ . '/includes/header.php';
                             </button>
                         <?php endif; ?>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                              data-confirm="تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_shift">
                             <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
@@ -1118,7 +1118,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="ti ti-edit"></i> تعديل
                         </button>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                              data-confirm="تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_shift">
                             <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
@@ -1239,7 +1239,7 @@ require_once __DIR__ . '/includes/header.php';
         fetch('shift_data.php?id=' + id)
             .then(r => r.json())
             .then(data => {
-                if (data.error) { alert(data.error); return; }
+                if (data.error) { fgToast(data.error, 'err'); return; }
                 document.getElementById('formAction').value = action;
                 document.getElementById('shiftId').value = id;
                 document.querySelector('[name="branch_id"]').value = data.branch_id;
@@ -1292,7 +1292,7 @@ require_once __DIR__ . '/includes/header.php';
                 calc();
                 openShiftModal();
             })
-            .catch(() => alert('تعذّر تحميل بيانات الوردية.'));
+            .catch(() => fgToast('تعذّر تحميل بيانات الوردية.', 'err'));
     }
 
     function ownerEditShift(id) {

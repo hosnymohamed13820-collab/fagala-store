@@ -887,7 +887,7 @@ $today = date('Y-m-d');
 <div class="modal-bg" id="receiptModal">
     <div class="modal">
         <h3>استلام نقدية</h3>
-        <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)">
+        <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)" data-busy="جاري الحفظ...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
             <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
@@ -1121,7 +1121,7 @@ $today = date('Y-m-d');
 <div class="modal-bg" id="transferModal">
     <div class="modal">
         <h3>تحويل بين خزينتين</h3>
-        <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)">
+        <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)" data-busy="جاري التحويل...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="transfer">
             <div class="form-row"><label>من خزينة</label><select name="from_treasury_id" required><?= $transferOpts ?></select></div>
@@ -1229,9 +1229,9 @@ $today = date('Y-m-d');
     }
     function handleReceiptSubmit(e){
         const amt = moneyVal(document.getElementById('receiptForm').querySelector('input[name="amount"]'));
-        if (amt <= 0) { e.preventDefault(); alert('اكتب مبلغ أكبر من صفر.'); return false; }
+        if (amt <= 0) { e.preventDefault(); fgToast('اكتب مبلغ أكبر من صفر.', 'warn'); return false; }
         const missing = normalOpMissing(document.getElementById('receiptForm'), 'receiptType');
-        if (missing) { e.preventDefault(); alert(missing); return false; }
+        if (missing) { e.preventDefault(); fgToast(missing, 'warn'); return false; }
         return true;
     }
     // تأكيد التحويل — أي تحويل بين خزينتين
@@ -1241,11 +1241,11 @@ $today = date('Y-m-d');
         const to   = form.querySelector('select[name="to_treasury_id"]');
         if (from.value === to.value) {
             e.preventDefault();
-            alert('مينفعش تحوّل لنفس الخزينة.');
+            fgToast('مينفعش تحوّل لنفس الخزينة.', 'warn');
             return false;
         }
         const amtVal = moneyVal(form.querySelector('input[name="amount"]'));
-        if (amtVal <= 0) { e.preventDefault(); alert('اكتب مبلغ أكبر من صفر.'); return false; }
+        if (amtVal <= 0) { e.preventDefault(); fgToast('اكتب مبلغ أكبر من صفر.', 'warn'); return false; }
         const amt = amtVal.toLocaleString('en-US', {
             minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
             maximumFractionDigits: 2
@@ -1269,13 +1269,13 @@ $today = date('Y-m-d');
             }
             const amtInput = form.querySelector('input[name="amount"]');
             const amtVal = moneyVal(amtInput);
-            if (amtVal <= 0) { alert('اكتب مبلغ أكبر من صفر.'); return false; }
+            if (amtVal <= 0) { fgToast('اكتب مبلغ أكبر من صفر.', 'warn'); return false; }
             const formattedAmt = amtVal.toLocaleString('en-US', {
                 minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
                 maximumFractionDigits: 2
             });
             const missing = normalOpMissing(form, 'disburseType');
-            if (missing) { alert(missing); return false; }
+            if (missing) { fgToast(missing, 'warn'); return false; }
             const treSelect = form.querySelector('select[name="treasury_id"]');
             const treName = treSelect && treSelect.selectedIndex >= 0
                 ? treSelect.options[treSelect.selectedIndex].text.trim()
@@ -1314,8 +1314,7 @@ $today = date('Y-m-d');
         disbSending = sending;
         const btn = document.getElementById('disbConfirmBtn');
         if (!btn) return;
-        btn.disabled = sending;
-        btn.textContent = sending ? 'جاري الصرف…' : 'تأكيد الصرف';
+        fgBusy(btn, sending, 'جاري الصرف…');
     }
     function confirmDisburse(){
         if (disbSending) return;
@@ -1537,9 +1536,7 @@ $today = date('Y-m-d');
             }
         }
 
-        btn.disabled = true;
-        const oldHtml = btn.innerHTML;
-        btn.textContent = 'جارِ الحفظ…';
+        fgBusy(btn, true, 'جارِ الحفظ…');
         try {
             const res  = await fetch('treasury.php?ajax=je_edit', {
                 method:  'POST',
@@ -1560,8 +1557,7 @@ $today = date('Y-m-d');
             err.textContent = ex.message || 'الاتصال فشل — حاول تاني.';
             err.style.display = 'block';
         } finally {
-            btn.disabled  = false;
-            btn.innerHTML = oldHtml;
+            fgBusy(btn, false);
         }
     }
 
@@ -1629,7 +1625,7 @@ $today = date('Y-m-d');
                   + 'هيتعمل ' + revOp + ' بنفس المبلغ بتاريخ ' + dt + '.';
         if (!confirm(msg)) return;
 
-        btn.disabled = true;
+        fgBusy(btn, true, 'جاري الإلغاء...');
         try {
             const res = await fetch('treasury.php?ajax=je_reverse', {
                 method: 'POST',
@@ -1640,12 +1636,12 @@ $today = date('Y-m-d');
             if (data.ok) {
                 location.reload();
             } else {
-                alert(data.error || 'حدث خطأ أثناء عكس القيد.');
-                btn.disabled = false;
+                fgToast(data.error || 'حدث خطأ أثناء عكس القيد.', 'err');
+                fgBusy(btn, false);
             }
         } catch (e) {
-            alert('تعذر الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.');
-            btn.disabled = false;
+            fgToast('تعذر الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.', 'err');
+            fgBusy(btn, false);
         }
     }
 </script>

@@ -544,7 +544,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function exportCsv() {
-        if (!shown.length) { alert('مفيش بيانات'); return; }
+        if (!shown.length) { fgToast('مفيش بيانات', 'warn'); return; }
         let csv = '\ufeff' + ['الكود','اسم الصنف','الكمية المطلوبة', ...BRANCHES.map(b => b.is_admin?'الإدارة':b.name)].join(',') + '\n';
         shown.forEach(r => {
             const bal = r.balances || {};

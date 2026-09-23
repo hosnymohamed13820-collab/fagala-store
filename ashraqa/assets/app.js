@@ -352,3 +352,380 @@ window.initMoneyInputs = function (root) {
 };
 
 document.addEventListener('DOMContentLoaded', function () { window.initMoneyInputs(); });
+
+/* ===== نظام التصميم ٢ب — توست · بوب أب · تحميل (بريف ٤٤) ===== */
+(function () {
+    var toastContainer = null;
+    function getToastContainer() {
+        if (!toastContainer || !document.body.contains(toastContainer)) {
+            toastContainer = document.createElement('div');
+            toastContainer.className = 'fg-toasts';
+            toastContainer.setAttribute('role', 'status');
+            toastContainer.setAttribute('aria-live', 'polite');
+            document.body.appendChild(toastContainer);
+        }
+        return toastContainer;
+    }
+
+    window.fgToast = function (msg, type, ms) {
+        if (!document.body) return null;
+        var validTypes = { ok: 'ti-circle-check', err: 'ti-alert-circle', warn: 'ti-alert-triangle' };
+        var t = (type && validTypes[type]) ? type : 'ok';
+        var iconClass = validTypes[t];
+        var duration = typeof ms === 'number' ? ms : (t === 'warn' ? 5000 : (t === 'err' ? 6000 : 3000));
+
+        var container = getToastContainer();
+        var toast = document.createElement('div');
+        toast.className = 'fg-toast fg-toast-' + t;
+        if (t === 'err') {
+            toast.setAttribute('role', 'alert');
+        }
+
+        var icon = document.createElement('i');
+        icon.className = 'ti ' + iconClass + ' fg-toast-icon';
+        icon.setAttribute('aria-hidden', 'true');
+
+        var text = document.createElement('span');
+        text.className = 'fg-toast-text';
+        text.textContent = String(msg || '');
+
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'fg-toast-x';
+        closeBtn.setAttribute('aria-label', 'قفل');
+        var closeIcon = document.createElement('i');
+        closeIcon.className = 'ti ti-x';
+        closeBtn.appendChild(closeIcon);
+
+        function removeToast() {
+            if (toast.parentNode) {
+                toast.classList.add('fg-toast-closing');
+                setTimeout(function () {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 200);
+            }
+        }
+
+        closeBtn.addEventListener('click', removeToast);
+
+        toast.appendChild(icon);
+        toast.appendChild(text);
+        toast.appendChild(closeBtn);
+
+        container.appendChild(toast);
+
+        while (container.children.length > 4) {
+            container.removeChild(container.firstElementChild);
+        }
+
+        if (duration > 0) {
+            setTimeout(removeToast, duration);
+        }
+
+        return toast;
+    };
+
+    var dialogQueue = Promise.resolve();
+
+    function showDialog(msg, opts) {
+        return new Promise(function (resolve) {
+            var prevFocus = null;
+            try { prevFocus = document.activeElement; } catch (e) {}
+
+            var bg = document.createElement('div');
+            bg.className = 'fg-dlg-bg';
+
+            var dlg = document.createElement('div');
+            dlg.className = 'fg-dlg';
+            dlg.setAttribute('role', 'dialog');
+            dlg.setAttribute('aria-modal', 'true');
+
+            var titleId = 'fg_dlg_title_' + Math.random().toString(36).substr(2, 9);
+            var descId = 'fg_dlg_desc_' + Math.random().toString(36).substr(2, 9);
+            dlg.setAttribute('aria-labelledby', titleId);
+            dlg.setAttribute('aria-describedby', descId);
+
+            var titleEl = document.createElement('h3');
+            titleEl.className = 'fg-dlg-title';
+            titleEl.id = titleId;
+            titleEl.textContent = opts.title;
+
+            var msgEl = document.createElement('p');
+            msgEl.className = 'fg-dlg-msg';
+            msgEl.id = descId;
+            msgEl.textContent = msg || 'متأكد؟';
+
+            var actions = document.createElement('div');
+            actions.className = 'fg-dlg-actions';
+
+            var okBtn = document.createElement('button');
+            okBtn.type = 'button';
+            okBtn.className = 'fg-dlg-btn fg-dlg-ok' + (opts.danger ? ' fg-dlg-danger' : '');
+            okBtn.textContent = opts.okText;
+
+            var cancelBtn = null;
+            if (opts.showCancel) {
+                cancelBtn = document.createElement('button');
+                cancelBtn.type = 'button';
+                cancelBtn.className = 'fg-dlg-btn fg-dlg-cancel';
+                cancelBtn.textContent = opts.cancelText;
+            }
+
+            actions.appendChild(okBtn);
+            if (cancelBtn) {
+                actions.appendChild(cancelBtn);
+            }
+
+            dlg.appendChild(titleEl);
+            dlg.appendChild(msgEl);
+            dlg.appendChild(actions);
+            bg.appendChild(dlg);
+
+            var keyHandler = null;
+
+            function closeWith(val) {
+                if (keyHandler) {
+                    document.removeEventListener('keydown', keyHandler, true);
+                    keyHandler = null;
+                }
+                if (bg.parentNode) {
+                    bg.parentNode.removeChild(bg);
+                }
+                if (!document.querySelector('.fg-dlg-bg')) {
+                    if (document.documentElement) {
+                        document.documentElement.classList.remove('fg-dlg-open');
+                    }
+                }
+                try {
+                    if (prevFocus && typeof prevFocus.focus === 'function' && document.body.contains(prevFocus)) {
+                        prevFocus.focus();
+                    }
+                } catch (e) {}
+                resolve(val);
+            }
+
+            okBtn.addEventListener('click', function () { closeWith(true); });
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function () { closeWith(false); });
+            }
+
+            bg.addEventListener('click', function (e) {
+                if (e.target === bg) {
+                    closeWith(opts.showCancel ? false : true);
+                }
+            });
+
+            keyHandler = function (e) {
+                if (e.key === 'Escape') {
+                    e.stopPropagation();
+                    closeWith(opts.showCancel ? false : true);
+                    return;
+                }
+                var isEnter = (typeof window.isEnterKey === 'function') ? window.isEnterKey(e) : (e.key === 'Enter');
+                if (isEnter) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (cancelBtn && document.activeElement === cancelBtn) {
+                        closeWith(false);
+                    } else {
+                        closeWith(true);
+                    }
+                    return;
+                }
+                if (e.key === 'Tab') {
+                    var btns = cancelBtn ? [okBtn, cancelBtn] : [okBtn];
+                    if (btns.length === 1) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        btns[0].focus();
+                        return;
+                    }
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        if (document.activeElement === btns[0]) {
+                            e.preventDefault();
+                            btns[1].focus();
+                        }
+                    } else {
+                        if (document.activeElement === btns[1]) {
+                            e.preventDefault();
+                            btns[0].focus();
+                        }
+                    }
+                }
+            };
+
+            document.addEventListener('keydown', keyHandler, true);
+
+            if (document.documentElement) {
+                document.documentElement.classList.add('fg-dlg-open');
+            }
+            if (document.body) {
+                document.body.appendChild(bg);
+            }
+
+            try { okBtn.focus(); } catch (e) {}
+        });
+    }
+
+    function queueDialog(msg, opts) {
+        var res = dialogQueue.then(function () {
+            return showDialog(msg, opts);
+        });
+        dialogQueue = res.catch(function () {});
+        return res;
+    }
+
+    window.fgAlert = function (msg, title) {
+        return queueDialog(msg, {
+            title: title || 'تنبيه',
+            okText: 'تمام',
+            cancelText: '',
+            showCancel: false,
+            danger: false
+        }).then(function () {});
+    };
+
+    window.fgConfirm = function (msg, options) {
+        var opt = options || {};
+        return queueDialog(msg, {
+            title: opt.title || 'تأكيد',
+            okText: opt.okText || 'تمام',
+            cancelText: opt.cancelText || 'رجوع',
+            showCancel: true,
+            danger: Boolean(opt.danger)
+        });
+    };
+
+    window.fgBusy = function (button, on, label) {
+        if (!button) return;
+        if (on) {
+            if (button.classList && button.classList.contains('fg-busy')) return;
+            button.__fgHtml = button.innerHTML;
+            button.__fgMinWidth = button.style ? button.style.minWidth : '';
+            var w = button.offsetWidth;
+            if (w && button.style) {
+                button.style.minWidth = w + 'px';
+            }
+            if (button.classList) {
+                button.classList.add('fg-busy');
+            }
+            button.setAttribute('aria-busy', 'true');
+            button.setAttribute('aria-disabled', 'true');
+
+            var origText = (button.textContent || '').trim();
+            var textToShow = typeof label === 'string' ? label : origText;
+            var html = '<i class="ti ti-loader ti-spin" aria-hidden="true"></i>';
+            if (textToShow) {
+                var span = document.createElement('span');
+                span.textContent = ' ' + textToShow;
+                html += span.outerHTML;
+            }
+            button.innerHTML = html;
+
+            if (button.type === 'submit') {
+                button.__fgTimer = setTimeout(function () {
+                    button.disabled = true;
+                }, 0);
+            } else {
+                button.disabled = true;
+            }
+        } else {
+            if (!button.classList || !button.classList.contains('fg-busy')) return;
+            if (button.__fgTimer) {
+                clearTimeout(button.__fgTimer);
+                delete button.__fgTimer;
+            }
+            if (typeof button.__fgHtml === 'string') {
+                button.innerHTML = button.__fgHtml;
+                delete button.__fgHtml;
+            }
+            if (button.style) {
+                button.style.minWidth = button.__fgMinWidth || '';
+                delete button.__fgMinWidth;
+            }
+            button.classList.remove('fg-busy');
+            button.removeAttribute('aria-busy');
+            button.removeAttribute('aria-disabled');
+            button.disabled = false;
+        }
+    };
+
+    window.addEventListener('pageshow', function (e) {
+        if (e && e.persisted) {
+            var busyBtns = document.querySelectorAll ? document.querySelectorAll('.fg-busy') : [];
+            for (var i = 0; i < busyBtns.length; i++) {
+                window.fgBusy(busyBtns[i], false);
+            }
+            var forms = document.querySelectorAll ? document.querySelectorAll('form') : [];
+            for (var j = 0; j < forms.length; j++) {
+                delete forms[j].__fgSending;
+                delete forms[j].__fgConfirmed;
+            }
+        }
+    });
+
+    // فورم data-confirm — مرحلة الالتقاط
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-confirm')) return;
+        if (form.__fgConfirmed) {
+            delete form.__fgConfirmed;
+            return;
+        }
+        var msg = form.getAttribute('data-confirm');
+        if (typeof form.requestSubmit !== 'function') {
+            if (!window.confirm(msg)) {
+                e.preventDefault();
+            }
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        var sub = e.submitter;
+        var opts = {
+            title: form.getAttribute('data-confirm-title') || 'تأكيد',
+            okText: form.getAttribute('data-confirm-ok') || 'تمام',
+            cancelText: 'رجوع',
+            danger: form.hasAttribute('data-confirm-danger')
+        };
+        var confFn = window.fgConfirm || function () { return Promise.resolve(true); };
+        confFn(msg, opts).then(function (ok) {
+            if (!ok) return;
+            form.__fgConfirmed = true;
+            if (sub && sub.form === form) {
+                form.requestSubmit(sub);
+            } else {
+                form.requestSubmit();
+            }
+        });
+    }, true);
+
+    // فورم data-busy — مرحلة الفقاعة
+    document.addEventListener('submit', function (e) {
+        var form = e.target;
+        if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-busy')) return;
+        if (form.__fgSending) {
+            e.preventDefault();
+            return;
+        }
+        if (e.defaultPrevented) return;
+        form.__fgSending = true;
+        var b = (e.submitter && e.submitter.form === form) ? e.submitter : null;
+        if (!b && form.elements) {
+            for (var i = 0; i < form.elements.length; i++) {
+                if (form.elements[i].type === 'submit') {
+                    b = form.elements[i];
+                    break;
+                }
+            }
+        }
+        if (b) {
+            var busyLabel = form.getAttribute('data-busy');
+            window.fgBusy(b, true, busyLabel || undefined);
+        }
+    });
+})();
+

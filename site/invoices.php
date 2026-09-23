@@ -3050,7 +3050,7 @@ require_once __DIR__ . '/includes/header.php';
                         <i class="ti ti-plus"></i>
                         <?= $gIsItems ? 'ضيف فواتير أو أصناف' : 'ضيف فاتورة' ?>
                     </button>
-                    <form method="post" onsubmit="return confirm('مسح المجموعة؟\n\nالتوزيع اللي اتعمل هيفضل محفوظ في الفواتير — اللي هيتمسح هو تجميعة الشغل بس.');">
+                    <form method="post" data-confirm="مسح المجموعة؟&#10;&#10;التوزيع اللي اتعمل هيفضل محفوظ في الفواتير — اللي هيتمسح هو تجميعة الشغل بس." data-confirm-danger>
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="group_delete">
                         <input type="hidden" name="group_id" value="<?= (int)$grpCurrent['id'] ?>">
@@ -4607,7 +4607,7 @@ require_once __DIR__ . '/includes/header.php';
             if (!d.ok) {
                 input.value = saved > 0 ? saved : '';
                 setInd(input, '✗', 'var(--neg)');
-                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                fgToast('خطأ في الحفظ: ' + (d.error || 'حاول تاني'), 'err');
                 return;
             }
             input.dataset.saved = qty;
@@ -4633,7 +4633,7 @@ require_once __DIR__ . '/includes/header.php';
         .catch(() => {
             input.value = saved > 0 ? saved : '';
             setInd(input, '✗', 'var(--neg)');
-            alert('مفيش اتصال بالسيرفر.');
+            fgToast('مفيش اتصال بالسيرفر.', 'err');
         });
     }
 
@@ -5023,7 +5023,7 @@ require_once __DIR__ . '/includes/header.php';
                 }
             } else {
                 if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; }
-                alert(j.error || 'تعذّر الحفظ');
+                fgToast(j.error || 'تعذّر الحفظ', 'err');
             }
         })
         .catch(() => { if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; } });
@@ -5340,7 +5340,7 @@ require_once __DIR__ . '/includes/header.php';
             .then(r => r.json())
             .then(d => {
                 if (!d.ok) {
-                    alert('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'));
+                    fgToast('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'), 'err');
                     if (btnSubmit) {
                         btnSubmit.disabled = false;
                         btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
@@ -5350,7 +5350,7 @@ require_once __DIR__ . '/includes/header.php';
                 location.reload();
             })
             .catch(() => {
-                alert('تعذّر الاتصال بالسيرفر.');
+                fgToast('تعذّر الاتصال بالسيرفر.', 'err');
                 if (btnSubmit) {
                     btnSubmit.disabled = false;
                     btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
@@ -5472,7 +5472,7 @@ require_once __DIR__ . '/includes/header.php';
             .then(r => r.json())
             .then(j => {
                 if (sel) sel.disabled = false;
-                if (!j.ok) { alert(j.error || 'تعذّر تغيير الحالة'); resetStatusSel(); return; }
+                if (!j.ok) { fgToast(j.error || 'تعذّر تغيير الحالة', 'err'); resetStatusSel(); return; }
 
                 initialStatusSel = val;
                 if (lock) lock.style.display = j.manual ? '' : 'none';
@@ -5485,7 +5485,7 @@ require_once __DIR__ . '/includes/header.php';
             })
             .catch(() => {
                 if (sel) sel.disabled = false;
-                alert('تعذّر الاتصال بالسيرفر');
+                fgToast('تعذّر الاتصال بالسيرفر', 'err');
                 resetStatusSel();
             });
     }
@@ -5580,7 +5580,7 @@ require_once __DIR__ . '/includes/header.php';
             if (!d.ok) {
                 input.value = saved > 0 ? saved : '';
                 setInd(input, '✗', 'var(--neg)');
-                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                fgToast('خطأ في الحفظ: ' + (d.error || 'حاول تاني'), 'err');
                 return;
             }
             input.dataset.saved = qty;
@@ -5940,7 +5940,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 btn.disabled = false;
                 row.dataset.done = prev ? '1' : '0';
                 paint(row); paintLookupBtn(btn, prev);
-                alert(e.message);
+                fgToast(e.message, 'err');
             });
     };
 
@@ -6080,7 +6080,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
         fetch('invoices.php', { method: 'POST', body: fd })
             .then(r => r.json())
             .then(j => {
-                if (!j.ok) { alert(j.error || 'فشل المسح'); return; }
+                if (!j.ok) { fgToast(j.error || 'فشل المسح', 'err'); return; }
                 document.querySelectorAll('tr.item-row').forEach(row => {
                     if (isDone) row.dataset.done = '0';
                     else        row.dataset.hl = '';
@@ -6088,7 +6088,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 });
                 if (ov.classList.contains('open')) iflClose();
             })
-            .catch(() => alert('تعذّر الاتصال بالسيرفر'));
+            .catch(() => fgToast('تعذّر الاتصال بالسيرفر', 'err'));
     };
 
     // ---------- إشعار إضافة الصنف لمشاكل الفواتير ----------

@@ -777,10 +777,10 @@ require_once __DIR__ . '/includes/header.php';
                     alert('تم إلغاء الفاتورة من موديول الاستلامات.');
                     location.reload();
                 } else {
-                    alert(d.error || 'حدث خطأ أثناء إلغاء الفاتورة.');
+                    fgToast(d.error || 'حدث خطأ أثناء إلغاء الفاتورة.', 'err');
                 }
             })
-            .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+            .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
     }
 
     document.querySelectorAll('.clickable-card').forEach(function(card) {
@@ -1372,12 +1372,12 @@ function saveQtyEdit(input) {
                 recalcDiffTotals();
             } else {
                 input.style.borderColor = 'var(--neg)';
-                alert(d.error || 'تعذر حفظ الكمية.');
+                fgToast(d.error || 'تعذر حفظ الكمية.', 'err');
             }
         })
         .catch(function() {
             input.style.borderColor = 'var(--neg)';
-            alert('تعذر الاتصال بالخادم لحفظ التعديل.');
+            fgToast('تعذر الاتصال بالخادم لحفظ التعديل.', 'err');
         });
 }
 
@@ -1422,10 +1422,10 @@ function startReceiving() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function finishReview() {
@@ -1441,10 +1441,10 @@ function finishReview() {
             if (d.ok) {
                 location.href = 'receiving.php?r=' + receiptId;
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function approveReceipt() {
@@ -1460,10 +1460,10 @@ function approveReceipt() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function rejectReceiptModal() {
@@ -1483,7 +1483,7 @@ function submitRejectReceipt() {
     var txt = document.getElementById('rejectReasonInput');
     var reason = (txt ? txt.value : '').trim();
     if (!reason) {
-        alert('يرجى كتابة سبب رفض الاستلام.');
+        fgToast('يرجى كتابة سبب رفض الاستلام.', 'warn');
         if (txt) txt.focus();
         return;
     }
@@ -1500,10 +1500,10 @@ function submitRejectReceipt() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ أثناء رفض الاستلام.');
+                fgToast(d.error || 'حدث خطأ أثناء رفض الاستلام.', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function deleteSingleReceipt(id) {
@@ -1522,10 +1522,10 @@ function deleteSingleReceipt(id) {
                 alert('تم إلغاء الاستلام بنجاح.');
                 window.location.href = 'receiving.php';
             } else {
-                alert(d.error || 'حدث خطأ أثناء إلغاء الاستلام.');
+                fgToast(d.error || 'حدث خطأ أثناء إلغاء الاستلام.', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function escapeHtml(str) {

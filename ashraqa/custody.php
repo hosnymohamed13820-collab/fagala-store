@@ -251,11 +251,6 @@ require_once __DIR__ . '/includes/header.php';
     .top-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
     .branch-select select { padding:10px 14px; border:1.5px solid var(--line); border-radius:10px;
         font-size:14px; font-family:inherit; background:var(--surface); }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 18px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-danger { background:var(--neg-fill); } .btn-danger:hover { background:var(--neg-fill); }
-    .btn-sm { padding:7px 13px; font-size:13px; }
     .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
     .stat { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat .label { font-size:13px; color:var(--ink-500); margin-bottom:6px; }
@@ -302,8 +297,6 @@ require_once __DIR__ . '/includes/header.php';
     .status-bar.pending  { background:var(--warn-soft); color:var(--warn); }
     .status-bar.rejected { background:var(--neg-soft);  color:var(--neg); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
 </style>
 
 <?php if ($flash): ?>
@@ -486,7 +479,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php if ($canEditThisEmpCustody): ?>
                             <td>
                                 <form method="post" style="margin:0;"
-                                      onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة عهدة الموظف.');">
+                                      data-confirm="إلغاء المصروف ده؟&#10;&#10;<?= e($ex['description']) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>&#10;&#10;المبلغ هيرجع لخزينة عهدة الموظف." data-confirm-danger>
                                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="delete_expense">
                                     <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
@@ -701,7 +694,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php if ($canEditCustody): ?>
                         <td>
                             <form method="post" style="margin:0;"
-                                  onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة العهدة، وهيتسجّل قيد إلغاء في كشف الحساب.');">
+                                  data-confirm="إلغاء المصروف ده؟&#10;&#10;<?= e($ex['description']) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>&#10;&#10;المبلغ هيرجع لخزينة العهدة، وهيتسجّل قيد إلغاء في كشف الحساب." data-confirm-danger>
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="delete_expense">
                                 <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
@@ -909,7 +902,7 @@ require_once __DIR__ . '/includes/header.php';
                 const empSelect = closeForm.querySelector('select[name="employee_id"]');
                 if (!empSelect || !empSelect.value) {
                     e.preventDefault();
-                    alert('العجز ' + Math.abs(currentDiff).toFixed(2) + ' ج أكبر من الحد المسموح (' + tolerance + ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.');
+                    fgToast('العجز ' + Math.abs(currentDiff).toFixed(2) + ' ج أكبر من الحد المسموح (' + tolerance + ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.', 'warn', 8000);
                     if (empSelect) empSelect.focus();
                     return false;
                 }

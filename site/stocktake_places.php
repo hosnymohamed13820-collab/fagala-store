@@ -90,7 +90,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($places)): ?>
         <div class="empty">لا توجد أماكن بعد. أضف أقسام وأرفف فوق.</div>
     <?php else: ?>
-    <form method="post" onsubmit="return confirm('مسح جميع الأقسام والأرفف (<?= count($places) ?>) دفعة واحدة؟ مش هينفع ترجعهم.')" style="margin-bottom:14px;">
+    <form method="post" data-confirm="مسح جميع الأقسام والأرفف (<?= count($places) ?>) دفعة واحدة؟ مش هينفع ترجعهم." data-confirm-danger style="margin-bottom:14px;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="delete_all">
         <button type="submit" class="btn" style="background:var(--neg-fill);"><i class="ti ti-trash"></i> مسح جميع الأقسام والأرفف</button>
@@ -111,7 +111,7 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
                             <button class="btn btn-sm btn-ghost"><?= $p['is_active']?'إخفاء':'تفعيل' ?></button>
                         </form>
-                        <form method="post" style="display:inline;" onsubmit="return confirm('حذف المكان ده؟')">
+                        <form method="post" style="display:inline;" data-confirm="حذف المكان ده؟" data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete">
                             <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">

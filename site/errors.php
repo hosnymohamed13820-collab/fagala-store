@@ -135,7 +135,7 @@ require_once __DIR__ . '/includes/header.php';
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <a href="errors.php" class="btn"><i class="ti ti-refresh"></i> تحديث</a>
             <?php if (is_owner() && $groups): ?>
-                <form method="post" onsubmit="return confirm('مسح السجل كله؟ مفيش رجوع.');" style="margin:0;">
+                <form method="post" data-confirm="مسح السجل كله؟ مفيش رجوع." data-confirm-danger style="margin:0;">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="clear">
                     <button type="submit" class="btn btn-danger"><i class="ti ti-trash"></i> مسح السجل</button>

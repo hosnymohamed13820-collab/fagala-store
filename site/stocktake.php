@@ -573,7 +573,7 @@ require_once __DIR__ . '/includes/header.php';
                 <button class="btn btn-green" onclick="document.getElementById('startModal').classList.add('open')">
                     <i class="ti ti-player-play"></i> بدء الجرد
                 </button>
-                <form method="post" style="display:inline;" onsubmit="return confirm('إعادة فتح آخر جرد مقفول؟ كل المحاضر هترجع زي ما هي.')">
+                <form method="post" style="display:inline;" data-confirm="إعادة فتح آخر جرد مقفول؟ كل المحاضر هترجع زي ما هي.">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_session">
                     <button class="btn" style="background:var(--warn-fill);"><i class="ti ti-rotate"></i> إعادة فتح آخر جرد</button>
@@ -589,7 +589,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="ti ti-upload"></i> رفع رصيد
                         </button>
                     <?php endif; ?>
-                    <form method="post" style="display:inline;" onsubmit="return confirm('تأكيد إنهاء الجرد؟ هتتقفل كل الأزرار.')">
+                    <form method="post" style="display:inline;" data-confirm="تأكيد إنهاء الجرد؟ هتتقفل كل الأزرار." data-confirm-danger>
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="end_session">
                         <button class="btn btn-red"><i class="ti ti-player-stop"></i> إنهاء الجرد</button>
@@ -606,7 +606,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <a href="stocktake.php" class="btn btn-ghost btn-sm"><i class="ti ti-arrow-right"></i> رجوع للمحاضر</a>
         <?php if ($owner && $openSheet['status'] !== 'done'): ?>
-            <form method="post" onsubmit="return confirm('مسح المحضر #<?= (int)$openSheet['sheet_no'] ?> بالكامل بكل أصنافه؟ مش هينفع ترجعه.')" style="display:inline;">
+            <form method="post" data-confirm="مسح المحضر #<?= (int)$openSheet['sheet_no'] ?> بالكامل بكل أصنافه؟ مش هينفع ترجعه." data-confirm-danger style="display:inline;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="delete_sheet">
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
@@ -907,7 +907,7 @@ require_once __DIR__ . '/includes/header.php';
                     <a href="stocktake.php?sheet=<?= (int)$openSheet['id'] ?>&mode=review" class="btn"><i class="ti ti-eye"></i> فتح المراجعة</a>
                 <?php elseif (!$showCompare): ?>
                     <!-- مرحلة الإدخال: المراجع بيدخل أصنافه، وبعدين "تمت المراجعة" -->
-                    <form method="post" style="display:inline;" onsubmit="return confirm('خلصت إدخال أصنافك؟ هنعرض الفروقات للمراجعة.')">
+                    <form method="post" style="display:inline;" data-confirm="خلصت إدخال أصنافك؟ هنعرض الفروقات للمراجعة.">
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="mark_reviewed">
                         <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
@@ -929,7 +929,7 @@ require_once __DIR__ . '/includes/header.php';
                 <span style="color:var(--pos);font-weight:600;"><i class="ti ti-lock"></i> المحضر منتهي (للقراءة فقط)</span>
                 <a href="stocktake_export.php?sheet=<?= (int)$openSheet['id'] ?>" class="btn btn-green"><i class="ti ti-download"></i> طباعة التقرير</a>
                 <?php if ($owner): ?>
-                <form method="post" style="display:inline;" onsubmit="return confirm('فتح المحضر للمراجعة تاني؟ هتقدر تعدّل وتنهي من جديد.')">
+                <form method="post" style="display:inline;" data-confirm="فتح المحضر للمراجعة تاني؟ هتقدر تعدّل وتنهي من جديد.">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="reopen_review">
                     <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
@@ -1122,7 +1122,7 @@ require_once __DIR__ . '/includes/header.php';
                onkeyup="filterTable('reviewSearch','reviewTable')"
                style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);<?= empty($diffLines)?'display:none;':'' ?>" aria-label="ابحث في الأصناف المفرّقة">
         <!-- form الحفظ الجماعي (زر تم الانتهاء بيستخدمه) -->
-        <form method="post" id="finalForm" onsubmit="return confirm('حفظ كل التعديلات وإنهاء المحضر؟')">
+        <form method="post" id="finalForm" data-confirm="حفظ كل التعديلات وإنهاء المحضر؟">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="set_final_bulk">
             <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
@@ -1265,7 +1265,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td style="color:var(--ink-400);font-size:12px;"><?= e($ln['review_log'] ?? '') ?></td>
                     <?php if ($session && $openSheet['status']==='open' && $canEdit): ?>
                     <td>
-                        <form method="post" onsubmit="return confirm('حذف الصنف ده من المحضر؟')" style="display:inline;">
+                        <form method="post" data-confirm="حذف الصنف ده من المحضر؟" data-confirm-danger style="display:inline;">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_line">
                             <input type="hidden" name="line_id" value="<?= (int)$ln['id'] ?>">
@@ -1427,7 +1427,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php if ($owner): ?>
                                 <td onclick="event.stopPropagation();">
                                     <?php if ($sh['status'] !== 'done'): ?>
-                                        <form method="post" onsubmit="return confirm('مسح المحضر #<?= (int)$sh['sheet_no'] ?> بالكامل؟ مش هينفع ترجعه.')" style="display:inline;">
+                                        <form method="post" data-confirm="مسح المحضر #<?= (int)$sh['sheet_no'] ?> بالكامل؟ مش هينفع ترجعه." data-confirm-danger style="display:inline;">
                                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                             <input type="hidden" name="action" value="delete_sheet">
                                             <input type="hidden" name="sheet_id" value="<?= (int)$sh['id'] ?>">

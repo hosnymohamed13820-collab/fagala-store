@@ -146,11 +146,8 @@ $active_module = 'shortage';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center;
-        gap:7px; text-decoration:none; white-space:nowrap; }
-    .btn:hover { filter:brightness(0.94); }
-    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { white-space: nowrap; }
 
     .rs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;
                margin-bottom:6px; }
@@ -241,7 +238,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($r['status'] === 'open'): ?>
                     <?php foreach ([['delivered','اتسلّم','var(--pos)'], ['cancelled','إلغاء','var(--neg)']] as [$sv,$lb,$col]): ?>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد: <?= e($lb) ?>؟');">
+                              data-confirm="تأكيد: <?= e($lb) ?>؟"<?= $sv === 'cancelled' ? ' data-confirm-danger' : '' ?>>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="set_status">
                             <input type="hidden" name="res" value="<?= (int)$r['id'] ?>">

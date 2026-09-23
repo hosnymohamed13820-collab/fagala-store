@@ -143,11 +143,8 @@ $page_title = 'تجميع الحجوزات';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center;
-        gap:7px; text-decoration:none; white-space:nowrap; transition:filter .15s; }
-    .btn:hover { filter:brightness(0.94); color:#fff; }
-    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { white-space: nowrap; }
 
     .btn-secondary { background:var(--surface); color:var(--ink-700); border:1.5px solid var(--line); }
     .btn-secondary:hover { background:var(--line-soft); color:var(--ink-700); }
@@ -656,12 +653,12 @@ require_once __DIR__ . '/includes/header.php';
                     checkEmptyState();
                 } else {
                     row.style.opacity = '1';
-                    alert(data.error || 'حصل خطأ أثناء مسح السطر.');
+                    fgToast(data.error || 'حصل خطأ أثناء مسح السطر.', 'err');
                 }
             })
             .catch(err => {
                 row.style.opacity = '1';
-                alert('فشل الاتصال بالسيرفر.');
+                fgToast('فشل الاتصال بالسيرفر.', 'err');
             });
         }
 
@@ -712,7 +709,7 @@ require_once __DIR__ . '/includes/header.php';
             closeKeepMenu();
             const checkedRows = Array.from(document.querySelectorAll('#checkedList .keep-row'));
             if (checkedRows.length === 0) {
-                alert('مفيش أصناف متشحّطة للمسح.');
+                fgToast('مفيش أصناف متشحّطة للمسح.', 'warn');
                 return;
             }
 
@@ -735,11 +732,11 @@ require_once __DIR__ . '/includes/header.php';
                     updateCheckedCounters();
                     checkEmptyState();
                 } else {
-                    alert(data.error || 'حصل خطأ أثناء مسح المتشحّط.');
+                    fgToast(data.error || 'حصل خطأ أثناء مسح المتشحّط.', 'err');
                 }
             })
             .catch(err => {
-                alert('فشل الاتصال بالسيرفر.');
+                fgToast('فشل الاتصال بالسيرفر.', 'err');
             });
         }
 
@@ -770,7 +767,7 @@ require_once __DIR__ . '/includes/header.php';
                     showIndicator('✓ اتحفظ', true);
                 } else {
                     showIndicator('✗ فشل الحفظ', false);
-                    alert(data.error || 'فشل حفظ الاسم.');
+                    fgToast(data.error || 'فشل حفظ الاسم.', 'err');
                 }
             })
             .catch(err => {
@@ -1236,7 +1233,7 @@ require_once __DIR__ . '/includes/header.php';
             const shortBoxes = Array.from(document.querySelectorAll('.short-cb:checked')).map(cb => parseInt(cb.value, 10));
 
             if (resBoxes.length === 0 && shortBoxes.length === 0) {
-                alert('اختار سطر واحد على الأقل للتجميع.');
+                fgToast('اختار سطر واحد على الأقل للتجميع.', 'warn');
                 return;
             }
 
@@ -1261,12 +1258,12 @@ require_once __DIR__ . '/includes/header.php';
                 if (data.ok) {
                     window.location.href = `purchase_groups.php?g=${data.id}`;
                 } else {
-                    alert(data.error || 'حصل خطأ أثناء إنشاء المجموعة.');
+                    fgToast(data.error || 'حصل خطأ أثناء إنشاء المجموعة.', 'err');
                     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-stack-2"></i> تجميع المحدد'; }
                 }
             })
             .catch(err => {
-                alert('فشل الاتصال بالسيرفر.');
+                fgToast('فشل الاتصال بالسيرفر.', 'err');
                 if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-stack-2"></i> تجميع المحدد'; }
             });
         }

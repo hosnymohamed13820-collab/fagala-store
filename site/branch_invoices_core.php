@@ -1580,7 +1580,7 @@ require_once __DIR__ . '/includes/header.php';
                         if (row) refreshAshMrk(row);
                     } else {
                         if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; }
-                        alert(j.error || 'تعذّر الحفظ');
+                        fgToast(j.error || 'تعذّر الحفظ', 'err');
                     }
                 })
                 .catch(() => {

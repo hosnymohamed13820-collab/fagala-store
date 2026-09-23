@@ -479,7 +479,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php if ($canEditThisEmpCustody): ?>
                             <td>
                                 <form method="post" style="margin:0;"
-                                      onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة عهدة الموظف.');">
+                                      data-confirm="إلغاء المصروف ده؟&#10;&#10;<?= e($ex['description']) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>&#10;&#10;المبلغ هيرجع لخزينة عهدة الموظف." data-confirm-danger>
                                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="delete_expense">
                                     <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
@@ -694,7 +694,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php if ($canEditCustody): ?>
                         <td>
                             <form method="post" style="margin:0;"
-                                  onsubmit="return confirm('إلغاء المصروف ده؟\n\n<?= e(addslashes($ex['description'])) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>\n\nالمبلغ هيرجع لخزينة العهدة، وهيتسجّل قيد إلغاء في كشف الحساب.');">
+                                  data-confirm="إلغاء المصروف ده؟&#10;&#10;<?= e($ex['description']) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>&#10;&#10;المبلغ هيرجع لخزينة العهدة، وهيتسجّل قيد إلغاء في كشف الحساب." data-confirm-danger>
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="delete_expense">
                                 <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
@@ -902,7 +902,7 @@ require_once __DIR__ . '/includes/header.php';
                 const empSelect = closeForm.querySelector('select[name="employee_id"]');
                 if (!empSelect || !empSelect.value) {
                     e.preventDefault();
-                    alert('العجز ' + Math.abs(currentDiff).toFixed(2) + ' ج أكبر من الحد المسموح (' + tolerance + ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.');
+                    fgToast('العجز ' + Math.abs(currentDiff).toFixed(2) + ' ج أكبر من الحد المسموح (' + tolerance + ' ج) — لازم تحدد الموظف المسؤول قبل الإقفال.', 'warn', 8000);
                     if (empSelect) empSelect.focus();
                     return false;
                 }

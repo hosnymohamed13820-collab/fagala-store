@@ -584,7 +584,7 @@ require_once __DIR__ . '/includes/header.php';
                                 تعديل
                             </button>
                             <form method="post" style="display:inline;"
-                                  onsubmit="return confirm('تأكيد تغيير حالة المستخدم؟')">
+                                  data-confirm="تأكيد تغيير حالة المستخدم؟">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="toggle">
                                 <input type="hidden" name="user_id" value="<?= (int)$usr['id'] ?>">

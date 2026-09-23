@@ -1116,7 +1116,7 @@ function shift_cashier_amounts(array $s): array {
     function rvCompare(btn) {
         var sysEl = document.getElementById('rv_acc_system');
         if (sysEl.value.trim() === '') {
-            alert('اكتب قيمة السيستم الأول.');
+            fgToast('اكتب قيمة السيستم الأول.', 'warn');
             sysEl.focus();
             return;
         }

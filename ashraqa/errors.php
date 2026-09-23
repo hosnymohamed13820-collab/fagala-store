@@ -94,9 +94,8 @@ require_once __DIR__ . '/includes/header.php';
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .card { background:var(--surface); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow-sm); margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:8px 16px; border-radius:9px;
-        font-size:13.5px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:6px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); color:#fff; }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { padding: 8px 16px; font-size: 13.5px; }
     .btn-danger { background:var(--neg-fill); color:#fff; }
     .btn-danger:hover { background:var(--neg-fill); color:#fff; opacity:.9; }
 
@@ -136,7 +135,7 @@ require_once __DIR__ . '/includes/header.php';
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <a href="errors.php" class="btn"><i class="ti ti-refresh"></i> تحديث</a>
             <?php if (is_owner() && $groups): ?>
-                <form method="post" onsubmit="return confirm('مسح السجل كله؟ مفيش رجوع.');" style="margin:0;">
+                <form method="post" data-confirm="مسح السجل كله؟ مفيش رجوع." data-confirm-danger style="margin:0;">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="clear">
                     <button type="submit" class="btn btn-danger"><i class="ti ti-trash"></i> مسح السجل</button>

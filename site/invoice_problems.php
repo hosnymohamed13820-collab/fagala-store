@@ -774,10 +774,10 @@ require_once __DIR__ . '/includes/header.php';
                     var tr = btn.closest('tr');
                     if (tr) tr.remove();
                 } else {
-                    alert(d.error || 'حدث خطأ أثناء الحذف');
+                    fgToast(d.error || 'حدث خطأ أثناء الحذف', 'err');
                 }
             })
-            .catch(() => alert('تعذر الاتصال بالسيرفر'));
+            .catch(() => fgToast('تعذر الاتصال بالسيرفر', 'err'));
     }
     </script>
 
@@ -1098,13 +1098,13 @@ require_once __DIR__ . '/includes/header.php';
                     } else {
                         input.value = prev;
                         if (ind) { ind.innerHTML = '<i class="ti ti-x"></i>'; ind.style.color = 'var(--neg)'; }
-                        alert(d.error || 'حدث خطأ في الحفظ');
+                        fgToast(d.error || 'حدث خطأ في الحفظ', 'err');
                     }
                 })
                 .catch(function () {
                     input.value = prev;
                     if (ind) { ind.innerHTML = '<i class="ti ti-x"></i>'; ind.style.color = 'var(--neg)'; }
-                    alert('تعذر الاتصال بالسيرفر');
+                    fgToast('تعذر الاتصال بالسيرفر', 'err');
                 });
         }
 
@@ -1147,10 +1147,10 @@ require_once __DIR__ . '/includes/header.php';
                             row.style.display = 'none';
                         }
                     } else {
-                        alert(d.error || 'حدث خطأ أثناء الحذف');
+                        fgToast(d.error || 'حدث خطأ أثناء الحذف', 'err');
                     }
                 })
-                .catch(() => alert('تعذر الاتصال بالسيرفر'));
+                .catch(() => fgToast('تعذر الاتصال بالسيرفر', 'err'));
         }
 
         function deleteCurrentInvoiceProblems(distId) {
@@ -1166,10 +1166,10 @@ require_once __DIR__ . '/includes/header.php';
                     if (d.ok) {
                         window.location.href = 'invoice_problems.php';
                     } else {
-                        alert(d.error || 'حدث خطأ أثناء الحذف');
+                        fgToast(d.error || 'حدث خطأ أثناء الحذف', 'err');
                     }
                 })
-                .catch(() => alert('تعذر الاتصال بالسيرفر'));
+                .catch(() => fgToast('تعذر الاتصال بالسيرفر', 'err'));
         }
         </script>
     <?php endif; ?>

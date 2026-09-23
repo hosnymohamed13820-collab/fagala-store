@@ -631,7 +631,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <form method="post" style="margin-top:14px;"
-                  onsubmit="return confirm('تمسح الرفعة دي وكل بنودها؟');">
+                  data-confirm="تمسح الرفعة دي وكل بنودها؟" data-confirm-danger>
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="del_batch">
                 <input type="hidden" name="batch_id" value="<?= $curBatch ?>">

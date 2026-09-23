@@ -238,7 +238,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($r['status'] === 'open'): ?>
                     <?php foreach ([['delivered','اتسلّم','var(--pos)'], ['cancelled','إلغاء','var(--neg)']] as [$sv,$lb,$col]): ?>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد: <?= e($lb) ?>؟');">
+                              data-confirm="تأكيد: <?= e($lb) ?>؟"<?= $sv === 'cancelled' ? ' data-confirm-danger' : '' ?>>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="set_status">
                             <input type="hidden" name="res" value="<?= (int)$r['id'] ?>">
