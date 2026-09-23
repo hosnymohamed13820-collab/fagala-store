@@ -3676,9 +3676,9 @@ require_once __DIR__ . '/includes/header.php';
                     $invDt = isset($inv['doc_type']) && $inv['doc_type'] !== '' ? (string)$inv['doc_type'] : '*';
                     $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
                     $fallbackKey = $invNo . '|*|*';
-                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? ($invStatuses[$invNo] ?? 'new'));
+                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? (inv_status_match($invStatuses, $invNo, $invCb, $invDt) ?? 'new'));
                     [$stLabel, $stClass] = invoice_status_label($st);
-                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? ($invNotes[$invNo] ?? ''))));
+                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
                     <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>"
                         data-st="<?= e($st) ?>"

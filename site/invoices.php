@@ -3851,9 +3851,9 @@ require_once __DIR__ . '/includes/header.php';
                     $invDt = isset($inv['doc_type']) && $inv['doc_type'] !== '' ? (string)$inv['doc_type'] : '*';
                     $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
                     $fallbackKey = $invNo . '|*|*';
-                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? ($invStatuses[$invNo] ?? 'new'));
+                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? (inv_status_match($invStatuses, $invNo, $invCb, $invDt) ?? 'new'));
                     [$stLabel, $stClass] = invoice_status_label($st);
-                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? ($invNotes[$invNo] ?? ''))));
+                    $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
                     <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ((int)($inv['doc_type'] ?? 0) === 6): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span></td><?php endif; ?></tr>
                 <?php endforeach; ?>

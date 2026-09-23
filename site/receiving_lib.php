@@ -1259,16 +1259,18 @@ function get_invoice_statuses(array $invoiceNos): array
         $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
         $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
         $out[$no . '|' . $cb . '|' . $dt] = (string) $r['status'];
-        if (!isset($out[$no])) {
-            $out[$no] = (string) $r['status'];
-        }
+        $out['by_no'][$no][] = [
+            'cb'  => $cb,
+            'dt'  => $dt,
+            'val' => (string) $r['status'],
+        ];
     }
     return $out;
 }
 
 /**
  * ملاحظات الفواتير — عشان نعرض النص نفسه في القائمة بالمفتاح المركب والافتراضي.
- * بترجّع [composite_key => نص الملاحظة, invoice_no => نص الملاحظة].
+ * بترجّع [composite_key => نص الملاحظة, by_no => [invoice_no => rows]].
  */
 function get_invoices_with_notes(array $invoiceNos): array
 {
@@ -1291,14 +1293,62 @@ function get_invoices_with_notes(array $invoiceNos): array
             $cb = $r['company_branch'] !== null ? (string) $r['company_branch'] : '*';
             $dt = $r['doc_type'] !== null ? (string) $r['doc_type'] : '*';
             $out[$no . '|' . $cb . '|' . $dt] = (string) $r['user_notes'];
-            if (!isset($out[$no])) {
-                $out[$no] = (string) $r['user_notes'];
-            }
+            $out['by_no'][$no][] = [
+                'cb'  => $cb,
+                'dt'  => $dt,
+                'val' => (string) $r['user_notes'],
+            ];
         }
         return $out;
     } catch (Throwable $ex) {
         return [];
     }
+}
+
+/**
+ * مطابقة حالة أو ملاحظة فاتورة من سجلات التوزيع:
+ * الترتيب: كامل (no|cb|dt) ← قديم (no|*|*) ← متوافق (فقط إذا وجد سجل متوافق وحيد).
+ *
+ * @param array $map مصفوفة السجلات من get_invoice_statuses أو get_invoices_with_notes
+ * @param string $no رقم الفاتورة
+ * @param string $cb فرع الشركة (أو '*' إذا غير محدد)
+ * @param string $dt نوع المستند (أو '*' إذا غير محدد)
+ * @return string|null القيمة المطابقة أو null
+ */
+function inv_status_match(array $map, string $no, string $cb, string $dt): ?string
+{
+    // ١) المفتاح الكامل
+    if ($cb !== '*' && $dt !== '*') {
+        $k = $no . '|' . $cb . '|' . $dt;
+        if (isset($map[$k])) {
+            return $map[$k];
+        }
+    }
+
+    // ٢) السجل القديم بدون فرع ولا نوع مستند
+    $fb = $no . '|*|*';
+    if (isset($map[$fb])) {
+        return $map[$fb];
+    }
+
+    // ٣) السجلات المتوافقة
+    $rows = $map['by_no'][$no] ?? ($map[$no] ?? []);
+    if (!$rows) return null;
+
+    $matches = [];
+    foreach ($rows as $r) {
+        $cbMatch = ($r['cb'] === $cb || $cb === '*' || $r['cb'] === '*');
+        $dtMatch = ($r['dt'] === $dt || $dt === '*' || $r['dt'] === '*');
+        if ($cbMatch && $dtMatch) {
+            $matches[] = $r['val'] ?? ($r['status'] ?? ($r['notes'] ?? reset($r)));
+        }
+    }
+
+    if (count($matches) === 1) {
+        return (string) $matches[0];
+    }
+
+    return null;
 }
 
 /**
