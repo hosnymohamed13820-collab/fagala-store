@@ -648,7 +648,9 @@ require_once __DIR__ . '/includes/header.php';
     .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
     .stat-card .value { font-size:17px; font-weight:700; color:var(--accent-text); }
-    .stat-card .value.diff-pos { color:var(--pos); } .stat-card .value.diff-neg { color:var(--neg); }
+    /* text-align:center — قاعدة .diff-pos/.diff-neg العامة في fagala.css (بريف ٢١) بتحط
+       text-align:right عشان علامة السالب، فالرقم كان بيطلع يمين الكارت مش في نصه. */
+    .stat-card .value.diff-pos { color:var(--pos); text-align:center; } .stat-card .value.diff-neg { color:var(--neg); text-align:center; }
     .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
