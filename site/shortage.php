@@ -100,12 +100,9 @@ $active_module = 'shortage';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center;
-        gap:7px; text-decoration:none; white-space:nowrap; }
-    .btn:hover { filter:brightness(0.94); }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { white-space: nowrap; }
     .btn i { font-size:16px; }
-    .btn:disabled { opacity:0.55; cursor:not-allowed; }
 
     .sq-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; position:relative;
               flex-wrap:wrap; }

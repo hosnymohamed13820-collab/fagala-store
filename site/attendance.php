@@ -234,11 +234,6 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .form-row input { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); color:var(--ink-500); }
 </style>
 
 <?php if ($flash): ?>

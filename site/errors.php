@@ -94,9 +94,8 @@ require_once __DIR__ . '/includes/header.php';
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .card { background:var(--surface); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow-sm); margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:8px 16px; border-radius:9px;
-        font-size:13.5px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:6px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); color:#fff; }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { padding: 8px 16px; font-size: 13.5px; }
     .btn-danger { background:var(--neg-fill); color:#fff; }
     .btn-danger:hover { background:var(--neg-fill); color:#fff; opacity:.9; }
 

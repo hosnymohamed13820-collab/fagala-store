@@ -394,12 +394,6 @@ require_once __DIR__ . '/includes/header.php';
     .tab.active { background:var(--accent); color:#fff; }
     .tab:not(.active):hover { background:var(--bg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -425,8 +419,6 @@ require_once __DIR__ . '/includes/header.php';
         border-radius:9px; cursor:pointer; font-size:14px; color:var(--ink-700); }
     .pay-opt input:checked + label { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-top:20px; }
     .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:14px 16px; }
     .sum-card .label { font-size:12px; color:var(--ink-500); margin-bottom:4px; font-weight:500; }

@@ -1404,15 +1404,6 @@ $statusBadge = function($st) {
     .tab:not(.active):hover { background:var(--bg); }
     .tab .count { background:var(--neg-fill); color:#fff; border-radius:20px; padding:1px 7px; font-size:11px; margin-right:4px; }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-approve { background:var(--pos-fill); } .btn-reject { background:var(--neg-fill); }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -1429,7 +1420,6 @@ $statusBadge = function($st) {
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .payroll-num { width:95px; text-align:center; padding:4px 6px; border:1.5px solid var(--line);
         border-radius:6px; font-family:inherit; font-size:13px; -moz-appearance:textfield; appearance:textfield; }
     .payroll-num::-webkit-outer-spin-button,

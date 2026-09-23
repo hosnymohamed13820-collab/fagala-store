@@ -170,10 +170,6 @@ require_once __DIR__ . '/includes/header.php';
     .mk-weak   { background:var(--ink-200); }
     .mk-linked { background:var(--line-soft); border:1.5px solid var(--pos); }
     .mk-ign    { opacity:.55; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn[disabled] { opacity:.5; cursor:not-allowed; }
     .btn-sm { padding:6px 13px; font-size:12px; border-radius:8px; border:none; cursor:pointer;
         font-family:inherit; background:var(--accent); color:#fff; }
     .btn-sm.ghost { background:var(--surface); border:1.5px solid var(--line); color:var(--ink-700,var(--accent-text)); }

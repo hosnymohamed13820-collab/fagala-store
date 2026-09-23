@@ -143,11 +143,8 @@ $page_title = 'تجميع الحجوزات';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center;
-        gap:7px; text-decoration:none; white-space:nowrap; transition:filter .15s; }
-    .btn:hover { filter:brightness(0.94); color:#fff; }
-    .btn:disabled { opacity:.55; cursor:not-allowed; }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { white-space: nowrap; }
 
     .btn-secondary { background:var(--surface); color:var(--ink-700); border:1.5px solid var(--line); }
     .btn-secondary:hover { background:var(--line-soft); color:var(--ink-700); }

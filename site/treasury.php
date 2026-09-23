@@ -553,9 +553,6 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .summary-bar .label { font-size:14px; opacity:0.85; }
     .summary-bar .value { font-size:28px; font-weight:700; margin-top:4px; }
     .summary-bar .actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 18px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
     .btn-white { background:rgba(255,255,255,0.18); }
     .btn-white:hover { background:rgba(255,255,255,0.28); }
     /* خزينة الكاش الفعلي — نفس كارت الداشبورد س 161-168 */
@@ -631,8 +628,6 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         font-size:14px; font-family:inherit; background:var(--line-soft); }
     .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     /* عمود الملاحظات: النص الطويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل من الداتا مش من الخلية. */
     .je-c-notes { white-space:nowrap; }

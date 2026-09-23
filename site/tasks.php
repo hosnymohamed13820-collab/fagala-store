@@ -179,9 +179,6 @@ $prioBadge = function($p) {
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
     .fld input, .fld select, .fld textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
     .fld textarea { min-height:90px; resize:vertical; }
-    .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:11px 20px; cursor:pointer; font-family:inherit; font-size:14px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:7px 14px; font-size:13px; }
     .btn-done { background:var(--pos-fill); }
     .btn-ghost { background:var(--accent-soft); color:var(--accent-text); }
     .btn-ghost:hover { background:var(--line); color:var(--accent-text); }

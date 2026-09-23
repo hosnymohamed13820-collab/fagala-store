@@ -251,11 +251,6 @@ require_once __DIR__ . '/includes/header.php';
     .top-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
     .branch-select select { padding:10px 14px; border:1.5px solid var(--line); border-radius:10px;
         font-size:14px; font-family:inherit; background:var(--surface); }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 18px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-danger { background:var(--neg-fill); } .btn-danger:hover { background:var(--neg-fill); }
-    .btn-sm { padding:7px 13px; font-size:13px; }
     .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
     .stat { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .stat .label { font-size:13px; color:var(--ink-500); margin-bottom:6px; }
@@ -302,8 +297,6 @@ require_once __DIR__ . '/includes/header.php';
     .status-bar.pending  { background:var(--warn-soft); color:var(--warn); }
     .status-bar.rejected { background:var(--neg-soft);  color:var(--neg); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
 </style>
 
 <?php if ($flash): ?>

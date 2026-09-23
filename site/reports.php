@@ -1592,8 +1592,6 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; gap:10px; align-items:center; flex-wrap:wrap; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .filter-bar label { font-size:13px; color:var(--ink-500); }
     .filter-bar input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
-    .btn { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:10px 18px; cursor:pointer; font-family:inherit; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
-    .btn:hover { background:var(--accent-hover); }
     .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:var(--pos-fill); }
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .rep-title { font-size:17px; color:var(--ink-900); font-weight:700; margin-bottom:4px; }
@@ -1888,7 +1886,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <!-- البوب أب -->
-                <div id="sheetsModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;align-items:center;justify-content:center;">
+                <div id="sheetsModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:var(--z-modal);align-items:center;justify-content:center;">
                     <div style="background:var(--surface);border-radius:16px;padding:24px;max-width:560px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
                         <h3 style="color:var(--ink-900);font-size:17px;margin-bottom:14px;">اختر المحاضر</h3>
                         <div style="display:flex;gap:8px;margin-bottom:12px;">
@@ -2041,7 +2039,6 @@ require_once __DIR__ . '/includes/header.php';
     .np-row.np-have { opacity:.5; }
     .np-row label { flex:1; cursor:pointer; display:flex; gap:10px; align-items:center; }
     .np-muted { color:var(--ink-500); font-size:12px; }
-    .btn[disabled] { opacity:.5; cursor:not-allowed; }
     .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
     .btn-ghost:hover { background:var(--bg); }
     .np-note { font-size:12px; color:var(--ink-500); margin-top:10px; line-height:1.7; }

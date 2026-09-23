@@ -493,14 +493,6 @@ require_once __DIR__ . '/includes/header.php';
     .flash.merged  { background:var(--warn-soft); color:var(--warn); }
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:7px 13px; font-size:13px; }
-    .btn-green { background:var(--pos-fill); } .btn-green:hover { background:var(--pos-fill); }
-    .btn-red { background:var(--neg-fill); } .btn-red:hover { background:var(--neg-fill); }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
     .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-left:6px; }
@@ -525,8 +517,6 @@ require_once __DIR__ . '/includes/header.php';
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; }
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     .sheet-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
     .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
@@ -548,7 +538,7 @@ require_once __DIR__ . '/includes/header.php';
     /* رسالة عائمة تحت — متحركش الصفحة فوق (مهم للجرد على الموبايل) */
     .stk-toast {
         position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        z-index: 9999; padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 500;
+        z-index: var(--z-toast); padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 500;
         box-shadow: 0 6px 24px rgba(0,0,0,0.18); max-width: 90%; text-align: center;
         animation: toastIn 0.25s ease; }
     .stk-toast.success { background:var(--pos-fill); color: #fff; }
@@ -1561,7 +1551,7 @@ require_once __DIR__ . '/includes/header.php';
 </script>
 
 <?php if (isset($_GET['notfound'])): ?>
-<div id="notfoundModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
+<div id="notfoundModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:380px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
         <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">الكود غير موجود</h3>
@@ -1588,7 +1578,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?php if (isset($_GET['badqty'])): ?>
-<div id="badqtyModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:9999;display:flex;align-items:center;justify-content:center;">
+<div id="badqtyModal" style="position:fixed;inset:0;background:rgba(30,27,75,0.45);z-index:var(--z-modal);display:flex;align-items:center;justify-content:center;">
     <div style="background:var(--surface);border-radius:16px;padding:28px 32px;max-width:400px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.2);">
         <div style="font-size:48px;margin-bottom:8px;"><i class="ti ti-ban"></i></div>
         <h3 style="color:var(--neg);font-size:18px;margin-bottom:10px;">كمية غير منطقية</h3>

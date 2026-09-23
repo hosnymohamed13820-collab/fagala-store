@@ -64,15 +64,6 @@ $active_module = 'stocktake';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<style>
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn[disabled] { opacity:.5; cursor:not-allowed; }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
-</style>
 <div class="page-head"><h1>أقسام وأرفف الجرد</h1></div>
 
 <?php if ($flash): ?>

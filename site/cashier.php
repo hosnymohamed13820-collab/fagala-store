@@ -553,12 +553,6 @@ require_once __DIR__ . '/includes/header.php';
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
@@ -620,7 +614,7 @@ require_once __DIR__ . '/includes/header.php';
     @media (max-width:480px){ .grid-4 { grid-template-columns:1fr; } }
     /* بوب أب التقفيل */
     .shift-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5);
-        z-index:9999; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
+        z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .shift-modal.open { display:flex; }
     .shift-modal-box { background:var(--surface); border-radius:16px; width:100%; max-width:780px;
         box-shadow:0 18px 50px rgba(0,0,0,0.25); margin:auto; }

@@ -374,27 +374,8 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* تعريف أزرار الصفحة محلياً طبقاً للقواعد */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border-radius: var(--r);
-    font-size: 13.5px;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: var(--accent);
-    color: #fff;
-    text-decoration: none;
-    transition: background 0.15s ease, border-color 0.15s ease;
-}
-.btn:hover {
-    background: var(--accent-hover);
-    color: #fff;
-}
+/* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+.btn { padding: 8px 16px; font-size: 13.5px; font-weight: 600; border: 1px solid transparent; }
 .btn-ghost {
     background: var(--surface);
     color: var(--text);
@@ -406,7 +387,7 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--accent-text);
 }
 .btn-danger {
-    background: var(--neg);
+    background: var(--neg-fill);
     color: #fff;
 }
 .btn-danger:hover {
@@ -426,7 +407,7 @@ require_once __DIR__ . '/includes/header.php';
     position: fixed;
     inset: 0;
     background: rgba(30, 27, 75, 0.45);
-    z-index: 9999;
+    z-index: var(--z-modal);
     align-items: center;
     justify-content: center;
     padding: 16px;
