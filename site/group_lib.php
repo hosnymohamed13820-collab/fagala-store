@@ -74,103 +74,170 @@ function group_list(): array
         return [];
     }
 
-    $stItemsTotPosted = db()->prepare(
-        "SELECT COALESCE(SUM(l.quantity),0)
-         FROM invoice_group_lines gl
-         JOIN hq_invoice_lines l
-           ON l.sth_id = gl.sth_id AND l.suffix = gl.suffix AND l.item_code = gl.item_code
-         WHERE gl.group_id = ?"
-    );
-    $stItemsTotUnposted = db()->prepare(
-        "SELECT COALESCE(SUM(u.quantity),0)
-         FROM invoice_group_lines gl
-         JOIN hq_unposted_lines u
-           ON u.sth_id = gl.sth_id AND u.item_code = gl.item_code
-         WHERE gl.group_id = ? AND gl.suffix = 'YY_MM'"
-    );
-    $stFullTotPosted = db()->prepare(
-        "SELECT COALESCE(SUM(l.quantity),0)
-         FROM invoice_group_items i
-         JOIN hq_invoice_lines l ON l.sth_id = i.sth_id AND l.suffix = i.suffix
-         WHERE i.group_id = ?"
-    );
-    $stFullTotUnposted = db()->prepare(
-        "SELECT COALESCE(SUM(l.quantity),0)
-         FROM invoice_group_items i
-         JOIN hq_unposted_lines l ON l.sth_id = i.sth_id
-         WHERE i.group_id = ? AND i.suffix = 'YY_MM'"
-    );
-    $stItemsDone = db()->prepare(
-        "SELECT COALESCE(SUM(dl.amount),0) AS q,
-                COUNT(DISTINCT dl.branch_id) AS b
-         FROM invoice_group_items i
-         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
-         JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
-         JOIN invoice_group_lines gl
-           ON gl.group_id = i.group_id AND gl.sth_id = i.sth_id
-          AND gl.suffix = i.suffix AND gl.item_code = dl.notes
-         WHERE i.group_id = ?"
-    );
-    $stFullDone = db()->prepare(
-        "SELECT COALESCE(SUM(dl.amount),0) AS q,
-                COUNT(DISTINCT dl.branch_id) AS b
-         FROM invoice_group_items i
-         JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
-         JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
-         WHERE i.group_id = ?"
-    );
-    $stSelCount = db()->prepare('SELECT COUNT(DISTINCT item_code) FROM invoice_group_lines WHERE group_id = ?');
+    $allGids = array_map(fn($g) => (int) $g['id'], $groups);
+    $inAll = implode(',', $allGids);
+
+    // إصلاح المجموعات التي تحتوي على فواتير اترحّلت (للمجموعات المتأثرة فقط وقبل الإحصائيات)
+    try {
+        $orphanGids = db()->query(
+            "SELECT DISTINCT i.group_id
+             FROM invoice_group_items i
+             LEFT JOIN hq_unposted u ON u.sth_id = i.sth_id
+             WHERE i.group_id IN ($inAll) AND i.suffix = 'YY_MM' AND u.sth_id IS NULL"
+        )->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($orphanGids as $ogid) {
+            group_heal_posted((int) $ogid);
+        }
+    } catch (Throwable $ex) {
+        // لو الاستعلام وقع نكمل
+    }
+
+    $itemsGids = [];
+    $fullGids  = [];
+    foreach ($groups as $g) {
+        if (((string) ($g['group_type'] ?? 'full')) === 'items') {
+            $itemsGids[] = (int) $g['id'];
+        } else {
+            $fullGids[]  = (int) $g['id'];
+        }
+    }
+
+    // تجهيز استعلامات الإحصائيات المجمعة
+    $itemsTotPostedMap   = [];
+    $itemsTotUnpostedMap = [];
+    $fullTotPostedMap    = [];
+    $fullTotUnpostedMap  = [];
+    $itemsDoneMap        = [];
+    $fullDoneMap         = [];
+    $selCountMap         = [];
+
+    if (!empty($itemsGids)) {
+        $inItems = implode(',', $itemsGids);
+        try {
+            $st = db()->query(
+                "SELECT gl.group_id, COALESCE(SUM(l.quantity),0) AS qty
+                 FROM invoice_group_lines gl
+                 JOIN hq_invoice_lines l
+                   ON l.sth_id = gl.sth_id AND l.suffix = gl.suffix AND l.item_code = gl.item_code
+                 WHERE gl.group_id IN ($inItems)
+                 GROUP BY gl.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $itemsTotPostedMap[(int) $r['group_id']] = (float) $r['qty'];
+            }
+        } catch (Throwable $ex) {}
+
+        try {
+            $st = db()->query(
+                "SELECT gl.group_id, COALESCE(SUM(u.quantity),0) AS qty
+                 FROM invoice_group_lines gl
+                 JOIN hq_unposted_lines u
+                   ON u.sth_id = gl.sth_id AND u.item_code = gl.item_code
+                 WHERE gl.group_id IN ($inItems) AND gl.suffix = 'YY_MM'
+                 GROUP BY gl.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $itemsTotUnpostedMap[(int) $r['group_id']] = (float) $r['qty'];
+            }
+        } catch (Throwable $ex) {}
+
+        try {
+            $st = db()->query(
+                "SELECT i.group_id,
+                        COALESCE(SUM(dl.amount),0) AS q,
+                        COUNT(DISTINCT dl.branch_id) AS b
+                 FROM invoice_group_items i
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
+                 JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
+                 JOIN invoice_group_lines gl
+                   ON gl.group_id = i.group_id AND gl.sth_id = i.sth_id
+                  AND gl.suffix = i.suffix AND gl.item_code = dl.notes
+                 WHERE i.group_id IN ($inItems)
+                 GROUP BY i.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $itemsDoneMap[(int) $r['group_id']] = [
+                    'q' => (float) $r['q'],
+                    'b' => (int) $r['b'],
+                ];
+            }
+        } catch (Throwable $ex) {}
+
+        try {
+            $st = db()->query(
+                "SELECT group_id, COUNT(DISTINCT item_code) AS cnt
+                 FROM invoice_group_lines
+                 WHERE group_id IN ($inItems)
+                 GROUP BY group_id"
+            );
+            while ($r = $st->fetch()) {
+                $selCountMap[(int) $r['group_id']] = (int) $r['cnt'];
+            }
+        } catch (Throwable $ex) {}
+    }
+
+    if (!empty($fullGids)) {
+        $inFull = implode(',', $fullGids);
+        try {
+            $st = db()->query(
+                "SELECT i.group_id, COALESCE(SUM(l.quantity),0) AS qty
+                 FROM invoice_group_items i
+                 JOIN hq_invoice_lines l ON l.sth_id = i.sth_id AND l.suffix = i.suffix
+                 WHERE i.group_id IN ($inFull)
+                 GROUP BY i.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $fullTotPostedMap[(int) $r['group_id']] = (float) $r['qty'];
+            }
+        } catch (Throwable $ex) {}
+
+        try {
+            $st = db()->query(
+                "SELECT i.group_id, COALESCE(SUM(l.quantity),0) AS qty
+                 FROM invoice_group_items i
+                 JOIN hq_unposted_lines l ON l.sth_id = i.sth_id
+                 WHERE i.group_id IN ($inFull) AND i.suffix = 'YY_MM'
+                 GROUP BY i.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $fullTotUnpostedMap[(int) $r['group_id']] = (float) $r['qty'];
+            }
+        } catch (Throwable $ex) {}
+
+        try {
+            $st = db()->query(
+                "SELECT i.group_id,
+                        COALESCE(SUM(dl.amount),0) AS q,
+                        COUNT(DISTINCT dl.branch_id) AS b
+                 FROM invoice_group_items i
+                 JOIN invoice_distribution d ON d.invoice_no = i.invoice_no AND " . dist_key_sql('d', 'i.company_branch', 'i.doc_type') . "
+                 JOIN invoice_distribution_lines dl ON dl.distribution_id = d.id
+                 WHERE i.group_id IN ($inFull)
+                 GROUP BY i.group_id"
+            );
+            while ($r = $st->fetch()) {
+                $fullDoneMap[(int) $r['group_id']] = [
+                    'q' => (float) $r['q'],
+                    'b' => (int) $r['b'],
+                ];
+            }
+        } catch (Throwable $ex) {}
+    }
 
     foreach ($groups as &$g) {
         $gid = (int) $g['id'];
-
-        // صلّح ربط أي فاتورة اترحّلت — وإلا كمياتها هتسقط من الإجمالي
-        group_heal_posted($gid);
-
         $isItems = ((string) ($g['group_type'] ?? 'full')) === 'items';
 
-        // إجمالي الكميات في فواتير المجموعة (من المرآة)
-        // ⚠️ في مجموعة الأصناف بنعد الأصناف المختارة بس — وإلا المقام
-        //    هيبقى أكبر من الحقيقة والنسبة على الكارت هتطلع غلط.
-        $tot = 0.0;
-        try {
-            if ($isItems) {
-                $stItemsTotPosted->execute([$gid]);
-                $tot += (float) $stItemsTotPosted->fetchColumn();
-
-                $stItemsTotUnposted->execute([$gid]);
-                $tot += (float) $stItemsTotUnposted->fetchColumn();
-            } else {
-                $stFullTotPosted->execute([$gid]);
-                $tot += (float) $stFullTotPosted->fetchColumn();
-
-                $stFullTotUnposted->execute([$gid]);
-                $tot += (float) $stFullTotUnposted->fetchColumn();
-            }
-        } catch (Throwable $ex) { /* المرآة لسه مش جاهزة */ }
-
-        // اللي اتوزّع فعلاً — الربط بـ invoice_no زي سجل التوزيع
-        $done = 0.0; $branches = 0;
-        try {
-            if ($isItems) {
-                // بنعد التوزيع بتاع الأصناف المختارة بس
-                $stItemsDone->execute([$gid]);
-                $r = $stItemsDone->fetch();
-            } else {
-                $stFullDone->execute([$gid]);
-                $r = $stFullDone->fetch();
-            }
-            $done     = (float) ($r['q'] ?? 0);
-            $branches = (int) ($r['b'] ?? 0);
-        } catch (Throwable $ex) { /* تجاهل */ }
-
-        // عدد الأصناف المختارة (للكارت) — مجموعة الأصناف بس
-        $g['sel_count'] = 0;
         if ($isItems) {
-            try {
-                $stSelCount->execute([$gid]);
-                $g['sel_count'] = (int) $stSelCount->fetchColumn();
-            } catch (Throwable $ex) { /* تجاهل */ }
+            $tot = ($itemsTotPostedMap[$gid] ?? 0.0) + ($itemsTotUnpostedMap[$gid] ?? 0.0);
+            $done = (float) ($itemsDoneMap[$gid]['q'] ?? 0.0);
+            $branches = (int) ($itemsDoneMap[$gid]['b'] ?? 0);
+            $g['sel_count'] = (int) ($selCountMap[$gid] ?? 0);
+        } else {
+            $tot = ($fullTotPostedMap[$gid] ?? 0.0) + ($fullTotUnpostedMap[$gid] ?? 0.0);
+            $done = (float) ($fullDoneMap[$gid]['q'] ?? 0.0);
+            $branches = (int) ($fullDoneMap[$gid]['b'] ?? 0);
+            $g['sel_count'] = 0;
         }
 
         $g['is_items']  = $isItems;
@@ -409,10 +476,11 @@ function group_invoice_codes(int $groupId, int $sthId, string $suffix): array
 }
 
 /** كل أصناف فاتورة من المرآة — [code => true] (بيستخدمها إضافة فاتورة كاملة) */
-function group_fetch_invoice_codes(int $sthId, string $suffix): array
+function group_fetch_invoice_codes(int $sthId, string $suffix, ?array $lines = null): array
 {
     $out = [];
-    foreach (sqlsrv_fetch_invoice_items($sthId, $suffix ?: null) as $ln) {
+    $items = ($lines !== null) ? $lines : sqlsrv_fetch_invoice_items($sthId, $suffix ?: null);
+    foreach ($items as $ln) {
         $c = trim((string) ($ln['item_code'] ?? ''));
         if ($c !== '') $out[$c] = true;
     }
@@ -440,6 +508,32 @@ function group_add_invoices(int $groupId, array $picks, ?int $userId = null): in
     foreach (group_invoices($groupId) as $inv) {
         $have[(int) $inv['sth_id'] . '|' . (string) $inv['suffix']] = true;
     }
+
+    // جلب الهيدرات والتوزيع مجمّعاً للـ picks غير الموجودة
+    $pairs = [];
+    foreach ($picks as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = trim((string) ($p['suffix'] ?? ''));
+        if ($sth > 0 && !isset($have[$sth . '|' . $suf])) {
+            $pairs[$sth . '|' . $suf] = ['sth_id' => $sth, 'suffix' => $suf];
+        }
+    }
+    $headersMap = $pairs ? group_fetch_headers(array_values($pairs)) : [];
+    $distPre = group_dist_existing(array_filter($headersMap));
+
+    // في مجموعة الأصناف: جلب السطور مجمّعاً بالـ suffix الخاص بكل هيدر
+    $linesPairs = [];
+    if ($isItems && !empty($headersMap)) {
+        foreach ($pairs as $p) {
+            $key = $p['sth_id'] . '|' . $p['suffix'];
+            $h = $headersMap[$key] ?? null;
+            if ($h) {
+                $realSuf = (string) ($h['suffix'] ?? $p['suffix']);
+                $linesPairs[$p['sth_id'] . '|' . $realSuf] = ['sth_id' => $p['sth_id'], 'suffix' => $realSuf];
+            }
+        }
+    }
+    $linesMap = $linesPairs ? group_fetch_lines(array_values($linesPairs)) : [];
 
     // أعلى sort_order حالي — الجديد بيتحط بعده
     $maxSort = 0;
@@ -477,7 +571,8 @@ function group_add_invoices(int $groupId, array $picks, ?int $userId = null): in
             $suf = trim((string) ($p['suffix'] ?? ''));
             if (isset($have[$sth . '|' . $suf])) continue;   // موجودة أصلاً
 
-            $h = sqlsrv_fetch_invoice_header($sth, $suf ?: null);
+            $key = $sth . '|' . $suf;
+            $h = $headersMap[$key] ?? null;
             if (!$h) continue;                                // اتلغت أو مش في المرآة
             $suf = (string) ($h['suffix'] ?? $suf);
 
@@ -506,11 +601,16 @@ function group_add_invoices(int $groupId, array $picks, ?int $userId = null): in
                     $maxSort++,
                 ]);
             }
-            ensure_distribution_record($h, $userId);
+
+            $k = group_dist_key($h);
+            if ($k === null || !isset($distPre[$k])) {
+                ensure_distribution_record($h, $userId);
+            }
 
             // مجموعة أصناف → أصناف الفاتورة كلها تدخل الفلتر
             if ($insL) {
-                foreach (array_keys(group_fetch_invoice_codes($sth, $suf)) as $c) {
+                $lines = $linesMap[$sth . '|' . $suf] ?? null;
+                foreach (array_keys(group_fetch_invoice_codes($sth, $suf, $lines)) as $c) {
                     $insL->execute([$groupId, $sth, $suf, $c, $userId]);
                 }
             }
@@ -556,6 +656,19 @@ function group_add_items(int $groupId, array $picks, ?int $userId = null): array
     foreach (group_invoices($groupId) as $inv) {
         $have[(int) $inv['sth_id'] . '|' . (string) $inv['suffix']] = true;
     }
+
+    // جلب الهيدرات للأزواج المميزة غير الموجودة في have
+    $pairs = [];
+    foreach ($picks as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = trim((string) ($p['suffix'] ?? ''));
+        if ($sth > 0 && empty($have[$sth . '|' . $suf])) {
+            $pairs[$sth . '|' . $suf] = ['sth_id' => $sth, 'suffix' => $suf];
+        }
+    }
+    $headersMap = $pairs ? group_fetch_headers(array_values($pairs)) : [];
+    $distPre = group_dist_existing(array_filter($headersMap));
+
     $maxSort = 0;
     try {
         $st = db()->prepare('SELECT COALESCE(MAX(sort_order),-1) FROM invoice_group_items WHERE group_id = ?');
@@ -595,7 +708,7 @@ function group_add_items(int $groupId, array $picks, ?int $userId = null): array
 
             // الفاتورة لازم تكون جوه المجموعة الأول (عشان سجل التوزيع)
             if (empty($have[$sth . '|' . $suf])) {
-                $h = sqlsrv_fetch_invoice_header($sth, $suf ?: null);
+                $h = $headersMap[$sth . '|' . $suf] ?? null;
                 if (!$h) { $bad++; continue; }               // فاتورة اتحذفت/اتعدّلت
                 $realSuf = (string) ($h['suffix'] ?? $suf);
                 $cb = $h['company_branch'] ?? ($h['company_branch_id'] ?? null);
@@ -623,7 +736,10 @@ function group_add_items(int $groupId, array $picks, ?int $userId = null): array
                         $maxSort++,
                     ]);
                 }
-                ensure_distribution_record($h, $userId);
+                $k = group_dist_key($h);
+                if ($k === null || !isset($distPre[$k])) {
+                    ensure_distribution_record($h, $userId);
+                }
                 $have[$sth . '|' . $realSuf] = true;
                 $suf = $realSuf;
             }
@@ -685,9 +801,11 @@ function group_create(array $picks, ?int $userId, ?string $name = null, string $
     }
 
     // جلب الهيدرات (وترتيبها بالتاريخ — الأقدم الأول)
+    $rawHeaders = group_fetch_headers($clean);
     $headers = [];
     foreach ($clean as $c) {
-        $h = sqlsrv_fetch_invoice_header($c['sth_id'], $c['suffix'] ?: null);
+        $k = $c['sth_id'] . '|' . $c['suffix'];
+        $h = $rawHeaders[$k] ?? null;
         if (!$h) continue;
         $headers[] = [
             'sth_id'        => $c['sth_id'],
@@ -701,6 +819,8 @@ function group_create(array $picks, ?int $userId, ?string $name = null, string $
     if (count($headers) < 2) {
         throw new RuntimeException('مقدرناش نجيب بيانات الفواتير المختارة.');
     }
+
+    $distPre = group_dist_existing(array_column($headers, 'header'));
 
     usort($headers, fn($a, $b) => strcmp((string)$a['invoice_date'], (string)$b['invoice_date']));
 
@@ -759,7 +879,10 @@ function group_create(array $picks, ?int $userId, ?string $name = null, string $
                 ]);
             }
             // سجل التوزيع لكل فاتورة لازم يبقى موجود من دلوقتي
-            ensure_distribution_record($h['header'], $userId);
+            $k = group_dist_key($h['header']);
+            if ($k === null || !isset($distPre[$k])) {
+                ensure_distribution_record($h['header'], $userId);
+            }
         }
 
         $pdo->commit();
@@ -962,20 +1085,38 @@ function group_load(int $groupId): array
     $selOnly = group_is_items($groupId);
     $selMap  = $selOnly ? group_selected_map($groupId) : [];
 
+    $pairs = [];
+    foreach ($invoices as $inv) {
+        $pairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+    }
+    $headersMap = group_fetch_headers($pairs);
+    $distPre    = group_dist_existing(array_filter($headersMap));
+
+    $linePairs = [];
+    foreach ($invoices as $inv) {
+        $k = (int) $inv['sth_id'] . '|' . (string) $inv['suffix'];
+        if (!empty($headersMap[$k])) {
+            $linePairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+        }
+    }
+    $linesMap = group_fetch_lines($linePairs);
+
     foreach ($invoices as $inv) {
         $sth    = (int) $inv['sth_id'];
         $suffix = (string) $inv['suffix'];
+        $key    = $sth . '|' . $suffix;
 
-        $header = sqlsrv_fetch_invoice_header($sth, $suffix ?: null);
+        $header = $headersMap[$key] ?? null;
         if (!$header) {
             $out['missing'][] = $inv;
             continue;
         }
-        $dist = ensure_distribution_record($header, null);
+        $k    = group_dist_key($header);
+        $dist = ($k !== null && isset($distPre[$k])) ? $distPre[$k] : ensure_distribution_record($header, null);
         $distId = (int) $dist['id'];
         $out['dist_ids'][$sth] = $distId;
 
-        $lines = sqlsrv_fetch_invoice_items($sth, $suffix ?: null);
+        $lines = $linesMap[$key] ?? [];
         $allow = $selOnly ? ($selMap[$sth . '|' . $suffix] ?? []) : null;
         foreach ($lines as $ln) {
             $code = trim((string) ($ln['item_code'] ?? ''));
@@ -1507,14 +1648,39 @@ function group_save_prices_bulk(int $groupId, array $prices, ?int $userId = null
  */
 function group_refresh_statuses(int $groupId, ?int $userId = null): void
 {
-    foreach (group_invoices($groupId) as $inv) {
+    $invoices = group_invoices($groupId);
+    if (!$invoices) return;
+
+    $pairs = [];
+    foreach ($invoices as $inv) {
+        $pairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+    }
+    $headersMap = group_fetch_headers($pairs);
+    $distPre    = group_dist_existing(array_filter($headersMap));
+
+    $linePairs = [];
+    foreach ($invoices as $inv) {
+        $k = (int) $inv['sth_id'] . '|' . (string) $inv['suffix'];
+        if (!empty($headersMap[$k])) {
+            $linePairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+        }
+    }
+    $linesMap = group_fetch_lines($linePairs);
+
+    foreach ($invoices as $inv) {
         $sth    = (int) $inv['sth_id'];
         $suffix = (string) $inv['suffix'];
+        $key    = $sth . '|' . $suffix;
         try {
-            $header = sqlsrv_fetch_invoice_header($sth, $suffix ?: null);
+            $header = $headersMap[$key] ?? null;
             if (!$header) continue;
-            $dist = ensure_distribution_record($header, null);
-            refresh_invoice_status((int) $dist['id'], $sth, $suffix ?: null, false /* group_refresh_statuses() بتتنده مع كل حفظ كمية في المجموعة — مش إرسال */);
+            $k    = group_dist_key($header);
+            $dist = ($k !== null && isset($distPre[$k])) ? $distPre[$k] : ensure_distribution_record($header, null);
+            try {
+                recalc_invoice_status((int) $dist['id'], $linesMap[$key] ?? [], false /* group_refresh_statuses() بتتنده مع كل حفظ كمية في المجموعة — مش إرسال */);
+            } catch (Throwable $ex) {
+                error_log('receiving: تعذّر تحديث حالة الفاتورة — ' . $ex->getMessage());
+            }
         } catch (Throwable $ex) {
             // فاتورة واحدة فشلت ما توقفش الباقي
             error_log('group: فشل تحديث حالة الفاتورة ' . $sth . ' — ' . $ex->getMessage());
@@ -1538,4 +1704,310 @@ function group_refresh_statuses(int $groupId, ?int $userId = null): void
     } catch (Throwable $ex) {
         error_log('group: فشل فتح الاستلام للمجموعة ' . $groupId . ' — ' . $ex->getMessage());
     }
+}
+
+/**
+ * عدد المجموعات المفتوحة (استعلام خفيف وبسيط بدون تحميل بيانات المجموعات).
+ */
+function group_open_count(): int
+{
+    try {
+        return (int) db()->query("SELECT COUNT(*) FROM invoice_groups WHERE status = 'open'")->fetchColumn();
+    } catch (Throwable $ex) {
+        return 0;
+    }
+}
+
+/**
+ * استخراج المفتاح الثلاثي (invoice_no|company_branch|doc_type) من هيدر الفاتورة.
+ * يرجع null إذا كان أي جزء ناقصاً حتى لا يتم التخمين أو التوزيع الخاطئ.
+ */
+function group_dist_key(array $h): ?string
+{
+    $invNo = (string) ($h['inv_no'] ?? '');
+    if ($invNo === '') return null;
+
+    $cb = null;
+    if (isset($h['company_branch']) && $h['company_branch'] !== null && $h['company_branch'] !== '') {
+        $cb = (int) $h['company_branch'];
+    } elseif (isset($h['company_branch_id']) && $h['company_branch_id'] !== null && $h['company_branch_id'] !== '') {
+        $cb = (int) $h['company_branch_id'];
+    }
+
+    $dt = null;
+    if (isset($h['doc_type']) && $h['doc_type'] !== null && $h['doc_type'] !== '') {
+        $dt = (int) $h['doc_type'];
+    }
+
+    if ($cb === null || $dt === null) return null;
+
+    return $invNo . '|' . $cb . '|' . $dt;
+}
+
+/**
+ * جلب سجلات التوزيع الموجودة مسبقاً لمجموعة هيدرات (قراءة فقط بدون كتابة).
+ * المفتاح: invoice_no|company_branch|doc_type.
+ *
+ * @param array $headers قائمة مصفوفات الهيدرات
+ * @return array [key => row]
+ */
+function group_dist_existing(array $headers): array
+{
+    $triplets = [];
+    foreach ($headers as $h) {
+        if (!is_array($h)) continue;
+        $k = group_dist_key($h);
+        if ($k === null) continue;
+        if (!isset($triplets[$k])) {
+            $parts = explode('|', $k, 3);
+            $triplets[$k] = [$parts[0], (int)$parts[1], (int)$parts[2]];
+        }
+    }
+    if (!$triplets) return [];
+
+    $out = [];
+    $pdo = db();
+    $chunks = array_chunk(array_values($triplets), 500);
+    foreach ($chunks as $chunk) {
+        try {
+            $phList = [];
+            $params = [];
+            foreach ($chunk as $t) {
+                $phList[] = '(?,?,?)';
+                $params[] = $t[0];
+                $params[] = $t[1];
+                $params[] = $t[2];
+            }
+            $phStr = implode(',', $phList);
+            $st = $pdo->prepare(
+                "SELECT * FROM invoice_distribution
+                 WHERE (invoice_no, company_branch, doc_type) IN ($phStr)
+                 ORDER BY id ASC"
+            );
+            $st->execute($params);
+            while ($r = $st->fetch()) {
+                $k = (string)$r['invoice_no'] . '|' . (int)$r['company_branch'] . '|' . (int)$r['doc_type'];
+                if (!isset($out[$k])) {
+                    $out[$k] = $r;
+                }
+            }
+        } catch (Throwable $ex) {
+            // لو رمى، اعتبر كل مفاتيحه مالقيناهاش
+        }
+    }
+    return $out;
+}
+
+/**
+ * جلب هيدرات فواتير مجمعة: ['sth_id'=>..., 'suffix'=>...].
+ * المفتاح بالـ suffix اللي اتطلب.
+ *
+ * @param array $pairs قائمة أزواج ['sth_id'=>int, 'suffix'=>string]
+ * @return array ["sth|suffix" => header|null]
+ */
+function group_fetch_headers(array $pairs): array
+{
+    $out = [];
+    $postedPairs = [];
+    $unpostedIds = [];
+
+    foreach ($pairs as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = (string) ($p['suffix'] ?? '');
+        $k   = $sth . '|' . $suf;
+        if (isset($out[$k])) continue;
+
+        if ($sth <= 0) {
+            $out[$k] = null;
+            continue;
+        }
+
+        if ($suf !== '' && $suf !== 'YY_MM') {
+            $postedPairs[$k] = [$sth, $suf];
+        } elseif ($suf === 'YY_MM') {
+            $unpostedIds[$k] = $sth;
+        }
+    }
+
+    $pdo = db();
+
+    // 1) الفواتير المرحلة من hq_invoices
+    if ($postedPairs) {
+        $chunks = array_chunk($postedPairs, 500);
+        foreach ($chunks as $chunk) {
+            try {
+                $phList = [];
+                $params = [];
+                foreach ($chunk as $item) {
+                    $phList[] = '(?,?)';
+                    $params[] = $item[0];
+                    $params[] = $item[1];
+                }
+                $phStr = implode(',', $phList);
+                $st = $pdo->prepare(
+                    "SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
+                            supplier_code, supplier_name, net_amount, total_amount,
+                            invoice_date, doc_type, suffix, company_branch
+                     FROM hq_invoices WHERE (sth_id, suffix) IN ($phStr)"
+                );
+                $st->execute($params);
+                while ($r = $st->fetch()) {
+                    $k = (int)$r['inv_id'] . '|' . (string)$r['suffix'];
+                    $out[$k] = $r;
+                }
+            } catch (Throwable $ex) {
+                // fall through to fallback
+            }
+        }
+    }
+
+    // 2) الفواتير غير المحفوظة من hq_unposted
+    if ($unpostedIds) {
+        $chunks = array_chunk($unpostedIds, 500, true);
+        foreach ($chunks as $chunk) {
+            try {
+                $ids = array_values(array_unique($chunk));
+                $phStr = implode(',', array_fill(0, count($ids), '?'));
+                $st = $pdo->prepare(
+                    "SELECT sth_id AS inv_id, doc_no AS inv_no, supplier_id,
+                            supplier_code, supplier_name, net_amount, total_amount,
+                            invoice_date, doc_type, remark, company_branch
+                     FROM hq_unposted WHERE sth_id IN ($phStr)"
+                );
+                $st->execute($ids);
+                while ($r = $st->fetch()) {
+                    $r['suffix'] = 'YY_MM';
+                    $k = (int)$r['inv_id'] . '|YY_MM';
+                    $out[$k] = $r;
+                }
+            } catch (Throwable $ex) {
+                // fall through to fallback
+            }
+        }
+    }
+
+    // 3) Fallback: أي مفتاح مالقيناهوش أو suffix فاضي
+    $checked = [];
+    foreach ($pairs as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = (string) ($p['suffix'] ?? '');
+        $k   = $sth . '|' . $suf;
+        if (isset($checked[$k])) continue;
+        $checked[$k] = true;
+        if (!array_key_exists($k, $out)) {
+            $h = sqlsrv_fetch_invoice_header($sth, $suf ?: null);
+            $out[$k] = $h ?: null;
+        }
+    }
+
+    return $out;
+}
+
+/**
+ * جلب بنود فواتير مجمعة: ['sth_id'=>..., 'suffix'=>...].
+ *
+ * @param array $pairs قائمة أزواج ['sth_id'=>int, 'suffix'=>string]
+ * @return array ["sth|suffix" => rows]
+ */
+function group_fetch_lines(array $pairs): array
+{
+    $out = [];
+    $postedPairs = [];
+    $unpostedIds = [];
+
+    foreach ($pairs as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = (string) ($p['suffix'] ?? '');
+        $k   = $sth . '|' . $suf;
+        if (isset($out[$k])) continue;
+
+        if ($sth <= 0) {
+            $out[$k] = [];
+            continue;
+        }
+
+        if ($suf !== '' && $suf !== 'YY_MM') {
+            $postedPairs[$k] = [$sth, $suf];
+        } elseif ($suf === 'YY_MM') {
+            $unpostedIds[$k] = $sth;
+        }
+    }
+
+    $pdo = db();
+
+    // 1) بنود مرحلة من hq_invoice_lines
+    if ($postedPairs) {
+        $chunks = array_chunk($postedPairs, 500);
+        foreach ($chunks as $chunk) {
+            try {
+                $phList = [];
+                $params = [];
+                foreach ($chunk as $item) {
+                    $phList[] = '(?,?)';
+                    $params[] = $item[0];
+                    $params[] = $item[1];
+                }
+                $phStr = implode(',', $phList);
+                $st = $pdo->prepare(
+                    "SELECT sth_id AS _k_sth, suffix AS _k_suf,
+                            item_id, item_code, item_name, quantity,
+                            unit_price, cost_price
+                     FROM hq_invoice_lines
+                     WHERE (sth_id, suffix) IN ($phStr)
+                     ORDER BY sth_id, suffix, line_no"
+                );
+                $st->execute($params);
+                while ($r = $st->fetch()) {
+                    $k = (int)$r['_k_sth'] . '|' . (string)$r['_k_suf'];
+                    unset($r['_k_sth'], $r['_k_suf']);
+                    $out[$k][] = $r;
+                }
+            } catch (Throwable $ex) {
+                // fall through to single fetch
+            }
+        }
+    }
+
+    // 2) بنود غير محفوظة من hq_unposted_lines
+    if ($unpostedIds) {
+        $chunks = array_chunk($unpostedIds, 500, true);
+        foreach ($chunks as $chunk) {
+            try {
+                $ids = array_values(array_unique($chunk));
+                $phStr = implode(',', array_fill(0, count($ids), '?'));
+                $st = $pdo->prepare(
+                    "SELECT sth_id AS _k_sth,
+                            item_id, item_code, item_name, quantity,
+                            unit_price, cost_price
+                     FROM hq_unposted_lines
+                     WHERE sth_id IN ($phStr)
+                     ORDER BY sth_id, line_no"
+                );
+                $st->execute($ids);
+                while ($r = $st->fetch()) {
+                    $k = (int)$r['_k_sth'] . '|YY_MM';
+                    unset($r['_k_sth'], $r['_k_suf']);
+                    $out[$k][] = $r;
+                }
+            } catch (Throwable $ex) {
+                // fall through to single fetch
+            }
+        }
+    }
+
+    // 3) Fallback: أي مفتاح مالوش بنود أو suffix فاضي
+    $checked = [];
+    foreach ($pairs as $p) {
+        $sth = (int) ($p['sth_id'] ?? 0);
+        $suf = (string) ($p['suffix'] ?? '');
+        $k   = $sth . '|' . $suf;
+        if (isset($checked[$k])) continue;
+        $checked[$k] = true;
+        if (empty($out[$k])) {
+            $items = sqlsrv_fetch_invoice_items($sth, $suf ?: null);
+            $out[$k] = is_array($items) ? $items : [];
+        }
+    }
+
+    return $out;
 }

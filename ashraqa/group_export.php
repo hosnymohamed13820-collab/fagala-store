@@ -64,26 +64,65 @@ $grpIsItems = group_is_items($groupId);
 require_once __DIR__ . '/receiving_flow_lib.php';
 $soloDistIds = receiving_solo_dist_ids(group_code_dist_ids($groupId, '__any__'));
 
-$q = $pdo->prepare(
-    'SELECT notes AS item_code, SUM(amount) AS qty
-     FROM invoice_distribution_lines
-     WHERE distribution_id = ? AND branch_id = ?
-     GROUP BY notes HAVING SUM(amount) > 0'
-);
+$pairs = [];
+foreach ($invoices as $inv) {
+    $pairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+}
+$headersMap = group_fetch_headers($pairs);
+$distPre    = group_dist_existing(array_filter($headersMap));
+
+$linePairs = [];
+foreach ($invoices as $inv) {
+    $k = (int) $inv['sth_id'] . '|' . (string) $inv['suffix'];
+    if (!empty($headersMap[$k])) {
+        $linePairs[] = ['sth_id' => (int) $inv['sth_id'], 'suffix' => (string) $inv['suffix']];
+    }
+}
+$linesMap = group_fetch_lines($linePairs);
+
+// استخراج سجلات التوزيع لفواتير المجموعة
+$distMap = [];
+foreach ($invoices as $inv) {
+    $sth    = (int) $inv['sth_id'];
+    $suffix = (string) $inv['suffix'];
+    $key    = $sth . '|' . $suffix;
+    $header = $headersMap[$key] ?? null;
+    if (!$header) continue;
+    $k    = group_dist_key($header);
+    $dist = ($k !== null && isset($distPre[$k])) ? $distPre[$k] : ensure_distribution_record($header);
+    $distId = (int) $dist['id'];
+    if (isset($soloDistIds[$distId])) continue;
+    $distMap[$key] = $distId;
+}
+
+// استعلام كميات واحد مجمّع لكل الفواتير
+$qtyLinesByDist = [];
+$allDistIds = array_values(array_unique($distMap));
+if (!empty($allDistIds)) {
+    $ph = implode(',', array_fill(0, count($allDistIds), '?'));
+    $params = array_merge($allDistIds, [$branchId]);
+    $stQty = $pdo->prepare(
+        "SELECT distribution_id, notes AS item_code, SUM(amount) AS qty
+         FROM invoice_distribution_lines
+         WHERE distribution_id IN ($ph) AND branch_id = ?
+         GROUP BY distribution_id, notes HAVING SUM(amount) > 0"
+    );
+    $stQty->execute($params);
+    while ($r = $stQty->fetch()) {
+        $qtyLinesByDist[(int) $r['distribution_id']][] = $r;
+    }
+}
 
 foreach ($invoices as $inv) {
     $sth    = (int) $inv['sth_id'];
     $suffix = (string) $inv['suffix'];
+    $key    = $sth . '|' . $suffix;
 
-    $header = sqlsrv_fetch_invoice_header($sth, $suffix ?: null);
+    $header = $headersMap[$key] ?? null;
     if (!$header) continue;                 // فاتورة اتحفظت/اتلغت — نكمّل بالباقي
 
-    $dist   = ensure_distribution_record($header);
-    $distId = (int) $dist['id'];
-
-    // اتبعتت لوحدها خلاص → مش بتنزل في الملف، **ومانسجّلش عليها تصدير تاني**
-    // (مابنحطهاش في $distIds فالحلقة اللي تحت بتعدّيها لوحدها).
-    if (isset($soloDistIds[$distId])) continue;
+    if (!isset($distMap[$key])) continue;
+    $distId = $distMap[$key];
 
     $distIds[$sth] = $distId;
 
@@ -91,15 +130,16 @@ foreach ($invoices as $inv) {
     $allow = $grpIsItems ? group_invoice_codes($groupId, $sth, $suffix) : [];
 
     // كميات الفرع في الفاتورة دي
-    $q->execute([$distId, $branchId]);
-    foreach ($q as $row) {
+    $branchRows = $qtyLinesByDist[$distId] ?? [];
+    foreach ($branchRows as $row) {
         $code = (string) $row['item_code'];
         if ($allow && empty($allow[$code])) continue;
         $qtyByCode[$code] = ($qtyByCode[$code] ?? 0) + (float) $row['qty'];
     }
 
     // أسعار التكلفة (أول سعر بنلاقيه للصنف)
-    foreach (sqlsrv_fetch_invoice_items($sth, $suffix ?: null) as $it) {
+    $items = $linesMap[$key] ?? [];
+    foreach ($items as $it) {
         $code = (string) $it['item_code'];
         if ($allow && empty($allow[$code])) continue;
         if (!isset($costByCode[$code])) {
@@ -152,11 +192,17 @@ $skipReceiving = !empty($_GET['skip_receiving']);
 
 // تسجيل التصدير على كل فاتورة + تحديث حالتها
 foreach ($invoices as $inv) {
-    $sth = (int) $inv['sth_id'];
+    $sth    = (int) $inv['sth_id'];
+    $suffix = (string) $inv['suffix'];
+    $key    = $sth . '|' . $suffix;
     if (!isset($distIds[$sth])) continue;
     try {
         mark_branch_exported($distIds[$sth], $branchId, current_user()['id'] ?? null);
-        refresh_invoice_status($distIds[$sth], $sth, ((string) $inv['suffix']) ?: null, false /* الملف المجمّع = كارت مجموعة واحد. السطر ١٥٦ هو اللي بيفتحها */);
+        try {
+            recalc_invoice_status($distIds[$sth], $linesMap[$key] ?? [], false /* الملف المجمّع = كارت مجموعة واحد. السطر ٢١٥ هو اللي بيفتحها */);
+        } catch (Throwable $ex) {
+            error_log('receiving: تعذّر تحديث حالة الفاتورة — ' . $ex->getMessage());
+        }
     } catch (Throwable $ex) {
         error_log('group_export: تعذّر تسجيل التصدير للفاتورة ' . $sth . ' — ' . $ex->getMessage());
     }
