@@ -230,7 +230,9 @@ function Get-ReplQueue {
         $t = Invoke-Sql @"
 SET NOCOUNT ON;
 SELECT q.n, q.age_min, q.first_id,
-       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text
+       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text,
+       (SELECT MAX(x) FROM (SELECT MAX(drr_id) AS x FROM db_repl_receive WHERE brch_id = 1
+                            UNION ALL SELECT MAX(drr_id) FROM db_repl_receive_hist WHERE brch_id = 1) h) AS last_recv
 FROM (SELECT COUNT(*) AS n,
              DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) AS age_min,
              MIN(drr_id) AS first_id
@@ -245,9 +247,39 @@ FROM (SELECT COUNT(*) AS n,
             age_min    = $(if ($n -gt 0 -and $r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 0 })
             first_id   = $(if ($n -gt 0 -and $r['first_id'] -isnot [DBNull]) { [string]$r['first_id'] } else { '' })
             first_text = $(if ($n -gt 0 -and $r['first_text'] -isnot [DBNull]) { [string]$r['first_text'] } else { '' })
+            last_recv  = $(if ($r['last_recv'] -isnot [DBNull]) { [string]$r['last_recv'] } else { '' })
         }
     } catch {
         Write-Log "[repl] could not read queue: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# ---------------------------------------------------------------------
+#  HQ outgoing replication (db_repl_send). drs_export_flag = 0 means the
+#  command is not in any file yet (Sep 17-20 2026: HQ made no files for
+#  3 days). last_exported = newest command already put in a file; the
+#  website compares it with what each branch says it received.
+#  Never throws: $null = "could not read".
+# ---------------------------------------------------------------------
+function Get-ReplSend {
+    try {
+        $t = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT (SELECT COUNT(*) FROM db_repl_send WHERE drs_export_flag = 0) AS pending,
+       (SELECT DATEDIFF(MINUTE, MIN(create_date), GETDATE()) FROM db_repl_send WHERE drs_export_flag = 0) AS pend_age,
+       (SELECT MAX(x) FROM (SELECT MAX(drs_id) AS x FROM db_repl_send WHERE drs_export_flag = 1
+                            UNION ALL SELECT MAX(drs_id) FROM db_repl_send_hist) h) AS last_exported;
+"@
+        if ($t.Rows.Count -lt 1) { return $null }
+        $r = $t.Rows[0]
+        return @{
+            pending       = [int]$r['pending']
+            pend_age      = $(if ($r['pend_age'] -isnot [DBNull]) { [int]$r['pend_age'] } else { 0 })
+            last_exported = $(if ($r['last_exported'] -isnot [DBNull]) { [string]$r['last_exported'] } else { '' })
+        }
+    } catch {
+        Write-Log "[repl] could not read send queue: $($_.Exception.Message)"
         return $null
     }
 }
@@ -263,6 +295,7 @@ function Send-Beat {
             version = $AgentVer
             host    = $env:COMPUTERNAME
             repl    = (Get-ReplQueue)
+            repl_send = (Get-ReplSend)
         } | ConvertTo-Json -Compress
 
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)

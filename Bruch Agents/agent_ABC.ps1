@@ -154,7 +154,9 @@ function Get-ReplQueue {
         $t = Invoke-Sql @"
 SET NOCOUNT ON;
 SELECT q.n, q.age_min, q.first_id,
-       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text
+       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text,
+       (SELECT MAX(x) FROM (SELECT MAX(drr_id) AS x FROM db_repl_receive WHERE brch_id = 1
+                            UNION ALL SELECT MAX(drr_id) FROM db_repl_receive_hist WHERE brch_id = 1) h) AS last_recv
 FROM (SELECT COUNT(*) AS n,
              DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) AS age_min,
              MIN(drr_id) AS first_id
@@ -169,6 +171,7 @@ FROM (SELECT COUNT(*) AS n,
             age_min    = $(if ($n -gt 0 -and $r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 0 })
             first_id   = $(if ($n -gt 0 -and $r['first_id'] -isnot [DBNull]) { [string]$r['first_id'] } else { '' })
             first_text = $(if ($n -gt 0 -and $r['first_text'] -isnot [DBNull]) { [string]$r['first_text'] } else { '' })
+            last_recv  = $(if ($r['last_recv'] -isnot [DBNull]) { [string]$r['last_recv'] } else { '' })
         }
     } catch {
         Write-Log "[repl] could not read queue: $($_.Exception.Message)"
