@@ -776,6 +776,10 @@ require_once __DIR__ . '/includes/header.php';
                 return false; // نمنع الـ submit العادي
             }
 
+            function stkEsc(s) {
+                return String(s).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+            }
+
             var addingLine = false;
             function submitLineAjax(form) {
                 if (addingLine) return;
@@ -788,7 +792,7 @@ require_once __DIR__ . '/includes/header.php';
                     .then(function(r){ return r.json(); })
                     .then(function(d){
                         addingLine = false;
-                        if (d.notfound !== undefined) { showStkPopup('كود غير موجود', 'الكود <b>'+d.notfound+'</b> مش موجود في بيانات الأصناف.'); return; }
+                        if (d.notfound !== undefined) { showStkPopup('كود غير موجود', 'الكود <b>'+stkEsc(d.notfound)+'</b> مش موجود في بيانات الأصناف.'); return; }
                         if (d.badqty !== undefined) { showStkPopup('كمية كبيرة', 'الكمية كبيرة بشكل غير منطقي. اتأكد إنك مدخّلتش الكود في خانة الكمية.'); return; }
                         if (!d.ok) { showStkToast(d.err || 'حصل خطأ', 'error'); return; }
                         // تحديث الجدول
@@ -994,6 +998,10 @@ require_once __DIR__ . '/includes/header.php';
                         .catch(function(){ box.value = '⚠️ تعذّر الاتصال'; });
                 }, 150);
             };
+            function stkEsc(s) {
+                return String(s).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; });
+            }
+
             // إضافة صنف المراجع بـ AJAX — الصفحة متطلعش فوق (زي الجرد)
             var revAdding = false;
             function submitReviewAjax(form) {
@@ -1004,7 +1012,7 @@ require_once __DIR__ . '/includes/header.php';
                     .then(function(r){ return r.json(); })
                     .then(function(d){
                         revAdding = false;
-                        if (d.notfound !== undefined) { showStkPopup('كود غير موجود','الكود <b>'+d.notfound+'</b> مش موجود.'); return; }
+                        if (d.notfound !== undefined) { showStkPopup('كود غير موجود','الكود <b>'+stkEsc(d.notfound)+'</b> مش موجود.'); return; }
                         if (d.badqty !== undefined) { showStkPopup('كمية كبيرة','الكمية كبيرة بشكل غير منطقي.'); return; }
                         if (!d.ok) { showStkToast(d.err||'خطأ','error'); return; }
                         // حدّث جدول المراجع (يعيد جلب الجدول من الصفحة)

@@ -35,6 +35,7 @@ if ($post !== '') parse_str($post, $_POST);
 
 session_id('clitest' . preg_replace('/\W/', '', $as));
 session_start();
+$_SESSION['app'] = getenv('RUN_APP') ?: 'fagala';
 if ($as === 'owner') {
     $_SESSION['user'] = ['id' => 1, 'username' => 'owner', 'full_name' => 'المالك', 'is_owner' => 1, 'branch_id' => null, 'perms_version' => 0];
     $_SESSION['permissions'] = [];

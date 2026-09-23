@@ -48,6 +48,10 @@ if (session_status() === PHP_SESSION_NONE) {
         'secure'   => $isHttps,
         'samesite' => 'Lax',
     ]);
+    // 🔴 اسم جلسة خاص بإشراقة — إشراقة متركّبة جوّه public_html ومفتوحة على
+    //    hosnimanagement.com/ashraqa/ بنفس الكوكي ونفس مكان التخزين، فالجلسة كانت
+    //    بتعدّي بين الموقعين (مراجعة ٢٢ سبتمبر ٢٠٢٦). اسم مختلف = كوكي مختلف.
+    session_name('ASHSESS');
     session_start();
 
     // تجديد متدحرج: كل طلب من مستخدم داخل بيمدّد الكوكي من جديد، فاللي
@@ -61,6 +65,18 @@ if (session_status() === PHP_SESSION_NONE) {
             'samesite' => 'Lax',
         ]);
     }
+}
+
+// هيدرز الحماية — مراجعة ٢٢ سبتمبر ٢٠٢٦ (clickjacking · MIME sniffing · إخفاء نسخة PHP)
+if (!headers_sent()) {
+    header_remove('X-Powered-By');
+    header('X-Frame-Options: SAMEORIGIN');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    $fgHttps = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off')
+            || (($_SERVER['SERVER_PORT'] ?? '') == 443)
+            || (strtolower($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    if ($fgHttps) header('Strict-Transport-Security: max-age=31536000');
 }
 
 /**
@@ -263,6 +279,7 @@ function attempt_login(string $username, string $password): bool
         'is_owner'      => (int) $user['is_owner'] === 1,
         'perms_version' => $permsVer,
     ];
+    $_SESSION['app'] = 'ashraqa';
 
     // تحميل صلاحيات المستخدم في الجلسة (مرة واحدة)
     load_permissions((int) $user['id']);
@@ -412,6 +429,12 @@ function require_login(): void
         exit;
     }
 
+    if (($_SESSION['app'] ?? '') !== 'ashraqa') {
+        logout();
+        header('Location: login.php');
+        exit;
+    }
+
     $userId = (int) ($_SESSION['user']['id'] ?? 0);
     if ($userId <= 0) {
         logout();
@@ -420,7 +443,11 @@ function require_login(): void
     }
 
     try {
-        $st = db()->prepare('SELECT is_active, perms_version FROM users WHERE id = ?');
+        $st = db()->prepare(
+            'SELECT u.is_active, u.perms_version, u.branch_id, u.role_id, r.is_owner
+               FROM users u JOIN roles r ON r.id = u.role_id
+              WHERE u.id = ?'
+        );
         $st->execute([$userId]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
 
@@ -430,6 +457,10 @@ function require_login(): void
             header('Location: login.php');
             exit;
         }
+
+        $_SESSION['user']['branch_id'] = $row['branch_id'] !== null ? (int) $row['branch_id'] : null;
+        $_SESSION['user']['role_id']   = (int) $row['role_id'];
+        $_SESSION['user']['is_owner']  = (int) $row['is_owner'] === 1;
 
         // لو رقم إصدار الصلاحيات اتغير (الأونر عدّل صلاحياته)، نحدّث الجلسة فوراً من غير خروج
         if (isset($row['perms_version'])) {
