@@ -257,6 +257,11 @@ $DEFINED = [
     // بيفضلوا غامقين (دور الخلفية). و`--accent-text` نفس الحكاية للأزرق.
     'pos-fill','neg-fill','warn-fill','accent-text',
     'fill-strong','fill-strong-fg','fill-strong-veil',
+    // نظام التصميم (بريف ٤٢): مقاسات بس — مابتتغيّرش في الوضع الليلي
+    'fs-xs','fs-sm','fs-base','fs-md','fs-lg','fs-xl','fs-2xl','fs-3xl',
+    'r-xs','r-md','r-pill',
+    'sp-1','sp-2','sp-3','sp-4','sp-5','sp-6',
+    'z-dropdown','z-sticky','z-modal','z-toast','z-top',
 ];
 preg_match_all('/var\(\s*--([a-z0-9-]+)\s*\)/i', $css, $vm);
 $used    = array_unique($vm[1] ?? []);
