@@ -72,7 +72,7 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$AgentVer   = '1.1'
+$AgentVer   = '1.2'
 
 # Send everything (ignore the delta) once every N runs, so a lost
 # update can never stay lost forever. 180 runs x 5 min = ~15 hours.
@@ -142,6 +142,41 @@ function Release-Lock {
 }
 
 # ---------------------------------------------------------------------
+#  Replication queue (Anzmah db_repl_receive). The replication stops at
+#  the first command that fails and never writes why, so the queue just
+#  grows in silence (Sep 20-23 2026: 3 days, 797 then 1574 rows).
+#  We report: how many are waiting, minutes since the oldest one ARRIVED
+#  (drr_import_date - create_date is when HQ made it, can be days older),
+#  and the first stuck command. Never throws: $null = "could not read".
+# ---------------------------------------------------------------------
+function Get-ReplQueue {
+    try {
+        $t = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT q.n, q.age_min, q.first_id,
+       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text
+FROM (SELECT COUNT(*) AS n,
+             DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) AS age_min,
+             MIN(drr_id) AS first_id
+        FROM db_repl_receive
+       WHERE drr_execute_flag = 0) q;
+"@
+        if ($t.Rows.Count -lt 1) { return $null }
+        $r = $t.Rows[0]
+        $n = [int]$r['n']
+        return @{
+            waiting    = $n
+            age_min    = $(if ($n -gt 0 -and $r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 0 })
+            first_id   = $(if ($n -gt 0 -and $r['first_id'] -isnot [DBNull]) { [string]$r['first_id'] } else { '' })
+            first_text = $(if ($n -gt 0 -and $r['first_text'] -isnot [DBNull]) { [string]$r['first_text'] } else { '' })
+        }
+    } catch {
+        Write-Log "[repl] could not read queue: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# ---------------------------------------------------------------------
 #  Heartbeat - tiny "I am alive" ping. Never throws: a failed beat
 #  must not fail the sync. Sent on EVERY path, including failure -
 #  a broken query must not look like a dead PC.
@@ -155,6 +190,7 @@ function Send-Beat {
             error   = $ErrorText
             version = $AgentVer
             host    = $env:COMPUTERNAME
+            repl    = (Get-ReplQueue)
         } | ConvertTo-Json -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
         $null = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
@@ -192,7 +228,10 @@ function Invoke-Sql {
     try {
         $conn.Open()
         $cmd = $conn.CreateCommand()
-        $cmd.CommandText = $Query
+        # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
+        # replication never wait on us. A value mid-write can be read once; the next
+        # run (2 min) corrects it. We only read - nothing here writes to this DB.
+        $cmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Query
         $cmd.CommandTimeout = 120
         $ad = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
         $dt = New-Object System.Data.DataTable

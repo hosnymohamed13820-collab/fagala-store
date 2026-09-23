@@ -75,6 +75,8 @@ function agent_list(): array
 
     $inWin = agent_in_window();
     $now   = time();
+    // طابور ربط سيستم الفروع (بريف ٥٠) — دقايق من وصول أقدم أمر مستني
+    $replLimit = agent_cfg_int('agent_repl_alert_min', 120, 15);
 
     try {
         $rows = db()->query(
@@ -105,6 +107,10 @@ function agent_list(): array
         $r['data_min'] = $r['last_data_at']
             ? (int) floor(($now - strtotime((string) $r['last_data_at'])) / 60)
             : null;
+
+        // null = الوكيل قديم أو مابيقراش الطابور (أو الأعمدة لسه مااتضافتش) · stuck = عدّى الحد
+        $r['repl_status'] = !array_key_exists('repl_waiting', $r) || $r['repl_waiting'] === null ? null
+            : (((int) $r['repl_waiting'] > 0 && (int) $r['repl_age_min'] >= $replLimit) ? 'stuck' : 'ok');
     }
     unset($r);
 
@@ -114,17 +120,19 @@ function agent_list(): array
 /**
  * ملخّص للتنبيه: الوكلاء اللي فيهم مشكلة دلوقتي.
  *
- * @return array ['level' => ok|warn|alert, 'warn' => [], 'alert' => []]
+ * @return array ['level' => ok|warn|alert, 'warn' => [], 'alert' => [], 'repl' => []]
+ *   repl = الفروع اللي طابور ربطها واقف — في أي وقت، مش وقت الشغل بس (بريف ٥٠)
  */
 function agent_trouble(): array
 {
-    $warn = []; $alert = [];
+    $warn = []; $alert = []; $repl = [];
     foreach (agent_list() as $a) {
         if ($a['status'] === AGENT_ALERT)     $alert[] = $a;
         elseif ($a['status'] === AGENT_WARN)  $warn[]  = $a;
+        if (($a['repl_status'] ?? null) === 'stuck') $repl[] = $a;
     }
-    $level = $alert ? AGENT_ALERT : ($warn ? AGENT_WARN : AGENT_OK);
-    return ['level' => $level, 'warn' => $warn, 'alert' => $alert];
+    $level = ($alert || $repl) ? AGENT_ALERT : ($warn ? AGENT_WARN : AGENT_OK);
+    return ['level' => $level, 'warn' => $warn, 'alert' => $alert, 'repl' => $repl];
 }
 
 /**
@@ -151,12 +159,24 @@ function agent_nag_text(array $t): string
         return implode(' · ', $out);
     };
 
+    // طابور الربط الواقف (بريف ٥٠) — بييجي الأول لأنه بيوقف الأصناف والأسعار كلها
+    $replText = '';
+    if (!empty($t['repl'])) {
+        $out = [];
+        foreach ($t['repl'] as $r) {
+            $out[] = $r['label'] . ' (' . (int) $r['repl_waiting'] . ' أمر من ' . agent_ago((int) $r['repl_age_min']) . ')';
+        }
+        $replText = 'ربط سيستم الفروع واقف: ' . implode(' · ', $out) . '. الأصناف والأسعار الجديدة مش بتوصل.';
+    }
+    if (!$t['alert'] && !$t['warn']) return $replText;
+    $pre = $replText !== '' ? $replText . ' — ' : '';
+
     if ($t['alert']) {
         $s = 'وكيل مزامنة واقف: ' . $names($t['alert']);
         if ($t['warn']) $s .= ' — وكمان متأخر: ' . $names($t['warn']);
-        return $s . '. الأرصدة من الفروع دي مش بتتحدّث.';
+        return $pre . $s . '. الأرصدة من الفروع دي مش بتتحدّث.';
     }
-    return 'وكيل مزامنة متأخر: ' . $names($t['warn']) . '. لو استمر، الأرصدة هتبقى قديمة.';
+    return $pre . 'وكيل مزامنة متأخر: ' . $names($t['warn']) . '. لو استمر، الأرصدة هتبقى قديمة.';
 }
 
 /** «٣ دقايق» / «ساعتين» — للعرض */
@@ -208,6 +228,54 @@ function agent_beat(string $key, int $rows = 0, string $error = '',
     $st->execute([$rows, $version, $host, $rows, $err, $err, $err, $key]);
 
     return $st->rowCount() > 0 || agent_exists($key);
+}
+
+/**
+ * طابور ربط سيستم الفروع (db_repl_receive) — بريف ٥٠.
+ * الربط بيقف عند أول أمر يفشل ومابيقولش، فالوكيل بيعدّ المستني مع كل نبضة.
+ * الإشعار بيتبعت **مرة واحدة** لكل وقفة: أول ما الوقفة تعدّي الحد، و`repl_alerted_at`
+ * بيتصفّر لما الطابور يفضى — فالوقفة الجاية تبعت تاني.
+ */
+function agent_repl_beat(string $key, array $repl): void
+{
+    $waiting = max(0, (int) ($repl['waiting'] ?? 0));
+    $age     = max(0, (int) ($repl['age_min'] ?? 0));
+    $firstId = preg_match('/^\d{1,19}$/', (string) ($repl['first_id'] ?? '')) ? (string) $repl['first_id'] : null;
+    $text    = mb_substr((string) ($repl['first_text'] ?? ''), 0, 255);
+    if ($waiting === 0) { $age = 0; $firstId = null; $text = ''; }
+
+    $pdo = db();
+    $pdo->prepare(
+        'UPDATE agent_status
+            SET repl_waiting = ?, repl_age_min = ?, repl_first_id = ?, repl_first_text = ?,
+                repl_checked_at = NOW(),
+                repl_alerted_at = CASE WHEN ? = 0 THEN NULL ELSE repl_alerted_at END
+          WHERE agent_key = ?'
+    )->execute([$waiting, $age, $firstId, $text !== '' ? $text : null, $waiting, $key]);
+
+    $limit = agent_cfg_int('agent_repl_alert_min', 120, 15);
+    if ($waiting === 0 || $age < $limit) return;
+
+    // UPDATE شرطي = قفل: نبضتين في نفس اللحظة مايبعتوش إشعارين
+    $claim = $pdo->prepare('UPDATE agent_status SET repl_alerted_at = NOW() WHERE agent_key = ? AND repl_alerted_at IS NULL');
+    $claim->execute([$key]);
+    if ($claim->rowCount() !== 1) return;
+
+    $lb = $pdo->prepare('SELECT label FROM agent_status WHERE agent_key = ?');
+    $lb->execute([$key]);
+    $label = (string) ($lb->fetchColumn() ?: $key);
+
+    $ids = $pdo->query(
+        'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $wid = (int) setting('agent_watcher_id', '0');
+    if ($wid > 0) $ids[] = $wid;
+
+    require_once __DIR__ . '/push_lib.php';
+    notify($pdo, $ids, 'agent_repl',
+        'ربط ' . $label . ' واقف',
+        $waiting . ' أمر مستني من ' . agent_ago($age) . ' — أول أمر واقف رقم ' . ($firstId ?? '؟'),
+        'settings.php#agents');
 }
 
 function agent_exists(string $key): bool

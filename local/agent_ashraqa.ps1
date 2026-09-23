@@ -62,7 +62,7 @@ $SyncToken = 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS'
 # cannot tell "PC is off" apart from "no stock changed".
 $BeatUrl  = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey = 'ashraqa'      # must match agent_status.agent_key on the site
-$AgentVer = '1.4'
+$AgentVer = '1.5'
 
 # Heartbeat token: the beat now uses the agent's own secret token, and the
 # website verifies that it belongs to 'ashraqa'.
@@ -225,9 +225,12 @@ try {
 
     $conn = New-Object System.Data.SqlClient.SqlConnection($connStr)
     $conn.Open()
-
     $cmd = $conn.CreateCommand()
-    $cmd.CommandText    = $Query
+
+    # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
+    # replication never wait on us. A value mid-write can be read once; the next
+    # run (2 min) corrects it. We only read - nothing here writes to this DB.
+    $cmd.CommandText    = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Query
     $cmd.CommandTimeout = 300
 
     $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)

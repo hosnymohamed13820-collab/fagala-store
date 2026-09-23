@@ -60,7 +60,7 @@ $SyncToken = 'ashweb_15c488c25181d22bec038b314ba6a679'
 $BeatUrl   = 'https://ashraqa.hosnimanagement.com/sync_beat.php'
 $BeatToken = $SyncToken   # same token; = SYNC_AGENT_TOKENS['hq'] in ashraqa/sync_tokens.php
 $AgentKey  = 'hq'
-$AgentVer  = 'ashweb-1.1'
+$AgentVer  = 'ashweb-1.2'
 
 # SQL expression for the SALE price, as a column of Item i.
 # EMPTY = the agent refuses to run (see the header).
@@ -151,7 +151,10 @@ function Send-Chunks {
 function Read-Sql {
     param($Conn, [string]$Sql)
     $cmd = $Conn.CreateCommand()
-    $cmd.CommandText = $Sql
+    # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
+    # replication never wait on us. A value mid-write can be read once; the next
+    # run (2 min) corrects it. We only read - nothing here writes to this DB.
+    $cmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Sql
     $cmd.CommandTimeout = 300
     $t = New-Object System.Data.DataTable
     [void](New-Object System.Data.SqlClient.SqlDataAdapter($cmd)).Fill($t)

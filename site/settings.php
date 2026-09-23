@@ -27,6 +27,7 @@ $editable = [
     'agent_watcher_id'          => ['مسؤول متابعة وكلاء المزامنة (بيوصله تنبيه مع الأونر)', 'user'],
     'agent_warn_min'            => ['تنبيه أصفر لو وكيل سكت (بالدقايق)', 'number'],
     'agent_alert_min'           => ['تنبيه أحمر لو وكيل سكت (بالدقايق)', 'number'],
+    'agent_repl_alert_min'      => ['إشعار لو ربط سيستم الفروع واقف (بالدقايق — أقل حاجة ١٥)', 'number'],
     'agent_watch_from'          => ['مراقبة الوكلاء تبدأ الساعة', 'time'],
     'agent_watch_to'            => ['مراقبة الوكلاء تنتهي الساعة', 'time'],
     'sales_revenue_account_id'  => ['حساب «إيراد مبيعات» اللي الورديات بتترحّل عليه (رقم الحساب)', 'number'],
@@ -94,6 +95,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($key === 'agent_alert_min') {
                     $warn = max(1, (int) ($_POST['agent_warn_min'] ?? 20));
                     $val  = (string) max($warn, (int) $val);
+                }
+                // طابور الربط (بريف ٥٠): ربع ساعة على الأقل — أقل من كده الربط العادي نفسه هيبان «واقف»
+                if ($key === 'agent_repl_alert_min') {
+                    $val = (string) max(15, (int) $val);
                 }
                 $upd->execute([$key, $val]);
             }
@@ -415,11 +420,34 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                     <?php endif; ?>
                 </span>
 
+                <?php /* طابور ربط سيستم الفروع (بريف ٥٠) — null = الوكيل لسه على نسخة قديمة */
+                $rs = $a['repl_status'] ?? null;
+                if ($rs !== null):
+                    $rw = (int) $a['repl_waiting']; ?>
+                    <span style="font-size:12px;color:<?= $rs === 'stuck' ? 'var(--neg)' : 'var(--ink-500)' ?>;">
+                        <?php if ($rs === 'stuck'): ?>
+                            <b>🔴 الربط واقف:</b> <?= $rw ?> أمر من <?= e(agent_ago((int) $a['repl_age_min'])) ?>
+                        <?php elseif ($rw === 0): ?>
+                            الربط: ✅ مفيش حاجة مستنية
+                        <?php else: ?>
+                            الربط: <?= $rw ?> أمر بيتنفّذ (من <?= e(agent_ago((int) $a['repl_age_min'])) ?>)
+                        <?php endif; ?>
+                    </span>
+                <?php endif; ?>
+
                 <?php if (!empty($a['host_name'])): ?>
                     <code style="font-size:11px;color:var(--ink-400);"><?= e($a['host_name']) ?></code>
                 <?php endif; ?>
                 <?php if (!empty($a['agent_version'])): ?>
                     <span style="font-size:11px;color:var(--ink-400);">v<?= e($a['agent_version']) ?></span>
+                <?php endif; ?>
+
+                <?php if (($a['repl_status'] ?? null) === 'stuck'): ?>
+                    <div style="flex:1 1 100%;font-size:11.5px;color:var(--neg);
+                         padding-top:4px;border-top:1px dashed rgba(0,0,0,.08);margin-top:2px;">
+                        أول أمر واقف في طابور الربط (ابعته للمهندس) — رقم <code><?= e((string) $a['repl_first_id']) ?></code>:
+                        <code style="display:block;direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;margin-top:3px;"><?= e((string) $a['repl_first_text']) ?></code>
+                    </div>
                 <?php endif; ?>
 
                 <?php if (!empty($a['last_error'])):

@@ -72,6 +72,12 @@ try {
         (string) ($in['host']    ?? '')
     );
 
+    // طابور الربط (بريف ٥٠) — الوكلاء الجداد بس بيبعتوه. null/مش موجود = تجاهل.
+    if (isset($in['repl']) && is_array($in['repl'])) {
+        try { agent_repl_beat($agent, $in['repl']); }
+        catch (Throwable $ex) { /* الأعمدة لسه مااتضافتش — النبضة نفسها نجحت */ }
+    }
+
     echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $ex) {
     beat_die('Server error.', 500);

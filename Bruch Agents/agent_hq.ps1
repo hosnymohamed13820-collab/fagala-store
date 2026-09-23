@@ -28,7 +28,7 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 # tell a dead PC from a quiet sales day.
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.1'
+$AgentVer  = '2.2'
 
 # Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
 $SyncToken = 'hq_48c4cfd7ec51ede3faf01c94aba41504e95f7b9b'
@@ -191,7 +191,10 @@ function Invoke-Sql {
     $conn.Open()
     try {
         $cmd = $conn.CreateCommand()
-        $cmd.CommandText    = $Sql
+        # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
+        # replication never wait on us. A value mid-write can be read once; the next
+        # run (2 min) corrects it. We only read - nothing here writes to this DB.
+        $cmd.CommandText    = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Sql
         $cmd.CommandTimeout = 300
         $adapter = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
         $table   = New-Object System.Data.DataTable
@@ -214,6 +217,41 @@ function Invoke-Sql {
 # ---------------------------------------------------------------------
 $script:BeatRows = 0
 
+# ---------------------------------------------------------------------
+#  Replication queue (Anzmah db_repl_receive). The replication stops at
+#  the first command that fails and never writes why, so the queue just
+#  grows in silence (Sep 20-23 2026: 3 days, 797 then 1574 rows).
+#  We report: how many are waiting, minutes since the oldest one ARRIVED
+#  (drr_import_date - create_date is when HQ made it, can be days older),
+#  and the first stuck command. Never throws: $null = "could not read".
+# ---------------------------------------------------------------------
+function Get-ReplQueue {
+    try {
+        $t = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT q.n, q.age_min, q.first_id,
+       (SELECT LEFT(r.drr_text, 200) FROM db_repl_receive r WHERE r.drr_id = q.first_id) AS first_text
+FROM (SELECT COUNT(*) AS n,
+             DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) AS age_min,
+             MIN(drr_id) AS first_id
+        FROM db_repl_receive
+       WHERE drr_execute_flag = 0) q;
+"@
+        if ($t.Rows.Count -lt 1) { return $null }
+        $r = $t.Rows[0]
+        $n = [int]$r['n']
+        return @{
+            waiting    = $n
+            age_min    = $(if ($n -gt 0 -and $r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 0 })
+            first_id   = $(if ($n -gt 0 -and $r['first_id'] -isnot [DBNull]) { [string]$r['first_id'] } else { '' })
+            first_text = $(if ($n -gt 0 -and $r['first_text'] -isnot [DBNull]) { [string]$r['first_text'] } else { '' })
+        }
+    } catch {
+        Write-Log "[repl] could not read queue: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 function Send-Beat {
     param([int]$Rows = 0, [string]$ErrorText = '')
 
@@ -224,6 +262,7 @@ function Send-Beat {
             error   = $ErrorText
             version = $AgentVer
             host    = $env:COMPUTERNAME
+            repl    = (Get-ReplQueue)
         } | ConvertTo-Json -Compress
 
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
