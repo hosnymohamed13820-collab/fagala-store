@@ -116,7 +116,7 @@ require_once __DIR__ . '/nav_icons.php';
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=40').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=42').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -128,7 +128,7 @@ require_once __DIR__ . '/nav_icons.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=17">
+    <link rel="stylesheet" href="assets/fagala.css?v=19">
 </head>
 <body>
 <script>
@@ -217,7 +217,21 @@ require_once __DIR__ . '/nav_icons.php';
             ?>
             <button class="theme-toggle" onclick="toggleTheme()"
                     title="الوضع الليلي" aria-label="تبديل الوضع الليلي">
-                <span class="tt-track"><span class="tt-knob"><i class="ti ti-moon"></i></span></span>
+                <span class="tt-track"><span class="tt-knob">
+                    <svg class="tt-sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <mask id="tt-sm-mask">
+                            <rect width="24" height="24" fill="#fff"/>
+                            <circle class="tt-sm-bite" cx="17" cy="7" r="6" fill="#000"/>
+                        </mask>
+                        <circle class="tt-sm-core" cx="12" cy="12" r="8" fill="currentColor" mask="url(#tt-sm-mask)"/>
+                        <g class="tt-sm-rays" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="12" y1="1.5" x2="12" y2="3.5"/>  <line x1="12" y1="20.5" x2="12" y2="22.5"/>
+                            <line x1="1.5" y1="12" x2="3.5" y2="12"/>  <line x1="20.5" y1="12" x2="22.5" y2="12"/>
+                            <line x1="4.6" y1="4.6" x2="6" y2="6"/>    <line x1="18" y1="18" x2="19.4" y2="19.4"/>
+                            <line x1="4.6" y1="19.4" x2="6" y2="18"/>  <line x1="18" y1="6" x2="19.4" y2="4.6"/>
+                        </g>
+                    </svg>
+                </span></span>
             </button>
             <div class="notif-wrap">
                 <button class="notif-bell" onclick="toggleNotif(event)" title="الإشعارات">

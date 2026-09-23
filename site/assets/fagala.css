@@ -1190,6 +1190,28 @@
         /* الزرار على اليمين في الوضع الفاتح، وبيمشي شمال في الليلي.
            translateX فيزيائي مش منطقي — السالب شمال حتى في RTL. */
         :root[data-theme="dark"] .tt-knob { transform: translateX(-20px); color: var(--accent); }
+
+        /* ===== أيقونة السلايدر: شمس في الفاتح ↔ هلال في الليلي (بريف ٤٩) =====
+           الـSVG جوّه header.php. الشكل كله بـtransform بس (مش r ولا cx) عشان
+           يتحرّك ناعم في كل المتصفحات:
+             - الشمس: القرص متصغّر (scale .62) · القرص القاضم برّه (translate) · الشعاعات ظاهرة
+             - الهلال: القرص كامل · القاضم داخل عليه · الشعاعات منكمشة ومخفية
+             - الأيقونة كلها بتلف ٣٦٠° في نفس مدة مشي الزرار (.45s) — والعكس بيلف راجع */
+        .tt-knob { color: var(--warn); transition: transform .45s cubic-bezier(.4,0,.2,1), color .45s; }
+        .tt-sm { width: 14px; height: 14px; display: block; overflow: visible;
+                 transition: transform .45s cubic-bezier(.4,0,.2,1); }
+        .tt-sm-core, .tt-sm-bite, .tt-sm-rays { transform-box: fill-box; transform-origin: center;
+                 transition: transform .45s cubic-bezier(.4,0,.2,1), opacity .3s; }
+        .tt-sm-core { transform: scale(.62); }
+        .tt-sm-bite { transform: translate(11px, -11px); }
+        .tt-sm-rays { transform: scale(1) rotate(0deg); opacity: 1; }
+        :root[data-theme="dark"] .tt-sm      { transform: rotate(360deg); }
+        :root[data-theme="dark"] .tt-sm-core { transform: scale(1); }
+        :root[data-theme="dark"] .tt-sm-bite { transform: translate(0, 0); }
+        :root[data-theme="dark"] .tt-sm-rays { transform: scale(.4) rotate(-45deg); opacity: 0; }
+        @media (prefers-reduced-motion: reduce) {
+            .tt-knob, .tt-sm, .tt-sm-core, .tt-sm-bite, .tt-sm-rays { transition: none; }
+        }
         .topbar .menu-toggle {
             display: none;
             background: none; border: none;
@@ -1258,7 +1280,8 @@
             line-height: 1.05;
             font-variant-numeric: tabular-nums;
         }
-        .tre-box .tre-val { font-size: 27px !important; }
+        /* clamp: كارت الخزنة ممكن يوصل ١٥٠px ورقم زي 93,086.10 بـ27px كان بيلزق في حرفه (٢٣ سبتمبر) */
+        .tre-box .tre-val { font-size: clamp(19px, 1.6vw, 27px) !important; }
         .sum-box .v       { font-size: 29px !important; }
 
         /* الكارت الرئيسي: أغمق وأوضح — ده أهم رقم في الشاشة */
