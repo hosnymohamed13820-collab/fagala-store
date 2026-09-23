@@ -765,9 +765,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
+                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td style="font-weight:500;"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
@@ -845,9 +845,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
+                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td style="font-weight:500;"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>

@@ -4321,6 +4321,13 @@ function money_fmt($amount): string
     return number_format($rounded, 2);
 }
 
+/** مبلغ في خلية جدول: كسرين ثابتين دايماً عشان العلامة العشرية تتصفّ (قرار محمد ٢٣ سبتمبر ٢٠٢٦). */
+function money_fmt_table($amount): string
+{
+    return number_format(round((float) $amount, 2), 2);
+}
+
+
 /**
  * ⬅️ `ltr_out()` كانت هنا. اتنقلت لـ`auth.php` جنب `e()`.
  *    السبب: `book_reserve.php` بيستعملها وهو **مابيعملش require

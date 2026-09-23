@@ -1459,6 +1459,27 @@ $statusBadge = function($st) {
     .sal-tbl tbody tr:hover .c-emp { background:var(--accent-soft); }
     /* خط فاصل بيوضّح إن اللي بعده بيلف */
     .sal-tbl .c-emp { border-left:1.5px solid var(--line); }
+
+    /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
+    .hrs-fw5 { font-weight:500; }
+    .hrs-inl { display:inline-flex;align-items:center;gap:4px; }
+    .hrs-scroll-x { overflow-x:auto; }
+    .hrs-fw6, input.hrs-fw6 { font-weight:600; }
+    .hrs-hint { font-size:12px;color:var(--ink-500); }
+    .hrs-dash { color:var(--ink-400); }
+    .hrs-strong { color:var(--ink-900); }
+    .hrs-btn-xs { padding:2px 8px;font-size:12px; }
+    .hrs-neg { color:var(--neg); }
+    .hrs-muted14 { color:var(--ink-500);font-size:14px; }
+    input.hrs-flt-input { padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit; }
+    .hrs-flt-label { font-size:13px;color:var(--ink-700);font-weight:500; }
+    .hrs-inline-form { display:inline; }
+    .hrs-flt-item { display:flex;align-items:center;gap:6px; }
+    .hrs-pos6 { color:var(--pos);font-weight:600; }
+    .hrs-neg5 { color:var(--neg);font-weight:500; }
+    .hrs-neg-badge { color:var(--neg);background:var(--neg-soft); }
+    .hrs-muted { color:var(--ink-500); }
+    .hrs-faint { color:var(--ink-300); }
 </style>
 
 <?php if ($flash): ?>
@@ -1484,13 +1505,13 @@ $statusBadge = function($st) {
             <tbody>
             <?php foreach ($empList as $e2): ?>
                 <tr>
-                    <td style="font-weight:500;"><?= e($e2['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($e2['full_name']) ?></td>
                     <td><?= e($e2['branch_name'] ?? '—') ?></td>
                     <td><?= e($e2['job_title'] ?? '—') ?></td>
                     <td><?= number_format((float)$e2['base_salary'],2) ?></td>
                     <td><?= (float)$e2['pending_advance'] > 0
                             ? '<span style="color:var(--neg);font-weight:600;">'.number_format((float)$e2['pending_advance'],2).'</span>'
-                            : '<span style="color:var(--ink-500);">0.00</span>' ?></td>
+                            : '<span class="hrs-muted">0.00</span>' ?></td>
                     <td><?= e($e2['expected_in'] ? substr($e2['expected_in'],0,5) : '—') ?></td>
                     <td><?= e($e2['expected_out'] ? substr($e2['expected_out'],0,5) : '—') ?></td>
                 </tr>
@@ -1513,7 +1534,7 @@ $statusBadge = function($st) {
     }
     ?>
     <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($advances) ?> سلفة (<?= count($monthlyAdvances) ?> سلف الشهر · <?= count($standingAdvances) ?> مستديمة)</span>
+        <span class="hrs-muted14"><?= count($advances) ?> سلفة (<?= count($monthlyAdvances) ?> سلف الشهر · <?= count($standingAdvances) ?> مستديمة)</span>
         <div style="display:flex;gap:8px;align-items:center;">
             <?php if (is_owner()): ?>
                 <button type="button" class="btn btn-ghost" onclick="document.getElementById('openingBalanceModal').classList.add('open')"><i class="ti ti-wallet"></i> تسجيل رصيد افتتاحي</button>
@@ -1529,7 +1550,7 @@ $statusBadge = function($st) {
         <?php if (empty($monthlyAdvances)): ?>
             <div class="empty">لا توجد سلف شهرية.</div>
         <?php else: ?>
-        <div style="overflow-x:auto;">
+        <div class="hrs-scroll-x">
         <table>
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1542,14 +1563,14 @@ $statusBadge = function($st) {
             ?>
                 <tr>
                     <td><?= e($a['advance_date']) ?></td>
-                    <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($a['full_name']) ?></td>
                     <td><?= number_format($origAmount, 2) ?></td>
-                    <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
+                    <td class="hrs-fw6"><?= number_format($remAmount, 2) ?></td>
                     <td>
                         <?php if ($monthlyDed > 0): ?>
                             <span style="font-weight:600;color:var(--accent-text);"><?= number_format($monthlyDed, 2) ?></span>
                         <?php else: ?>
-                            <span style="color:var(--ink-500);">بالكامل</span>
+                            <span class="hrs-muted">بالكامل</span>
                         <?php endif; ?>
                     </td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
@@ -1574,9 +1595,9 @@ $statusBadge = function($st) {
                                 </form>
                             <?php endif; ?>
                         <?php elseif ($isPending && $remAmount <= 0): ?>
-                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);">ملغاة</span>
+                            <span class="badge hrs-neg-badge">ملغاة</span>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);">—</span>
+                            <span class="hrs-faint">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -1594,7 +1615,7 @@ $statusBadge = function($st) {
         <?php if (empty($standingAdvances)): ?>
             <div class="empty">لا توجد سلف مستديمة.</div>
         <?php else: ?>
-        <div style="overflow-x:auto;">
+        <div class="hrs-scroll-x">
         <table>
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1607,14 +1628,14 @@ $statusBadge = function($st) {
             ?>
                 <tr>
                     <td><?= e($a['advance_date']) ?></td>
-                    <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($a['full_name']) ?></td>
                     <td><?= number_format($origAmount, 2) ?></td>
-                    <td style="font-weight:600;"><?= number_format($remAmount, 2) ?></td>
+                    <td class="hrs-fw6"><?= number_format($remAmount, 2) ?></td>
                     <td>
                         <?php if ($monthlyDed > 0): ?>
                             <span style="font-weight:600;color:var(--accent-text);"><?= number_format($monthlyDed, 2) ?></span>
                         <?php else: ?>
-                            <span style="color:var(--ink-500);">بالكامل</span>
+                            <span class="hrs-muted">بالكامل</span>
                         <?php endif; ?>
                     </td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
@@ -1639,9 +1660,9 @@ $statusBadge = function($st) {
                                 </form>
                             <?php endif; ?>
                         <?php elseif ($isPending && $remAmount <= 0): ?>
-                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);">ملغاة</span>
+                            <span class="badge hrs-neg-badge">ملغاة</span>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);">—</span>
+                            <span class="hrs-faint">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -1661,13 +1682,13 @@ $statusBadge = function($st) {
             🔴 دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
             (رصيد دائن في سجل حسابه). مابتتخصمش من المرتب، وبتتصرفله لما ترجّعهاله.
         </p>
-        <div style="overflow-x:auto;">
+        <div class="hrs-scroll-x">
         <table>
             <thead><tr><th>الموظف</th><th>الشركة مدينة له</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($owedToEmps as $o): ?>
                 <tr>
-                    <td style="font-weight:500;"><?= e($o['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($o['full_name']) ?></td>
                     <td style="font-weight:700;color:var(--pos);"><?= number_format($o['owed'], 2) ?></td>
                     <td>
                         <a class="btn btn-sm" style="background:var(--fill-strong);color:var(--fill-strong-fg);"
@@ -1689,7 +1710,7 @@ $statusBadge = function($st) {
 
 <?php elseif ($tab === 'bonuses'): ?>
     <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($bonuses) ?> مكافأة</span>
+        <span class="hrs-muted14"><?= count($bonuses) ?> مكافأة</span>
         <button class="btn" onclick="document.getElementById('bonusModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة مكافأة</button>
     </div>
     <div class="card">
@@ -1702,7 +1723,7 @@ $statusBadge = function($st) {
             <?php foreach ($bonuses as $bn): $b=$statusBadge($bn['status']); ?>
                 <tr>
                     <td><?= e($bn['bonus_date']) ?></td>
-                    <td style="font-weight:500;"><?= e($bn['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($bn['full_name']) ?></td>
                     <td><?= number_format((float)$bn['amount'],2) ?></td>
                     <td><?= e($bn['reason'] ?? '—') ?></td>
                     <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
@@ -1715,7 +1736,7 @@ $statusBadge = function($st) {
 
 <?php elseif ($tab === 'penalties'): ?>
     <div class="toolbar">
-        <span style="color:var(--ink-500);font-size:14px;"><?= count($penalties) ?> استقطاع/جزاء</span>
+        <span class="hrs-muted14"><?= count($penalties) ?> استقطاع/جزاء</span>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
     </div>
     <div style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
@@ -1726,7 +1747,7 @@ $statusBadge = function($st) {
         <?php if (empty($penalties)): ?>
             <div class="empty">لا توجد استقطاعات أو جزاءات.</div>
         <?php else: ?>
-        <div style="overflow-x:auto;">
+        <div class="hrs-scroll-x">
         <table>
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
@@ -1744,7 +1765,7 @@ $statusBadge = function($st) {
                 ?>
                 <tr>
                     <td><?= e($p['deduction_date']) ?></td>
-                    <td style="font-weight:500;"><?= e($p['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($p['full_name']) ?></td>
                     <td><span class="badge" style="background:<?= $typeBg ?>;color:<?= $typeColor ?>;"><?= e($p['deduction_type']) ?></span></td>
                     <td><?= e($p['branch_name'] ?? '—') ?></td>
                     <td style="font-weight:600;<?= ($p['deduction_type']==='زيادة وردية') ? 'color:var(--pos);' : 'color:var(--neg);' ?>"><?= number_format((float)$p['amount'],2) ?></td>
@@ -1772,20 +1793,17 @@ $statusBadge = function($st) {
 
         <form method="get" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
             <input type="hidden" name="tab" value="salaries">
-            <div style="display:flex;align-items:center;gap:6px;">
-                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من تاريخ:</label>
-                <input type="date" name="from" value="<?= e($salFrom) ?>" onchange="formSubmit(this.form)"
-                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            <div class="hrs-flt-item">
+                <label for="salFltFrom" class="hrs-flt-label">من تاريخ:</label>
+                <input type="date" name="from" id="salFltFrom" class="hrs-flt-input" value="<?= e($salFrom) ?>" onchange="formSubmit(this.form)">
             </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى تاريخ:</label>
-                <input type="date" name="to" value="<?= e($salTo) ?>" onchange="formSubmit(this.form)"
-                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            <div class="hrs-flt-item">
+                <label for="salFltTo" class="hrs-flt-label">إلى تاريخ:</label>
+                <input type="date" name="to" id="salFltTo" class="hrs-flt-input" value="<?= e($salTo) ?>" onchange="formSubmit(this.form)">
             </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-                <label style="font-size:13px;color:var(--ink-700);font-weight:500;">شهر المرتب:</label>
-                <input type="month" name="month" value="<?= e($salMonth) ?>" onchange="formSubmit(this.form)"
-                       style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            <div class="hrs-flt-item">
+                <label for="salFltMonth" class="hrs-flt-label">شهر المرتب:</label>
+                <input type="month" name="month" id="salFltMonth" class="hrs-flt-input" value="<?= e($salMonth) ?>" onchange="formSubmit(this.form)">
             </div>
             <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
         </form>
@@ -1808,8 +1826,8 @@ $statusBadge = function($st) {
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
                 <div style="display:flex;align-items:center;gap:10px;">
                     <span style="font-weight:600;color:var(--ink-900);">المستحق للموظفين (<?= count($payrollData) ?>)</span>
-                    <button type="button" class="btn btn-sm btn-ghost" id="btnSalSelectAll" style="padding:2px 8px;font-size:12px;">تحديد الكل</button>
-                    <button type="button" class="btn btn-sm btn-ghost" id="btnSalDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء التحديد</button>
+                    <button type="button" class="btn btn-sm btn-ghost hrs-btn-xs" id="btnSalSelectAll">تحديد الكل</button>
+                    <button type="button" class="btn btn-sm btn-ghost hrs-btn-xs" id="btnSalDeselectAll">إلغاء التحديد</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <select name="treasury_id" required style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
@@ -1853,7 +1871,7 @@ $statusBadge = function($st) {
                     <?php endif; ?>
                 </div>
             </div>
-            <div style="overflow-x:auto;">
+            <div class="hrs-scroll-x">
             <table class="sal-tbl" data-cashier-deficit-carry="<?= cashier_deficit_carry_enabled() ? '1' : '0' ?>">
                 <thead>
                     <tr>
@@ -1901,7 +1919,7 @@ $statusBadge = function($st) {
                         <td class="c-pick">
                             <input type="checkbox" name="employee_ids[]" value="<?= $p['id'] ?>" class="sal-emp-cb" <?= ($p['is_paid'] || (!$p['is_fixed'] && $p['no_expected'])) ? 'disabled' : '' ?>>
                         </td>
-                        <td class="c-emp" style="font-weight:500;">
+                        <td class="c-emp hrs-fw5">
                             <?= e($p['full_name']) ?>
                             <?php if ($p['ledger_balance'] < -0.005): ?>
                                 <span class="badge" style="font-size:11px;color:var(--pos);background:var(--pos-soft);margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
@@ -1914,52 +1932,50 @@ $statusBadge = function($st) {
                                 </div>
                             <?php endif; ?>
                         </td>
-                        <td><?= $p['branch_name'] ? e($p['branch_name']) : '<span style="color:var(--ink-400);">—</span>' ?></td>
-                        <td><?= $p['is_fixed'] ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['work_hours'], 2) ?></td>
-                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . number_format($p['work_days'], 2) . '</span>') ?></td>
+                        <td><?= $p['branch_name'] ? e($p['branch_name']) : '<span class="hrs-dash">—</span>' ?></td>
+                        <td><?= $p['is_fixed'] ? '<span class="hrs-dash">—</span>' : number_format($p['work_hours'], 2) ?></td>
+                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span class="hrs-dash">—</span>' : ('<span title="أيام العمل الفعلية: ' . number_format($p['work_days'], 3) . '">' . number_format($p['work_days'], 2) . '</span>') ?></td>
                         <td>
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
-                                <span style="color:var(--ink-400);">—</span>
+                                <span class="hrs-dash">—</span>
                             <?php elseif (is_owner() && !$p['is_paid']): ?>
-                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                <div class="hrs-inl">
                                     <input type="number" min="0" max="60" step="1" name="leave_days[<?= $p['id'] ?>]"
                                            value="<?= (int)$p['leave_days'] ?>"
-                                           class="leave-days-input payroll-num is-days"
+                                           class="leave-days-input payroll-num is-days hrs-fw6"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="leave_days"
                                            data-saved="<?= (int)$p['leave_days'] ?>"
                                            data-calc="<?= (int)$p['leave_days_calc'] ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="font-weight:600;">
+                                           onblur="salAutoSave(this)">
                                     <span class="save-ind"></span>
                                 </div>
                             <?php else: ?>
-                                <span style="font-weight:600;"><?= (int)$p['leave_days'] ?></span>
+                                <span class="hrs-fw6"><?= (int)$p['leave_days'] ?></span>
                             <?php endif; ?>
                         </td>
                         <td>
                             <?php if ($p['is_fixed'] || $p['no_expected']): ?>
-                                <span style="color:var(--ink-400);">—</span>
+                                <span class="hrs-dash">—</span>
                             <?php elseif (is_owner() && !$p['is_paid']): ?>
-                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                <div class="hrs-inl">
                                     <input type="number" min="0" max="60" step="0.01" name="due_days[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
-                                           class="due-days-input payroll-num"
+                                           class="due-days-input payroll-num hrs-fw6"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="due_days"
                                            data-saved="<?= number_format($p['due_days_calc'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['work_days'] + $p['leave_days'], 2, '.', '') ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="font-weight:600;">
+                                           onblur="salAutoSave(this)">
                                     <span class="due-days-edited-badge" style="<?= (abs((float)$p['due_days_calc'] - round((float)$p['work_days'] + (int)$p['leave_days'], 2)) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب (أيام العمل + الإجازة)">معدّلة</span>
                                     <span class="save-ind"></span>
                                 </div>
                             <?php else: ?>
-                                <span class="cell-due-days" style="font-weight:600;" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= number_format($p['due_days_calc'], 2) ?></span>
+                                <span class="cell-due-days hrs-fw6" title="أيام الاستحقاق الفعلية: <?= number_format($p['due_days_calc'], 3) ?>"><?= number_format($p['due_days_calc'], 2) ?></span>
                             <?php endif; ?>
                         </td>
                         <td><?= number_format($p['base_salary'], 2) ?></td>
-                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span style="color:var(--ink-400);">—</span>' : number_format($p['day_rate'], 2) ?></td>
+                        <td><?= ($p['is_fixed'] || $p['no_expected']) ? '<span class="hrs-dash">—</span>' : number_format($p['day_rate'], 2) ?></td>
                         <td class="cell-gross"><?= ($p['is_fixed']) ? number_format($p['gross_salary'], 2) : ($p['no_expected'] ? '—' : number_format($p['gross_salary'], 2)) ?></td>
                         <td>
                             <?php if ($p['is_paid'] || !is_owner()): ?>
@@ -1967,33 +1983,31 @@ $statusBadge = function($st) {
                                     <?= $p['total_bonuses'] > 0 ? ('+' . number_format($p['total_bonuses'], 2)) : '0.00' ?>
                                 </span>
                             <?php elseif ($p['bonus_cnt'] > 1): ?>
-                                <span style="color:var(--pos);font-weight:600;">+<?= number_format($p['total_bonuses'], 2) ?></span>
+                                <span class="hrs-pos6">+<?= number_format($p['total_bonuses'], 2) ?></span>
                                 <a href="hr.php?tab=bonuses" style="display:block;font-size:11px;color:var(--accent-text);text-decoration:none;" title="يوجد أكثر من مكافأة معلّقة — عدلها من تاب المكافآت">تفاصيل (<?= $p['bonus_cnt'] ?>)</a>
                             <?php elseif ($p['bonus_cnt'] === 1): ?>
-                                <span style="display:inline-flex;align-items:center;gap:4px;">
+                                <span class="hrs-inl">
                                     <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
-                                           class="bonus-input payroll-num"
+                                           class="bonus-input payroll-num hrs-pos6"
                                            data-orig="<?= $p['total_bonuses'] ?>"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="bonuses"
                                            data-saved="<?= number_format($p['total_bonuses'], 2, '.', '') ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="color:var(--pos);font-weight:600;">
+                                           onblur="salAutoSave(this)">
                                     <span class="save-ind"></span>
                                 </span>
                             <?php else: ?>
-                                <span style="display:inline-flex;align-items:center;gap:4px;">
+                                <span class="hrs-inl">
                                     <input type="number" step="0.01" min="0" name="bonuses[<?= $p['id'] ?>]"
                                            value=""
                                            placeholder="0.00"
-                                           class="bonus-input payroll-num"
+                                           class="bonus-input payroll-num hrs-pos6"
                                            data-orig="0.00"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="bonuses"
                                            data-saved=""
-                                           onblur="salAutoSave(this)"
-                                           style="color:var(--pos);font-weight:600;">
+                                           onblur="salAutoSave(this)">
                                     <span class="save-ind"></span>
                                 </span>
                             <?php endif; ?>
@@ -2009,16 +2023,15 @@ $statusBadge = function($st) {
                                     <?= number_format($p['monthly_adv_take'], 2) ?>
                                 </span>
                             <?php else: ?>
-                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                <div class="hrs-inl">
                                     <input type="number" step="0.01" min="0" name="monthly_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
-                                           class="monthly-take-input payroll-num"
+                                           class="monthly-take-input payroll-num hrs-neg5"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="monthly_take"
                                            data-saved="<?= number_format($p['monthly_adv_take'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['monthly_adv_take_calc'], 2, '.', '') ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="color:var(--neg);font-weight:500;">
+                                           onblur="salAutoSave(this)">
                                     <span class="monthly-take-edited-badge" style="<?= (abs((float)$p['monthly_adv_take'] - (float)$p['monthly_adv_take_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                     <span class="save-ind"></span>
                                 </div>
@@ -2035,16 +2048,15 @@ $statusBadge = function($st) {
                                     <?= number_format($p['standing_adv_take'], 2) ?>
                                 </span>
                             <?php else: ?>
-                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                <div class="hrs-inl">
                                     <input type="number" step="0.01" min="0" name="standing_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
-                                           class="standing-take-input payroll-num"
+                                           class="standing-take-input payroll-num hrs-neg5"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="standing_take"
                                            data-saved="<?= number_format($p['standing_adv_take'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['standing_adv_take_calc'], 2, '.', '') ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="color:var(--neg);font-weight:500;">
+                                           onblur="salAutoSave(this)">
                                     <span class="standing-take-edited-badge" style="<?= (abs((float)$p['standing_adv_take'] - (float)$p['standing_adv_take_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                     <span class="save-ind"></span>
                                 </div>
@@ -2061,16 +2073,15 @@ $statusBadge = function($st) {
                                     <?= number_format($p['cashier_deficit'], 2) ?>
                                 </span>
                             <?php else: ?>
-                                <div style="display:inline-flex;align-items:center;gap:4px;">
+                                <div class="hrs-inl">
                                     <input type="number" step="0.01" min="0" name="cashier_take[<?= $p['id'] ?>]"
                                            value="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
-                                           class="cashier-take-input payroll-num"
+                                           class="cashier-take-input payroll-num hrs-neg5"
                                            data-emp="<?= (int)$p['id'] ?>"
                                            data-field="cashier_take"
                                            data-saved="<?= number_format($p['cashier_deficit'], 2, '.', '') ?>"
                                            data-calc="<?= number_format($p['cashier_deficit_calc'], 2, '.', '') ?>"
-                                           onblur="salAutoSave(this)"
-                                           style="color:var(--neg);font-weight:500;">
+                                           onblur="salAutoSave(this)">
                                     <span class="cashier-take-edited-badge" style="<?= (abs((float)$p['cashier_deficit'] - (float)$p['cashier_deficit_calc']) > 0.005) ? '' : 'display:none;' ?>font-size:11px;color:var(--warn);font-weight:600;" title="القيمة تختلف عن المحسوب">معدّل</span>
                                     <span class="save-ind"></span>
                                 </div>
@@ -2124,11 +2135,11 @@ $statusBadge = function($st) {
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-bottom:16px;">
             <div style="background:var(--line-soft);padding:10px 14px;border-radius:8px;">
-                <div style="font-size:12px;color:var(--ink-500);">الصافي المسترد</div>
+                <div class="hrs-hint">الصافي المسترد</div>
                 <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= number_format((float)$confirmRevSalary['net_salary'], 2) ?> ج</div>
             </div>
             <div style="background:var(--line-soft);padding:10px 14px;border-radius:8px;">
-                <div style="font-size:12px;color:var(--ink-500);">الخزينة المسترد إليها</div>
+                <div class="hrs-hint">الخزينة المسترد إليها</div>
                 <div style="font-size:14px;font-weight:600;color:var(--ink-900);">
                     <?= $confirmRevJe ? (e($confirmRevJe['treasury_name']) . ' (استلام ' . number_format((float)$confirmRevJe['debit'], 2) . ' ج)') : 'لا يوجد قيد مالي بالخزينة (الصافي صفر)' ?>
                 </div>
@@ -2178,8 +2189,8 @@ $statusBadge = function($st) {
             <input type="hidden" name="salary_id" value="<?= (int)$confirmRevSalary['id'] ?>">
 
             <div class="form-row" style="margin-bottom:14px;">
-                <label style="font-weight:600;color:var(--ink-900);">سبب الإرجاع (إجباري):</label>
-                <input type="text" name="reason" required placeholder="مثال: تم الصرف للموظف الخطأ / تعديل الحضور" aria-label="سبب الإرجاع" style="max-width:500px;">
+                <label for="revReason" style="font-weight:600;color:var(--ink-900);">سبب الإرجاع (إجباري):</label>
+                <input type="text" name="reason" id="revReason" required placeholder="مثال: تم الصرف للموظف الخطأ / تعديل الحضور" aria-label="سبب الإرجاع" style="max-width:500px;">
             </div>
 
             <div style="display:flex;gap:8px;">
@@ -2195,7 +2206,7 @@ $statusBadge = function($st) {
         <?php if (empty($salaries)): ?>
             <div class="empty">لا توجد رواتب مصروفة.</div>
         <?php else: ?>
-        <div style="overflow-x:auto;">
+        <div class="hrs-scroll-x">
         <table>
             <thead>
                 <tr>
@@ -2219,8 +2230,8 @@ $statusBadge = function($st) {
             <?php foreach ($salaries as $s): $b=$statusBadge($s['status']); ?>
                 <tr>
                     <td><?= e($s['salary_month']) ?></td>
-                    <td style="font-weight:500;"><?= e($s['full_name']) ?></td>
-                    <td style="font-size:12px;color:var(--ink-500);">
+                    <td class="hrs-fw5"><?= e($s['full_name']) ?></td>
+                    <td class="hrs-hint">
                         <?= !empty($s['period_from']) ? (e($s['period_from']) . ' ← ' . e($s['period_to'])) : '—' ?>
                     </td>
                     <td style="font-size:13px;">
@@ -2238,14 +2249,14 @@ $statusBadge = function($st) {
                     </td>
                     <td><?= number_format((float)$s['base_salary'],2) ?></td>
                     <td style="color:var(--pos);"><?= isset($s['total_bonuses']) ? number_format((float)$s['total_bonuses'],2) : '0.00' ?></td>
-                    <td style="color:var(--neg);"><?= number_format((float)$s['total_advances'],2) ?></td>
-                    <td style="color:var(--neg);"><?= number_format((float)$s['total_penalties'],2) ?></td>
-                    <td style="color:var(--neg);"><?= number_format((float)$s['total_deficits'],2) ?></td>
-                    <td style="color:var(--neg);"><?= isset($s['total_cashier_deficits']) ? number_format((float)$s['total_cashier_deficits'],2) : '0.00' ?></td>
+                    <td class="hrs-neg"><?= number_format((float)$s['total_advances'],2) ?></td>
+                    <td class="hrs-neg"><?= number_format((float)$s['total_penalties'],2) ?></td>
+                    <td class="hrs-neg"><?= number_format((float)$s['total_deficits'],2) ?></td>
+                    <td class="hrs-neg"><?= isset($s['total_cashier_deficits']) ? number_format((float)$s['total_cashier_deficits'],2) : '0.00' ?></td>
                     <td style="font-weight:700;color:var(--pos);"><?= number_format((float)$s['net_salary'],2) ?></td>
                     <td>
                         <?php if ($s['reversed_at'] !== null): ?>
-                            <span class="badge" style="color:var(--neg);background:var(--neg-soft);" title="<?= e('سبب الإرجاع: ' . ($s['reverse_reason'] ?? '—')) ?>">مرجّع</span>
+                            <span class="badge hrs-neg-badge" title="<?= e('سبب الإرجاع: ' . ($s['reverse_reason'] ?? '—')) ?>">مرجّع</span>
                             <div style="font-size:11px;color:var(--ink-500);margin-top:2px;" title="<?= e($s['reverse_reason'] ?? '') ?>"><?= e($s['reverse_reason'] ?? '—') ?></div>
                         <?php else: ?>
                             <span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span>
@@ -2283,7 +2294,7 @@ $statusBadge = function($st) {
             <tbody>
             <?php foreach ($requests as $r): $b=$statusBadge($r['status']); ?>
                 <tr>
-                    <td style="font-weight:500;"><?= e($r['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($r['full_name']) ?></td>
                     <td><?= e($r['req_date']) ?></td>
                     <td><?= e($r['requested_in'] ? substr($r['requested_in'],0,5) : '—') ?></td>
                     <td><?= e($r['requested_out'] ? substr($r['requested_out'],0,5) : '—') ?></td>
@@ -2300,14 +2311,14 @@ $statusBadge = function($st) {
                                         data-date="<?= e($r['req_date']) ?>"
                                         title="تعديل الأوقات"><i class="ti ti-edit"></i> تعديل</button>
                             <?php endif; ?>
-                            <form method="post" style="display:inline;">
+                            <form method="post" class="hrs-inline-form">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="approve_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
                                 <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
                                 <button class="btn btn-sm btn-approve">اعتماد</button>
                             </form>
-                            <form method="post" style="display:inline;">
+                            <form method="post" class="hrs-inline-form">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="reject_request">
                                 <input type="hidden" name="request_id" value="<?= (int)$r['id'] ?>">
@@ -2315,7 +2326,7 @@ $statusBadge = function($st) {
                                 <button class="btn btn-sm btn-reject">رفض</button>
                             </form>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);">—</span>
+                            <span class="hrs-faint">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -2329,12 +2340,12 @@ $statusBadge = function($st) {
     <div class="card">
         <div class="section-title">سجل الحضور والانصراف</div>
         <div class="toolbar" style="margin-bottom:14px;">
-            <span style="color:var(--ink-500);font-size:14px;">الحضور بيتسجّل بالبصمة، والتصحيح بيبقى من تاب «طلبات التصحيح».</span>
+            <span class="hrs-muted14">الحضور بيتسجّل بالبصمة، والتصحيح بيبقى من تاب «طلبات التصحيح».</span>
         </div>
         <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
             <input type="hidden" name="tab" value="attendance">
-            <label style="font-size:13px;color:var(--ink-500);">الشهر:</label>
-            <input type="month" name="month" value="<?= e($attMonth) ?>" onchange="formSubmit(this.form)"
+            <label for="attFltMonth" style="font-size:13px;color:var(--ink-500);">الشهر:</label>
+            <input type="month" name="month" id="attFltMonth" value="<?= e($attMonth) ?>" onchange="formSubmit(this.form)"
                    style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
         </form>
         <?php if (empty($attRows)): ?>
@@ -2373,7 +2384,7 @@ $statusBadge = function($st) {
             ?>
                 <tr<?= $rowFlagged ? ' style="background:var(--surface);"' : '' ?>>
                     <td><?= e($a['att_date']) ?></td>
-                    <td style="font-weight:500;"><?= e($a['full_name']) ?></td>
+                    <td class="hrs-fw5"><?= e($a['full_name']) ?></td>
                     <td><?= e($a['check_in'] ? substr($a['check_in'],0,5) : '—') ?></td>
                     <td><?= e($a['check_out'] ? substr($a['check_out'],0,5) : '—') ?></td>
                     <td><?= number_format((float)$a['work_hours'],2) ?></td>
@@ -2386,7 +2397,7 @@ $statusBadge = function($st) {
                     </td>
                     <td><span class="badge" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span></td>
                     <td>
-                        <form method="post" style="display:inline;"
+                        <form method="post" class="hrs-inline-form"
                               data-confirm="تأكيد مسح سجل حضور <?= e($a['full_name']) ?> يوم <?= e($a['att_date']) ?>؟ هيقدر يسجّل من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_attendance">
@@ -2409,18 +2420,18 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_advance">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+            <div class="form-row"><label for="advEmp">الموظف</label><select name="employee_id" id="advEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>نوع السلفة</label><select name="adv_type">
+            <div class="form-row"><label for="advAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="advAmount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label for="advTypeSel">نوع السلفة</label><select name="adv_type" id="advTypeSel">
                 <option value="standing" selected>مستديمة (رصيد قديم)</option>
                 <option value="monthly">سلفة الشهر</option>
             </select></div>
-            <div class="form-row"><label>القسط الشهري (0 = خصم بالكامل مع الراتب)</label><input type="number" step="0.01" min="0" name="monthly_deduction" value="0" aria-label="القسط الشهري"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="advance_date" value="<?= date('Y-m-d') ?>"></div>
-            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="مثال: رصيد سلفة قديم قبل النظام" aria-label="ملاحظات"></div>
+            <div class="form-row"><label for="advDeduction">القسط الشهري (0 = خصم بالكامل مع الراتب)</label><input type="number" step="0.01" min="0" name="monthly_deduction" id="advDeduction" value="0" aria-label="القسط الشهري"></div>
+            <div class="form-row"><label for="advDate">التاريخ</label><input type="date" name="advance_date" id="advDate" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row"><label for="advNotes">ملاحظات</label><input type="text" name="notes" id="advNotes" placeholder="مثال: رصيد سلفة قديم قبل النظام" aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('advanceModal').classList.remove('open')">إلغاء</button>
@@ -2441,17 +2452,17 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_opening_balance">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+            <div class="form-row"><label for="obEmp">الموظف</label><select name="employee_id" id="obEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>الاتجاه</label><select name="direction" required>
+            <div class="form-row"><label for="obDirection">الاتجاه</label><select name="direction" id="obDirection" required>
                 <option value="debit">عليه — الموظف مدين للشركة</option>
                 <option value="credit">له — الشركة مدينة للموظف</option>
             </select></div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>البيان (مطلوب)</label><input type="text" name="description" required aria-label="البيان"></div>
+            <div class="form-row"><label for="obAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="obAmount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label for="obDate">التاريخ</label><input type="date" name="date" id="obDate" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-row"><label for="obDesc">البيان (مطلوب)</label><input type="text" name="description" id="obDesc" required aria-label="البيان"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('openingBalanceModal').classList.remove('open')">إلغاء</button>
@@ -2467,13 +2478,13 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_bonus">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+            <div class="form-row"><label for="bnEmp">الموظف</label><select name="employee_id" id="bnEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
-            <div class="form-row"><label>السبب</label><input type="text" name="reason" aria-label="السبب"></div>
+            <div class="form-row"><label for="bnAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="bnAmount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label for="bnDate">التاريخ</label><input type="date" name="date" id="bnDate" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row"><label for="bnReason">السبب</label><input type="text" name="reason" id="bnReason" aria-label="السبب"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('bonusModal').classList.remove('open')">إلغاء</button>
@@ -2488,13 +2499,13 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_penalty">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" required>
+            <div class="form-row"><label for="pnEmp">الموظف</label><select name="employee_id" id="pnEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
-            <div class="form-row"><label>السبب</label><input type="text" name="reason" aria-label="السبب"></div>
+            <div class="form-row"><label for="pnAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="pnAmount" required aria-label="المبلغ"></div>
+            <div class="form-row"><label for="pnDate">التاريخ</label><input type="date" name="date" id="pnDate" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row"><label for="pnReason">السبب</label><input type="text" name="reason" id="pnReason" aria-label="السبب"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('penaltyModal').classList.remove('open')">إلغاء</button>
@@ -2511,39 +2522,39 @@ $statusBadge = function($st) {
             <input type="hidden" name="action" value="pay_salary">
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
             <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
-            <div class="form-row"><label>الموظف</label><select name="employee_id" id="singleSalaryEmpId" required>
+            <div class="form-row"><label for="singleSalaryEmpId">الموظف</label><select name="employee_id" id="singleSalaryEmpId" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>شهر المرتب</label><input type="month" name="salary_month" value="<?= e($salMonth) ?>" required></div>
-            <div class="form-row"><label>خزينة الصرف</label><select name="treasury_id" required>
+            <div class="form-row"><label for="ssMonth">شهر المرتب</label><input type="month" name="salary_month" id="ssMonth" value="<?= e($salMonth) ?>" required></div>
+            <div class="form-row"><label for="ssTreasury">خزينة الصرف</label><select name="treasury_id" id="ssTreasury" required>
                 <option value="">— اختر الخزينة —</option>
                 <?php foreach ($payTreasuries as $t): ?><option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row"><label for="ssDate">التاريخ</label><input type="date" name="date" id="ssDate" value="<?= date('Y-m-d') ?>"></div>
             <?php if (is_owner()): ?>
                 <div class="form-row">
-                    <label>أيام الإجازة (تعديل الأونر — اختياري)</label>
+                    <label for="singleSalaryLeaveDays">أيام الإجازة (تعديل الأونر — اختياري)</label>
                     <input type="number" min="0" max="60" step="1" name="leave_days" id="singleSalaryLeaveDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
                 <div class="form-row">
-                    <label>أيام الاستحقاق (تعديل الأونر — اختياري)</label>
+                    <label for="singleSalaryDueDays">أيام الاستحقاق (تعديل الأونر — اختياري)</label>
                     <input type="number" min="0" max="60" step="0.01" name="due_days" id="singleSalaryDueDays" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
                 <div class="form-row">
-                    <label>المخصوم من سلف الشهر (تعديل الأونر — اختياري)</label>
+                    <label for="singleSalaryMonthlyTake">المخصوم من سلف الشهر (تعديل الأونر — اختياري)</label>
                     <input type="number" min="0" step="0.01" name="monthly_take" id="singleSalaryMonthlyTake" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
                 <div class="form-row">
-                    <label>المخصوم من المستديمة (تعديل الأونر — اختياري)</label>
+                    <label for="singleSalaryStandingTake">المخصوم من المستديمة (تعديل الأونر — اختياري)</label>
                     <input type="number" min="0" step="0.01" name="standing_take" id="singleSalaryStandingTake" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
                 <div class="form-row">
-                    <label>عجز الكاشير المخصوم (تعديل الأونر — اختياري)</label>
+                    <label for="singleSalaryCashierTake">عجز الكاشير المخصوم (تعديل الأونر — اختياري)</label>
                     <input type="number" min="0" step="0.01" name="cashier_take" id="singleSalaryCashierTake" placeholder="اتركه فارغاً للاعتماد التلقائي">
                 </div>
             <?php endif; ?>
-            <p style="font-size:12px;color:var(--ink-500);">سيتم إضافة المكافآت وخصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
+            <p class="hrs-hint">سيتم إضافة المكافآت وخصم السلف والجزاءات وعجز العهدة المعلّقة تلقائياً.</p>
             <div class="modal-actions">
                 <button type="submit" class="btn">صرف المرتب</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('salaryModal').classList.remove('open')">إلغاء</button>
@@ -2561,12 +2572,12 @@ $statusBadge = function($st) {
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
             <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
             <div class="form-row">
-                <label>الشهر</label>
-                <input type="month" name="salary_month" value="<?= e($salMonth) ?>" required>
+                <label for="bsMonth">الشهر</label>
+                <input type="month" name="salary_month" id="bsMonth" value="<?= e($salMonth) ?>" required>
             </div>
             <div class="form-row">
-                <label>خزينة الصرف</label>
-                <select name="treasury_id" required>
+                <label for="bsTreasury">خزينة الصرف</label>
+                <select name="treasury_id" id="bsTreasury" required>
                     <option value="">— اختر الخزينة —</option>
                     <?php foreach ($payTreasuries as $t): ?>
                         <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option>
@@ -2574,15 +2585,15 @@ $statusBadge = function($st) {
                 </select>
             </div>
             <div class="form-row">
-                <label>تاريخ الصرف</label>
-                <input type="date" name="date" value="<?= date('Y-m-d') ?>" required>
+                <label for="bsDate">تاريخ الصرف</label>
+                <input type="date" name="date" id="bsDate" value="<?= date('Y-m-d') ?>" required>
             </div>
             <div class="form-row">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                     <label style="margin:0;font-weight:600;">الموظفون (<?= count($empList) ?>)</label>
                     <div style="display:flex;gap:6px;">
-                        <button type="button" class="btn btn-sm btn-ghost" id="btnBatchSelectAll" style="padding:2px 8px;font-size:12px;">تحديد الكل</button>
-                        <button type="button" class="btn btn-sm btn-ghost" id="btnBatchDeselectAll" style="padding:2px 8px;font-size:12px;">إلغاء تحديد الكل</button>
+                        <button type="button" class="btn btn-sm btn-ghost hrs-btn-xs" id="btnBatchSelectAll">تحديد الكل</button>
+                        <button type="button" class="btn btn-sm btn-ghost hrs-btn-xs" id="btnBatchDeselectAll">إلغاء تحديد الكل</button>
                     </div>
                 </div>
                 <div style="max-height:200px;overflow-y:auto;border:1.5px solid var(--line);border-radius:9px;padding:8px 12px;background:var(--line-soft);">
@@ -2600,7 +2611,7 @@ $statusBadge = function($st) {
                     <?php endforeach; ?>
                 </div>
             </div>
-            <p style="font-size:12px;color:var(--ink-500);">سيتم صرف المرتبات للموظفين المحددين وإضافة المكافآت وخصم السلف والجزاءات وعجز العهدة تلقائياً لكل موظف.</p>
+            <p class="hrs-hint">سيتم صرف المرتبات للموظفين المحددين وإضافة المكافآت وخصم السلف والجزاءات وعجز العهدة تلقائياً لكل موظف.</p>
             <div class="modal-actions">
                 <button type="submit" class="btn"><i class="ti ti-check"></i> صرف الرواتب المحددة</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('batchSalaryModal').classList.remove('open')">إلغاء</button>
@@ -2614,7 +2625,7 @@ $statusBadge = function($st) {
     <div class="modal">
         <h3>تعديل وقت طلب التصحيح</h3>
         <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
-            الموظف: <strong id="editReqEmpName" style="color:var(--ink-900);"></strong> · التاريخ: <strong id="editReqDate" style="color:var(--ink-900);"></strong>
+            الموظف: <strong id="editReqEmpName" class="hrs-strong"></strong> · التاريخ: <strong id="editReqDate" class="hrs-strong"></strong>
         </p>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -2622,11 +2633,11 @@ $statusBadge = function($st) {
             <input type="hidden" name="request_id" id="editReqId" value="">
             <input type="hidden" name="rstatus" value="<?= e($reqStatus) ?>">
             <div class="form-row">
-                <label>وقت الحضور المطلوب</label>
+                <label for="editReqIn">وقت الحضور المطلوب</label>
                 <input type="time" name="requested_in" id="editReqIn">
             </div>
             <div class="form-row">
-                <label>وقت الانصراف المطلوب</label>
+                <label for="editReqOut">وقت الانصراف المطلوب</label>
                 <input type="time" name="requested_out" id="editReqOut">
             </div>
             <div class="modal-actions">
@@ -2642,17 +2653,17 @@ $statusBadge = function($st) {
     <div class="modal">
         <h3>تعديل القسط الشهري للسلفة</h3>
         <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
-            الموظف: <strong id="editAdvEmpName" style="color:var(--ink-900);"></strong> · أصل السلفة: <strong id="editAdvAmount" style="color:var(--ink-900);"></strong> · المتبقي: <strong id="editAdvRemaining" style="color:var(--ink-900);"></strong>
+            الموظف: <strong id="editAdvEmpName" class="hrs-strong"></strong> · أصل السلفة: <strong id="editAdvAmount" class="hrs-strong"></strong> · المتبقي: <strong id="editAdvRemaining" class="hrs-strong"></strong>
         </p>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="update_advance_deduction">
             <input type="hidden" name="advance_id" id="editAdvId" value="">
             <div class="form-row">
-                <label>القسط الشهري (0 = خصم المتبقي بالكامل مع أول راتب)</label>
+                <label for="editAdvDeduction">القسط الشهري (0 = خصم المتبقي بالكامل مع أول راتب)</label>
                 <input type="number" step="0.01" min="0" name="monthly_deduction" id="editAdvDeduction" required>
             </div>
-            <p style="font-size:12px;color:var(--ink-500);">إذا حُدد القسط بـ 0 فسيتم خصم كامل المبلغ المتبقي مع الراتب القادم.</p>
+            <p class="hrs-hint">إذا حُدد القسط بـ 0 فسيتم خصم كامل المبلغ المتبقي مع الراتب القادم.</p>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ التعديل</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('editAdvanceModal').classList.remove('open')">إلغاء</button>

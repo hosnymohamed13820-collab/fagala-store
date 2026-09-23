@@ -484,7 +484,7 @@ function je_code_cell(array $row): string {
              . 'color:var(--accent-text);background:var(--bg);">'
              . e($row['entry_code_name']) . '</span>';
     }
-    return '<span class="je-code" style="color:var(--ink-300);">—</span>';
+    return '<span class="je-code trs-dash">—</span>';
 }
 
 /**
@@ -499,7 +499,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     $isReversal = ($refType === 'reversal');
 
     $out = '<span class="je-note" title="' . e($notes) . '">'
-         . ($notes !== '' ? e($notes) : '<span style="color:var(--ink-300);">—</span>')
+         . ($notes !== '' ? e($notes) : '<span class="trs-dash">—</span>')
          . '</span>';
 
     if ($canEditEntry || $canEditNotes) {
@@ -648,6 +648,14 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
        من غير التمرير ده عمود «مدين» بيتقص وبيعرض آخر ٣ أرقام من المبلغ. */
     .stmt-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .stmt-scroll > table { min-width: max-content; }
+
+    /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
+    .trs-dash { color:var(--ink-300); }
+    .form-row input.trs-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px; }
+    .trs-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px; }
+    .trs-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
+    .trs-pick-chosen { margin-top:8px;font-size:13px;color:var(--pos);font-weight:600; }
+    .trs-fw5 { font-weight:500; }
 </style>
 
 <?php if ($flash): ?>
@@ -702,10 +710,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 
         <form method="get" class="filter-bar">
             <input type="hidden" name="treasury" value="all">
-            <label>من</label>
-            <input type="date" name="from" value="<?= e($stFrom) ?>">
-            <label>إلى</label>
-            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <label for="stAllFrom">من</label>
+            <input type="date" name="from" id="stAllFrom" value="<?= e($stFrom) ?>">
+            <label for="stAllTo">إلى</label>
+            <input type="date" name="to" id="stAllTo" value="<?= e($stTo) ?>">
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
@@ -746,7 +754,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
-                        <td style="font-weight:500;"><?= e($row['treasury_name']) ?></td>
+                        <td class="trs-fw5"><?= e($row['treasury_name']) ?></td>
                         <td class="je-c-desc">
                             <?= e($row['description']) ?>
                             <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
@@ -756,13 +764,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                                 </div>
                             <?php endif; ?>
                         </td>
-                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
-                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
+                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td class="trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
@@ -782,10 +790,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 
         <form method="get" class="filter-bar">
             <input type="hidden" name="treasury" value="<?= (int)$selectedTreasury['id'] ?>">
-            <label>من</label>
-            <input type="date" name="from" value="<?= e($stFrom) ?>">
-            <label>إلى</label>
-            <input type="date" name="to" value="<?= e($stTo) ?>">
+            <label for="stOneFrom">من</label>
+            <input type="date" name="from" id="stOneFrom" value="<?= e($stFrom) ?>">
+            <label for="stOneTo">إلى</label>
+            <input type="date" name="to" id="stOneTo" value="<?= e($stTo) ?>">
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
@@ -836,13 +844,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                                 </div>
                             <?php endif; ?>
                         </td>
-                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                        <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
-                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span style="color:var(--ink-300);">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td style="font-weight:500;"><?= ltr_out(money_fmt((float)$row['running_balance'])) ?></td>
+                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td class="trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
@@ -890,32 +898,32 @@ $today = date('Y-m-d');
         <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)" data-busy="جاري الحفظ...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
-            <div class="form-row"><label>الخزينة</label><select name="treasury_id" required><?= $receiptOpts ?></select></div>
+            <div class="form-row"><label for="rcTreasury">الخزينة</label><select name="treasury_id" id="rcTreasury" required><?= $receiptOpts ?></select></div>
             <div class="form-row" id="receiptAccountRow">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id') ?>
             </div>
             <div class="form-row cost-branch-row" id="receiptCostBranchRow">
-                <label>اسم الفرع</label>
-                <select name="cost_branch_id">
+                <label for="rcCostBranch">اسم الفرع</label>
+                <select name="cost_branch_id" id="rcCostBranch">
                     <option value="">— بدون تحديد —</option>
                     <?php foreach ($costBranches as $cb): ?>
                         <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+            <div class="form-row"><label for="rcAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="rcAmount" required
                    autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
-            <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الاستلام" aria-label="البيان"></div>
+            <div class="form-row"><label for="rcDate">التاريخ</label><input type="date" name="date" id="rcDate" value="<?= $today ?>" required></div>
+            <div class="form-row"><label for="rcDesc">البيان</label><input type="text" name="description" id="rcDesc" placeholder="سبب الاستلام" aria-label="البيان"></div>
             <div class="form-row" id="receiptNotesRow">
-                <label>ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                <label for="rcNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                <textarea name="notes" id="rcNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
             </div>
 
             <!-- نوع الاستلام: عادي / مورد / رد سلفة / استلام عهدة -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
-                <label>نوع الاستلام</label>
+                <label for="receiptType">نوع الاستلام</label>
                 <select name="op_type" id="receiptType" onchange="toggleReceiptType()">
                     <option value="normal">استلام عادي</option>
                     <option value="supplier">استلام من مورد</option>
@@ -923,39 +931,35 @@ $today = date('Y-m-d');
                     <option value="custody">استلام عهدة من فرع</option>
                 </select>
                 <div id="recSupplierBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="recSuppSearch" placeholder="ابحث باسم المورد..."
-                           oninput="filterRecSupps()" autocomplete="off"
-                           style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
-                    <div id="recSuppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                    <input type="text" id="recSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                           oninput="filterRecSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
+                    <div id="recSuppList" class="trs-pick-list">
                         <?php foreach ($suppliers as $s): ?>
-                            <div class="rec-supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
-                                 onclick="pickRecSupp(this)"
-                                 style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                            <div class="rec-supp-opt trs-pick-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                 onclick="pickRecSupp(this)">
                                 <?= e($s['name']) ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
                     <input type="hidden" name="supplier_id" id="recSuppId" value="">
-                    <div id="recSuppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                    <div id="recSuppChosen" class="trs-pick-chosen"></div>
                 </div>
                 <div id="recAdvanceBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="recEmpSearch" placeholder="ابحث باسم الموظف..."
-                           oninput="filterRecEmps()" autocomplete="off"
-                           style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم الموظف...">
-                    <div id="recEmpList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                    <input type="text" id="recEmpSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                           oninput="filterRecEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
+                    <div id="recEmpList" class="trs-pick-list">
                         <?php foreach ($employees as $emp): ?>
-                            <div class="rec-emp-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
-                                 onclick="pickRecEmp(this)"
-                                 style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                            <div class="rec-emp-opt trs-pick-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
+                                 onclick="pickRecEmp(this)">
                                 <?= e($emp['full_name']) ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
                     <input type="hidden" name="employee_id" id="recEmpId" value="">
-                    <div id="recEmpChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                    <div id="recEmpChosen" class="trs-pick-chosen"></div>
                 </div>
                 <div id="recCustodyBox" style="display:none;margin-top:12px;">
-                    <label>الفرع</label>
+                    <label for="recCustodyBranch">الفرع</label>
                     <select name="branch_id" id="recCustodyBranch">
                         <option value="">— اختر الفرع —</option>
                         <?php foreach ($branchesForCustody as $b): ?>
@@ -1002,8 +1006,8 @@ $today = date('Y-m-d');
             ?>
             <div id="disbFormBody">
                 <div class="form-row">
-                    <label>الخزينة</label>
-                    <select name="treasury_id" required>
+                    <label for="dsTreasury">الخزينة</label>
+                    <select name="treasury_id" id="dsTreasury" required>
                         <?php foreach ($disbTreasuries as $t): ?>
                             <option value="<?= (int)$t['id'] ?>"
                                     <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
@@ -1017,26 +1021,26 @@ $today = date('Y-m-d');
                     <?= acctree_field('entry_code_id') ?>
                 </div>
                 <div class="form-row cost-branch-row" id="disburseCostBranchRow">
-                    <label>اسم الفرع</label>
-                    <select name="cost_branch_id">
+                    <label for="dsCostBranch">اسم الفرع</label>
+                    <select name="cost_branch_id" id="dsCostBranch">
                         <option value="">— بدون تحديد —</option>
                         <?php foreach ($costBranches as $cb): ?>
                             <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+                <div class="form-row"><label for="dsAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="dsAmount" required
                        autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-                <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
-                <div class="form-row"><label>البيان</label><input type="text" name="description" placeholder="سبب الصرف" aria-label="البيان"></div>
+                <div class="form-row"><label for="dsDate">التاريخ</label><input type="date" name="date" id="dsDate" value="<?= $today ?>" required></div>
+                <div class="form-row"><label for="dsDesc">البيان</label><input type="text" name="description" id="dsDesc" placeholder="سبب الصرف" aria-label="البيان"></div>
                 <div class="form-row" id="disburseNotesRow">
-                    <label>ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                    <textarea name="notes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                    <label for="dsNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                    <textarea name="notes" id="dsNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
                 </div>
 
                 <!-- نوع الصرف: عادي / مورد / سلفة موظف / عهدة فرع -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
-                    <label>نوع الصرف</label>
+                    <label for="disburseType">نوع الصرف</label>
                     <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
                         <option value="normal">صرف عادي</option>
                         <option value="supplier">صرف لمورد</option>
@@ -1047,43 +1051,39 @@ $today = date('Y-m-d');
 
                     <!-- صرف لمورد -->
                     <div id="supplierBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="suppSearch" placeholder="ابحث باسم المورد..."
-                               oninput="filterSupps()" autocomplete="off"
-                               style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم المورد...">
-                        <div id="suppList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                        <input type="text" id="suppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                               oninput="filterSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
+                        <div id="suppList" class="trs-pick-list">
                             <?php foreach ($suppliers as $s): ?>
-                                <div class="supp-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
-                                     onclick="pickSupp(this)"
-                                     style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                <div class="supp-opt trs-pick-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                     onclick="pickSupp(this)">
                                     <?= e($s['name']) ?>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                         <input type="hidden" name="supplier_id" id="suppId" value="">
-                        <div id="suppChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                        <div id="suppChosen" class="trs-pick-chosen"></div>
                     </div>
 
                     <!-- سلفة موظف -->
                     <div id="advanceBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="empSearch" placeholder="ابحث باسم الموظف..."
-                               oninput="filterEmps()" autocomplete="off"
-                               style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;" aria-label="ابحث باسم الموظف...">
-                        <div id="empList" style="max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;">
+                        <input type="text" id="empSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                               oninput="filterEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
+                        <div id="empList" class="trs-pick-list">
                             <?php foreach ($employees as $emp): ?>
-                                <div class="emp-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
-                                     onclick="pickEmp(this)"
-                                     style="padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft);">
+                                <div class="emp-opt trs-pick-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
+                                     onclick="pickEmp(this)">
                                     <?= e($emp['full_name']) ?>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                         <input type="hidden" name="employee_id" id="empId" value="">
-                        <div id="empChosen" style="margin-top:8px;font-size:13px;color:var(--pos);font-weight:600;"></div>
+                        <div id="empChosen" class="trs-pick-chosen"></div>
                     </div>
 
                     <!-- عهدة فرع -->
                     <div id="custodyBox" style="display:none;margin-top:12px;">
-                        <label>الفرع</label>
+                        <label for="custodyBranch">الفرع</label>
                         <select name="branch_id" id="custodyBranch">
                             <option value="">— اختر الفرع —</option>
                             <?php foreach ($branchesForCustody as $b): ?>
@@ -1124,12 +1124,12 @@ $today = date('Y-m-d');
         <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)" data-busy="جاري التحويل...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="transfer">
-            <div class="form-row"><label>من خزينة</label><select name="from_treasury_id" required><?= $transferOpts ?></select></div>
-            <div class="form-row"><label>إلى خزينة</label><select name="to_treasury_id" required><?= $transferOpts ?></select></div>
-            <div class="form-row"><label>المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" required
+            <div class="form-row"><label for="trFrom">من خزينة</label><select name="from_treasury_id" id="trFrom" required><?= $transferOpts ?></select></div>
+            <div class="form-row"><label for="trTo">إلى خزينة</label><select name="to_treasury_id" id="trTo" required><?= $transferOpts ?></select></div>
+            <div class="form-row"><label for="trAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="trAmount" required
                    autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= $today ?>" required></div>
-            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" aria-label="ملاحظات"></div>
+            <div class="form-row"><label for="trDate">التاريخ</label><input type="date" name="date" id="trDate" value="<?= $today ?>" required></div>
+            <div class="form-row"><label for="trNotes">ملاحظات</label><input type="text" name="notes" id="trNotes" aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">تنفيذ التحويل</button>
                 <button type="button" class="btn btn-cancel" onclick="closeModal('transferModal')">إلغاء</button>
@@ -1152,7 +1152,7 @@ $today = date('Y-m-d');
 
         <?php if ($canEditEntry): ?>
         <div class="form-row" style="margin-top:14px;">
-            <label>التاريخ</label>
+            <label for="jeDate">التاريخ</label>
             <input type="date" id="jeDate" aria-label="التاريخ">
             <div id="jeDateHint" style="display:none;font-size:12px;color:var(--ink-500);margin-top:4px;">
                 تاريخ القيد ده جاي من الموديول بتاعه (وردية / عهدة / راتب / تحويل / فاتورة مورد) ويتعدّل من هناك.
@@ -1163,13 +1163,13 @@ $today = date('Y-m-d');
             <?= acctree_field('je_account', null, '— بدون قيد —', 'all', 'jeAccount') ?>
         </div>
         <div class="form-row">
-            <label>البيان</label>
+            <label for="jeDesc">البيان</label>
             <input type="text" id="jeDesc" maxlength="255" aria-label="البيان">
         </div>
         <?php endif; ?>
 
         <div class="form-row"<?= $canEditEntry ? '' : ' style="margin-top:14px;"' ?>>
-            <label>ملاحظات</label>
+            <label for="jeNotes">ملاحظات</label>
             <textarea id="jeNotes" rows="5" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
         </div>
 
@@ -1589,7 +1589,7 @@ $today = date('Y-m-d');
             if (d.notes) {
                 note.textContent = d.notes;
             } else {
-                note.innerHTML = '<span style="color:var(--ink-300);">—</span>';
+                note.innerHTML = '<span class="trs-dash">—</span>';
             }
             const btn = noteCell.querySelector('.je-edit');
             if (btn) {

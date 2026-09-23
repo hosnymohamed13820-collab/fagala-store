@@ -4394,6 +4394,13 @@ function money_fmt($amount): string
     return number_format($rounded, 2);
 }
 
+/** مبلغ في خلية جدول: كسرين ثابتين دايماً عشان العلامة العشرية تتصفّ (قرار محمد ٢٣ سبتمبر ٢٠٢٦). */
+function money_fmt_table($amount): string
+{
+    return number_format(round((float) $amount, 2), 2);
+}
+
+
 /**
  * مسار التحويل بين الخزائن كنص عادي (بدون HTML).
  * يرجع '' لو الاسمين فاضيين، أو 'من: X ← إلى: Y' مع تعويض الفاضي بـ'—'.

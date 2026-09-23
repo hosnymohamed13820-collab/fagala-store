@@ -690,6 +690,10 @@ require_once __DIR__ . '/includes/header.php';
     .sum-diff-box .sdl { font-size:13px; color:var(--ink-500); }
     .sum-diff-box .sdv { font-size:32px; font-weight:700; margin:10px 0; color:var(--ink-900); }
     .sum-diff-box .sds { font-size:13px; color:var(--ink-500); }
+
+    /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
+    .csh-shift-name { font-weight:600;color:var(--accent-text); }
+    .csh-edit-badge { font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px; }
 </style>
 
 <?php if ($flash): ?>
@@ -789,7 +793,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- بيانات الوردية -->
         <div class="grid-top grid-4">
             <div class="fld">
-                <label>القائم بالتقفيل</label>
+                <label for="cashierName">القائم بالتقفيل</label>
                 <input type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
             </div>
             <div class="fld">
@@ -797,8 +801,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="number" min="1" step="1" name="shift_name" id="shiftName" placeholder="مثال: 1" required>
             </div>
             <div class="fld">
-                <label for="systemTotal">الفرع <?= empty($u['branch_id']) ? '' : '(فرعك)' ?></label>
-                <select name="branch_id" required>
+                <label for="shiftBranch">الفرع <?= empty($u['branch_id']) ? '' : '(فرعك)' ?></label>
+                <select name="branch_id" id="shiftBranch" required>
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $defaultBranch===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>
@@ -807,8 +811,8 @@ require_once __DIR__ . '/includes/header.php';
                 </select>
             </div>
             <div class="fld">
-                <label>تاريخ اليوم</label>
-                <input type="date" name="business_date" value="<?= e($bizDateStr) ?>" required>
+                <label for="shiftDate">تاريخ اليوم</label>
+                <input type="date" name="business_date" id="shiftDate" value="<?= e($bizDateStr) ?>" required>
             </div>
         </div>
         <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
@@ -891,7 +895,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="ct-pane" id="pane_summary">
             <div class="grid-top">
                 <div class="fld">
-                    <label>إجمالي السيستم</label>
+                    <label for="systemTotal">إجمالي السيستم</label>
                     <input type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
                 </div>
             </div>
@@ -927,7 +931,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
 <?php if (!empty($mySeqIssues)): ?>
 <div class="card" style="border-right:4px solid var(--warn);">
-    <div class="section-title" style="color:var(--warn-text, var(--warn));"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
+    <div class="section-title" style="color:var(--warn);"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
     <?php foreach ($mySeqIssues as $iss):
         $desc = $iss['kind'] === 'duplicate'
             ? "رقم الوردية {$iss['found_no']} اتكرر في فرع {$iss['branch_name']}"
@@ -971,10 +975,10 @@ require_once __DIR__ . '/includes/header.php';
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= e($s['branch_name']) ?></td>
@@ -1022,10 +1026,10 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= number_format($sys,2) ?></td>
@@ -1097,10 +1101,10 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= number_format($sys,2) ?></td>
