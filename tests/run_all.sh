@@ -136,5 +136,16 @@ else
 fi
 
 echo
+echo "== اختبارات المرتب =="
+if [ -n "$PHP_BIN" ]; then
+    LOG="${TMPDIR:-/tmp}"
+    "$PHP_BIN" tests/finance/test_salary.php > "$LOG/sal.log" 2>&1         && tail -1 "$LOG/sal.log" || { cat "$LOG/sal.log"; FAIL=1; }
+else
+    echo "  ❌ php مش ملقي — اختبارات المرتب ما اتفحصتش."
+    echo "     حط المسار الكامل في PHP_BIN، أو ضيف فولدر php.exe للـPATH."
+    FAIL=1
+fi
+
+echo
 [ $FAIL -eq 0 ] && echo "✅ كل الفحوصات عدّت" || echo "❌ فيه فحص فشل — ما ترفعش"
 exit $FAIL
