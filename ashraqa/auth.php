@@ -188,6 +188,7 @@ function module_parts(): array
         ],
         'treasury' => [
             'statement' => 'الخزينة وكشف الحساب',
+            'operate'   => 'صرف واستلام وتحويل',
             'reverse'   => 'قيد عكسي',
         ],
     ];

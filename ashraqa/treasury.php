@@ -4,7 +4,7 @@
  * نظام الفجالة ستور المالي
  *
  * - عرض كل الخزائن وأرصدتها.
- * - عمليات: استلام نقدية، صرف نقدية، تحويل بين خزينتين.
+ * - عمليات: استلام نقدية، صرف نقدية، تحويل بين خزينتين (تتطلب صلاحية treasury:operate).
  * - كشف حساب لكل خزينة بالمدين والدائن والرصيد التراكمي.
  *
  * كل العمليات بتمر من finance.php (المصدر الوحيد للحقيقة).
@@ -28,6 +28,11 @@ $costBranches = cost_branches_list();
 $canEditEntry = is_owner();
 $canEditNotes = true;
 $canReverse   = can('treasury:reverse');
+
+// صرف · استلام · تحويل — جزء لوحده من ٢٢ سبتمبر ٢٠٢٦. قبلها أي حد بيشوف
+// الخزينة (treasury:statement) كان بيقدر يحرّك فلوس. can() بترجّع true للأونر
+// ولأي حد معاه 'treasury' كامل.
+$canOperate   = can('treasury:operate');
 
 // =====================================================================
 //  AJAX — قيد عكسي لحركة صرف أو استلام
@@ -144,7 +149,12 @@ if (($_GET['ajax'] ?? '') === 'je_edit') {
 
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!csrf_verify($_POST['csrf'] ?? '')) {
+    if (!$canOperate) {
+        // 🔴 حارس السيرفر — إخفاء الزراير لوحده مش حماية (أي حد يقدر يبعت POST بإيده).
+        //    قبل أي action: اللي مالوش الجزء مايعدّيش لأي عملية، حتى لو اتضافت عملية جديدة بعدين.
+        $flash = 'مالكش صلاحية صرف أو استلام أو تحويل.';
+        $flashType = 'error';
+    } elseif (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
         $flashType = 'error';
     } else {
@@ -655,9 +665,11 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="value"><?= ltr_out(money_fmt($totalBalance)) ?> <span style="font-size:16px;">ج.م</span></div>
     </div>
     <div class="actions">
+        <?php if ($canOperate): ?>
         <button class="btn btn-white" onclick="openModal('receiptModal')"><i class="ti ti-arrow-down-left"></i> استلام</button>
         <button class="btn btn-white" onclick="openModal('disburseModal')"><i class="ti ti-arrow-up-right"></i> صرف</button>
         <button class="btn btn-white" onclick="openModal('transferModal')"><i class="ti ti-transfer"></i> تحويل</button>
+        <?php endif; ?>
         <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
     </div>
 </div>
