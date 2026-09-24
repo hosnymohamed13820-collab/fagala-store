@@ -22,7 +22,29 @@
         }
     } catch (e) {}
 
-    // بيانات وتصاميم الـ ٧ شخصيات (SVG متكامل بنمط Flat كيوت مع عيون قابلة للتحريك)
+    // الوش — عينين + بؤبؤ بلمعة + خدود + ابتسامة. واحد للكل عشان يفضلوا شبه بعض.
+    // الـ<g class="lfx-eye-pupil"> هو اللي بيتحرك (البؤبؤ واللمعة مع بعض).
+    function face(xL, xR, y, r, ink) {
+        const pr = (r * 0.52).toFixed(2);
+        const hl = (r * 0.2).toFixed(2);
+        const hx = (r * 0.2).toFixed(2);
+        const hy = (r * 0.24).toFixed(2);
+        const mid = (xL + xR) / 2;
+        const sw = r * 0.5;                        // نص عرض الابتسامة (رقم مش نص — toFixed هنا كانت بتلزق الأرقام)
+        const sy = y + r + 3.2;                    // مكان الابتسامة
+        const eye = (x) => `
+                <circle cx="${x}" cy="${y}" r="${r}" fill="#ffffff" stroke="${ink}" stroke-width="1.4"/>
+                <g class="lfx-eye-pupil">
+                    <circle cx="${x}" cy="${y}" r="${pr}" fill="${ink}"/>
+                    <circle cx="${x - hx}" cy="${y - hy}" r="${hl}" fill="#ffffff"/>
+                </g>`;
+        return eye(xL) + eye(xR) + `
+                <ellipse cx="${xL - r * 0.7}" cy="${y + r + 1.6}" rx="${(r * 0.55).toFixed(2)}" ry="${(r * 0.32).toFixed(2)}" fill="#f43f5e" opacity="0.45"/>
+                <ellipse cx="${xR + r * 0.7}" cy="${y + r + 1.6}" rx="${(r * 0.55).toFixed(2)}" ry="${(r * 0.32).toFixed(2)}" fill="#f43f5e" opacity="0.45"/>
+                <path d="M${(mid - sw).toFixed(2)} ${sy.toFixed(2)}C${(mid - sw * 0.5).toFixed(2)} ${(sy + 3).toFixed(2)} ${(mid + sw * 0.5).toFixed(2)} ${(sy + 3).toFixed(2)} ${(mid + sw).toFixed(2)} ${sy.toFixed(2)}" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>`;
+    }
+
+    // الـ٧ شخصيات (SVG flat كيوت — الوش من face())
     const CHARACTERS = [
         {
             id: 'pencil',
@@ -34,27 +56,13 @@
             posMobile: { top: '6%', right: '4%' },
             svg: `
             <svg viewBox="0 0 80 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- الممحاة والحزام الفضي -->
-                <path d="M26 18C26 11.3726 31.3726 6 38 6H42C48.6274 6 54 11.3726 54 18V24H26V18Z" fill="#ff9aa2"/>
-                <rect x="25" y="24" width="30" height="7" rx="1.5" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1"/>
-                <!-- جسم القلم الخشبي -->
-                <path d="M25 31H55V76H25V31Z" fill="#fbc02d"/>
+                <path d="M24 18C24 11.3726 29.3726 6 36 6H44C50.6274 6 56 11.3726 56 18V24H24V18Z" fill="#ff9aa2"/>
+                <rect x="23" y="24" width="34" height="7" rx="1.5" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1"/>
+                <path d="M24 31H56V76H24V31Z" fill="#fbc02d"/>
                 <path d="M35 31H45V76H35V31Z" fill="#f9a825"/>
-                <!-- سن القلم الخشبي والرصاص -->
-                <path d="M25 76L40 98L55 76H25Z" fill="#ffecb3"/>
-                <path d="M35 90.7L40 98L45 90.7H35Z" fill="#374151"/>
-                <!-- ملامح الوجه -->
-                <!-- العين اليمنى -->
-                <circle cx="34" cy="50" r="4.5" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="34" cy="50" r="2.2" fill="#1f2937"/>
-                <!-- العين اليسرى -->
-                <circle cx="46" cy="50" r="4.5" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="46" cy="50" r="2.2" fill="#1f2937"/>
-                <!-- الخدود -->
-                <ellipse cx="29" cy="54" rx="2.5" ry="1.5" fill="#f87171" opacity="0.6"/>
-                <ellipse cx="51" cy="54" rx="2.5" ry="1.5" fill="#f87171" opacity="0.6"/>
-                <!-- ابتسامة -->
-                <path d="M37 57C38.5 59.5 41.5 59.5 43 57" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M24 76L40 99L56 76H24Z" fill="#ffecb3"/>
+                <path d="M34.8 91.5L40 99L45.2 91.5H34.8Z" fill="#374151"/>
+                ${face(33, 47, 48, 6, '#1f2937')}
             </svg>`
         },
         {
@@ -64,23 +72,15 @@
             height: 82,
             depth: 18,
             pos: { top: '38%', right: '8%' },
-            posMobile: { top: '24%', right: '3%' },
+            // على الموبايل مكانها القديم كان ورا المربع بالظبط — نزلت تحت
+            posMobile: { top: '84%', left: '40%' },
             svg: `
             <svg viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- جزء الممحاة الوردي المشطوف -->
-                <rect x="12" y="14" width="66" height="62" rx="14" transform="rotate(-8 45 45)" fill="#ffb7b2"/>
-                <!-- غلاف الأستيكة الكرتوني الأزرق -->
-                <rect x="12" y="38" width="66" height="38" rx="10" transform="rotate(-8 45 45)" fill="#3b82f6"/>
-                <rect x="12" y="44" width="66" height="7" transform="rotate(-8 45 45)" fill="#60a5fa"/>
-                <!-- ملامح الوجه -->
                 <g transform="rotate(-8 45 45)">
-                    <circle cx="36" cy="30" r="4.5" fill="#ffffff" stroke="#1e293b" stroke-width="1.2"/>
-                    <circle class="lfx-eye-pupil" cx="36" cy="30" r="2.2" fill="#1e293b"/>
-                    <circle cx="52" cy="30" r="4.5" fill="#ffffff" stroke="#1e293b" stroke-width="1.2"/>
-                    <circle class="lfx-eye-pupil" cx="52" cy="30" r="2.2" fill="#1e293b"/>
-                    <ellipse cx="30" cy="33" rx="2.5" ry="1.5" fill="#f43f5e" opacity="0.6"/>
-                    <ellipse cx="58" cy="33" rx="2.5" ry="1.5" fill="#f43f5e" opacity="0.6"/>
-                    <path d="M41 34C42.5 36.5 45.5 36.5 47 34" stroke="#1e293b" stroke-width="1.5" stroke-linecap="round"/>
+                    <rect x="12" y="14" width="66" height="62" rx="14" fill="#ffb7b2"/>
+                    <rect x="12" y="44" width="66" height="32" rx="10" fill="#3b82f6"/>
+                    <rect x="12" y="48" width="66" height="6" fill="#60a5fa"/>
+                    ${face(35, 55, 27, 6.2, '#1e293b')}
                 </g>
             </svg>`
         },
@@ -94,23 +94,13 @@
             posMobile: { top: '6%', left: '4%' },
             svg: `
             <svg viewBox="0 0 80 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- غطاء وكليبسة القلم الجاف -->
-                <rect x="29" y="8" width="22" height="12" rx="3" fill="#1e40af"/>
-                <path d="M51 14H56V44H51V14Z" rx="2" fill="#93c5fd" stroke="#1e40af" stroke-width="1"/>
-                <!-- جسم القلم -->
-                <path d="M29 20H51V78H29V20Z" fill="#2563eb"/>
-                <path d="M37 20H43V78H37V20Z" fill="#3b82f6"/>
-                <!-- سن القلم المعدني والكروي -->
-                <path d="M29 78L40 98L51 78H29Z" fill="#94a3b8"/>
+                <rect x="26" y="8" width="28" height="12" rx="3" fill="#1e40af"/>
+                <rect x="54" y="12" width="5" height="32" rx="2" fill="#93c5fd" stroke="#1e40af" stroke-width="1"/>
+                <path d="M26 20H54V78H26V20Z" fill="#2563eb"/>
+                <path d="M36 20H44V78H36V20Z" fill="#3b82f6"/>
+                <path d="M26 78L40 98L54 78H26Z" fill="#94a3b8"/>
                 <circle cx="40" cy="99" r="2" fill="#1e293b"/>
-                <!-- ملامح الوجه -->
-                <circle cx="35" cy="48" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="35" cy="48" r="2.2" fill="#0f172a"/>
-                <circle cx="45" cy="48" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="45" cy="48" r="2.2" fill="#0f172a"/>
-                <ellipse cx="31" cy="51" rx="2" ry="1.2" fill="#f43f5e" opacity="0.6"/>
-                <ellipse cx="49" cy="51" rx="2" ry="1.2" fill="#f43f5e" opacity="0.6"/>
-                <path d="M38 53C39.2 55.2 41 55.2 42 53" stroke="#0f172a" stroke-width="1.4" stroke-linecap="round"/>
+                ${face(34, 46, 44, 5.6, '#0f172a')}
             </svg>`
         },
         {
@@ -123,60 +113,43 @@
             posMobile: { top: '78%', right: '5%' },
             svg: `
             <svg viewBox="0 0 80 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- جسم المسطرة بزوايا مائلة خفيفة -->
-                <rect x="24" y="8" width="32" height="94" rx="6" transform="rotate(6 40 55)" fill="#fef08a" stroke="#facc15" stroke-width="1.5"/>
-                <!-- علامات التدريج -->
-                <g transform="rotate(6 40 55)" stroke="#ca8a04" stroke-width="1.2" stroke-linecap="round">
-                    <line x1="24" y1="16" x2="33" y2="16"/>
-                    <line x1="24" y1="24" x2="29" y2="24"/>
-                    <line x1="24" y1="32" x2="33" y2="32"/>
-                    <line x1="24" y1="40" x2="29" y2="40"/>
-                    <line x1="24" y1="72" x2="33" y2="72"/>
-                    <line x1="24" y1="80" x2="29" y2="80"/>
-                    <line x1="24" y1="88" x2="33" y2="88"/>
-                    <line x1="24" y1="96" x2="29" y2="96"/>
-                </g>
-                <!-- ملامح الوجه في منتصف المسطرة -->
                 <g transform="rotate(6 40 55)">
-                    <circle cx="35" cy="54" r="4.2" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                    <circle class="lfx-eye-pupil" cx="35" cy="54" r="2.1" fill="#1f2937"/>
-                    <circle cx="46" cy="54" r="4.2" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                    <circle class="lfx-eye-pupil" cx="46" cy="54" r="2.1" fill="#1f2937"/>
-                    <ellipse cx="31" cy="57" rx="2" ry="1.2" fill="#fb7185" opacity="0.6"/>
-                    <ellipse cx="50" cy="57" rx="2" ry="1.2" fill="#fb7185" opacity="0.6"/>
-                    <path d="M38 59C39.5 61 41.5 61 43 59" stroke="#1f2937" stroke-width="1.4" stroke-linecap="round"/>
+                    <rect x="22" y="8" width="36" height="94" rx="6" fill="#fef08a" stroke="#facc15" stroke-width="1.5"/>
+                    <g stroke="#ca8a04" stroke-width="1.2" stroke-linecap="round">
+                        <line x1="22" y1="16" x2="31" y2="16"/>
+                        <line x1="22" y1="24" x2="27" y2="24"/>
+                        <line x1="22" y1="32" x2="31" y2="32"/>
+                        <line x1="22" y1="72" x2="31" y2="72"/>
+                        <line x1="22" y1="80" x2="27" y2="80"/>
+                        <line x1="22" y1="88" x2="31" y2="88"/>
+                        <line x1="22" y1="96" x2="27" y2="96"/>
+                    </g>
+                    ${face(35, 48, 50, 5.6, '#1f2937')}
                 </g>
             </svg>`
         },
         {
+            // برّاية بجد: جسم برتقاني + شفرة فضي فوق بمسمار + فتحة القلم المخروطية
             id: 'sharpener',
             name: 'برّاية',
             width: 84,
             height: 78,
             depth: 14,
             pos: { top: '40%', left: '8%' },
-            posMobile: { top: '25%', left: '3%' },
+            // على الموبايل مكانها القديم كان ورا المربع — طلعت فوق بين القلم والكتاب
+            posMobile: { top: '13%', left: '26%' },
             svg: `
             <svg viewBox="0 0 90 85" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- جسم البرّاية الانسيابي المائل -->
-                <path d="M16 20C16 14.4772 20.4772 10 26 10H64C69.5228 10 74 14.4772 74 20V65C74 70.5228 69.5228 75 64 75H26C20.4772 75 16 70.5228 16 65V20Z" fill="#38bdf8"/>
-                <!-- انحناءة وسط البرّاية لتسهيل المسك -->
-                <path d="M16 35C20 38 20 47 16 50V35Z" fill="#0284c7"/>
-                <path d="M74 35C70 38 70 47 74 50V35Z" fill="#0284c7"/>
-                <!-- الشفرة المعدنية والمسمار -->
-                <rect x="34" y="16" width="22" height="42" rx="2" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.2"/>
-                <circle cx="45" cy="24" r="3" fill="#64748b"/>
-                <line x1="43" y1="24" x2="47" y2="24" stroke="#e2e8f0" stroke-width="1"/>
-                <!-- فتحة سن القلم البيضاوية -->
-                <ellipse cx="45" cy="67" rx="10" ry="4" fill="#0369a1"/>
-                <!-- ملامح الوجه على الشفرة اللطيفة -->
-                <circle cx="40" cy="40" r="3.8" fill="#ffffff" stroke="#0f172a" stroke-width="1.1"/>
-                <circle class="lfx-eye-pupil" cx="40" cy="40" r="1.9" fill="#0f172a"/>
-                <circle cx="50" cy="40" r="3.8" fill="#ffffff" stroke="#0f172a" stroke-width="1.1"/>
-                <circle class="lfx-eye-pupil" cx="50" cy="40" r="1.9" fill="#0f172a"/>
-                <ellipse cx="37" cy="43" rx="1.8" ry="1" fill="#f43f5e" opacity="0.6"/>
-                <ellipse cx="53" cy="43" rx="1.8" ry="1" fill="#f43f5e" opacity="0.6"/>
-                <path d="M43 45C44 46.5 46 46.5 47 45" stroke="#0f172a" stroke-width="1.3" stroke-linecap="round"/>
+                <rect x="10" y="26" width="70" height="48" rx="12" fill="#fb923c"/>
+                <rect x="10" y="62" width="70" height="12" rx="6" fill="#ea580c"/>
+                <rect x="18" y="18" width="54" height="13" rx="3" fill="#e2e8f0" stroke="#64748b" stroke-width="1.3"/>
+                <line x1="22" y1="29" x2="60" y2="29" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="65" cy="24.5" r="3" fill="#94a3b8" stroke="#475569" stroke-width="1"/>
+                <line x1="63" y1="24.5" x2="67" y2="24.5" stroke="#475569" stroke-width="1"/>
+                <circle cx="27" cy="50" r="10" fill="#9a3412"/>
+                <circle cx="27" cy="50" r="6" fill="#7c2d12"/>
+                <circle cx="27" cy="50" r="2.4" fill="#431407"/>
+                ${face(50, 66, 46, 5.6, '#1f2937')}
             </svg>`
         },
         {
@@ -189,47 +162,37 @@
             posMobile: { top: '78%', left: '5%' },
             svg: `
             <svg viewBox="0 0 90 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- الورقة مع ثنية صغيرة في الزاوية العلوية -->
                 <path d="M15 15H58L75 32V75H15V15Z" fill="#fef9c3" stroke="#fde047" stroke-width="1.5"/>
-                <!-- الثنية المطوية -->
                 <path d="M58 15V32H75L58 15Z" fill="#fef08a" stroke="#fde047" stroke-width="1.2"/>
-                <!-- خطوط أسطر خفيفة -->
-                <line x1="24" y1="36" x2="52" y2="36" stroke="#fde047" stroke-width="1.5" stroke-linecap="round"/>
-                <line x1="24" y1="65" x2="66" y2="65" stroke="#fde047" stroke-width="1.5" stroke-linecap="round"/>
-                <!-- ملامح الوجه الكيوت -->
-                <circle cx="38" cy="48" r="4.5" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="38" cy="48" r="2.2" fill="#1f2937"/>
-                <circle cx="52" cy="48" r="4.5" fill="#ffffff" stroke="#1f2937" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="52" cy="48" r="2.2" fill="#1f2937"/>
-                <ellipse cx="32" cy="51" rx="2.5" ry="1.5" fill="#fb7185" opacity="0.6"/>
-                <ellipse cx="58" cy="51" rx="2.5" ry="1.5" fill="#fb7185" opacity="0.6"/>
-                <path d="M42 53C43.5 55.5 46.5 55.5 48 53" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="24" y1="30" x2="50" y2="30" stroke="#fde047" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="24" y1="66" x2="66" y2="66" stroke="#fde047" stroke-width="1.5" stroke-linecap="round"/>
+                ${face(37, 53, 45, 6.2, '#1f2937')}
             </svg>`
         },
         {
+            // كتاب بجد: جلدة ملوّنة + كعب غامق + الصفحات باينة من الجنب وتحت + شريطة
             id: 'book',
             name: 'كتاب',
-            width: 92,
-            height: 84,
+            width: 80,
+            height: 96,
             depth: 16,
-            pos: { top: '8%', left: '46%' },
+            pos: { top: '4%', left: '46%' },
             posMobile: { top: '3%', left: '38%' },
             svg: `
-            <svg viewBox="0 0 95 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <!-- غلاف الكتاب وصفحاته المنحنية -->
-                <path d="M12 20C12 16 16 14 20 14H75C79 14 83 16 83 20V68C83 72 79 74 75 74H20C16 74 12 72 12 68V20Z" fill="#334155"/>
-                <!-- كعب وصفحات الكتاب البيضاء -->
-                <rect x="18" y="20" width="62" height="48" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
-                <!-- شريطة فاصل الكتاب الحمراء -->
-                <path d="M50 14V50L46 46L42 50V14H50Z" fill="#ef4444"/>
-                <!-- ملامح الوجه على صفحات الكتاب -->
-                <circle cx="38" cy="40" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="38" cy="40" r="2.2" fill="#0f172a"/>
-                <circle cx="58" cy="40" r="4.5" fill="#ffffff" stroke="#0f172a" stroke-width="1.2"/>
-                <circle class="lfx-eye-pupil" cx="58" cy="40" r="2.2" fill="#0f172a"/>
-                <ellipse cx="32" cy="43" rx="2.5" ry="1.5" fill="#f43f5e" opacity="0.6"/>
-                <ellipse cx="64" cy="43" rx="2.5" ry="1.5" fill="#f43f5e" opacity="0.6"/>
-                <path d="M45 44C46.5 47 49.5 47 51 44" stroke="#0f172a" stroke-width="1.5" stroke-linecap="round"/>
+            <svg viewBox="0 0 84 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="17" y="12" width="56" height="81" rx="5" fill="#fef3c7" stroke="#e7d6a6" stroke-width="1"/>
+                <g stroke="#e7d6a6" stroke-width="0.9">
+                    <line x1="69.5" y1="18" x2="69.5" y2="88"/>
+                    <line x1="71.5" y1="18" x2="71.5" y2="88"/>
+                    <line x1="22" y1="90" x2="66" y2="90"/>
+                </g>
+                <path d="M54 86V97L57.5 94L61 97V86Z" fill="#ef4444"/>
+                <rect x="11" y="7" width="57" height="81" rx="6" fill="#14b8a6"/>
+                <rect x="11" y="7" width="11" height="81" rx="5" fill="#0f766e"/>
+                <line x1="14" y1="18" x2="19" y2="18" stroke="#5eead4" stroke-width="1.6" stroke-linecap="round"/>
+                <line x1="14" y1="77" x2="19" y2="77" stroke="#5eead4" stroke-width="1.6" stroke-linecap="round"/>
+                <rect x="31" y="18" width="28" height="6" rx="3" fill="#99f6e4"/>
+                ${face(37, 53, 48, 6.2, '#134e4a')}
             </svg>`
         }
     ];
@@ -483,8 +446,8 @@
                 targetRot = (pos.angle * 180 / Math.PI) * 0.15;
 
                 // العيون تنظر قليلاً للأمام في اتجاه السير
-                targetPupilX = Math.cos(pos.angle) * 1.8;
-                targetPupilY = Math.sin(pos.angle) * 1.8;
+                targetPupilX = Math.cos(pos.angle) * 2.2;
+                targetPupilY = Math.sin(pos.angle) * 2.2;
 
             } else if (hasValidMouse) {
                 // وضع الـ Parallax وتتبع الماوس
@@ -504,8 +467,8 @@
 
                 if (dist > 1) {
                     const angle = Math.atan2(dy, dx);
-                    // أقصى إزاحة للبؤبؤ داخل العين ٢.٣ بكسل
-                    const pupilDist = Math.min(2.3, dist / 120 * 2.3);
+                    // أقصى إزاحة للبؤبؤ داخل العين ٢.٨ (العين نص قطرها ~٦)
+                    const pupilDist = Math.min(2.8, dist / 120 * 2.8);
                     targetPupilX = Math.cos(angle) * pupilDist;
                     targetPupilY = Math.sin(angle) * pupilDist;
                 }
