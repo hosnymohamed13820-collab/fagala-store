@@ -130,7 +130,7 @@
         },
         {
             // برّاية كلاسيك (شكل صورة محمد) بجسم بلاستيك برتقاني: جوانب مقروصة للمسكة · شفرة طويلة
-            // بطرف مدوّر عليها الوش · مسمار نحاس تحت الابتسامة · فتحة القلم في الوش اللي تحت
+            // بطرف مدوّر عليها الوش · مسمار نحاس تحت الابتسامة · من غير فتحة القلم (طلب محمد)
             id: 'sharpener',
             name: 'برّاية',
             width: 70,
@@ -143,8 +143,6 @@
             <svg viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M18 12H62Q68 12 68 18V30Q60 40 60 50Q60 60 68 68V80H12V68Q20 60 20 50Q20 40 12 30V18Q12 12 18 12Z" fill="#fb923c" stroke="#c2410c" stroke-width="1.4" stroke-linejoin="round"/>
                 <rect x="12" y="78" width="56" height="16" rx="4" fill="#ea580c" stroke="#c2410c" stroke-width="1.4"/>
-                <ellipse cx="40" cy="86" rx="8.5" ry="5.5" fill="#9a3412"/>
-                <ellipse cx="40" cy="86.6" rx="5" ry="3.2" fill="#431407"/>
                 <g fill="#fdba74">
                     <circle cx="16" cy="20" r="0.9"/><circle cx="20" cy="24" r="0.9"/><circle cx="16" cy="28" r="0.9"/>
                     <circle cx="64" cy="20" r="0.9"/><circle cx="60" cy="24" r="0.9"/><circle cx="64" cy="28" r="0.9"/>
