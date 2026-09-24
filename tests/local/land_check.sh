@@ -4,6 +4,7 @@
 # ---------------------------------------------------------------------
 #  الاستعمال:  bash tests/local/land_check.sh 45            ← + run_all
 #              bash tests/local/land_check.sh 45 --no-gate
+#              bash tests/local/land_check.sh 45 --restore  ← رجّع ملفات site/ الناقصة من Laragon
 #
 #  ١) git status مطابق لبلوك «المتوقع بالحرف» في .briefs/briefN.md؟
 #  ٢) ملف في ashraqa/ اتنسخ فوقه نسخة site/ وهو كان مختلف؟ (حصلت في ٤٤)
@@ -14,8 +15,10 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-N="${1:-}"; GATE=1
+N="${1:-}"; GATE=1; RESTORE=0
 [ "${2:-}" = "--no-gate" ] && GATE=0
+[ "${2:-}" = "--restore" ] && RESTORE=1
+LARAGON="${LARAGON_WWW:-/d/laragon/www}"
 BRIEF=".briefs/brief$N.md"
 [ -z "$N" ] || [ ! -f "$BRIEF" ] && { echo "❌ الاستعمال: bash tests/local/land_check.sh <رقم البريف>"; exit 1; }
 FAIL=0
@@ -32,6 +35,26 @@ else
     echo "  ❌ مختلف:"
     diff <(echo "$EXP") <(echo "$ACT") | grep '^[<>]' | sed 's/^</  ناقص:/; s/^>/  زيادة:/'
     FAIL=1
+
+    # 🔴 حصلت مرتين (٥٢ و٥٣): الوكيل خلص وملفات site/ رجعت زي HEAD (Reject في لوحته؟)
+    #    بس نسخته لسه في Laragon لأنه عمل sync قبل الاختبار.
+    MISSING="$(diff <(echo "$EXP") <(echo "$ACT") | grep '^< ' | sed 's/^< //')"
+    while read -r st path; do
+        [ -z "$path" ] && continue
+        case "$path" in
+            site/*)
+                rel="${path#site/}"
+                if [ -f "$LARAGON/$rel" ] && ! cmp -s "$LARAGON/$rel" "$path" 2>/dev/null; then
+                    if [ $RESTORE -eq 1 ]; then
+                        cp "$LARAGON/$rel" "$path" && echo "  ↺ $path ← من Laragon (راجع الديف)"
+                    else
+                        echo "  💡 $path — Laragon فيه نسخة مختلفة. رجّعها بـ: --restore"
+                    fi
+                fi ;;
+            ashraqa/*) echo "  ✋ $path — مش في Laragon، اعمل تعديله بإيدك" ;;
+            *)         echo "  ✋ $path — اكتبه تاني من البريف" ;;
+        esac
+    done <<< "$MISSING"
 fi
 
 echo; echo "═══ ٢) ملفات إشراقة اللي بقت نسخة من الفجالة ═══"

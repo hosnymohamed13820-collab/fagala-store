@@ -38,6 +38,8 @@
 #    bash tests/local/deploy.sh --yes ashraqa
 #    bash tests/local/deploy.sh --errors        ← سجل الأخطاء بس (من غير رفع)
 #
+#  --head = ارفع آخر كوميت بس (من worktree نضيف) — لو وكيل لسه شغّال.
+#
 #  متطلبات: مفتاح ~/.ssh/fagala_hostinger
 # =====================================================================
 set -u
@@ -51,16 +53,31 @@ SNAP="public_html"          # نسخة مرجعية محلية — بتتحدّ�
 
 SSH=(ssh -i "$SSH_KEY" -p "$SSH_PORT" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR)
 
-GO=0; ONLY=""; ERRORS_ONLY=0
+GO=0; ONLY=""; ERRORS_ONLY=0; HEAD_ONLY=0; PASS=()
 for a in "$@"; do
     case "$a" in
-        --yes)            GO=1 ;;
-        --errors)         ERRORS_ONLY=1 ;;
-        fagala|site)      ONLY="fagala" ;;
-        ashraqa)          ONLY="ashraqa" ;;
+        --yes)            GO=1; PASS+=("$a") ;;
+        --head)           HEAD_ONLY=1 ;;
+        --errors)         ERRORS_ONLY=1; PASS+=("$a") ;;
+        fagala|site)      ONLY="fagala"; PASS+=("$a") ;;
+        ashraqa)          ONLY="ashraqa"; PASS+=("$a") ;;
         *) echo "❌ خيار مش معروف: $a"; exit 1 ;;
     esac
 done
+
+# ---------------------------------------------------------------------
+#  --head: ارفع **آخر كوميت** بس — من نسخة نضيفة (git worktree) في فولدر مؤقت.
+#  للحالة اللي أجي/كوديكس فيها لسه شغّال وشغله نصّه على الجهاز
+#  (٢٤ سبتمبر ٢٠٢٦ — رفعنا ٥٤ وأجي في نص ٥٥). الملفات المش متكوميتة مابتطلعش.
+# ---------------------------------------------------------------------
+if [ $HEAD_ONLY -eq 1 ]; then
+    WT="${TMPDIR:-/tmp}/fagala_deploy_head_$$"
+    git worktree add -q --detach "$WT" HEAD || { echo "❌ git worktree فشل"; exit 1; }
+    echo "📦 برفع آخر كوميت: $(git log --oneline -1)"
+    bash "$WT/tests/local/deploy.sh" "${PASS[@]}"; rc=$?
+    git worktree remove --force "$WT"
+    exit $rc
+fi
 
 # آخر ٢٤ ساعة — المدى اللي بيبيّن «فيه حاجة اتكسرت ومحدش واخد باله»
 SINCE="$(date -d '24 hours ago' '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)"
