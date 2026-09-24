@@ -33,7 +33,7 @@ for b in "/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" \
 done
 [ -z "$BROWSER" ] && { echo "❌ مفيش Edge ولا Chrome"; exit 1; }
 
-HTML="$("$PHP" tests/local/run_page.php "$PAGE" "$WHO" "" 2>&1)"
+HTML="$("$PHP" tests/local/run_page.php "$PAGE" "$WHO" "${SHOT_Q:-}" 2>&1)"
 if echo "$HTML" | grep -qE "Fatal error|Parse error"; then
     echo "❌ الصفحة وقعت:"; echo "$HTML" | grep -E "Fatal error|Parse error" | head -3; exit 1
 fi
@@ -43,9 +43,17 @@ for mode in $MODES; do
     f="$WWW/_shot_${name}_${mode}.html"
     # الوضع بيتحدد من localStorage قبل أي ستايل — بنثبّته قبل سكربت الهيدر
     printf '%s' "$HTML" | sed "0,/<head>/s//<head><script>try{localStorage.setItem('fagala-theme','$mode')}catch(e){}<\/script>/" > "$f"
-    png="$OUT/${name}_${mode}_${W}.png"
+    png="$OUT/${name}${SHOT_Q:+_q}_${mode}_${W}.png"
+    # بروفايل مؤقت لوحده: لو Edge مفتوح (عند محمد أو وكيل بيصوّر) الـheadless بيتقفل على نفس البروفايل ومايطلعش صورة
+    rm -f "${png:?}"   # صورة قديمة بنفس الاسم كانت بتخلّي اللوب اللي تحت يفتكرها الجديدة
+    PROF="$(mktemp -d)"
     timeout 60 "$BROWSER" --headless=new --disable-gpu --hide-scrollbars --window-size="$W,$H" \
+        --user-data-dir="$(cygpath -w "$PROF" 2>/dev/null || echo "$PROF")" \
         --virtual-time-budget=3000 --screenshot="$png" "file:///${f#/}" >/dev/null 2>&1
+    # مع بروفايل جديد msedge بيرجع فوراً ويكمّل في الخلفية — استنى الصورة قبل ما تمسح الصفحة
+    for _ in $(seq 1 40); do [ -s "$png" ] && break; sleep 0.5; done
+    sleep 1
     rm -f "$f"
+    rm -rf "${PROF:?}" 2>/dev/null
     [ -s "$png" ] && echo "📸 $png" || echo "❌ الصورة ماتعملتش ($mode)"
 done
