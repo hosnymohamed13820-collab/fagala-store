@@ -129,28 +129,33 @@
             </svg>`
         },
         {
-            // برّاية: الوش على الشفرة الفضي نفسها (قدام) · المسمار في الركن · فتحة القلم على الجنب
+            // برّاية كلاسيك (شكل صورة محمد) بجسم بلاستيك برتقاني: جوانب مقروصة للمسكة · شفرة طويلة
+            // بطرف مدوّر عليها الوش · مسمار نحاس تحت الابتسامة · فتحة القلم في الوش اللي تحت
             id: 'sharpener',
             name: 'برّاية',
-            width: 84,
-            height: 78,
+            width: 70,
+            height: 88,
             depth: 14,
-            pos: { top: '40%', left: '8%' },
+            pos: { top: '38%', left: '9%' },
             // على الموبايل مكانها القديم كان ورا المربع — طلعت فوق بين القلم والكتاب
-            posMobile: { top: '13%', left: '26%' },
+            posMobile: { top: '12%', left: '27%' },
             svg: `
-            <svg viewBox="0 0 90 85" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="8" y="24" width="74" height="50" rx="12" fill="#fb923c"/>
-                <rect x="8" y="62" width="74" height="12" rx="6" fill="#ea580c"/>
-                <circle cx="21" cy="46" r="8.5" fill="#9a3412"/>
-                <circle cx="21" cy="46" r="5" fill="#7c2d12"/>
-                <circle cx="21" cy="46" r="2" fill="#431407"/>
-                <rect x="33" y="14" width="45" height="44" rx="5" fill="#e2e8f0" stroke="#64748b" stroke-width="1.4"/>
-                <rect x="33.7" y="14.7" width="43.6" height="6" rx="4" fill="#f8fafc"/>
-                <line x1="36" y1="21" x2="75" y2="21" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/>
-                <circle cx="71.5" cy="51" r="3" fill="#94a3b8" stroke="#475569" stroke-width="1"/>
-                <line x1="69.5" y1="51" x2="73.5" y2="51" stroke="#475569" stroke-width="1"/>
-                ${face(47.5, 63.5, 33, 5.6, '#1f2937')}
+            <svg viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 12H62Q68 12 68 18V30Q60 40 60 50Q60 60 68 68V80H12V68Q20 60 20 50Q20 40 12 30V18Q12 12 18 12Z" fill="#fb923c" stroke="#c2410c" stroke-width="1.4" stroke-linejoin="round"/>
+                <rect x="12" y="78" width="56" height="16" rx="4" fill="#ea580c" stroke="#c2410c" stroke-width="1.4"/>
+                <ellipse cx="40" cy="86" rx="8.5" ry="5.5" fill="#9a3412"/>
+                <ellipse cx="40" cy="86.6" rx="5" ry="3.2" fill="#431407"/>
+                <g fill="#fdba74">
+                    <circle cx="16" cy="20" r="0.9"/><circle cx="20" cy="24" r="0.9"/><circle cx="16" cy="28" r="0.9"/>
+                    <circle cx="64" cy="20" r="0.9"/><circle cx="60" cy="24" r="0.9"/><circle cx="64" cy="28" r="0.9"/>
+                    <circle cx="16" cy="72" r="0.9"/><circle cx="20" cy="68" r="0.9"/><circle cx="16" cy="64" r="0.9"/>
+                    <circle cx="64" cy="72" r="0.9"/><circle cx="60" cy="68" r="0.9"/><circle cx="64" cy="64" r="0.9"/>
+                </g>
+                <path d="M25 7H55V60Q55 71 40 71Q25 71 25 60Z" fill="#e2e8f0" stroke="#475569" stroke-width="1.4" stroke-linejoin="round"/>
+                <line x1="28" y1="10" x2="28" y2="60" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="40" cy="52" r="4.6" fill="#d4a24c" stroke="#8a6420" stroke-width="1.1"/>
+                <path d="M37.6 52H42.4M40 49.6V54.4" stroke="#8a6420" stroke-width="1.3" stroke-linecap="round"/>
+                ${face(34, 46, 25, 5.2, '#1f2937')}
             </svg>`
         },
         {
