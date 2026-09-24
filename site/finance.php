@@ -1110,7 +1110,8 @@ function issue_disbursement_order(
     $cashId = require_main_treasury();
 
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // حارس: لو الفرع عنده عهدة معلقة للمراجعة، نرفض قبل أي حركة مالية (المرفوضة مفتوحة للتعديل)
         $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE branch_id=? AND status = 'pending_review' ORDER BY id DESC LIMIT 1");
@@ -1156,10 +1157,10 @@ function issue_disbursement_order(
             )->execute([$branchId, $custodyTreasuryId, $date, $amount, $amount]);
         }
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return $orderId;
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1185,7 +1186,8 @@ function issue_employee_disbursement_order(
     $cashId = require_main_treasury();
 
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // التحقق من وجود الموظف
         $empStmt = $pdo->prepare("SELECT id, full_name, branch_id FROM employees WHERE id=? AND is_active=1 LIMIT 1");
@@ -1264,10 +1266,10 @@ function issue_employee_disbursement_order(
             )->execute([$employeeId, $empBranchId, $custodyTreasuryId, $date, $amount, $amount]);
         }
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return $orderId;
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1289,7 +1291,8 @@ function add_custody_expense(
         throw new InvalidArgumentException('مبلغ المصروف لازم يكون أكبر من صفر.');
     }
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // تأكد إن العهدة مفتوحة أو مرفوضة واقرأ خزينتها
         $st = $pdo->prepare("SELECT status, custody_treasury_id FROM branch_custody WHERE id=? FOR UPDATE");
@@ -1320,10 +1323,10 @@ function add_custody_expense(
         post_journal($custodyTreasuryId, $amount, 0, 'مصروف عهدة: ' . $description,
                      $date, 'custody_expense', $lineId, $userId, $pdo, $entryCodeId);
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return $lineId;
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1348,7 +1351,8 @@ function add_custody_expense(
 function delete_custody_expense(int $lineId, ?int $userId = null): void
 {
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         // اقرا السطر والعهدة بتاعته مع القفل
         $st = $pdo->prepare(
@@ -1389,9 +1393,9 @@ function delete_custody_expense(int $lineId, ?int $userId = null): void
         $pdo->prepare('UPDATE branch_custody SET total_expenses=?, closing_balance=? WHERE id=?')
             ->execute([$newExp, $newClosing, $custodyId]);
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1440,7 +1444,8 @@ function submit_custody_count(
     }
 
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         $st = $pdo->prepare("SELECT * FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
@@ -1484,10 +1489,10 @@ function submit_custody_count(
             $custodyId,
         ]);
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return ['difference' => $difference, 'expected' => $expected];
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -1522,7 +1527,8 @@ function save_custody_review(
     }
 
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         $st = $pdo->prepare("SELECT * FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
@@ -1565,7 +1571,7 @@ function save_custody_review(
             );
             $upRej->execute([$reason, $userId, $custodyId]);
 
-            $pdo->commit();
+            if ($own) $pdo->commit();
             return ['variance' => $variance, 'on_employee' => false, 'deficit_id' => null];
         }
 
@@ -1702,10 +1708,10 @@ function save_custody_review(
             $custodyId,
         ]);
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
         return ['variance' => $variance, 'on_employee' => $onEmployee, 'deficit_id' => $deficitId];
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }
@@ -2396,7 +2402,8 @@ function receive_custody(
         throw new InvalidArgumentException('المبلغ لازم يكون أكبر من صفر.');
     }
     $pdo = db();
-    $pdo->beginTransaction();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
     try {
         $ct = $pdo->prepare("SELECT id FROM treasuries WHERE branch_id=? AND type='branch_custody' LIMIT 1");
         $ct->execute([$branchId]);
@@ -2420,9 +2427,9 @@ function receive_custody(
                 ->execute([$newOpening, $newClosing, $row['id']]);
         }
 
-        $pdo->commit();
+        if ($own) $pdo->commit();
     } catch (Throwable $ex) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
         throw $ex;
     }
 }

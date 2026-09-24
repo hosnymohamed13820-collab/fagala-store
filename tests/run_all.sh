@@ -24,7 +24,10 @@ export PYTHONIOENCODING=utf-8
 find_php() {
     [ -n "${PHP_BIN:-}" ] && [ -x "$PHP_BIN" ] && { echo "$PHP_BIN"; return; }
     command -v php > /dev/null 2>&1 && { echo php; return; }
-    for d in /c/php /c/tools/php /c/xampp/php /c/laragon/bin/php/* /c/laragon/bin/php \n             /d/php /d/php-*/ /d/php*/ /e/php /e/php-*/ \n             "$HOME"/Downloads/php-*/ /c/Users/*/Downloads/php-*/; do
+    for d in /c/php /c/tools/php /c/xampp/php /c/laragon/bin/php/* /c/laragon/bin/php \
+             /d/laragon/bin/php/* /d/laragon/bin/php \
+             /d/php /d/php-*/ /d/php*/ /e/php /e/php-*/ \
+             "$HOME"/Downloads/php-*/ /c/Users/*/Downloads/php-*/; do
         [ -x "$d/php.exe" ] && { echo "$d/php.exe"; return; }
     done
 }
@@ -135,12 +138,21 @@ else
 fi
 
 echo
-echo "== اختبارات المرتب =="
+echo "== اختبارات منطق الفلوس =="
+if [ -f "/d/laragon/www/config.php" ]; then
+    bash tests/local/sync_to_laragon.sh > /dev/null 2>&1 || {
+        echo "  ❌ فشلت مزامنة الكود إلى Laragon قبل الاختبارات"
+        FAIL=1
+    }
+fi
+
 if [ -n "$PHP_BIN" ]; then
     LOG="${TMPDIR:-/tmp}"
     "$PHP_BIN" tests/finance/test_salary.php > "$LOG/sal.log" 2>&1         && tail -1 "$LOG/sal.log" || { cat "$LOG/sal.log"; FAIL=1; }
+    "$PHP_BIN" tests/finance/test_distribution.php > "$LOG/dist.log" 2>&1 && tail -1 "$LOG/dist.log" || { cat "$LOG/dist.log"; FAIL=1; }
+    "$PHP_BIN" tests/finance/test_custody.php > "$LOG/cust.log" 2>&1      && tail -1 "$LOG/cust.log" || { cat "$LOG/cust.log"; FAIL=1; }
 else
-    echo "  ❌ php مش ملقي — اختبارات المرتب ما اتفحصتش."
+    echo "  ❌ php مش ملقي — اختبارات منطق الفلوس ما اتفحصتش."
     echo "     حط المسار الكامل في PHP_BIN، أو ضيف فولدر php.exe للـPATH."
     FAIL=1
 fi
