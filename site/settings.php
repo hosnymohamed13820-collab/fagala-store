@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         try {
-            $userId = current_user_id();
+            $userId = (int) current_user()['id'];
             $st = $pdo->prepare(
                 'UPDATE invoice_distribution
                  SET hq_guard_off = ?, hq_guard_off_by = ?, hq_guard_off_at = NOW()
