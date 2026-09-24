@@ -1392,16 +1392,23 @@ require_once __DIR__ . '/includes/header.php';
                         <th>كمية <?= $BR_NAME_H ?></th>
                         <th>رصيد <?= $BR_NAME_H ?></th>
                         <th>سعر الوحدة</th>
+                        <th>الإجمالي</th>
                         <th>سعر البيع</th>
                         <th>نسبة التسعير</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($ashraqaItems as $it):
+                    <?php
+                    $totTableTotal = 0.0;
+                    $totTableQty   = 0.0;
+                    foreach ($ashraqaItems as $it):
                         $code = (string)($it['item_code'] ?? '');
                         $qty  = (float)($ashraqaQtys[$code] ?? 0);
                         $hasPrice = isset($salePrices[$code]);
                         $sPrice = $hasPrice ? (float)$salePrices[$code] : null;
+                        $lineTotal = $qty * (float)($it['unit_price'] ?? 0);
+                        $totTableTotal += $lineTotal;
+                        $totTableQty   += $qty;
 
                         // رصيد الفرع: قد يكون سالب ويعرض كما هو، ولو غير موجود يعرض —
                         if (isset($balances[$code])) {
@@ -1426,6 +1433,9 @@ require_once __DIR__ . '/includes/header.php';
                             <td style="color:var(--ink-600);">
                                 <?= number_format((float)($it['unit_price'] ?? 0), 2) ?>
                             </td>
+                            <td style="font-weight:600;color:var(--ink-900);">
+                                <?= number_format($lineTotal, 2) ?>
+                            </td>
                             <td class="c-sale">
                                 <div style="display:inline-flex;align-items:center;">
                                     <input type="number" step="0.01" min="0"
@@ -1445,6 +1455,17 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
+                <tfoot>
+                    <tr style="font-weight:700;background:var(--line-soft);">
+                        <td colspan="2" style="font-weight:700;">الإجمالي</td>
+                        <td style="font-weight:700;"><?= rtrim(rtrim(number_format($totTableQty, 2, '.', ''), '0'), '.') ?></td>
+                        <td></td>
+                        <td></td>
+                        <td style="font-weight:700;color:var(--ink-900);"><?= number_format($totTableTotal, 2) ?></td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>
         </div>
 

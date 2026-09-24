@@ -14,6 +14,59 @@ $uid  = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
 $tab = 'statement';
 
+// AJAX: حفظ أو مسح علامة التلوين على صف الفاتورة في المطابقة (بريف ٥٩)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'recon_mark') {
+    header('Content-Type: application/json; charset=utf-8');
+    require_permission('suppliers');
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        echo json_encode(['ok' => false, 'error' => 'انتهت صلاحية الجلسة، حدّث الصفحة وحاول تاني']);
+        exit;
+    }
+
+    $sthId  = isset($_POST['sth_id']) ? (int) $_POST['sth_id'] : 0;
+    $suffix = isset($_POST['suffix']) ? trim((string) $_POST['suffix']) : '';
+    $color  = isset($_POST['color']) ? trim((string) $_POST['color']) : '';
+
+    if ($sthId <= 0 || $suffix === '') {
+        echo json_encode(['ok' => false, 'error' => 'بيانات الفاتورة غير صحيحة']);
+        exit;
+    }
+
+    require_once __DIR__ . '/item_flags_lib.php';
+
+    try {
+        if ($color === '') {
+            // مسح العلامة
+            $del = $pdo->prepare('DELETE FROM recon_marks WHERE sth_id = ? AND suffix = ?');
+            $del->execute([$sthId, $suffix]);
+            echo json_encode(['ok' => true, 'action' => 'deleted']);
+            exit;
+        }
+
+        if (!in_array($color, IFL_COLORS, true)) {
+            echo json_encode(['ok' => false, 'error' => 'اللون غير صالح']);
+            exit;
+        }
+
+        $ins = $pdo->prepare(
+            'INSERT INTO recon_marks (sth_id, suffix, color, marked_by, marked_at)
+             VALUES (?, ?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE color = VALUES(color), marked_by = VALUES(marked_by), marked_at = NOW()'
+        );
+        $ins->execute([$sthId, $suffix, $color, $uid]);
+        echo json_encode(['ok' => true, 'action' => 'saved', 'color' => $color]);
+        exit;
+    } catch (PDOException $e) {
+        // فحص وجود الجدول: خطأ 1146 = Table doesn't exist
+        $errMsg = 'شغّل local/recon_marks.sql الأول';
+        if ($e->getCode() != '42S02' && strpos($e->getMessage(), "doesn't exist") === false) {
+            $errMsg = 'تعذّر الحفظ: ' . $e->getMessage();
+        }
+        echo json_encode(['ok' => false, 'error' => $errMsg]);
+        exit;
+    }
+}
+
 // نقرأ رسالة الفلاش من السيشن (بعد التحويل إن وجدت)
 if (isset($_SESSION['flash'])) {
     $flash = $_SESSION['flash'];
@@ -254,31 +307,38 @@ if ($tab === 'statement') {
                 $buy = $recMatrix[$currBranch['cb']][$pErp][2] ?? ['cnt' => 0, 'amt' => 0.0];
                 // رجّعهولنا (عنده) = cb=الطرف · supplier_id=erp الفرع · dt=6
                 $buyMatched = $recMatrix[$pCb][$currBranch['erp']][6] ?? ['cnt' => 0, 'amt' => 0.0];
-                $diffBuy = $buy['amt'] - $buyMatched['amt'];
 
                 // رجّعناله = cb=الفرع · supplier_id=erp الطرف · dt=6
                 $ret = $recMatrix[$currBranch['cb']][$pErp][6] ?? ['cnt' => 0, 'amt' => 0.0];
                 // استلمه منّا (عنده) = cb=الطرف · supplier_id=erp الفرع · dt=2
                 $retMatched = $recMatrix[$pCb][$currBranch['erp']][2] ?? ['cnt' => 0, 'amt' => 0.0];
-                $diffRet = $ret['amt'] - $retMatched['amt'];
+
+                // بريف ٥٩: رقم صافي واحد لكل طرف
+                // وصلنا منه (صافي) = اشترينا منه − رجّعناله
+                $netOur = (float)$buy['amt'] - (float)$ret['amt'];
+                // بعتهولنا (صافي) = رجّعهولنا (عنده) − استلمه منّا (عنده)
+                $netHis = (float)$buyMatched['amt'] - (float)$retMatched['amt'];
+                // الفرق = الأول − التاني
+                $diff = $netOur - $netHis;
 
                 $reconcileRows[$pKey] = [
                     'key'         => $pKey,
                     'label'       => $pInfo['label'],
                     'buy'         => $buy,
                     'buy_matched' => $buyMatched,
-                    'diff_buy'    => $diffBuy,
                     'ret'         => $ret,
                     'ret_matched' => $retMatched,
-                    'diff_ret'    => $diffRet,
+                    'net_our'     => $netOur,
+                    'net_his'     => $netHis,
+                    'diff'        => $diff,
                 ];
             }
         }
 
         // كشف مقارنة الطرفين (party=hq|bonjour|degla|abc)
         if ($currBranch !== null && $currParty !== null) {
-            // جدول عندنا: فواتير الفرع حيث supplier_id = erp الطرف
-            $ourSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+            // جدول عندنا: فواتير الفرع حيث supplier_id = erp الطرف (مع suffix لعلامات التلوين)
+            $ourSql = "SELECT sth_id, suffix, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
                        FROM hq_invoices
                        WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
                          AND doc_type IN (2, 6)
@@ -289,9 +349,9 @@ if ($tab === 'statement') {
             $ourStmt->execute([$from, $to, $currBranch['cb'], $currParty['erp']]);
             $partyMovesOur = $ourStmt->fetchAll();
 
-            // جدول عنده: فواتير الطرف حيث supplier_id = erp الفرع
+            // جدول عنده: فواتير الطرف حيث supplier_id = erp الفرع (مع suffix لعلامات التلوين)
             $hisWhereCb = ($currPartyKey === 'hq') ? "(company_branch = 1 OR company_branch IS NULL)" : "company_branch = ?";
-            $hisSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+            $hisSql = "SELECT sth_id, suffix, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
                        FROM hq_invoices
                        WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
                          AND doc_type IN (2, 6)
@@ -319,6 +379,25 @@ if ($tab === 'statement') {
                     $partyTotHisBuy += (float)$m['net_amount'];
                 } else {
                     $partyTotHisRet += (float)$m['net_amount'];
+                }
+            }
+
+            // قراءة علامات التلوين للفواتير المعروضة باستعلام واحد (بريف ٥٩)
+            $reconMarks = [];
+            $allSthIds = array_values(array_unique(array_filter(array_merge(
+                array_column($partyMovesOur, 'sth_id'),
+                array_column($partyMovesHis, 'sth_id')
+            ))));
+            if (!empty($allSthIds)) {
+                try {
+                    $inPh = implode(',', array_fill(0, count($allSthIds), '?'));
+                    $rmStmt = $pdo->prepare("SELECT sth_id, suffix, color FROM recon_marks WHERE sth_id IN ($inPh)");
+                    $rmStmt->execute($allSthIds);
+                    while ($rmRow = $rmStmt->fetch()) {
+                        $reconMarks[$rmRow['sth_id'] . '_' . $rmRow['suffix']] = $rmRow['color'];
+                    }
+                } catch (PDOException $e) {
+                    // في حال لم يتم تشغيل recon_marks.sql بعد
                 }
             }
 
@@ -360,6 +439,16 @@ if ($tab === 'statement') {
                 }
                 $x->addRow(['إجمالي الشراء', '', '', round($partyTotHisBuy, 2)], true);
                 $x->addRow(['إجمالي المردود', '', '', round($partyTotHisRet, 2)], true);
+                $x->addBlank();
+
+                // قسم ٣: صافي المطابقة
+                $partyNetOur = $partyTotOurBuy - $partyTotOurRet;
+                $partyNetHis = $partyTotHisRet - $partyTotHisBuy;
+                $partyDiff   = $partyNetOur - $partyNetHis;
+                $x->addRow(['ثالثاً: صافي المطابقة'], true);
+                $x->addRow(['وصلنا منه — صافي (دفاتر ' . $currBranch['label'] . ')', '', '', round($partyNetOur, 2)], true);
+                $x->addRow(['بعتهولنا — صافي (دفاتر ' . $currParty['label'] . ')', '', '', round($partyNetHis, 2)], true);
+                $x->addRow(['الفرق (دفاترنا − دفاتره)', '', '', round($partyDiff, 2)], true);
 
                 $x->download('RECONCILE_' . strtoupper($currBranchKey) . '_' . strtoupper($currPartyKey) . '_' . $from . '_' . $to . '.xlsx');
                 exit;
@@ -387,6 +476,22 @@ if ($tab === 'statement') {
                 ]);
             }
             $x->addRow(['الإجمالي', '', round($totSumPurchases, 2), round($totSumReturns, 2), round($totSumPaid, 2), round($totSumReceived, 2), round($totSumBalance, 2)], true);
+
+            // كارت المطابقة بالأعمدة الأربعة في تصدير الإكسيل لتاب الفرع (بريف ٥٩)
+            if ($currBranch !== null && !empty($reconcileRows)) {
+                $x->addBlank();
+                $x->addRow(['مطابقة مع الإدارة والفروع — فرع ' . $currBranch['label']], true);
+                $x->addRow(['الطرف', 'وصلنا منه — صافي (دفاترنا)', 'بعتهولنا — صافي (دفاتره)', 'الفرق'], true);
+                foreach ($reconcileRows as $rRow) {
+                    $x->addRow([
+                        $rRow['label'],
+                        round($rRow['net_our'], 2),
+                        round($rRow['net_his'], 2),
+                        round($rRow['diff'], 2),
+                    ]);
+                }
+            }
+
             $brSuffix = $currBranchKey ? '_' . strtoupper($currBranchKey) : '';
             $x->download('SUPPLIERS_SUMMARY' . $brSuffix . '_' . $from . '_' . $to . '.xlsx');
             exit;
@@ -665,6 +770,37 @@ require_once __DIR__ . '/includes/header.php';
     @media (max-width: 900px) {
         .dual-tables-grid { grid-template-columns:1fr; }
     }
+
+    /* تمييز وتلوين صفوف المطابقة (بريف ٥٩) */
+    .recon-table tbody tr.hl-red    { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--neg); }
+    .recon-table tbody tr.hl-green  { background:var(--line-soft); box-shadow:inset -4px 0 0 var(--pos); }
+    .recon-table tbody tr.hl-yellow { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
+    .recon-table tbody tr.hl-orange { background:var(--warn-soft); box-shadow:inset -4px 0 0 var(--warn); }
+    .recon-table tbody tr.hl-red:hover    { background:var(--line-soft); }
+    .recon-table tbody tr.hl-green:hover  { background:var(--line); }
+    .recon-table tbody tr.hl-yellow:hover { background:var(--warn-soft); }
+    .recon-table tbody tr.hl-orange:hover { background:var(--warn-soft); }
+
+    /* شريط أدوات قلم التلوين */
+    .pen-toolbar { display:inline-flex; align-items:center; gap:8px; background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:4px 10px; }
+    .pen-toggle-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-800); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.15s ease; }
+    .pen-toggle-btn:hover { background:var(--line); }
+    .pen-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .color-dots { display:inline-flex; align-items:center; gap:6px; }
+    .color-dot { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.1s ease, border-color 0.1s ease; padding:0; outline:none; }
+    .color-dot:hover { transform:scale(1.15); }
+    .color-dot.active { border-color:var(--ink-900); transform:scale(1.2); box-shadow:0 0 0 2px var(--surface); }
+    .color-dot.dot-red    { background:var(--neg); }
+    .color-dot.dot-green  { background:var(--pos); }
+    .color-dot.dot-yellow { background:var(--warn); }
+    .color-dot.dot-orange { background:#f76707; }
+    .eraser-btn { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:6px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-600); cursor:pointer; font-size:13px; padding:0; transition:all 0.15s ease; }
+    .eraser-btn:hover { background:var(--line); color:var(--ink-900); }
+    .eraser-btn.active { background:var(--ink-800); color:#fff; border-color:var(--ink-800); }
+
+    /* مؤشر القلم العائم */
+    .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid #fff; }
+    body.pen-active .recon-table tbody tr { cursor:crosshair !important; }
 </style>
 
 <?php if ($flash): ?>
@@ -672,7 +808,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
     <?php if ($currBranch !== null && $currParty !== null): ?>
-        <!-- (ج) كشف مقارنة الطرفين (بريف ٥٨) -->
+        <!-- (ج) كشف مقارنة الطرفين (بريف ٥٨ و ٥٩) -->
         <div class="toolbar" style="align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
             <div>
                 <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="btn btn-sm btn-ghost" style="margin-bottom:8px;">
@@ -686,17 +822,37 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <form method="get" class="filter-form" style="margin-bottom:0;">
-                <input type="hidden" name="tab" value="statement">
-                <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
-                <input type="hidden" name="party" value="<?= e($currPartyKey) ?>">
-                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-                <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
-                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&party=<?= e($currPartyKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
-                    <i class="ti ti-download"></i> تصدير إكسيل
-                </a>
-            </form>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <!-- قلم التلوين (بريف ٥٩) -->
+                <div class="pen-toolbar" id="reconPenToolbar">
+                    <button type="button" class="pen-toggle-btn" id="reconPenToggle" title="تفعيل/تعطيل وضع التلوين (Esc للخروج)">
+                        <i class="ti ti-pencil"></i> قلم التلوين
+                    </button>
+                    <div class="color-dots">
+                        <button type="button" class="color-dot dot-yellow active" data-color="yellow" title="أصفر"></button>
+                        <button type="button" class="color-dot dot-green" data-color="green" title="أخضر"></button>
+                        <button type="button" class="color-dot dot-red" data-color="red" title="أحمر"></button>
+                        <button type="button" class="color-dot dot-orange" data-color="orange" title="برتقالي"></button>
+                    </div>
+                    <button type="button" class="eraser-btn" id="reconEraserBtn" title="ممحاة (مسح التلوين)">
+                        <i class="ti ti-x"></i>
+                    </button>
+                </div>
+
+                <form method="get" class="filter-form" style="margin-bottom:0;">
+                    <input type="hidden" name="tab" value="statement">
+                    <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+                    <input type="hidden" name="party" value="<?= e($currPartyKey) ?>">
+                    <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+                    <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+                    <a href="?tab=statement&br=<?= e($currBranchKey) ?>&party=<?= e($currPartyKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+                        <i class="ti ti-download"></i> تصدير إكسيل
+                    </a>
+                </form>
+            </div>
         </div>
+
+        <div class="recon-cursor-dot" id="reconCursorDot"></div>
 
         <div class="dual-tables-grid">
             <!-- جدول عندنا -->
@@ -708,7 +864,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
                 <?php else: ?>
                 <div style="overflow-x:auto;">
-                <table>
+                <table class="recon-table">
                     <thead>
                         <tr>
                             <th>التاريخ</th>
@@ -719,7 +875,12 @@ require_once __DIR__ . '/includes/header.php';
                     </thead>
                     <tbody>
                     <?php foreach ($partyMovesOur as $m): ?>
-                        <tr>
+                        <?php
+                        $mkKey = $m['sth_id'] . '_' . $m['suffix'];
+                        $mColor = $reconMarks[$mkKey] ?? '';
+                        $rowClass = $mColor !== '' ? 'hl-' . $mColor : '';
+                        ?>
+                        <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                             <td><?= e($m['tx_date']) ?></td>
                             <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
                             <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
@@ -752,7 +913,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
                 <?php else: ?>
                 <div style="overflow-x:auto;">
-                <table>
+                <table class="recon-table">
                     <thead>
                         <tr>
                             <th>التاريخ</th>
@@ -763,7 +924,12 @@ require_once __DIR__ . '/includes/header.php';
                     </thead>
                     <tbody>
                     <?php foreach ($partyMovesHis as $m): ?>
-                        <tr>
+                        <?php
+                        $mkKey = $m['sth_id'] . '_' . $m['suffix'];
+                        $mColor = $reconMarks[$mkKey] ?? '';
+                        $rowClass = $mColor !== '' ? 'hl-' . $mColor : '';
+                        ?>
+                        <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                             <td><?= e($m['tx_date']) ?></td>
                             <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
                             <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
@@ -787,6 +953,224 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
         </div>
+
+        <?php
+        $partyNetOur = $partyTotOurBuy - $partyTotOurRet;
+        $partyNetHis = $partyTotHisRet - $partyTotHisBuy;
+        $partyDiff   = $partyNetOur - $partyNetHis;
+        $partyIsMatch = abs($partyDiff) < 0.01;
+        ?>
+        <div class="card" style="margin-top:16px;">
+            <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;">
+                صافي المطابقة بين الطرفين
+            </div>
+            <div class="sum-cards" style="margin-top:0;">
+                <div class="sum-card">
+                    <div class="label">وصلنا منه — صافي (دفاتر <?= e($currBranch['label']) ?>)</div>
+                    <div class="val" style="direction:ltr;text-align:right;"><?= number_format($partyNetOur, 2) ?></div>
+                    <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
+                        شراء <?= number_format($partyTotOurBuy, 2) ?> − مردود <?= number_format($partyTotOurRet, 2) ?>
+                    </small>
+                </div>
+                <div class="sum-card">
+                    <div class="label">بعتهولنا — صافي (دفاتر <?= e($currParty['label']) ?>)</div>
+                    <div class="val" style="direction:ltr;text-align:right;"><?= number_format($partyNetHis, 2) ?></div>
+                    <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
+                        شراء <?= number_format($partyTotHisRet, 2) ?> − مردود <?= number_format($partyTotHisBuy, 2) ?>
+                    </small>
+                </div>
+                <div class="sum-card" style="background:<?= $partyIsMatch ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;border-color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;">
+                    <div class="label">الفرق (دفاترنا − دفاتره)</div>
+                    <div class="val" style="color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;direction:ltr;text-align:right;">
+                        <?= $partyIsMatch ? '✓ متطابق' : number_format($partyDiff, 2) ?>
+                    </div>
+                    <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
+                        <?php if ($partyIsMatch): ?>
+                            الطرفين مسجّلين نفس الرصيد الصافي
+                        <?php else: ?>
+                            <?= $partyDiff > 0 ? 'دفاترنا فيها أكتر' : 'دفاتره فيها أكتر' ?>
+                        <?php endif; ?>
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            var colors = ['yellow', 'green', 'red', 'orange'];
+            var colorHexes = {
+                yellow: 'var(--warn)',
+                green: 'var(--pos)',
+                red: 'var(--neg)',
+                orange: '#f76707'
+            };
+            var curColorIdx = 0;
+            var isEraser = false;
+            var penActive = false;
+
+            var penBtn    = document.getElementById('reconPenToggle');
+            var eraserBtn = document.getElementById('reconEraserBtn');
+            var dotEls    = document.querySelectorAll('.color-dot');
+            var cursorDot = document.getElementById('reconCursorDot');
+            var csrfToken = '<?= csrf_token() ?>';
+
+            function updateCursorColor() {
+                if (!cursorDot) return;
+                if (isEraser) {
+                    cursorDot.style.background = '#333';
+                    cursorDot.style.borderColor = '#fff';
+                } else {
+                    var c = colors[curColorIdx];
+                    cursorDot.style.background = colorHexes[c] || '#f59f00';
+                    cursorDot.style.borderColor = '#fff';
+                }
+            }
+
+            function setPenActive(active) {
+                penActive = Boolean(active);
+                if (penBtn) penBtn.classList.toggle('active', penActive);
+                document.body.classList.toggle('pen-active', penActive);
+                if (cursorDot) cursorDot.style.display = penActive ? 'block' : 'none';
+            }
+
+            function selectColorIndex(idx, activatePen) {
+                curColorIdx = (idx + colors.length) % colors.length;
+                isEraser = false;
+                if (eraserBtn) eraserBtn.classList.remove('active');
+                dotEls.forEach(function(dot) {
+                    dot.classList.toggle('active', dot.getAttribute('data-color') === colors[curColorIdx]);
+                });
+                updateCursorColor();
+                if (activatePen) setPenActive(true);
+            }
+
+            function selectEraser(activatePen) {
+                isEraser = true;
+                if (eraserBtn) eraserBtn.classList.add('active');
+                dotEls.forEach(function(dot) { dot.classList.remove('active'); });
+                updateCursorColor();
+                if (activatePen) setPenActive(true);
+            }
+
+            if (penBtn) {
+                penBtn.addEventListener('click', function() {
+                    setPenActive(!penActive);
+                });
+            }
+
+            dotEls.forEach(function(dot) {
+                dot.addEventListener('click', function() {
+                    var c = this.getAttribute('data-color');
+                    var idx = colors.indexOf(c);
+                    if (idx !== -1) selectColorIndex(idx, true);
+                });
+            });
+
+            if (eraserBtn) {
+                eraserBtn.addEventListener('click', function() {
+                    selectEraser(true);
+                });
+            }
+
+            document.addEventListener('mousemove', function(e) {
+                if (!penActive || !cursorDot) return;
+                cursorDot.style.left = e.clientX + 'px';
+                cursorDot.style.top = e.clientY + 'px';
+            });
+
+            // اختصارات لوحة المفاتيح: Ctrl + -> و Ctrl + <- و Esc
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (penActive) {
+                        setPenActive(false);
+                    }
+                    return;
+                }
+                if (e.ctrlKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+                    e.preventDefault();
+                    if (e.key === 'ArrowRight') {
+                        selectColorIndex(curColorIdx + 1, false);
+                    } else {
+                        selectColorIndex(curColorIdx - 1, false);
+                    }
+                }
+            });
+
+            // الضغط على أي صف في الجداول
+            document.querySelectorAll('.recon-table tbody tr').forEach(function(tr) {
+                tr.addEventListener('click', function(e) {
+                    if (!penActive) return; // برّه وضع القلم الروابط والسلوك عادي
+
+                    var sthId = this.getAttribute('data-sth-id');
+                    var suffix = this.getAttribute('data-suffix');
+                    if (!sthId || suffix === null) return;
+
+                    var oldClasses = this.className;
+                    var oldColor = '';
+                    for (var i = 0; i < colors.length; i++) {
+                        if (this.classList.contains('hl-' + colors[i])) {
+                            oldColor = colors[i];
+                            break;
+                        }
+                    }
+
+                    var newColor = '';
+                    if (isEraser) {
+                        newColor = '';
+                    } else {
+                        var chosenColor = colors[curColorIdx];
+                        // دوسة تانية بنفس اللون على نفس الصف <- يتشال
+                        if (oldColor === chosenColor) {
+                            newColor = '';
+                        } else {
+                            newColor = chosenColor;
+                        }
+                    }
+
+                    // تحديث بصري فوري (Optimistic update)
+                    for (var j = 0; j < colors.length; j++) {
+                        this.classList.remove('hl-' + colors[j]);
+                    }
+                    if (newColor !== '') {
+                        this.classList.add('hl-' + newColor);
+                    }
+
+                    var that = this;
+                    var fd = new FormData();
+                    fd.append('action', 'recon_mark');
+                    fd.append('sth_id', sthId);
+                    fd.append('suffix', suffix);
+                    fd.append('color', newColor);
+                    fd.append('csrf', csrfToken);
+
+                    fetch('suppliers.php', {
+                        method: 'POST',
+                        body: fd
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (!data || !data.ok) {
+                            that.className = oldClasses;
+                            var msg = (data && data.error) ? data.error : 'فشل حفظ اللون';
+                            if (typeof window.fgToast === 'function') {
+                                fgToast(msg, 'err');
+                            } else {
+                                alert(msg);
+                            }
+                        }
+                    })
+                    .catch(function(err) {
+                        that.className = oldClasses;
+                        if (typeof window.fgToast === 'function') {
+                            fgToast('تعذّر الاتصال بالسيرفر لحفظ اللون', 'err');
+                        }
+                    });
+                });
+            });
+
+            updateCursorColor();
+        })();
+        </script>
 
     <?php elseif ($selectedSupplierId <= 0 || !$singleSupplier): ?>
         <!-- تابات الفروع -->
@@ -849,7 +1233,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <?php if ($currBranch !== null && !empty($reconcileRows)): ?>
-        <!-- كارت مطابقة مع الإدارة والفروع (بريف ٥٨) -->
+        <!-- كارت مطابقة مع الإدارة والفروع (بريف ٥٨ و ٥٩) -->
         <div class="reconcile-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
                 <div style="font-size:15px;color:var(--ink-900);font-weight:700;">
@@ -857,7 +1241,7 @@ require_once __DIR__ . '/includes/header.php';
                     مطابقة مع الإدارة والفروع — فرع <?= e($currBranch['label']) ?>
                 </div>
                 <div style="font-size:12px;color:var(--ink-500);">
-                    اضغط على أي صف لعرض كشف مقارنة تفصيلي للطرفين
+                    صافي البضاعة اللي دخلت الفرع من كل طرف حسب دفاترنا، قصاد صافي اللي خرج لنا من عنده حسب دفاتره. الفرق صفر = الطرفين مسجّلين نفس الحاجة. اضغط على الصف تشوف الفواتير.
                 </div>
             </div>
             <div style="overflow-x:auto;">
@@ -865,19 +1249,15 @@ require_once __DIR__ . '/includes/header.php';
                 <thead>
                     <tr>
                         <th>الطرف</th>
-                        <th>اشترينا منه</th>
-                        <th>رجّعهولنا (عنده)</th>
-                        <th>الفرق</th>
-                        <th>رجّعناله</th>
-                        <th>استلمه منّا (عنده)</th>
+                        <th>وصلنا منه — صافي (دفاترنا)</th>
+                        <th>بعتهولنا — صافي (دفاتره)</th>
                         <th>الفرق</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($reconcileRows as $rKey => $rRow): ?>
                     <?php
-                    $isBuyMatch = abs($rRow['diff_buy']) < 0.01;
-                    $isRetMatch = abs($rRow['diff_ret']) < 0.01;
+                    $isMatch = abs($rRow['diff']) < 0.01;
                     $rowUrl = '?tab=statement&br=' . urlencode($currBranchKey) . '&party=' . urlencode($rKey) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
                     ?>
                     <tr class="reconcile-row" onclick="window.location='<?= $rowUrl ?>'">
@@ -887,41 +1267,29 @@ require_once __DIR__ . '/includes/header.php';
                             </a>
                         </td>
                         <td>
-                            <?= $rRow['buy']['amt'] > 0 ? number_format($rRow['buy']['amt'], 2) : '—' ?>
-                            <?php if ($rRow['buy']['cnt'] > 0): ?>
-                                <span class="sub-cnt"><?= $rRow['buy']['cnt'] ?> فاتورة</span>
-                            <?php endif; ?>
+                            <div style="font-weight:700;color:var(--ink-900);direction:ltr;text-align:right;">
+                                <?= number_format($rRow['net_our'], 2) ?>
+                            </div>
+                            <div class="sub-cnt">
+                                شراء <?= number_format($rRow['buy']['amt'], 2) ?> (<?= $rRow['buy']['cnt'] ?>) − مردود <?= number_format($rRow['ret']['amt'], 2) ?> (<?= $rRow['ret']['cnt'] ?>)
+                            </div>
                         </td>
                         <td>
-                            <?= $rRow['buy_matched']['amt'] > 0 ? number_format($rRow['buy_matched']['amt'], 2) : '—' ?>
-                            <?php if ($rRow['buy_matched']['cnt'] > 0): ?>
-                                <span class="sub-cnt"><?= $rRow['buy_matched']['cnt'] ?> فاتورة</span>
-                            <?php endif; ?>
+                            <div style="font-weight:700;color:var(--ink-900);direction:ltr;text-align:right;">
+                                <?= number_format($rRow['net_his'], 2) ?>
+                            </div>
+                            <div class="sub-cnt">
+                                شراء <?= number_format($rRow['buy_matched']['amt'], 2) ?> (<?= $rRow['buy_matched']['cnt'] ?>) − مردود <?= number_format($rRow['ret_matched']['amt'], 2) ?> (<?= $rRow['ret_matched']['cnt'] ?>)
+                            </div>
                         </td>
                         <td>
-                            <?php if ($isBuyMatch): ?>
-                                <span class="diff-match">✓</span>
+                            <?php if ($isMatch): ?>
+                                <span class="diff-match" style="font-size:14px;color:var(--pos);font-weight:700;">✓ متطابق</span>
                             <?php else: ?>
-                                <span class="diff-pill diff-mismatch"><?= number_format($rRow['diff_buy'], 2) ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?= $rRow['ret']['amt'] > 0 ? number_format($rRow['ret']['amt'], 2) : '—' ?>
-                            <?php if ($rRow['ret']['cnt'] > 0): ?>
-                                <span class="sub-cnt"><?= $rRow['ret']['cnt'] ?> فاتورة</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?= $rRow['ret_matched']['amt'] > 0 ? number_format($rRow['ret_matched']['amt'], 2) : '—' ?>
-                            <?php if ($rRow['ret_matched']['cnt'] > 0): ?>
-                                <span class="sub-cnt"><?= $rRow['ret_matched']['cnt'] ?> فاتورة</span>
-                            <?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ($isRetMatch): ?>
-                                <span class="diff-match">✓</span>
-                            <?php else: ?>
-                                <span class="diff-pill diff-mismatch"><?= number_format($rRow['diff_ret'], 2) ?></span>
+                                <span class="diff-pill diff-mismatch" style="color:var(--neg);"><?= number_format($rRow['diff'], 2) ?></span>
+                                <div style="font-size:11px;color:var(--ink-500);margin-top:2px;">
+                                    <?= $rRow['diff'] > 0 ? 'دفاترنا فيها أكتر' : 'دفاتره فيها أكتر' ?>
+                                </div>
                             <?php endif; ?>
                         </td>
                     </tr>

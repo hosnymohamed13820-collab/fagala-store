@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS recon_marks (
+  sth_id     BIGINT      NOT NULL,
+  suffix     VARCHAR(8)  NOT NULL,
+  color      VARCHAR(10) NOT NULL,
+  marked_by  INT UNSIGNED NULL,
+  marked_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (sth_id, suffix)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

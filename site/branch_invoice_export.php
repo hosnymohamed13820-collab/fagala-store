@@ -162,7 +162,7 @@ $x = new SimpleXlsx('فاتورة ' . $invHeader['inv_no']);
 
 // ===== أنواع الأعمدة (قبل أي بيانات) =====
 //   A=م رقم · B=كود الصنف نص · C=اسم الصنف نص · الباقي أرقام
-$x->setColumnTypes(['n', 's', 's', 'n', 'n', 'n', 'n', 'n']);
+$x->setColumnTypes(['n', 's', 's', 'n', 'n', 'n', 'n', 'n', 'n']);
 
 // ===== بيانات الفاتورة =====
 $x->addRow(['بيانات الفاتورة'], true);
@@ -174,17 +174,19 @@ $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
 $x->addBlank();
 
 // ===== رأس جدول الأصناف =====
-$head = ['م', 'كود الصنف', 'اسم الصنف', 'كمية ' . $BR_INV['name'], 'رصيد ' . $BR_INV['name'], 'سعر الوحدة', 'سعر البيع', 'نسبة التسعير'];
+$head = ['م', 'كود الصنف', 'اسم الصنف', 'كمية ' . $BR_INV['name'], 'رصيد ' . $BR_INV['name'], 'سعر الوحدة', 'الإجمالي', 'سعر البيع', 'نسبة التسعير'];
 $x->addRow($head, true);
 
 // ===== الأصناف =====
 $i = 1;
 $totQty = 0.0;
+$totAmt = 0.0;
 
 foreach ($ashraqaItems as $it) {
     $code = (string) ($it['item_code'] ?? '');
     $qty  = (float) ($ashraqaQtys[$code] ?? 0);
     $unit = (float) ($it['unit_price'] ?? 0);
+    $lineTot = $qty * $unit;
 
     // رصيد الفرع: لو غير موجود يكون فاضي
     $bbal = isset($balances[$code]) ? round((float)$balances[$code]['balance'], 3) : '';
@@ -205,16 +207,18 @@ foreach ($ashraqaItems as $it) {
         round($qty, 3),
         $bbal,
         round($unit, 2),
+        round($lineTot, 2),
         $sPrice,
         $pctOut,
     ];
 
     $x->addRow($row);
     $totQty += $qty;
+    $totAmt += $lineTot;
 }
 
 // ===== الإجماليات =====
-$tot = ['', '', 'الإجمالي', round($totQty, 3), '', '', '', ''];
+$tot = ['', '', 'الإجمالي', round($totQty, 3), '', '', round($totAmt, 2), '', ''];
 $x->addRow($tot, true);
 
 $safeDocNo = preg_replace('/[^\w\-]+/', '_', (string) $invHeader['inv_no']);
