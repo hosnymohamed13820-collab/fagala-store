@@ -1112,8 +1112,8 @@ function issue_disbursement_order(
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        // حارس: لو الفرع عنده عهدة معلقة للمراجعة أو مرفوضة، نرفض قبل أي حركة مالية
-        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE branch_id=? AND status IN ('pending_review','rejected') ORDER BY id DESC LIMIT 1");
+        // حارس: لو الفرع عنده عهدة معلقة للمراجعة، نرفض قبل أي حركة مالية (المرفوضة مفتوحة للتعديل)
+        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE branch_id=? AND status = 'pending_review' ORDER BY id DESC LIMIT 1");
         $chk->execute([$branchId]);
         $pendingStatus = $chk->fetchColumn();
         if ($pendingStatus) {
@@ -1133,8 +1133,8 @@ function issue_disbursement_order(
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
-        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة
-        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE branch_id=? AND status='open' ORDER BY id DESC LIMIT 1");
+        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة أو المرفوضة
+        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE branch_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1");
         $st->execute([$branchId]);
         $custodyId = $st->fetchColumn();
 
@@ -1197,8 +1197,8 @@ function issue_employee_disbursement_order(
         $empName = $emp['full_name'];
         $empBranchId = !empty($emp['branch_id']) ? (int) $emp['branch_id'] : null;
 
-        // حارس: لو الموظف عنده عهدة معلقة للمراجعة أو مرفوضة، نرفض قبل أي حركة مالية
-        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE employee_id=? AND status IN ('pending_review','rejected') ORDER BY id DESC LIMIT 1");
+        // حارس: لو الموظف عنده عهدة معلقة للمراجعة، نرفض قبل أي حركة مالية (المرفوضة مفتوحة للتعديل)
+        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE employee_id=? AND status = 'pending_review' ORDER BY id DESC LIMIT 1");
         $chk->execute([$employeeId]);
         $pendingStatus = $chk->fetchColumn();
         if ($pendingStatus) {
@@ -1241,8 +1241,8 @@ function issue_employee_disbursement_order(
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف عهدة' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
-        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة
-        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE employee_id=? AND status='open' ORDER BY id DESC LIMIT 1");
+        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة أو المرفوضة
+        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE employee_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1");
         $st->execute([$employeeId]);
         $custodyId = $st->fetchColumn();
 
@@ -2409,8 +2409,8 @@ function receive_custody(
         post_journal($mainTreasuryId, 0, $amount, 'استلام عهدة من الفرع' . ($notes ? " - $notes" : ''),
                      $date, 'custody_return', $branchId, $userId, $pdo);
 
-        // قلّل أول المدة في العهدة المفتوحة
-        $st = $pdo->prepare("SELECT id, opening_balance, total_expenses FROM branch_custody WHERE branch_id=? AND status='open' ORDER BY id DESC LIMIT 1 FOR UPDATE");
+        // قلّل أول المدة في العهدة المفتوحة أو المرفوضة
+        $st = $pdo->prepare("SELECT id, opening_balance, total_expenses FROM branch_custody WHERE branch_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1 FOR UPDATE");
         $st->execute([$branchId]);
         $row = $st->fetch();
         if ($row) {

@@ -36,6 +36,18 @@ if (!function_exists('suppliers_has_erp_col')) {
     }
 }
 
+// موردين في السيستم بس مش موردين حقيقيين: فروع + رصيد افتتاحي + مستهلكات (اتأكدنا من الأرقام على السيرفر ٢٤ سبتمبر)
+const SUPP_INTERNAL_IDS = [2, 3, 4, 7, 10, 21, 24]; // رصيد افتتاحي · مستهلكات · الرئيسية (الادارة) · فرع الفجالة · فرع ABC · فرع دجلة · فرع بونجور
+
+// cb = hq_invoices.company_branch (ترقيم الشركة) · bid = branches.id عندنا — مش نفس الترقيم
+const SUPP_BRANCHES = [
+    'hq'      => ['label' => 'الإدارة',   'cb' => 1, 'bid' => 6],
+    'fagala'  => ['label' => 'الفجالة',   'cb' => 2, 'bid' => 3],
+    'bonjour' => ['label' => 'بونجور',    'cb' => 3, 'bid' => 1],
+    'degla'   => ['label' => 'دجلة',      'cb' => 5, 'bid' => 4],
+    'abc'     => ['label' => 'اي بي سي',  'cb' => 6, 'bid' => 2],
+];
+
 if (isset($_GET['supplier']) && !isset($_GET['tab'])) {
     $tab = 'statement';
 }
@@ -60,8 +72,10 @@ $periodReceived     = 0.0;
 $finalBalance       = 0.0;
 $stStart            = '2026-06-27';
 $selectedSupplierId = isset($_GET['supplier']) && (int)$_GET['supplier'] > 0 ? (int)$_GET['supplier'] : 0;
-$from               = '';
-$to                 = '';
+
+$brParam = trim((string) ($_GET['br'] ?? ''));
+$currBranchKey = array_key_exists($brParam, SUPP_BRANCHES) ? $brParam : '';
+$currBranch = $currBranchKey !== '' ? SUPP_BRANCHES[$currBranchKey] : null;
 
 if ($tab === 'statement') {
     try {
@@ -73,38 +87,40 @@ if ($tab === 'statement') {
         }
     } catch (Throwable) {}
 
+    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : $stStart;
+    $to   = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'])) ? $_GET['to'] : date('Y-m-d');
+
     $hasErp = suppliers_has_erp_col($pdo);
 
     if ($selectedSupplierId <= 0) {
         // (أ) الملخص: ٣ استعلامات مجمعة
         // 1) فواتير الشراء والمردودات من hq_invoices
-        if ($hasErp) {
-            $hqSummary = $pdo->prepare(
-                "SELECT
-                    s.id AS supplier_id,
-                    SUM(CASE WHEN h.doc_type = 2 THEN h.net_amount ELSE 0 END) AS purchases,
-                    SUM(CASE WHEN h.doc_type = 6 THEN h.net_amount ELSE 0 END) AS returns
-                 FROM hq_invoices h
-                 JOIN suppliers s ON (
-                     (s.erp_supplier_id IS NOT NULL AND h.supplier_id = s.erp_supplier_id)
-                     OR (s.erp_supplier_id IS NULL AND h.supplier_name = s.name)
-                 )
-                 WHERE h.invoice_date >= ? AND h.doc_type IN (2, 6)
-                 GROUP BY s.id"
-            );
-        } else {
-            $hqSummary = $pdo->prepare(
-                "SELECT
-                    s.id AS supplier_id,
-                    SUM(CASE WHEN h.doc_type = 2 THEN h.net_amount ELSE 0 END) AS purchases,
-                    SUM(CASE WHEN h.doc_type = 6 THEN h.net_amount ELSE 0 END) AS returns
-                 FROM hq_invoices h
-                 JOIN suppliers s ON h.supplier_name = s.name
-                 WHERE h.invoice_date >= ? AND h.doc_type IN (2, 6)
-                 GROUP BY s.id"
-            );
+        $hqJoin = $hasErp
+            ? "(s.erp_supplier_id IS NOT NULL AND h.supplier_id = s.erp_supplier_id) OR (s.erp_supplier_id IS NULL AND h.supplier_name = s.name)"
+            : "h.supplier_name = s.name";
+
+        $hqSql = "SELECT
+            s.id AS supplier_id,
+            SUM(CASE WHEN h.doc_type = 2 AND h.invoice_date >= ? THEN h.net_amount ELSE 0 END) AS purchases,
+            SUM(CASE WHEN h.doc_type = 6 AND h.invoice_date >= ? THEN h.net_amount ELSE 0 END) AS returns,
+            SUM(CASE WHEN h.doc_type = 2 THEN h.net_amount ELSE 0 END) AS tot_purchases,
+            SUM(CASE WHEN h.doc_type = 6 THEN h.net_amount ELSE 0 END) AS tot_returns
+         FROM hq_invoices h
+         JOIN suppliers s ON ($hqJoin)
+         WHERE h.invoice_date >= ? AND h.invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+           AND h.doc_type IN (2, 6)";
+
+        $hqParams = [$from, $from, $stStart, $to];
+        if ($currBranchKey === 'hq') {
+            $hqSql .= " AND (h.company_branch = 1 OR h.company_branch IS NULL)";
+        } elseif ($currBranch !== null) {
+            $hqSql .= " AND h.company_branch = ?";
+            $hqParams[] = $currBranch['cb'];
         }
-        $hqSummary->execute([$stStart]);
+        $hqSql .= " GROUP BY s.id";
+
+        $hqSummary = $pdo->prepare($hqSql);
+        $hqSummary->execute($hqParams);
         $hqRows = $hqSummary->fetchAll();
         $hqMap = [];
         foreach ($hqRows as $r) {
@@ -112,27 +128,47 @@ if ($tab === 'statement') {
         }
 
         // 2) اليومية والخزينة على حساب المورد
-        $jeSummary = $pdo->prepare(
-            "SELECT
-                a.src_id AS supplier_id,
-                SUM(je.debit) AS paid,
-                SUM(je.credit) AS received
-             FROM journal_entries je
-             JOIN accounts a ON a.id = je.account_id AND a.src_table = 'suppliers'
-             WHERE je.entry_date >= ?
-             GROUP BY a.src_id"
-        );
-        $jeSummary->execute([$stStart]);
+        $jeSelectParams = [$from, $from];
+        $jeWhere = ["je.entry_date >= ? AND je.entry_date < DATE_ADD(?, INTERVAL 1 DAY)"];
+        $jeWhereParams = [$stStart, $to];
+        $jeJoin = "";
+
+        if ($currBranchKey === 'hq') {
+            $jeJoin = " LEFT JOIN treasuries t ON t.id = je.treasury_id";
+            $jeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
+        } elseif ($currBranch !== null) {
+            $jeJoin = " LEFT JOIN treasuries t ON t.id = je.treasury_id";
+            $jeWhere[] = "t.branch_id = ?";
+            $jeWhereParams[] = $currBranch['bid'];
+        }
+
+        $jeSql = "SELECT
+            a.src_id AS supplier_id,
+            SUM(CASE WHEN je.entry_date >= ? THEN je.debit ELSE 0 END) AS paid,
+            SUM(CASE WHEN je.entry_date >= ? THEN je.credit ELSE 0 END) AS received,
+            SUM(je.debit) AS tot_paid,
+            SUM(je.credit) AS tot_received
+         FROM journal_entries je
+         JOIN accounts a ON a.id = je.account_id AND a.src_table = 'suppliers'"
+         . $jeJoin
+         . " WHERE " . implode(' AND ', $jeWhere)
+         . " GROUP BY a.src_id";
+
+        $jeSummary = $pdo->prepare($jeSql);
+        $jeSummary->execute(array_merge($jeSelectParams, $jeWhereParams));
         $jeRows = $jeSummary->fetchAll();
         $jeMap = [];
         foreach ($jeRows as $r) {
             $jeMap[(int)$r['supplier_id']] = $r;
         }
 
-        // 3) الموردين النشطين
-        $activeSuppliers = $pdo->query(
-            "SELECT id, name, phone FROM suppliers WHERE is_active = 1 ORDER BY name"
-        )->fetchAll();
+        // 3) الموردين النشطين (باستثناء الموردين الداخليين)
+        $inPlaceholders = implode(',', array_fill(0, count(SUPP_INTERNAL_IDS), '?'));
+        $stActive = $pdo->prepare(
+            "SELECT id, name, phone FROM suppliers WHERE is_active = 1 AND id NOT IN ($inPlaceholders) ORDER BY name"
+        );
+        $stActive->execute(SUPP_INTERNAL_IDS);
+        $activeSuppliers = $stActive->fetchAll();
 
         foreach ($activeSuppliers as $s) {
             $sid = (int) $s['id'];
@@ -140,7 +176,17 @@ if ($tab === 'statement') {
             $ret = (float) ($hqMap[$sid]['returns'] ?? 0);
             $pd  = (float) ($jeMap[$sid]['paid'] ?? 0);
             $rc  = (float) ($jeMap[$sid]['received'] ?? 0);
-            $bal = $p - $ret - $pd + $rc;
+
+            $totP   = (float) ($hqMap[$sid]['tot_purchases'] ?? 0);
+            $totRet = (float) ($hqMap[$sid]['tot_returns'] ?? 0);
+            $totPd  = (float) ($jeMap[$sid]['tot_paid'] ?? 0);
+            $totRc  = (float) ($jeMap[$sid]['tot_received'] ?? 0);
+            $bal    = $totP - $totRet - $totPd + $totRc;
+
+            // مورد كل أرقامه صفر يختفي
+            if (abs($p) < 0.005 && abs($ret) < 0.005 && abs($pd) < 0.005 && abs($rc) < 0.005 && abs($bal) < 0.005) {
+                continue;
+            }
 
             $totSumPurchases += $p;
             $totSumReturns   += $ret;
@@ -165,7 +211,8 @@ if ($tab === 'statement') {
         if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
             require_once __DIR__ . '/xlsx_lib.php';
             $x = new SimpleXlsx('ملخص الموردين');
-            $x->addRow(['كشوف حسابات الموردين — من ' . $stStart . ' حتى ' . date('Y-m-d')]);
+            $headerTitle = 'كشوف حسابات الموردين' . ($currBranch ? ' — فرع ' . $currBranch['label'] : '') . ' — من ' . $from . ' حتى ' . $to;
+            $x->addRow([$headerTitle]);
             $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
             $x->addBlank();
             $x->addRow(['المورد', 'التليفون', 'المشتريات', 'المردودات', 'المصروف له', 'المستلم منه', 'الرصيد'], true);
@@ -181,7 +228,8 @@ if ($tab === 'statement') {
                 ]);
             }
             $x->addRow(['الإجمالي', '', round($totSumPurchases, 2), round($totSumReturns, 2), round($totSumPaid, 2), round($totSumReceived, 2), round($totSumBalance, 2)], true);
-            $x->download('SUPPLIERS_SUMMARY_' . date('Y-m-d') . '.xlsx');
+            $brSuffix = $currBranchKey ? '_' . strtoupper($currBranchKey) : '';
+            $x->download('SUPPLIERS_SUMMARY' . $brSuffix . '_' . $from . '_' . $to . '.xlsx');
             exit;
         }
     } else {
@@ -191,9 +239,6 @@ if ($tab === 'statement') {
         $singleSupplier = $stSupp->fetch();
 
         if ($singleSupplier) {
-            $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : $stStart;
-            $to   = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'])) ? $_GET['to'] : date('Y-m-d');
-
             // حساب المورد في الشجرة
             $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
             $stAcc->execute([$selectedSupplierId]);
@@ -201,43 +246,57 @@ if ($tab === 'statement') {
 
             // رصيد ما قبل الفترة
             if ($from > $stStart) {
+                $priorHqSql = "SELECT
+                    SUM(CASE WHEN doc_type = 2 THEN net_amount ELSE 0 END) AS purchases,
+                    SUM(CASE WHEN doc_type = 6 THEN net_amount ELSE 0 END) AS returns
+                 FROM hq_invoices
+                 WHERE invoice_date >= ? AND invoice_date < ?
+                   AND doc_type IN (2, 6)
+                   AND " . ($hasErp && !empty($singleSupplier['erp_supplier_id'])
+                       ? "(supplier_id = ? OR (supplier_id IS NULL AND supplier_name = ?))"
+                       : "supplier_name = ?");
+
+                $priorHqParams = [$stStart, $from];
                 if ($hasErp && !empty($singleSupplier['erp_supplier_id'])) {
-                    $stPriorHq = $pdo->prepare(
-                        "SELECT
-                            SUM(CASE WHEN doc_type = 2 THEN net_amount ELSE 0 END) AS purchases,
-                            SUM(CASE WHEN doc_type = 6 THEN net_amount ELSE 0 END) AS returns
-                         FROM hq_invoices
-                         WHERE invoice_date >= ? AND invoice_date < ?
-                           AND doc_type IN (2, 6)
-                           AND (supplier_id = ? OR (supplier_id IS NULL AND supplier_name = ?))"
-                    );
-                    $stPriorHq->execute([$stStart, $from, $singleSupplier['erp_supplier_id'], $singleSupplier['name']]);
+                    $priorHqParams[] = $singleSupplier['erp_supplier_id'];
+                    $priorHqParams[] = $singleSupplier['name'];
                 } else {
-                    $stPriorHq = $pdo->prepare(
-                        "SELECT
-                            SUM(CASE WHEN doc_type = 2 THEN net_amount ELSE 0 END) AS purchases,
-                            SUM(CASE WHEN doc_type = 6 THEN net_amount ELSE 0 END) AS returns
-                         FROM hq_invoices
-                         WHERE invoice_date >= ? AND invoice_date < ?
-                           AND doc_type IN (2, 6)
-                           AND supplier_name = ?"
-                    );
-                    $stPriorHq->execute([$stStart, $from, $singleSupplier['name']]);
+                    $priorHqParams[] = $singleSupplier['name'];
                 }
+
+                if ($currBranchKey === 'hq') {
+                    $priorHqSql .= " AND (company_branch = 1 OR company_branch IS NULL)";
+                } elseif ($currBranch !== null) {
+                    $priorHqSql .= " AND company_branch = ?";
+                    $priorHqParams[] = $currBranch['cb'];
+                }
+
+                $stPriorHq = $pdo->prepare($priorHqSql);
+                $stPriorHq->execute($priorHqParams);
                 $priorHq = $stPriorHq->fetch();
                 $priorPurchases = (float) ($priorHq['purchases'] ?? 0);
                 $priorReturns   = (float) ($priorHq['returns'] ?? 0);
 
                 if ($suppAccId > 0) {
-                    $stPriorJe = $pdo->prepare(
-                        "SELECT
-                            SUM(debit) AS paid,
-                            SUM(credit) AS received
-                         FROM journal_entries
-                         WHERE account_id = ?
-                           AND entry_date >= ? AND entry_date < ?"
-                    );
-                    $stPriorJe->execute([$suppAccId, $stStart, $from]);
+                    $priorJeSql = "SELECT
+                        SUM(je.debit) AS paid,
+                        SUM(je.credit) AS received
+                     FROM journal_entries je";
+                    $priorJeWhere = ["je.account_id = ?", "je.entry_date >= ?", "je.entry_date < ?"];
+                    $priorJeParams = [$suppAccId, $stStart, $from];
+
+                    if ($currBranchKey === 'hq') {
+                        $priorJeSql .= " LEFT JOIN treasuries t ON t.id = je.treasury_id";
+                        $priorJeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
+                    } elseif ($currBranch !== null) {
+                        $priorJeSql .= " LEFT JOIN treasuries t ON t.id = je.treasury_id";
+                        $priorJeWhere[] = "t.branch_id = ?";
+                        $priorJeParams[] = $currBranch['bid'];
+                    }
+                    $priorJeSql .= " WHERE " . implode(' AND ', $priorJeWhere);
+
+                    $stPriorJe = $pdo->prepare($priorJeSql);
+                    $stPriorJe->execute($priorJeParams);
                     $priorJe = $stPriorJe->fetch();
                     $priorPaid     = (float) ($priorJe['paid'] ?? 0);
                     $priorReceived = (float) ($priorJe['received'] ?? 0);
@@ -245,42 +304,59 @@ if ($tab === 'statement') {
                 $priorBalance = $priorPurchases - $priorReturns - $priorPaid + $priorReceived;
             }
 
-            // حركات الفترة [from, to]
+            // حركات الفترة [from, to] — مع إصلاح DATETIME بـ DATE_ADD
+            $periodHqSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+             FROM hq_invoices
+             WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+               AND doc_type IN (2, 6)
+               AND " . ($hasErp && !empty($singleSupplier['erp_supplier_id'])
+                   ? "(supplier_id = ? OR (supplier_id IS NULL AND supplier_name = ?))"
+                   : "supplier_name = ?");
+
+            $periodHqParams = [$from, $to];
             if ($hasErp && !empty($singleSupplier['erp_supplier_id'])) {
-                $stHq = $pdo->prepare(
-                    "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
-                     FROM hq_invoices
-                     WHERE invoice_date >= ? AND invoice_date <= ?
-                       AND doc_type IN (2, 6)
-                       AND (supplier_id = ? OR (supplier_id IS NULL AND supplier_name = ?))
-                     ORDER BY invoice_date ASC, sth_id ASC"
-                );
-                $stHq->execute([$from, $to, $singleSupplier['erp_supplier_id'], $singleSupplier['name']]);
+                $periodHqParams[] = $singleSupplier['erp_supplier_id'];
+                $periodHqParams[] = $singleSupplier['name'];
             } else {
-                $stHq = $pdo->prepare(
-                    "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
-                     FROM hq_invoices
-                     WHERE invoice_date >= ? AND invoice_date <= ?
-                       AND doc_type IN (2, 6)
-                       AND supplier_name = ?
-                     ORDER BY invoice_date ASC, sth_id ASC"
-                );
-                $stHq->execute([$from, $to, $singleSupplier['name']]);
+                $periodHqParams[] = $singleSupplier['name'];
             }
+
+            if ($currBranchKey === 'hq') {
+                $periodHqSql .= " AND (company_branch = 1 OR company_branch IS NULL)";
+            } elseif ($currBranch !== null) {
+                $periodHqSql .= " AND company_branch = ?";
+                $periodHqParams[] = $currBranch['cb'];
+            }
+            $periodHqSql .= " ORDER BY invoice_date ASC, sth_id ASC";
+
+            $stHq = $pdo->prepare($periodHqSql);
+            $stHq->execute($periodHqParams);
             $periodHqRows = $stHq->fetchAll();
 
             $periodJeRows = [];
             if ($suppAccId > 0) {
-                $stJe = $pdo->prepare(
-                    "SELECT je.id, je.entry_date AS tx_date, je.description, je.debit, je.credit,
-                            t.name AS treasury_name, je.notes
-                     FROM journal_entries je
-                     LEFT JOIN treasuries t ON t.id = je.treasury_id
-                     WHERE je.account_id = ?
-                       AND je.entry_date >= ? AND je.entry_date <= ?
-                     ORDER BY je.entry_date ASC, je.id ASC"
-                );
-                $stJe->execute([$suppAccId, $from, $to]);
+                $periodJeSql = "SELECT je.id, je.entry_date AS tx_date, je.description, je.debit, je.credit,
+                        t.name AS treasury_name, je.notes
+                 FROM journal_entries je
+                 LEFT JOIN treasuries t ON t.id = je.treasury_id";
+
+                $periodJeWhere = [
+                    "je.account_id = ?",
+                    "je.entry_date >= ?",
+                    "je.entry_date < DATE_ADD(?, INTERVAL 1 DAY)"
+                ];
+                $periodJeParams = [$suppAccId, $from, $to];
+
+                if ($currBranchKey === 'hq') {
+                    $periodJeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
+                } elseif ($currBranch !== null) {
+                    $periodJeWhere[] = "t.branch_id = ?";
+                    $periodJeParams[] = $currBranch['bid'];
+                }
+                $periodJeSql .= " WHERE " . implode(' AND ', $periodJeWhere) . " ORDER BY je.entry_date ASC, je.id ASC";
+
+                $stJe = $pdo->prepare($periodJeSql);
+                $stJe->execute($periodJeParams);
                 $periodJeRows = $stJe->fetchAll();
             }
 
@@ -342,9 +418,10 @@ if ($tab === 'statement') {
             // تصدير إكسيل لكشف مورد واحد
             if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
                 require_once __DIR__ . '/xlsx_lib.php';
-                $sheetTitle = mb_substr('كشف ' . $singleSupplier['name'], 0, 31);
+                $branchLabel = $currBranch ? ' (' . $currBranch['label'] . ')' : '';
+                $sheetTitle = mb_substr('كشف ' . $singleSupplier['name'] . $branchLabel, 0, 31);
                 $x = new SimpleXlsx($sheetTitle);
-                $x->addRow(['كشف حساب مورد: ' . $singleSupplier['name']]);
+                $x->addRow(['كشف حساب مورد: ' . $singleSupplier['name'] . ($currBranch ? ' — فرع ' . $currBranch['label'] : '')]);
                 $x->addRow(['الفترة', 'من ' . $from . ' إلى ' . $to]);
                 $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
                 $x->addBlank();
@@ -370,7 +447,8 @@ if ($tab === 'statement') {
                 $x->addRow(['الرصيد الختامي', round($finalBalance, 2)], true);
 
                 $safeName = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $singleSupplier['name']);
-                $x->download('SUPPLIER_' . ($safeName ?: $selectedSupplierId) . '_' . $from . '_' . $to . '.xlsx');
+                $brSuffix = $currBranchKey ? '_' . strtoupper($currBranchKey) : '';
+                $x->download('SUPPLIER_' . ($safeName ?: $selectedSupplierId) . $brSuffix . '_' . $from . '_' . $to . '.xlsx');
                 exit;
             }
         }
@@ -433,24 +511,74 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
     <?php if ($selectedSupplierId <= 0 || !$singleSupplier): ?>
+        <!-- تابات الفروع -->
+        <div class="tabs">
+            <a href="?tab=statement&br=&from=<?= e($from) ?>&to=<?= e($to) ?>" class="tab <?= $currBranchKey === '' ? 'active' : '' ?>">الكل</a>
+            <?php foreach (SUPP_BRANCHES as $k => $b): ?>
+                <a href="?tab=statement&br=<?= e($k) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="tab <?= $currBranchKey === $k ? 'active' : '' ?>"><?= e($b['label']) ?></a>
+            <?php endforeach; ?>
+        </div>
+
         <!-- (أ) الملخص: كل الموردين -->
-        <div class="toolbar">
+        <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
             <div>
-                <span class="section-title" style="margin-bottom:0;">كشوف حسابات الموردين</span>
+                <span class="section-title" style="margin-bottom:0;">كشوف حسابات الموردين<?= $currBranch ? ' — فرع ' . e($currBranch['label']) : '' ?></span>
                 <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
-                    الفترة من <?= e($stStart) ?> حتى اليوم (بعد جرد ٢٧ يونيو)
+                    الفترة من <?= e($from) ?> حتى <?= e($to) ?> (رصيد ما بعد جرد ٢٧ يونيو)
                 </div>
             </div>
-            <a href="?tab=statement&export=xlsx" class="btn btn-sm btn-ghost">
-                <i class="ti ti-download"></i> تصدير إكسيل
-            </a>
+            <form method="get" class="filter-form" style="margin-bottom:0;">
+                <input type="hidden" name="tab" value="statement">
+                <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+                <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+                    <i class="ti ti-download"></i> تصدير إكسيل
+                </a>
+            </form>
+        </div>
+
+        <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
+            <div class="sum-card">
+                <div class="label">عدد الموردين</div>
+                <div class="val" id="cardSuppCount"><?= count($statementSummary) ?></div>
+            </div>
+            <div class="sum-card">
+                <div class="label">إجمالي المشتريات</div>
+                <div class="val" id="cardTotPurchases"><?= number_format($totSumPurchases, 2) ?></div>
+            </div>
+            <div class="sum-card">
+                <div class="label">إجمالي المردودات</div>
+                <div class="val" id="cardTotReturns"><?= number_format($totSumReturns, 2) ?></div>
+            </div>
+            <div class="sum-card">
+                <div class="label">إجمالي المصروف للموردين</div>
+                <div class="val" id="cardTotPaid"><?= number_format($totSumPaid, 2) ?></div>
+            </div>
+            <div class="sum-card">
+                <div class="label">إجمالي المستلم من الموردين</div>
+                <div class="val" id="cardTotReceived"><?= number_format($totSumReceived, 2) ?></div>
+            </div>
+            <div class="sum-card" id="cardBalanceBox" style="background:<?= $totSumBalance > 0 ? 'var(--neg-soft)' : ($totSumBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
+                <div class="label">إجمالي الرصيد القائم</div>
+                <div class="val" id="cardTotBalance" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
+                    <?= number_format($totSumBalance, 2) ?>
+                </div>
+                <small id="cardBalanceHint" style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
+                    <?= $totSumBalance > 0 ? 'احنا مديونين للموردين' : ($totSumBalance < 0 ? 'الموردين مدينين لنا' : 'الأرصدة متوازنة') ?>
+                </small>
+            </div>
         </div>
 
         <div class="card">
             <?php if (empty($statementSummary)): ?>
-                <div class="empty">لا يوجد موردون نشطون.</div>
+                <div class="empty">لا يوجد موردون بحركات أو أرصدة في هذه الفترة.</div>
             <?php else: ?>
-            <table>
+            <div style="margin-bottom:14px;max-width:320px;">
+                <input type="search" id="suppSearch" placeholder="بحث باسم المورد..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--ink-900);">
+            </div>
+            <div style="overflow-x:auto;">
+            <table id="suppTable">
                 <thead>
                     <tr>
                         <th>المورد</th>
@@ -461,11 +589,16 @@ require_once __DIR__ . '/includes/header.php';
                         <th>الرصيد</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="suppTbody">
                 <?php foreach ($statementSummary as $s): ?>
-                    <tr>
+                    <tr data-name="<?= e(mb_strtolower($s['name'])) ?>"
+                        data-p="<?= $s['purchases'] ?>"
+                        data-r="<?= $s['returns'] ?>"
+                        data-pd="<?= $s['paid'] ?>"
+                        data-rc="<?= $s['received'] ?>"
+                        data-b="<?= $s['balance'] ?>">
                         <td style="font-weight:600;">
-                            <a href="?tab=statement&supplier=<?= (int)$s['id'] ?>" class="inv-link">
+                            <a href="?tab=statement&supplier=<?= (int)$s['id'] ?>&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="inv-link">
                                 <?= e($s['name']) ?>
                             </a>
                         </td>
@@ -478,60 +611,129 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                     </tr>
                 <?php endforeach; ?>
+                <tr id="noSuppMatch" style="display:none;"><td colspan="6" class="empty">لا توجد نتائج مطابقة للبحث.</td></tr>
                 </tbody>
-                <tfoot>
+                <tfoot id="suppTfoot">
                     <tr style="font-weight:700;border-top:2px solid var(--line);">
                         <td>الإجمالي</td>
-                        <td><?= number_format($totSumPurchases, 2) ?></td>
-                        <td><?= number_format($totSumReturns, 2) ?></td>
-                        <td><?= number_format($totSumPaid, 2) ?></td>
-                        <td><?= number_format($totSumReceived, 2) ?></td>
-                        <td style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-400)') ?>;">
+                        <td id="footP"><?= number_format($totSumPurchases, 2) ?></td>
+                        <td id="footR"><?= number_format($totSumReturns, 2) ?></td>
+                        <td id="footPd"><?= number_format($totSumPaid, 2) ?></td>
+                        <td id="footRc"><?= number_format($totSumReceived, 2) ?></td>
+                        <td id="footB" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-400)') ?>;">
                             <?= number_format($totSumBalance, 2) ?>
                         </td>
                     </tr>
                 </tfoot>
             </table>
+            </div>
             <?php endif; ?>
         </div>
 
-        <div class="sum-cards">
-            <div class="sum-card">
-                <div class="label">إجمالي المشتريات</div>
-                <div class="val"><?= number_format($totSumPurchases, 2) ?></div>
-            </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المردودات</div>
-                <div class="val"><?= number_format($totSumReturns, 2) ?></div>
-            </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المصروف للموردين</div>
-                <div class="val"><?= number_format($totSumPaid, 2) ?></div>
-            </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المستلم من الموردين</div>
-                <div class="val"><?= number_format($totSumReceived, 2) ?></div>
-            </div>
-            <div class="sum-card" style="background:<?= $totSumBalance > 0 ? 'var(--neg-soft)' : ($totSumBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
-                <div class="label">إجمالي الرصيد القائم</div>
-                <div class="val" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
-                    <?= number_format($totSumBalance, 2) ?>
-                </div>
-                <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
-                    <?= $totSumBalance > 0 ? 'احنا مديونين للموردين' : ($totSumBalance < 0 ? 'الموردين مدينين لنا' : 'الأرصدة متوازنة') ?>
-                </small>
-            </div>
-        </div>
+        <script>
+        (function() {
+            var searchInput = document.getElementById('suppSearch');
+            if (!searchInput) return;
+
+            var tbody = document.getElementById('suppTbody');
+            if (!tbody) return;
+            var rows = Array.from(tbody.querySelectorAll('tr[data-name]'));
+            var noMatch = document.getElementById('noSuppMatch');
+
+            var cardCount = document.getElementById('cardSuppCount');
+            var cardP = document.getElementById('cardTotPurchases');
+            var cardR = document.getElementById('cardTotReturns');
+            var cardPd = document.getElementById('cardTotPaid');
+            var cardRc = document.getElementById('cardTotReceived');
+            var cardB = document.getElementById('cardTotBalance');
+            var cardBBox = document.getElementById('cardBalanceBox');
+            var cardBHint = document.getElementById('cardBalanceHint');
+
+            var footP = document.getElementById('footP');
+            var footR = document.getElementById('footR');
+            var footPd = document.getElementById('footPd');
+            var footRc = document.getElementById('footRc');
+            var footB = document.getElementById('footB');
+
+            function fmt(n) {
+                return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+
+            function recalculate() {
+                var query = searchInput.value.trim().toLowerCase();
+                var visibleCount = 0;
+                var sumP = 0, sumR = 0, sumPd = 0, sumRc = 0, sumB = 0;
+
+                for (var i = 0; i < rows.length; i++) {
+                    var r = rows[i];
+                    var name = r.getAttribute('data-name') || '';
+                    var matches = !query || name.indexOf(query) !== -1;
+                    if (matches) {
+                        r.style.display = '';
+                        visibleCount++;
+                        sumP += parseFloat(r.getAttribute('data-p') || 0);
+                        sumR += parseFloat(r.getAttribute('data-r') || 0);
+                        sumPd += parseFloat(r.getAttribute('data-pd') || 0);
+                        sumRc += parseFloat(r.getAttribute('data-rc') || 0);
+                        sumB += parseFloat(r.getAttribute('data-b') || 0);
+                    } else {
+                        r.style.display = 'none';
+                    }
+                }
+
+                if (noMatch) {
+                    noMatch.style.display = (visibleCount === 0 && rows.length > 0) ? '' : 'none';
+                }
+
+                if (cardCount) cardCount.textContent = visibleCount.toLocaleString('en-US');
+                if (cardP) cardP.textContent = fmt(sumP);
+                if (cardR) cardR.textContent = fmt(sumR);
+                if (cardPd) cardPd.textContent = fmt(sumPd);
+                if (cardRc) cardRc.textContent = fmt(sumRc);
+                if (cardB) cardB.textContent = fmt(sumB);
+
+                if (footP) footP.textContent = fmt(sumP);
+                if (footR) footR.textContent = fmt(sumR);
+                if (footPd) footPd.textContent = fmt(sumPd);
+                if (footRc) footRc.textContent = fmt(sumRc);
+                if (footB) {
+                    footB.textContent = fmt(sumB);
+                    footB.style.color = sumB > 0.005 ? 'var(--neg)' : (sumB < -0.005 ? 'var(--pos)' : 'var(--ink-400)');
+                }
+
+                if (cardBBox && cardB && cardBHint) {
+                    if (sumB > 0.005) {
+                        cardBBox.style.background = 'var(--neg-soft)';
+                        cardBBox.style.borderColor = 'var(--neg)';
+                        cardB.style.color = 'var(--neg)';
+                        cardBHint.textContent = 'احنا مديونين للموردين';
+                    } else if (sumB < -0.005) {
+                        cardBBox.style.background = 'var(--pos-soft)';
+                        cardBBox.style.borderColor = 'var(--pos)';
+                        cardB.style.color = 'var(--pos)';
+                        cardBHint.textContent = 'الموردين مدينين لنا';
+                    } else {
+                        cardBBox.style.background = 'var(--line-soft)';
+                        cardBBox.style.borderColor = 'var(--line)';
+                        cardB.style.color = 'var(--ink-900)';
+                        cardBHint.textContent = 'الأرصدة متوازنة';
+                    }
+                }
+            }
+
+            searchInput.addEventListener('input', recalculate);
+        })();
+        </script>
 
     <?php else: ?>
         <!-- (ب) كشف حساب مورد واحد -->
         <div class="toolbar" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
             <div>
-                <a href="?tab=statement" class="btn btn-sm btn-ghost" style="margin-bottom:8px;">
+                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="btn btn-sm btn-ghost" style="margin-bottom:8px;">
                     <i class="ti ti-arrow-right"></i> كل الموردين
                 </a>
                 <div class="section-title" style="margin-bottom:2px;font-size:18px;">
-                    <?= e($singleSupplier['name']) ?>
+                    <?= e($singleSupplier['name']) ?><?= $currBranch ? ' — <span style="font-size:14px;color:var(--accent-text);font-weight:500;">فرع: ' . e($currBranch['label']) . '</span>' : '' ?>
                 </div>
                 <div style="font-size:12px;color:var(--ink-500);">
                     <?= !empty($singleSupplier['phone']) ? ('تليفون: ' . e($singleSupplier['phone'])) : '' ?>
@@ -541,10 +743,11 @@ require_once __DIR__ . '/includes/header.php';
             <form method="get" class="filter-form" style="margin-bottom:0;">
                 <input type="hidden" name="tab" value="statement">
                 <input type="hidden" name="supplier" value="<?= $selectedSupplierId ?>">
+                <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
                 <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
                 <label>إلى <input type="date" name="to" value="<?= e($to) ?>"></label>
                 <button type="submit" class="btn btn-sm">تطبيق</button>
-                <a href="?tab=statement&supplier=<?= $selectedSupplierId ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+                <a href="?tab=statement&supplier=<?= $selectedSupplierId ?>&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                     <i class="ti ti-download"></i> تصدير إكسيل
                 </a>
             </form>
