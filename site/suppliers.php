@@ -39,13 +39,16 @@ if (!function_exists('suppliers_has_erp_col')) {
 // موردين في السيستم بس مش موردين حقيقيين: فروع + رصيد افتتاحي + مستهلكات (اتأكدنا من الأرقام على السيرفر ٢٤ سبتمبر)
 const SUPP_INTERNAL_IDS = [2, 3, 4, 7, 10, 21, 24]; // رصيد افتتاحي · مستهلكات · الرئيسية (الادارة) · فرع الفجالة · فرع ABC · فرع دجلة · فرع بونجور
 
-// cb = hq_invoices.company_branch (ترقيم الشركة) · bid = branches.id عندنا — مش نفس الترقيم
+// erp = hq_invoices.supplier_id بتاع «الطرف ده كمورد» في دفاتر الباقيين (اتأكدنا على السيرفر ٢٤ سبتمبر)
+// sid = suppliers.id عندنا (لينك الكشف)
 const SUPP_BRANCHES = [
-    'fagala'  => ['label' => 'الفجالة',   'cb' => 2, 'bid' => 3],
-    'degla'   => ['label' => 'دجلة',      'cb' => 5, 'bid' => 4],
-    'bonjour' => ['label' => 'بونجور',    'cb' => 3, 'bid' => 1],
-    'abc'     => ['label' => 'اي بي سي',  'cb' => 6, 'bid' => 2],
+    'fagala'  => ['label' => 'الفجالة',  'cb' => 2, 'bid' => 3, 'erp' => 3000091, 'sid' => 7],
+    'bonjour' => ['label' => 'بونجور',   'cb' => 3, 'bid' => 1, 'erp' => 4,       'sid' => 24],
+    'degla'   => ['label' => 'دجلة',     'cb' => 5, 'bid' => 4, 'erp' => 1000180, 'sid' => 21],
+    'abc'     => ['label' => 'اي بي سي', 'cb' => 6, 'bid' => 2, 'erp' => 1000181, 'sid' => 10],
 ];
+// الإدارة طرف في المطابقة بس — مش تاب
+const SUPP_HQ_PARTY = ['label' => 'الإدارة', 'cb' => 1, 'erp' => 1000182, 'sid' => 4];
 
 if (isset($_GET['supplier']) && !isset($_GET['tab'])) {
     $tab = 'statement';
@@ -75,6 +78,19 @@ $selectedSupplierId = isset($_GET['supplier']) && (int)$_GET['supplier'] > 0 ? (
 $brParam = trim((string) ($_GET['br'] ?? ''));
 $currBranchKey = array_key_exists($brParam, SUPP_BRANCHES) ? $brParam : '';
 $currBranch = $currBranchKey !== '' ? SUPP_BRANCHES[$currBranchKey] : null;
+
+// أطراف المطابقة (الإدارة + الفروع)
+$suppAllParties = array_merge(['hq' => SUPP_HQ_PARTY], SUPP_BRANCHES);
+$partyParam = trim((string) ($_GET['party'] ?? ''));
+$currPartyKey = ($currBranchKey !== '' && array_key_exists($partyParam, $suppAllParties) && $partyParam !== $currBranchKey) ? $partyParam : '';
+$currParty = $currPartyKey !== '' ? $suppAllParties[$currPartyKey] : null;
+$reconcileRows = [];
+$partyMovesOur = [];
+$partyMovesHis = [];
+$partyTotOurBuy = 0.0;
+$partyTotOurRet = 0.0;
+$partyTotHisBuy = 0.0;
+$partyTotHisRet = 0.0;
 
 if ($tab === 'statement') {
     try {
@@ -157,11 +173,8 @@ if ($tab === 'statement') {
         }
 
         // 3) الموردين النشطين (باستثناء الموردين الداخليين)
-        // في تابات الفروع بس: المورد 4 (الرئيسية/الإدارة) بيظهر زي أي مورد (بريف ٥٤)
+        // في كل التابات: الموردين الداخليين مستبعدين من الجدول العادي (المورد 4 راح لكارت المطابقة — بريف ٥٨)
         $excludedSuppIds = SUPP_INTERNAL_IDS;
-        if ($currBranchKey !== '') {
-            $excludedSuppIds = array_values(array_diff(SUPP_INTERNAL_IDS, [4]));
-        }
         $inPlaceholders = implode(',', array_fill(0, count($excludedSuppIds), '?'));
         $stActive = $pdo->prepare(
             "SELECT id, name, phone FROM suppliers WHERE is_active = 1 AND id NOT IN ($inPlaceholders) ORDER BY name"
@@ -205,6 +218,153 @@ if ($tab === 'statement') {
             ];
         }
         usort($statementSummary, fn($a, $b) => $b['balance'] <=> $a['balance']);
+
+        // 4) كارت المطابقة مع الإدارة والفروع (في تابات الفروع بس — بريف ٥٨)
+        if ($currBranch !== null) {
+            $allErpIds = array_column($suppAllParties, 'erp');
+            $inErp = implode(',', array_fill(0, count($allErpIds), '?'));
+            $recSql = "SELECT company_branch, supplier_id, doc_type, COUNT(*) AS cnt, SUM(net_amount) AS total_amt
+                       FROM hq_invoices
+                       WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+                         AND doc_type IN (2, 6)
+                         AND supplier_id IN ($inErp)
+                       GROUP BY company_branch, supplier_id, doc_type";
+            $recStmt = $pdo->prepare($recSql);
+            $recStmt->execute(array_merge([$from, $to], $allErpIds));
+            $recRows = $recStmt->fetchAll();
+
+            $recMatrix = [];
+            foreach ($recRows as $r) {
+                $cb = ($r['company_branch'] === null) ? 1 : (int)$r['company_branch'];
+                // NULL و1 الاتنين إدارة — يتجمعوا مش يدوسوا على بعض
+                $cell = &$recMatrix[$cb][(int)$r['supplier_id']][(int)$r['doc_type']];
+                $cell = [
+                    'cnt' => (int)($cell['cnt'] ?? 0) + (int)$r['cnt'],
+                    'amt' => (float)($cell['amt'] ?? 0) + (float)$r['total_amt'],
+                ];
+                unset($cell);
+            }
+
+            foreach ($suppAllParties as $pKey => $pInfo) {
+                if ($pKey === $currBranchKey) continue;
+                $pCb = $pInfo['cb'];
+                $pErp = $pInfo['erp'];
+
+                // اشترينا منه = cb=الفرع · supplier_id=erp الطرف · dt=2
+                $buy = $recMatrix[$currBranch['cb']][$pErp][2] ?? ['cnt' => 0, 'amt' => 0.0];
+                // رجّعهولنا (عنده) = cb=الطرف · supplier_id=erp الفرع · dt=6
+                $buyMatched = $recMatrix[$pCb][$currBranch['erp']][6] ?? ['cnt' => 0, 'amt' => 0.0];
+                $diffBuy = $buy['amt'] - $buyMatched['amt'];
+
+                // رجّعناله = cb=الفرع · supplier_id=erp الطرف · dt=6
+                $ret = $recMatrix[$currBranch['cb']][$pErp][6] ?? ['cnt' => 0, 'amt' => 0.0];
+                // استلمه منّا (عنده) = cb=الطرف · supplier_id=erp الفرع · dt=2
+                $retMatched = $recMatrix[$pCb][$currBranch['erp']][2] ?? ['cnt' => 0, 'amt' => 0.0];
+                $diffRet = $ret['amt'] - $retMatched['amt'];
+
+                $reconcileRows[$pKey] = [
+                    'key'         => $pKey,
+                    'label'       => $pInfo['label'],
+                    'buy'         => $buy,
+                    'buy_matched' => $buyMatched,
+                    'diff_buy'    => $diffBuy,
+                    'ret'         => $ret,
+                    'ret_matched' => $retMatched,
+                    'diff_ret'    => $diffRet,
+                ];
+            }
+        }
+
+        // كشف مقارنة الطرفين (party=hq|bonjour|degla|abc)
+        if ($currBranch !== null && $currParty !== null) {
+            // جدول عندنا: فواتير الفرع حيث supplier_id = erp الطرف
+            $ourSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+                       FROM hq_invoices
+                       WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+                         AND doc_type IN (2, 6)
+                         AND company_branch = ?
+                         AND supplier_id = ?
+                       ORDER BY invoice_date ASC, sth_id ASC";
+            $ourStmt = $pdo->prepare($ourSql);
+            $ourStmt->execute([$from, $to, $currBranch['cb'], $currParty['erp']]);
+            $partyMovesOur = $ourStmt->fetchAll();
+
+            // جدول عنده: فواتير الطرف حيث supplier_id = erp الفرع
+            $hisWhereCb = ($currPartyKey === 'hq') ? "(company_branch = 1 OR company_branch IS NULL)" : "company_branch = ?";
+            $hisSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+                       FROM hq_invoices
+                       WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+                         AND doc_type IN (2, 6)
+                         AND $hisWhereCb
+                         AND supplier_id = ?
+                       ORDER BY invoice_date ASC, sth_id ASC";
+            $hisParams = [$from, $to];
+            if ($currPartyKey !== 'hq') {
+                $hisParams[] = $currParty['cb'];
+            }
+            $hisParams[] = $currBranch['erp'];
+            $hisStmt = $pdo->prepare($hisSql);
+            $hisStmt->execute($hisParams);
+            $partyMovesHis = $hisStmt->fetchAll();
+
+            foreach ($partyMovesOur as $m) {
+                if ((int)$m['doc_type'] === 2) {
+                    $partyTotOurBuy += (float)$m['net_amount'];
+                } else {
+                    $partyTotOurRet += (float)$m['net_amount'];
+                }
+            }
+            foreach ($partyMovesHis as $m) {
+                if ((int)$m['doc_type'] === 2) {
+                    $partyTotHisBuy += (float)$m['net_amount'];
+                } else {
+                    $partyTotHisRet += (float)$m['net_amount'];
+                }
+            }
+
+            // تصدير إكسيل لكشف المقارنة للطرفين
+            if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
+                require_once __DIR__ . '/xlsx_lib.php';
+                $sheetTitle = mb_substr('مطابقة ' . $currBranch['label'] . ' و ' . $currParty['label'], 0, 31);
+                $x = new SimpleXlsx($sheetTitle);
+                $headerTitle = 'كشف مقارنة مطابقة: فرع ' . $currBranch['label'] . ' ⟷ ' . $currParty['label'] . ' — من ' . $from . ' حتى ' . $to;
+                $x->addRow([$headerTitle]);
+                $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
+                $x->addBlank();
+
+                // قسم ١: عندنا
+                $x->addRow(['أولاً: دفاتر فرع ' . $currBranch['label'] . ' (عندنا)'], true);
+                $x->addRow(['التاريخ', 'رقم المستند', 'نوع الحركة', 'المبلغ'], true);
+                foreach ($partyMovesOur as $m) {
+                    $x->addRow([
+                        $m['tx_date'],
+                        (string)$m['doc_no'],
+                        ((int)$m['doc_type'] === 2 ? 'شراء' : 'مردود'),
+                        round((float)$m['net_amount'], 2),
+                    ]);
+                }
+                $x->addRow(['إجمالي الشراء', '', '', round($partyTotOurBuy, 2)], true);
+                $x->addRow(['إجمالي المردود', '', '', round($partyTotOurRet, 2)], true);
+                $x->addBlank();
+
+                // قسم ٢: عنده
+                $x->addRow(['ثانياً: دفاتر ' . $currParty['label'] . ' (عنده)'], true);
+                $x->addRow(['التاريخ', 'رقم المستند', 'نوع الحركة', 'المبلغ'], true);
+                foreach ($partyMovesHis as $m) {
+                    $x->addRow([
+                        $m['tx_date'],
+                        (string)$m['doc_no'],
+                        ((int)$m['doc_type'] === 2 ? 'شراء' : 'مردود'),
+                        round((float)$m['net_amount'], 2),
+                    ]);
+                }
+                $x->addRow(['إجمالي الشراء', '', '', round($partyTotHisBuy, 2)], true);
+                $x->addRow(['إجمالي المردود', '', '', round($partyTotHisRet, 2)], true);
+
+                $x->download('RECONCILE_' . strtoupper($currBranchKey) . '_' . strtoupper($currPartyKey) . '_' . $from . '_' . $to . '.xlsx');
+                exit;
+            }
+        }
 
         // تصدير إكسيل للملخص
         if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
@@ -494,13 +654,141 @@ require_once __DIR__ . '/includes/header.php';
     .filter-form { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .filter-form label { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-700); font-weight:500; }
     .filter-form input[type="date"] { padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-900); }
+    .reconcile-card { border:1.5px solid var(--line); border-radius:14px; background:var(--surface); padding:16px 20px; margin-bottom:18px; }
+    .reconcile-row { cursor:pointer; transition:background 0.15s ease; }
+    .reconcile-row:hover { background:var(--line-soft); }
+    .sub-cnt { font-size:11px; color:var(--ink-500); display:block; margin-top:2px; font-weight:normal; }
+    .diff-pill { display:inline-block; font-weight:700; direction:ltr; unicode-bidi:isolate; }
+    .diff-match { color:var(--pos); font-weight:700; }
+    .diff-mismatch { color:var(--neg); font-weight:700; }
+    .dual-tables-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px; }
+    @media (max-width: 900px) {
+        .dual-tables-grid { grid-template-columns:1fr; }
+    }
 </style>
 
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-    <?php if ($selectedSupplierId <= 0 || !$singleSupplier): ?>
+    <?php if ($currBranch !== null && $currParty !== null): ?>
+        <!-- (ج) كشف مقارنة الطرفين (بريف ٥٨) -->
+        <div class="toolbar" style="align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+            <div>
+                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="btn btn-sm btn-ghost" style="margin-bottom:8px;">
+                    <i class="ti ti-arrow-right"></i> رجوع لتاب فرع <?= e($currBranch['label']) ?>
+                </a>
+                <div class="section-title" style="margin-bottom:2px;font-size:18px;">
+                    مطابقة: فرع <?= e($currBranch['label']) ?> ⟷ <?= e($currParty['label']) ?>
+                </div>
+                <div style="font-size:13px;color:var(--ink-500);margin-top:2px;">
+                    الفترة من <?= e($from) ?> حتى <?= e($to) ?>
+                </div>
+            </div>
+
+            <form method="get" class="filter-form" style="margin-bottom:0;">
+                <input type="hidden" name="tab" value="statement">
+                <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+                <input type="hidden" name="party" value="<?= e($currPartyKey) ?>">
+                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+                <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&party=<?= e($currPartyKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+                    <i class="ti ti-download"></i> تصدير إكسيل
+                </a>
+            </form>
+        </div>
+
+        <div class="dual-tables-grid">
+            <!-- جدول عندنا -->
+            <div class="card" style="margin-bottom:0;">
+                <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;padding-bottom:8px;border-bottom:1.5px solid var(--line);">
+                    عندنا (<?= e($currBranch['label']) ?>)
+                </div>
+                <?php if (empty($partyMovesOur)): ?>
+                    <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
+                <?php else: ?>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>رقم المستند</th>
+                            <th>النوع</th>
+                            <th>المبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($partyMovesOur as $m): ?>
+                        <tr>
+                            <td><?= e($m['tx_date']) ?></td>
+                            <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
+                            <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
+                            <td style="font-weight:600;"><?= number_format((float)$m['net_amount'], 2) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php endif; ?>
+
+                <div class="sum-cards" style="margin-top:16px;">
+                    <div class="sum-card">
+                        <div class="label">إجمالي الشراء</div>
+                        <div class="val"><?= number_format($partyTotOurBuy, 2) ?></div>
+                    </div>
+                    <div class="sum-card">
+                        <div class="label">إجمالي المردود</div>
+                        <div class="val"><?= number_format($partyTotOurRet, 2) ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- جدول عنده -->
+            <div class="card" style="margin-bottom:0;">
+                <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;padding-bottom:8px;border-bottom:1.5px solid var(--line);">
+                    عنده (<?= e($currParty['label']) ?>)
+                </div>
+                <?php if (empty($partyMovesHis)): ?>
+                    <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
+                <?php else: ?>
+                <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>رقم المستند</th>
+                            <th>النوع</th>
+                            <th>المبلغ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($partyMovesHis as $m): ?>
+                        <tr>
+                            <td><?= e($m['tx_date']) ?></td>
+                            <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
+                            <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
+                            <td style="font-weight:600;"><?= number_format((float)$m['net_amount'], 2) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php endif; ?>
+
+                <div class="sum-cards" style="margin-top:16px;">
+                    <div class="sum-card">
+                        <div class="label">إجمالي الشراء</div>
+                        <div class="val"><?= number_format($partyTotHisBuy, 2) ?></div>
+                    </div>
+                    <div class="sum-card">
+                        <div class="label">إجمالي المردود</div>
+                        <div class="val"><?= number_format($partyTotHisRet, 2) ?></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <?php elseif ($selectedSupplierId <= 0 || !$singleSupplier): ?>
         <!-- تابات الفروع -->
         <div class="tabs">
             <a href="?tab=statement&br=&from=<?= e($from) ?>&to=<?= e($to) ?>" class="tab <?= $currBranchKey === '' ? 'active' : '' ?>">الكل</a>
@@ -559,6 +847,90 @@ require_once __DIR__ . '/includes/header.php';
                 </small>
             </div>
         </div>
+
+        <?php if ($currBranch !== null && !empty($reconcileRows)): ?>
+        <!-- كارت مطابقة مع الإدارة والفروع (بريف ٥٨) -->
+        <div class="reconcile-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                <div style="font-size:15px;color:var(--ink-900);font-weight:700;">
+                    <i class="ti ti-arrows-sort" style="color:var(--accent-text);"></i>
+                    مطابقة مع الإدارة والفروع — فرع <?= e($currBranch['label']) ?>
+                </div>
+                <div style="font-size:12px;color:var(--ink-500);">
+                    اضغط على أي صف لعرض كشف مقارنة تفصيلي للطرفين
+                </div>
+            </div>
+            <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الطرف</th>
+                        <th>اشترينا منه</th>
+                        <th>رجّعهولنا (عنده)</th>
+                        <th>الفرق</th>
+                        <th>رجّعناله</th>
+                        <th>استلمه منّا (عنده)</th>
+                        <th>الفرق</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($reconcileRows as $rKey => $rRow): ?>
+                    <?php
+                    $isBuyMatch = abs($rRow['diff_buy']) < 0.01;
+                    $isRetMatch = abs($rRow['diff_ret']) < 0.01;
+                    $rowUrl = '?tab=statement&br=' . urlencode($currBranchKey) . '&party=' . urlencode($rKey) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
+                    ?>
+                    <tr class="reconcile-row" onclick="window.location='<?= $rowUrl ?>'">
+                        <td style="font-weight:600;">
+                            <a href="<?= $rowUrl ?>" class="inv-link" onclick="event.stopPropagation();">
+                                <?= e($rRow['label']) ?>
+                            </a>
+                        </td>
+                        <td>
+                            <?= $rRow['buy']['amt'] > 0 ? number_format($rRow['buy']['amt'], 2) : '—' ?>
+                            <?php if ($rRow['buy']['cnt'] > 0): ?>
+                                <span class="sub-cnt"><?= $rRow['buy']['cnt'] ?> فاتورة</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?= $rRow['buy_matched']['amt'] > 0 ? number_format($rRow['buy_matched']['amt'], 2) : '—' ?>
+                            <?php if ($rRow['buy_matched']['cnt'] > 0): ?>
+                                <span class="sub-cnt"><?= $rRow['buy_matched']['cnt'] ?> فاتورة</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($isBuyMatch): ?>
+                                <span class="diff-match">✓</span>
+                            <?php else: ?>
+                                <span class="diff-pill diff-mismatch"><?= number_format($rRow['diff_buy'], 2) ?></span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?= $rRow['ret']['amt'] > 0 ? number_format($rRow['ret']['amt'], 2) : '—' ?>
+                            <?php if ($rRow['ret']['cnt'] > 0): ?>
+                                <span class="sub-cnt"><?= $rRow['ret']['cnt'] ?> فاتورة</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?= $rRow['ret_matched']['amt'] > 0 ? number_format($rRow['ret_matched']['amt'], 2) : '—' ?>
+                            <?php if ($rRow['ret_matched']['cnt'] > 0): ?>
+                                <span class="sub-cnt"><?= $rRow['ret_matched']['cnt'] ?> فاتورة</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if ($isRetMatch): ?>
+                                <span class="diff-match">✓</span>
+                            <?php else: ?>
+                                <span class="diff-pill diff-mismatch"><?= number_format($rRow['diff_ret'], 2) ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div class="card">
             <?php if (empty($statementSummary)): ?>

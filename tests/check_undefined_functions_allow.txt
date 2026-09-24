@@ -3,4 +3,3 @@ fastcgi_finish_request   # PHP-FPM على السيرفر · push_lib.php بيت�
 finfo_open               # إضافة fileinfo على السيرفر
 finfo_file
 finfo_close
-reconcile_treasury       # 🐞 معروف (٢٤ سبتمبر ٢٠٢٦): reconcile.php صفحة يتيمة — مفيش لينك ليها ولا اتعملت الدالة أبداً. مستني قرار محمد (تتمسح؟)
