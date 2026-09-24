@@ -738,44 +738,45 @@ function set_branch_distribution(
         // 🔴 السقف الحقيقي = الأقل بين كمية الفاتورة ورصيد الإدارة.
         //    الفاتورة ممكن تبقى ١٢ والواصل فعلاً ١٠ (والباقي اتعمله
         //    مردود)، فرصيد الإدارة ١٠. توزيع ١٢ بيطلّع بضاعة مش موجودة.
-        //
-        // 🔴 وبيتحسب **هنا في السيرفر** بقصد. `$itemQty` جاي من
-        //    `$_POST['item_qty']` في المتصفح، يعني ممكن يتزوّر — كان
-        //    ينفع حد يبعت item_qty=99999 ويوزّع أي كمية يعوزها.
-        //    رصيد الإدارة بيتقري من القاعدة فمالوش دعوة بالعميل.
-        $hqBal = hq_admin_balance_for_code($itemCode);
-
-        // 🔴 الرصيد مش معروف: **ممنوع تزوّد، مسموح تقلّل**.
-        //    التطوّر ده حصل على تلات خطوات في يوم واحد (٣١ أغسطس ٢٠٢٦):
-        //      ١) «مش معروف = مفيش سقف» ← الميزة بتفضل نايمة بالظبط في
-        //         الحالة اللي اتعملت عشانها.
-        //      ٢) «مش معروف = امنع خالص» ← اتقفل ٥٤ صنف من ٧٥ في فاتورة
-        //         واحدة، بما فيهم أصناف **متوزّعة خلاص**.
-        //      ٣) الصح: امنع **الخطر الجديد** بس.
-        if ($hqBal === null) {
-            // 🔴 الرصيد مش واصل: **ممنوع تزوّد، مسموح تقلّل**.
-            //    أول نسخة كانت بتمنع الصنف خالص، فاتقفل ٥٤ صنف من ٧٥ —
-            //    بما فيهم أصناف **متوزّعة خلاص**، فمحمد مابقاش يقدر
-            //    يصلّح ولا يمسح توزيع قديم. القفل كان بيعاقبه على شغل
-            //    عمله قبل ما الميزة تتعمل أصلاً.
-            //    طول ما الكمية مابتزيدش عن المحفوظ، مفيش بضاعة زيادة
-            //    بتطلع — فمفيش سبب نمنعه.
-            $ownSt = $pdo->prepare(
-                'SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
-                 WHERE distribution_id = ? AND notes = ? AND branch_id = ? FOR UPDATE'
-            );
-            $ownSt->execute([$distributionId, $itemCode, $branchId]);
-            $ownCurrent = (float) $ownSt->fetchColumn();
-
-            if ($qty > $ownCurrent + 0.0001) {
-                throw new RuntimeException(
-                    'رصيد الإدارة للصنف ده مش واصل، فمش هينفع تزوّد الكمية. '
-                    . 'تقدر تقلّلها أو تصفّرها. شغّل وكيل مزامنة الإدارة عشان توزّع أكتر.'
-                );
-            }
-            $cap = min($itemQty, $othersTotal + $ownCurrent);
+        //    لو حارس رصيد الإدارة متشال عن الفاتورة دي من الإعدادات (بريف ٥٤):
+        //    السقف = كمية الفاتورة بس (حتى لو رصيد الإدارة صفر أو مش واصل).
+        if (dist_guard_off([$distributionId])) {
+            $cap = $itemQty;
         } else {
-            $cap = min($itemQty, max(0.0, $hqBal));   // الرصيد السالب = صفر
+            $hqBal = hq_admin_balance_for_code($itemCode);
+
+            // 🔴 الرصيد مش معروف: **ممنوع تزوّد، مسموح تقلّل**.
+            //    التطوّر ده حصل على تلات خطوات في يوم واحد (٣١ أغسطس ٢٠٢٦):
+            //      ١) «مش معروف = مفيش سقف» ← الميزة بتفضل نايمة بالظبط في
+            //         الحالة اللي اتعملت عشانها.
+            //      ٢) «مش معروف = امنع خالص» ← اتقفل ٥٤ صنف من ٧٥ في فاتورة
+            //         واحدة، بما فيهم أصناف **متوزّعة خلاص**.
+            //      ٣) الصح: امنع **الخطر الجديد** بس.
+            if ($hqBal === null) {
+                // 🔴 الرصيد مش واصل: **ممنوع تزوّد، مسموح تقلّل**.
+                //    أول نسخة كانت بتمنع الصنف خالص، فاتقفل ٥٤ صنف من ٧٥ —
+                //    بما فيهم أصناف **متوزّعة خلاص**، فمحمد مابقاش يقدر
+                //    يصلّح ولا يمسح توزيع قديم. القفل كان بيعاقبه على شغل
+                //    عمله قبل ما الميزة تتعمل أصلاً.
+                //    طول ما الكمية مابتزيدش عن المحفوظ، مفيش بضاعة زيادة
+                //    بتطلع — فمفيش سبب نمنعه.
+                $ownSt = $pdo->prepare(
+                    'SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines
+                     WHERE distribution_id = ? AND notes = ? AND branch_id = ? FOR UPDATE'
+                );
+                $ownSt->execute([$distributionId, $itemCode, $branchId]);
+                $ownCurrent = (float) $ownSt->fetchColumn();
+
+                if ($qty > $ownCurrent + 0.0001) {
+                    throw new RuntimeException(
+                        'رصيد الإدارة للصنف ده مش واصل، فمش هينفع تزوّد الكمية. '
+                        . 'تقدر تقلّلها أو تصفّرها. شغّل وكيل مزامنة الإدارة عشان توزّع أكتر.'
+                    );
+                }
+                $cap = min($itemQty, $othersTotal + $ownCurrent);
+            } else {
+                $cap = min($itemQty, max(0.0, $hqBal));   // الرصيد السالب = صفر
+            }
         }
 
         // المتاح للفرع ده = السقف − توزيع باقي الفروع
@@ -785,7 +786,7 @@ function set_branch_distribution(
                    number_format(max(0.0, $available), 2) . ')';
             // لو السبب رصيد الإدارة مش كمية الفاتورة، قولها صريحة —
             // من غير كده الرسالة بتبان غلط في النظام مش حماية مقصودة
-            if ($cap < $itemQty - 0.0001) {
+            if (isset($hqBal) && $cap < $itemQty - 0.0001) {
                 $msg .= ' — رصيد الإدارة ' . number_format(max(0.0, $hqBal), 2)
                       . ' والفاتورة ' . number_format($itemQty, 2);
             }
@@ -1858,9 +1859,32 @@ const ADMIN_STO_ID = 1;
  *    بيتقفل على **كل** الأصناف المش معروفة، والموقع كله يقف لـ٤٩
  *    موظف في ٥ فروع أول ما الوكيل يتأخر ساعة.
  *
- * 🔴 ودي **لصنف واحد وقت الحفظ بس**. متنادهاش في حلقة رندر —
- *    الفاتورة فيها مئات الأصناف، والأرصدة بتتجاب مجمّعة بـ
- *    `sqlsrv_fetch_item_balances_all()` قبل الحلقة.
+/**
+ * هل حارس رصيد الإدارة متشال عن أي من الفواتير المحددة؟ (بريف ٥٤)
+ * لو مفيش فواتير أو الجدول مافيهوش العمود، ترجع false بأمان.
+ *
+ * @param int[] $distIds معرفات سجلات التوزيع (invoice_distribution.id)
+ */
+function dist_guard_off(array $distIds): bool
+{
+    $clean = array_values(array_filter(array_map('intval', $distIds), fn($id) => $id > 0));
+    if (empty($clean)) {
+        return false;
+    }
+    try {
+        $pdo = db();
+        $ph = implode(',', array_fill(0, count($clean), '?'));
+        $st = $pdo->prepare("SELECT 1 FROM invoice_distribution WHERE id IN ($ph) AND hq_guard_off = 1 LIMIT 1");
+        $st->execute($clean);
+        return (bool) $st->fetchColumn();
+    } catch (Throwable) {
+        return false;
+    }
+}
+
+/**
+ * رصيد الإدارة لصنف واحد (من النسخة المحلية لجدول الأرصدة).
+ * السقف الحقيقي لتوزيع الصنف على الفروع: مينفعش نوزّع أكتر منه.
  */
 function hq_admin_balance_for_code(string $itemCode): ?float
 {

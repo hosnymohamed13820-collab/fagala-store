@@ -41,10 +41,9 @@ const SUPP_INTERNAL_IDS = [2, 3, 4, 7, 10, 21, 24]; // رصيد افتتاحي �
 
 // cb = hq_invoices.company_branch (ترقيم الشركة) · bid = branches.id عندنا — مش نفس الترقيم
 const SUPP_BRANCHES = [
-    'hq'      => ['label' => 'الإدارة',   'cb' => 1, 'bid' => 6],
     'fagala'  => ['label' => 'الفجالة',   'cb' => 2, 'bid' => 3],
-    'bonjour' => ['label' => 'بونجور',    'cb' => 3, 'bid' => 1],
     'degla'   => ['label' => 'دجلة',      'cb' => 5, 'bid' => 4],
+    'bonjour' => ['label' => 'بونجور',    'cb' => 3, 'bid' => 1],
     'abc'     => ['label' => 'اي بي سي',  'cb' => 6, 'bid' => 2],
 ];
 
@@ -111,9 +110,7 @@ if ($tab === 'statement') {
            AND h.doc_type IN (2, 6)";
 
         $hqParams = [$from, $from, $stStart, $to];
-        if ($currBranchKey === 'hq') {
-            $hqSql .= " AND (h.company_branch = 1 OR h.company_branch IS NULL)";
-        } elseif ($currBranch !== null) {
+        if ($currBranch !== null) {
             $hqSql .= " AND h.company_branch = ?";
             $hqParams[] = $currBranch['cb'];
         }
@@ -133,10 +130,7 @@ if ($tab === 'statement') {
         $jeWhereParams = [$stStart, $to];
         $jeJoin = "";
 
-        if ($currBranchKey === 'hq') {
-            $jeJoin = " LEFT JOIN treasuries t ON t.id = je.treasury_id";
-            $jeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
-        } elseif ($currBranch !== null) {
+        if ($currBranch !== null) {
             $jeJoin = " LEFT JOIN treasuries t ON t.id = je.treasury_id";
             $jeWhere[] = "t.branch_id = ?";
             $jeWhereParams[] = $currBranch['bid'];
@@ -163,11 +157,16 @@ if ($tab === 'statement') {
         }
 
         // 3) الموردين النشطين (باستثناء الموردين الداخليين)
-        $inPlaceholders = implode(',', array_fill(0, count(SUPP_INTERNAL_IDS), '?'));
+        // في تابات الفروع بس: المورد 4 (الرئيسية/الإدارة) بيظهر زي أي مورد (بريف ٥٤)
+        $excludedSuppIds = SUPP_INTERNAL_IDS;
+        if ($currBranchKey !== '') {
+            $excludedSuppIds = array_values(array_diff(SUPP_INTERNAL_IDS, [4]));
+        }
+        $inPlaceholders = implode(',', array_fill(0, count($excludedSuppIds), '?'));
         $stActive = $pdo->prepare(
             "SELECT id, name, phone FROM suppliers WHERE is_active = 1 AND id NOT IN ($inPlaceholders) ORDER BY name"
         );
-        $stActive->execute(SUPP_INTERNAL_IDS);
+        $stActive->execute($excludedSuppIds);
         $activeSuppliers = $stActive->fetchAll();
 
         foreach ($activeSuppliers as $s) {
@@ -264,9 +263,7 @@ if ($tab === 'statement') {
                     $priorHqParams[] = $singleSupplier['name'];
                 }
 
-                if ($currBranchKey === 'hq') {
-                    $priorHqSql .= " AND (company_branch = 1 OR company_branch IS NULL)";
-                } elseif ($currBranch !== null) {
+                if ($currBranch !== null) {
                     $priorHqSql .= " AND company_branch = ?";
                     $priorHqParams[] = $currBranch['cb'];
                 }
@@ -285,10 +282,7 @@ if ($tab === 'statement') {
                     $priorJeWhere = ["je.account_id = ?", "je.entry_date >= ?", "je.entry_date < ?"];
                     $priorJeParams = [$suppAccId, $stStart, $from];
 
-                    if ($currBranchKey === 'hq') {
-                        $priorJeSql .= " LEFT JOIN treasuries t ON t.id = je.treasury_id";
-                        $priorJeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
-                    } elseif ($currBranch !== null) {
+                    if ($currBranch !== null) {
                         $priorJeSql .= " LEFT JOIN treasuries t ON t.id = je.treasury_id";
                         $priorJeWhere[] = "t.branch_id = ?";
                         $priorJeParams[] = $currBranch['bid'];
@@ -321,9 +315,7 @@ if ($tab === 'statement') {
                 $periodHqParams[] = $singleSupplier['name'];
             }
 
-            if ($currBranchKey === 'hq') {
-                $periodHqSql .= " AND (company_branch = 1 OR company_branch IS NULL)";
-            } elseif ($currBranch !== null) {
+            if ($currBranch !== null) {
                 $periodHqSql .= " AND company_branch = ?";
                 $periodHqParams[] = $currBranch['cb'];
             }
@@ -347,9 +339,7 @@ if ($tab === 'statement') {
                 ];
                 $periodJeParams = [$suppAccId, $from, $to];
 
-                if ($currBranchKey === 'hq') {
-                    $periodJeWhere[] = "(je.treasury_id IS NULL OR t.branch_id IS NULL OR t.branch_id = 6)";
-                } elseif ($currBranch !== null) {
+                if ($currBranch !== null) {
                     $periodJeWhere[] = "t.branch_id = ?";
                     $periodJeParams[] = $currBranch['bid'];
                 }

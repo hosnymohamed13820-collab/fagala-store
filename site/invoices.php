@@ -2632,15 +2632,22 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         <?php else: ?>
             <?php
+                $isGuardOff = dist_guard_off([$distId]);
                 $naCount = 0;
-                foreach ($items as $it) {
-                    $iid = (int) ($it['item_id'] ?? 0);
-                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
-                        $naCount++;
+                if (!$isGuardOff) {
+                    foreach ($items as $it) {
+                        $iid = (int) ($it['item_id'] ?? 0);
+                        if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                            $naCount++;
+                        }
                     }
                 }
             ?>
-            <?php if ($naCount > 0): ?>
+            <?php if ($isGuardOff): ?>
+                <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
+                    🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
+                </div>
+            <?php elseif ($naCount > 0): ?>
                 <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
                     <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
                     <div>
@@ -2684,12 +2691,17 @@ require_once __DIR__ . '/includes/header.php';
                         $iSkip  = isset($skipMap[$code]);
                         // رصيد الإدارة — سقف التوزيع. `$itemBalances` محسوبة
                         // مجمّعة قبل الحلقة، فمفيش أي استعلام هنا.
-                        // 🔴 `null` = مفيش سقف (الصنف مش معروف / الوكيل ما زامنش)،
-                        //    **مش صفر**. لو بقت صفر التوزيع بيتقفل على الموقع كله.
-                        $iid   = (int) ($it['item_id'] ?? 0);
-                        $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
-                        $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
-                        $hqNA  = ($hqB === null);   // رصيد الإدارة مش واصل = التوزيع متقفل
+                        // 🔴 لو الحارس متشال: السقف = كمية الصنف، ومفيش تنبيهات
+                        if ($isGuardOff) {
+                            $hqB   = $qty;
+                            $hqLow = false;
+                            $hqNA  = false;
+                        } else {
+                            $iid   = (int) ($it['item_id'] ?? 0);
+                            $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
+                            $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                            $hqNA  = ($hqB === null);   // رصيد الإدارة مش واصل = التوزيع متقفل
+                        }
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>
@@ -3145,15 +3157,43 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">مفيش أصناف في فواتير المجموعة.</div>
             <?php else: ?>
             <?php
+                $grpDistIds = $grpData['dist_ids'] ?? [];
+                $guardOffDistMap = [];
+                if (!empty($grpDistIds)) {
+                    try {
+                        $pdo = db();
+                        $ph = implode(',', array_fill(0, count($grpDistIds), '?'));
+                        $st = $pdo->prepare("SELECT id FROM invoice_distribution WHERE id IN ($ph) AND hq_guard_off = 1");
+                        $st->execute($grpDistIds);
+                        $guardOffDistMap = array_fill_keys($st->fetchAll(PDO::FETCH_COLUMN), true);
+                    } catch (Throwable) {}
+                }
+                $grpHasGuardOff = !empty($guardOffDistMap);
+
                 $naCount = 0;
                 foreach ($grpItems as $it) {
-                    $iid = (int) ($it['item_id'] ?? 0);
-                    if ($iid <= 0 || !isset($itemBalances[$iid])) {
-                        $naCount++;
+                    $itGuardOff = false;
+                    if ($grpHasGuardOff && !empty($it['sources'])) {
+                        foreach ($it['sources'] as $src) {
+                            if (!empty($guardOffDistMap[(int)($src['dist_id'] ?? 0)])) {
+                                $itGuardOff = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!$itGuardOff) {
+                        $iid = (int) ($it['item_id'] ?? 0);
+                        if ($iid <= 0 || !isset($itemBalances[$iid])) {
+                            $naCount++;
+                        }
                     }
                 }
             ?>
-            <?php if ($naCount > 0): ?>
+            <?php if ($grpHasGuardOff): ?>
+                <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
+                    🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
+                </div>
+            <?php elseif ($naCount > 0): ?>
                 <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
                     <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
                     <div>
@@ -3199,10 +3239,26 @@ require_once __DIR__ . '/includes/header.php';
                         }
                         $iFlags = $itemFlags[$code] ?? [];
                         $iSkip  = isset($skipMap[$code]);
-                        $iid   = (int) ($it['item_id'] ?? 0);
-                        $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
-                        $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
-                        $hqNA  = ($hqB === null);
+
+                        $itGuardOff = false;
+                        if ($grpHasGuardOff && !empty($it['sources'])) {
+                            foreach ($it['sources'] as $src) {
+                                if (!empty($guardOffDistMap[(int)($src['dist_id'] ?? 0)])) {
+                                    $itGuardOff = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if ($itGuardOff) {
+                            $hqB   = $qty;
+                            $hqLow = false;
+                            $hqNA  = false;
+                        } else {
+                            $iid   = (int) ($it['item_id'] ?? 0);
+                            $hqB   = ($iid > 0 && isset($itemBalances[$iid])) ? (float) $itemBalances[$iid] : null;
+                            $hqLow = ($hqB !== null && $hqB < $qty - 0.0001);
+                            $hqNA  = ($hqB === null);
+                        }
                     ?>
                     <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e($it['item_name']) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
                         <?= ifl_code_cell($code, $iSkip) ?>

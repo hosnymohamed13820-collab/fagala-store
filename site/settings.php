@@ -51,6 +51,45 @@ $settingsUsers = $pdo->query(
 )->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (($_POST['action'] ?? '') === 'invoice_guard') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!is_owner()) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'غير مصرح لك (للأونر فقط).']);
+            exit;
+        }
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'انتهت صلاحية الجلسة، حاول مرة أخرى.']);
+            exit;
+        }
+        $distId = (int)($_POST['dist_id'] ?? 0);
+        $off = !empty($_POST['off']) ? 1 : 0;
+        if ($distId <= 0) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'رقم الفاتورة غير صحيح.']);
+            exit;
+        }
+        try {
+            $userId = current_user_id();
+            $st = $pdo->prepare(
+                'UPDATE invoice_distribution
+                 SET hq_guard_off = ?, hq_guard_off_by = ?, hq_guard_off_at = NOW()
+                 WHERE id = ?'
+            );
+            $st->execute([$off, $userId, $distId]);
+            echo json_encode(['success' => true, 'off' => $off, 'dist_id' => $distId]);
+            exit;
+        } catch (PDOException $e) {
+            if ($e->getCode() === '42S22' || str_contains($e->getMessage(), 'Unknown column') || str_contains($e->getMessage(), 'hq_guard_off')) {
+                echo json_encode(['success' => false, 'error' => 'شغّل local/invoice_guard_off.sql الأول']);
+                exit;
+            }
+            echo json_encode(['success' => false, 'error' => 'خطأ في قاعدة البيانات: ' . $e->getMessage()]);
+            exit;
+        }
+    }
+
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
         $flashType = 'error';
@@ -195,6 +234,11 @@ require_once __DIR__ . '/includes/header.php';
     .toggle-status { font-size:13px; color:var(--ink-700); user-select:none; }
     .toggle-notice { font-size:12px; color:var(--neg); margin-top:6px; line-height:1.5; }
     .fld-hint { font-size:12px; color:var(--ink-500); margin-top:6px; line-height:1.5; }
+
+    .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
+                backdrop-filter:blur(3px); z-index:999; align-items:center; justify-content:center; }
+    .modal-bg.open { display:flex; }
+    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:760px; max-height:85vh; padding:22px; }
 </style>
 
 <?php if (is_owner()): ?>
@@ -515,6 +559,183 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
     </a>
 </div>
 
+<?php if (is_owner()): ?>
+    <?php
+        $guardInvoices = [];
+        try {
+            $hasHqGuardCol = false;
+            $chkCol = $pdo->query("SHOW COLUMNS FROM invoice_distribution LIKE 'hq_guard_off'")->fetch();
+            $hasHqGuardCol = !empty($chkCol);
 
+            $gSql = "SELECT d.id, d.invoice_no, d.dist_date, d.status, "
+                  . ($hasHqGuardCol ? "d.hq_guard_off" : "0 AS hq_guard_off")
+                  . ", COALESCE(s.name, '—') AS supplier_name
+                     FROM invoice_distribution d
+                     LEFT JOIN suppliers s ON s.id = d.supplier_id
+                     ORDER BY " . ($hasHqGuardCol ? "d.hq_guard_off DESC, " : "") . "d.id DESC
+                     LIMIT 300";
+            $guardInvoices = $pdo->query($gSql)->fetchAll();
+        } catch (Throwable) {
+            $guardInvoices = [];
+        }
+    ?>
+    <div class="card" style="margin-top:20px;">
+        <h3 style="margin-bottom:6px;">فك حارس رصيد الإدارة عن فاتورة</h3>
+        <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
+            السماح بتوزيع فاتورة شراء على الفروع حتى كمية الفاتورة دون التقيد برصيد الإدارة الحالي (حتى لو رصيد الإدارة صفر أو مش واصل).
+        </p>
+        <button type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('invGuardModal').classList.add('open')">
+            اختار فاتورة…
+        </button>
+    </div>
+
+    <!-- بوب أب فك حارس الفاتورة -->
+    <div class="modal-bg" id="invGuardModal" onclick="if(event.target===this)this.classList.remove('open')">
+        <div class="modal" style="max-width:760px;width:95%;max-height:85vh;display:flex;flex-direction:column;padding:22px;background:var(--surface);border-radius:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                <h3 style="margin:0;font-size:17px;color:var(--ink-900);">فك حارس رصيد الإدارة عن فاتورة</h3>
+                <button type="button" onclick="document.getElementById('invGuardModal').classList.remove('open')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-500);">&times;</button>
+            </div>
+            <div style="margin-bottom:12px;">
+                <input type="search" id="guardSearchInput" placeholder="بحث برقم الفاتورة أو اسم المورد..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--surface);color:var(--ink-900);">
+            </div>
+            <div style="overflow-y:auto;flex:1;max-height:55vh;border:1px solid var(--line);border-radius:10px;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;" id="guardTable">
+                    <thead>
+                        <tr style="background:var(--line-soft);text-align:right;position:sticky;top:0;z-index:2;">
+                            <th style="padding:10px 12px;border-bottom:1px solid var(--line);">رقم الفاتورة</th>
+                            <th style="padding:10px 12px;border-bottom:1px solid var(--line);">المورد</th>
+                            <th style="padding:10px 12px;border-bottom:1px solid var(--line);">التاريخ</th>
+                            <th style="padding:10px 12px;border-bottom:1px solid var(--line);">الحالة</th>
+                            <th style="padding:10px 12px;border-bottom:1px solid var(--line);text-align:center;">الإجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody id="guardTbody">
+                    <?php if (empty($guardInvoices)): ?>
+                        <tr><td colspan="5" style="padding:20px;text-align:center;color:var(--ink-500);">لا توجد فواتير توزيع.</td></tr>
+                    <?php else: ?>
+                        <?php
+                            $stMap = [
+                                'new'   => ['جديدة', 'var(--ink-700)', 'var(--line-soft)'],
+                                'split' => ['موزعة جزئياً', 'var(--warn)', 'var(--warn-soft)'],
+                                'done'  => ['مكتملة', 'var(--pos)', 'var(--pos-soft)'],
+                            ];
+                        ?>
+                        <?php foreach ($guardInvoices as $gi): ?>
+                            <?php
+                                $isOff = !empty($gi['hq_guard_off']);
+                                $stInfo = $stMap[$gi['status']] ?? [$gi['status'], 'var(--ink-700)', 'var(--line-soft)'];
+                            ?>
+                            <tr data-inv="<?= e(mb_strtolower($gi['invoice_no'] ?? '')) ?>"
+                                data-supp="<?= e(mb_strtolower($gi['supplier_name'] ?? '')) ?>"
+                                data-id="<?= (int)$gi['id'] ?>"
+                                style="border-bottom:1px solid var(--line-soft);<?= $isOff ? 'background:var(--warn-soft);' : '' ?>">
+                                <td style="padding:9px 12px;font-weight:600;">
+                                    <?= e($gi['invoice_no'] ?: '#' . $gi['id']) ?>
+                                    <span class="guard-badge" style="display:<?= $isOff ? 'inline-block' : 'none' ?>;margin-right:6px;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--warn);color:#fff;">الحارس مفكوك</span>
+                                </td>
+                                <td style="padding:9px 12px;"><?= e($gi['supplier_name']) ?></td>
+                                <td style="padding:9px 12px;color:var(--ink-500);"><?= e($gi['dist_date']) ?></td>
+                                <td style="padding:9px 12px;">
+                                    <span style="font-size:11.5px;padding:2px 8px;border-radius:6px;color:<?= $stInfo[1] ?>;background:<?= $stInfo[2] ?>;font-weight:600;">
+                                        <?= e($stInfo[0]) ?>
+                                    </span>
+                                </td>
+                                <td style="padding:9px 12px;text-align:center;">
+                                    <button type="button" class="btn btn-sm <?= $isOff ? 'btn-ghost' : 'btn-primary' ?> btn-guard-toggle"
+                                            data-id="<?= (int)$gi['id'] ?>"
+                                            data-off="<?= $isOff ? '0' : '1' ?>"
+                                            onclick="toggleInvoiceGuard(this)"
+                                            style="padding:4px 10px;font-size:12px;">
+                                        <?= $isOff ? 'رجّع الحارس' : 'فك' ?>
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <tr id="noGuardMatch" style="display:none;"><td colspan="5" style="padding:20px;text-align:center;color:var(--ink-500);">لا توجد نتائج مطابقة للبحث.</td></tr>
+                    <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function toggleInvoiceGuard(btn) {
+        var distId = btn.getAttribute('data-id');
+        var newOff = btn.getAttribute('data-off');
+        btn.disabled = true;
+
+        var body = new URLSearchParams();
+        body.append('action', 'invoice_guard');
+        body.append('dist_id', distId);
+        body.append('off', newOff);
+        body.append('csrf', <?= json_encode(csrf_token()) ?>);
+
+        fetch('settings.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            btn.disabled = false;
+            if (!data.success) {
+                if (typeof fgToast === 'function') {
+                    fgToast(data.error || 'تعذّر تحديث حالة الحارس', 'err');
+                } else {
+                    alert(data.error || 'تعذّر تحديث حالة الحارس');
+                }
+                return;
+            }
+            var row = btn.closest('tr');
+            var isOff = String(data.off) === '1';
+            btn.setAttribute('data-off', isOff ? '0' : '1');
+            btn.textContent = isOff ? 'رجّع الحارس' : 'فك';
+            btn.className = 'btn btn-sm ' + (isOff ? 'btn-ghost' : 'btn-primary') + ' btn-guard-toggle';
+            row.style.background = isOff ? 'var(--warn-soft)' : '';
+            var badge = row.querySelector('.guard-badge');
+            if (badge) {
+                badge.style.display = isOff ? 'inline-block' : 'none';
+            }
+            if (typeof fgToast === 'function') {
+                fgToast(isOff ? 'تم فك حارس رصيد الإدارة عن الفاتورة' : 'تم تفعيل حارس رصيد الإدارة للفاتورة', 'ok');
+            }
+        })
+        .catch(function() {
+            btn.disabled = false;
+            if (typeof fgToast === 'function') {
+                fgToast('تعذّر الاتصال بالسيرفر', 'err');
+            } else {
+                alert('تعذّر الاتصال بالسيرفر');
+            }
+        });
+    }
+
+    (function() {
+        var s = document.getElementById('guardSearchInput');
+        if (!s) return;
+        var tbody = document.getElementById('guardTbody');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr[data-inv]'));
+        var noMatch = document.getElementById('noGuardMatch');
+
+        s.addEventListener('input', function() {
+            var q = s.value.trim().toLowerCase();
+            var visible = 0;
+            for (var i = 0; i < rows.length; i++) {
+                var r = rows[i];
+                var inv = r.getAttribute('data-inv') || '';
+                var supp = r.getAttribute('data-supp') || '';
+                var matches = !q || inv.indexOf(q) !== -1 || supp.indexOf(q) !== -1;
+                r.style.display = matches ? '' : 'none';
+                if (matches) visible++;
+            }
+            if (noMatch) noMatch.style.display = (visible === 0 && rows.length > 0) ? '' : 'none';
+        });
+    })();
+    </script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
+
