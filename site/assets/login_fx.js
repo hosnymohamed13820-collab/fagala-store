@@ -44,10 +44,28 @@
                 <path d="M${(mid - sw).toFixed(2)} ${sy.toFixed(2)}C${(mid - sw * 0.5).toFixed(2)} ${(sy + 3).toFixed(2)} ${(mid + sw * 0.5).toFixed(2)} ${(sy + 3).toFixed(2)} ${(mid + sw).toFixed(2)} ${sy.toFixed(2)}" stroke="${ink}" stroke-width="1.6" stroke-linecap="round"/>`;
     }
 
+    // إيدين ورجلين «ستيكس» — ورا الجسم (أول حاجة في الـSVG). كل طرف <g> بيلف حوالين
+    // المفصل بتاعه (data-j). الزاوية صفر = الطرف نازل لتحت؛ الموجب مع عقارب الساعة.
+    const LIMB_INK = '#cbd5e1';
+    const ARM_REST = 28;   // الإيد نازلة لبرّه شوية
+    const LEG_REST = 5;
+    function limbsSvg(l) {
+        const g = (kind, j, len, rest, tip) =>
+            `<g class="lfx-limb" data-k="${kind}" data-j="${j[0]} ${j[1]}" data-r="${rest}" transform="rotate(${rest} ${j[0]} ${j[1]})">` +
+            `<path d="M${j[0]} ${j[1]}V${j[1] + len}${tip}"/></g>`;
+        return `<g stroke="${LIMB_INK}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none">` +
+            g('al', l.arms[0], l.armLen, ARM_REST, '') +
+            g('ar', l.arms[1], l.armLen, -ARM_REST, '') +
+            g('ll', l.legs[0], l.legLen, LEG_REST, 'h-5') +      // الرجل الشمال والرِّجل لبرّه
+            g('lr', l.legs[1], l.legLen, -LEG_REST, 'h5') +
+            `</g>`;
+    }
+
     // الـ٧ شخصيات (SVG flat كيوت — الوش من face())
     const CHARACTERS = [
         {
             id: 'pencil',
+            limbs: { arms: [[24, 52], [56, 52]], armLen: 16, legs: [[33, 84], [47, 84]], legLen: 18 },
             name: 'قلم رصاص',
             width: 76,
             height: 104,
@@ -67,6 +85,7 @@
         },
         {
             id: 'eraser',
+            limbs: { arms: [[14, 47], [76, 41]], armLen: 14, legs: [[36, 77], [56, 75]], legLen: 14 },
             name: 'أستيكة',
             width: 82,
             height: 82,
@@ -86,6 +105,7 @@
         },
         {
             id: 'pen',
+            limbs: { arms: [[26, 52], [54, 52]], armLen: 16, legs: [[34, 84], [46, 84]], legLen: 18 },
             name: 'قلم جاف',
             width: 74,
             height: 106,
@@ -105,6 +125,7 @@
         },
         {
             id: 'ruler',
+            limbs: { arms: [[23, 54], [57, 58]], armLen: 15, legs: [[33, 100], [48, 101]], legLen: 12 },
             name: 'مسطرة',
             width: 72,
             height: 110,
@@ -132,6 +153,7 @@
             // برّاية كلاسيك (شكل صورة محمد) بجسم بلاستيك برتقاني: جوانب مقروصة للمسكة · شفرة طويلة
             // بطرف مدوّر عليها الوش · مسمار نحاس تحت الابتسامة · من غير فتحة القلم (طلب محمد)
             id: 'sharpener',
+            limbs: { arms: [[21, 50], [59, 50]], armLen: 14, legs: [[28, 93], [52, 93]], legLen: 11 },
             name: 'برّاية',
             width: 70,
             height: 88,
@@ -158,6 +180,7 @@
         },
         {
             id: 'paper',
+            limbs: { arms: [[15, 50], [75, 50]], armLen: 14, legs: [[35, 75], [55, 75]], legLen: 13 },
             name: 'ورقة نوت',
             width: 86,
             height: 86,
@@ -176,6 +199,7 @@
         {
             // كتاب بجد: جلدة ملوّنة + كعب غامق + الصفحات باينة من الجنب وتحت + شريطة
             id: 'book',
+            limbs: { arms: [[11, 52], [72, 52]], armLen: 15, legs: [[30, 92], [52, 92]], legLen: 11 },
             name: 'كتاب',
             width: 80,
             height: 96,
@@ -263,13 +287,25 @@
             el.style.width = charDef.width + 'px';
             el.style.height = charDef.height + 'px';
 
-            el.innerHTML = charDef.svg;
+            // الأطراف أول حاجة جوّه الـ<svg> عشان تبان طالعة من ورا الجسم
+            el.innerHTML = charDef.svg.replace('>', '>' + limbsSvg(charDef.limbs));
             containerEl.appendChild(el);
 
             return {
                 def: charDef,
                 el: el,
                 pupils: el.querySelectorAll('.lfx-eye-pupil'),
+                limbs: Array.from(el.querySelectorAll('.lfx-limb')).map(g => ({
+                    g: g,
+                    k: g.dataset.k,
+                    j: g.dataset.j,
+                    rest: parseFloat(g.dataset.r),
+                    last: parseFloat(g.dataset.r)
+                })),
+                prevX: 0,
+                prevY: 0,
+                walkPhase: index * 0.9,
+                walkAmp: 0,
                 curX: 0,
                 curY: 0,
                 curPupilX: 0,
@@ -493,6 +529,28 @@
             } else {
                 node.el.style.transform = `translate3d(${node.curX.toFixed(2)}px, ${node.curY.toFixed(2)}px, 0)`;
             }
+
+            // المشي: الرجلين بتتحرك على قد المسافة اللي الكاركتر قطعها في الفريم —
+            // واقف = واقف، ماشي بسرعة = خطوات أسرع. الإيد عكس الرجل اللي في نفس الناحية.
+            const speed = Math.min(4, Math.hypot(node.curX - node.prevX, node.curY - node.prevY));
+            node.prevX = node.curX;
+            node.prevY = node.curY;
+            node.walkAmp += (Math.min(1, speed / 0.3) - node.walkAmp) * 0.1;
+            node.walkPhase += 0.02 + speed * 0.35;
+            const swing = Math.sin(node.walkPhase) * node.walkAmp;
+            // وهو واقف الإيدين بتتهز هزة خفيفة (بدل «التنفّس» القديم)
+            const sway = Math.sin(timestamp / 650 + node.idlePhase * 6) * 4 * (1 - node.walkAmp);
+            node.limbs.forEach(l => {
+                let a = l.rest;
+                if (l.k === 'll') a += 30 * swing;
+                else if (l.k === 'lr') a -= 30 * swing;
+                else if (l.k === 'al') a += -26 * swing + sway;
+                else a += -26 * swing - sway;
+                if (Math.abs(a - l.last) > 0.15) {
+                    l.last = a;
+                    l.g.setAttribute('transform', `rotate(${a.toFixed(1)} ${l.j})`);
+                }
+            });
 
             // تطبيق حركة البؤبؤ داخل العين
             if (node.pupils.length > 0) {
