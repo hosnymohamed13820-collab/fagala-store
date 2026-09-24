@@ -690,7 +690,8 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
             <?php foreach ($pairs as $p): ?>
                 <?php
-                $rowUrl = 'branch_recon.php?a=' . urlencode($p['from_key']) . '&b=' . urlencode($p['to_key']) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
+                // كشف ٥٩ مبني على إن a هو اللي استلم — لو a بقى «من» الأرقام بتطلع سالبة
+                $rowUrl = 'branch_recon.php?a=' . urlencode($p['to_key']) . '&b=' . urlencode($p['from_key']) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
                 ?>
                 <tr class="recon-row" onclick="window.location='<?= $rowUrl ?>'">
                     <td style="font-weight:700;">
