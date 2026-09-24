@@ -1254,15 +1254,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         //  "لسه ماتوزّعش منها حاجة" لحد ما المستخدم يعمل ريفريش.)
         $groupTotals   = [];
         $invoiceTotals = [];
-        $q = $pdo->prepare(
-            'SELECT branch_id, SUM(amount) AS t FROM invoice_distribution_lines
-             WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
-        );
+        $distTotalsMap = [];
+        if (!empty($g['dist_ids'])) {
+            $dids = array_values(array_unique(array_map('intval', $g['dist_ids'])));
+            $ph   = implode(',', array_fill(0, count($dids), '?'));
+            $q    = $pdo->prepare(
+                "SELECT distribution_id, branch_id, SUM(amount) AS t
+                 FROM invoice_distribution_lines
+                 WHERE distribution_id IN ($ph)
+                 GROUP BY distribution_id, branch_id
+                 HAVING SUM(amount) > 0"
+            );
+            $q->execute($dids);
+            while ($r = $q->fetch()) {
+                $distTotalsMap[(int) $r['distribution_id']][(int) $r['branch_id']] = (float) $r['t'];
+            }
+        }
         foreach ($g['dist_ids'] as $sth => $did) {
-            $q->execute([(int) $did]);
-            foreach ($q->fetchAll() as $r) {
-                $bid = (int) $r['branch_id'];
-                $t   = (float) $r['t'];
+            $rows = $distTotalsMap[(int) $did] ?? [];
+            foreach ($rows as $bid => $t) {
                 $invoiceTotals[(string) $sth][(string) $bid] = $t;
                 $groupTotals[(string) $bid] = ($groupTotals[(string) $bid] ?? 0) + $t;
             }
@@ -1384,6 +1394,11 @@ $openCb        = isset($_GET['cb']) && $_GET['cb'] !== '' ? (int) $_GET['cb'] : 
 $openDt        = isset($_GET['dt']) && $_GET['dt'] !== '' ? (int) $_GET['dt'] : null;
 $sqlsrvError = '';
 $invoiceGroups = [];
+$invScope = $_GET['scope'] ?? 'admin';
+if (!in_array($invScope, ['admin', 'branches', 'all'], true)) {
+    $invScope = 'admin';
+}
+$adminCount = $branchCount = 0;
 $openInvoice = null;
 $items = [];
 $distId = 0;
@@ -1557,6 +1572,30 @@ try {
         }
         // تجميع بالفرع: الإدارة فوق، بعدها الفروع
         $invoiceGroups = group_invoices_by_branch($invoices);
+
+        $adminCount = 0;
+        $branchCount = 0;
+        foreach ($invoiceGroups as $g) {
+            $cnt = count($g['invoices']);
+            if (!empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1) {
+                $adminCount += $cnt;
+            } else {
+                $branchCount += $cnt;
+            }
+        }
+
+        if ($invScope !== 'all') {
+            $filteredGroups = [];
+            foreach ($invoiceGroups as $g) {
+                $isAdm = !empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1;
+                if ($invScope === 'admin' && $isAdm) {
+                    $filteredGroups[] = $g;
+                } elseif ($invScope === 'branches' && !$isAdm) {
+                    $filteredGroups[] = $g;
+                }
+            }
+            $invoiceGroups = $filteredGroups;
+        }
 
         // حالة كل فاتورة — استعلام واحد على MySQL (مخزّنة مسبقًا).
         // قبل كده كنا بنجيب أصناف كل فاتورة من SQL Server عشان نحسب،
@@ -1902,6 +1941,9 @@ require_once __DIR__ . '/includes/header.php';
     .inv-table { width:100%; border-collapse:collapse; }
     .inv-table thead th { background:var(--line-soft); color:var(--accent-text); font-weight:600; padding:11px 12px; text-align:center; border-bottom:2px solid var(--line); white-space:nowrap; }
     .inv-table tbody td { padding:11px 12px; text-align:center; border-bottom:1px solid var(--line-soft); }
+    .inv-table tbody td.inv-date     { font-size:13px; }
+    .inv-table tbody td.inv-scode    { font-family:monospace; color:var(--ink-500); }
+    .inv-table tbody td.inv-supplier { font-weight:500; text-align:right; }
     .inv-table .inv-row { cursor:pointer; transition:background 0.12s; }
     .inv-table .inv-row:hover { background:var(--accent-soft); }
     .inv-table .inv-no { font-weight:700; color:var(--accent-text); }
@@ -2817,7 +2859,7 @@ require_once __DIR__ . '/includes/header.php';
         </a>
         <a class="tab-btn <?= $tab==='group'?'active':'' ?>" href="invoices.php?tab=group">
             <i class="ti ti-stack-2"></i> فواتير مجمّعة
-            <?php $grpOpenCount = count(group_list()); if ($grpOpenCount > 0): ?>
+            <?php $grpOpenCount = group_open_count(); if ($grpOpenCount > 0): ?>
                 <span style="background:var(--pos-fill);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
                     <?= $grpOpenCount ?>
                 </span>
@@ -2953,7 +2995,7 @@ require_once __DIR__ . '/includes/header.php';
                         <i class="ti ti-plus"></i>
                         <?= $gIsItems ? 'ضيف فواتير أو أصناف' : 'ضيف فاتورة' ?>
                     </button>
-                    <form method="post" onsubmit="return confirm('مسح المجموعة؟\n\nالتوزيع اللي اتعمل هيفضل محفوظ في الفواتير — اللي هيتمسح هو تجميعة الشغل بس.');">
+                    <form method="post" data-confirm="مسح المجموعة؟&#10;&#10;التوزيع اللي اتعمل هيفضل محفوظ في الفواتير — اللي هيتمسح هو تجميعة الشغل بس." data-confirm-danger>
                         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                         <input type="hidden" name="action" value="group_delete">
                         <input type="hidden" name="group_id" value="<?= (int)$grpCurrent['id'] ?>">
@@ -3577,28 +3619,26 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
-        <?php
-        $adminCount = 0;
-        $branchCount = 0;
-        foreach ($invoiceGroups as $g) {
-            $cnt = count($g['invoices']);
-            if (!empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1) {
-                $adminCount += $cnt;
-            } else {
-                $branchCount += $cnt;
-            }
+        <script>
+        const INV_TAB = <?= json_encode($tab) ?>;
+
+        function setScopeFilter(scope, btn) {
+            const inp = document.getElementById('invSearch');
+            const q = inp ? inp.value.trim() : '';
+            location.href = 'invoices.php?tab=' + encodeURIComponent(INV_TAB) + '&scope=' + encodeURIComponent(scope)
+                          + (q ? '&q=' + encodeURIComponent(q) : '');
         }
-        ?>
+        </script>
 
         <!-- أزرار عزل فواتير الإدارة عن باقي الفروع -->
         <div class="scope-filters">
-            <button type="button" class="scope-btn active" data-scope="admin" onclick="setScopeFilter('admin', this)">
+            <button type="button" class="scope-btn<?= $invScope === 'admin' ? ' active' : '' ?>" data-scope="admin" onclick="setScopeFilter('admin', this)">
                 <i class="ti ti-building-bank"></i> فواتير الإدارة (المركز الرئيسي) <span><?= $adminCount ?></span>
             </button>
-            <button type="button" class="scope-btn" data-scope="branches" onclick="setScopeFilter('branches', this)">
+            <button type="button" class="scope-btn<?= $invScope === 'branches' ? ' active' : '' ?>" data-scope="branches" onclick="setScopeFilter('branches', this)">
                 <i class="ti ti-building-store"></i> فواتير الفروع الأخرى <span><?= $branchCount ?></span>
             </button>
-            <button type="button" class="scope-btn" data-scope="all" onclick="setScopeFilter('all', this)">
+            <button type="button" class="scope-btn<?= $invScope === 'all' ? ' active' : '' ?>" data-scope="all" onclick="setScopeFilter('all', this)">
                 <i class="ti ti-list-details"></i> كل الفواتير <span><?= $adminCount + $branchCount ?></span>
             </button>
         </div>
@@ -3623,7 +3663,7 @@ require_once __DIR__ . '/includes/header.php';
                 <th>كود المورد</th><th>اسم المورد</th><th>الإجمالي</th><th>الصافي</th>
                 <?php if ($tab==='posted'): ?><th>الحالة</th><?php endif; ?>
             </tr></thead>
-            <tbody>
+            <tbody title="اضغط لفتح أصناف الفاتورة">
             <?php $rowNo = 0; foreach ($invoiceGroups as $g): ?>
                 <?php
                     $colspan = $tab==='posted' ? 8 : 7;
@@ -3676,30 +3716,7 @@ require_once __DIR__ . '/includes/header.php';
                     [$stLabel, $stClass] = invoice_status_label($st);
                     $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
-                    <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>"
-                        data-st="<?= e($st) ?>"
-                        data-scope="<?= $gScope ?>"
-                        data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>"
-                        onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')" title="اضغط لفتح أصناف الفاتورة">
-                        <td><?= $rowNo ?></td>
-                        <td class="inv-no">
-                            <?= e($invNo) ?>
-                            <?php if ((int)($inv['doc_type'] ?? 0) === 6): ?>
-                                <span class="doc-badge refund">مردود شراء</span>
-                            <?php endif; ?>
-                            <?php if ($nTxt !== ''): ?>
-                                <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span>
-                            <?php endif; ?>
-                        </td>
-                        <td style="font-size:13px;"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td>
-                        <td style="font-family:monospace;color:var(--ink-500);"><?= e($inv['supplier_code'] ?? '—') ?></td>
-                        <td style="font-weight:500;text-align:right;"><?= e($inv['supplier_name'] ?? '—') ?></td>
-                        <td><?= number_format((float)$inv['total_amount'],2) ?></td>
-                        <td><?= number_format((float)$inv['net_amount'],2) ?></td>
-                        <?php if ($tab==='posted'): ?>
-                            <td><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span></td>
-                        <?php endif; ?>
-                    </tr>
+                    <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ((int)($inv['doc_type'] ?? 0) === 6): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span></td><?php endif; ?></tr>
                 <?php endforeach; ?>
                 <?php endforeach; /* المجموعات الفرعية (شراء/مردود) */ ?>
             <?php endforeach; ?>
@@ -3921,18 +3938,11 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
 
-    let invFilter = { q: '', st: 'all', scope: 'admin' };
+    let invFilter = { q: '', st: 'all', scope: '<?= e($invScope) ?>' };
 
     function filterInvList() {
         const inp = document.getElementById('invSearch');
         invFilter.q = (inp ? inp.value : '').trim().toLowerCase();
-        applyInvFilter();
-    }
-
-    function setScopeFilter(scope, btn) {
-        document.querySelectorAll('.scope-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        invFilter.scope = scope;
         applyInvFilter();
     }
 
@@ -4003,6 +4013,12 @@ require_once __DIR__ . '/includes/header.php';
             const sp = b.querySelector('span');
             if (sp) sp.textContent = c[b.dataset.st] ?? 0;
         });
+        const urlQ = new URLSearchParams(location.search).get('q');
+        if (urlQ) {
+            const inp = document.getElementById('invSearch');
+            if (inp) inp.value = urlQ;
+            invFilter.q = urlQ.trim().toLowerCase();
+        }
         // تطبيق الفلترة المبدئية لحصر العرض على فواتير الإدارة
         applyInvFilter();
     })();
@@ -4526,7 +4542,7 @@ require_once __DIR__ . '/includes/header.php';
             if (!d.ok) {
                 input.value = saved > 0 ? saved : '';
                 setInd(input, '✗', 'var(--neg)');
-                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                fgToast('خطأ في الحفظ: ' + (d.error || 'حاول تاني'), 'err');
                 return;
             }
             input.dataset.saved = qty;
@@ -4552,7 +4568,7 @@ require_once __DIR__ . '/includes/header.php';
         .catch(() => {
             input.value = saved > 0 ? saved : '';
             setInd(input, '✗', 'var(--neg)');
-            alert('مفيش اتصال بالسيرفر.');
+            fgToast('مفيش اتصال بالسيرفر.', 'err');
         });
     }
 
@@ -4942,7 +4958,7 @@ require_once __DIR__ . '/includes/header.php';
                 }
             } else {
                 if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; }
-                alert(j.error || 'تعذّر الحفظ');
+                fgToast(j.error || 'تعذّر الحفظ', 'err');
             }
         })
         .catch(() => { if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; } });
@@ -5258,7 +5274,7 @@ require_once __DIR__ . '/includes/header.php';
             .then(r => r.json())
             .then(d => {
                 if (!d.ok) {
-                    alert('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'));
+                    fgToast('خطأ: ' + (d.error || 'تعذّر اعتماد التوزيع'), 'err');
                     if (btnSubmit) {
                         btnSubmit.disabled = false;
                         btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
@@ -5268,7 +5284,7 @@ require_once __DIR__ . '/includes/header.php';
                 location.reload();
             })
             .catch(() => {
-                alert('تعذّر الاتصال بالسيرفر.');
+                fgToast('تعذّر الاتصال بالسيرفر.', 'err');
                 if (btnSubmit) {
                     btnSubmit.disabled = false;
                     btnSubmit.innerHTML = '<i class="ti ti-check"></i> اعتماد التوزيع';
@@ -5334,7 +5350,7 @@ require_once __DIR__ . '/includes/header.php';
             .then(r => r.json())
             .then(j => {
                 if (sel) sel.disabled = false;
-                if (!j.ok) { alert(j.error || 'تعذّر تغيير الحالة'); return; }
+                if (!j.ok) { fgToast(j.error || 'تعذّر تغيير الحالة', 'err'); return; }
 
                 if (lock) lock.style.display = j.manual ? '' : 'none';
 
@@ -5346,7 +5362,7 @@ require_once __DIR__ . '/includes/header.php';
             })
             .catch(() => {
                 if (sel) sel.disabled = false;
-                alert('تعذّر الاتصال بالسيرفر');
+                fgToast('تعذّر الاتصال بالسيرفر', 'err');
             });
     }
 
@@ -5440,7 +5456,7 @@ require_once __DIR__ . '/includes/header.php';
             if (!d.ok) {
                 input.value = saved > 0 ? saved : '';
                 setInd(input, '✗', 'var(--neg)');
-                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                fgToast('خطأ في الحفظ: ' + (d.error || 'حاول تاني'), 'err');
                 return;
             }
             input.dataset.saved = qty;
@@ -5800,7 +5816,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 btn.disabled = false;
                 row.dataset.done = prev ? '1' : '0';
                 paint(row); paintLookupBtn(btn, prev);
-                alert(e.message);
+                fgToast(e.message, 'err');
             });
     };
 
@@ -5940,7 +5956,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
         fetch('invoices.php', { method: 'POST', body: fd })
             .then(r => r.json())
             .then(j => {
-                if (!j.ok) { alert(j.error || 'فشل المسح'); return; }
+                if (!j.ok) { fgToast(j.error || 'فشل المسح', 'err'); return; }
                 document.querySelectorAll('tr.item-row').forEach(row => {
                     if (isDone) row.dataset.done = '0';
                     else        row.dataset.hl = '';
@@ -5948,7 +5964,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
                 });
                 if (ov.classList.contains('open')) iflClose();
             })
-            .catch(() => alert('تعذّر الاتصال بالسيرفر'));
+            .catch(() => fgToast('تعذّر الاتصال بالسيرفر', 'err'));
     };
 
     // ---------- إشعار إضافة الصنف لمشاكل الفواتير ----------

@@ -445,7 +445,7 @@ function shift_cashier_amounts(array $s): array {
     .sc-stat .v.red { color:var(--neg); }
     .btn-review { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 18px; cursor:pointer; font-family:inherit; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
     /* بوب أب */
-    .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:9999; align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
+    .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
     .rv-modal.open { display:flex; }
     .rv-box { background:var(--surface); border-radius:16px; width:100%; max-width:620px; margin:auto; box-shadow:0 18px 50px rgba(0,0,0,0.25); }
     .rv-mhead { display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; }
@@ -1103,7 +1103,7 @@ function shift_cashier_amounts(array $s): array {
     function rvCompare(btn) {
         var sysEl = document.getElementById('rv_acc_system');
         if (sysEl.value.trim() === '') {
-            alert('اكتب قيمة السيستم الأول.');
+            fgToast('اكتب قيمة السيستم الأول.', 'warn');
             sysEl.focus();
             return;
         }
