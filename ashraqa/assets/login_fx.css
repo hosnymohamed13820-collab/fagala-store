@@ -36,17 +36,20 @@
 }
 
 /* حركة تنفّس خفيفة ناعمة (float/breathing) */
+/* 🔴 بـ translate مش transform: الأنيميشن بيغلب الـtransform اللي الـJS بيكتبه
+   inline، فكان الـparallax ميت والرجوع من الخمول بيقفز بدل ما يبقى ناعم.
+   translate خاصية لوحدها بتتجمع مع transform. */
 @keyframes lfxFloat1 {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-4px); }
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -4px; }
 }
 @keyframes lfxFloat2 {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-5px); }
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -5px; }
 }
 @keyframes lfxFloat3 {
-    0%, 100% { transform: translateY(0); }
-    50%      { transform: translateY(-3px); }
+    0%, 100% { translate: 0 0; }
+    50%      { translate: 0 -3px; }
 }
 
 .lfx-char:nth-child(1) { animation: lfxFloat1 4.2s ease-in-out infinite; }

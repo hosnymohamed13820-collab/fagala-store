@@ -308,6 +308,8 @@
                 curPupilX: 0,
                 curPupilY: 0,
                 curRot: 0,
+                baseX: 0,
+                baseY: 0,
                 // إزاحة زمنية مختلفة لكل شخصية في مشوار الخمول
                 idlePhase: index * (1.0 / CHARACTERS.length),
                 // سرعة مختلفة طفيفة (بين ٠.٩ و ١.١)
@@ -316,7 +318,8 @@
         });
 
         updateCardBounds();
-        window.addEventListener('resize', updateCardBounds, { passive: true });
+        cacheBasePositions();
+        window.addEventListener('resize', function () { updateCardBounds(); cacheBasePositions(); }, { passive: true });
 
         // الاستماع لأي تفاعل للمستخدم لتصفير مؤقت الخمول
         const resetEvents = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
@@ -337,6 +340,15 @@
         if (!prefersReducedMotion) {
             animFrameId = requestAnimationFrame(renderLoop);
         }
+    }
+
+    // مكان كل كاركتر من غير الـtransform — بيتحسب مرة واحدة ومع الـresize بس.
+    // (getBoundingClientRect جوّه اللوب كان بيعمل layout ٧ مرات في كل فريم — تقيل على الآيفون القديم)
+    function cacheBasePositions() {
+        charNodes.forEach(node => {
+            node.baseX = node.el.offsetLeft;
+            node.baseY = node.el.offsetTop;
+        });
     }
 
     function updateCardBounds() {
@@ -464,13 +476,8 @@
                 const targetWorldX = pos.x * winW;
                 const targetWorldY = pos.y * winH;
 
-                // الموضع الابتدائي للكاركتر في DOM
-                const baseRect = node.el.getBoundingClientRect();
-                const defaultX = baseRect.left - node.curX;
-                const defaultY = baseRect.top - node.curY;
-
-                targetX = targetWorldX - defaultX - (node.def.width / 2);
-                targetY = targetWorldY - defaultY - (node.def.height / 2);
+                targetX = targetWorldX - node.baseX - (node.def.width / 2);
+                targetY = targetWorldY - node.baseY - (node.def.height / 2);
 
                 // إمالة طفيفة في اتجاه السير
                 targetRot = (pos.angle * 180 / Math.PI) * 0.15;
@@ -488,9 +495,8 @@
                 targetY = relY * node.def.depth;
 
                 // مركز الكاركتر الفعلي لحساب زاوية نظر العين للماوس
-                const rect = node.el.getBoundingClientRect();
-                const charMidX = rect.left + rect.width / 2;
-                const charMidY = rect.top + rect.height / 2;
+                const charMidX = node.baseX + node.curX + node.def.width / 2;
+                const charMidY = node.baseY + node.curY + node.def.height / 2;
 
                 const dx = mouseX - charMidX;
                 const dy = mouseY - charMidY;
