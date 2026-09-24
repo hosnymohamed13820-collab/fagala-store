@@ -53,6 +53,8 @@ ALTER ROLE [db_datareader] ADD MEMBER [NT AUTHORITY\SYSTEM];
 ```
 
 ### الوكلاء الموجودين
+📁 **السبعة في `local/agents/`** (من ٢٤ سبتمبر ٢٠٢٦ — كانوا في `Bruch Agents/` و`local/`). `local/agent_hq_OLD_unused.ps1` نسخة قديمة من غير نبضة — متركّبهاش.
+
 | الوكيل | الجهاز | القاعدة | التوكن | بيبعت |
 |--------|--------|---------|--------|-------|
 | agent_hq.ps1 | الإدارة | Anzmah_FagalaHQ | site/sync_tokens.php | أصناف، أسعار، أكواد، مخازن، فواتير، أرصدة، غير مرحّلة، **تصنيفات، أصناف اتشرت** |

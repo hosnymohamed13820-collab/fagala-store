@@ -58,14 +58,13 @@ fi
 
 echo
 echo "== بنية PowerShell =="
-# 🔴 الوكلاء في **مكانين** مش مكان واحد:
-#      local/          = وكيل الإدارة وإشراقة والسكانر
-#      Bruch Agents/   = وكلاء الفروع الأربعة الشغّالة
+# 🔴 وكلاء المزامنة السبعة في local/agents/ (من ٢٤ سبتمبر — كانوا في Bruch Agents/ و local/)
+#    والطابعة والسكانر في local/
 #    الفحص كان بيشوف local/ بس، فوكلاء الفروع كانوا بيعدّوا من غير
 #    أي فحص بنية — وده بان يوم ١١ سبتمبر ٢٠٢٦ لما اتعدّلوا الأربعة
 #    في رن واحد.
 PS1_FILES=()
-for f in local/*.ps1 "Bruch Agents"/*.ps1; do
+for f in local/*.ps1 local/agents/*.ps1; do
     [ -f "$f" ] && PS1_FILES+=("$f")
 done
 if [ ${#PS1_FILES[@]} -gt 0 ]; then
