@@ -129,7 +129,7 @@
             </svg>`
         },
         {
-            // برّاية بجد: جسم برتقاني + شفرة فضي فوق بمسمار + فتحة القلم المخروطية
+            // برّاية: الوش على الشفرة الفضي نفسها (قدام) · المسمار في الركن · فتحة القلم على الجنب
             id: 'sharpener',
             name: 'برّاية',
             width: 84,
@@ -140,16 +140,17 @@
             posMobile: { top: '13%', left: '26%' },
             svg: `
             <svg viewBox="0 0 90 85" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="10" y="26" width="70" height="48" rx="12" fill="#fb923c"/>
-                <rect x="10" y="62" width="70" height="12" rx="6" fill="#ea580c"/>
-                <rect x="18" y="18" width="54" height="13" rx="3" fill="#e2e8f0" stroke="#64748b" stroke-width="1.3"/>
-                <line x1="22" y1="29" x2="60" y2="29" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/>
-                <circle cx="65" cy="24.5" r="3" fill="#94a3b8" stroke="#475569" stroke-width="1"/>
-                <line x1="63" y1="24.5" x2="67" y2="24.5" stroke="#475569" stroke-width="1"/>
-                <circle cx="27" cy="50" r="10" fill="#9a3412"/>
-                <circle cx="27" cy="50" r="6" fill="#7c2d12"/>
-                <circle cx="27" cy="50" r="2.4" fill="#431407"/>
-                ${face(50, 66, 46, 5.6, '#1f2937')}
+                <rect x="8" y="24" width="74" height="50" rx="12" fill="#fb923c"/>
+                <rect x="8" y="62" width="74" height="12" rx="6" fill="#ea580c"/>
+                <circle cx="21" cy="46" r="8.5" fill="#9a3412"/>
+                <circle cx="21" cy="46" r="5" fill="#7c2d12"/>
+                <circle cx="21" cy="46" r="2" fill="#431407"/>
+                <rect x="33" y="14" width="45" height="44" rx="5" fill="#e2e8f0" stroke="#64748b" stroke-width="1.4"/>
+                <rect x="33.7" y="14.7" width="43.6" height="6" rx="4" fill="#f8fafc"/>
+                <line x1="36" y1="21" x2="75" y2="21" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="71.5" cy="51" r="3" fill="#94a3b8" stroke="#475569" stroke-width="1"/>
+                <line x1="69.5" y1="51" x2="73.5" y2="51" stroke="#475569" stroke-width="1"/>
+                ${face(47.5, 63.5, 33, 5.6, '#1f2937')}
             </svg>`
         },
         {
