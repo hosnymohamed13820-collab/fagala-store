@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * receiving.php — موديول استلام الفواتير في الفروع
  * نظام الفجالة ستور المالي
@@ -1103,7 +1103,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- المكون المشترك للسكانر (كاميرا الموبايل) -->
-<script src="assets/barcode_scanner.js?v=6"></script>
+<script src="assets/barcode_scanner.js?v=7"></script>
 
 <script>
 var csrfToken = <?= json_encode(csrf_token()) ?>;

@@ -94,10 +94,36 @@
     function ensureLib(cb) {
         if (window.Html5Qrcode) { cb(); return; }
         const s = document.createElement('script');
-        s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+        s.src = 'assets/vendor/html5-qrcode.min.js';
         s.onload = cb;
-        s.onerror = function () { alert('تعذّر تحميل مكتبة الكاميرا. اتأكد من الاتصال بالإنترنت.'); };
+        s.onerror = function () { alert('تعذّر تحميل مكتبة الكاميرا.'); };
         document.head.appendChild(s);
+    }
+
+    function fixVideoElement() {
+        const vid = document.querySelector('#bcReader video');
+        if (vid) {
+            vid.setAttribute('playsinline', 'true');
+            vid.setAttribute('webkit-playsinline', 'true');
+            vid.setAttribute('muted', 'true');
+            vid.setAttribute('autoplay', 'true');
+            vid.muted = true;
+            vid.playsInline = true;
+        }
+    }
+
+    function getCameraErrorMessage(err) {
+        if (!navigator.mediaDevices) {
+            return '⚠️ افتح الموقع من Safari نفسه مش من الأيقونة. اكتب الكود يدوياً.';
+        }
+        const errName = err ? (err.name || '') : '';
+        if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+            return '⚠️ تم حظر الكاميرا: الإعدادات ← Safari ← الكاميرا ← سماح. اكتب الكود يدوياً.';
+        }
+        if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+            return '⚠️ الكاميرا مفتوحة في برنامج تاني. اكتب الكود يدوياً.';
+        }
+        return '⚠️ تعذّر تشغيل الكاميرا. اكتب الكود يدوياً.';
     }
 
     /* ============================================================
@@ -105,6 +131,7 @@
      * ============================================================ */
     function tuneCamera() {
         if (!scanner || !scanning) return;
+        fixVideoElement();
         let caps = {};
         try { caps = scanner.getRunningTrackCapabilities() || {}; } catch (e) { caps = {}; }
 
@@ -139,8 +166,9 @@
             if (ctls) ctls.style.display = 'flex';
         }
 
-        // 4) تبديل الكاميرا (لو فيه أكتر من كاميرا خلفية)
-        if (camList.length > 1) {
+        // 4) تبديل الكاميرا (لو فيه أكتر من كاميرا خلفية أو على iOS)
+        const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (camList.length > 1 || isIos) {
             const s = document.getElementById('bcSwitch');
             if (s) s.style.display = 'inline-block';
             if (ctls) ctls.style.display = 'flex';
@@ -175,7 +203,26 @@
     };
 
     window.bcSwitchCamera = function () {
-        if (!camList.length) return;
+        if (!camList.length) {
+            Html5Qrcode.getCameras().then(function (cams) {
+                camList = cams || [];
+                if (camList.length > 1) {
+                    const s = document.getElementById('bcSwitch');
+                    if (s) s.style.display = 'inline-block';
+                    camIndex = (camIndex + 1) % camList.length;
+                    const cam = camList[camIndex];
+                    localStorage.setItem(LS_CAM, cam.id);
+                    restartWith(cam.id);
+                } else if (camList.length === 1) {
+                    const h = document.getElementById('bcHint');
+                    if (h) h.textContent = 'مفيش كاميرا تانية متاحة للتبديل.';
+                }
+            }).catch(function (err) {
+                const h = document.getElementById('bcHint');
+                if (h) h.textContent = getCameraErrorMessage(err);
+            });
+            return;
+        }
         camIndex = (camIndex + 1) % camList.length;
         const cam = camList[camIndex];
         localStorage.setItem(LS_CAM, cam.id);
@@ -314,10 +361,17 @@
             delete cfg.videoConstraints.facingMode; // بنحدد كاميرا بعينها
             cfg.videoConstraints.deviceId = { exact: camId };
             scanner.start({ deviceId: { exact: camId } }, cfg, onScan, function () {})
-                .then(function () { scanning = true; setTimeout(tuneCamera, 400); })
-                .catch(function () {
+                .then(function () {
+                    scanning = true;
+                    fixVideoElement();
+                    setTimeout(function() {
+                        fixVideoElement();
+                        tuneCamera();
+                    }, 400);
+                })
+                .catch(function (err) {
                     const h = document.getElementById('bcHint');
-                    if (h) h.textContent = '⚠️ الكاميرا دي مشتغلتش، جرّب 🔄 تاني.';
+                    if (h) h.textContent = getCameraErrorMessage(err);
                 });
         };
         // 🔴 `go` بتنده `scanner.start()` واللي بترمي **synchronous** لو
@@ -343,6 +397,12 @@
         modal.style.display = 'flex';
         const hint = document.getElementById('bcHint');
         hint.textContent = HINT_MSG;
+
+        if (!navigator.mediaDevices) {
+            hint.textContent = getCameraErrorMessage();
+            return;
+        }
+
         // مراقب بسيط: أول ما الكود يبعد عن الكادر، رسالة القفل تتشال
         // (محلي بالكامل — مفيش أي نداء للسيرفر)
         clearInterval(lockTimer);
@@ -354,28 +414,69 @@
                 }
             }, 500);
         }
+
+        const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
         ensureLib(function () {
             try {
-                scanner = scanner || new Html5Qrcode('bcReader');
-                // نجيب قايمة الكاميرات الأول (عشان الاختيار الذكي والتبديل)
-                Html5Qrcode.getCameras().then(function (cams) {
-                    camList = cams || [];
-                    if (camList.length) {
-                        camIndex = pickCamera(camList);
-                        restartWith(camList[camIndex].id);
-                    } else {
-                        // مفيش قايمة (إذن الكاميرا لسه) — نبدأ بالطريقة العادية
-                        scanner.start({ facingMode: 'environment' }, startConfig(), onScan, function () {})
-                            .then(function () { scanning = true; setTimeout(tuneCamera, 400); })
-                            .catch(function () { hint.textContent = '⚠️ تعذّر تشغيل الكاميرا. اكتب الكود يدوياً.'; });
-                    }
-                }).catch(function () {
+                let formatsToSupport = undefined;
+                if (window.Html5QrcodeSupportedFormats) {
+                    formatsToSupport = [
+                        Html5QrcodeSupportedFormats.EAN_13,
+                        Html5QrcodeSupportedFormats.EAN_8,
+                        Html5QrcodeSupportedFormats.UPC_A,
+                        Html5QrcodeSupportedFormats.UPC_E,
+                        Html5QrcodeSupportedFormats.CODE_128,
+                        Html5QrcodeSupportedFormats.CODE_39
+                    ];
+                }
+                const qrcodeConfig = {
+                    verbose: false,
+                    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+                };
+                if (formatsToSupport) {
+                    qrcodeConfig.formatsToSupport = formatsToSupport;
+                }
+                scanner = scanner || new Html5Qrcode('bcReader', qrcodeConfig);
+
+                function onStartSuccess() {
+                    scanning = true;
+                    fixVideoElement();
+                    setTimeout(function() {
+                        fixVideoElement();
+                        tuneCamera();
+                    }, 400);
+                }
+
+                function onStartFail(err) {
+                    hint.textContent = getCameraErrorMessage(err);
+                }
+
+                if (isIos) {
+                    // على iOS: نبدأ بـ facingMode على طول من غير getCameras()
                     scanner.start({ facingMode: 'environment' }, startConfig(), onScan, function () {})
-                        .then(function () { scanning = true; setTimeout(tuneCamera, 400); })
-                        .catch(function () { hint.textContent = '⚠️ تعذّر تشغيل الكاميرا. اكتب الكود يدوياً.'; });
-                });
+                        .then(onStartSuccess)
+                        .catch(onStartFail);
+                } else {
+                    // نجيب قايمة الكاميرات الأول (عشان الاختيار الذكي والتبديل)
+                    Html5Qrcode.getCameras().then(function (cams) {
+                        camList = cams || [];
+                        if (camList.length) {
+                            camIndex = pickCamera(camList);
+                            restartWith(camList[camIndex].id);
+                        } else {
+                            scanner.start({ facingMode: 'environment' }, startConfig(), onScan, function () {})
+                                .then(onStartSuccess)
+                                .catch(onStartFail);
+                        }
+                    }).catch(function () {
+                        scanner.start({ facingMode: 'environment' }, startConfig(), onScan, function () {})
+                            .then(onStartSuccess)
+                            .catch(onStartFail);
+                    });
+                }
             } catch (e) {
-                hint.textContent = '⚠️ خطأ في الكاميرا.';
+                hint.textContent = getCameraErrorMessage(e);
             }
         });
     };

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * includes/header.php — رأس الصفحة المشترك لكل المديولات
  *
@@ -56,6 +56,7 @@ require_once __DIR__ . '/nav_icons.php';
                     f.append('c', String(c || 0));
                     f.append('k', String(k || '').slice(0, 1500));
                     f.append('p', (location.pathname + location.search).slice(0, 300));
+                    f.append('ua', (navigator.userAgent || '').slice(0, 200));
                     navigator.sendBeacon('errors.php?report=js', f);
                 } catch (x) {}
             }
@@ -116,7 +117,7 @@ require_once __DIR__ . '/nav_icons.php';
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=43').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=44').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل

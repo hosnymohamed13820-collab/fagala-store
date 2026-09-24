@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * stock_query.php — استعلام أرصدة الأصناف في الإدارة والفروع
  * نظام الفجالة ستور المالي
@@ -193,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<script src="assets/barcode_scanner.js?v=6"></script>
+<script src="assets/barcode_scanner.js?v=7"></script>
 <script>
     const BRANCHES  = <?= json_encode($branches, JSON_UNESCAPED_UNICODE) ?>;
     const ADMIN_STO = <?= (int) ADMIN_STO_ID ?>;

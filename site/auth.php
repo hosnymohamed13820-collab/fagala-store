@@ -98,6 +98,7 @@ function all_modules(): array
         'tasks'         => ['label' => 'المهام',            'icon' => 'ti-inbox',         'url' => 'tasks.php'],
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
+        'branch_recon'  => ['label' => 'مطابقة الفروع',     'icon' => 'ti-transfer',                  'url' => 'branch_recon.php'],
         'invoices'      => ['label' => 'الاستلامات',        'icon' => 'ti-package-import',     'url' => 'invoices.php'],
         'receiving'     => ['label' => 'استلام الفواتير',   'icon' => 'ti-truck',              'url' => 'receiving.php'],
         'branch_invoices' => ['label' => 'فواتير الفروع',   'icon' => 'ti-file-invoice',       'url' => 'branch_invoices.php'],

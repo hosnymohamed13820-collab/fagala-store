@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * invoices.php — الاستلامات (توزيع فواتير السيستم على الفروع)
  * نظام الفجالة ستور المالي
@@ -6083,6 +6083,6 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 </script>
 <?php endif; ?>
 
-<script src="assets/barcode_scanner.js?v=6"></script>
+<script src="assets/barcode_scanner.js?v=7"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

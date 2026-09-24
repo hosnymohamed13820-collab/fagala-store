@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * book_reserve.php — حجز الكتب (تاب ٣ في موديول النواقص)
  * نظام الفجالة ستور المالي
@@ -422,7 +422,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 </div>
 
-<script src="assets/barcode_scanner.js?v=6"></script>
+<script src="assets/barcode_scanner.js?v=7"></script>
 <script>
     const CSRF = <?= json_encode(csrf_token()) ?>;
     let added = [];          // الكتب المضافة للحجز الحالي

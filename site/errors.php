@@ -42,6 +42,11 @@ if (($_GET['report'] ?? '') === 'js') {
     // الصفحة اللي حصل فيها — بتيجي من المتصفح مش من REQUEST_URI بتاع الريكوست ده
     $_SERVER['REQUEST_URI'] = '/' . ltrim(errlog_cut((string) ($_POST['p'] ?? ''), 300), '/');
 
+    $ua = trim((string) ($_POST['ua'] ?? ''));
+    if ($ua !== '') {
+        $msg .= ' [ua: ' . $ua . ']';
+    }
+
     errlog_record(
         'js',
         $msg,

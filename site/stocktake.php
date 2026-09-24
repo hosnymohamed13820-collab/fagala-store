@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * stocktake.php — الجرد
  * نظام الفجالة ستور المالي
@@ -1775,6 +1775,6 @@ require_once __DIR__ . '/includes/header.php';
     }
 </script>
 
-<script src="assets/barcode_scanner.js?v=6"></script>
+<script src="assets/barcode_scanner.js?v=7"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
