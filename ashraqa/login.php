@@ -71,6 +71,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/login_fx.css?v=1">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -275,6 +276,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     </style>
 </head>
 <body>
+    <div class="lfx" aria-hidden="true"></div>
     <div class="login-card">
         <div class="brand">
             <div class="logo"><img src="icon-192.png?v=3" alt="" width="58" height="58"></div>
@@ -351,5 +353,6 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             }
         })();
     </script>
+    <script src="assets/login_fx.js?v=1" defer></script>
 </body>
 </html>

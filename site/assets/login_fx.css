@@ -1,0 +1,91 @@
+/* =====================================================================
+ * login_fx.css — استايل شخصيات الأدوات المكتبية في صفحة الدخول (بريف ٦١)
+ * ===================================================================== */
+
+.lfx {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 1;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* كل شخصية */
+.lfx-char {
+    position: absolute;
+    pointer-events: none;
+    will-change: transform;
+    transition: opacity 0.5s ease;
+}
+
+.lfx-char svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.18));
+}
+
+/* العيون والبؤبؤ */
+.lfx-eye-pupil {
+    will-change: transform;
+    transform-origin: center;
+}
+
+/* حركة تنفّس خفيفة ناعمة (float/breathing) */
+@keyframes lfxFloat1 {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+}
+@keyframes lfxFloat2 {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-5px); }
+}
+@keyframes lfxFloat3 {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-3px); }
+}
+
+.lfx-char:nth-child(1) { animation: lfxFloat1 4.2s ease-in-out infinite; }
+.lfx-char:nth-child(2) { animation: lfxFloat2 4.8s ease-in-out infinite 0.6s; }
+.lfx-char:nth-child(3) { animation: lfxFloat3 3.9s ease-in-out infinite 1.2s; }
+.lfx-char:nth-child(4) { animation: lfxFloat1 5.1s ease-in-out infinite 1.8s; }
+.lfx-char:nth-child(5) { animation: lfxFloat2 4.5s ease-in-out infinite 0.9s; }
+.lfx-char:nth-child(6) { animation: lfxFloat3 4.0s ease-in-out infinite 1.5s; }
+.lfx-char:nth-child(7) { animation: lfxFloat1 4.7s ease-in-out infinite 0.3s; }
+
+/* إيقاف الطفو الذاتي أثناء وضع الخمول للتحكم الكامل عبر JS */
+.lfx.lfx-is-idle .lfx-char {
+    animation: none !important;
+}
+
+/* استجابة الشاشات (أحجام مناسبة للديسكتوب والموبايل) */
+@media (max-width: 768px) {
+    .lfx-char svg {
+        transform: scale(0.75);
+        transform-origin: center;
+        filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.15));
+    }
+}
+
+@media (max-width: 480px) {
+    .lfx-char svg {
+        transform: scale(0.60);
+        transform-origin: center;
+    }
+}
+
+/* دعم تقليل الحركة للمستخدمين اللي مفعلين Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    .lfx-char {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+    .lfx-eye-pupil {
+        transform: none !important;
+    }
+}
