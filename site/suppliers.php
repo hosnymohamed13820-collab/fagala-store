@@ -564,9 +564,6 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($statementSummary)): ?>
                 <div class="empty">لا يوجد موردون بحركات أو أرصدة في هذه الفترة.</div>
             <?php else: ?>
-            <div style="margin-bottom:14px;max-width:320px;">
-                <input type="search" id="suppSearch" placeholder="بحث باسم المورد..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:14px;font-family:inherit;background:var(--surface);color:var(--ink-900);">
-            </div>
             <div style="overflow-x:auto;">
             <table id="suppTable">
                 <thead>
@@ -601,117 +598,50 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                     </tr>
                 <?php endforeach; ?>
-                <tr id="noSuppMatch" style="display:none;"><td colspan="6" class="empty">لا توجد نتائج مطابقة للبحث.</td></tr>
                 </tbody>
-                <tfoot id="suppTfoot">
-                    <tr style="font-weight:700;border-top:2px solid var(--line);">
-                        <td>الإجمالي</td>
-                        <td id="footP"><?= number_format($totSumPurchases, 2) ?></td>
-                        <td id="footR"><?= number_format($totSumReturns, 2) ?></td>
-                        <td id="footPd"><?= number_format($totSumPaid, 2) ?></td>
-                        <td id="footRc"><?= number_format($totSumReceived, 2) ?></td>
-                        <td id="footB" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-400)') ?>;">
-                            <?= number_format($totSumBalance, 2) ?>
-                        </td>
-                    </tr>
-                </tfoot>
             </table>
             </div>
             <?php endif; ?>
         </div>
 
         <script>
-        (function() {
-            var searchInput = document.getElementById('suppSearch');
-            if (!searchInput) return;
-
-            var tbody = document.getElementById('suppTbody');
-            if (!tbody) return;
-            var rows = Array.from(tbody.querySelectorAll('tr[data-name]'));
-            var noMatch = document.getElementById('noSuppMatch');
-
-            var cardCount = document.getElementById('cardSuppCount');
-            var cardP = document.getElementById('cardTotPurchases');
-            var cardR = document.getElementById('cardTotReturns');
-            var cardPd = document.getElementById('cardTotPaid');
-            var cardRc = document.getElementById('cardTotReceived');
-            var cardB = document.getElementById('cardTotBalance');
-            var cardBBox = document.getElementById('cardBalanceBox');
-            var cardBHint = document.getElementById('cardBalanceHint');
-
-            var footP = document.getElementById('footP');
-            var footR = document.getElementById('footR');
-            var footPd = document.getElementById('footPd');
-            var footRc = document.getElementById('footRc');
-            var footB = document.getElementById('footB');
+        /* الكروت بتتحسب من الصفوف الظاهرة في فلتر الجدول العام (xtable.js بيبعت
+           xtable:filter بالصفوف الظاهرة بعد أي بحث/فلتر/مسح) — نفس اللي الجدول بيعرضه بالظبط. */
+        (function () {
+            var table = document.getElementById('suppTable');
+            if (!table) return;
+            var $ = function (id) { return document.getElementById(id); };
+            var cardBBox = $('cardBalanceBox'), cardB = $('cardTotBalance'), cardBHint = $('cardBalanceHint');
 
             function fmt(n) {
                 return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
 
-            function recalculate() {
-                var query = searchInput.value.trim().toLowerCase();
-                var visibleCount = 0;
-                var sumP = 0, sumR = 0, sumPd = 0, sumRc = 0, sumB = 0;
-
-                for (var i = 0; i < rows.length; i++) {
-                    var r = rows[i];
-                    var name = r.getAttribute('data-name') || '';
-                    var matches = !query || name.indexOf(query) !== -1;
-                    if (matches) {
-                        r.style.display = '';
-                        visibleCount++;
-                        sumP += parseFloat(r.getAttribute('data-p') || 0);
-                        sumR += parseFloat(r.getAttribute('data-r') || 0);
-                        sumPd += parseFloat(r.getAttribute('data-pd') || 0);
-                        sumRc += parseFloat(r.getAttribute('data-rc') || 0);
-                        sumB += parseFloat(r.getAttribute('data-b') || 0);
-                    } else {
-                        r.style.display = 'none';
-                    }
-                }
-
-                if (noMatch) {
-                    noMatch.style.display = (visibleCount === 0 && rows.length > 0) ? '' : 'none';
-                }
-
-                if (cardCount) cardCount.textContent = visibleCount.toLocaleString('en-US');
-                if (cardP) cardP.textContent = fmt(sumP);
-                if (cardR) cardR.textContent = fmt(sumR);
-                if (cardPd) cardPd.textContent = fmt(sumPd);
-                if (cardRc) cardRc.textContent = fmt(sumRc);
-                if (cardB) cardB.textContent = fmt(sumB);
-
-                if (footP) footP.textContent = fmt(sumP);
-                if (footR) footR.textContent = fmt(sumR);
-                if (footPd) footPd.textContent = fmt(sumPd);
-                if (footRc) footRc.textContent = fmt(sumRc);
-                if (footB) {
-                    footB.textContent = fmt(sumB);
-                    footB.style.color = sumB > 0.005 ? 'var(--neg)' : (sumB < -0.005 ? 'var(--pos)' : 'var(--ink-400)');
-                }
-
-                if (cardBBox && cardB && cardBHint) {
-                    if (sumB > 0.005) {
-                        cardBBox.style.background = 'var(--neg-soft)';
-                        cardBBox.style.borderColor = 'var(--neg)';
-                        cardB.style.color = 'var(--neg)';
-                        cardBHint.textContent = 'احنا مديونين للموردين';
-                    } else if (sumB < -0.005) {
-                        cardBBox.style.background = 'var(--pos-soft)';
-                        cardBBox.style.borderColor = 'var(--pos)';
-                        cardB.style.color = 'var(--pos)';
-                        cardBHint.textContent = 'الموردين مدينين لنا';
-                    } else {
-                        cardBBox.style.background = 'var(--line-soft)';
-                        cardBBox.style.borderColor = 'var(--line)';
-                        cardB.style.color = 'var(--ink-900)';
-                        cardBHint.textContent = 'الأرصدة متوازنة';
-                    }
-                }
-            }
-
-            searchInput.addEventListener('input', recalculate);
+            table.addEventListener('xtable:filter', function (ev) {
+                var rows = (ev.detail && ev.detail.rows) || [];
+                var sP = 0, sR = 0, sPd = 0, sRc = 0, sB = 0, n = 0;
+                rows.forEach(function (r) {
+                    if (!r.hasAttribute('data-p')) return;
+                    n++;
+                    sP  += parseFloat(r.getAttribute('data-p'))  || 0;
+                    sR  += parseFloat(r.getAttribute('data-r'))  || 0;
+                    sPd += parseFloat(r.getAttribute('data-pd')) || 0;
+                    sRc += parseFloat(r.getAttribute('data-rc')) || 0;
+                    sB  += parseFloat(r.getAttribute('data-b'))  || 0;
+                });
+                $('cardSuppCount').textContent    = n.toLocaleString('en-US');
+                $('cardTotPurchases').textContent = fmt(sP);
+                $('cardTotReturns').textContent   = fmt(sR);
+                $('cardTotPaid').textContent      = fmt(sPd);
+                $('cardTotReceived').textContent  = fmt(sRc);
+                cardB.textContent = fmt(sB);
+                var tone = sB > 0.005 ? 'neg' : (sB < -0.005 ? 'pos' : '');
+                cardBBox.style.background  = tone ? 'var(--' + tone + '-soft)' : 'var(--line-soft)';
+                cardBBox.style.borderColor = tone ? 'var(--' + tone + ')' : 'var(--line)';
+                cardB.style.color          = tone ? 'var(--' + tone + ')' : 'var(--ink-900)';
+                cardBHint.textContent = tone === 'neg' ? 'احنا مديونين للموردين'
+                                      : (tone === 'pos' ? 'الموردين مدينين لنا' : 'الأرصدة متوازنة');
+            });
         })();
         </script>
 
