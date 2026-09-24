@@ -1615,7 +1615,7 @@ require_once __DIR__ . '/includes/header.php';
     top: 24px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 99999;
+    z-index: var(--z-toast);
     background: var(--surface);
     color: var(--text);
     border: 1.5px solid var(--accent);
@@ -1949,10 +1949,6 @@ require_once __DIR__ . '/includes/header.php';
         background:var(--accent); color:#fff;
     }
     .inv-stack { display:flex; flex-direction:column; gap:3px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:10px 18px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; text-decoration:none; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
     .item-row { border:1.5px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; }
     .item-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
     .item-name { font-size:15px; font-weight:600; color:var(--ink-900); }
@@ -2010,7 +2006,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* ===== بوب أب بحث الصنف ===== */
     .lookup-overlay { display:none; position:fixed; inset:0; background:rgba(30,25,70,.45);
-                      z-index:900; align-items:flex-start; justify-content:center; padding:60px 16px; }
+                      z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:60px 16px; }
     .lookup-overlay.open { display:flex; }
     .lookup-box { background:var(--surface); border-radius:14px; width:100%; max-width:640px;
                   box-shadow:0 18px 50px rgba(40,30,90,.25); overflow:hidden; }
@@ -2117,7 +2113,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* ===== بوب أب إعدادات الصنف ===== */
     .ifl-overlay { display:none; position:fixed; inset:0; background:rgba(22,35,61,.5);
-        z-index:960; align-items:center; justify-content:center; padding:16px; }
+        z-index:calc(var(--z-modal) + 60); align-items:center; justify-content:center; padding:16px; }
     .ifl-overlay.open { display:flex; }
     .ifl-box { background:var(--surface); border-radius:var(--r-lg); width:100%; max-width:430px;
         max-height:90vh; overflow-y:auto; box-shadow:var(--shadow-lg); }
@@ -2171,7 +2167,7 @@ require_once __DIR__ . '/includes/header.php';
         border-color:var(--accent-text); font-weight:700; color:var(--accent-text); }
     /* ===== بوب أب اختيار الفاتورة ===== */
     .picker-overlay { display:none; position:fixed; inset:0; background:rgba(22,35,61,.5);
-        z-index:950; align-items:flex-start; justify-content:center; padding:50px 16px; }
+        z-index:calc(var(--z-modal) + 50); align-items:flex-start; justify-content:center; padding:50px 16px; }
     .picker-overlay.open { display:flex; }
     .picker-box { background:var(--surface); border-radius:var(--r-lg); width:100%; max-width:720px;
         max-height:82vh; display:flex; flex-direction:column; overflow:hidden;

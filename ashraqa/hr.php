@@ -1399,15 +1399,6 @@ $statusBadge = function($st) {
     .tab:not(.active):hover { background:var(--bg); }
     .tab .count { background:var(--neg-fill); color:#fff; border-radius:20px; padding:1px 7px; font-size:11px; margin-right:4px; }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-approve { background:var(--pos-fill); } .btn-reject { background:var(--neg-fill); }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -1424,7 +1415,6 @@ $statusBadge = function($st) {
     .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
     .payroll-num { width:95px; text-align:center; padding:4px 6px; border:1.5px solid var(--line);
         border-radius:6px; font-family:inherit; font-size:13px; -moz-appearance:textfield; appearance:textfield; }
     .payroll-num::-webkit-outer-spin-button,
@@ -1571,7 +1561,7 @@ $statusBadge = function($st) {
                                     title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
                             <?php if (is_owner()): ?>
                                 <form method="post" style="display:inline;margin:0;"
-                                      onsubmit="return confirm('تأكيد إلغاء سلفة <?= e(addslashes($a['full_name'])) ?>؟\nالمبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م');">
+                                      data-confirm="تأكيد إلغاء سلفة <?= e($a['full_name']) ?>؟&#10;المبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م" data-confirm-danger>
                                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="cancel_advance">
                                     <input type="hidden" name="advance_id" value="<?= (int)$a['id'] ?>">
@@ -1636,7 +1626,7 @@ $statusBadge = function($st) {
                                     title="تعديل القسط الشهري"><i class="ti ti-edit"></i> تعديل القسط</button>
                             <?php if (is_owner()): ?>
                                 <form method="post" style="display:inline;margin:0;"
-                                      onsubmit="return confirm('تأكيد إلغاء سلفة <?= e(addslashes($a['full_name'])) ?>؟\nالمبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م');">
+                                      data-confirm="تأكيد إلغاء سلفة <?= e($a['full_name']) ?>؟&#10;المبلغ المتبقي: <?= number_format($remAmount, 2) ?> ج.م" data-confirm-danger>
                                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="cancel_advance">
                                     <input type="hidden" name="advance_id" value="<?= (int)$a['id'] ?>">
@@ -1804,7 +1794,7 @@ $statusBadge = function($st) {
                 <span>تنبيه: الفترة المحددة تختلف عن الفترة المعتادة (من ٢٦ الشهر اللي فات لـ٢٥ الشهر ده).</span>
             </div>
         <?php endif; ?>
-        <form method="post" id="batchPayrollForm">
+        <form method="post" id="batchPayrollForm" data-busy="جاري صرف الرواتب...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
             <input type="hidden" name="period_to" value="<?= e($salTo) ?>">
@@ -2386,7 +2376,7 @@ $statusBadge = function($st) {
                     <td><span class="badge" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span></td>
                     <td>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد مسح سجل حضور <?= e($a['full_name']) ?> يوم <?= e($a['att_date']) ?>؟ هيقدر يسجّل من جديد.')">
+                              data-confirm="تأكيد مسح سجل حضور <?= e($a['full_name']) ?> يوم <?= e($a['att_date']) ?>؟ هيقدر يسجّل من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_attendance">
                             <input type="hidden" name="attendance_id" value="<?= (int)$a['id'] ?>">
@@ -2505,7 +2495,7 @@ $statusBadge = function($st) {
 <div class="modal-bg" id="salaryModal">
     <div class="modal">
         <h3>صرف مرتب فردي</h3>
-        <form method="post">
+        <form method="post" data-busy="جاري صرف المرتب...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="pay_salary">
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
@@ -2554,7 +2544,7 @@ $statusBadge = function($st) {
 <div class="modal-bg" id="batchSalaryModal">
     <div class="modal" style="max-width:500px;">
         <h3>صرف رواتب مجموعة</h3>
-        <form method="post">
+        <form method="post" data-busy="جاري صرف الرواتب...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="pay_salary_batch">
             <input type="hidden" name="period_from" value="<?= e($salFrom) ?>">
@@ -3065,7 +3055,7 @@ $statusBadge = function($st) {
                 input.value = saved;
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 setInd(input, '✗', 'var(--neg)');
-                alert('خطأ في الحفظ: ' + (d.error || 'حاول تاني'));
+                fgToast('خطأ في الحفظ: ' + (d.error || 'حاول تاني'), 'err');
                 return;
             }
             if (val === '') {

@@ -583,12 +583,6 @@ require_once __DIR__ . '/includes/header.php';
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
     .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
@@ -640,7 +634,7 @@ require_once __DIR__ . '/includes/header.php';
     @media (max-width:480px){ .grid-4 { grid-template-columns:1fr; } }
     /* بوب أب التقفيل */
     .shift-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5);
-        z-index:9999; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
+        z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .shift-modal.open { display:flex; }
     .shift-modal-box { background:var(--surface); border-radius:16px; width:100%; max-width:780px;
         box-shadow:0 18px 50px rgba(0,0,0,0.25); margin:auto; }
@@ -716,6 +710,10 @@ require_once __DIR__ . '/includes/header.php';
     .sum-diff-box .sdl { font-size:13px; color:var(--ink-500); }
     .sum-diff-box .sdv { font-size:32px; font-weight:700; margin:10px 0; color:var(--ink-900); }
     .sum-diff-box .sds { font-size:13px; color:var(--ink-500); }
+
+    /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
+    .csh-shift-name { font-weight:600;color:var(--accent-text); }
+    .csh-edit-badge { font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px; }
 </style>
 
 <?php if ($flash): ?>
@@ -812,7 +810,7 @@ require_once __DIR__ . '/includes/header.php';
         <button type="button" class="modal-x" onclick="closeShiftModal()">&times;</button>
     </div>
     <div class="shift-modal-body">
-    <form method="post" id="shiftForm">
+    <form method="post" id="shiftForm" data-busy="جاري تسليم الوردية...">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="submit_shift" id="formAction">
         <input type="hidden" name="shift_id" value="" id="shiftId">
@@ -820,7 +818,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- بيانات الوردية -->
         <div class="grid-top grid-4">
             <div class="fld">
-                <label>القائم بالتقفيل</label>
+                <label for="cashierName">القائم بالتقفيل</label>
                 <input type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
             </div>
             <div class="fld">
@@ -828,8 +826,8 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="number" min="1" step="1" name="shift_name" id="shiftName" placeholder="مثال: 1" required>
             </div>
             <div class="fld">
-                <label for="systemTotal">الفرع <?= empty($u['branch_id']) ? '' : '(فرعك)' ?></label>
-                <select name="branch_id" required>
+                <label for="shiftBranch">الفرع <?= empty($u['branch_id']) ? '' : '(فرعك)' ?></label>
+                <select name="branch_id" id="shiftBranch" required>
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $defaultBranch===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>
@@ -838,8 +836,8 @@ require_once __DIR__ . '/includes/header.php';
                 </select>
             </div>
             <div class="fld">
-                <label>تاريخ اليوم</label>
-                <input type="date" name="business_date" value="<?= e($bizDateStr) ?>" required>
+                <label for="shiftDate">تاريخ اليوم</label>
+                <input type="date" name="business_date" id="shiftDate" value="<?= e($bizDateStr) ?>" required>
             </div>
         </div>
         <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
@@ -989,7 +987,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="ct-pane" id="pane_summary">
             <div class="grid-top">
                 <div class="fld">
-                    <label>إجمالي السيستم</label>
+                    <label for="systemTotal">إجمالي السيستم</label>
                     <input type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
                 </div>
             </div>
@@ -1050,7 +1048,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
 <?php if (!empty($mySeqIssues)): ?>
 <div class="card" style="border-right:4px solid var(--warn);">
-    <div class="section-title" style="color:var(--warn-text, var(--warn));"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
+    <div class="section-title" style="color:var(--warn);"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
     <?php foreach ($mySeqIssues as $iss):
         $desc = $iss['kind'] === 'duplicate'
             ? "رقم الوردية {$iss['found_no']} اتكرر في فرع {$iss['branch_name']}"
@@ -1097,10 +1095,10 @@ require_once __DIR__ . '/includes/header.php';
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= e($s['branch_name']) ?></td>
@@ -1151,10 +1149,10 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= number_format($sys,2) ?></td>
@@ -1185,7 +1183,7 @@ require_once __DIR__ . '/includes/header.php';
                             </button>
                         <?php endif; ?>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                              data-confirm="تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_shift">
                             <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
@@ -1242,10 +1240,10 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= e($s['business_date']) ?></td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td style="font-weight:600;color:var(--accent-text);">
+                <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
-                        <div style="font-size:11px;font-weight:normal;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
+                        <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td><?= number_format($sys,2) ?></td>
@@ -1275,7 +1273,7 @@ require_once __DIR__ . '/includes/header.php';
                             <i class="ti ti-edit"></i> تعديل
                         </button>
                         <form method="post" style="display:inline;"
-                              onsubmit="return confirm('تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد.')">
+                              data-confirm="تأكيد مسح التقفيلة دي؟ هتقدر تعملها من جديد." data-confirm-danger>
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="delete_shift">
                             <input type="hidden" name="shift_id" value="<?= (int)$s['id'] ?>">
@@ -1296,7 +1294,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=2"></script>
+<script src="assets/acctree.js?v=3"></script>
 <script>
     const denoms = <?= json_encode($denominations) ?>;
     const methods = ['visa','instapay'];
@@ -1451,7 +1449,7 @@ require_once __DIR__ . '/includes/header.php';
         fetch('shift_data.php?id=' + id)
             .then(r => r.json())
             .then(data => {
-                if (data.error) { alert(data.error); return; }
+                if (data.error) { fgToast(data.error, 'err'); return; }
                 document.getElementById('formAction').value = action;
                 document.getElementById('shiftId').value = id;
                 document.querySelector('[name="branch_id"]').value = data.branch_id;
@@ -1519,7 +1517,7 @@ require_once __DIR__ . '/includes/header.php';
                 calc();
                 openShiftModal();
             })
-            .catch(() => alert('تعذّر تحميل بيانات الوردية.'));
+            .catch(() => fgToast('تعذّر تحميل بيانات الوردية.', 'err'));
     }
 
     function ownerEditShift(id) {

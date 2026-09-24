@@ -153,9 +153,8 @@ require_once __DIR__ . '/includes/header.php';
     .fld-edit:hover { background:var(--accent-soft); color:var(--accent-text); }
     .form-row.is-open .fld-edit { border-color:var(--neg); color:var(--neg); }
     .form-row.is-open .fld-edit:hover { background:var(--neg-soft); color:var(--neg); }
-    .btn { background:var(--accent); color:#fff; border:none; padding:12px 28px; border-radius:10px;
-        font-size:15px; font-family:inherit; cursor:pointer; font-weight:600; }
-    .btn:hover { background:var(--accent-hover); }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { padding: 12px 28px; font-size: 15px; font-weight: 600; }
     .nav-links { margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap; }
     .nav-link { padding:9px 16px; background:var(--surface); border-radius:9px; text-decoration:none;
         color:var(--accent-text); font-size:14px; }

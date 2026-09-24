@@ -719,49 +719,11 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .btn {
-        background: var(--accent);
-        color: #fff;
-        border: none;
-        padding: 8px 16px;
-        border-radius: 9px;
-        font-size: 13.5px;
-        font-family: inherit;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        text-decoration: none;
-        transition: background 0.15s ease;
-    }
-    .btn:hover {
-        background: var(--accent-hover);
-        color: #fff;
-    }
-    .btn-primary {
-        background: var(--accent);
-        color: #fff;
-    }
-    .btn-primary:hover {
-        background: var(--accent-hover);
-        color: #fff;
-    }
-    .btn-outline {
-        background: var(--surface);
-        color: var(--ink-700);
-        border: 1px solid var(--line);
-    }
-    .btn-outline:hover {
-        background: var(--bg);
-        color: var(--ink-700);
-    }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { padding: 8px 16px; font-size: 13.5px; }
     .btn-sm {
         padding: 5px 11px;
         font-size: 12.5px;
-    }
-    .btn:disabled {
-        opacity: .5;
-        cursor: not-allowed;
     }
     .btn-outline:disabled:hover {
         background: var(--surface);
@@ -1622,7 +1584,7 @@ require_once __DIR__ . '/includes/header.php';
                         if (row) refreshAshMrk(row);
                     } else {
                         if (ind) { ind.textContent = '✕'; ind.className = 'sale-ind err'; }
-                        alert(j.error || 'تعذّر الحفظ');
+                        fgToast(j.error || 'تعذّر الحفظ', 'err');
                     }
                 })
                 .catch(() => {

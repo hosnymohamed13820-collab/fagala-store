@@ -219,21 +219,8 @@ require_once __DIR__ . '/includes/header.php';
         color: var(--ink-500);
         line-height: 1.6;
     }
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 9px 18px;
-        border-radius: var(--r, 10px);
-        font-size: 13px;
-        font-weight: 600;
-        font-family: inherit;
-        cursor: pointer;
-        text-decoration: none;
-        border: none;
-        transition: background 0.15s ease;
-    }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { font-size: 13px; font-weight: 600; }
     .btn-secondary {
         background: var(--line-soft);
         color: var(--ink-700);

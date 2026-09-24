@@ -74,9 +74,8 @@ require_once __DIR__ . '/includes/header.php';
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--ink-400); }
     th { color:var(--accent-text); font-weight:600; font-size:13px; }
     td { color:var(--accent-text); }
-    .btn { background:var(--accent); color:#fff; border:none; padding:8px 16px; border-radius:9px;
-        font-size:13px; font-family:inherit; cursor:pointer; }
-    .btn:hover { background:var(--accent); }
+    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+    .btn { padding: 8px 16px; font-size: 13px; }
     .recon-input { width:120px; padding:8px 10px; border:1.5px solid var(--ink-400); border-radius:8px;
         font-size:14px; text-align:center; font-family:inherit; }
     .diff-pos { color:var(--pos); font-weight:600; } .diff-neg { color:var(--neg); font-weight:600; } .diff-zero { color:var(--accent-text); }

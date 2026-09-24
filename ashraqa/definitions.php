@@ -433,13 +433,6 @@ require_once __DIR__ . '/includes/header.php';
     .tab.active { background:var(--accent); color:#fff; }
     .tab:not(.active):hover { background:var(--bg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; text-decoration:none;
-        display:inline-flex; align-items:center; gap:7px; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:6px 12px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:12px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -469,9 +462,6 @@ require_once __DIR__ . '/includes/header.php';
         width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
         font-size:14px; font-family:inherit; background:var(--line-soft); }
     .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
-    .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line); }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
 </style>
 

@@ -329,27 +329,8 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* تعيين أنماط الأزرار محلياً طبقاً للقواعد */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border-radius: var(--r);
-    font-size: 13.5px;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid transparent;
-    background: var(--accent);
-    color: #fff;
-    text-decoration: none;
-    transition: background 0.15s ease, border-color 0.15s ease;
-}
-.btn:hover {
-    background: var(--accent-hover);
-    color: #fff;
-}
+/* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
+.btn { padding: 8px 16px; font-size: 13.5px; font-weight: 600; border: 1px solid transparent; }
 .btn-ghost {
     background: var(--surface);
     color: var(--text);
@@ -361,7 +342,7 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--accent-text);
 }
 .btn-success {
-    background: var(--pos);
+    background: var(--pos-fill);
     color: #fff;
 }
 .btn-success:hover {
@@ -369,7 +350,7 @@ require_once __DIR__ . '/includes/header.php';
     color: #fff;
 }
 .btn-danger {
-    background: var(--neg);
+    background: var(--neg-fill);
     color: #fff;
 }
 .btn-danger:hover {
@@ -390,7 +371,7 @@ require_once __DIR__ . '/includes/header.php';
 .pill-sent { background: var(--ink-200); color: var(--ink-700); }
 .pill-receiving { background: var(--warn-soft); color: var(--warn); }
 .pill-received { background: var(--pos-soft); color: var(--pos); }
-.pill-approved { background: var(--pos); color: #fff; }
+.pill-approved { background: var(--pos-fill); color: #fff; }
 
 .receiving-card {
     margin-bottom: 14px;
@@ -755,10 +736,10 @@ require_once __DIR__ . '/includes/header.php';
                     alert('تم إلغاء الفاتورة من موديول الاستلامات.');
                     location.reload();
                 } else {
-                    alert(d.error || 'حدث خطأ أثناء إلغاء الفاتورة.');
+                    fgToast(d.error || 'حدث خطأ أثناء إلغاء الفاتورة.', 'err');
                 }
             })
-            .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+            .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
     }
 
     document.querySelectorAll('.clickable-card').forEach(function(card) {
@@ -1101,7 +1082,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <!-- نافذة منبثقة لسبب الرفض وإعادة الفتح -->
-    <div id="rejectModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.6);z-index:99999;align-items:center;justify-content:center;padding:16px;">
+    <div id="rejectModal" style="display:none;position:fixed;inset:0;background:rgba(30,27,75,0.6);z-index:var(--z-modal);align-items:center;justify-content:center;padding:16px;">
         <div style="background:var(--surface);border-radius:var(--r);max-width:480px;width:100%;padding:20px;border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,0.2);">
             <h3 style="margin:0 0 10px 0;font-size:16px;color:var(--neg);display:flex;align-items:center;gap:6px;">
                 <i class="ti ti-alert-triangle"></i> رفض الاستلام وإعادة الفتح للفرع
@@ -1350,12 +1331,12 @@ function saveQtyEdit(input) {
                 recalcDiffTotals();
             } else {
                 input.style.borderColor = 'var(--neg)';
-                alert(d.error || 'تعذر حفظ الكمية.');
+                fgToast(d.error || 'تعذر حفظ الكمية.', 'err');
             }
         })
         .catch(function() {
             input.style.borderColor = 'var(--neg)';
-            alert('تعذر الاتصال بالخادم لحفظ التعديل.');
+            fgToast('تعذر الاتصال بالخادم لحفظ التعديل.', 'err');
         });
 }
 
@@ -1400,10 +1381,10 @@ function startReceiving() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function finishReview() {
@@ -1419,10 +1400,10 @@ function finishReview() {
             if (d.ok) {
                 location.href = 'receiving.php?r=' + receiptId;
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function approveReceipt() {
@@ -1438,10 +1419,10 @@ function approveReceipt() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ');
+                fgToast(d.error || 'حدث خطأ', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function rejectReceiptModal() {
@@ -1461,7 +1442,7 @@ function submitRejectReceipt() {
     var txt = document.getElementById('rejectReasonInput');
     var reason = (txt ? txt.value : '').trim();
     if (!reason) {
-        alert('يرجى كتابة سبب رفض الاستلام.');
+        fgToast('يرجى كتابة سبب رفض الاستلام.', 'warn');
         if (txt) txt.focus();
         return;
     }
@@ -1478,10 +1459,10 @@ function submitRejectReceipt() {
             if (d.ok) {
                 location.reload();
             } else {
-                alert(d.error || 'حدث خطأ أثناء رفض الاستلام.');
+                fgToast(d.error || 'حدث خطأ أثناء رفض الاستلام.', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function deleteSingleReceipt(id) {
@@ -1500,10 +1481,10 @@ function deleteSingleReceipt(id) {
                 alert('تم إلغاء الاستلام بنجاح.');
                 window.location.href = 'receiving.php';
             } else {
-                alert(d.error || 'حدث خطأ أثناء إلغاء الاستلام.');
+                fgToast(d.error || 'حدث خطأ أثناء إلغاء الاستلام.', 'err');
             }
         })
-        .catch(function(err) { alert('تعذر الاتصال بالخادم'); });
+        .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
 function escapeHtml(str) {

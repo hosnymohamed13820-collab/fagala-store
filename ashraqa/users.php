@@ -386,15 +386,6 @@ require_once __DIR__ . '/includes/header.php';
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
-    .btn {
-        background:var(--accent); color:#fff; border:none; padding:11px 20px;
-        border-radius:10px; font-size:14px; font-family:inherit; cursor:pointer;
-        text-decoration:none; display:inline-flex; align-items:center; gap:7px;
-    }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--bg); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:13px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
     th { color:var(--ink-500); font-weight:600; font-size:13px; }
@@ -460,8 +451,6 @@ require_once __DIR__ . '/includes/header.php';
         color: var(--ink-400);
     }
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
-    .btn-cancel { background:var(--line-soft); color:var(--ink-500); }
-    .btn-cancel:hover { background:var(--line-soft); color:var(--ink-500); }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
     @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
 </style>
@@ -547,7 +536,7 @@ require_once __DIR__ . '/includes/header.php';
                                 تعديل
                             </button>
                             <form method="post" style="display:inline;"
-                                  onsubmit="return confirm('تأكيد تغيير حالة المستخدم؟')">
+                                  data-confirm="تأكيد تغيير حالة المستخدم؟">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="action" value="toggle">
                                 <input type="hidden" name="user_id" value="<?= (int)$usr['id'] ?>">
