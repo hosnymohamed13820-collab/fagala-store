@@ -420,15 +420,25 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                     <?php endif; ?>
                 </span>
 
-                <?php /* طابور ربط سيستم الفروع (بريف ٥٠) — null = الوكيل لسه على نسخة قديمة */
+                <?php /* طابور وتصدير واستلام ربط سيستم الفروع (بريف ٥٠ و ٥٢) — null = الوكيل لسه على نسخة قديمة */
                 $rs = $a['repl_status'] ?? null;
                 if ($rs !== null):
-                    $rw = (int) $a['repl_waiting']; ?>
-                    <span style="font-size:12px;color:<?= $rs === 'stuck' ? 'var(--neg)' : 'var(--ink-500)' ?>;">
+                    $rw = (int) ($a['repl_waiting'] ?? 0); ?>
+                    <span style="font-size:12px;color:<?= in_array($rs, ['stuck', 'behind', 'not_exporting'], true) ? 'var(--neg)' : 'var(--ink-500)' ?>;">
                         <?php if ($rs === 'stuck'): ?>
                             <b>🔴 الربط واقف:</b> <?= $rw ?> أمر من <?= e(agent_ago((int) $a['repl_age_min'])) ?>
+                        <?php elseif ($rs === 'not_exporting'): ?>
+                            <b>🔴 الإدارة مابتطلّعش ملفات:</b> <?= (int) ($a['repl_send_pending'] ?? 0) ?> أمر مستني تصدير من <?= e(agent_ago((int) ($a['repl_send_age_min'] ?? 0))) ?>
+                        <?php elseif ($rs === 'behind'): ?>
+                            <b>🔴 مابيستلمش:</b> آخر أمر <?= e((string) ($a['repl_last_recv'] ?? '؟')) ?> (الإدارة وصلت <?= e((string) ($a['hq_last_sent'] ?? '؟')) ?>)
                         <?php elseif ($rw === 0): ?>
-                            الربط: ✅ مفيش حاجة مستنية
+                            الربط: ✅ مفيش حاجة مستنية<?php
+                                if ($a['agent_key'] === 'hq' && !empty($a['repl_last_sent'])) {
+                                    echo ' · آخر تصدير: ' . e((string) $a['repl_last_sent']);
+                                } elseif (!empty($a['repl_last_recv'])) {
+                                    echo ' · آخر أمر: ' . e((string) $a['repl_last_recv']);
+                                }
+                            ?>
                         <?php else: ?>
                             الربط: <?= $rw ?> أمر بيتنفّذ (من <?= e(agent_ago((int) $a['repl_age_min'])) ?>)
                         <?php endif; ?>

@@ -78,6 +78,12 @@ try {
         catch (Throwable $ex) { /* الأعمدة لسه مااتضافتش — النبضة نفسها نجحت */ }
     }
 
+    // تصدير الربط في الإدارة (بريف ٥٢) — وكيل الإدارة بس بيبعته.
+    if (isset($in['repl_send']) && is_array($in['repl_send'])) {
+        try { agent_repl_send_beat($agent, $in['repl_send']); }
+        catch (Throwable $ex) { /* الأعمدة لسه مااتضافتش — النبضة نفسها نجحت */ }
+    }
+
     echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $ex) {
     beat_die('Server error.', 500);

@@ -62,6 +62,15 @@ function agent_hhmm(string $s, int $fallback): int
     return $fallback;
 }
 
+/** مقارنة رقمين bigint بأمان كنصوص أو أرقام 64-bit دون استخدام float */
+function agent_id_cmp(string $a, string $b): int
+{
+    if (strlen($a) !== strlen($b)) {
+        return strlen($a) <=> strlen($b);
+    }
+    return strcmp($a, $b);
+}
+
 /**
  * حالة كل الوكلاء.
  *
@@ -75,7 +84,7 @@ function agent_list(): array
 
     $inWin = agent_in_window();
     $now   = time();
-    // طابور ربط سيستم الفروع (بريف ٥٠) — دقايق من وصول أقدم أمر مستني
+    // طابور ربط سيستم الفروع (بريف ٥٠ و ٥٢) — دقايق من وصول أقدم أمر مستني / تأخر التصدير أو الاستلام
     $replLimit = agent_cfg_int('agent_repl_alert_min', 120, 15);
 
     try {
@@ -86,7 +95,20 @@ function agent_list(): array
         return [];                            // الجدول لسه ما اتعملش
     }
 
+    // استخراج أكبر أمر صدّرته الإدارة مرة واحدة قبل الحلقة
+    $hqLastSent = null;
+    foreach ($rows as $row) {
+        if (($row['agent_key'] ?? '') === 'hq') {
+            if (!empty($row['repl_last_sent']) && preg_match('/^\d{1,19}$/', (string) $row['repl_last_sent'])) {
+                $hqLastSent = (string) $row['repl_last_sent'];
+            }
+            break;
+        }
+    }
+
     foreach ($rows as &$r) {
+        $r['hq_last_sent'] = $hqLastSent;
+
         $beat  = $r['last_beat_at'] ? strtotime((string) $r['last_beat_at']) : null;
         $quiet = $beat === null ? null : (int) floor(($now - $beat) / 60);
         $r['quiet_min'] = $quiet;
@@ -108,9 +130,43 @@ function agent_list(): array
             ? (int) floor(($now - strtotime((string) $r['last_data_at'])) / 60)
             : null;
 
-        // null = الوكيل قديم أو مابيقراش الطابور (أو الأعمدة لسه مااتضافتش) · stuck = عدّى الحد
-        $r['repl_status'] = !array_key_exists('repl_waiting', $r) || $r['repl_waiting'] === null ? null
-            : (((int) $r['repl_waiting'] > 0 && (int) $r['repl_age_min'] >= $replLimit) ? 'stuck' : 'ok');
+        // null = الوكيل قديم مابيبعتش بيانات ربط
+        // stuck = واقف في الطابور (بريف ٥٠)
+        // not_exporting = الإدارة مابتطلّعش ملفات (بريف ٥٢)
+        // behind = الفرع مابيستلمش (بريف ٥٢)
+        // ok = شغال سليم
+        // الأولوية: stuck > behind
+        $hasReplData = array_key_exists('repl_waiting', $r) && (
+            $r['repl_waiting'] !== null ||
+            ($r['repl_last_recv'] ?? null) !== null ||
+            ($r['repl_send_pending'] ?? null) !== null
+        );
+
+        if (!$hasReplData) {
+            $r['repl_status'] = null;
+        } elseif ((int) ($r['repl_waiting'] ?? 0) > 0 && (int) ($r['repl_age_min'] ?? 0) >= $replLimit) {
+            $r['repl_status'] = 'stuck';
+        } elseif ($r['agent_key'] === 'hq') {
+            if ($r['repl_send_pending'] !== null && (int) $r['repl_send_pending'] > 0 && (int) ($r['repl_send_age_min'] ?? 0) >= $replLimit) {
+                $r['repl_status'] = 'not_exporting';
+            } else {
+                $r['repl_status'] = 'ok';
+            }
+        } else {
+            $isBehind = false;
+            if ($hqLastSent !== null && !empty($r['repl_last_recv']) && preg_match('/^\d{1,19}$/', (string) $r['repl_last_recv'])) {
+                if (agent_id_cmp((string) $r['repl_last_recv'], $hqLastSent) < 0) {
+                    $changedAt = $r['repl_recv_changed_at'] ?? null;
+                    if ($changedAt) {
+                        $staleMin = (int) floor(($now - strtotime((string) $changedAt)) / 60);
+                        if ($staleMin >= $replLimit) {
+                            $isBehind = true;
+                        }
+                    }
+                }
+            }
+            $r['repl_status'] = $isBehind ? 'behind' : 'ok';
+        }
     }
     unset($r);
 
@@ -121,7 +177,7 @@ function agent_list(): array
  * ملخّص للتنبيه: الوكلاء اللي فيهم مشكلة دلوقتي.
  *
  * @return array ['level' => ok|warn|alert, 'warn' => [], 'alert' => [], 'repl' => []]
- *   repl = الفروع اللي طابور ربطها واقف — في أي وقت، مش وقت الشغل بس (بريف ٥٠)
+ *   repl = الفروع اللي طابور ربطها واقف أو متأخرة أو الإدارة مش بتصدر — في أي وقت (بريف ٥٠ و ٥٢)
  */
 function agent_trouble(): array
 {
@@ -129,7 +185,9 @@ function agent_trouble(): array
     foreach (agent_list() as $a) {
         if ($a['status'] === AGENT_ALERT)     $alert[] = $a;
         elseif ($a['status'] === AGENT_WARN)  $warn[]  = $a;
-        if (($a['repl_status'] ?? null) === 'stuck') $repl[] = $a;
+        if (in_array($a['repl_status'] ?? null, ['stuck', 'behind', 'not_exporting'], true)) {
+            $repl[] = $a;
+        }
     }
     $level = ($alert || $repl) ? AGENT_ALERT : ($warn ? AGENT_WARN : AGENT_OK);
     return ['level' => $level, 'warn' => $warn, 'alert' => $alert, 'repl' => $repl];
@@ -159,14 +217,22 @@ function agent_nag_text(array $t): string
         return implode(' · ', $out);
     };
 
-    // طابور الربط الواقف (بريف ٥٠) — بييجي الأول لأنه بيوقف الأصناف والأسعار كلها
+    // طابور وتصدير واستلام الربط (بريف ٥٠ و ٥٢) — بييجي الأول لأنه بيوقف الأصناف والأسعار كلها
     $replText = '';
     if (!empty($t['repl'])) {
         $out = [];
         foreach ($t['repl'] as $r) {
-            $out[] = $r['label'] . ' (' . (int) $r['repl_waiting'] . ' أمر من ' . agent_ago((int) $r['repl_age_min']) . ')';
+            $st = $r['repl_status'] ?? '';
+            if ($st === 'not_exporting') {
+                $out[] = $r['label'] . ' مابتطلّعش ملفات (' . (int) ($r['repl_send_pending'] ?? 0) . ' أمر من ' . agent_ago((int) ($r['repl_send_age_min'] ?? 0)) . ')';
+            } elseif ($st === 'behind') {
+                $out[] = $r['label'] . ' مابيستلمش (آخر أمر ' . ($r['repl_last_recv'] ?? '؟') . ' والإدارة وصلت ' . ($r['hq_last_sent'] ?? '؟') . ')';
+            } else {
+                // stuck
+                $out[] = $r['label'] . ' واقف في الطابور (' . (int) $r['repl_waiting'] . ' أمر من ' . agent_ago((int) $r['repl_age_min']) . ')';
+            }
         }
-        $replText = 'ربط سيستم الفروع واقف: ' . implode(' · ', $out) . '. الأصناف والأسعار الجديدة مش بتوصل.';
+        $replText = 'ربط سيستم الفروع: ' . implode(' · ', $out) . '. الأصناف والأسعار الجديدة مش بتوصل.';
     }
     if (!$t['alert'] && !$t['warn']) return $replText;
     $pre = $replText !== '' ? $replText . ' — ' : '';
@@ -231,10 +297,10 @@ function agent_beat(string $key, int $rows = 0, string $error = '',
 }
 
 /**
- * طابور ربط سيستم الفروع (db_repl_receive) — بريف ٥٠.
+ * طابور ربط سيستم الفروع (db_repl_receive) — بريف ٥٠ و ٥٢.
  * الربط بيقف عند أول أمر يفشل ومابيقولش، فالوكيل بيعدّ المستني مع كل نبضة.
  * الإشعار بيتبعت **مرة واحدة** لكل وقفة: أول ما الوقفة تعدّي الحد، و`repl_alerted_at`
- * بيتصفّر لما الطابور يفضى — فالوقفة الجاية تبعت تاني.
+ * بيتصفّر لما الطابور يفضى والفرع يلحق — فالوقفة الجاية تبعت تاني.
  */
 function agent_repl_beat(string $key, array $repl): void
 {
@@ -244,26 +310,153 @@ function agent_repl_beat(string $key, array $repl): void
     $text    = mb_substr((string) ($repl['first_text'] ?? ''), 0, 255);
     if ($waiting === 0) { $age = 0; $firstId = null; $text = ''; }
 
+    $hasRecv = isset($repl['last_recv']) && preg_match('/^\d{1,19}$/', (string) $repl['last_recv']);
+    $recv    = $hasRecv ? (string) $repl['last_recv'] : null;
+
     $pdo = db();
     $pdo->prepare(
         'UPDATE agent_status
             SET repl_waiting = ?, repl_age_min = ?, repl_first_id = ?, repl_first_text = ?,
                 repl_checked_at = NOW(),
-                repl_alerted_at = CASE WHEN ? = 0 THEN NULL ELSE repl_alerted_at END
+                repl_recv_changed_at = CASE
+                    WHEN ? IS NOT NULL AND NOT (repl_last_recv <=> ?) THEN NOW()
+                    ELSE repl_recv_changed_at
+                END,
+                repl_last_recv = CASE WHEN ? IS NOT NULL THEN ? ELSE repl_last_recv END
           WHERE agent_key = ?'
-    )->execute([$waiting, $age, $firstId, $text !== '' ? $text : null, $waiting, $key]);
+    )->execute([$waiting, $age, $firstId, $text !== '' ? $text : null, $recv, $recv, $recv, $recv, $key]);
+
+    // قراءة أكبر أمر صدّرته الإدارة (لو الوكيل فرع)
+    $hqLastSent = null;
+    if ($key !== 'hq') {
+        $stHq = $pdo->query("SELECT repl_last_sent FROM agent_status WHERE agent_key = 'hq'");
+        $val = $stHq ? $stHq->fetchColumn() : null;
+        if ($val !== false && $val !== null && preg_match('/^\d{1,19}$/', (string) $val)) {
+            $hqLastSent = (string) $val;
+        }
+    }
 
     $limit = agent_cfg_int('agent_repl_alert_min', 120, 15);
-    if ($waiting === 0 || $age < $limit) return;
+    $isStuck = ($waiting > 0 && $age >= $limit);
 
-    // UPDATE شرطي = قفل: نبضتين في نفس اللحظة مايبعتوش إشعارين
+    // الحالة الحالية للفرع بعد التحديث
+    $stCur = $pdo->prepare('SELECT repl_last_recv, repl_recv_changed_at FROM agent_status WHERE agent_key = ?');
+    $stCur->execute([$key]);
+    $curRow = $stCur->fetch();
+    $curRecv = $curRow['repl_last_recv'] ?? null;
+    $curChangedAt = $curRow['repl_recv_changed_at'] ?? null;
+
+    $isBehind = false;
+    $staleMin = 0;
+    if ($key !== 'hq' && $hqLastSent !== null && $curRecv !== null) {
+        if (agent_id_cmp((string) $curRecv, $hqLastSent) < 0) {
+            if ($curChangedAt) {
+                $staleMin = (int) floor((time() - strtotime((string) $curChangedAt)) / 60);
+                if ($staleMin >= $limit) {
+                    $isBehind = true;
+                }
+            }
+        }
+    }
+
+    // تصفير تنبيه الوقفة لما الفرع يلحق والطابور يفضى
+    $isCaughtUp = ($hqLastSent === null || $curRecv === null || agent_id_cmp((string) $curRecv, $hqLastSent) >= 0);
+    if ($waiting === 0 && $isCaughtUp) {
+        // الإدارة: متصفّرش لو التصدير لسه واقف — وإلا agent_repl_send_beat يبعت إشعار كل نبضة
+        $pdo->prepare(
+            'UPDATE agent_status SET repl_alerted_at = NULL
+              WHERE agent_key = ? AND (agent_key <> \'hq\' OR COALESCE(repl_send_pending, 0) = 0)'
+        )->execute([$key]);
+        return;
+    }
+
+    // تنبيه ١: طابور واقف (الأولوية الأولى)
+    if ($isStuck) {
+        $claim = $pdo->prepare('UPDATE agent_status SET repl_alerted_at = NOW() WHERE agent_key = ? AND repl_alerted_at IS NULL');
+        $claim->execute([$key]);
+        if ($claim->rowCount() !== 1) return;
+
+        $lb = $pdo->prepare('SELECT label FROM agent_status WHERE agent_key = ?');
+        $lb->execute([$key]);
+        $label = (string) ($lb->fetchColumn() ?: $key);
+
+        $ids = $pdo->query(
+            'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
+        )->fetchAll(PDO::FETCH_COLUMN);
+        $wid = (int) setting('agent_watcher_id', '0');
+        if ($wid > 0) $ids[] = $wid;
+
+        require_once __DIR__ . '/push_lib.php';
+        notify($pdo, $ids, 'agent_repl',
+            'ربط ' . $label . ' واقف',
+            $waiting . ' أمر مستني من ' . agent_ago($age) . ' — أول أمر واقف رقم ' . ($firstId ?? '؟'),
+            'settings.php#agents');
+        return;
+    }
+
+    // تنبيه ٢: الفرع مابيستلمش (behind)
+    if ($isBehind) {
+        $claim = $pdo->prepare('UPDATE agent_status SET repl_alerted_at = NOW() WHERE agent_key = ? AND repl_alerted_at IS NULL');
+        $claim->execute([$key]);
+        if ($claim->rowCount() !== 1) return;
+
+        $lb = $pdo->prepare('SELECT label FROM agent_status WHERE agent_key = ?');
+        $lb->execute([$key]);
+        $label = (string) ($lb->fetchColumn() ?: $key);
+
+        $ids = $pdo->query(
+            'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
+        )->fetchAll(PDO::FETCH_COLUMN);
+        $wid = (int) setting('agent_watcher_id', '0');
+        if ($wid > 0) $ids[] = $wid;
+
+        require_once __DIR__ . '/push_lib.php';
+        notify($pdo, $ids, 'agent_repl',
+            'ربط ' . $label . ' مابيستلمش',
+            'آخر أمر ' . $curRecv . ' والإدارة وصلت ' . $hqLastSent . ' (ثابت من ' . agent_ago($staleMin) . ')',
+            'settings.php#agents');
+        return;
+    }
+}
+
+/**
+ * تصدير ربط سيستم الإدارة (db_repl_send) — بريف ٥٢.
+ * الإدارة بتطلّع طابور واحد لكل الفروع. لو التصدير وقف، الفروع كلها مابيوصلهاش جديد.
+ */
+function agent_repl_send_beat(string $key, array $s): void
+{
+    $pending = max(0, (int) ($s['pending'] ?? 0));
+    $pendAge = max(0, (int) ($s['pend_age'] ?? 0));
+    $lastExp = preg_match('/^\d{1,19}$/', (string) ($s['last_exported'] ?? '')) ? (string) $s['last_exported'] : null;
+    if ($pending === 0) { $pendAge = 0; }
+
+    $pdo = db();
+    $pdo->prepare(
+        'UPDATE agent_status
+            SET repl_send_pending = ?,
+                repl_send_age_min = ?,
+                repl_last_sent    = COALESCE(?, repl_last_sent),
+                repl_checked_at   = NOW()
+          WHERE agent_key = ?'
+    )->execute([$pending, $pendAge, $lastExp, $key]);
+
+    // تصفير تنبيه وقفة التصدير لما الطابور يفضى
+    if ($pending === 0) {
+        $pdo->prepare(
+            'UPDATE agent_status
+                SET repl_alerted_at = CASE WHEN repl_waiting IS NULL OR repl_waiting = 0 THEN NULL ELSE repl_alerted_at END
+              WHERE agent_key = ?'
+        )->execute([$key]);
+        return;
+    }
+
+    $limit = agent_cfg_int('agent_repl_alert_min', 120, 15);
+    if ($pendAge < $limit) return;
+
+    // UPDATE شرطي = قفل: إشعار واحد لكل وقفة
     $claim = $pdo->prepare('UPDATE agent_status SET repl_alerted_at = NOW() WHERE agent_key = ? AND repl_alerted_at IS NULL');
     $claim->execute([$key]);
     if ($claim->rowCount() !== 1) return;
-
-    $lb = $pdo->prepare('SELECT label FROM agent_status WHERE agent_key = ?');
-    $lb->execute([$key]);
-    $label = (string) ($lb->fetchColumn() ?: $key);
 
     $ids = $pdo->query(
         'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
@@ -273,8 +466,8 @@ function agent_repl_beat(string $key, array $repl): void
 
     require_once __DIR__ . '/push_lib.php';
     notify($pdo, $ids, 'agent_repl',
-        'ربط ' . $label . ' واقف',
-        $waiting . ' أمر مستني من ' . agent_ago($age) . ' — أول أمر واقف رقم ' . ($firstId ?? '؟'),
+        'الإدارة مابتطلّعش ملفات ربط',
+        $pending . ' أمر مستني تصدير من ' . agent_ago($pendAge),
         'settings.php#agents');
 }
 
