@@ -28,7 +28,7 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 # tell a dead PC from a quiet sales day.
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.2'
+$AgentVer  = '2.3'
 
 # Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
 $SyncToken = 'hq_48c4cfd7ec51ede3faf01c94aba41504e95f7b9b'
@@ -593,7 +593,8 @@ SELECT h.STH_ID AS sth_id, '$suffix' AS suffix,
        COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE) AS last_modify
 FROM STO_TRANS_HEADER_$suffix h
 LEFT JOIN SUPPLIERS s ON s.SUPP_ID = h.SUPP_ID
-WHERE h.SSTT_ID IN (2,6) $wmClause
+-- branch purchases now come from each branch agent (brief 66)
+WHERE h.SSTT_ID IN (2,6) AND h.BRCH_ID = 1 $wmClause
 ORDER BY COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE);
 "@
 

@@ -41,6 +41,7 @@
 
 # Which branch is this? Must match agent_status.agent_key on the site.
 $AgentKey    = 'bonjour'
+$BranchBrchId = 3
 
 # This branch's own database, on this same PC.
 $SqlServer   = 'localhost'
@@ -72,7 +73,7 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$AgentVer   = '1.2'
+$AgentVer   = '1.3'
 
 # Send everything (ignore the delta) once every N runs, so a lost
 # update can never stay lost forever. 180 runs x 5 min = ~15 hours.
@@ -410,7 +411,7 @@ if ($send.Count -eq 0) {
 #  Sales (SSTT_TYPE = 3) and sale returns (SSTT_TYPE = 6).
 #  Filter uses STO_SYS_TRANS_TYPES.SSTT_TYPE IN (3, 6) via JOIN so any
 #  new sales transaction type added to the ERP is caught automatically.
-#  Purchases (SSTT_TYPE = 2, 5) are excluded - HQ agent handles them.
+#  Purchases are handled in the dedicated section below (brief 66).
 # =====================================================================
 
 function Get-Fingerprint {
@@ -624,6 +625,178 @@ ORDER BY l.STH_ID, l.STL_LINE_NO;
 }
 
 # =====================================================================
+#  BRANCH PURCHASES & LINES (Monthly partitioned tables)
+#
+#  Purchases (SSTT_ID = 2) and purchase returns (SSTT_ID = 6).
+#  Each branch now sends its own purchases directly from its local DB
+#  instead of waiting for HQ sync (brief 66).
+# =====================================================================
+
+$okPurchases = $true
+$sentPurchases = 0
+$sentPurchaseLines = 0
+
+foreach ($suffix in $suffixes) {
+    $headTable = "STO_TRANS_HEADER_$suffix"
+
+    $existsSql = "SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '$headTable'"
+    try {
+        $exists = (Invoke-Sql $existsSql).Rows[0]['c']
+    } catch {
+        Write-Log "[pur_$suffix] existence check failed: $($_.Exception.Message)"
+        $okPurchases = $false
+        continue
+    }
+    if ($exists -eq 0) { continue }
+
+    $wmKey = "pur_$suffix"
+    $wm = $watermarks[$wmKey]
+    $wmClause = ''
+    if ($wm) {
+        $wmClause = "AND COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE) > DATEADD(DAY, -3, '$wm')"
+    }
+
+    $headSql = @"
+SET NOCOUNT ON;
+SELECT h.STH_ID AS sth_id, '$suffix' AS suffix,
+       LTRIM(RTRIM(h.STH_DOC_NO)) AS doc_no, h.SSTT_ID AS doc_type,
+       h.SUPP_ID AS supplier_id,
+       LTRIM(RTRIM(s.SUPP_CODE)) AS supplier_code,
+       LTRIM(RTRIM(s.SUPP_NAME1)) AS supplier_name,
+       h.STH_NET_VALUE AS net_amount, h.STH_TOT_VALUE AS total_amount,
+       h.STH_DOC_DATE AS invoice_date, h.BRCH_ID AS company_branch,
+       COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE) AS last_modify
+FROM STO_TRANS_HEADER_$suffix h
+LEFT JOIN SUPPLIERS s ON s.SUPP_ID = h.SUPP_ID
+WHERE h.SSTT_ID IN (2,6) AND h.BRCH_ID = $BranchBrchId $wmClause
+ORDER BY COALESCE(h.LAST_MODIFY_DATE, h.CREATE_DATE);
+"@
+
+    try {
+        $headRows = Invoke-Sql $headSql
+    } catch {
+        Write-Log "[pur_$suffix] header query failed: $($_.Exception.Message)"
+        $okPurchases = $false
+        continue
+    }
+
+    if ($headRows.Rows.Count -eq 0) { continue }
+
+    $ids = @()
+    $maxModify = $wm
+    $hdrOut = New-Object System.Collections.ArrayList
+    foreach ($r in $headRows.Rows) {
+        $ids += [int64]$r['sth_id']
+        $lm = $r['last_modify']
+        if ($lm -isnot [DBNull]) {
+            $lmStr = ([datetime]$lm).ToString('yyyy-MM-dd HH:mm:ss.fff')
+            if (-not $maxModify -or $lmStr -gt $maxModify) { $maxModify = $lmStr }
+        }
+        $null = $hdrOut.Add([ordered]@{
+            sth_id         = [int64]$r['sth_id']
+            suffix         = $suffix
+            doc_no         = [string]$r['doc_no']
+            doc_type       = [int]$r['doc_type']
+            supplier_id    = if ($r['supplier_id'] -is [DBNull]) { $null } else { [int]$r['supplier_id'] }
+            supplier_code  = [string]$r['supplier_code']
+            supplier_name  = [string]$r['supplier_name']
+            net_amount     = [double]$r['net_amount']
+            total_amount   = [double]$r['total_amount']
+            invoice_date   = if ($r['invoice_date'] -is [DBNull]) { $null } else { ([datetime]$r['invoice_date']).ToString('yyyy-MM-dd HH:mm:ss') }
+            company_branch = if ($r['company_branch'] -is [DBNull]) { $null } else { [int]$r['company_branch'] }
+            last_modify    = if ($r['last_modify'] -is [DBNull]) { $null } else { ([datetime]$r['last_modify']).ToString('yyyy-MM-dd HH:mm:ss') }
+        })
+    }
+
+    Write-Log "[pur_$suffix] $($hdrOut.Count) candidate purchase invoice(s)."
+
+    $hdrFinger = @{ kind = 'purchases'; suffix = $suffix; rows = $hdrOut } | ConvertTo-Json -Depth 5 -Compress
+    if (-not (Test-Changed "purchases_$suffix" $hdrFinger)) {
+        Write-Log "[pur_$suffix] unchanged - nothing to send."
+        continue
+    }
+
+    $monthOk = $true
+
+    $chunkSize = 500
+    for ($i = 0; $i -lt $hdrOut.Count; $i += $chunkSize) {
+        $hChunk = @($hdrOut[$i..([math]::Min($i + $chunkSize - 1, $hdrOut.Count - 1))])
+        $p = @{ agent = $AgentKey; kind = 'purchases'; rows = $hChunk } | ConvertTo-Json -Depth 5 -Compress
+        if (Send-Payload $p) {
+            $sentPurchases += $hChunk.Count
+        } else {
+            $monthOk = $false
+            $okPurchases = $false
+            break
+        }
+    }
+    if (-not $monthOk) { continue }
+
+    $idChunks = @()
+    for ($i = 0; $i -lt $ids.Count; $i += 500) {
+        $idChunks += ,($ids[$i..([math]::Min($i + 499, $ids.Count - 1))])
+    }
+
+    foreach ($chunk in $idChunks) {
+        $idList = ($chunk -join ',')
+        $lineSql = @"
+SET NOCOUNT ON;
+SELECT l.STH_ID AS sth_id, l.STL_LINE_NO AS line_no, l.ITEM_ID AS item_id,
+       LTRIM(RTRIM(ic.IC_CODE)) AS item_code,
+       LTRIM(RTRIM(ic.IC_NAME1)) AS item_name,
+       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price
+FROM STO_TRANS_LINES_$suffix l
+LEFT JOIN ITEM_CODES ic ON ic.IC_ID = l.IC_ID
+WHERE l.STH_ID IN ($idList)
+ORDER BY l.STH_ID, l.STL_LINE_NO;
+"@
+        try {
+            $lineRows = Invoke-Sql $lineSql
+        } catch {
+            Write-Log "[pur_$suffix] lines query failed: $($_.Exception.Message)"
+            $okPurchases = $false
+            $monthOk = $false
+            break
+        }
+
+        $lnOut = New-Object System.Collections.ArrayList
+        foreach ($r in $lineRows.Rows) {
+            $null = $lnOut.Add([ordered]@{
+                sth_id     = [int64]$r['sth_id']
+                suffix     = $suffix
+                line_no    = [int]$r['line_no']
+                item_id    = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
+                item_code  = [string]$r['item_code']
+                item_name  = [string]$r['item_name']
+                quantity   = [double]$r['quantity']
+                unit_price = [double]$r['unit_price']
+                cost_price = [double]$r['cost_price']
+            })
+        }
+
+        if ($lnOut.Count -gt 0) {
+            for ($j = 0; $j -lt $lnOut.Count; $j += 500) {
+                $lnChunk = @($lnOut[$j..([math]::Min($j + 499, $lnOut.Count - 1))])
+                $lnPayload = @{ agent = $AgentKey; kind = 'purchase_lines'; rows = $lnChunk } | ConvertTo-Json -Depth 5 -Compress
+                if (Send-Payload $lnPayload) {
+                    $sentPurchaseLines += $lnChunk.Count
+                } else {
+                    $okPurchases = $false
+                    $monthOk = $false
+                    break
+                }
+            }
+        }
+        if (-not $monthOk) { break }
+    }
+
+    if ($monthOk) {
+        Set-Sent "purchases_$suffix" $hdrFinger
+        if ($maxModify) { $watermarks["pur_$suffix"] = $maxModify }
+    }
+}
+
+# =====================================================================
 #  UNPOSTED INVOICES & LINES (STO_TRANS_HEADER_YY_MM, STH_STATUS=0)
 #
 #  Unposted sales invoices and their lines.
@@ -757,7 +930,7 @@ ORDER BY l.STH_ID, l.STL_LINE_NO;
 #  If any chunk failed we keep the OLD state for that section, so the
 #  next run retries.
 # ---------------------------------------------------------------------
-$allOk = ($ok -and $okInvoices -and $okUnposted)
+$allOk = ($ok -and $okInvoices -and $okPurchases -and $okUnposted)
 
 try {
     $balObj = @{}
@@ -779,15 +952,16 @@ try {
     Write-Log "Could not save state: $($_.Exception.Message)"
 }
 
-$totalSent = $sent + $sentInvoices + $sentInvoiceLines + $sentUnposted + $sentUnpostedLines
+$totalSent = $sent + $sentInvoices + $sentInvoiceLines + $sentPurchases + $sentPurchaseLines + $sentUnposted + $sentUnpostedLines
 
 if ($allOk) {
     Stop-Run -Rows $totalSent -ErrorText '' -Code 0
 } else {
     $errParts = @()
-    if (-not $ok)         { $errParts += 'balances' }
-    if (-not $okInvoices) { $errParts += 'invoices' }
-    if (-not $okUnposted) { $errParts += 'unposted' }
+    if (-not $ok)          { $errParts += 'balances' }
+    if (-not $okInvoices)  { $errParts += 'invoices' }
+    if (-not $okPurchases) { $errParts += 'purchases' }
+    if (-not $okUnposted)  { $errParts += 'unposted' }
     Stop-Run -Rows $totalSent -ErrorText ("sync failed: " + ($errParts -join ', ')) -Code 1
 }
 

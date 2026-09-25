@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/sync_tokens.php';
 const BRANCH_MAX_ROWS   = 60000;
+const BR_AGENT_BRCH     = ['zahraa' => 2, 'degla' => 5, 'bonjour' => 3, 'abc' => 6];
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -63,7 +64,7 @@ require_once __DIR__ . '/agent_lib.php';
 try {
     if (!agent_exists($agent)) br_die('Unknown agent: ' . $agent, 404);
 
-    if (!in_array($kind, ['balances', 'invoices', 'invoice_lines', 'unposted', 'unposted_lines'], true)) {
+    if (!in_array($kind, ['balances', 'invoices', 'invoice_lines', 'unposted', 'unposted_lines', 'purchases', 'purchase_lines'], true)) {
         br_die('Unknown kind: ' . $kind);
     }
 
@@ -241,6 +242,120 @@ try {
                 $st->execute([
                     $agent,
                     $sid,
+                    $ln,
+                    ($r['item_id'] ?? null) !== null ? (int) $r['item_id'] : null,
+                    mb_substr((string) ($r['item_code'] ?? ''), 0, 64),
+                    mb_substr((string) ($r['item_name'] ?? ''), 0, 255),
+                    (float) ($r['quantity'] ?? 0),
+                    (float) ($r['unit_price'] ?? 0),
+                    (float) ($r['cost_price'] ?? 0),
+                ]);
+                $stored++;
+            }
+        } elseif ($kind === 'purchases') {
+            // فواتير الشراء والمردود — upsert بالـ (sth_id, suffix) في hq_invoices
+            // كل فرع يبعت فواتير فرعه بس (company_branch = BR_AGENT_BRCH[$agent])
+            $expectedBrch = BR_AGENT_BRCH[$agent] ?? 0;
+            $ins = $pdo->prepare(
+                'INSERT INTO hq_invoices
+                    (sth_id, suffix, doc_no, doc_type, supplier_id, supplier_code,
+                     supplier_name, net_amount, total_amount, invoice_date, company_branch, last_modify)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    suffix         = VALUES(suffix),
+                    doc_no         = VALUES(doc_no),
+                    doc_type       = VALUES(doc_type),
+                    supplier_id    = VALUES(supplier_id),
+                    supplier_code  = VALUES(supplier_code),
+                    supplier_name  = VALUES(supplier_name),
+                    net_amount     = VALUES(net_amount),
+                    total_amount   = VALUES(total_amount),
+                    invoice_date   = VALUES(invoice_date),
+                    company_branch = VALUES(company_branch),
+                    last_modify    = VALUES(last_modify)'
+            );
+            foreach ($rows as $r) {
+                if (!is_array($r)) { $skipped++; continue; }
+                $sid = (int) ($r['sth_id'] ?? 0);
+                $suf = (string) ($r['suffix'] ?? '');
+                if ($sid <= 0 || $suf === '') { $skipped++; continue; }
+
+                $brch = ($r['company_branch'] ?? null) !== null ? (int) $r['company_branch'] : null;
+                if ($brch !== $expectedBrch) {
+                    $skipped++;
+                    continue;
+                }
+
+                $ins->execute([
+                    $sid,
+                    $suf,
+                    (string) ($r['doc_no'] ?? ''),
+                    (int) ($r['doc_type'] ?? 0),
+                    ($r['supplier_id'] ?? null) !== null ? (int) $r['supplier_id'] : null,
+                    (string) ($r['supplier_code'] ?? ''),
+                    mb_substr((string) ($r['supplier_name'] ?? ''), 0, 255),
+                    (float) ($r['net_amount'] ?? 0),
+                    (float) ($r['total_amount'] ?? 0),
+                    ($r['invoice_date'] ?? null) ?: null,
+                    $brch,
+                    ($r['last_modify'] ?? null) ?: null,
+                ]);
+                $stored++;
+            }
+        } elseif ($kind === 'purchase_lines') {
+            // بنود فواتير الشراء والمردود — المفتاح (sth_id, suffix, line_no) في hq_invoice_lines
+            // تقبل فقط إذا كانت (sth_id, suffix) موجودة في hq_invoices تابعة لنفس الفرع
+            $expectedBrch = BR_AGENT_BRCH[$agent] ?? 0;
+
+            $candidateIds = [];
+            foreach ($rows as $r) {
+                if (is_array($r)) {
+                    $sid = (int) ($r['sth_id'] ?? 0);
+                    if ($sid > 0) $candidateIds[$sid] = true;
+                }
+            }
+
+            $validHeaders = [];
+            if (!empty($candidateIds) && $expectedBrch > 0) {
+                $ids = array_keys($candidateIds);
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $chk = $pdo->prepare(
+                    "SELECT sth_id, suffix FROM hq_invoices WHERE company_branch = ? AND sth_id IN ($placeholders)"
+                );
+                $chk->execute(array_merge([$expectedBrch], $ids));
+                while ($row = $chk->fetch(PDO::FETCH_ASSOC)) {
+                    $validHeaders[$row['sth_id'] . '|' . $row['suffix']] = true;
+                }
+            }
+
+            $ins = $pdo->prepare(
+                'INSERT INTO hq_invoice_lines
+                    (sth_id, suffix, line_no, item_id, item_code, item_name, quantity, unit_price, cost_price)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    item_id    = VALUES(item_id),
+                    item_code  = VALUES(item_code),
+                    item_name  = VALUES(item_name),
+                    quantity   = VALUES(quantity),
+                    unit_price = VALUES(unit_price),
+                    cost_price = VALUES(cost_price)'
+            );
+
+            foreach ($rows as $r) {
+                if (!is_array($r)) { $skipped++; continue; }
+                $sid = (int) ($r['sth_id'] ?? 0);
+                $ln  = (int) ($r['line_no'] ?? 0);
+                $suf = (string) ($r['suffix'] ?? '');
+                if ($sid <= 0 || $suf === '') { $skipped++; continue; }
+
+                if (!isset($validHeaders[$sid . '|' . $suf])) {
+                    $skipped++;
+                    continue;
+                }
+
+                $ins->execute([
+                    $sid,
+                    $suf,
                     $ln,
                     ($r['item_id'] ?? null) !== null ? (int) $r['item_id'] : null,
                     mb_substr((string) ($r['item_code'] ?? ''), 0, 64),
