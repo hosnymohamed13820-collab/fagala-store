@@ -19,6 +19,8 @@ if (!is_owner()) {
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }
 
+require_once __DIR__ . '/sensitive_lib.php';
+
 $pdo         = db();
 $modules     = all_modules();
 $moduleParts = module_parts();
@@ -288,9 +290,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $empId = $empChk->fetchColumn();
                         if ($isEmp) {
                             if ($empId) {
-                                $pdo->prepare(
-                                    'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
-                                )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                                if (sens_unlocked()) {
+                                    $pdo->prepare(
+                                        'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
+                                    )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                                } else {
+                                    $pdo->prepare(
+                                        'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
+                                    )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $expIn, $expOut, $allowAny, $empId]);
+                                }
                             } else {
                                 $pdo->prepare(
                                     'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out, allow_anywhere, is_active)
@@ -425,6 +433,8 @@ $branches = $pdo->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER
 
 $page_title    = 'إدارة المستخدمين';
 $active_module = 'settings';
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -565,8 +575,8 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td>
                         <?php if (!$usr['is_owner']): ?>
-                            <button class="btn btn-sm btn-ghost"
-                                onclick='openEdit(<?= json_encode([
+                            <?php
+                                $editData = [
                                     "id" => $usr["id"],
                                     "full_name" => $usr["full_name"],
                                     "username" => $usr["username"],
@@ -580,7 +590,13 @@ require_once __DIR__ . '/includes/header.php';
                                     "expected_in" => $usr["expected_in"] ?? "",
                                     "expected_out" => $usr["expected_out"] ?? "",
                                     "allow_anywhere" => (int)($usr["allow_anywhere"] ?? 0),
-                                ], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                ];
+                                if (!sens_unlocked()) {
+                                    unset($editData['base_salary']);
+                                }
+                            ?>
+                            <button class="btn btn-sm btn-ghost"
+                                onclick='openEdit(<?= json_encode($editData, JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                                 تعديل
                             </button>
                             <form method="post" style="display:inline;"
@@ -662,7 +678,10 @@ require_once __DIR__ . '/includes/header.php';
                 <div id="empFields" style="display:none;margin-top:12px;">
                     <div class="form-grid">
                         <div class="form-row">
-                            <label>المرتب الأساسي</label>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                <label style="margin-bottom:0;">المرتب الأساسي</label>
+                                <?= sens_eye() ?>
+                            </div>
                             <input type="number" step="0.01" min="0" name="base_salary" id="f_salary" value="0">
                         </div>
                         <div class="form-row">
@@ -844,6 +863,8 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('formAction').value = 'add';
         document.getElementById('formUserId').value = '';
         document.getElementById('userForm').reset();
+        document.getElementById('f_salary').disabled = false;
+        document.getElementById('f_salary').placeholder = '';
         clearPerms();
         // إظهار/إخفاء التلميحات
         document.getElementById('f_username').readOnly = false;
@@ -871,7 +892,15 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('f_branch').value = (data.branch_id === '' || data.branch_id == null) ? '' : data.branch_id;
         // بيانات الموظف
         document.getElementById('f_isemp').checked = !!data.is_employee;
-        document.getElementById('f_salary').value = data.base_salary !== '' ? data.base_salary : 0;
+        if (!('base_salary' in data)) {
+            document.getElementById('f_salary').disabled = true;
+            document.getElementById('f_salary').value = '';
+            document.getElementById('f_salary').placeholder = 'مقفول — Ctrl+L';
+        } else {
+            document.getElementById('f_salary').disabled = false;
+            document.getElementById('f_salary').placeholder = '';
+            document.getElementById('f_salary').value = data.base_salary !== '' ? data.base_salary : 0;
+        }
         document.getElementById('f_job').value = data.job_title || '';
         document.getElementById('f_phone').value = data.phone || '';
         document.getElementById('f_in').value = data.expected_in || '';

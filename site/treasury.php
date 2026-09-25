@@ -463,6 +463,8 @@ if ($isAllStatement) {
 
 $page_title    = 'الخزينة وكشف الحساب';
 $active_module = 'treasury';
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 
 $typeIcons = [
@@ -555,6 +557,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .summary-bar .actions { display:flex; gap:8px; flex-wrap:wrap; }
     .btn-white { background:rgba(255,255,255,0.18); }
     .btn-white:hover { background:rgba(255,255,255,0.28); }
+    .summary-bar .sens-eye { color: #fff; border-color: rgba(255,255,255,.4); }
+    .summary-bar .sens-eye .sens-eye-sub { color: rgba(255,255,255,.75); }
+    .summary-bar .sens-eye:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
     /* خزينة الكاش الفعلي — نفس كارت الداشبورد س 161-168 */
     .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
@@ -665,9 +670,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 <div class="summary-bar">
     <div>
         <div class="label">إجمالي الأرصدة (شامل عهد الفروع)</div>
-        <div class="value"><?= ltr_out(money_fmt($totalBalance)) ?> <span style="font-size:16px;">ج.م</span></div>
+        <div class="value"><?= sens_mask(ltr_out(money_fmt($totalBalance))) ?> <span style="font-size:16px;">ج.م</span></div>
     </div>
     <div class="actions">
+        <?= sens_eye() ?>
         <?php if ($canOperate): ?>
         <button class="btn btn-white" onclick="openModal('receiptModal')"><i class="ti ti-arrow-down-left"></i> استلام</button>
         <button class="btn btn-white" onclick="openModal('disburseModal')"><i class="ti ti-arrow-up-right"></i> صرف</button>
@@ -677,9 +683,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     </div>
 </div>
 
-<div class="tre-box realcash<?= $realCash < 0 ? ' neg' : '' ?>" title="الخزينة الرئيسية + خزينة الكاش">
+<div class="tre-box realcash<?= (sens_unlocked() && $realCash < 0 ? ' neg' : '') ?>" title="الخزينة الرئيسية + خزينة الكاش">
     <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
-    <div class="tre-val"><?= ltr_out(money_fmt($realCash)) ?> <span class="tre-cur">ج.م</span></div>
+    <div class="tre-val"><?= sens_mask(ltr_out(money_fmt($realCash))) ?> <span class="tre-cur">ج.م</span></div>
 </div>
 
 <div class="treasuries-grid">
@@ -693,8 +699,8 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                     <div class="tc-type"><?= e(treasury_type_label($t['type'])) ?></div>
                 </div>
             </div>
-            <div class="tc-balance <?= $t['balance'] < 0 ? 'neg' : '' ?>">
-                <?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tc-cur">ج.م</span>
+            <div class="tc-balance <?= (sens_unlocked() && (float)$t['balance'] < 0 ? 'neg' : '') ?>">
+                <?= sens_mask(ltr_out(money_fmt((float)$t['balance']))) ?> <span class="tc-cur">ج.م</span>
             </div>
         </a>
     <?php endforeach; ?>

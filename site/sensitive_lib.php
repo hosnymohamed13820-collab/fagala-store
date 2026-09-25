@@ -27,7 +27,7 @@ function sens_mask(string $html): string {
     if (sens_unlocked()) {
         return $html;
     }
-    return '<span class="sens-blur" onclick="sensOpen()" title="مخفي — Ctrl+L">00,000.00</span>';
+    return '<span class="sens-blur" onclick="event.preventDefault();event.stopPropagation();sensOpen()" title="مخفي — Ctrl+L">00,000.00</span>';
 }
 
 function sens_eye(): string {
