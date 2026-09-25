@@ -149,10 +149,15 @@ function ilk_item_history(string $code, int $itemId = 0): array
     $dist = ilk_distribution_map($docNos, $codes);
 
     // ---- أسماء الفروع ----
+    // وفرع الشركة اللي اشترى الفاتورة: company_branch = branches.sto_id
+    // (نفس ربط group_invoices_by_branch في قايمة الفواتير)
     $branches = [];
+    $buyerNames = [1 => 'الإدارة'];
     try {
-        foreach ($pdo->query('SELECT id, name FROM branches') as $b) {
+        foreach ($pdo->query('SELECT id, name, sto_id, in_receiving FROM branches') as $b) {
             $branches[(int) $b['id']] = (string) $b['name'];
+            $sid = (int) ($b['sto_id'] ?? 0);
+            if ($sid > 1) $buyerNames[$sid] = (int) $b['in_receiving'] === 1 ? (string) $b['name'] : 'الإدارة';
         }
     } catch (Throwable $ex) { /* تجاهل */ }
 
@@ -200,6 +205,8 @@ function ilk_item_history(string $code, int $itemId = 0): array
             'sth_id'         => (int) $l['sth_id'],
             'suffix'         => (string) $l['suffix'],
             'company_branch' => ($l['company_branch'] !== null && $l['company_branch'] !== '') ? (int) $l['company_branch'] : null,
+            // من غير فرع = الإدارة (زي قايمة الفواتير)
+            'buyer'          => $buyerNames[(int) ($l['company_branch'] ?? 0) ?: 1] ?? ('فرع #' . (int) $l['company_branch']),
             'doc_type'       => ($l['doc_type'] !== null && $l['doc_type'] !== '') ? (int) $l['doc_type'] : null,
             'is_return'      => $isRet,
             'type_label'     => $isRet ? 'مردود شراء' : 'فاتورة شراء',

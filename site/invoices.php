@@ -1948,6 +1948,7 @@ require_once __DIR__ . '/includes/header.php';
                             (r.company_branch ? '&cb=' + encodeURIComponent(r.company_branch) : '') +
                             (r.doc_type ? '&dt=' + encodeURIComponent(r.doc_type) : '') + '">' + esc(r.doc_no) + '</a>' +
                         '<span class="ilk-muted">' + esc(r.date ? r.date.substring(0, 10) : '') + '</span>' +
+                        (r.buyer ? '<span class="ilk-chip" title="الفرع اللي عامل الفاتورة"><i class="ti ti-building-store"></i> ' + esc(r.buyer) + '</span>' : '') +
                         '<span style="flex:1;min-width:60px;"></span>' +
                         '<span>كمية <b>' + num(r.qty) + '</b></span>' +
                         '<span class="ilk-muted">سعر ' + money(r.unit_price) + '</span>' +
