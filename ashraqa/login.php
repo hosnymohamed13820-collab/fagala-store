@@ -71,7 +71,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/login_fx.css?v=9">
+    <link rel="stylesheet" href="assets/login_fx.css?v=10">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
@@ -320,7 +320,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=46').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=47').catch(() => {});
             });
         }
 
@@ -353,6 +353,6 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             }
         })();
     </script>
-    <script src="assets/login_fx.js?v=10" defer></script>
+    <script src="assets/login_fx.js?v=11" defer></script>
 </body>
 </html>

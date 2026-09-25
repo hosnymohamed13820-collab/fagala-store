@@ -379,6 +379,25 @@
     let sceneWaitingFor = null;
     let sceneWaitTimer = 0;
 
+    // حالة التفاعل النشط مع الشخصيات (بريف ٦٥)
+    let interactingNode = null;
+    let lastMovedMouseX = -9999;
+    let lastMovedMouseY = -9999;
+    let mouseStationaryTimer = 0;
+    let isTouchInteraction = false;
+    let touchInactiveTimer = 0;
+    let lastTouchX = -9999;
+    let lastTouchY = -9999;
+
+    function updateDebugDataset() {
+        document.body.dataset.lfxIncard = String(debugInCardCount);
+        document.body.dataset.lfxInteract = interactingNode ? (interactingNode.def.id + ':' + interactingNode.interact) : '';
+        if (debugMode) {
+            document.body.dataset.lfxMindist = String(Math.round(debugMinDist));
+            document.body.dataset.lfxFlips = String(debugFlipCount);
+        }
+    }
+
     // حساب مربع الكارت بحجم الشخصية (هامش ٢٤ + نصف العرض/الطول)
     function getCharBox(card, def) {
         const padX = 24 + (def ? def.width / 2 : 24);
@@ -650,7 +669,7 @@
             el.innerHTML = charDef.svg.replace('>', '>' + limbsSvg(charDef.limbs));
             containerEl.appendChild(el);
 
-            return {
+            const node = {
                 def: charDef,
                 el: el,
                 pupils: el.querySelectorAll('.lfx-eye-pupil'),
@@ -698,8 +717,40 @@
                 lookAtDuration: 0,
                 // مؤقتات الحركات الخاصة
                 actionTimer: 0,
-                specialAction: null
+                specialAction: null,
+                // حالة التفاعل النشط (بريف ٦٥)
+                interact: null, // null | 'held' | 'flying' | 'chase'
+                grabOffsetX: 0,
+                grabOffsetY: 0,
+                mouseHistory: [],
+                squashTimer: 0,
+                spinAngle: 0,
+                isChaseStopped: false
             };
+
+            el.addEventListener('pointerdown', (e) => {
+                if (prefersReducedMotion) return;
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                e.preventDefault();
+                startCharInteraction(node, e);
+            });
+
+            el.addEventListener('touchstart', (e) => {
+                if (prefersReducedMotion) return;
+                e.preventDefault();
+                if (e.touches && e.touches.length > 0) {
+                    const t = e.touches[0];
+                    startCharInteraction(node, {
+                        clientX: t.clientX,
+                        clientY: t.clientY,
+                        pointerId: t.identifier,
+                        pointerType: 'touch',
+                        preventDefault: () => e.preventDefault()
+                    });
+                }
+            }, { passive: false });
+
+            return node;
         });
 
         updateCardBounds();
@@ -709,9 +760,29 @@
         resetEvents.forEach(evt => window.addEventListener(evt, onUserActivity, { passive: true }));
         window.addEventListener('mousemove', onMouseMove, { passive: true });
         window.addEventListener('mouseleave', onMouseLeave, { passive: true });
+        window.addEventListener('pointermove', onGlobalPointerMove, { passive: false });
+        window.addEventListener('pointerup', onGlobalPointerUp, { passive: true });
+        window.addEventListener('pointercancel', onGlobalPointerUp, { passive: true });
+        window.addEventListener('touchmove', onGlobalTouchMove, { passive: false });
+        window.addEventListener('touchend', onGlobalTouchEnd, { passive: true });
+        window.addEventListener('touchcancel', onGlobalTouchEnd, { passive: true });
         document.addEventListener('visibilitychange', onVisibilityChange);
 
+        if (loginCardEl) {
+            loginCardEl.addEventListener('focusin', () => {
+                if (interactingNode) {
+                    endInteraction(interactingNode);
+                }
+            });
+            loginCardEl.addEventListener('pointerdown', () => {
+                if (interactingNode && interactingNode.interact === 'chase') {
+                    endInteraction(interactingNode);
+                }
+            });
+        }
+
         resetIdleTimer();
+        updateDebugDataset();
 
         // محاكاة سريعة ثابتة إذا طُلب ?lfx_warp=N
         if (warpSeconds > 0) {
@@ -722,6 +793,7 @@
                 simulatePhysics(fixedDt);
             }
             applyDOM();
+            lastFrameTime = performance.now();
         }
 
         if (!prefersReducedMotion) {
@@ -748,12 +820,28 @@
         } else {
             isMouseInsideCard = false;
         }
+
+        if (Math.hypot(e.clientX - lastMovedMouseX, e.clientY - lastMovedMouseY) > 3) {
+            lastMovedMouseX = e.clientX;
+            lastMovedMouseY = e.clientY;
+            mouseStationaryTimer = 0;
+        }
+
+        if (interactingNode && interactingNode.interact === 'held') {
+            interactingNode.mouseHistory.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+            if (interactingNode.mouseHistory.length > 30) {
+                interactingNode.mouseHistory.shift();
+            }
+        }
     }
 
     function onMouseLeave() {
         mouseX = -9999;
         mouseY = -9999;
         isMouseInsideCard = false;
+        if (interactingNode && interactingNode.interact === 'chase') {
+            endInteraction(interactingNode);
+        }
     }
 
     function onUserActivity() {
@@ -766,10 +854,12 @@
 
     function resetIdleTimer() {
         if (idleTimer) clearTimeout(idleTimer);
+        if (interactingNode) return;
         idleTimer = setTimeout(startIdleMode, idleTimeoutMs);
     }
 
     function startIdleMode() {
+        if (interactingNode) return;
         isIdle = true;
         sceneStage = 'idle_wait';
         stageTimer = 2.0; // يبدأ أول مشهد خلال ٢ إلى ٣ ثواني
@@ -892,6 +982,733 @@
         node.lookAtTarget = null;
     }
 
+    // =========================================================================
+    // دوال التفاعل مع الشخصيات (بريف ٦٥): مسك · حركة · رمي · مطاردة الماوس
+    // =========================================================================
+
+    function onGlobalPointerMove(e) {
+        if (prefersReducedMotion) return;
+        mouseX = e.clientX;
+        mouseY = e.clientY;
+        if (e.pointerType === 'touch') {
+            lastTouchX = e.clientX;
+            lastTouchY = e.clientY;
+            touchInactiveTimer = 0;
+        }
+
+        if (cardRect) {
+            isMouseInsideCard = (
+                mouseX >= cardRect.left &&
+                mouseX <= cardRect.right &&
+                mouseY >= cardRect.top &&
+                mouseY <= cardRect.bottom
+            );
+        } else {
+            isMouseInsideCard = false;
+        }
+
+        if (Math.hypot(e.clientX - lastMovedMouseX, e.clientY - lastMovedMouseY) > 3) {
+            lastMovedMouseX = e.clientX;
+            lastMovedMouseY = e.clientY;
+            mouseStationaryTimer = 0;
+        }
+
+        if (interactingNode && interactingNode.interact === 'held') {
+            interactingNode.mouseHistory.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+            if (interactingNode.mouseHistory.length > 30) {
+                interactingNode.mouseHistory.shift();
+            }
+        }
+    }
+
+    function onGlobalPointerUp(e) {
+        if (interactingNode && interactingNode.interact === 'held') {
+            releaseHeldChar(interactingNode, e);
+        }
+    }
+
+    function onGlobalTouchMove(e) {
+        if (prefersReducedMotion) return;
+        if (e.touches && e.touches.length > 0) {
+            const t = e.touches[0];
+            mouseX = t.clientX;
+            mouseY = t.clientY;
+            lastTouchX = t.clientX;
+            lastTouchY = t.clientY;
+            touchInactiveTimer = 0;
+
+            if (interactingNode && interactingNode.interact === 'held') {
+                e.preventDefault();
+                interactingNode.mouseHistory.push({ x: t.clientX, y: t.clientY, t: performance.now() });
+                if (interactingNode.mouseHistory.length > 30) {
+                    interactingNode.mouseHistory.shift();
+                }
+            }
+        }
+    }
+
+    function onGlobalTouchEnd(e) {
+        if (interactingNode && interactingNode.interact === 'held') {
+            releaseHeldChar(interactingNode, e);
+        }
+    }
+
+    // بدء مسك الشخصية (held)
+    function startCharInteraction(node, e) {
+        if (prefersReducedMotion) return;
+
+        // شخصية واحدة بس في التفاعل: إذا كانت هناك شخصية أخرى يتم إنهاؤها أولاً
+        if (interactingNode && interactingNode !== node) {
+            endInteraction(interactingNode);
+        }
+
+        // التفاعل يوقف الخمول تماماً
+        stopIdleMode();
+
+        interactingNode = node;
+        node.interact = 'held';
+        node.activePath = null;
+        node.specialAction = null;
+        node.isFollower = false;
+        node.followWaypoints = null;
+        node.followLeader = null;
+        node.walkAmp = 0;
+        node.bounce = 0;
+        node.vx = 0;
+        node.vy = 0;
+        node.currentSpeed = 0;
+        node.isChaseStopped = false;
+
+        node.grabOffsetX = e.clientX - node.x;
+        node.grabOffsetY = e.clientY - node.y;
+
+        isTouchInteraction = (e.pointerType === 'touch');
+        touchInactiveTimer = 0;
+        if (isTouchInteraction) {
+            lastTouchX = e.clientX;
+            lastTouchY = e.clientY;
+        }
+
+        node.mouseHistory = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+        node.el.classList.add('lfx-held');
+
+        try {
+            if (e.pointerId !== undefined) {
+                node.el.setPointerCapture(e.pointerId);
+            }
+        } catch (err) {}
+
+        updateDebugDataset();
+    }
+
+    // إفلات الشخصية والرمي (flying)
+    function releaseHeldChar(node, e) {
+        node.el.classList.remove('lfx-held');
+        try {
+            if (e && e.pointerId !== undefined) {
+                node.el.releasePointerCapture(e.pointerId);
+            }
+        } catch (err) {}
+
+        const now = performance.now();
+        const recent = node.mouseHistory.filter(h => now - h.t <= 120);
+        let vx = 0;
+        let vy = 0;
+
+        if (recent.length >= 2) {
+            const oldest = recent[0];
+            const newest = recent[recent.length - 1];
+            const dtH = (newest.t - oldest.t) / 1000;
+            if (dtH > 0.005) {
+                vx = (newest.x - oldest.x) / dtH;
+                vy = (newest.y - oldest.y) / dtH;
+            }
+        }
+
+        const speed = Math.hypot(vx, vy);
+        const MAX_SPEED = 2200;
+        if (speed > MAX_SPEED) {
+            vx = (vx / speed) * MAX_SPEED;
+            vy = (vy / speed) * MAX_SPEED;
+        }
+
+        node.vx = vx;
+        node.vy = vy;
+        node.currentSpeed = Math.hypot(vx, vy);
+        node.interact = 'flying';
+        node.spinAngle = node.tilt || 0;
+        node.squashTimer = 0;
+
+        // إذا سيبتها فوق مربع الكارت ← ترتد لبرّه فوراً
+        if (cardRect && node.def.id !== 'paper') {
+            const box = getCharBox(cardRect, node.def);
+            if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
+                const dLeft = Math.abs(node.x - box.minX);
+                const dRight = Math.abs(box.maxX - node.x);
+                const dTop = Math.abs(node.y - box.minY);
+                const dBottom = Math.abs(box.maxY - node.y);
+                const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                if (minD === dLeft) { node.x = box.minX - 2; node.vx = -Math.abs(node.vx || 200) * 0.5; }
+                else if (minD === dRight) { node.x = box.maxX + 2; node.vx = Math.abs(node.vx || 200) * 0.5; }
+                else if (minD === dTop) { node.y = box.minY - 2; node.vy = -Math.abs(node.vy || 200) * 0.5; }
+                else { node.y = box.maxY + 2; node.vy = Math.abs(node.vy || 200) * 0.5; }
+                node.currentSpeed = Math.hypot(node.vx, node.vy);
+            }
+        }
+
+        if (node.currentSpeed < 40) {
+            node.currentSpeed = 0;
+            node.vx = 0;
+            node.vy = 0;
+            node.squashTimer = 0.2;
+            node.tilt = 0;
+        }
+
+        updateDebugDataset();
+    }
+
+    // حالة المسك الحالية (held)
+    function handleCharInteractHeld(node, dt) {
+        const curMouseX = isTouchInteraction ? lastTouchX : mouseX;
+        const curMouseY = isTouchInteraction ? lastTouchY : mouseY;
+
+        node.x = curMouseX - node.grabOffsetX;
+        node.y = curMouseY - node.grabOffsetY;
+
+        const now = performance.now();
+        const recent = node.mouseHistory.filter(h => now - h.t <= 120);
+        let vxHist = 0;
+        if (recent.length >= 2) {
+            const oldest = recent[0];
+            const newest = recent[recent.length - 1];
+            const dtH = (newest.t - oldest.t) / 1000;
+            if (dtH > 0.005) {
+                vxHist = (newest.x - oldest.x) / dtH;
+            }
+        }
+
+        // ميلان = سرعة الماوس الأفقية × ثابت، بحد أقصى ±٢٥°
+        node.tilt = Math.max(-25, Math.min(25, vxHist * 0.15));
+
+        // الوش ناحية الحركة
+        if (Math.abs(vxHist) > 20) {
+            node.facing = vxHist > 0 ? 1 : -1;
+        }
+
+        // الرجلين متدلّية من غير دورة مشي
+        node.walkAmp = 0;
+        node.bounce = 0;
+
+        node.pupilOffset.x = node.facing * 1.8;
+        node.pupilOffset.y = 0;
+
+        // الباقيين وقت held: بيبصّوا على الشخصية الممسوكة وواقفين مكانهم
+        charNodes.forEach(other => {
+            if (other !== node) {
+                other.lookAtTarget = node;
+                other.currentSpeed = 0;
+                other.vx = 0;
+                other.vy = 0;
+                other.walkAmp = 0;
+                other.bounce = 0;
+                const ldx = node.x - other.x;
+                const ldy = node.y - other.y;
+                const lang = Math.atan2(ldy, ldx);
+                other.pupilOffset.x = Math.cos(lang) * 2.2 * other.facing;
+                other.pupilOffset.y = Math.sin(lang) * 2.2;
+            }
+        });
+    }
+
+    // حالة الطيران والارتداد (flying)
+    function handleCharInteractFlying(node, dt, winW, winH) {
+        if (node.squashTimer > 0) {
+            node.squashTimer -= dt;
+            node.bounce = Math.sin((1 - Math.max(0, node.squashTimer) / 0.2) * Math.PI) * 6;
+            node.tilt = 0;
+            node.vx = 0;
+            node.vy = 0;
+            node.currentSpeed = 0;
+            if (node.squashTimer <= 0) {
+                // الانتقال للمطاردة (chase)
+                node.interact = 'chase';
+                node.bounce = 0;
+                node.squashTimer = 0;
+                node.followWaypoints = null;
+                node.followWaypointTimer = 0;
+                node.isChaseStopped = false;
+                mouseStationaryTimer = 0;
+                touchInactiveTimer = 0;
+                charNodes.forEach(o => {
+                    if (o.lookAtTarget === node) o.lookAtTarget = null;
+                });
+                updateDebugDataset();
+            }
+            return;
+        }
+
+        // احتكاك: v *= Math.exp(-3.5*dt)
+        const friction = Math.exp(-3.5 * dt);
+        node.vx *= friction;
+        node.vy *= friction;
+        node.currentSpeed = Math.hypot(node.vx, node.vy);
+
+        node.x += node.vx * dt;
+        node.y += node.vy * dt;
+
+        // ارتداد حواف الشاشة
+        if (node.x <= 50) {
+            node.x = 50;
+            node.vx = -node.vx * 0.5;
+        } else if (node.x >= winW - 50) {
+            node.x = winW - 50;
+            node.vx = -node.vx * 0.5;
+        }
+        if (node.y <= 50) {
+            node.y = 50;
+            node.vy = -node.vy * 0.5;
+        } else if (node.y >= winH - 50) {
+            node.y = winH - 50;
+            node.vy = -node.vy * 0.5;
+        }
+
+        // ارتداد مربع الكارت الموسّع
+        if (cardRect && node.def.id !== 'paper') {
+            const box = getCharBox(cardRect, node.def);
+            if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
+                const dLeft = Math.abs(node.x - box.minX);
+                const dRight = Math.abs(box.maxX - node.x);
+                const dTop = Math.abs(node.y - box.minY);
+                const dBottom = Math.abs(box.maxY - node.y);
+                const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                if (minD === dLeft) {
+                    node.x = box.minX - 2;
+                    node.vx = -Math.abs(node.vx) * 0.5;
+                } else if (minD === dRight) {
+                    node.x = box.maxX + 2;
+                    node.vx = Math.abs(node.vx) * 0.5;
+                } else if (minD === dTop) {
+                    node.y = box.minY - 2;
+                    node.vy = -Math.abs(node.vy) * 0.5;
+                } else {
+                    node.y = box.maxY + 2;
+                    node.vy = Math.abs(node.vy) * 0.5;
+                }
+                node.currentSpeed = Math.hypot(node.vx, node.vy);
+            }
+        }
+
+        // دوران أثناء الطيران واعتدال عند التباطؤ
+        node.spinAngle += (node.vx * 0.8) * dt;
+        const straighten = Math.min(1, Math.max(0, (node.currentSpeed - 40) / 120));
+        node.tilt = (node.spinAngle % 360) * straighten;
+
+        if (Math.abs(node.vx) > 15) {
+            node.facing = node.vx > 0 ? 1 : -1;
+        }
+
+        node.walkAmp = 0;
+        node.bounce = 0;
+
+        // لما السرعة < ٤٠px/ث ← «هبطت» (كبسة صغيرة ٠٫٢ث)
+        if (node.currentSpeed < 40) {
+            node.currentSpeed = 0;
+            node.vx = 0;
+            node.vy = 0;
+            node.squashTimer = 0.2;
+            node.tilt = 0;
+        }
+
+        // الباقيين وقت flying: بيبصّوا على الشخصية الطائرة وواقفين مكانهم
+        charNodes.forEach(other => {
+            if (other !== node) {
+                other.lookAtTarget = node;
+                other.currentSpeed = 0;
+                other.vx = 0;
+                other.vy = 0;
+                other.walkAmp = 0;
+                other.bounce = 0;
+                const ldx = node.x - other.x;
+                const ldy = node.y - other.y;
+                const lang = Math.atan2(ldy, ldx);
+                other.pupilOffset.x = Math.cos(lang) * 2.2 * other.facing;
+                other.pupilOffset.y = Math.sin(lang) * 2.2;
+            }
+        });
+    }
+
+    // حالة المطاردة (chase)
+    function handleCharInteractChase(node, dt, winW, winH) {
+        // شروط انتهاء المطاردة:
+        // ١) الماوس ثابت ٥ ثواني
+        if (!isTouchInteraction) {
+            mouseStationaryTimer += dt;
+            if (mouseStationaryTimer >= 5.0) {
+                endInteraction(node);
+                return;
+            }
+        }
+
+        // ٢) الماوس خرج من الصفحة
+        if (!isTouchInteraction && (mouseX < 0 || mouseY < 0)) {
+            endInteraction(node);
+            return;
+        }
+
+        // ٤) اللمس (موبايل): انتهاء بعد ٤ ثواني من غير لمس
+        if (isTouchInteraction) {
+            touchInactiveTimer += dt;
+            if (touchInactiveTimer >= 4.0) {
+                endInteraction(node);
+                return;
+            }
+        }
+
+        let targetX = isTouchInteraction ? lastTouchX : mouseX;
+        let targetY = isTouchInteraction ? lastTouchY : mouseY;
+
+        // إذا كان الماوس جوّه الكارت ← الهدف أقرب نقطة على حرف المربع الموسّع
+        if (cardRect) {
+            const box = getCharBox(cardRect, node.def);
+            if (targetX >= box.minX && targetX <= box.maxX && targetY >= box.minY && targetY <= box.maxY) {
+                const dLeft = Math.abs(targetX - box.minX);
+                const dRight = Math.abs(box.maxX - targetX);
+                const dTop = Math.abs(targetY - box.minY);
+                const dBottom = Math.abs(box.maxY - targetY);
+                const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                if (minD === dLeft) targetX = box.minX;
+                else if (minD === dRight) targetX = box.maxX;
+                else if (minD === dTop) targetY = box.minY;
+                else targetY = box.maxY;
+            }
+        }
+
+        let nextTargetX = targetX;
+        let nextTargetY = targetY;
+
+        // الالتفاف حول المربع الموسّع عبر planSafeWaypoints
+        if (cardRect) {
+            node.followWaypointTimer -= dt;
+            const box = getCharBox(cardRect, node.def);
+            const intersects = segmentIntersectsBox(node.x, node.y, targetX, targetY, box);
+
+            if (intersects) {
+                if (!node.followWaypoints || node.followWaypointTimer <= 0) {
+                    node.followWaypoints = planSafeWaypoints(node.x, node.y, targetX, targetY, winW, winH, node.def);
+                    node.followWaypointTimer = 0.5;
+                }
+                while (node.followWaypoints && node.followWaypoints.length > 2) {
+                    const wp = node.followWaypoints[1];
+                    if (Math.hypot(node.x - wp.x, node.y - wp.y) <= 25) {
+                        node.followWaypoints.splice(1, 1);
+                    } else {
+                        break;
+                    }
+                }
+                if (node.followWaypoints && node.followWaypoints.length > 1) {
+                    const wp = node.followWaypoints[1];
+                    nextTargetX = wp.x;
+                    nextTargetY = wp.y;
+                }
+            } else {
+                node.followWaypoints = null;
+            }
+        }
+
+        const distToFinal = Math.hypot(targetX - node.x, targetY - node.y);
+        const isSteeringWaypoint = (nextTargetX !== targetX || nextTargetY !== targetY);
+
+        if (node.isChaseStopped) {
+            if (distToFinal > 85 || isSteeringWaypoint) {
+                node.isChaseStopped = false;
+            }
+        } else {
+            if (distToFinal <= 70 && !isSteeringWaypoint) {
+                node.isChaseStopped = true;
+            }
+        }
+
+        if (node.isChaseStopped) {
+            // توقف على بُعد ~٧٠px والوش ناحية الماوس
+            const decel = (RUN / ACCEL_T) * dt;
+            node.currentSpeed = Math.max(0, node.currentSpeed - decel);
+            node.vx = 0;
+            node.vy = 0;
+            if (Math.abs(targetX - node.x) > 5) {
+                node.facing = targetX > node.x ? 1 : -1;
+            }
+            node.walkAmp += (0 - node.walkAmp) * (1 - Math.exp(-dt * 15));
+            node.bounce = 0;
+            node.tilt = 0;
+            const lang = Math.atan2(targetY - node.y, targetX - node.x);
+            node.pupilOffset.x = Math.cos(lang) * 2.2 * node.facing;
+            node.pupilOffset.y = Math.sin(lang) * 2.2;
+        } else {
+            // جري RUN بتسارع ACCEL_T
+            const accel = (RUN / ACCEL_T) * dt;
+            node.currentSpeed = Math.min(RUN, node.currentSpeed + accel);
+            const dx = nextTargetX - node.x;
+            const dy = nextTargetY - node.y;
+            const d = Math.hypot(dx, dy);
+            if (d > 1) {
+                node.vx = (dx / d) * node.currentSpeed;
+                node.vy = (dy / d) * node.currentSpeed;
+                node.x += node.vx * dt;
+                node.y += node.vy * dt;
+            }
+            if (Math.abs(node.vx) > 15) {
+                node.facing = node.vx > 0 ? 1 : -1;
+            }
+            const distMoved = Math.hypot(node.vx, node.vy) * dt;
+            node.walkPhase += distMoved / STRIDE_RUN;
+            const targetAmp = Math.min(1, node.currentSpeed / WALK);
+            node.walkAmp += (targetAmp - node.walkAmp) * (1 - Math.exp(-dt * 15));
+            node.bounce = (node.walkAmp > 0.05) ? Math.abs(Math.sin(node.walkPhase)) * 2.5 * node.walkAmp : 0;
+            node.tilt = node.facing * Math.min(6, (node.currentSpeed / RUN) * 6);
+            const moveAng = Math.atan2(node.vy, node.vx);
+            node.pupilOffset.x = Math.cos(moveAng) * 2.2 * node.facing;
+            node.pupilOffset.y = Math.sin(moveAng) * 2.2;
+        }
+    }
+
+    // إنهاء التفاعل والرجوع لـ null والمشي للبيت
+    function endInteraction(node) {
+        if (!node) return;
+        node.interact = null;
+        if (interactingNode === node) {
+            interactingNode = null;
+        }
+        node.el.classList.remove('lfx-held');
+
+        const winW = window.innerWidth || document.documentElement.clientWidth;
+        const winH = window.innerHeight || document.documentElement.clientHeight;
+        const isMobile = winW < 700;
+        const homes = isMobile ? HOMES_MOBILE : HOMES_DESKTOP;
+        const home = homes[node.def.id] || { x: 0.5, y: 0.5 };
+        const homeX = home.x * winW;
+        const homeY = home.y * winH;
+
+        // الشخصية تمشي لبيتها من مكانها (startCharWalk، مش نقل)
+        startCharWalk(node, homeX, homeY, WALK, false, node.def.id === 'ruler');
+
+        charNodes.forEach(o => {
+            if (o.lookAtTarget === node) o.lookAtTarget = null;
+        });
+
+        // عدّاد الخمول العادي يبدأ من الأول
+        resetIdleTimer();
+        updateDebugDataset();
+    }
+
+    // محاكاة فيزياء التفاعل النشط
+    function simulateInteractionPhysics(dt) {
+        const winW = window.innerWidth || document.documentElement.clientWidth;
+        const winH = window.innerHeight || document.documentElement.clientHeight;
+        const isMobile = winW < 700;
+        const PERSONAL = isMobile ? 64 : 84;
+        const MAX_SEP_SPEED = 60;
+
+        if (interactingNode) {
+            if (interactingNode.interact === 'held') {
+                handleCharInteractHeld(interactingNode, dt);
+            } else if (interactingNode.interact === 'flying') {
+                handleCharInteractFlying(interactingNode, dt, winW, winH);
+            } else if (interactingNode.interact === 'chase') {
+                handleCharInteractChase(interactingNode, dt, winW, winH);
+            }
+        }
+
+        // حركة الشخصيات الأخرى وقت المطاردة (chase)
+        if (interactingNode && interactingNode.interact === 'chase') {
+            const homes = isMobile ? HOMES_MOBILE : HOMES_DESKTOP;
+            const centerX = winW / 2;
+            const centerY = winH / 2;
+            const hasValidMouse = (mouseX > 0 && mouseY > 0 && !isMouseInsideCard);
+
+            charNodes.forEach(other => {
+                if (other === interactingNode) return;
+                const home = homes[other.def.id] || { x: 0.5, y: 0.5 };
+                let targetX = home.x * winW;
+                let targetY = home.y * winH;
+                let targetPupilX = 1.6;
+                let targetPupilY = 0;
+
+                if (hasValidMouse) {
+                    const relX = (mouseX - centerX) / centerX;
+                    const relY = (mouseY - centerY) / centerY;
+                    targetX += relX * other.def.depth;
+                    targetY += relY * other.def.depth;
+
+                    const dx = mouseX - other.x;
+                    const dy = mouseY - other.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist > 1) {
+                        const angle = Math.atan2(dy, dx);
+                        const pupilDist = Math.min(2.8, (dist / 120) * 2.8);
+                        targetPupilX = Math.cos(angle) * pupilDist;
+                        targetPupilY = Math.sin(angle) * pupilDist;
+                    }
+                }
+
+                const smoothK = 1 - Math.exp(-dt * 5);
+                const prevX = other.x;
+                const prevY = other.y;
+                other.x += (targetX - other.x) * smoothK;
+                other.y += (targetY - other.y) * smoothK;
+                other.vx = (other.x - prevX) / Math.max(dt, 1 / 1000);
+                other.vy = (other.y - prevY) / Math.max(dt, 1 / 1000);
+                other.currentSpeed = Math.hypot(other.vx, other.vy);
+
+                other.facing = 1;
+                other.tilt = 0;
+                other.bounce = 0;
+                other.walkAmp += (0 - other.walkAmp) * (1 - Math.exp(-dt * 15));
+
+                other.pupilOffset.x += (targetPupilX - other.pupilOffset.x) * (1 - Math.exp(-dt * 8));
+                other.pupilOffset.y += (targetPupilY - other.pupilOffset.y) * (1 - Math.exp(-dt * 8));
+            });
+
+            // تباعد المسافة الشخصية (PERSONAL) وقت chase بين جميع الشخصيات
+            for (let i = 0; i < charNodes.length; i++) {
+                for (let j = i + 1; j < charNodes.length; j++) {
+                    const c1 = charNodes[i];
+                    const c2 = charNodes[j];
+                    if (c1.def.id === 'paper' || c2.def.id === 'paper') continue;
+
+                    let dx = c2.x - c1.x;
+                    let dy = c2.y - c1.y;
+                    let dist = Math.hypot(dx, dy);
+
+                    if (dist > 0 && dist < PERSONAL) {
+                        const ux = dx / dist;
+                        const uy = dy / dist;
+                        if (dist < 74) {
+                            const pushHard = Math.min((74 - dist) / 2, 4);
+                            c1.x -= ux * pushHard;
+                            c1.y -= uy * pushHard;
+                            c2.x += ux * pushHard;
+                            c2.y += uy * pushHard;
+                            dist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
+                        } else {
+                            const overlap = PERSONAL - dist;
+                            const pushSpeed = Math.min(MAX_SEP_SPEED, (overlap / PERSONAL) * MAX_SEP_SPEED);
+                            const pushDist = (pushSpeed * dt) / 2;
+                            c1.x -= ux * pushDist;
+                            c1.y -= uy * pushDist;
+                            c2.x += ux * pushDist;
+                            c2.y += uy * pushDist;
+                        }
+                    }
+                    if (debugMode) {
+                        debugMinDist = Math.min(debugMinDist, dist);
+                    }
+                }
+            }
+        }
+
+        // شبكة أمان المربع: مركز أي شخصية (إلا الورقة والشخصية الممسوكة) برّه المربع الموسع
+        if (cardRect) {
+            charNodes.forEach(node => {
+                if (node.def.id === 'paper') return;
+                if (node.interact === 'held') return;
+                const box = getCharBox(cardRect, node.def);
+                if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
+                    debugInCardCount++;
+                    const dLeft = Math.abs(node.x - box.minX);
+                    const dRight = Math.abs(box.maxX - node.x);
+                    const dTop = Math.abs(node.y - box.minY);
+                    const dBottom = Math.abs(box.maxY - node.y);
+                    const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                    if (minD === dLeft) node.x = box.minX;
+                    else if (minD === dRight) node.x = box.maxX;
+                    else if (minD === dTop) node.y = box.minY;
+                    else node.y = box.maxY;
+                }
+            });
+        }
+
+        // حدود الشاشة
+        charNodes.forEach(node => {
+            if (node.interact === 'held') return;
+            node.x = Math.max(50, Math.min(winW - 50, node.x));
+            node.y = Math.max(50, Math.min(winH - 50, node.y));
+        });
+
+        // بهتان الأثر القديم
+        pencilTrail.forEach(pt => { pt.life -= dt; });
+        pencilTrail = pencilTrail.filter(pt => pt.life > 0);
+        penTrail.forEach(pt => { pt.life -= dt; });
+        penTrail = penTrail.filter(pt => pt.life > 0);
+    }
+
+    // حركة العودة للبيت بنعومة على المسار بعد انتهاء التفاعل
+    function simulateWalkingHome(dt, node) {
+        const path = node.activePath;
+        if (!path) return;
+
+        const a = node.targetSpeed / ACCEL_T;
+        const remDist = path.totalLength - node.distOnPath;
+        const stopDist = (node.currentSpeed * node.currentSpeed) / (2 * a);
+
+        if (remDist > stopDist) {
+            node.currentSpeed = Math.min(node.targetSpeed, node.currentSpeed + a * dt);
+        } else {
+            node.currentSpeed = Math.max(14, node.currentSpeed - a * dt);
+        }
+
+        node.distOnPath += node.currentSpeed * dt;
+
+        if (node.distOnPath >= path.totalLength) {
+            node.distOnPath = path.totalLength;
+            const endPt = path.getAt(path.totalLength);
+            node.x = endPt.x;
+            node.y = endPt.y;
+            node.currentSpeed = 0;
+            node.vx = 0;
+            node.vy = 0;
+            node.activePath = null;
+        } else {
+            const pt = path.getAt(node.distOnPath);
+            node.vx = Math.cos(pt.angle) * node.currentSpeed;
+            node.vy = Math.sin(pt.angle) * node.currentSpeed;
+            node.x = pt.x;
+            node.y = pt.y;
+            if (path.isOrtho) {
+                node.rulerRot = pt.rot || 0;
+                node.customTilt = node.rulerRot;
+            }
+        }
+
+        if (Math.abs(node.vx) > 15) {
+            node.facing = node.vx > 0 ? 1 : -1;
+        }
+        const distMoved = Math.hypot(node.vx, node.vy) * dt;
+        node.walkPhase += distMoved / STRIDE_WALK;
+        const targetAmp = Math.min(1, node.currentSpeed / WALK);
+        node.walkAmp += (targetAmp - node.walkAmp) * (1 - Math.exp(-dt * 15));
+        node.bounce = (node.walkAmp > 0.05) ? Math.abs(Math.sin(node.walkPhase)) * 2.5 * node.walkAmp : 0;
+        if (node.def.id !== 'ruler') {
+            node.tilt = node.facing * Math.min(6, (node.currentSpeed / RUN) * 6);
+        }
+
+        // شبكة أمان المربع أثناء العودة
+        if (cardRect && node.def.id !== 'paper') {
+            const box = getCharBox(cardRect, node.def);
+            if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
+                debugInCardCount++;
+                const dLeft = Math.abs(node.x - box.minX);
+                const dRight = Math.abs(box.maxX - node.x);
+                const dTop = Math.abs(node.y - box.minY);
+                const dBottom = Math.abs(box.maxY - node.y);
+                const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                if (minD === dLeft) node.x = box.minX;
+                else if (minD === dRight) node.x = box.maxX;
+                else if (minD === dTop) node.y = box.minY;
+                else node.y = box.maxY;
+            }
+        }
+    }
+
     // محاكاة فيزيائية لفريم واحد بـ dt حقيقي
     function simulatePhysics(dt) {
         const winW = window.innerWidth || document.documentElement.clientWidth;
@@ -972,6 +1789,7 @@
 
             // ١) الورقة تعوم دائماً ولا تشارك في المشاهد
             if (charId === 'paper') {
+                if (node.interact || node.activePath) return;
                 node.actionTimer += dt;
                 const t = node.actionTimer;
                 const home = homes.paper;
@@ -1188,7 +2006,7 @@
             }
 
             // رسم أثر القلم الرصاص عند الكتابة
-            if (node.trailType === 'pencil' && node.currentSpeed > 5) {
+            if (node.trailType === 'pencil' && node.currentSpeed > 5 && !node.interact) {
                 const waveY = Math.sin(sceneTime * 12) * 2;
                 const tipX = node.x;
                 const tipY = node.y + node.def.height / 2 - 6 + waveY;
@@ -1307,7 +2125,7 @@
                         c1.y -= uy * pushHard;
                         c2.x += ux * pushHard;
                         c2.y += uy * pushHard;
-                        dist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
+                        dist = 74;
                     } else {
                         const overlap = PERSONAL - dist;
                         const pushSpeed = Math.min(MAX_SEP_SPEED, (overlap / PERSONAL) * MAX_SEP_SPEED);
@@ -1328,7 +2146,7 @@
         // شبكة أمان المربع: لو مركز أي شخصية (إلا الورقة) دخل مربعها الموسع ← ادفعها لأقرب حافة
         if (cardRect) {
             charNodes.forEach(node => {
-                if (node.def.id === 'paper') return;
+                if (node.def.id === 'paper' || node.interact === 'held') return;
                 const box = getCharBox(cardRect, node.def);
                 if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
                     debugInCardCount++;
@@ -1347,6 +2165,7 @@
 
         // حدود الشاشة (هامش ٥٠ بكسل) وشروط الموبايل
         charNodes.forEach(node => {
+            if (node.interact === 'held') return;
             node.x = Math.max(50, Math.min(winW - 50, node.x));
             if (isMobile) {
                 if (node.y > winH * 16 / 100 && node.y < winH * 86 / 100) {
@@ -1364,11 +2183,7 @@
         penTrail = penTrail.filter(pt => pt.life > 0);
 
         // تسجيل المتغيرات في body للتجربة والفحص
-        document.body.dataset.lfxIncard = String(debugInCardCount);
-        if (debugMode) {
-            document.body.dataset.lfxMindist = String(Math.round(debugMinDist));
-            document.body.dataset.lfxFlips = String(debugFlipCount);
-        }
+        updateDebugDataset();
     }
 
     // تطبيق خطوة من خطوات المشهد
@@ -1503,7 +2318,8 @@
     }
 
     // حركة Parallax وتتبع الماوس أثناء التفاعل النشط
-    function applyActiveParallax(dt) {
+    // حركة Parallax وتتبع الماوس أثناء التفاعل النشط
+    function applyActiveParallax(dt, skipNode) {
         const winW = window.innerWidth || document.documentElement.clientWidth;
         const winH = window.innerHeight || document.documentElement.clientHeight;
         const centerX = winW / 2;
@@ -1513,6 +2329,7 @@
         const hasValidMouse = (mouseX > 0 && mouseY > 0 && !isMouseInsideCard);
 
         charNodes.forEach(node => {
+            if (node === skipNode) return;
             const home = homes[node.def.id] || { x: 0.5, y: 0.5 };
             let targetX = home.x * winW;
             let targetY = home.y * winH;
@@ -1564,15 +2381,26 @@
         if (document.hidden || prefersReducedMotion) return;
 
         const now = timestamp || performance.now();
-        const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+        const dt = Math.min((now - lastFrameTime) / 1000, 0.035);
         lastFrameTime = now;
 
-        if (isIdle) {
+        if (interactingNode) {
+            simulateInteractionPhysics(dt);
+            applyDOM();
+        } else if (isIdle) {
             simulatePhysics(dt);
             applyDOM();
         } else {
-            applyActiveParallax(dt);
+            const returningNode = charNodes.find(n => n.activePath);
+            if (returningNode) {
+                simulateWalkingHome(dt, returningNode);
+                applyActiveParallax(dt, returningNode);
+            } else {
+                applyActiveParallax(dt);
+            }
         }
+
+        updateDebugDataset();
 
         animFrameId = requestAnimationFrame(renderLoop);
     }

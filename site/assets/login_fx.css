@@ -17,10 +17,16 @@
 /* كل شخصية */
 .lfx-char {
     position: absolute;
-    pointer-events: none;
+    pointer-events: auto;
+    touch-action: none;
+    cursor: grab;
     will-change: transform;
     transition: opacity 0.5s ease;
     z-index: 1;
+}
+
+.lfx-char.lfx-held {
+    cursor: grabbing;
 }
 
 /* طبقة الأثر (مسار القلم الرصاص والجاف) */
@@ -73,6 +79,8 @@
 /* دعم تقليل الحركة للمستخدمين اللي مفعلين Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
     .lfx-char {
+        pointer-events: none !important;
+        cursor: default !important;
         animation: none !important;
         transition: none !important;
         transform: none !important;
