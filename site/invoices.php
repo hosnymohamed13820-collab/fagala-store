@@ -1695,6 +1695,11 @@ require_once __DIR__ . '/includes/header.php';
         <i class="ti ti-alert-circle"></i> مشاكل الفواتير
     </a>
     <?php endif; ?>
+    <?php if (can('invoices:undistributed')): ?>
+    <a href="undistributed.php" class="btn btn-sm" title="اللي اتشرى في فترة ولسه ماتوزّعش على الفروع">
+        <i class="ti ti-package-export"></i> الأصناف غير الموزّعة
+    </a>
+    <?php endif; ?>
     <?php /* فواتير الفروع بقت موديول لوحده (branch_invoices.php) — مالهاش زراير هنا */ ?>
 </div>
 

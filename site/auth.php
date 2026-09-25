@@ -159,6 +159,7 @@ function module_parts(): array
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',
+            'undistributed' => 'الأصناف غير الموزّعة',
             // فواتير الفروع (إشراقة وإخواتها) بقت موديول لوحده: branch_invoices
         ],
         'receiving' => [
