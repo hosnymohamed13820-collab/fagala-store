@@ -3402,7 +3402,6 @@ window.INV = <?= json_encode([
     'csrf'        => (string) csrf_token(),
 ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 </script>
-<script src="assets/invoices.js?v=1"></script>
 
 <?php
 // بوب أب إعدادات الصنف — بيتبني مرة واحدة، ولما يبقى فيه جدول أصناف بس.
@@ -3467,6 +3466,8 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 
 <?php endif; ?>
 
+<?php /* بعد بوب أب الأصناف: الـJS بيدوّر على #iflOverlay وقت ما يتحمّل (بريف ٥٧ كان حاطه قبله فعلامات الأصناف كلها وقفت) */ ?>
+<script src="assets/invoices.js?v=2"></script>
 <script src="assets/barcode_scanner.js?v=7"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
