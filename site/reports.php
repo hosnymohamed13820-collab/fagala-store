@@ -10,6 +10,7 @@
 require_once __DIR__ . '/auth.php';
 require_module_access('reports');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sensitive_lib.php';
 
 $pdo = db();
 
@@ -1266,7 +1267,11 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
     }
 }
 
-$report = build_report($pdo, $type, $from, $to);
+if ($type === 'salaries' && !sens_unlocked()) {
+    $report = ['title'=>'تقرير الرواتب','headers'=>[],'rows'=>[],'totals'=>[]];
+} else {
+    $report = build_report($pdo, $type, $from, $to);
+}
 
 // تصدير إكسل (للتقارير العادية — الجرد له تصدير خاص بيه تحت)
 //
@@ -1285,6 +1290,10 @@ $report = build_report($pdo, $type, $from, $to);
 //    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
 //    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
 if ($export && $type !== 'stocktake' && $type !== 'customers') {
+    if ($type === 'salaries' && !sens_unlocked()) {
+        http_response_code(403);
+        exit('الرواتب مقفولة');
+    }
     require_once __DIR__ . '/xlsx_lib.php';
     $x = new SimpleXlsx(mb_substr((string)($report['title'] ?? 'تقرير'), 0, 30));
 
@@ -1579,6 +1588,7 @@ if ($type === 'stocktake') {
 
 $page_title    = 'التقارير';
 $active_module = 'reports';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -2464,7 +2474,9 @@ require_once __DIR__ . '/includes/header.php';
         <div class="empty"><?= e($report['note']) ?></div>
     <?php endif; ?>
 
-    <?php if (($report['layout'] ?? '') === 'master_detail'): ?>
+    <?php if ($type === 'salaries' && !sens_unlocked()): ?>
+        <?php sens_lock_screen('تقرير الرواتب'); ?>
+    <?php elseif (($report['layout'] ?? '') === 'master_detail'): ?>
         <?php if (($report['report_subtype'] ?? '') === 'advances'): ?>
             <?php if (empty($report['details'])): ?>
                 <div class="empty">لا توجد بيانات في هذه الفترة.</div>

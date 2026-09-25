@@ -154,6 +154,8 @@ $statusLabels = [
 
 $page_title    = 'الرئيسية';
 $active_module = 'dashboard';
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -259,20 +261,23 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 </div>
 
-<p class="sec-label">أرصدة الخزائن</p>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <p class="sec-label" style="margin:0;">أرصدة الخزائن</p>
+    <?= sens_eye() ?>
+</div>
 <div class="treasury-grid">
     <div class="tre-box main">
         <div class="tre-top"><i class="ti ti-building-bank"></i> الخزائن المركزية (بدون عهد الفروع)</div>
-        <div class="tre-val"><?= ltr_out(money_fmt($mainTotal)) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= sens_mask(ltr_out(money_fmt($mainTotal))) ?> <span class="tre-cur">ج.م</span></div>
     </div>
     <div class="tre-box realcash<?= $realCash < 0 ? ' neg' : '' ?>" title="الخزينة الرئيسية + خزينة الكاش">
         <div class="tre-top"><i class="ti ti-cash"></i> خزينة الكاش الفعلي</div>
-        <div class="tre-val"><?= ltr_out(money_fmt($realCash)) ?> <span class="tre-cur">ج.م</span></div>
+        <div class="tre-val"><?= sens_mask(ltr_out(money_fmt($realCash))) ?> <span class="tre-cur">ج.م</span></div>
     </div>
     <?php foreach ($centralTreasuries as $t): ?>
         <div class="tre-box">
             <div class="tre-top"><i class="ti <?= e($typeIcons[$t['type']]??'ti-cash') ?>"></i> <?= e($t['name']) ?></div>
-            <div class="tre-val"><?= ltr_out(money_fmt((float)$t['balance'])) ?> <span class="tre-cur">ج.م</span></div>
+            <div class="tre-val"><?= sens_mask(ltr_out(money_fmt((float)$t['balance']))) ?> <span class="tre-cur">ج.م</span></div>
         </div>
     <?php endforeach; ?>
 </div>
@@ -281,7 +286,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="summary-grid">
     <div class="sum-box">
         <div class="l"><i class="ti ti-cash-banknote"></i> إجمالي المبيعات</div>
-        <div class="v v-green"><?= ltr_out(money_fmt($totalSales)) ?></div>
+        <div class="v v-green"><?= sens_mask(ltr_out(money_fmt($totalSales))) ?></div>
         <div class="u">ج.م — معتمدة</div>
     </div>
     <div class="sum-box">
@@ -311,7 +316,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="bar-row">
                     <div class="bar-head">
                         <span class="bn">عهدة <?= e($bar['name']) ?></span>
-                        <span class="bv"><?= number_format($bar['balance'],0) ?> / <?= number_format($bar['opening'],0) ?> ج.م</span>
+                        <span class="bv"><?= sens_mask(number_format($bar['balance'],0) . ' / ' . number_format($bar['opening'],0) . ' ج.م') ?></span>
                     </div>
                     <div class="bar-track">
                         <div class="bar-fill <?= e($bar['color']) ?>" style="width:<?= $bar['opening']>0 ? round($bar['pct']) : 0 ?>%;"></div>
@@ -326,7 +331,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="bar-row">
                     <div class="bar-head">
                         <span class="bn">عهدة <?= e($bar['name']) ?></span>
-                        <span class="bv"><?= number_format($bar['balance'],0) ?> / <?= number_format($bar['opening'],0) ?> ج.م</span>
+                        <span class="bv"><?= sens_mask(number_format($bar['balance'],0) . ' / ' . number_format($bar['opening'],0) . ' ج.م') ?></span>
                     </div>
                     <div class="bar-track">
                         <div class="bar-fill <?= e($bar['color']) ?>" style="width:<?= $bar['opening']>0 ? round($bar['pct']) : 0 ?>%;"></div>

@@ -10,6 +10,7 @@
 require_once __DIR__ . '/auth.php';
 require_module_access('hr');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sensitive_lib.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
@@ -130,6 +131,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'payro
         if (!csrf_verify($_POST['csrf'] ?? '')) {
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
+        if (!sens_unlocked()) {
+            throw new RuntimeException('الرواتب مقفولة — افتحها بالباسورد (Ctrl+L).');
+        }
         $empId = (int)($_POST['employee_id'] ?? 0);
         $month = trim((string)($_POST['salary_month'] ?? ''));
         $field = trim((string)($_POST['field'] ?? ''));
@@ -232,6 +236,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashType = 'error';
         } elseif (!can('hr:' . $targetPart)) {
             $flash = 'غير مصرّح لك بتنفيذ هذه العملية.';
+            $flashType = 'error';
+        } elseif ($targetPart === 'salaries' && !sens_unlocked()) {
+            $flash = 'الرواتب مقفولة — افتحها بالباسورد (Ctrl+L) وجرّب تاني.';
             $flashType = 'error';
         } else {
             try {
@@ -1371,6 +1378,7 @@ if ($tab === 'salaries') {
 
 $page_title    = 'الموارد البشرية';
 $active_module = 'hr';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 
 $leaveLabels = ['annual'=>'سنوية','sick'=>'مرضية','unpaid'=>'بدون راتب','other'=>'أخرى'];
@@ -1503,7 +1511,7 @@ $statusBadge = function($st) {
                     <td class="hrs-fw5"><?= e($e2['full_name']) ?></td>
                     <td><?= e($e2['branch_name'] ?? '—') ?></td>
                     <td><?= e($e2['job_title'] ?? '—') ?></td>
-                    <td><?= number_format((float)$e2['base_salary'],2) ?></td>
+                    <td><?= sens_mask(number_format((float)$e2['base_salary'],2)) ?></td>
                     <td><?= (float)$e2['pending_advance'] > 0
                             ? '<span style="color:var(--neg);font-weight:600;">'.number_format((float)$e2['pending_advance'],2).'</span>'
                             : '<span class="hrs-muted">0.00</span>' ?></td>
@@ -1777,6 +1785,7 @@ $statusBadge = function($st) {
     </div>
 
 <?php elseif ($tab === 'salaries'): ?>
+    <?php if (!sens_unlocked()): sens_lock_screen('الرواتب'); else: ?>
     <!-- فلترة فترة الحضور -->
     <div class="card" style="margin-bottom:18px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
@@ -2271,6 +2280,7 @@ $statusBadge = function($st) {
         </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
 <?php elseif ($tab === 'requests'): ?>
     <div class="card">
@@ -2509,6 +2519,7 @@ $statusBadge = function($st) {
     </div>
 </div>
 
+<?php if (sens_unlocked()): ?>
 <div class="modal-bg" id="salaryModal">
     <div class="modal">
         <h3>صرف مرتب فردي</h3>
@@ -2614,6 +2625,7 @@ $statusBadge = function($st) {
         </form>
     </div>
 </div>
+<?php endif; ?>
 
 <?php if (can_edit_attendance_time()): ?>
 <div class="modal-bg" id="editRequestModal">
