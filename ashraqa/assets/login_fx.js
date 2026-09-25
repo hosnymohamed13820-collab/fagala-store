@@ -13,12 +13,26 @@
     const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // مهلة الخمول: ٩٠ ثانية افتراضياً، أو من خلال باراميتر ?lfx_idle=5 للتجربة السريعة
+    // وباراميتر ?lfx_t=150 لبدء التايملاين مباشرة من ثانية محددة (بريف ٦٢)
     let idleTimeoutMs = 90000;
+    let initialTimelineSec = 0;
+    let hasCustomT = false;
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const customIdle = parseInt(urlParams.get('lfx_idle'), 10);
         if (customIdle && customIdle > 0) {
             idleTimeoutMs = customIdle * 1000;
+        }
+        const tParam = urlParams.get('lfx_t');
+        if (tParam !== null) {
+            const parsedT = parseFloat(tParam);
+            if (!isNaN(parsedT)) {
+                initialTimelineSec = parsedT;
+                hasCustomT = true;
+                if (!customIdle) {
+                    idleTimeoutMs = 300; // ادخل الخمول سريعاً لتسهيل تجربة التايملاين
+                }
+            }
         }
     } catch (e) {}
 
@@ -225,21 +239,404 @@
         }
     ];
 
-    // مسارات الخمول (Idle Waypoints): نقاط نسبية (0 to 1) تطوف حول الشاشة دون الاصطدام بالكارد في الوسط
-    const IDLE_WAYPOINTS = [
-        { x: 0.12, y: 0.15 },
-        { x: 0.28, y: 0.08 },
-        { x: 0.50, y: 0.06 },
-        { x: 0.72, y: 0.08 },
-        { x: 0.86, y: 0.18 },
-        { x: 0.90, y: 0.42 },
-        { x: 0.88, y: 0.68 },
-        { x: 0.76, y: 0.88 },
-        { x: 0.50, y: 0.92 },
-        { x: 0.24, y: 0.88 },
-        { x: 0.10, y: 0.70 },
-        { x: 0.08, y: 0.40 }
-    ];
+    // =========================================================================
+    // سكريبتات الخمول (٣٠٠ ثانية) — لكل شخصية سيناريو وحركة خاصة (بريف ٦٢)
+    // الإحداثيات نسبية للشاشة [0, 1] وتمثل مركز الشخصية.
+    // المنطقة الممنوعة (.login-card + 24px) بتُحسب ديناميكياً وتُدفع النقط للخارج.
+    // =========================================================================
+    const TIMELINE_DURATION = 300;
+
+    const SCRIPTS = {
+        // ١) قلم رصاص — يكتب على الشريط العلوي، يفكر، يجري في المطاردة، ويلف ويرجع
+        pencil: [
+            { t: 0,   to: [0.08, 0.10], dur: 0,  act: 'start' },
+            { t: 0,   to: [0.30, 0.07], dur: 40, act: 'write' },
+            { t: 40,  to: [0.30, 0.07], dur: 8,  act: 'think' },
+            { t: 48,  to: [0.70, 0.08], dur: 30, act: 'write' },
+            { t: 78,  to: [0.92, 0.14], dur: 32, act: 'write' },
+            { t: 110, to: [0.93, 0.45], dur: 40, act: 'walk' },
+            { t: 150, to: [0.93, 0.80], dur: 35, act: 'run' },
+            { t: 185, to: [0.55, 0.93], dur: 55, act: 'walk' },
+            { t: 240, to: [0.12, 0.88], dur: 20, act: 'walk' },
+            { t: 260, to: [0.06, 0.50], dur: 20, act: 'walk' },
+            { t: 280, to: [0.08, 0.10], dur: 20, act: 'walk' }
+        ],
+
+        // ٢) أستيكة — تمسح وراء القلم بتأخير ٤ ثواني، وتقف تتفرج على المطاردة ١٥٠–١٨٥ ثانية
+        eraser: [
+            { t: 0,   to: null,         dur: 150, act: 'follow_pencil', delay: 8 },
+            { t: 150, to: [0.90, 0.30], dur: 35,  act: 'watch_chase' },
+            { t: 185, to: null,         dur: 115, act: 'follow_pencil', delay: 8 }
+        ],
+
+        // ٣) قلم جاف — يمشي على الجنب الشمال، يمضي حلزونة وخط أزرق، يزور الأعلى ويرجع
+        pen: [
+            { t: 0,   to: [0.06, 0.35], dur: 0,  act: 'start' },
+            { t: 0,   to: [0.07, 0.55], dur: 30, act: 'walk' },
+            { t: 30,  to: [0.07, 0.55], dur: 40, act: 'sign' },
+            { t: 70,  to: [0.10, 0.25], dur: 25, act: 'walk' },
+            { t: 95,  to: [0.10, 0.25], dur: 25, act: 'pause' },
+            { t: 120, to: [0.45, 0.05], dur: 40, act: 'walk' },
+            { t: 160, to: [0.10, 0.25], dur: 40, act: 'walk' },
+            { t: 200, to: [0.08, 0.72], dur: 15, act: 'walk' },
+            { t: 215, to: [0.08, 0.72], dur: 45, act: 'sign' },
+            { t: 260, to: [0.06, 0.35], dur: 40, act: 'walk' }
+        ],
+
+        // ٤) مسطرة — خطوط مستقيمة متعامدة فقط، تلف ٩٠ درجة وتقيس
+        ruler: [
+            { t: 0,   to: [0.10, 0.90], dur: 0,  act: 'start',      rot: 0 },
+            { t: 0,   to: [0.40, 0.90], dur: 60, act: 'ortho_move', rot: 0 },
+            { t: 60,  to: [0.40, 0.90], dur: 5,  act: 'measure',    rot: 0 },
+            { t: 65,  to: [0.60, 0.90], dur: 65, act: 'ortho_move', rot: 0 },
+            { t: 130, to: [0.60, 0.90], dur: 5,  act: 'measure',    rot: 0 },
+            { t: 135, to: [0.90, 0.90], dur: 55, act: 'ortho_move', rot: 0 },
+            { t: 190, to: [0.90, 0.62], dur: 50, act: 'ortho_move', rot: 90 },
+            { t: 240, to: [0.90, 0.90], dur: 30, act: 'ortho_move', rot: 90 },
+            { t: 270, to: [0.10, 0.90], dur: 30, act: 'ortho_move', rot: 0 }
+        ],
+
+        // ٥) برّاية — تتسكع في الركن، تبص لفوق، تطارد القلم بسرعة ×٢، وتنهج
+        sharpener: [
+            { t: 0,   to: [0.94, 0.92], dur: 140, act: 'pace', offset: 0.03 },
+            { t: 140, to: [0.94, 0.92], dur: 10,  act: 'look_pencil' },
+            { t: 150, to: null,         dur: 35,  act: 'chase_pencil', delay: 6 },
+            { t: 185, to: [0.93, 0.80], dur: 15,  act: 'pant' },
+            { t: 200, to: [0.94, 0.92], dur: 100, act: 'walk' }
+        ],
+
+        // ٦) ورقة — طفو جيبي ناعم زي ورقة في الهواء، بدون حركة أرجل، تقلب scaleX كل ٤٥ ثانية
+        paper: [
+            { t: 0, to: null, dur: 300, act: 'float' }
+        ],
+
+        // ٧) كتاب — يقرأ بحركة نبض، يمشي ببطء بنصف السرعة، ويتابع المطاردة
+        book: [
+            { t: 0,   to: [0.14, 0.88], dur: 90,  act: 'read' },
+            { t: 90,  to: [0.30, 0.88], dur: 60,  act: 'walk' },
+            { t: 150, to: [0.30, 0.88], dur: 35,  act: 'watch_chase' },
+            { t: 185, to: [0.08, 0.62], dur: 35,  act: 'walk' },
+            { t: 220, to: [0.08, 0.62], dur: 40,  act: 'read' },
+            { t: 260, to: [0.14, 0.88], dur: 40,  act: 'walk' }
+        ]
+    };
+
+    // استيفاء ناعم بين النقاط المتتالية
+    function evalWaypointSegs(segs, sec) {
+        let curSeg = segs[0];
+        let prevTo = segs[0].to;
+        for (let i = 0; i < segs.length; i++) {
+            const s = segs[i];
+            if (sec >= s.t) {
+                curSeg = s;
+                prevTo = (i > 0 && segs[i - 1].to) ? segs[i - 1].to : s.to;
+            }
+        }
+        const dur = curSeg.dur || 1;
+        const u = Math.max(0, Math.min(1, (sec - curSeg.t) / dur));
+        // Smoothstep interpolation (3u^2 - 2u^3)
+        const s = u * u * (3 - 2 * u);
+        const p0 = prevTo || curSeg.to;
+        const p1 = curSeg.to || prevTo;
+        const nx = p0[0] + (p1[0] - p0[0]) * s;
+        const ny = p0[1] + (p1[1] - p0[1]) * s;
+        const dx = (p1[0] - p0[0]) * 6 * u * (1 - u);
+        const dy = (p1[1] - p0[1]) * 6 * u * (1 - u);
+        return { nx, ny, dx, dy, act: curSeg.act, seg: curSeg };
+    }
+
+    // موقع القلم الرصاص عند أي ثانية في التايملاين
+    function getPencilNormPos(sec) {
+        const s = ((sec % TIMELINE_DURATION) + TIMELINE_DURATION) % TIMELINE_DURATION;
+        return evalWaypointSegs(SCRIPTS.pencil, s);
+    }
+
+    // حساب المنطقة الممنوعة لكارت تسجيل الدخول (+ 24px هامش)
+    function getCardNormalizedBounds(winW, winH) {
+        if (!cardRect || winW <= 0 || winH <= 0) return null;
+        const margin = 24;
+        return {
+            minX: Math.max(0, (cardRect.left - margin) / winW),
+            maxX: Math.min(1, (cardRect.right + margin) / winW),
+            minY: Math.max(0, (cardRect.top - margin) / winH),
+            maxY: Math.min(1, (cardRect.bottom + margin) / winH)
+        };
+    }
+
+    // دفع أي نقطة تقع داخل كارت الدخول لأقرب حافة خارجية
+    function avoidForbiddenCard(nx, ny, cardBox) {
+        if (!cardBox) return { x: nx, y: ny };
+        if (nx >= cardBox.minX && nx <= cardBox.maxX && ny >= cardBox.minY && ny <= cardBox.maxY) {
+            const dLeft = Math.abs(nx - cardBox.minX);
+            const dRight = Math.abs(cardBox.maxX - nx);
+            const dTop = Math.abs(ny - cardBox.minY);
+            const dBottom = Math.abs(cardBox.maxY - ny);
+            const minD = Math.min(dLeft, dRight, dTop, dBottom);
+            if (minD === dLeft) return { x: cardBox.minX, y: ny };
+            if (minD === dRight) return { x: cardBox.maxX, y: ny };
+            if (minD === dTop) return { x: nx, y: cardBox.minY };
+            return { x: nx, y: cardBox.maxY };
+        }
+        return { x: nx, y: ny };
+    }
+
+    // على الموبايل: حصر الحركة في الشريط العلوي (y <= 0.16) أو السفلي (y >= 0.86)
+    function clampMobileY(ny, winW) {
+        if (winW >= 700) return ny;
+        if (ny <= 0.16 || ny >= 0.86) return ny;
+        return ny < 0.51 ? 0.14 : 0.88;
+    }
+
+    // تقييم حالة وموقع كل شخصية عند ثانية معينة
+    function getCharacterIdleState(charId, sec, winW, winH, cardBox, pencilState) {
+        let nx = 0.5;
+        let ny = 0.5;
+        let dx = 0;
+        let dy = 0;
+        let rot = 0;
+        let customScaleX = null;
+        let walkAmpTarget = 1;
+        let isRunning = false;
+        let targetLook = null;
+        let act = 'walk';
+        let emitTrail = null;
+        let hopBounce = 0;
+
+        const s = ((sec % TIMELINE_DURATION) + TIMELINE_DURATION) % TIMELINE_DURATION;
+
+        if (charId === 'pencil') {
+            const p = evalWaypointSegs(SCRIPTS.pencil, s);
+            nx = p.nx;
+            ny = p.ny;
+            dx = p.dx;
+            dy = p.dy;
+            act = p.act;
+
+            if (act === 'write') {
+                emitTrail = 'pencil';
+                walkAmpTarget = 0.8;
+            } else if (act === 'think') {
+                walkAmpTarget = 0;
+                const st = s - p.seg.t;
+                rot = Math.sin(st * 2.0) * 8; // يميل ويرجع وهو بيفكر
+            } else if (act === 'run') {
+                isRunning = true;
+                walkAmpTarget = 1.0;
+            } else {
+                walkAmpTarget = 0.8;
+            }
+
+        } else if (charId === 'eraser') {
+            if (s >= 150 && s < 185) {
+                // تقف في (0.90, 0.30) وتبص تتابع المطاردة
+                nx = 0.90;
+                ny = 0.30;
+                walkAmpTarget = 0;
+                act = 'watch_chase';
+                if (pencilState) {
+                    targetLook = { x: pencilState.worldX, y: pencilState.worldY };
+                }
+            } else {
+                // متأخرة ٤ ثواني وراء القلم
+                const delayT = (s - 4 + TIMELINE_DURATION) % TIMELINE_DURATION;
+                const p = getPencilNormPos(delayT);
+                nx = p.nx;
+                ny = p.ny;
+                dx = p.dx;
+                dy = p.dy;
+                walkAmpTarget = 0.8;
+                act = 'follow';
+            }
+
+        } else if (charId === 'pen') {
+            const p = evalWaypointSegs(SCRIPTS.pen, s);
+            act = p.act;
+
+            if (act === 'sign') {
+                emitTrail = 'pen';
+                const st = s - p.seg.t;
+                if (st < 28) {
+                    // دورتين حلزونية
+                    const loopAngle = (st / 14) * 2 * Math.PI;
+                    nx = p.seg.to[0] + (st / 28) * 0.035 + 0.025 * Math.cos(loopAngle);
+                    ny = p.seg.to[1] + 0.025 * Math.sin(loopAngle);
+                    dx = -0.025 * Math.sin(loopAngle);
+                    dy = 0.025 * Math.cos(loopAngle);
+                    walkAmpTarget = 0.5;
+                } else if (st < 34) {
+                    // شرطة تحت الإمضاء
+                    const u = (st - 28) / 6;
+                    nx = (p.seg.to[0] - 0.01) + u * 0.07;
+                    ny = p.seg.to[1] + 0.045;
+                    dx = 0.07;
+                    dy = 0;
+                    walkAmpTarget = 0.7;
+                } else {
+                    // وقفة بعد الإمضاء
+                    nx = p.seg.to[0] + 0.06;
+                    ny = p.seg.to[1] + 0.045;
+                    dx = 0;
+                    dy = 0;
+                    walkAmpTarget = 0;
+                }
+            } else if (act === 'pause') {
+                nx = p.nx;
+                ny = p.ny;
+                walkAmpTarget = 0;
+            } else {
+                nx = p.nx;
+                ny = p.ny;
+                dx = p.dx;
+                dy = p.dy;
+                walkAmpTarget = 0.8;
+            }
+
+        } else if (charId === 'ruler') {
+            const segs = SCRIPTS.ruler;
+            let curSeg = segs[0];
+            let prevTo = segs[0].to;
+            for (let i = 0; i < segs.length; i++) {
+                const sg = segs[i];
+                if (s >= sg.t) {
+                    curSeg = sg;
+                    prevTo = (i > 0 && segs[i - 1].to) ? segs[i - 1].to : sg.to;
+                }
+            }
+            act = curSeg.act;
+            if (act === 'measure') {
+                nx = curSeg.to[0];
+                ny = curSeg.to[1];
+                walkAmpTarget = 0;
+                const st = s - curSeg.t;
+                // تلف أفقي وترجع (تقيس)
+                rot = Math.sin((st / (curSeg.dur || 5)) * Math.PI) * 90;
+            } else if (act === 'ortho_move') {
+                const dur = curSeg.dur || 1;
+                const u = Math.max(0, Math.min(1, (s - curSeg.t) / dur));
+                // حركة مستقيمة فقط (Linear) دون منحنيات
+                nx = prevTo[0] + (curSeg.to[0] - prevTo[0]) * u;
+                ny = prevTo[1] + (curSeg.to[1] - prevTo[1]) * u;
+                dx = curSeg.to[0] - prevTo[0];
+                dy = curSeg.to[1] - prevTo[1];
+                rot = curSeg.rot || 0;
+                walkAmpTarget = 0.8;
+            } else {
+                nx = curSeg.to[0];
+                ny = curSeg.to[1];
+                rot = curSeg.rot || 0;
+                walkAmpTarget = 0;
+            }
+
+        } else if (charId === 'sharpener') {
+            if (s < 140) {
+                // تتمشى رايح جاي خطوتين في الركن
+                nx = 0.94 + 0.03 * Math.sin(s * 0.25);
+                ny = 0.92;
+                dx = 0.03 * 0.25 * Math.cos(s * 0.25);
+                dy = 0;
+                walkAmpTarget = 0.5;
+                act = 'pace';
+            } else if (s >= 140 && s < 150) {
+                // تبص فوق ناحية القلم
+                nx = 0.94;
+                ny = 0.92;
+                walkAmpTarget = 0;
+                act = 'look_pencil';
+                if (pencilState) {
+                    targetLook = { x: pencilState.worldX, y: pencilState.worldY };
+                }
+            } else if (s >= 150 && s < 185) {
+                // تجري ورا القلم متأخرة ثانيتين بسرعة مضاعفة
+                const delayT = (s - 2 + TIMELINE_DURATION) % TIMELINE_DURATION;
+                const p = getPencilNormPos(delayT);
+                nx = p.nx;
+                ny = p.ny;
+                dx = p.dx;
+                dy = p.dy;
+                isRunning = true;
+                walkAmpTarget = 1.0;
+                act = 'chase';
+            } else if (s >= 185 && s < 200) {
+                // تقف لاهثة وتنط ٣ مرات
+                nx = 0.93;
+                ny = 0.80;
+                walkAmpTarget = 0;
+                act = 'pant';
+                const st = s - 185;
+                if (st < 7.5) {
+                    // ٣ نطات صغيرة
+                    const hop = Math.max(0, Math.sin(st * Math.PI / 2.5));
+                    hopBounce = hop * 5.0;
+                }
+            } else {
+                // ترجع ببطء للركن
+                const u = (s - 200) / 100;
+                const sm = u * u * (3 - 2 * u);
+                nx = 0.93 + (0.94 - 0.93) * sm;
+                ny = 0.80 + (0.92 - 0.80) * sm;
+                dx = 0.01;
+                dy = 0.12;
+                walkAmpTarget = 0.4;
+                act = 'walk_back';
+            }
+
+        } else if (charId === 'paper') {
+            // ورقة طايرة — مسار جيبي هادي، مفيش حركة رجلين
+            nx = 0.50 + 0.35 * Math.sin((s / 300) * 2 * Math.PI - Math.PI / 2);
+            ny = (winW < 700) ? (0.08 + 0.04 * Math.sin(s * 0.4)) : (0.20 + 0.05 * Math.sin(s * 0.4));
+            rot = 12 * Math.cos(s * 0.4);
+            const cycle = s % 45;
+            customScaleX = cycle < 1 ? Math.cos(cycle * 2 * Math.PI) : 1;
+            walkAmpTarget = 0;
+            act = 'float';
+
+        } else if (charId === 'book') {
+            const p = evalWaypointSegs(SCRIPTS.book, s);
+            act = p.act;
+            if (act === 'read') {
+                nx = p.seg.to[0];
+                ny = p.seg.to[1];
+                walkAmpTarget = 0;
+                // يتفتح ويتقفل ببطء
+                customScaleX = 1 + 0.075 * (1 + Math.sin((s / 4) * 2 * Math.PI));
+            } else if (act === 'watch_chase') {
+                nx = p.seg.to[0];
+                ny = p.seg.to[1];
+                walkAmpTarget = 0;
+                if (pencilState) {
+                    targetLook = { x: pencilState.worldX, y: pencilState.worldY };
+                }
+            } else {
+                nx = p.nx;
+                ny = p.ny;
+                dx = p.dx;
+                dy = p.dy;
+                // نصف سرعة الباقي
+                walkAmpTarget = 0.4;
+            }
+        }
+
+        // تطبيق شروط الموبايل والمنطقة الممنوعة
+        ny = clampMobileY(ny, winW);
+        const avoided = avoidForbiddenCard(nx, ny, cardBox);
+        nx = avoided.x;
+        ny = avoided.y;
+
+        return {
+            nx,
+            ny,
+            dx,
+            dy,
+            rot,
+            customScaleX,
+            walkAmpTarget,
+            isRunning,
+            targetLook,
+            act,
+            emitTrail,
+            hopBounce
+        };
+    }
 
     // حالة التطبيق والمتغيرات العامة
     let containerEl = null;
@@ -247,10 +644,19 @@
     let cardRect = null;
     let charNodes = [];
 
+    // عناصر SVG الخاصة بالأثر
+    let trailsSvg = null;
+    let pencilPolylineEl = null;
+    let penPolylineEl = null;
+    let pencilTrail = [];
+    let penTrail = [];
+
     let mouseX = -9999;
     let mouseY = -9999;
     let isMouseInsideCard = false;
     let isIdle = false;
+    let isFirstIdleFrame = true;
+    let initTimestamp = Date.now();
     let idleTimer = null;
     let lastActivityTime = Date.now();
     let idleStartTime = 0;
@@ -269,6 +675,21 @@
             containerEl.setAttribute('aria-hidden', 'true');
             loginCardEl.parentNode.insertBefore(containerEl, loginCardEl);
         }
+
+        // إنشاء طبقة SVG للأثر المشترك (قلم رصاص وقلم جاف)
+        trailsSvg = containerEl.querySelector('.lfx-trails');
+        if (!trailsSvg) {
+            trailsSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            trailsSvg.setAttribute('class', 'lfx-trails');
+            trailsSvg.setAttribute('aria-hidden', 'true');
+            trailsSvg.innerHTML = `
+                <polyline id="lfxPencilTrail" fill="none" stroke="#64748b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.75" />
+                <polyline id="lfxPenTrail" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+            `;
+            containerEl.insertBefore(trailsSvg, containerEl.firstChild);
+        }
+        pencilPolylineEl = trailsSvg.querySelector('#lfxPencilTrail');
+        penPolylineEl = trailsSvg.querySelector('#lfxPenTrail');
 
         const isMobile = window.innerWidth <= 768;
 
@@ -306,17 +727,14 @@
                 prevY: 0,
                 walkPhase: index * 0.9,
                 walkAmp: 0,
+                facing: 1,
                 curX: 0,
                 curY: 0,
                 curPupilX: 0,
                 curPupilY: 0,
                 curRot: 0,
                 baseX: 0,
-                baseY: 0,
-                // إزاحة زمنية مختلفة لكل شخصية في مشوار الخمول
-                idlePhase: index * (1.0 / CHARACTERS.length),
-                // سرعة مختلفة طفيفة (بين ٠.٩ و ١.١)
-                idleSpeedFactor: 0.9 + (index % 3) * 0.1
+                baseY: 0
             };
         });
 
@@ -339,14 +757,18 @@
 
         resetIdleTimer();
 
+        // لو تم تمرير ?lfx_t= ابدأ وضع الخمول فوراً بالتوقيت المحدد
+        if (hasCustomT) {
+            startIdleMode();
+        }
+
         // بدء حلقة الحركة إذا لم يكن المستخدم يفضل تقليل الحركة
         if (!prefersReducedMotion) {
             animFrameId = requestAnimationFrame(renderLoop);
         }
     }
 
-    // مكان كل كاركتر من غير الـtransform — بيتحسب مرة واحدة ومع الـresize بس.
-    // (getBoundingClientRect جوّه اللوب كان بيعمل layout ٧ مرات في كل فريم — تقيل على الآيفون القديم)
+    // مكان كل كاركتر من غير الـtransform — بيتحسب مرة واحدة ومع الـresize بس
     function cacheBasePositions() {
         charNodes.forEach(node => {
             node.baseX = node.el.offsetLeft;
@@ -383,6 +805,7 @@
     }
 
     function onUserActivity() {
+        if (hasCustomT && Date.now() - initTimestamp < 1500) return;
         lastActivityTime = Date.now();
         if (isIdle) {
             stopIdleMode();
@@ -397,7 +820,8 @@
 
     function startIdleMode() {
         isIdle = true;
-        idleStartTime = performance.now();
+        isFirstIdleFrame = true;
+        idleStartTime = performance.now() - (initialTimelineSec * 1000);
         if (containerEl) {
             containerEl.classList.add('lfx-is-idle');
         }
@@ -405,6 +829,10 @@
 
     function stopIdleMode() {
         isIdle = false;
+        pencilTrail = [];
+        penTrail = [];
+        if (pencilPolylineEl) pencilPolylineEl.setAttribute('points', '');
+        if (penPolylineEl) penPolylineEl.setAttribute('points', '');
         if (containerEl) {
             containerEl.classList.remove('lfx-is-idle');
         }
@@ -425,32 +853,6 @@
         }
     }
 
-    // استيفاء دائري بين نقاط المسار (Catmull-Rom أو Linear Closed Spline)
-    function getIdlePosition(t) {
-        const total = IDLE_WAYPOINTS.length;
-        const normT = ((t % 1) + 1) % 1; // 0 to 1
-        const floatIdx = normT * total;
-        const i0 = Math.floor(floatIdx) % total;
-        const i1 = (i0 + 1) % total;
-        const fraction = floatIdx - Math.floor(floatIdx);
-
-        // تنعيم الحركة (Smoothstep)
-        const smooth = fraction * fraction * (3 - 2 * fraction);
-
-        const p0 = IDLE_WAYPOINTS[i0];
-        const p1 = IDLE_WAYPOINTS[i1];
-
-        const x = p0.x + (p1.x - p0.x) * smooth;
-        const y = p0.y + (p1.y - p0.y) * smooth;
-
-        // حساب زاوية الاتجاه
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
-        const angle = Math.atan2(dy, dx);
-
-        return { x, y, angle };
-    }
-
     // حلقة الحركة الرئيسية (Single requestAnimationFrame loop)
     function renderLoop(timestamp) {
         if (document.hidden || prefersReducedMotion) return;
@@ -460,7 +862,30 @@
         const centerX = winW / 2;
         const centerY = winH / 2;
 
+        const cardBox = getCardNormalizedBounds(winW, winH);
         const hasValidMouse = (mouseX > 0 && mouseY > 0 && !isMouseInsideCard);
+
+        let elapsedSec = 0;
+        let pencilState = null;
+        let eraserWorldX = -9999;
+        let eraserWorldY = -9999;
+
+        if (isIdle) {
+            elapsedSec = ((timestamp - idleStartTime) / 1000) % TIMELINE_DURATION;
+            // حساب موقع القلم المرجعي لحركة الأستيكة والبرّاية وتتبع العيون
+            const pIdeal = getCharacterIdleState('pencil', elapsedSec, winW, winH, cardBox, null);
+            pencilState = {
+                worldX: pIdeal.nx * winW,
+                worldY: pIdeal.ny * winH
+            };
+        }
+
+        // إيجاد مركز الأستيكة لمسح أثر القلم عند اللمس
+        const eraserNode = charNodes.find(n => n.def.id === 'eraser');
+        if (eraserNode) {
+            eraserWorldX = eraserNode.baseX + eraserNode.curX + (eraserNode.def.width / 2);
+            eraserWorldY = eraserNode.baseY + eraserNode.curY + (eraserNode.def.height / 2);
+        }
 
         charNodes.forEach(node => {
             let targetX = 0;
@@ -468,38 +893,106 @@
             let targetPupilX = 0;
             let targetPupilY = 0;
             let targetRot = 0;
+            let scaleX = 1;
+            let bounce = 0;
+            let charWalkAmpTarget = 0;
+            let isRunning = false;
 
             if (isIdle) {
-                // وضع الخمول: مسار محسوب مسبقاً يطوف حول الكارد لمدة ٥ دقائق (٣٠٠ ثانية)
-                const elapsedSec = (timestamp - idleStartTime) / 1000;
-                const loopDuration = 300; // ٥ دقايق للدورة الكاملة
-                const progress = (elapsedSec * node.idleSpeedFactor / loopDuration) + node.idlePhase;
+                // وضع الخمول: سكريبت الحركة الخاص بالشخصية
+                const state = getCharacterIdleState(node.def.id, elapsedSec, winW, winH, cardBox, pencilState);
 
-                const pos = getIdlePosition(progress);
-                const targetWorldX = pos.x * winW;
-                const targetWorldY = pos.y * winH;
+                const targetWorldX = state.nx * winW;
+                const targetWorldY = state.ny * winH;
 
                 targetX = targetWorldX - node.baseX - (node.def.width / 2);
                 targetY = targetWorldY - node.baseY - (node.def.height / 2);
 
-                // إمالة طفيفة في اتجاه السير
-                targetRot = (pos.angle * 180 / Math.PI) * 0.15;
+                if (isFirstIdleFrame) {
+                    node.curX = targetX;
+                    node.curY = targetY;
+                    node.prevX = targetX;
+                    node.prevY = targetY;
+                }
 
-                // العيون تنظر قليلاً للأمام في اتجاه السير
-                targetPupilX = Math.cos(pos.angle) * 2.2;
-                targetPupilY = Math.sin(pos.angle) * 2.2;
+                targetRot = state.rot;
+                charWalkAmpTarget = state.walkAmpTarget;
+                isRunning = state.isRunning;
+                bounce = state.hopBounce || 0;
+
+                // اتجاه الوجه (scaleX(-1) عند المشي يساراً)
+                const vx = targetX - node.curX;
+                if (node.def.id !== 'paper' && node.def.id !== 'ruler') {
+                    if (vx < -0.2) {
+                        node.facing = -1;
+                    } else if (vx > 0.2) {
+                        node.facing = 1;
+                    }
+                }
+
+                if (node.def.id === 'paper') {
+                    scaleX = state.customScaleX !== null ? state.customScaleX : 1;
+                } else if (node.def.id === 'book' && state.customScaleX !== null) {
+                    scaleX = state.customScaleX;
+                } else if (node.def.id === 'ruler') {
+                    scaleX = 1; // المسطرة تلف ٩٠ درجة ولا تُقلب
+                } else {
+                    scaleX = node.facing;
+                }
+
+                // اتجاه نظر العينين أثناء الخمول
+                if (state.targetLook) {
+                    const charMidX = node.baseX + node.curX + (node.def.width / 2);
+                    const charMidY = node.baseY + node.curY + (node.def.height / 2);
+                    const ldx = state.targetLook.x - charMidX;
+                    const ldy = state.targetLook.y - charMidY;
+                    const angle = Math.atan2(ldy, ldx);
+                    targetPupilX = Math.cos(angle) * 2.2 * node.facing;
+                    targetPupilY = Math.sin(angle) * 2.2;
+                } else {
+                    const vy = targetY - node.curY;
+                    const moveSpeed = Math.hypot(vx, vy);
+                    if (moveSpeed > 0.25) {
+                        const angle = Math.atan2(vy, vx);
+                        targetPupilX = Math.cos(angle) * 2.2 * node.facing;
+                        targetPupilY = Math.sin(angle) * 2.2;
+                    } else {
+                        targetPupilX = 1.6;
+                        targetPupilY = 0;
+                    }
+                }
+
+                // تتبع الأثر (Trail) للقلم الرصاص والقلم الجاف
+                const curWorldX = node.baseX + node.curX + (node.def.width / 2);
+                const curWorldY = node.baseY + node.curY + (node.def.height / 2);
+
+                // نقطة كل ١٠٠ms لكل قلم لوحده — كل فريم كان بيخلّي الـ٦٠ نقطة = ثانية واحدة (~٨px تحت رجله)
+                const trailTick = Math.abs(elapsedSec - (node.lastTrailSec ?? -1)) >= 0.1;
+                if (trailTick && state.emitTrail) node.lastTrailSec = elapsedSec;
+                if (!trailTick) {
+                    // لسه بدري على نقطة جديدة
+                } else if (state.emitTrail === 'pencil') {
+                    const tipX = curWorldX;
+                    const tipY = curWorldY + (node.def.height * 0.44) + Math.sin(elapsedSec * 14) * 2;
+                    pencilTrail.push({ x: tipX, y: tipY, t: elapsedSec });
+                } else if (state.emitTrail === 'pen') {
+                    const penTipX = curWorldX;
+                    const penTipY = curWorldY + (node.def.height * 0.42);
+                    penTrail.push({ x: penTipX, y: penTipY, t: elapsedSec });
+                }
 
             } else if (hasValidMouse) {
                 // وضع الـ Parallax وتتبع الماوس
-                const relX = (mouseX - centerX) / centerX; // -1 to 1
-                const relY = (mouseY - centerY) / centerY; // -1 to 1
+                const relX = (mouseX - centerX) / centerX;
+                const relY = (mouseY - centerY) / centerY;
 
                 targetX = relX * node.def.depth;
                 targetY = relY * node.def.depth;
+                node.facing = 1;
+                scaleX = 1;
 
-                // مركز الكاركتر الفعلي لحساب زاوية نظر العين للماوس
-                const charMidX = node.baseX + node.curX + node.def.width / 2;
-                const charMidY = node.baseY + node.curY + node.def.height / 2;
+                const charMidX = node.baseX + node.curX + (node.def.width / 2);
+                const charMidY = node.baseY + node.curY + (node.def.height / 2);
 
                 const dx = mouseX - charMidX;
                 const dy = mouseY - charMidY;
@@ -507,15 +1000,20 @@
 
                 if (dist > 1) {
                     const angle = Math.atan2(dy, dx);
-                    // أقصى إزاحة للبؤبؤ داخل العين ٢.٨ (العين نص قطرها ~٦)
                     const pupilDist = Math.min(2.8, dist / 120 * 2.8);
                     targetPupilX = Math.cos(angle) * pupilDist;
                     targetPupilY = Math.sin(angle) * pupilDist;
                 }
+            } else {
+                // عودة للمركز
+                targetX = 0;
+                targetY = 0;
+                node.facing = 1;
+                scaleX = 1;
             }
 
-            // حركة ناعمة بـ lerp
-            const easeFactor = isIdle ? 0.04 : 0.08;
+            // حركة ناعمة بـ lerp (العودة السريعة عند التفاعل ~800ms)
+            const easeFactor = isIdle ? 0.05 : 0.08;
             node.curX += (targetX - node.curX) * easeFactor;
             node.curY += (targetY - node.curY) * easeFactor;
             node.curRot += (targetRot - node.curRot) * easeFactor;
@@ -523,29 +1021,49 @@
             node.curPupilX += (targetPupilX - node.curPupilX) * 0.12;
             node.curPupilY += (targetPupilY - node.curPupilY) * 0.12;
 
-            // تطبيق الـ transform على الكاركتر
-            if (isIdle) {
-                node.el.style.transform = `translate3d(${node.curX.toFixed(2)}px, ${node.curY.toFixed(2)}px, 0) rotate(${node.curRot.toFixed(2)}deg)`;
-            } else {
-                node.el.style.transform = `translate3d(${node.curX.toFixed(2)}px, ${node.curY.toFixed(2)}px, 0)`;
-            }
-
-            // المشي: الرجلين بتتحرك على قد المسافة اللي الكاركتر قطعها في الفريم —
-            // واقف = واقف، ماشي بسرعة = خطوات أسرع. الإيد عكس الرجل اللي في نفس الناحية.
-            const speed = Math.min(4, Math.hypot(node.curX - node.prevX, node.curY - node.prevY));
+            // حساب سرعة الحركة الفعلية في الفريم
+            const speed = Math.hypot(node.curX - node.prevX, node.curY - node.prevY);
             node.prevX = node.curX;
             node.prevY = node.curY;
-            node.walkAmp += (Math.min(1, speed / 0.3) - node.walkAmp) * 0.1;
-            node.walkPhase += 0.02 + speed * 0.35;
+
+            // حركة المشي والأرجل: الرجلين بتتحرك بس وهو ماشي وسرعتها قد سرعته
+            if (node.def.id === 'paper') {
+                node.walkAmp = 0;
+            } else {
+                const targetAmp = (charWalkAmpTarget > 0 && speed > 0.05)
+                    ? Math.min(1, speed / (isRunning ? 0.7 : 0.3)) * charWalkAmpTarget
+                    : 0;
+                node.walkAmp += (targetAmp - node.walkAmp) * 0.15;
+                if (node.walkAmp < 0.01) node.walkAmp = 0;
+
+                const stepSpeed = isRunning ? (0.04 + speed * 0.55) : (0.02 + speed * 0.35);
+                node.walkPhase += stepSpeed;
+            }
+
+            // نطّة صغيرة مع كل خطوة (2–3px)
+            if (node.def.id !== 'paper' && node.walkAmp > 0.05 && bounce === 0) {
+                bounce = Math.abs(Math.sin(node.walkPhase)) * 2.5 * node.walkAmp;
+            }
+
+            // ميل خفيف لقدّام وقت السرعة
+            let finalRot = node.curRot;
+            if (isIdle && node.def.id !== 'paper' && node.def.id !== 'ruler') {
+                finalRot += node.facing * Math.min(speed * 1.6, 7);
+            }
+
+            // تطبيق الـ transform على الكاركتر
+            node.el.style.transform = `translate3d(${node.curX.toFixed(2)}px, ${(node.curY - bounce).toFixed(2)}px, 0) scaleX(${scaleX.toFixed(2)}) rotate(${finalRot.toFixed(1)}deg)`;
+
+            // حركة الأطراف: أرجل متأرجحة أثناء السير وثابتة تماماً عند الوقوف
             const swing = Math.sin(node.walkPhase) * node.walkAmp;
-            // وهو واقف الإيدين بتتهز هزة خفيفة (بدل «التنفّس» القديم)
-            const sway = Math.sin(timestamp / 650 + node.idlePhase * 6) * 4 * (1 - node.walkAmp);
             node.limbs.forEach(l => {
                 let a = l.rest;
-                if (l.k === 'll') a += 30 * swing;
-                else if (l.k === 'lr') a -= 30 * swing;
-                else if (l.k === 'al') a += -26 * swing + sway;
-                else a += -26 * swing - sway;
+                if (node.def.id !== 'paper' && node.walkAmp > 0.01) {
+                    if (l.k === 'll') a += 30 * swing;
+                    else if (l.k === 'lr') a -= 30 * swing;
+                    else if (l.k === 'al') a += -26 * swing;
+                    else a += -26 * swing;
+                }
                 if (Math.abs(a - l.last) > 0.15) {
                     l.last = a;
                     l.g.setAttribute('transform', `rotate(${a.toFixed(1)} ${l.j})`);
@@ -561,6 +1079,40 @@
                 });
             }
         });
+
+        if (isIdle && isFirstIdleFrame) {
+            isFirstIdleFrame = false;
+        }
+
+        // تحديث أثر القلم الرصاص (يبهت على ٦ ثواني ويمسح عند ملامسة الأستيكة)
+        if (isIdle && pencilPolylineEl) {
+            pencilTrail = pencilTrail.filter(pt => {
+                // مسح الأثر إذا اقتربت منه الأستيكة (أقل من 48px)
+                const distToEraser = Math.hypot(pt.x - eraserWorldX, pt.y - eraserWorldY);
+                if (distToEraser < 48) return false;
+                // ١٠ ثواني مش ٦ — الأستيكة ورا القلم بـ٨ ثواني، فهي اللي بتمسحه مش بيبهت لوحده
+                const age = ((elapsedSec - pt.t + TIMELINE_DURATION) % TIMELINE_DURATION);
+                return age <= 10;
+            });
+            if (pencilTrail.length > 100) {
+                pencilTrail.splice(0, pencilTrail.length - 100);
+            }
+            const pts = pencilTrail.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+            pencilPolylineEl.setAttribute('points', pts);
+        }
+
+        // تحديث أثر القلم الجاف (حبر أزرق بيبهت على ٦ ثواني)
+        if (isIdle && penPolylineEl) {
+            penTrail = penTrail.filter(pt => {
+                const age = ((elapsedSec - pt.t + TIMELINE_DURATION) % TIMELINE_DURATION);
+                return age <= 6;
+            });
+            if (penTrail.length > 60) {
+                penTrail.splice(0, penTrail.length - 60);
+            }
+            const pts = penTrail.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+            penPolylineEl.setAttribute('points', pts);
+        }
 
         animFrameId = requestAnimationFrame(renderLoop);
     }
