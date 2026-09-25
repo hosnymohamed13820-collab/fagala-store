@@ -908,6 +908,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     exit;
 }
 
+function dist_is_return(PDO $pdo, int $distId): bool
+{
+    $stDt = $pdo->prepare('SELECT doc_type FROM invoice_distribution WHERE id = ?');
+    $stDt->execute([$distId]);
+    return (int) $stDt->fetchColumn() === 6;
+}
+
 // ===== تغيير حالة الفاتورة يدوي (AJAX) =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
     header('Content-Type: application/json; charset=utf-8');
@@ -918,6 +925,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
         $distId = (int) ($_POST['distribution_id'] ?? 0);
         $status = trim($_POST['status'] ?? '');
         if ($distId <= 0) throw new RuntimeException('فاتورة غير صحيحة.');
+        if (dist_is_return($pdo, $distId)) {
+            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+        }
 
         // 🔴 تشغيل تجريبي: بنرجّع الأصناف الناقصة **دلوقتي** من غير ما
         //    نكتب أي حاجة. لازم يفضل قبل أي UPDATE.
@@ -1370,6 +1380,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autos
         if ($distId <= 0 || $itemCode === '' || $branchId <= 0) {
             throw new RuntimeException('بيانات ناقصة.');
         }
+        if (dist_is_return($pdo, $distId)) {
+            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+        }
         $res = set_branch_distribution($distId, $itemCode, $itemQty, $branchId, $qty, $uid);
         // إجمالي كميات الفرع الكلي في التوزيعة (لتحديث زرار التحميل)
         $bt = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines WHERE distribution_id=? AND branch_id=?');
@@ -1428,6 +1441,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reser
         if ($distId <= 0 || $invId === null || $invId === '') {
             throw new RuntimeException('بيانات ناقصة.');
         }
+        if (dist_is_return($pdo, $distId)) {
+            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+        }
 
         $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
         $items = merge_invoice_items($rawItems);
@@ -1475,6 +1491,7 @@ try {
             if ($openDt !== null && !isset($openInvoice['doc_type'])) {
                 $openInvoice['doc_type'] = $openDt;
             }
+            $isReturnDoc = $openInvoice && (int)($openInvoice['doc_type'] ?? 0) === 6;
             // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
             // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
             $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
@@ -1981,6 +1998,9 @@ require_once __DIR__ . '/includes/header.php';
             <div class="m"><span class="l">الصافي:</span> <span class="v"><?= number_format((float)$openInvoice['net_amount'],2) ?></span></div>
             <div class="m"><span class="l">الإجمالي:</span> <span class="v"><?= number_format((float)$openInvoice['total_amount'],2) ?></span></div>
             <div class="m"><span class="l">التاريخ:</span> <span class="v"><?= e(date('Y-m-d', strtotime((string)$openInvoice['invoice_date']))) ?></span></div>
+            <?php if ($isReturnDoc): ?>
+                <div class="m"><span class="doc-badge refund">مردود شراء</span></div>
+            <?php else: ?>
             <?php
                 $curStatus = (string)($distRecord['status'] ?? 'new');
                 $isManual  = (int)($distRecord['status_manual'] ?? 0) === 1;
@@ -1998,12 +2018,13 @@ require_once __DIR__ . '/includes/header.php';
                 <span id="invStatusLock" class="inv-lock" style="<?= $isManual ? '' : 'display:none;' ?>"
                       title="الحالة مقفولة يدوي"><i class="ti ti-lock"></i></span>
             </div>
+            <?php endif; ?>
         </div>
 
         <?php /* لافتة قراءة بس، محسوبة وقت تحميل الصفحة. التحذير اللي
                  بيظهر وقت قفل الحالة يدوي بيسأل السيرفر من جديد
                  (فرع `dry`) لأن جدول التوزيع بيتحفظ من غير ريفرش. */ ?>
-        <?php if (!$isManual && !empty($pendingItems)): ?>
+        <?php if (!$isReturnDoc && !$isManual && !empty($pendingItems)): ?>
             <div class="card" style="background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn-text, var(--warn));padding:12px 16px;border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
                 <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;margin-top:2px;"></i>
                 <div>
@@ -2035,9 +2056,11 @@ require_once __DIR__ . '/includes/header.php';
             <button class="btn btn-sm btn-primary" type="button" onclick="openLookup()">
                 <i class="ti ti-search"></i> بحث صنف
             </button>
+            <?php if (!$isReturnDoc): ?>
             <button class="btn btn-sm btn-res-pull" type="button" onclick="openReservationPull()">
                 <i class="ti ti-users"></i> سحب أعداد الفروع
             </button>
+            <?php endif; ?>
         </div>
 
         <!-- بوب أب بحث الصنف -->
@@ -2065,6 +2088,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
+        <?php if (!$isReturnDoc): ?>
         <!-- بوب أب سحب أعداد الفروع -->
         <div class="lookup-overlay" id="resPullOverlay" onclick="if(event.target===this)closeReservationPull()">
             <div class="lookup-box" style="max-width:850px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
@@ -2081,6 +2105,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
         </div>
+        <?php endif; ?>
 
         <?php if (empty($items)): ?>
             <?php if (!empty($GLOBALS['recv_lines_missing'])): ?>
@@ -2114,21 +2139,55 @@ require_once __DIR__ . '/includes/header.php';
                     }
                 }
             ?>
-            <?php if ($isGuardOff): ?>
-                <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
-                    🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
-                </div>
-            <?php elseif ($naCount > 0): ?>
-                <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
-                    <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
-                    <div>
-                        فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
-                        شغّل وكيل مزامنة الإدارة.
+            <?php if (!$isReturnDoc): ?>
+                <?php if ($isGuardOff): ?>
+                    <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
+                        🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
                     </div>
-                </div>
+                <?php elseif ($naCount > 0): ?>
+                    <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+                        <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;"></i>
+                        <div>
+                            فيه <?= $naCount ?> صنف رصيد الإدارة بتاعهم مش واصل — تقدر تقلّل توزيعهم بس مش تزوّده.
+                            شغّل وكيل مزامنة الإدارة.
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?= mrk_bulk_bar() ?>
             <?php endif; ?>
-            <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
+            <?php if ($isReturnDoc): ?>
+            <div class="lines-wrap">
+            <table class="lines-table" id="linesTable" data-xt-min="1">
+                <thead>
+                    <tr>
+                        <th>كود الصنف</th>
+                        <th>اسم الصنف</th>
+                        <th>الكمية</th>
+                        <th>سعر التكلفة</th>
+                        <th class="th-inote">ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($items as $it): ?>
+                    <?php
+                        $code = (string) ($it['item_code'] ?? '');
+                        $qty  = (float) ($it['quantity'] ?? 0);
+                        $iFlags = $itemFlags[$code] ?? [];
+                        $iSkip  = isset($skipMap[$code]);
+                    ?>
+                    <tr class="<?= ifl_row_class($iFlags) ?>" data-code="<?= e($code) ?>" data-name="<?= e((string)($it['item_name'] ?? '')) ?>"<?= ifl_row_data($iFlags, $iSkip) ?>>
+                        <?= ifl_code_cell($code, $iSkip) ?>
+                        <?= ifl_name_cell((string)($it['item_name'] ?? ''), $iFlags) ?>
+                        <td class="c-qty"><?= number_format($qty, 2) ?></td>
+                        <td class="c-cost"><?= number_format((float)($it['cost_price'] ?? 0), 3) ?></td>
+                        <?= ifl_notes_cell($code, $iFlags) ?>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php else: ?>
             <div class="lines-wrap">
             <table class="lines-table" id="linesTable" data-xt-min="1">
                 <thead>
@@ -2311,6 +2370,7 @@ require_once __DIR__ . '/includes/header.php';
                 </tbody>
             </table>
             </div>
+            <?php endif; ?>
         <?php endif; ?>
     </div>
 
@@ -2327,6 +2387,7 @@ require_once __DIR__ . '/includes/header.php';
         </a>
     </div>
 
+    <?php if (!$isReturnDoc): ?>
     <!-- تصدير أسعار البيع — مستقل تمامًا عن حالة التوزيع، شغّال في أي وقت -->
     <div class="card" style="margin-bottom:16px;">
         <div class="section-title">أسعار البيع</div>
@@ -2350,7 +2411,24 @@ require_once __DIR__ . '/includes/header.php';
             </span>
         </div>
     </div>
+    <?php endif; ?>
 
+    <?php if ($isReturnDoc): ?>
+    <!-- كارت ملف المردود -->
+    <div class="card" id="returnDlCard" style="margin-bottom:16px;">
+        <div class="section-title">ملف المردود</div>
+        <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
+            ملف TEXT واحد فيه كل أصناف المردود بكميتها كاملة (كود الصنف، الكمية، سعر التكلفة). المردود مابيتوزعش على الفروع.
+        </p>
+        <?= ifl_skip_note($skipMap) ?>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <a class="btn" style="background:var(--pos-fill);"
+               href="return_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
+                <i class="ti ti-download"></i> تنزيل ملف المردود
+            </a>
+        </div>
+    </div>
+    <?php else: ?>
     <?php
     $isReceivingOpened = false;
     if (!empty($distId)) {
@@ -2382,6 +2460,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         </div>
     </div>
+    <?php endif; ?>
 
 <?php else: ?>
     <!-- ===== قائمة الفواتير ===== -->
@@ -3373,11 +3452,18 @@ require_once __DIR__ . '/includes/header.php';
                     $invDt = isset($inv['doc_type']) && $inv['doc_type'] !== '' ? (string)$inv['doc_type'] : '*';
                     $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
                     $fallbackKey = $invNo . '|*|*';
-                    $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? (inv_status_match($invStatuses, $invNo, $invCb, $invDt) ?? 'new'));
-                    [$stLabel, $stClass] = invoice_status_label($st);
+                    $isRet = (int)($inv['doc_type'] ?? 0) === 6;
+                    if ($isRet) {
+                        $st = 'ret';
+                        $stLabel = '—';
+                        $stClass = '';
+                    } else {
+                        $st = $invStatuses[$fullKey] ?? ($invStatuses[$fallbackKey] ?? (inv_status_match($invStatuses, $invNo, $invCb, $invDt) ?? 'new'));
+                        [$stLabel, $stClass] = invoice_status_label($st);
+                    }
                     $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
-                    <tr class="inv-row<?= $st==='done'?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.((int)($inv['doc_type'] ?? 0) === 6 ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ((int)($inv['doc_type'] ?? 0) === 6): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span></td><?php endif; ?></tr>
+                    <tr class="inv-row<?= ($st==='done' && !$isRet)?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.($isRet ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ($isRet): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><?php if ($isRet): ?><span style="color:var(--ink-400);">—</span><?php else: ?><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span><?php endif; ?></td><?php endif; ?></tr>
                 <?php endforeach; ?>
                 <?php endforeach; /* المجموعات الفرعية (شراء/مردود) */ ?>
             <?php endforeach; ?>

@@ -66,6 +66,10 @@ if (!$invHeader) {
     http_response_code(404);
     die('الفاتورة غير موجودة.');
 }
+if ((int) ($invHeader['doc_type'] ?? 0) === 6) {
+    http_response_code(400);
+    die('المردود مابيتوزعش — نزّل ملف المردود من شاشة الفاتورة.');
+}
 $dist = ensure_distribution_record($invHeader);
 $distId = (int) $dist['id'];
 
