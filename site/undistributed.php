@@ -25,6 +25,9 @@ const UNDIST_BRANCH_ACCOUNTS = [
     1000252 => 'إشراقة',
 ];
 
+// «الرئيسية (الادارة)» — الإدارة بتشتري/ترجّع لنفسها. مالهاش دعوة بالتوزيع (قرار محمد ٢٥ سبتمبر)
+const UNDIST_SELF_ACCOUNT = 1000182;
+
 // =========================================================================
 //  معالجة طلبات AJAX لجلب تفاصيل الفاتورة للنافذة المنبثقة
 // =========================================================================
@@ -54,12 +57,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'inv') {
         exit;
     }
 
-    $docType = (int) $hdr['doc_type'];
+    $docType   = (int) $hdr['doc_type'];
+    $suppId    = (int) ($hdr['supplier_id'] ?? 0);
     $typeLabel = 'أخرى';
     if ($docType === 2) {
-        $typeLabel = 'شراء';
+        if (isset(UNDIST_BRANCH_ACCOUNTS[$suppId])) {
+            $typeLabel = 'رجوع من فرع (' . UNDIST_BRANCH_ACCOUNTS[$suppId] . ')';
+        } else {
+            $typeLabel = 'شراء';
+        }
     } elseif ($docType === 6) {
-        $suppId = (int) ($hdr['supplier_id'] ?? 0);
         if (isset(UNDIST_BRANCH_ACCOUNTS[$suppId])) {
             $typeLabel = 'توزيع على فرع (' . UNDIST_BRANCH_ACCOUNTS[$suppId] . ')';
         } else {
@@ -204,36 +211,41 @@ $notesCount = (int) $pdo->query('SELECT COUNT(*) FROM undist_notes')->fetchColum
 $defaultFrom = $hasState ? $savedFrom : date('Y-m-d', strtotime('-7 days'));
 $defaultTo   = $hasState ? $savedTo   : date('Y-m-d');
 
-$items         = [];
-$diffCount     = 0;
-$zeroDiffCount = 0;
+$items           = [];
+$diffCount       = 0;
+$zeroDiffCount   = 0;
+$mismatchCount   = 0;
+$lastBalanceSync = null;
 
 if ($hasState) {
     $branchIds       = array_keys(UNDIST_BRANCH_ACCOUNTS);
     $inPlaceholders  = implode(',', array_fill(0, count($branchIds), '?'));
 
-    // الاستعلام ١: التجميع لكل صنف في الإدارة فقط (company_branch = 1)
+    // الاستعلام ١: التجميع لكل صنف في الإدارة فقط (company_branch = 1) مع استبعاد حساب الإدارة
     $aggSql = "SELECT 
         l.item_code,
         MAX(l.item_name) AS item_name,
-        SUM(CASE WHEN h.doc_type = 2 THEN l.quantity ELSE 0 END) AS qty_purchased,
+        MAX(l.item_id) AS item_id,
+        SUM(CASE WHEN h.doc_type = 2 AND (h.supplier_id NOT IN ($inPlaceholders) OR h.supplier_id IS NULL) THEN l.quantity ELSE 0 END) AS qty_purchased,
+        SUM(CASE WHEN h.doc_type = 2 AND h.supplier_id IN ($inPlaceholders) THEN l.quantity ELSE 0 END) AS qty_back_branch,
         SUM(CASE WHEN h.doc_type = 6 AND (h.supplier_id NOT IN ($inPlaceholders) OR h.supplier_id IS NULL) THEN l.quantity ELSE 0 END) AS qty_returned_vendor,
         SUM(CASE WHEN h.doc_type = 6 AND h.supplier_id IN ($inPlaceholders) THEN l.quantity ELSE 0 END) AS qty_distributed_branch
     FROM hq_invoice_lines l
     JOIN hq_invoices h ON h.sth_id = l.sth_id AND h.suffix = l.suffix
     WHERE h.company_branch = 1
+      AND (h.supplier_id IS NULL OR h.supplier_id <> ?)
       AND h.doc_type IN (2, 6)
       AND h.invoice_date >= ?
       AND h.invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
       AND l.item_code <> ''
     GROUP BY l.item_code";
 
-    $aggParams = array_merge($branchIds, $branchIds, [$savedFrom, $savedTo]);
+    $aggParams = array_merge($branchIds, $branchIds, $branchIds, $branchIds, [UNDIST_SELF_ACCOUNT, $savedFrom, $savedTo]);
     $stAgg     = $pdo->prepare($aggSql);
     $stAgg->execute($aggParams);
     $aggRows   = $stAgg->fetchAll(PDO::FETCH_ASSOC);
 
-    // الاستعلام ٢: فواتير الشراء والمردود لنفس الفترة في الإدارة فقط (company_branch = 1)
+    // الاستعلام ٢: فواتير الشراء والمردود لنفس الفترة في الإدارة فقط (company_branch = 1) مع استبعاد حساب الإدارة
     $invSql = "SELECT DISTINCT
         l.item_code,
         h.sth_id,
@@ -245,6 +257,7 @@ if ($hasState) {
     FROM hq_invoice_lines l
     JOIN hq_invoices h ON h.sth_id = l.sth_id AND h.suffix = l.suffix
     WHERE h.company_branch = 1
+      AND (h.supplier_id IS NULL OR h.supplier_id <> ?)
       AND h.doc_type IN (2, 6)
       AND h.invoice_date >= ?
       AND h.invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
@@ -252,27 +265,38 @@ if ($hasState) {
     ORDER BY h.invoice_date ASC";
 
     $stInv = $pdo->prepare($invSql);
-    $stInv->execute([$savedFrom, $savedTo]);
+    $stInv->execute([UNDIST_SELF_ACCOUNT, $savedFrom, $savedTo]);
     $invRows = $stInv->fetchAll(PDO::FETCH_ASSOC);
 
     $itemInvoices = [];
     foreach ($invRows as $inv) {
-        $code    = (string) $inv['item_code'];
-        $docType = (int) $inv['doc_type'];
-        if ($docType === 2) {
+        $code       = (string) $inv['item_code'];
+        $docType    = (int) $inv['doc_type'];
+        $suppId     = (int) ($inv['supplier_id'] ?? 0);
+        $isBranch   = isset(UNDIST_BRANCH_ACCOUNTS[$suppId]);
+        $branchName = $isBranch ? UNDIST_BRANCH_ACCOUNTS[$suppId] : null;
+
+        if ($docType === 2 && !$isBranch) {
             $itemInvoices[$code]['purchases'][] = [
                 'sth_id' => (int) $inv['sth_id'],
                 'suffix' => (string) $inv['suffix'],
                 'doc_no' => (string) $inv['doc_no'],
             ];
-        } elseif ($docType === 6) {
-            $suppId     = (int) ($inv['supplier_id'] ?? 0);
-            $branchName = UNDIST_BRANCH_ACCOUNTS[$suppId] ?? null;
-            $label      = (string) $inv['doc_no'] . ' · ' . ($branchName !== null ? $branchName : 'مورد');
+        } elseif ($docType === 2 && $isBranch) {
+            $label = (string) $inv['doc_no'] . ' · رجع من ' . $branchName;
             $itemInvoices[$code]['returns'][] = [
-                'sth_id' => (int) $inv['sth_id'],
-                'suffix' => (string) $inv['suffix'],
-                'label'  => $label,
+                'sth_id'  => (int) $inv['sth_id'],
+                'suffix'  => (string) $inv['suffix'],
+                'label'   => $label,
+                'is_back' => true,
+            ];
+        } elseif ($docType === 6) {
+            $label = (string) $inv['doc_no'] . ' · ' . ($branchName !== null ? $branchName : 'مورد');
+            $itemInvoices[$code]['returns'][] = [
+                'sth_id'  => (int) $inv['sth_id'],
+                'suffix'  => (string) $inv['suffix'],
+                'label'   => $label,
+                'is_back' => false,
             ];
         }
     }
@@ -284,14 +308,38 @@ if ($hasState) {
         $notesMap[(string) $nRow['item_code']] = (string) $nRow['note'];
     }
 
-    // بناء قائمة الأصناف مع حساب الفرق والترتيب
+    // الاستعلام ٤: أرصدة الإدارة في hq_balances (sto_id = 1) وتاريخ آخر تحديث
+    $balancesMap = [];
+    $stBal = $pdo->query('SELECT item_id, balance FROM hq_balances WHERE sto_id = 1');
+    while ($bRow = $stBal->fetch(PDO::FETCH_ASSOC)) {
+        $balancesMap[(int) $bRow['item_id']] = round((float) $bRow['balance'], 3);
+    }
+    $stSync = $pdo->query('SELECT MAX(updated_at) FROM hq_balances WHERE sto_id = 1');
+    $lastBalanceSync = $stSync->fetchColumn();
+
+    // إحصاء تكرار item_id لمعرفة الأصناف المشتركة بين أكثر من كود في الجدول
+    $itemIdCounts = [];
     foreach ($aggRows as $r) {
-        $code          = (string) $r['item_code'];
-        $name          = (string) ($r['item_name'] ?? '');
-        $qtyPurchased  = round((float) ($r['qty_purchased'] ?? 0), 3);
-        $qtyRetVendor  = round((float) ($r['qty_returned_vendor'] ?? 0), 3);
-        $qtyDistBranch = round((float) ($r['qty_distributed_branch'] ?? 0), 3);
-        $diff          = round($qtyPurchased - $qtyRetVendor - $qtyDistBranch, 3);
+        $iid = ($r['item_id'] !== null && $r['item_id'] !== '') ? (int) $r['item_id'] : null;
+        if ($iid !== null && $iid > 0) {
+            $itemIdCounts[$iid] = ($itemIdCounts[$iid] ?? 0) + 1;
+        }
+    }
+
+    // بناء قائمة الأصناف مع حساب الفرق وصافي التوزيع والرصيد
+    foreach ($aggRows as $r) {
+        $code             = (string) $r['item_code'];
+        $name             = (string) ($r['item_name'] ?? '');
+        $itemId           = ($r['item_id'] !== null && $r['item_id'] !== '') ? (int) $r['item_id'] : null;
+        $isShared         = ($itemId !== null && ($itemIdCounts[$itemId] ?? 0) > 1);
+        $sharedCount      = $isShared ? $itemIdCounts[$itemId] : 1;
+
+        $qtyPurchased     = round((float) ($r['qty_purchased'] ?? 0), 3);
+        $qtyBackBranch    = round((float) ($r['qty_back_branch'] ?? 0), 3);
+        $qtyRetVendor     = round((float) ($r['qty_returned_vendor'] ?? 0), 3);
+        $qtyDistBranchRaw = round((float) ($r['qty_distributed_branch'] ?? 0), 3);
+        $qtyDistBranch    = round($qtyDistBranchRaw - $qtyBackBranch, 3);
+        $diff             = round($qtyPurchased - $qtyRetVendor - $qtyDistBranch, 3);
 
         if ($diff == 0) {
             $zeroDiffCount++;
@@ -299,13 +347,36 @@ if ($hasState) {
             $diffCount++;
         }
 
+        // رصيد الإدارة والمقارنة مع الفرق
+        $balance     = null;
+        $balMismatch = false;
+        $balDiff     = null;
+
+        if ($itemId !== null) {
+            $balance = $balancesMap[$itemId] ?? 0.0;
+            if (!$isShared) {
+                $balDiff = round($balance - $diff, 3);
+                if ($balance != $diff) {
+                    $balMismatch = true;
+                    $mismatchCount++;
+                }
+            }
+        }
+
         $items[] = [
             'item_code'       => $code,
             'item_name'       => $name,
+            'item_id'         => $itemId,
+            'is_shared'       => $isShared,
+            'shared_count'    => $sharedCount,
             'qty_purchased'   => $qtyPurchased,
+            'qty_back_branch' => $qtyBackBranch,
             'qty_ret_vendor'  => $qtyRetVendor,
             'qty_dist_branch' => $qtyDistBranch,
             'diff'            => $diff,
+            'balance'         => $balance,
+            'bal_mismatch'    => $balMismatch,
+            'bal_diff'        => $balDiff,
             'note'            => $notesMap[$code] ?? '',
             'purchases'       => $itemInvoices[$code]['purchases'] ?? [],
             'returns'         => $itemInvoices[$code]['returns'] ?? [],
@@ -467,15 +538,24 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 <?php else: ?>
 
+    <?php if ($lastBalanceSync): ?>
+    <div style="font-size:12px;color:var(--ink-600);margin-bottom:8px;display:flex;align-items:center;gap:4px;">
+        <i class="ti ti-clock"></i> الرصيد من آخر مزامنة: <?= htmlspecialchars($lastBalanceSync) ?>
+    </div>
+    <?php endif; ?>
+
     <!-- شريط الفلترة والعدّاد فوق الجدول -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div class="filter-btn-group" style="margin-bottom:0;">
-            <button type="button" class="filter-pill" id="toggleDistributedBtn" onclick="toggleDistributedFilter()">
+            <button type="button" class="filter-pill" id="toggleDistributedBtn" onclick="toggleFilter('hideDistributed')">
                 اخفي اللي اتوزّع (<?= $zeroDiffCount ?>)
+            </button>
+            <button type="button" class="filter-pill" id="toggleMismatchBtn" onclick="toggleFilter('onlyMismatch')">
+                الرصيد مش مساوي (<?= $mismatchCount ?>)
             </button>
         </div>
         <div style="font-size:13px;color:var(--ink-600);font-weight:600;">
-            <?= count($items) ?> صنف · <?= $diffCount ?> لسه فيه فرق
+            <?= count($items) ?> صنف · <?= $diffCount ?> لسه فيه فرق · <?= $mismatchCount ?> الرصيد مش مساوي
         </div>
     </div>
 
@@ -491,15 +571,16 @@ require_once __DIR__ . '/includes/header.php';
                         <th style="width:85px;text-align:center;">مردود للمورد</th>
                         <th style="width:95px;text-align:center;">موزّع على الفروع</th>
                         <th style="width:75px;text-align:center;">الفرق</th>
-                        <th style="width:200px;">ملاحظات</th>
-                        <th style="width:140px;">فواتير الشراء</th>
+                        <th style="width:115px;text-align:center;">رصيد الإدارة</th>
+                        <th style="width:180px;">ملاحظات</th>
+                        <th style="width:130px;">فواتير الشراء</th>
                         <th style="width:180px;">فواتير المردود</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php if (empty($items)): ?>
                     <tr>
-                        <td colspan="9" style="text-align:center;padding:32px;color:var(--ink-500);">
+                        <td colspan="10" style="text-align:center;padding:32px;color:var(--ink-500);">
                             مفيش فواتير شراء أو مردود للإدارة في الفترة دي.
                         </td>
                     </tr>
@@ -509,7 +590,9 @@ require_once __DIR__ . '/includes/header.php';
                         $isZero = ($diffVal == 0);
                         $diffColor = $diffVal > 0 ? 'var(--warn)' : ($isZero ? 'var(--pos)' : 'var(--neg)');
                     ?>
-                    <tr data-code="<?= htmlspecialchars($it['item_code']) ?>" data-diff-zero="<?= $isZero ? '1' : '0' ?>">
+                    <tr data-code="<?= htmlspecialchars($it['item_code']) ?>"
+                        data-diff-zero="<?= $isZero ? '1' : '0' ?>"
+                        data-bal-mismatch="<?= !empty($it['bal_mismatch']) ? '1' : '0' ?>">
                         <td><code><?= htmlspecialchars($it['item_code']) ?></code></td>
                         <td>
                             <div style="font-weight:600;"><?= htmlspecialchars($it['item_name']) ?></div>
@@ -524,6 +607,27 @@ require_once __DIR__ . '/includes/header.php';
                         <td style="text-align:center;"><?= ($it['qty_dist_branch'] + 0) ?></td>
                         <td style="text-align:center;font-weight:bold;color:<?= $diffColor ?>;">
                             <?= ($diffVal + 0) ?>
+                        </td>
+                        <td style="text-align:center;">
+                        <?php if ($it['item_id'] === null): ?>
+                            <span style="color:var(--ink-400);">—</span>
+                        <?php elseif ($it['is_shared']): ?>
+                            <div style="font-weight:600;"><?= ($it['balance'] + 0) ?></div>
+                            <div style="font-size:11px;color:var(--ink-500);margin-top:2px;">رصيد الصنف كله — <?= $it['shared_count'] ?> كود</div>
+                        <?php else: ?>
+                            <?php if (!$it['bal_mismatch']): ?>
+                                <div style="font-weight:600;color:var(--pos);">
+                                    <?= ($it['balance'] + 0) ?> <i class="ti ti-check"></i>
+                                </div>
+                            <?php else: ?>
+                                <div style="font-weight:600;color:var(--neg);">
+                                    <?= ($it['balance'] + 0) ?>
+                                </div>
+                                <div style="font-size:11px;color:var(--neg);margin-top:2px;">
+                                    الفرق عن الرصيد: <?= ($it['bal_diff'] > 0 ? '+' : '') . ($it['bal_diff'] + 0) ?>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         </td>
                         <td>
                             <div style="display:flex;align-items:center;">
@@ -552,6 +656,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php foreach ($it['returns'] as $r): ?>
                                 <button type="button"
                                         class="btn btn-sm btn-ghost inv-pill-btn"
+                                        <?= !empty($r['is_back']) ? 'style="color:var(--pos);font-weight:600;"' : '' ?>
                                         onclick="openInvoiceModal(<?= $r['sth_id'] ?>, <?= htmlspecialchars(json_encode($r['suffix'], JSON_UNESCAPED_UNICODE)) ?>, <?= htmlspecialchars(json_encode($it['item_code'], JSON_UNESCAPED_UNICODE)) ?>)"
                                         title="عرض تفاصيل الفاتورة">
                                     <i class="ti ti-file-invoice"></i> <?= htmlspecialchars($r['label']) ?>
@@ -741,23 +846,56 @@ function saveNote(input) {
         });
 }
 
-// فلترة إخفاء/إظهار الأصناف التي تم توزيعها بالكامل
-var hideDistributed = false;
-function toggleDistributedFilter() {
-    hideDistributed = !hideDistributed;
-    var btn = document.getElementById('toggleDistributedBtn');
-    if (!btn) return;
-    var rows = document.querySelectorAll('#undistTable tbody tr[data-diff-zero="1"]');
+// فلترة الجدول
+var filters = {
+    hideDistributed: false,
+    onlyMismatch: false
+};
 
-    if (hideDistributed) {
-        btn.classList.add('active');
-        btn.textContent = 'اظهر الكل';
-        rows.forEach(function (r) { r.style.display = 'none'; });
-    } else {
-        btn.classList.remove('active');
-        btn.textContent = 'اخفي اللي اتوزّع (' + <?= (int) $zeroDiffCount ?> + ')';
-        rows.forEach(function (r) { r.style.display = ''; });
+function toggleFilter(filterName) {
+    filters[filterName] = !filters[filterName];
+
+    var btnDist = document.getElementById('toggleDistributedBtn');
+    if (btnDist) {
+        if (filters.hideDistributed) {
+            btnDist.classList.add('active');
+            btnDist.textContent = 'اظهر الكل';
+        } else {
+            btnDist.classList.remove('active');
+            btnDist.textContent = 'اخفي اللي اتوزّع (' + <?= (int) $zeroDiffCount ?> + ')';
+        }
     }
+
+    var btnMis = document.getElementById('toggleMismatchBtn');
+    if (btnMis) {
+        if (filters.onlyMismatch) {
+            btnMis.classList.add('active');
+            btnMis.textContent = 'اظهر الكل';
+        } else {
+            btnMis.classList.remove('active');
+            btnMis.textContent = 'الرصيد مش مساوي (' + <?= (int) $mismatchCount ?> + ')';
+        }
+    }
+
+    applyFilters();
+}
+
+function applyFilters() {
+    var rows = document.querySelectorAll('#undistTable tbody tr[data-code]');
+    rows.forEach(function (r) {
+        var isZeroDiff = (r.getAttribute('data-diff-zero') === '1');
+        var isMismatch = (r.getAttribute('data-bal-mismatch') === '1');
+
+        var hide = false;
+        if (filters.hideDistributed && isZeroDiff) {
+            hide = true;
+        }
+        if (filters.onlyMismatch && !isMismatch) {
+            hide = true;
+        }
+
+        r.style.display = hide ? 'none' : '';
+    });
 }
 
 // نافذة تفاصيل الفاتورة
