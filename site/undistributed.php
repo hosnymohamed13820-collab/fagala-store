@@ -283,18 +283,26 @@ if ($hasState) {
                 'doc_no' => (string) $inv['doc_no'],
             ];
         } elseif ($docType === 2 && $isBranch) {
-            $label = (string) $inv['doc_no'] . ' · رجع من ' . $branchName;
+            $grp   = 'رجع من ' . $branchName;
+            $docNo = (string) $inv['doc_no'];
+            $label = $docNo . ' · ' . $grp;
             $itemInvoices[$code]['returns'][] = [
                 'sth_id'  => (int) $inv['sth_id'],
                 'suffix'  => (string) $inv['suffix'],
+                'doc_no'  => $docNo,
+                'grp'     => $grp,
                 'label'   => $label,
                 'is_back' => true,
             ];
         } elseif ($docType === 6) {
-            $label = (string) $inv['doc_no'] . ' · ' . ($branchName !== null ? $branchName : 'مورد');
+            $grp   = ($branchName !== null ? $branchName : 'مورد');
+            $docNo = (string) $inv['doc_no'];
+            $label = $docNo . ' · ' . $grp;
             $itemInvoices[$code]['returns'][] = [
                 'sth_id'  => (int) $inv['sth_id'],
                 'suffix'  => (string) $inv['suffix'],
+                'doc_no'  => $docNo,
+                'grp'     => $grp,
                 'label'   => $label,
                 'is_back' => false,
             ];
@@ -325,6 +333,24 @@ if ($hasState) {
             $itemIdCounts[$iid] = ($itemIdCounts[$iid] ?? 0) + 1;
         }
     }
+
+    // ترتيب مجموعات المردود: الفروع بترتيب ظهورها في UNDIST_BRANCH_ACCOUNTS ثم «رجع من …» ثم «مورد»
+    $branchOrder = array_values(array_unique(array_values(UNDIST_BRANCH_ACCOUNTS)));
+    $branchOrderMap = array_flip($branchOrder);
+    $getGrpWeight = function ($grp) use ($branchOrderMap) {
+        if (isset($branchOrderMap[$grp])) {
+            return 100 + $branchOrderMap[$grp];
+        }
+        if (str_starts_with($grp, 'رجع من ')) {
+            $sub = mb_substr($grp, 7);
+            $idx = $branchOrderMap[$sub] ?? 50;
+            return 200 + $idx;
+        }
+        if ($grp === 'مورد') {
+            return 300;
+        }
+        return 400;
+    };
 
     // بناء قائمة الأصناف مع حساب الفرق وصافي التوزيع والرصيد
     foreach ($aggRows as $r) {
@@ -363,6 +389,21 @@ if ($hasState) {
             }
         }
 
+        // تجميع فواتير المردود في مجموعات حسب الفرع / رجع من / مورد
+        $rawReturns = $itemInvoices[$code]['returns'] ?? [];
+        $returnGroups = [];
+        foreach ($rawReturns as $retInv) {
+            $returnGroups[$retInv['grp']][] = $retInv;
+        }
+        uksort($returnGroups, function ($a, $b) use ($getGrpWeight) {
+            $wA = $getGrpWeight($a);
+            $wB = $getGrpWeight($b);
+            if ($wA !== $wB) {
+                return $wA <=> $wB;
+            }
+            return strcmp($a, $b);
+        });
+
         $items[] = [
             'item_code'       => $code,
             'item_name'       => $name,
@@ -379,7 +420,8 @@ if ($hasState) {
             'bal_diff'        => $balDiff,
             'note'            => $notesMap[$code] ?? '',
             'purchases'       => $itemInvoices[$code]['purchases'] ?? [],
-            'returns'         => $itemInvoices[$code]['returns'] ?? [],
+            'returns'         => $rawReturns,
+            'return_groups'   => $returnGroups,
         ];
     }
 
@@ -425,7 +467,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 .undist-note-input {
     width: 100%;
-    min-width: 130px;
+    min-width: 100px;
     padding: 5px 8px;
     border: 1px solid var(--line);
     border-radius: var(--r-sm);
@@ -477,9 +519,15 @@ require_once __DIR__ . '/includes/header.php';
     border-color: var(--accent);
 }
 .inv-pill-btn {
-    padding: 2px 7px;
+    padding: 1px 6px;
     font-size: 11px;
     white-space: nowrap;
+}
+.ret-grp-lbl {
+    min-width: 52px;
+    font-size: 11px;
+    color: var(--ink-500);
+    font-weight: 600;
 }
 .modal-bg {
     display: none;
@@ -565,22 +613,21 @@ require_once __DIR__ . '/includes/header.php';
             <table class="prob-table" id="undistTable">
                 <thead>
                     <tr>
-                        <th style="width:120px;">كود الصنف</th>
                         <th>اسم الصنف</th>
                         <th style="width:75px;text-align:center;">المشترى</th>
                         <th style="width:85px;text-align:center;">مردود للمورد</th>
                         <th style="width:95px;text-align:center;">موزّع على الفروع</th>
                         <th style="width:75px;text-align:center;">الفرق</th>
-                        <th style="width:115px;text-align:center;">رصيد الإدارة</th>
-                        <th style="width:180px;">ملاحظات</th>
-                        <th style="width:130px;">فواتير الشراء</th>
-                        <th style="width:180px;">فواتير المردود</th>
+                        <th style="width:90px;text-align:center;">رصيد الإدارة</th>
+                        <th style="width:140px;" data-xt-skip>ملاحظات</th>
+                        <th style="width:110px;" data-xt-skip>فواتير الشراء</th>
+                        <th style="width:220px;" data-xt-skip>فواتير المردود</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php if (empty($items)): ?>
                     <tr>
-                        <td colspan="10" style="text-align:center;padding:32px;color:var(--ink-500);">
+                        <td colspan="9" style="text-align:center;padding:32px;color:var(--ink-500);">
                             مفيش فواتير شراء أو مردود للإدارة في الفترة دي.
                         </td>
                     </tr>
@@ -593,9 +640,9 @@ require_once __DIR__ . '/includes/header.php';
                     <tr data-code="<?= htmlspecialchars($it['item_code']) ?>"
                         data-diff-zero="<?= $isZero ? '1' : '0' ?>"
                         data-bal-mismatch="<?= !empty($it['bal_mismatch']) ? '1' : '0' ?>">
-                        <td><code><?= htmlspecialchars($it['item_code']) ?></code></td>
                         <td>
                             <div style="font-weight:600;"><?= htmlspecialchars($it['item_name']) ?></div>
+                            <div style="margin-top:2px;"><code style="font-size:11px;color:var(--ink-500);"><?= htmlspecialchars($it['item_code']) ?></code></div>
                             <?php if ($it['qty_purchased'] == 0): ?>
                             <div style="font-size:11px;color:var(--warn);margin-top:2px;">
                                 <i class="ti ti-alert-circle"></i> مالوش فاتورة شراء في الفترة دي — اشتراه قبلها، وسّع التاريخ
@@ -613,12 +660,11 @@ require_once __DIR__ . '/includes/header.php';
                             <span style="color:var(--ink-400);">—</span>
                         <?php elseif ($it['is_shared']): ?>
                             <div style="font-weight:600;"><?= ($it['balance'] + 0) ?></div>
-                            <div style="font-size:11px;color:var(--ink-500);margin-top:2px;">رصيد الصنف كله — <?= $it['shared_count'] ?> كود</div>
+                            <div style="font-size:11px;color:var(--ink-500);margin-top:2px;white-space:nowrap;">كل الأكواد (<?= $it['shared_count'] ?>)</div>
                         <?php else: ?>
                             <?php if (!$it['bal_mismatch']): ?>
-                                <div style="font-weight:600;color:var(--pos);">
-                                    <?= ($it['balance'] + 0) ?> <i class="ti ti-check"></i>
-                                </div>
+                                <span style="color:var(--pos);font-size:16px;" title="الرصيد <?= ($it['balance'] + 0) ?> = الفرق"><i class="ti ti-check"></i></span>
+                                <span style="display:none;"><?= ($it['balance'] + 0) ?></span>
                             <?php else: ?>
                                 <div style="font-weight:600;color:var(--neg);">
                                     <?= ($it['balance'] + 0) ?>
@@ -635,6 +681,7 @@ require_once __DIR__ . '/includes/header.php';
                                        class="undist-note-input"
                                        value="<?= htmlspecialchars($it['note']) ?>"
                                        data-saved="<?= htmlspecialchars($it['note']) ?>"
+                                       title="<?= htmlspecialchars($it['note']) ?>"
                                        onblur="saveNote(this)">
                                 <span class="save-ind"></span>
                             </div>
@@ -652,17 +699,26 @@ require_once __DIR__ . '/includes/header.php';
                             </div>
                         </td>
                         <td>
-                            <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                            <?php foreach ($it['returns'] as $r): ?>
-                                <button type="button"
-                                        class="btn btn-sm btn-ghost inv-pill-btn"
-                                        <?= !empty($r['is_back']) ? 'style="color:var(--pos);font-weight:600;"' : '' ?>
-                                        onclick="openInvoiceModal(<?= $r['sth_id'] ?>, <?= htmlspecialchars(json_encode($r['suffix'], JSON_UNESCAPED_UNICODE)) ?>, <?= htmlspecialchars(json_encode($it['item_code'], JSON_UNESCAPED_UNICODE)) ?>)"
-                                        title="عرض تفاصيل الفاتورة">
-                                    <i class="ti ti-file-invoice"></i> <?= htmlspecialchars($r['label']) ?>
-                                </button>
-                            <?php endforeach; ?>
+                        <?php if (!empty($it['return_groups'])): ?>
+                            <?php foreach ($it['return_groups'] as $grpName => $grpInvs): 
+                                $isBack = str_starts_with($grpName, 'رجع من ');
+                                $isVendor = ($grpName === 'مورد');
+                                $lblColor = $isBack ? 'var(--pos)' : ($isVendor ? 'var(--warn)' : 'var(--ink-500)');
+                            ?>
+                            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:3px;">
+                                <span class="ret-grp-lbl" style="color:<?= $lblColor ?>;"><?= htmlspecialchars($grpName) ?></span>
+                                <?php foreach ($grpInvs as $r): ?>
+                                    <button type="button"
+                                            class="btn btn-sm btn-ghost inv-pill-btn"
+                                            <?= !empty($r['is_back']) ? 'style="color:var(--pos);font-weight:600;"' : '' ?>
+                                            onclick="openInvoiceModal(<?= $r['sth_id'] ?>, <?= htmlspecialchars(json_encode($r['suffix'], JSON_UNESCAPED_UNICODE)) ?>, <?= htmlspecialchars(json_encode($it['item_code'], JSON_UNESCAPED_UNICODE)) ?>)"
+                                            title="فاتورة <?= htmlspecialchars($r['doc_no'] . ' · ' . $r['grp']) ?>">
+                                        <?= htmlspecialchars($r['doc_no']) ?>
+                                    </button>
+                                <?php endforeach; ?>
                             </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
