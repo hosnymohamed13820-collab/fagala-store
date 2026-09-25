@@ -276,26 +276,29 @@
             name: 'write',
             dur: 26,
             steps: [
-                { at: 0, who: 'pencil', do: 'walk', to: [55 / 100, 12 / 100], speed: WALK, trail: 'pencil' },
+                { at: 0, who: 'pencil', do: 'walk', to: [55 / 100, 10 / 100], speed: WALK, trail: 'pencil' },
                 { at: 0, who: 'eraser', do: 'follow', target: 'pencil', gap: 110, speed: WALK, eraseTrail: true },
-                { at: 8, who: 'pencil', do: 'lookAt', target: 'eraser', dur: 2 },
-                { at: 10, who: 'pencil', do: 'walk', to: [85 / 100, 12 / 100], speed: WALK, trail: 'pencil' },
-                { at: 18, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
-                { at: 18, who: 'eraser', do: 'walk', to: 'home', speed: WALK }
+                { at: 1, wait: 'pencil' },
+                { at: 1, who: 'pencil', do: 'lookAt', target: 'eraser', dur: 2 },
+                { at: 3, who: 'pencil', do: 'walk', to: [85 / 100, 10 / 100], speed: WALK, trail: 'pencil' },
+                { at: 4, wait: 'pencil' },
+                { at: 5, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
+                { at: 5, who: 'eraser', do: 'walk', to: 'home', speed: WALK }
             ]
         },
         {
             name: 'chase',
             dur: 27,
             steps: [
-                { at: 0, who: 'pencil', do: 'walk', to: [80 / 100, 75 / 100], speed: WALK },
-                { at: 4, who: 'sharpener', do: 'lookAt', target: 'pencil', dur: 1 },
-                { at: 5, who: 'pencil', do: 'run', to: [26 / 100, 88 / 100], speed: RUN },
-                { at: 5, who: 'sharpener', do: 'follow', target: 'pencil', gap: 150, speed: RUN * 95 / 100 },
-                { at: 5, who: 'all_others', do: 'lookAt', target: 'pencil', dur: 8 },
-                { at: 13, who: 'sharpener', do: 'hop', dur: 3 },
-                { at: 13, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
-                { at: 17, who: 'sharpener', do: 'walk', to: 'home', speed: WALK * 70 / 100 }
+                { at: 0, who: 'pencil', do: 'walk', to: [80 / 100, 75 / 100], speed: 150 },
+                { at: 1, wait: 'pencil' },
+                { at: 1, who: 'sharpener', do: 'lookAt', target: 'pencil', dur: 1 },
+                { at: 2, who: 'pencil', do: 'run', to: [26 / 100, 88 / 100], speed: RUN },
+                { at: 2, who: 'sharpener', do: 'follow', target: 'pencil', gap: 150, speed: RUN * 95 / 100 },
+                { at: 2, who: 'all_others', do: 'lookAt', target: 'pencil', dur: 8 },
+                { at: 10, who: 'sharpener', do: 'hop', dur: 3 },
+                { at: 10, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
+                { at: 14, who: 'sharpener', do: 'walk', to: 'home', speed: WALK * 70 / 100 }
             ]
         },
         {
@@ -304,10 +307,12 @@
             steps: [
                 { at: 0, who: 'pen', do: 'walk', to: [12 / 100, 55 / 100], speed: WALK },
                 { at: 0, who: 'book', do: 'walk', to: [24 / 100, 60 / 100], speed: SLOW },
-                { at: 4, who: 'book', do: 'lookAt', target: 'pen', dur: 14 },
-                { at: 4, who: 'pen', do: 'sign', dur: 12 },
-                { at: 18, who: 'pen', do: 'walk', to: 'home', speed: WALK },
-                { at: 18, who: 'book', do: 'walk', to: 'home', speed: SLOW }
+                { at: 1, wait: 'pen' },
+                { at: 1, wait: 'book' },
+                { at: 1, who: 'book', do: 'lookAt', target: 'pen', dur: 13 },
+                { at: 1, who: 'pen', do: 'sign', dur: 12 },
+                { at: 14, who: 'pen', do: 'walk', to: 'home', speed: WALK },
+                { at: 14, who: 'book', do: 'walk', to: 'home', speed: SLOW }
             ]
         },
         {
@@ -315,9 +320,10 @@
             dur: 24,
             steps: [
                 { at: 0, who: 'ruler', do: 'walk', to: [22 / 100, 88 / 100], speed: WALK, ortho: true },
-                { at: 5, who: 'book', do: 'lookAt', target: 'ruler', dur: 6 },
-                { at: 5, who: 'ruler', do: 'measure', dur: 3 },
-                { at: 10, who: 'ruler', do: 'walk', to: 'home', speed: WALK, ortho: true }
+                { at: 1, wait: 'ruler' },
+                { at: 1, who: 'book', do: 'lookAt', target: 'ruler', dur: 4 },
+                { at: 1, who: 'ruler', do: 'measure', dur: 3 },
+                { at: 4, who: 'ruler', do: 'walk', to: 'home', speed: WALK, ortho: true }
             ]
         },
         {
@@ -325,12 +331,14 @@
             dur: 25,
             steps: [
                 { at: 0, who: 'book', do: 'sit', dur: 18 },
-                { at: 1, who: 'pencil', do: 'walk', to: [6 / 100, 88 / 100], speed: WALK },
-                { at: 1, who: 'eraser', do: 'walk', to: [18 / 100, 88 / 100], speed: WALK },
-                { at: 6, who: 'pencil', do: 'lookAt', target: 'book', dur: 6 },
-                { at: 6, who: 'eraser', do: 'lookAt', target: 'book', dur: 6 },
-                { at: 14, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
-                { at: 14, who: 'eraser', do: 'walk', to: 'home', speed: WALK }
+                { at: 0, who: 'pencil', do: 'walk', to: [6 / 100, 88 / 100], speed: 140 },
+                { at: 0, who: 'eraser', do: 'walk', to: [18 / 100, 88 / 100], speed: 140 },
+                { at: 1, wait: 'pencil' },
+                { at: 1, wait: 'eraser' },
+                { at: 1, who: 'pencil', do: 'lookAt', target: 'book', dur: 6 },
+                { at: 1, who: 'eraser', do: 'lookAt', target: 'book', dur: 6 },
+                { at: 8, who: 'pencil', do: 'walk', to: 'home', speed: WALK },
+                { at: 8, who: 'eraser', do: 'walk', to: 'home', speed: WALK }
             ]
         }
     ];
@@ -365,6 +373,23 @@
     // باراميترات التجربة والتتبع
     let debugMinDist = 9999;
     let debugFlipCount = 0;
+    let debugInCardCount = 0;
+
+    // حالة انتظار المشهد
+    let sceneWaitingFor = null;
+    let sceneWaitTimer = 0;
+
+    // حساب مربع الكارت بحجم الشخصية (هامش ٢٤ + نصف العرض/الطول)
+    function getCharBox(card, def) {
+        const padX = 24 + (def ? def.width / 2 : 24);
+        const padY = 24 + (def ? def.height / 2 : 24);
+        return {
+            minX: card.left - padX,
+            maxX: card.right + padX,
+            minY: card.top - padY,
+            maxY: card.bottom + padY
+        };
+    }
 
     // فحص تقاطع خط مع مستطيل المربع (مع هامش ٢٤ بكسل)
     function segmentIntersectsBox(x1, y1, x2, y2, box) {
@@ -393,15 +418,10 @@
     }
 
     // بناء مسار آمن يلتف حول المربع بدلاً من الانزلاق على حوافه
-    function planSafeWaypoints(x1, y1, x2, y2, winW, winH) {
+    function planSafeWaypoints(x1, y1, x2, y2, winW, winH, def) {
         if (!cardRect) return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
 
-        const box = {
-            minX: cardRect.left - 24,
-            maxX: cardRect.right + 24,
-            minY: cardRect.top - 24,
-            maxY: cardRect.bottom + 24
-        };
+        const box = getCharBox(cardRect, def);
 
         if (!segmentIntersectsBox(x1, y1, x2, y2, box)) {
             return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
@@ -670,6 +690,12 @@
                 // التسكع الفردي
                 loiterTarget: null,
                 loiterTimer: 1 + Math.random() * 2,
+                // مسار المتابعة الآمن
+                followWaypoints: null,
+                followWaypointTimer: 0,
+                // مدة النظر
+                lookAtTimer: 0,
+                lookAtDuration: 0,
                 // مؤقتات الحركات الخاصة
                 actionTimer: 0,
                 specialAction: null
@@ -765,10 +791,16 @@
         }
 
         // إلغاء كل المسارات وتصفير السرعات
+        sceneWaitingFor = null;
+        sceneWaitTimer = 0;
         charNodes.forEach(n => {
             n.activePath = null;
             n.specialAction = null;
             n.lookAtTarget = null;
+            n.lookAtDuration = 0;
+            n.lookAtTimer = 0;
+            n.followWaypoints = null;
+            n.followWaypointTimer = 0;
             n.targetSpeed = WALK;
         });
     }
@@ -806,12 +838,18 @@
         currentScene = SCENES[nextIdx];
         sceneTime = 0;
         sceneStage = 'scene';
+        sceneWaitingFor = null;
+        sceneWaitTimer = 0;
 
         // تفريغ المسارات القديمة للشخصيات
         charNodes.forEach(n => {
             n.activePath = null;
             n.specialAction = null;
             n.lookAtTarget = null;
+            n.lookAtDuration = 0;
+            n.lookAtTimer = 0;
+            n.followWaypoints = null;
+            n.followWaypointTimer = 0;
         });
     }
 
@@ -827,13 +865,15 @@
         node.followLeader = null;
         node.lookAtTarget = null;
         node.specialAction = null;
+        node.followWaypoints = null;
+        node.followWaypointTimer = 0;
 
         if (isOrtho) {
             node.activePath = buildOrthoPath(node.x, node.y, targetX, targetY);
             node.distOnPath = 0;
             node.isOrtho = true;
         } else {
-            const waypoints = planSafeWaypoints(node.x, node.y, targetX, targetY, winW, winH);
+            const waypoints = planSafeWaypoints(node.x, node.y, targetX, targetY, winW, winH, node.def);
             node.activePath = buildCatmullRomPath(waypoints);
             node.distOnPath = 0;
             node.isOrtho = false;
@@ -874,14 +914,36 @@
                     triggerNextScene();
                 }
             } else if (sceneStage === 'scene' && currentScene) {
-                const prevSceneTime = sceneTime;
-                sceneTime += dt;
+                // فحص إذا كان هناك انتظار وصول شخصية
+                if (sceneWaitingFor) {
+                    sceneWaitTimer += dt;
+                    const waitedNode = charNodes.find(n => n.def.id === sceneWaitingFor);
+                    const isArrived = !waitedNode || !waitedNode.activePath;
+                    if (isArrived || sceneWaitTimer >= 25) {
+                        sceneWaitingFor = null;
+                        sceneWaitTimer = 0;
+                    }
+                }
 
-                // تنفيذ خطوات المشهد عند حلول توقيتها
-                for (let i = 0; i < currentScene.steps.length; i++) {
-                    const step = currentScene.steps[i];
-                    if (step.at >= prevSceneTime && step.at < sceneTime) {
-                        applySceneStep(step, winW, winH, homes);
+                if (!sceneWaitingFor) {
+                    const prevSceneTime = sceneTime;
+                    sceneTime += dt;
+
+                    // تنفيذ خطوات المشهد عند حلول توقيتها
+                    for (let i = 0; i < currentScene.steps.length; i++) {
+                        const step = currentScene.steps[i];
+                        if (step.at >= prevSceneTime && step.at < sceneTime) {
+                            if (step.wait) {
+                                const waitedNode = charNodes.find(n => n.def.id === step.wait);
+                                if (waitedNode && waitedNode.activePath) {
+                                    sceneWaitingFor = step.wait;
+                                    sceneWaitTimer = 0;
+                                    sceneTime = step.at;
+                                    break;
+                                }
+                            }
+                            applySceneStep(step, winW, winH, homes);
+                        }
                     }
                 }
 
@@ -889,6 +951,8 @@
                     sceneStage = 'loiter';
                     stageTimer = 4 + Math.random() * 4; // تسكع بين المشاهد من ٤ إلى ٨ ثواني
                     currentScene = null;
+                    sceneWaitingFor = null;
+                    sceneWaitTimer = 0;
                     // الجميع يعود لبيته بعد المشهد
                     charNodes.forEach(n => {
                         if (n.def.id !== 'paper') {
@@ -999,8 +1063,33 @@
                     const targetX = p0.x + (p1.x - p0.x) * u;
                     const targetY = p0.y + (p1.y - p0.y) * u;
 
-                    const dx = targetX - node.x;
-                    const dy = targetY - node.y;
+                    let nextTargetX = targetX;
+                    let nextTargetY = targetY;
+
+                    if (cardRect) {
+                        node.followWaypointTimer -= dt;
+                        const box = getCharBox(cardRect, node.def);
+                        const intersects = segmentIntersectsBox(node.x, node.y, targetX, targetY, box);
+
+                        if (intersects) {
+                            if (!node.followWaypoints || node.followWaypointTimer <= 0) {
+                                node.followWaypoints = planSafeWaypoints(node.x, node.y, targetX, targetY, winW, winH, node.def);
+                                node.followWaypointTimer = 0.5;
+                            }
+                            if (node.followWaypoints && node.followWaypoints.length > 1) {
+                                const wp = node.followWaypoints[1];
+                                if (Math.hypot(node.x - wp.x, node.y - wp.y) > 20) {
+                                    nextTargetX = wp.x;
+                                    nextTargetY = wp.y;
+                                }
+                            }
+                        } else {
+                            node.followWaypoints = null;
+                        }
+                    }
+
+                    const dx = nextTargetX - node.x;
+                    const dy = nextTargetY - node.y;
                     const distToTarget = Math.hypot(dx, dy);
 
                     if (distToTarget > 1) {
@@ -1177,6 +1266,16 @@
                 const lang = Math.atan2(ldy, ldx);
                 node.pupilOffset.x = Math.cos(lang) * 2.2 * node.facing;
                 node.pupilOffset.y = Math.sin(lang) * 2.2;
+
+                // انتهاء مدة النظر lookAt
+                if (node.lookAtDuration > 0) {
+                    node.lookAtTimer += dt;
+                    if (node.lookAtTimer >= node.lookAtDuration) {
+                        node.lookAtTarget = null;
+                        node.lookAtDuration = 0;
+                        node.lookAtTimer = 0;
+                    }
+                }
             } else if (node.currentSpeed > 10) {
                 const moveAng = Math.atan2(node.vy, node.vx);
                 node.pupilOffset.x = Math.cos(moveAng) * 2.2 * node.facing;
@@ -1202,12 +1301,13 @@
                     const ux = dx / dist;
                     const uy = dy / dist;
                     if (dist < 74) {
-                        const pushHard = (74 - dist) / 2;
+                        // تدرج دفع بحد أقصى 4px في الفريم لمنع نطات الـ 22px
+                        const pushHard = Math.min((74 - dist) / 2, 4);
                         c1.x -= ux * pushHard;
                         c1.y -= uy * pushHard;
                         c2.x += ux * pushHard;
                         c2.y += uy * pushHard;
-                        dist = 74;
+                        dist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
                     } else {
                         const overlap = PERSONAL - dist;
                         const pushSpeed = Math.min(MAX_SEP_SPEED, (overlap / PERSONAL) * MAX_SEP_SPEED);
@@ -1223,6 +1323,26 @@
                     debugMinDist = Math.min(debugMinDist, dist);
                 }
             }
+        }
+
+        // شبكة أمان المربع: لو مركز أي شخصية (إلا الورقة) دخل مربعها الموسع ← ادفعها لأقرب حافة
+        if (cardRect) {
+            charNodes.forEach(node => {
+                if (node.def.id === 'paper') return;
+                const box = getCharBox(cardRect, node.def);
+                if (node.x >= box.minX && node.x <= box.maxX && node.y >= box.minY && node.y <= box.maxY) {
+                    debugInCardCount++;
+                    const dLeft = Math.abs(node.x - box.minX);
+                    const dRight = Math.abs(box.maxX - node.x);
+                    const dTop = Math.abs(node.y - box.minY);
+                    const dBottom = Math.abs(box.maxY - node.y);
+                    const minD = Math.min(dLeft, dRight, dTop, dBottom);
+                    if (minD === dLeft) node.x = box.minX;
+                    else if (minD === dRight) node.x = box.maxX;
+                    else if (minD === dTop) node.y = box.minY;
+                    else node.y = box.maxY;
+                }
+            });
         }
 
         // حدود الشاشة (هامش ٥٠ بكسل) وشروط الموبايل
@@ -1243,7 +1363,8 @@
         penTrail.forEach(pt => { pt.life -= dt; });
         penTrail = penTrail.filter(pt => pt.life > 0);
 
-        // تسجيل المتغيرات في body للتجربة
+        // تسجيل المتغيرات في body للتجربة والفحص
+        document.body.dataset.lfxIncard = String(debugInCardCount);
         if (debugMode) {
             document.body.dataset.lfxMindist = String(Math.round(debugMinDist));
             document.body.dataset.lfxFlips = String(debugFlipCount);
@@ -1258,6 +1379,8 @@
                 charNodes.forEach(n => {
                     if (n.def.id !== step.target && n.def.id !== 'sharpener' && n.def.id !== 'paper') {
                         n.lookAtTarget = targetNode;
+                        n.lookAtDuration = step.dur || 8;
+                        n.lookAtTimer = 0;
                         n.currentSpeed = 0;
                         n.vx = 0;
                         n.vy = 0;
@@ -1294,6 +1417,8 @@
             const targetNode = charNodes.find(n => n.def.id === step.target);
             if (targetNode) {
                 node.lookAtTarget = targetNode;
+                node.lookAtDuration = step.dur || 4;
+                node.lookAtTimer = 0;
                 node.currentSpeed = 0;
                 node.vx = 0;
                 node.vy = 0;

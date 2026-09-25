@@ -320,7 +320,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=45').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=46').catch(() => {});
             });
         }
 
@@ -353,6 +353,6 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             }
         })();
     </script>
-    <script src="assets/login_fx.js?v=9" defer></script>
+    <script src="assets/login_fx.js?v=10" defer></script>
 </body>
 </html>
