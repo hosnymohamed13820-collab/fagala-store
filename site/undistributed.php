@@ -211,11 +211,12 @@ $notesCount = (int) $pdo->query('SELECT COUNT(*) FROM undist_notes')->fetchColum
 $defaultFrom = $hasState ? $savedFrom : date('Y-m-d', strtotime('-7 days'));
 $defaultTo   = $hasState ? $savedTo   : date('Y-m-d');
 
-$items           = [];
-$diffCount       = 0;
-$zeroDiffCount   = 0;
-$mismatchCount   = 0;
-$lastBalanceSync = null;
+$items            = [];
+$purchaseInvoices = [];
+$diffCount        = 0;
+$zeroDiffCount    = 0;
+$mismatchCount    = 0;
+$lastBalanceSync  = null;
 
 if ($hasState) {
     $branchIds       = array_keys(UNDIST_BRANCH_ACCOUNTS);
@@ -253,6 +254,7 @@ if ($hasState) {
         h.doc_no,
         h.doc_type,
         h.supplier_id,
+        h.supplier_name,
         h.invoice_date
     FROM hq_invoice_lines l
     JOIN hq_invoices h ON h.sth_id = l.sth_id AND h.suffix = l.suffix
@@ -278,9 +280,11 @@ if ($hasState) {
 
         if ($docType === 2 && !$isBranch) {
             $itemInvoices[$code]['purchases'][] = [
-                'sth_id' => (int) $inv['sth_id'],
-                'suffix' => (string) $inv['suffix'],
-                'doc_no' => (string) $inv['doc_no'],
+                'sth_id'        => (int) $inv['sth_id'],
+                'suffix'        => (string) $inv['suffix'],
+                'doc_no'        => (string) $inv['doc_no'],
+                'supplier_name' => (string) ($inv['supplier_name'] ?? ''),
+                'invoice_date'  => (string) $inv['invoice_date'],
             ];
         } elseif ($docType === 2 && $isBranch) {
             $grp   = 'رجع من ' . $branchName;
@@ -431,6 +435,32 @@ if ($hasState) {
             return ($b['diff'] <=> $a['diff']);
         }
         return strcmp($a['item_name'], $b['item_name']);
+    });
+
+    // إجمالي فواتير الشراء: كل فاتورة ظاهرة في كام صف في الجدول
+    // 🔴 المفتاح sth_id|suffix مش doc_no — أرقام الفواتير بتتكرر بين الـsuffixes
+    $purchaseInvoices = [];
+    foreach ($items as $it) {
+        foreach ($it['purchases'] as $p) {
+            $key = $p['sth_id'] . '|' . $p['suffix'];
+            if (!isset($purchaseInvoices[$key])) {
+                $purchaseInvoices[$key] = [
+                    'key'           => $key,
+                    'doc_no'        => (string) $p['doc_no'],
+                    'supplier_name' => (string) ($p['supplier_name'] ?? ''),
+                    'invoice_date'  => (string) $p['invoice_date'],
+                    'count'         => 0,
+                ];
+            }
+            $purchaseInvoices[$key]['count']++;
+        }
+    }
+    // الترتيب: count من الأكبر للأصغر، ولو متساويين invoice_date من الأقدم للأحدث
+    usort($purchaseInvoices, function ($a, $b) {
+        if ($a['count'] !== $b['count']) {
+            return ($b['count'] <=> $a['count']);
+        }
+        return strcmp($a['invoice_date'], $b['invoice_date']);
     });
 }
 
@@ -601,6 +631,11 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="filter-pill" id="toggleMismatchBtn" onclick="toggleFilter('onlyMismatch')">
                 الرصيد مش مساوي (<?= $mismatchCount ?>)
             </button>
+            <?php if (!empty($purchaseInvoices)): ?>
+            <button type="button" class="filter-pill" id="invListBtn" onclick="openInvListModal()">
+                <i class="ti ti-file-invoice"></i> <span id="invListBtnLbl">إجمالي الفواتير (<?= count($purchaseInvoices) ?>)</span>
+            </button>
+            <?php endif; ?>
         </div>
         <div style="font-size:13px;color:var(--ink-600);font-weight:600;">
             <?= count($items) ?> صنف · <?= $diffCount ?> لسه فيه فرق · <?= $mismatchCount ?> الرصيد مش مساوي
@@ -639,7 +674,8 @@ require_once __DIR__ . '/includes/header.php';
                     ?>
                     <tr data-code="<?= htmlspecialchars($it['item_code']) ?>"
                         data-diff-zero="<?= $isZero ? '1' : '0' ?>"
-                        data-bal-mismatch="<?= !empty($it['bal_mismatch']) ? '1' : '0' ?>">
+                        data-bal-mismatch="<?= !empty($it['bal_mismatch']) ? '1' : '0' ?>"
+                        data-pinv="<?= htmlspecialchars(json_encode(array_map(fn($p) => $p['sth_id'] . '|' . $p['suffix'], $it['purchases']), JSON_UNESCAPED_UNICODE)) ?>">
                         <td>
                             <div style="font-weight:600;"><?= htmlspecialchars($it['item_name']) ?></div>
                             <div style="margin-top:2px;"><code style="font-size:11px;color:var(--ink-500);"><?= htmlspecialchars($it['item_code']) ?></code></div>
@@ -758,6 +794,59 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     </thead>
                     <tbody id="modalLinesBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة إجمالي فواتير الشراء -->
+    <div class="modal-bg" id="invListModal" onclick="handleModalBgClick(event)">
+        <div class="modal" style="max-width:640px;max-height:85vh;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line-soft);padding-bottom:12px;margin-bottom:14px;">
+                <div>
+                    <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px;">
+                        <i class="ti ti-file-invoice"></i>
+                        <span>إجمالي فواتير الشراء</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">
+                        <?= count($purchaseInvoices) ?> فاتورة · دوس على فاتورة تفلتر الأصناف بتاعتها
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-ghost" onclick="closeInvListModal()" title="إغلاق">
+                    <i class="ti ti-x"></i>
+                </button>
+            </div>
+            <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);">
+                <table class="prob-table" style="margin-top:0;">
+                    <thead style="position:sticky;top:0;z-index:2;">
+                        <tr>
+                            <th style="width:110px;">رقم الفاتورة</th>
+                            <th>المورد</th>
+                            <th style="width:105px;text-align:center;">التاريخ</th>
+                            <th style="width:90px;text-align:center;">عدد الأصناف</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invListBody">
+                        <tr style="cursor:pointer;" data-key="" onclick="setInvFilter('')">
+                            <td colspan="4" style="text-align:center;font-weight:600;color:var(--accent-text);padding:10px;">
+                                كل الأصناف — شيل فلتر الفاتورة
+                            </td>
+                        </tr>
+                        <?php foreach ($purchaseInvoices as $pi): ?>
+                        <tr style="cursor:pointer;"
+                            data-key="<?= htmlspecialchars($pi['key']) ?>"
+                            data-doc="<?= htmlspecialchars($pi['doc_no']) ?>"
+                            data-count="<?= (int) $pi['count'] ?>"
+                            onclick="setInvFilter(this.dataset.key)">
+                            <td style="font-weight:600;">
+                                <i class="ti ti-file-invoice"></i> <?= htmlspecialchars($pi['doc_no']) ?>
+                            </td>
+                            <td><?= htmlspecialchars($pi['supplier_name'] !== '' ? $pi['supplier_name'] : '—') ?></td>
+                            <td style="text-align:center;"><?= htmlspecialchars(substr($pi['invoice_date'], 0, 10)) ?></td>
+                            <td style="text-align:center;font-weight:700;"><?= (int) $pi['count'] ?></td>
+                        </tr>
+                        <?php endforeach; ?>
                     </tbody>
                 </table>
             </div>
@@ -905,7 +994,8 @@ function saveNote(input) {
 // فلترة الجدول
 var filters = {
     hideDistributed: false,
-    onlyMismatch: false
+    onlyMismatch: false,
+    invKey: ''
 };
 
 function toggleFilter(filterName) {
@@ -949,9 +1039,62 @@ function applyFilters() {
         if (filters.onlyMismatch && !isMismatch) {
             hide = true;
         }
+        if (filters.invKey) {
+            var keys = JSON.parse(r.getAttribute('data-pinv') || '[]');
+            if (keys.indexOf(filters.invKey) === -1) {
+                hide = true;
+            }
+        }
 
         r.style.display = hide ? 'none' : '';
     });
+}
+
+function openInvListModal() {
+    var modal = document.getElementById('invListModal');
+    if (modal) modal.classList.add('open');
+}
+
+function closeInvListModal() {
+    var modal = document.getElementById('invListModal');
+    if (modal) modal.classList.remove('open');
+}
+
+function setInvFilter(key) {
+    filters.invKey = key || '';
+
+    var activeDoc = '';
+    var activeCount = '';
+    var rows = document.querySelectorAll('#invListBody tr[data-key]');
+    rows.forEach(function (r) {
+        if (r.dataset.key === filters.invKey) {
+            r.style.background = 'var(--accent-soft)';
+            activeDoc = r.dataset.doc || '';
+            activeCount = r.dataset.count || '';
+        } else {
+            r.style.background = '';
+        }
+    });
+
+    closeInvListModal();
+    applyFilters();
+
+    var btn = document.getElementById('invListBtn');
+    var lbl = document.getElementById('invListBtnLbl');
+    if (btn && lbl) {
+        if (filters.invKey) {
+            btn.classList.add('active');
+            lbl.textContent = 'فاتورة ' + activeDoc + ' (' + activeCount + ')';
+        } else {
+            btn.classList.remove('active');
+            lbl.textContent = 'إجمالي الفواتير (' + <?= (int) count($purchaseInvoices) ?> + ')';
+        }
+    }
+
+    var table = document.getElementById('undistTable');
+    if (table) {
+        table.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
 }
 
 // نافذة تفاصيل الفاتورة
@@ -1020,14 +1163,15 @@ function closeInvoiceModal() {
 }
 
 function handleModalBgClick(e) {
-    if (e.target.id === 'invoiceModal') {
-        closeInvoiceModal();
+    if (e.target.classList.contains('modal-bg')) {
+        e.target.classList.remove('open');
     }
 }
 
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
         closeInvoiceModal();
+        closeInvListModal();
     }
 });
 
