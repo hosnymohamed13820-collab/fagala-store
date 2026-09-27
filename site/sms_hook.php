@@ -77,10 +77,23 @@ try {
 
     // --- (٢) استقبال رسايل SMS ---
     if ($method === 'POST') {
+        $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($contentLength > 1048576) {
+            http_response_code(413);
+            echo json_encode(['ok' => false, 'error' => 'حجم الطلب أكبر من ١ ميجا.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         $raw = file_get_contents('php://input');
         if ($raw === false || $raw === '') {
             http_response_code(400);
             echo json_encode(['ok' => false, 'error' => 'مفيش بيانات مبعوتة.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if (strlen($raw) > 1048576) {
+            http_response_code(413);
+            echo json_encode(['ok' => false, 'error' => 'حجم الطلب أكبر من ١ ميجا.'], JSON_UNESCAPED_UNICODE);
             exit;
         }
 

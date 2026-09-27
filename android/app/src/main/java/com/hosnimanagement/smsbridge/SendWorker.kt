@@ -10,7 +10,6 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,11 +55,9 @@ class SendWorker(
 
             var conn: HttpURLConnection? = null
             try {
-                val url = URL(serverUrl)
-                conn = url.openConnection() as HttpURLConnection
+                // 🔴 الرابط بيتفحص (https + hosnimanagement.com) ومفيش redirects — Net.openSafe
+                conn = Net.openSafe(serverUrl)
                 conn.requestMethod = "POST"
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 conn.setRequestProperty("X-Sms-Token", token)
@@ -78,7 +75,8 @@ class SendWorker(
                         db.markSent(pending.map { it.id })
                         recordSuccess(prefs)
                     } else {
-                        val err = jsonResp.optString("error", "فشل الرد من السيرفر")
+                        // مابنقراش أي حاجة من الرد غير ok — والنص بيتقص عشان مايتعرضش أي حاجة طويلة
+                        val err = jsonResp.optString("error", "فشل الرد من السيرفر").take(120)
                         recordError(prefs, "خطأ من السيرفر: $err")
                         return Result.retry()
                     }
@@ -88,7 +86,7 @@ class SendWorker(
                     } catch (e: Exception) {
                         ""
                     }
-                    recordError(prefs, "خطأ HTTP $responseCode: $errBody")
+                    recordError(prefs, "خطأ HTTP $responseCode: ${errBody.take(120)}")
                     return Result.retry()
                 }
             } catch (ex: Exception) {
@@ -99,6 +97,7 @@ class SendWorker(
             }
         }
 
+        db.purgeOldSent()
         return Result.success()
     }
 

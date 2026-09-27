@@ -20,8 +20,9 @@ class BackfillWorker(
         val incSet = prefs.getStringSet(MainActivity.KEY_INCLUDE_KW, null)
         val excSet = prefs.getStringSet(MainActivity.KEY_EXCLUDE_KW, null)
 
-        val include = incSet?.toList() ?: SmsFilter.DEFAULT_INCLUDE
-        val exclude = excSet?.toList() ?: SmsFilter.DEFAULT_EXCLUDE
+        // 🔴 قوايم السيرفر بتضيّق بس — القواعد الثابتة جوّه SmsFilter
+        val serverInclude = incSet?.toList() ?: emptyList()
+        val serverExclude = excSet?.toList() ?: emptyList()
 
         val db = SmsDatabase.getInstance(context)
         val uri = Uri.parse("content://sms/inbox")
@@ -54,7 +55,7 @@ class BackfillWorker(
 
                     if (sender.isBlank() || body.isBlank() || smsAtMs <= 0) continue
 
-                    if (SmsFilter.shouldSend(sender, body, include, exclude)) {
+                    if (SmsFilter.shouldSend(sender, body, serverInclude, serverExclude)) {
                         val inserted = db.insert(
                             sender = sender,
                             body = body,

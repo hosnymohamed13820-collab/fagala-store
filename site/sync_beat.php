@@ -53,7 +53,7 @@ if ($agent === '' || !preg_match('/^[a-z0-9_]{2,32}$/', $agent)) {
     beat_die('Bad agent key.');
 }
 
-if (!synctok_ok($agent, $token, array_keys(SYNC_AGENT_TOKENS))) beat_die('Unauthorized.', 401);
+if (!synctok_ok($agent, $token, array_diff(array_keys(SYNC_AGENT_TOKENS), ['sms_phone']))) beat_die('Unauthorized.', 401);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/agent_lib.php';

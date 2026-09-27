@@ -11,8 +11,8 @@ android {
         applicationId = "com.hosnimanagement.smsbridge"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,4 +61,6 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     testImplementation("junit:junit:4.13.2")
+    // org.json الحقيقية للتستات — اللي في android.jar stub بيرمي exception فالتست بيكدب
+    testImplementation("org.json:json:20231013")
 }

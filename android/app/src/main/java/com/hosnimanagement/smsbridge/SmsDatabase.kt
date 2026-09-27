@@ -25,7 +25,7 @@ class SmsDatabase private constructor(context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "sms_queue.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2   // ٢: sent_at عشان مسح المتبعت بعد ٧ أيام (بريف ٧٨)
         private const val TABLE_NAME = "sms_queue"
 
         @Volatile
@@ -49,6 +49,7 @@ class SmsDatabase private constructor(context: Context) :
                 android_id INTEGER,
                 source TEXT NOT NULL,
                 sent INTEGER NOT NULL DEFAULT 0,
+                sent_at INTEGER,
                 UNIQUE(sender, sms_at_ms, body)
             )
             """.trimIndent()
@@ -56,7 +57,19 @@ class SmsDatabase private constructor(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // أي تحديث قادم للجدول
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE $TABLE_NAME ADD COLUMN sent_at INTEGER")
+        }
+    }
+
+    /**
+     * 🔴 مسح الرسايل اللي اتبعتت واتأكدت من أكتر من ٧ أيام — عشان نصوص البنك
+     * ماتفضلش على الموبايل. ده المسح الوحيد، والسيرفر هو النسخة الأصلية.
+     * (لو «اسحب القديم» اتعمل تاني هترجع للطابور، والسيرفر بيتجاهل المكرر بالـhash.)
+     */
+    fun purgeOldSent(): Int {
+        val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        return writableDatabase.delete(TABLE_NAME, "sent = 1 AND sent_at IS NOT NULL AND sent_at < ?", arrayOf(cutoff.toString()))
     }
 
     /**
@@ -130,7 +143,10 @@ class SmsDatabase private constructor(context: Context) :
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val cv = ContentValues().apply { put("sent", 1) }
+            val cv = ContentValues().apply {
+                put("sent", 1)
+                put("sent_at", System.currentTimeMillis())
+            }
             val chunked = ids.chunked(500)
             for (batch in chunked) {
                 val placeholders = batch.joinToString(",") { "?" }

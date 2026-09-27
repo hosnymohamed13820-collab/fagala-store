@@ -24,11 +24,9 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -96,13 +94,11 @@ class MainActivity : AppCompatActivity() {
         btnBatteryOpt       = findViewById(R.id.btnBatteryOpt)
 
         btnTestConnection.setOnClickListener {
-            saveConfig()
-            testConnection()
+            if (saveConfig()) testConnection()
         }
 
         btnBackfill.setOnClickListener {
-            saveConfig()
-            startBackfill()
+            if (saveConfig()) startBackfill()
         }
 
         btnBatteryOpt.setOnClickListener {
@@ -119,14 +115,24 @@ class MainActivity : AppCompatActivity() {
         editToken.setText(token)
     }
 
-    private fun saveConfig() {
-        val url   = editServerUrl.text.toString().trim()
+    /** بيرجّع false لو الرابط مش مسموح — ومايتحفظش ساعتها */
+    private fun saveConfig(): Boolean {
+        val url   = editServerUrl.text.toString().trim().ifEmpty { DEFAULT_URL }
         val token = editToken.text.toString().trim()
 
+        // 🔴 الرابط مقفول على https://hosnimanagement.com — أي رابط تاني يترفض
+        if (!Net.isAllowedUrl(url)) {
+            txtTestResult.visibility = View.VISIBLE
+            txtTestResult.setTextColor(ContextCompat.getColor(this, R.color.neg))
+            txtTestResult.text = "❌ الرابط لازم يبدأ بـ https://${Net.ALLOWED_HOST}/"
+            return false
+        }
+
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_SERVER_URL, if (url.isNotEmpty()) url else DEFAULT_URL)
+            .putString(KEY_SERVER_URL, url)
             .putString(KEY_TOKEN, token)
             .apply()
+        return true
     }
 
     private fun updateStatus() {
@@ -171,32 +177,18 @@ class MainActivity : AppCompatActivity() {
             try {
                 val sep = if (urlStr.contains("?")) "&" else "?"
                 val fullUrl = "$urlStr${sep}config=1"
-                val u = URL(fullUrl)
-                conn = u.openConnection() as HttpURLConnection
+                // 🔴 نفس فحص الرابط بتاع الخلفية — Net.openSafe
+                conn = Net.openSafe(fullUrl)
                 conn.requestMethod = "GET"
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
                 conn.setRequestProperty("X-Sms-Token", token)
 
                 val code = conn.responseCode
                 if (code == 200) {
                     val respStr = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-                    val json = JSONObject(respStr)
-                    if (json.optBoolean("ok", false)) {
-                        val incArr = json.optJSONArray("include")
-                        val excArr = json.optJSONArray("exclude")
-                        val incCount = incArr?.length() ?: 0
-                        val excCount = excArr?.length() ?: 0
-
-                        // حفظ الكلمات في SharedPreferences
-                        val incSet = mutableSetOf<String>()
-                        if (incArr != null) {
-                            for (i in 0 until incArr.length()) incSet.add(incArr.getString(i))
-                        }
-                        val excSet = mutableSetOf<String>()
-                        if (excArr != null) {
-                            for (i in 0 until excArr.length()) excSet.add(excArr.getString(i))
-                        }
+                    // 🔴 الرد بيتفحص كله قبل ما يتخزّن
+                    val parsed = Net.parseAndValidateConfig(respStr)
+                    if (parsed != null) {
+                        val (incSet, excSet) = parsed
                         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                             .putStringSet(KEY_INCLUDE_KW, incSet)
                             .putStringSet(KEY_EXCLUDE_KW, excSet)
@@ -205,14 +197,16 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             btnTestConnection.isEnabled = true
                             txtTestResult.setTextColor(ContextCompat.getColor(this, R.color.pos))
-                            txtTestResult.text = "✅ الاتصال ناجح! تم استلام $incCount كلمة تضمين و $excCount كلمة استبعاد."
+                            txtTestResult.text = "✅ الاتصال ناجح! تم استلام ${incSet.size} كلمة تضمين و ${excSet.size} كلمة استبعاد."
                         }
                     } else {
-                        val err = json.optString("error", "رد غير متوقع")
+                        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                            .putString(KEY_LAST_ERROR, "رد السيرفر مش سليم")
+                            .apply()
                         runOnUiThread {
                             btnTestConnection.isEnabled = true
                             txtTestResult.setTextColor(ContextCompat.getColor(this, R.color.neg))
-                            txtTestResult.text = "❌ فشل: $err"
+                            txtTestResult.text = "❌ فشل: رد السيرفر مش سليم"
                         }
                     }
                 } else if (code == 401) {
