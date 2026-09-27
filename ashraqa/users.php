@@ -19,6 +19,8 @@ if (!is_owner()) {
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }
 
+require_once __DIR__ . '/sensitive_lib.php';
+
 $pdo         = db();
 $modules     = all_modules();
 $moduleParts = module_parts();
@@ -288,9 +290,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $empId = $empChk->fetchColumn();
                         if ($isEmp) {
                             if ($empId) {
-                                $pdo->prepare(
-                                    'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
-                                )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                                if (sens_unlocked()) {
+                                    $pdo->prepare(
+                                        'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, base_salary=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
+                                    )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $salary, $expIn, $expOut, $allowAny, $empId]);
+                                } else {
+                                    $pdo->prepare(
+                                        'UPDATE employees SET full_name=?, branch_id=?, phone=?, job_title=?, expected_in=?, expected_out=?, allow_anywhere=?, is_active=1 WHERE id=?'
+                                    )->execute([$fullName, $branchId, $phone ?: null, $jobTitle ?: null, $expIn, $expOut, $allowAny, $empId]);
+                                }
                             } else {
                                 $pdo->prepare(
                                     'INSERT INTO employees (full_name, branch_id, user_id, phone, job_title, base_salary, expected_in, expected_out, allow_anywhere, is_active)
@@ -315,6 +323,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $flash = 'بيانات غير مكتملة.';
                 $flashType = 'error';
+            }
+        }
+
+        // --- صلاحية لمجموعة موظفين مرة واحدة (إضافة أو شيل) ---
+        // محمد: «أختار الموظفين وأفتح لهم موديول معين كلهم مرة واحدة».
+        // 🔴 المفتاح بيعدّي على sanitize_user_permissions زي الإضافة والتعديل —
+        //    مفتاح مش موجود في all_modules/module_parts بيتصد.
+        // 🔴 استعلامين بس مهما كان عدد الموظفين (INSERT متعدد + UPDATE بـIN)،
+        //    و perms_version بيزيد عشان الجلسات المفتوحة تقرا الجديد من غير خروج.
+        elseif ($action === 'bulk_perm') {
+            $mk    = (string) ($_POST['module_key'] ?? '');
+            $mode  = ($_POST['mode'] ?? '') === 'remove' ? 'remove' : 'add';
+            $clean = sanitize_user_permissions([$mk]);
+            $ids   = array_values(array_unique(array_filter(
+                array_map('intval', (array) ($_POST['user_ids'] ?? [])),
+                static fn($v) => $v > 0
+            )));
+            if (count($clean) !== 1 || $clean[0] !== $mk) {
+                $flash = 'الصلاحية دي مش معروفة.';
+                $flashType = 'error';
+            } elseif (!$ids) {
+                $flash = 'ماختارتش أي موظف.';
+                $flashType = 'error';
+            } else {
+                $ph = implode(',', array_fill(0, count($ids), '?'));
+                $pdo->beginTransaction();
+                try {
+                    if ($mode === 'add') {
+                        $vals = implode(',', array_fill(0, count($ids), '(?, ?)'));
+                        $args = [];
+                        foreach ($ids as $id) { $args[] = $id; $args[] = $mk; }
+                        $pdo->prepare("INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES $vals")->execute($args);
+                    } else {
+                        $pdo->prepare("DELETE FROM user_permissions WHERE module_key = ? AND user_id IN ($ph)")
+                            ->execute(array_merge([$mk], $ids));
+                    }
+                    $pdo->prepare("UPDATE users SET perms_version = perms_version + 1 WHERE id IN ($ph)")->execute($ids);
+                    $pdo->commit();
+                    $flash = ($mode === 'add' ? 'اتفتحت الصلاحية لـ ' : 'اتشالت الصلاحية من ') . count($ids) . ' موظف.';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    error_log('users bulk_perm: ' . $ex->getMessage());
+                    $flash = 'حصل خطأ ومااتحفظش حاجة.';
+                    $flashType = 'error';
+                }
             }
         }
 
@@ -378,6 +433,8 @@ $branches = $pdo->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER
 
 $page_title    = 'إدارة المستخدمين';
 $active_module = 'settings';
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -465,6 +522,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (is_owner()): ?>
             <a href="import_users.php" class="btn btn-ghost" style="text-decoration:none;"><i class="ti ti-download"></i> استيراد من النظام</a>
         <?php endif; ?>
+        <button class="btn btn-ghost" onclick="openBulk()"><i class="ti ti-users"></i> صلاحية لمجموعة</button>
         <button class="btn" onclick="openAdd()"><i class="ti ti-plus"></i> إضافة مستخدم</button>
     </div>
 </div>
@@ -517,8 +575,8 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td>
                         <?php if (!$usr['is_owner']): ?>
-                            <button class="btn btn-sm btn-ghost"
-                                onclick='openEdit(<?= json_encode([
+                            <?php
+                                $editData = [
                                     "id" => $usr["id"],
                                     "full_name" => $usr["full_name"],
                                     "username" => $usr["username"],
@@ -532,7 +590,13 @@ require_once __DIR__ . '/includes/header.php';
                                     "expected_in" => $usr["expected_in"] ?? "",
                                     "expected_out" => $usr["expected_out"] ?? "",
                                     "allow_anywhere" => (int)($usr["allow_anywhere"] ?? 0),
-                                ], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                ];
+                                if (!sens_unlocked()) {
+                                    unset($editData['base_salary']);
+                                }
+                            ?>
+                            <button class="btn btn-sm btn-ghost"
+                                onclick='openEdit(<?= json_encode($editData, JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
                                 تعديل
                             </button>
                             <form method="post" style="display:inline;"
@@ -616,7 +680,10 @@ require_once __DIR__ . '/includes/header.php';
                 <div id="empFields" style="display:none;margin-top:12px;">
                     <div class="form-grid">
                         <div class="form-row">
-                            <label>المرتب الأساسي</label>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                                <label style="margin-bottom:0;">المرتب الأساسي</label>
+                                <?= sens_eye() ?>
+                            </div>
                             <input type="number" step="0.01" min="0" name="base_salary" id="f_salary" value="0">
                         </div>
                         <div class="form-row">
@@ -691,6 +758,105 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<!-- ===== صلاحية لمجموعة موظفين مرة واحدة ===== -->
+<div class="modal-bg" id="bulkModal">
+    <div class="modal">
+        <h3>صلاحية لمجموعة موظفين</h3>
+        <form method="post" onsubmit="return bulkConfirm()">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="bulk_perm">
+
+            <div class="form-grid">
+                <div class="form-row">
+                    <label for="b_mod">الصلاحية</label>
+                    <select name="module_key" id="b_mod" required>
+                        <?php foreach ($modules as $key => $mod): ?>
+                            <?php if (isset($moduleParts[$key])): ?>
+                                <option value="<?= e($key) ?>"><?= e($mod['label']) ?> (كامل)</option>
+                                <?php foreach ($moduleParts[$key] as $pKey => $pLabel): ?>
+                                    <option value="<?= e($key . ':' . $pKey) ?>">&nbsp;&nbsp;↳ <?= e($mod['label']) ?>: <?= e($pLabel) ?></option>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <option value="<?= e($key) ?>"><?= e($mod['label']) ?></option>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label>العملية</label>
+                    <div style="display:flex;gap:16px;padding-top:8px;">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="mode" value="add" checked style="width:auto;"> افتحها</label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="mode" value="remove" style="width:auto;"> اقفلها</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <label>الموظفين <span id="b_count" style="color:var(--ink-500);font-weight:400;"></span></label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <select id="b_branch" onchange="bulkFilter()" style="flex:1;min-width:140px;">
+                        <option value="">كل الفروع</option>
+                        <?php foreach ($branches as $b): ?>
+                            <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
+                        <?php endforeach; ?>
+                        <option value="0">— بدون فرع —</option>
+                    </select>
+                    <button type="button" class="btn btn-ghost" onclick="bulkAll(true)">علّم الظاهرين</button>
+                    <button type="button" class="btn btn-ghost" onclick="bulkAll(false)">شيل العلامات</button>
+                </div>
+                <div class="perms-box" style="max-height:260px;">
+                    <?php foreach ($users as $bu): if (!(int)$bu['is_active'] || (int)$bu['is_owner']) continue; ?>
+                        <label class="perm-item b-user" data-branch="<?= (int)($bu['branch_id'] ?? 0) ?>">
+                            <input type="checkbox" name="user_ids[]" value="<?= (int)$bu['id'] ?>" onchange="bulkCount()">
+                            <?= e($bu['full_name']) ?>
+                            <span style="color:var(--ink-400);font-size:12px;">· <?= e($bu['branch_name'] ?? 'بدون فرع') ?></span>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+                <div class="hint">الموقوفين والأونر مش في القايمة. الصلاحية بتشتغل عندهم من غير خروج ودخول.</div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn">طبّق</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('bulkModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openBulk() {
+        document.getElementById('bulkModal').classList.add('open');
+        bulkFilter();
+    }
+    // فلتر الفرع بيخفي بس — العلامة على المخفي بتفضل (عشان تختار من كذا فرع)
+    function bulkFilter() {
+        const b = document.getElementById('b_branch').value;
+        document.querySelectorAll('#bulkModal .b-user').forEach(el => {
+            el.style.display = (b === '' || el.dataset.branch === b) ? '' : 'none';
+        });
+        bulkCount();
+    }
+    function bulkAll(on) {
+        document.querySelectorAll('#bulkModal .b-user').forEach(el => {
+            if (el.style.display !== 'none') el.querySelector('input').checked = on;
+        });
+        bulkCount();
+    }
+    function bulkCount() {
+        const n = document.querySelectorAll('#bulkModal .b-user input:checked').length;
+        document.getElementById('b_count').textContent = n ? '(' + n + ' متعلّم)' : '';
+        return n;
+    }
+    function bulkConfirm() {
+        const n = bulkCount();
+        if (!n) { alert('علّم على موظف واحد على الأقل.'); return false; }
+        const sel  = document.getElementById('b_mod');
+        const name = sel.options[sel.selectedIndex].text.replace(/^\s*↳\s*/, '').trim();
+        const add  = document.querySelector('#bulkModal input[name="mode"]:checked').value === 'add';
+        return confirm((add ? 'تفتح «' : 'تقفل «') + name + '» ' + (add ? 'لـ ' : 'عن ') + n + ' موظف؟');
+    }
+</script>
 <script>
     const modal = document.getElementById('modal');
 
@@ -699,6 +865,8 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('formAction').value = 'add';
         document.getElementById('formUserId').value = '';
         document.getElementById('userForm').reset();
+        document.getElementById('f_salary').disabled = false;
+        document.getElementById('f_salary').placeholder = '';
         clearPerms();
         // إظهار/إخفاء التلميحات
         document.getElementById('f_username').readOnly = false;
@@ -730,7 +898,15 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('f_branch').value = (data.branch_id === '' || data.branch_id == null) ? '' : data.branch_id;
         // بيانات الموظف
         document.getElementById('f_isemp').checked = !!data.is_employee;
-        document.getElementById('f_salary').value = data.base_salary !== '' ? data.base_salary : 0;
+        if (!('base_salary' in data)) {
+            document.getElementById('f_salary').disabled = true;
+            document.getElementById('f_salary').value = '';
+            document.getElementById('f_salary').placeholder = 'مقفول — Ctrl+L';
+        } else {
+            document.getElementById('f_salary').disabled = false;
+            document.getElementById('f_salary').placeholder = '';
+            document.getElementById('f_salary').value = data.base_salary !== '' ? data.base_salary : 0;
+        }
         document.getElementById('f_job').value = data.job_title || '';
         document.getElementById('f_phone').value = data.phone || '';
         document.getElementById('f_in').value = data.expected_in || '';

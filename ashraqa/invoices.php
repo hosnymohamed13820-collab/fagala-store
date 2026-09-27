@@ -877,6 +877,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
         $status = trim($_POST['status'] ?? '');
         if ($distId <= 0) throw new RuntimeException('فاتورة غير صحيحة.');
 
+        // 🔴 تشغيل تجريبي: بنرجّع الأصناف الناقصة **دلوقتي** من غير ما
+        //    نكتب أي حاجة. لازم يفضل قبل أي UPDATE.
+        //    بيتنده وقت الضغط مش وقت تحميل الصفحة، عشان جدول التوزيع
+        //    بيتحفظ لوحده من غير ريفرش — فأي قايمة محسوبة وقت التحميل
+        //    بتبقى قديمة وتحذّر من أصناف اتوزّعت خلاص (أو تسكت عن
+        //    أصناف اتصفّرت بعد كده).
+        if (!empty($_POST['dry'])) {
+            $dryItems = [];
+            try {
+                $dryItems = sqlsrv_fetch_invoice_items($_POST['invoice_id'] ?? null, $_POST['suffix'] ?? null);
+            } catch (Throwable $ex) { $dryItems = []; }
+            echo json_encode(
+                ['ok' => true, 'pending' => invoice_pending_items($distId, $dryItems)],
+                JSON_UNESCAPED_UNICODE
+            );
+            exit;
+        }
+
         if ($status === 'auto') {
             // رجوع للحساب التلقائي
             clear_invoice_status_manual($distId);
@@ -1443,14 +1461,32 @@ try {
             );
             $dq->execute([$distId]);
             $orphanCodes = [];
+            $distByItem = [];
             foreach ($dq as $r) {
                 $c = (string) $r['item_code'];
+                $distByItem[$c] = ($distByItem[$c] ?? 0.0) + (float)$r['qty'];
                 $isOrphan = $liveCodes && !isset($liveCodes[$c]);
                 if ($isOrphan) $orphanCodes[$c] = true;
                 if (isset($exclCodes[$c]) || $isOrphan) {
                     $b = (int) $r['branch_id'];
                     $branchTotals[$b] = max(0, ($branchTotals[$b] ?? 0) - (float) $r['qty']);
                     if ($branchTotals[$b] <= 0) unset($branchTotals[$b]);
+                }
+            }
+
+            // حصر الأصناف التي لم تكتمل في التوزيع للفاتورة الحالية
+            $pendingItems = [];
+            foreach ($items as $it) {
+                $code = (string) ($it['item_code'] ?? '');
+                $req  = (float) ($it['quantity'] ?? 0);
+                $done = (float) ($distByItem[$code] ?? 0);
+                if ($done < $req - 0.0001) {
+                    $pendingItems[] = [
+                        'code' => $code,
+                        'name' => (string) ($it['item_name'] ?? $code),
+                        'done' => $done,
+                        'qty'  => $req,
+                    ];
                 }
             }
 
@@ -2490,6 +2526,23 @@ require_once __DIR__ . '/includes/header.php';
                       title="الحالة مقفولة يدوي"><i class="ti ti-lock"></i></span>
             </div>
         </div>
+
+        <?php /* لافتة قراءة بس، محسوبة وقت تحميل الصفحة. التحذير اللي
+                 بيظهر وقت قفل الحالة يدوي بيسأل السيرفر من جديد
+                 (فرع `dry`) لأن جدول التوزيع بيتحفظ من غير ريفرش. */ ?>
+        <?php if (!$isManual && !empty($pendingItems)): ?>
+            <div class="card" style="background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn-text, var(--warn));padding:12px 16px;border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
+                <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;margin-top:2px;"></i>
+                <div>
+                    <strong style="font-size:14px;">الفاتورة لسه ما راحتش للاستلام — فيه أصناف توزيعها ناقص:</strong>
+                    <div style="margin-top:6px;font-size:13px;line-height:1.6;">
+                        <?php foreach ($pendingItems as $pi): ?>
+                            <div>• <?= e($pi['name']) ?> — اتوزّع <?= (float)$pi['done'] ?> من <?= (float)$pi['qty'] ?></div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
 
         <!-- ===== بار الملاحظات ===== -->
         <?php $uNotes = (string)($distRecord['user_notes'] ?? ''); ?>
@@ -5044,6 +5097,7 @@ require_once __DIR__ . '/includes/header.php';
     const INV_SUFFIX = '<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>';
     const CSRF = '<?= e(csrf_token()) ?>';
     const saveTimers = {};
+    let initialStatusSel = document.getElementById('invStatusSel') ? document.getElementById('invStatusSel').value : 'auto';
 
     // ===== سحب أعداد الفروع من الحجوزات =====
     const resPullOverlay = document.getElementById('resPullOverlay');
@@ -5333,7 +5387,63 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     // ===== تغيير حالة الفاتورة يدوي =====
+    function resetStatusSel() {
+        const sel = document.getElementById('invStatusSel');
+        if (sel) sel.value = initialStatusSel;
+    }
+
     function changeStatus(val) {
+        // 🔴 «تم التوزيع» اليدوي بيفتح الاستلام على طول — حتى لو فيه أصناف
+        //    توزيعها ناقص. ساعتها الأصناف دي مابتوصلش لأي فرع ومحدش ياخد
+        //    باله. فبنسأل السيرفر الأول ونحذّر. (قرار محمد ٢١ سبتمبر ٢٠٢٦)
+        if (val !== 'done') { doChangeStatus(val); return; }
+
+        // 🔴 بنسأل السيرفر **دلوقتي** — مش بنعتمد على قايمة محسوبة وقت
+        //    تحميل الصفحة. جدول التوزيع بيتحفظ لوحده من غير ريفرش، فلو
+        //    اعتمدنا على القديمة كنا هنحذّر من صنف اتوزّع خلاص، أو نسكت
+        //    عن صنف اتصفّر بعد التحميل. التحذير اللي بيكدب أسوأ من مفيش.
+        var fd = new FormData();
+        fd.append('action', 'set_status');
+        fd.append('csrf', CSRF);
+        fd.append('distribution_id', DIST_ID);
+        fd.append('status', val);
+        fd.append('invoice_id', INV_ID);
+        fd.append('suffix', INV_SUFFIX);
+        fd.append('dry', '1');
+
+        var sel = document.getElementById('invStatusSel');
+        if (sel) sel.disabled = true;
+
+        fetch('invoices.php', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (sel) sel.disabled = false;
+                var pend = (j && j.ok && j.pending) ? j.pending : [];
+                if (!pend.length) { doChangeStatus(val); return; }
+
+                var lines = ['خلي بالك: فيه ' + pend.length + ' صنف لسه ما اتوزّعش بالكامل:', ''];
+                for (var i = 0; i < pend.length; i++) {
+                    lines.push('• ' + pend[i].name
+                             + ' — اتوزّع ' + pend[i].done
+                             + ' من ' + pend[i].qty);
+                }
+                lines.push('');
+                lines.push('لو كمّلت، الفاتورة هتروح للفروع والأصناف دي مش هتوصل لحد.');
+                lines.push('الأحسن توزّعها الأول وهي هتروح لوحدها.');
+                lines.push('');
+                lines.push('تكمّل برضه؟');
+
+                if (!confirm(lines.join('\n'))) { resetStatusSel(); return; }
+                doChangeStatus(val);
+            })
+            .catch(function () {
+                // السيرفر ماردّش — التحذير مش سبب نمنع المستخدم من شغله
+                if (sel) sel.disabled = false;
+                doChangeStatus(val);
+            });
+    }
+
+    function doChangeStatus(val) {
         const sel  = document.getElementById('invStatusSel');
         const lock = document.getElementById('invStatusLock');
         if (sel) sel.disabled = true;
@@ -5350,8 +5460,9 @@ require_once __DIR__ . '/includes/header.php';
             .then(r => r.json())
             .then(j => {
                 if (sel) sel.disabled = false;
-                if (!j.ok) { fgToast(j.error || 'تعذّر تغيير الحالة', 'err'); return; }
+                if (!j.ok) { fgToast(j.error || 'تعذّر تغيير الحالة', 'err'); resetStatusSel(); return; }
 
+                initialStatusSel = val;
                 if (lock) lock.style.display = j.manual ? '' : 'none';
 
                 // تحديث اسم الحالة في خيار "تلقائي"
@@ -5363,6 +5474,7 @@ require_once __DIR__ . '/includes/header.php';
             .catch(() => {
                 if (sel) sel.disabled = false;
                 fgToast('تعذّر الاتصال بالسيرفر', 'err');
+                resetStatusSel();
             });
     }
 

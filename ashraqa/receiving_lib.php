@@ -1102,6 +1102,57 @@ function get_exported_branches(int $distributionId): array
  *
  * @param array $items أصناف الفاتورة (من sqlsrv_fetch_invoice_items)
  */
+/**
+ * الأصناف اللي لسه ما اتوزّعتش بالكامل في فاتورة.
+ *
+ * 🔴 نفس منطق `recalc_invoice_status()` بالظبط — نفس الدمج بالكود ونفس
+ *    المقارنة (`< $qty - 0.0001`). لو المنطقين اتفرقوا، التحذير اللي
+ *    بيظهر للمستخدم هيكدب. أي تعديل هنا لازم يتعمل هناك والعكس.
+ *
+ * 🔴 بتقرا بس — مابتكتبش ولا بتفتح استلام.
+ *
+ * ⚠️ بتتنده **وقت الضغط** مش وقت تحميل الصفحة: جدول التوزيع بيتحفظ
+ *    لوحده من غير ريفرش، فالقايمة المحسوبة وقت التحميل بتبقى قديمة
+ *    وبتحذّر من أصناف اتوزّعت خلاص (أو تسكت عن أصناف اتصفّرت).
+ */
+function invoice_pending_items(?int $distributionId, array $items): array
+{
+    if (!$distributionId || !$items) return [];
+
+    $items = merge_invoice_items($items);
+
+    $st = db()->prepare(
+        'SELECT notes AS item_code, SUM(amount) AS qty
+         FROM invoice_distribution_lines
+         WHERE distribution_id = ?
+         GROUP BY notes'
+    );
+    $st->execute([$distributionId]);
+
+    $byItem = [];
+    foreach ($st->fetchAll() as $r) {
+        $q = (float) $r['qty'];
+        if ($q <= 0) continue;
+        $byItem[(string) $r['item_code']] = $q;
+    }
+
+    $pending = [];
+    foreach ($items as $it) {
+        $code = (string) ($it['item_code'] ?? '');
+        $qty  = (float) ($it['quantity'] ?? 0);
+        $done = (float) ($byItem[$code] ?? 0);
+        if ($done < $qty - 0.0001) {
+            $pending[] = [
+                'code' => $code,
+                'name' => (string) ($it['item_name'] ?? $code),
+                'done' => $done,
+                'qty'  => $qty,
+            ];
+        }
+    }
+    return $pending;
+}
+
 function recalc_invoice_status(?int $distributionId, array $items, bool $autoOpenReceiving = true): string
 {
     if (!$distributionId || !$items) return 'new';

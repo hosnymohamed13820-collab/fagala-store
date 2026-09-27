@@ -83,7 +83,15 @@ if ($employee && $targetEmpId > 0) {
 
 $page_title = 'تفاصيل المرتب';
 $active_module = ''; // مش موديول في القايمة الجانبية
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
+
+if (!sens_unlocked()) {
+    sens_lock_screen('تفاصيل المرتب');
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
 ?>
 
 <style>

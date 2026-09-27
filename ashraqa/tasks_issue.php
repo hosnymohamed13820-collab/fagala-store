@@ -113,9 +113,24 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="fld" id="box_users">
+            <script>
+            /* 🔴 لازم تفضل فوق القايمة — لو نزلت تحت، اللي يكتب قبل ما الصفحة
+                   تكمّل مايحصلش حاجة وتتسجّل غلطة في سجل السيرفر. */
+                function empFilter() {
+                    var box = document.getElementById('empSearch');
+                    if (!box) return;
+                    var q = (box.value || '').trim().toLowerCase();
+                    var rows = document.querySelectorAll('[data-emp-row]');
+                    for (var i = 0; i < rows.length; i++) {
+                        rows[i].style.display =
+                            (!q || (rows[i].dataset.s || '').indexOf(q) !== -1) ? '' : 'none';
+                    }
+                }
+            </script>
+            <input type="text" id="empSearch" placeholder="ابحث بالاسم أو الفرع…" oninput="empFilter()" style="margin-bottom:8px;">
             <div class="checklist">
                 <?php foreach ($usersList as $usr): ?>
-                    <label>
+                    <label data-emp-row data-s="<?= e(mb_strtolower($usr['full_name'] . ' ' . ($usr['branch_name'] ?? ''))) ?>">
                         <input type="checkbox" name="user_ids[]" value="<?= (int)$usr['id'] ?>">
                         <?= e($usr['full_name']) ?>
                         <?php if ($usr['branch_name']): ?><span style="color:var(--ink-400);font-size:12px;">— <?= e($usr['branch_name']) ?></span><?php endif; ?>

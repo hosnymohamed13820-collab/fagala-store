@@ -1857,6 +1857,7 @@ window.INV = window.INV || {};
     const skipSeq = {};          // آخر ضغطة لكل كود — الرد القديم بيتتجاهل
 
     const ov = document.getElementById('iflOverlay');
+    if (!ov) return;             // الصفحة من غير جدول أصناف = مفيش بوب أب
 
     function rowOf(code) {
         const rows = document.querySelectorAll('tr.item-row');

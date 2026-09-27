@@ -33,10 +33,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
         $lat = ($_POST['lat'] ?? '') !== '' ? (float)$_POST['lat'] : null;
         $lng = ($_POST['lng'] ?? '') !== '' ? (float)$_POST['lng'] : null;
         $acc = ($_POST['acc'] ?? '') !== '' ? (float)$_POST['acc'] : null;
+        $geoErr = trim((string)($_POST['geo_err'] ?? ''));
+        $geoUa  = trim((string)($_POST['geo_ua'] ?? ''));
+        if ($geoUa === '') {
+            $geoUa = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+        }
         try {
             if ($action === 'clock_in' || $action === 'clock_out') {
                 $geo = evaluate_geofence($employee, $lat, $lng, $acc);
                 if ($reason = geofence_block_reason($employee, $lat, $lng, $geo)) {
+                    $accTxt = $acc !== null ? (int)$acc : '—';
+                    $errTxt = $geoErr !== '' ? $geoErr : '—';
+                    $uaTxt  = mb_substr($geoUa, 0, 150);
+                    errlog_record('geo', "رفض بصمة: موظف #{$employee['id']} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
                     throw new RuntimeException($reason);
                 }
                 $geo['lat'] = $lat; $geo['lng'] = $lng; $geo['acc'] = $acc;
@@ -72,6 +81,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
                     $where = ' (تنبيه: كنت خارج نطاق الفرع بمسافة ' . (int)$res['dist'] . ' متر — تم إبلاغ الموارد البشرية)';
                     $flashType = 'error';
                 } elseif (!empty($res['uncertain'])) {
+                    $accTxt = $acc !== null ? (int)$acc : '—';
+                    $errTxt = $geoErr !== '' ? $geoErr : '—';
+                    $uaTxt  = mb_substr($geoUa, 0, 150);
+                    errlog_record('geo', "موقع مش دقيق: موظف #{$employee['id']} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
                     $grace = (int)setting('geofence_uncertain_grace', '3');
                     $prev = geofence_consecutive_uncertain((int)$employee['id'], (int)($geo['radius'] ?: 50));
                     $rem = max(0, $grace - ($prev + 1));
@@ -290,6 +303,8 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
                 <input type="hidden" name="acc" class="geo-acc">
+                <input type="hidden" name="geo_err" class="geo-err">
+                <input type="hidden" name="geo_ua" class="geo-ua">
                 <button type="submit" class="clock-btn btn-in"><i class="ti ti-login"></i> تسجيل الحضور</button>
             </form>
         <?php elseif (!$actOut): ?>
@@ -299,6 +314,8 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <input type="hidden" name="lat" class="geo-lat">
                 <input type="hidden" name="lng" class="geo-lng">
                 <input type="hidden" name="acc" class="geo-acc">
+                <input type="hidden" name="geo_err" class="geo-err">
+                <input type="hidden" name="geo_ua" class="geo-ua">
                 <button type="submit" class="clock-btn btn-out"><i class="ti ti-logout"></i> تسجيل الانصراف</button>
             </form>
         <?php else: ?>
@@ -341,11 +358,13 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     (function(){
         const form = document.getElementById('clockForm');
         if (!form) return;
-        const btn  = form.querySelector('.clock-btn');
-        const hint = document.getElementById('geoHint');
+        const btn   = form.querySelector('.clock-btn');
+        const hint  = document.getElementById('geoHint');
         const latEl = form.querySelector('.geo-lat');
         const lngEl = form.querySelector('.geo-lng');
         const accEl = form.querySelector('.geo-acc');
+        const errEl = form.querySelector('.geo-err');
+        const uaEl  = form.querySelector('.geo-ua');
         let submitting = false;
 
         function showHint(txt, color) {
@@ -359,8 +378,11 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             if (submitting) return;               // الإرسال الفعلي (بعد ما جبنا الموقع)
             e.preventDefault();
 
+            if (uaEl) uaEl.value = (navigator.userAgent || '').slice(0, 200);
+
             if (!navigator.geolocation) {
                 // المتصفح مبيدعمش الموقع → نرسل من غير إحداثيات
+                if (errEl) errEl.value = 'unsupported';
                 submitting = true; form.submit(); return;
             }
 
@@ -373,15 +395,26 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             let timeoutId = null;
             let bestPos = null;
 
-            function doSubmit() {
+            function doSubmit(errCode) {
                 if (watchId !== null) navigator.geolocation.clearWatch(watchId);
                 if (timeoutId !== null) clearTimeout(timeoutId);
                 if (submitting) return;
                 
+                if (errEl && errCode !== undefined && errCode !== null) {
+                    errEl.value = String(errCode);
+                }
+
                 if (bestPos) {
                     latEl.value = bestPos.coords.latitude.toFixed(7);
                     lngEl.value = bestPos.coords.longitude.toFixed(7);
                     if (accEl) accEl.value = bestPos.coords.accuracy.toFixed(2);
+                    if (bestPos.coords.accuracy > 500) {
+                        const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                        const msg = isIos
+                            ? '⚠️ موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> من:<br>الإعدادات ← الخصوصية والأمان ← خدمات الموقع ← مواقع Safari ← أثناء الاستخدام وشغّل الموقع الدقيق.'
+                            : '⚠️ موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> في إعدادات الموقع بالمتصفح.';
+                        showHint(msg, 'var(--warn)');
+                    }
                 } else {
                     latEl.value = ''; lngEl.value = '';
                     if (accEl) accEl.value = '';
@@ -394,7 +427,9 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 form.submit();
             }
 
-            timeoutId = setTimeout(doSubmit, 8000);
+            timeoutId = setTimeout(function(){
+                doSubmit(3); // 3 = TIMEOUT
+            }, 15000);
 
             watchId = navigator.geolocation.watchPosition(
                 function(pos){
@@ -407,10 +442,25 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                     }
                 },
                 function(err){
-                    // فشل أو رفض
-                    if (!bestPos) doSubmit();
+                    if (err.code === 1) {
+                        // إذن الموقع مرفوض (PERMISSION_DENIED)
+                        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                        if (timeoutId !== null) clearTimeout(timeoutId);
+                        btn.disabled = false;
+                        btn.innerHTML = origHtml;
+                        const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                        const guide = isIos
+                            ? '<strong>تم رفض إذن الموقع!</strong> لتسجيل البصمة على آيفون:<br>الإعدادات ← الخصوصية والأمان ← خدمات الموقع ← مواقع Safari ← أثناء الاستخدام · وشغّل <strong>الموقع الدقيق</strong>.'
+                            : '<strong>تم رفض إذن الموقع!</strong> لتسجيل البصمة على أندرويد:<br>اسمح للموقع من القفل اللي جنب العنوان في المتصفح.';
+                        showHint(guide, 'var(--neg)');
+                        return;
+                    }
+                    // كود 2 (POSITION_UNAVAILABLE) أو 3 (TIMEOUT)
+                    if (!bestPos) {
+                        doSubmit(err.code);
+                    }
                 },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
             );
         });
     })();

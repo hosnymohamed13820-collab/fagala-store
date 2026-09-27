@@ -134,7 +134,9 @@ require_once __DIR__ . '/includes/header.php';
                     <?php foreach ($availableList as $av):
                         $isGrp = (int)$av['group_id'] > 0;
                         $link = 'receiving_diffs.php?' . ($isGrp ? ('g=' . $av['group_id']) : ('d=' . $av['distribution_id']));
-                        $title = $isGrp ? ('مجموعة فواتير #' . $av['group_id'] . ' — ' . ($av['group_name'] ?: 'بدون اسم')) : ('فاتورة مفردة #' . ($av['invoice_no'] ?: $av['distribution_id']));
+                        $title = $isGrp
+                            ? ($av['group_name'] ? ('مجموعة فواتير #' . $av['group_id'] . ' — ' . $av['group_name']) : ('مجموعة فواتير #' . $av['group_id']))
+                            : ('فاتورة مفردة #' . ($av['invoice_no'] ?: $av['distribution_id']));
                     ?>
                         <a href="<?= e($link) ?>" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);text-decoration:none;color:var(--text);"
                            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--line)'">
@@ -271,6 +273,18 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($itemsMap)): ?>
                 <p style="color:var(--ink-400);text-align:center;padding:24px 0;">لا توجد أصناف موزعة في هذا السياق.</p>
             <?php else: ?>
+                <?php /* 🔴 ألوان المفتاح لازم تطابق اللي الجدول بيرسمه (السطور ٣٤٧-٣٥٣):
+                         الكود بيحسب $diff = الموزّع − الممسوح، وبعدين **بيقلب الإشارة**
+                         وهو بيطبع: الموزّع أكبر ← بيطلع «-» بـ--neg، الممسوح أكبر ←
+                         «+» بـ--accent-text (مش --pos). لو غيّرت لون هنا، غيّره هناك. */ ?>
+                <div class="card" style="padding:10px 14px;margin-bottom:12px;
+                                         font-size:13px;color:var(--ink-500);
+                                         display:flex;gap:18px;flex-wrap:wrap;">
+                    <span><span class="pill-yet">لسه</span> الفرع لسه ما استلمش — مش فرق</span>
+                    <span><b>—</b> مفيش قيمة للخانة دي</span>
+                    <span><b style="color:var(--neg);">بالسالب</b> ناقص عن المطلوب</span>
+                    <span><b style="color:var(--accent-text);">بالموجب</b> زيادة عن المطلوب</span>
+                </div>
                 <div style="overflow-x:auto;">
                     <table class="diff-table">
                         <thead>

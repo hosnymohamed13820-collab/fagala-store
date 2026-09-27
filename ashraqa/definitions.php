@@ -9,6 +9,7 @@
 require_once __DIR__ . '/auth.php';
 require_permission('definitions');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sensitive_lib.php';
 
 $pdo       = db();
 $flash     = '';
@@ -153,9 +154,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $expOut     = trim($_POST['expected_out'] ?? '') ?: null;
             $userId     = ($_POST['user_id'] ?? '') !== '' ? (int) $_POST['user_id'] : null;
             if ($id > 0 && $name !== '') {
-                $pdo->prepare(
-                    'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_monthly_hours=?, expected_in=?, expected_out=?, salary_mode=? WHERE id=?'
-                )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut, $salaryMode, $id]);
+                if (sens_unlocked()) {
+                    $pdo->prepare(
+                        'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, base_salary=?, expected_monthly_hours=?, expected_in=?, expected_out=?, salary_mode=? WHERE id=?'
+                    )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $salary, $expHours, $expIn, $expOut, $salaryMode, $id]);
+                } else {
+                    $pdo->prepare(
+                        'UPDATE employees SET full_name=?, branch_id=?, user_id=?, phone=?, job_title=?, expected_monthly_hours=?, expected_in=?, expected_out=?, salary_mode=? WHERE id=?'
+                    )->execute([$name, $branchId, $userId, $phone ?: null, $jobTitle ?: null, $expHours, $expIn, $expOut, $salaryMode, $id]);
+                }
                 $flash = 'تم تعديل الموظف.';
             }
             $tab = 'employees';
@@ -417,6 +424,8 @@ $linkUsers = $pdo->query('SELECT id, full_name, username FROM users WHERE is_act
 
 $page_title    = 'التعريفات';
 $active_module = 'definitions';
+require_once __DIR__ . '/sensitive_lib.php';
+sens_page();
 require_once __DIR__ . '/includes/header.php';
 ?>
 
@@ -598,7 +607,10 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($employees) ?> موظف</span>
-        <button class="btn" onclick="openEmp()"><i class="ti ti-plus"></i> إضافة موظف</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <?= sens_eye() ?>
+            <button class="btn" onclick="openEmp()"><i class="ti ti-plus"></i> إضافة موظف</button>
+        </div>
     </div>
     <div class="card">
         <?php if (empty($employees)): ?>
@@ -619,7 +631,7 @@ require_once __DIR__ . '/includes/header.php';
                             <span style="color:var(--ink-700);font-size:13px;">على الساعات</span>
                         <?php endif; ?>
                     </td>
-                    <td><?= number_format((float)$emp['base_salary'], 2) ?></td>
+                    <td><?= sens_mask(number_format((float)$emp['base_salary'], 2)) ?></td>
                     <td>
                         <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
                             <span style="color:var(--ink-400);">—</span>
@@ -630,8 +642,14 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($emp['phone'] ?? '—') ?></td>
                     <td><span class="badge <?= $emp['is_active']?'active':'inactive' ?>"><?= $emp['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
+                        <?php
+                            $empJs = $emp;
+                            if (!sens_unlocked()) {
+                                unset($empJs['base_salary']);
+                            }
+                        ?>
                         <button class="btn btn-sm btn-ghost"
-                            onclick='openEmp(<?= json_encode($emp, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
+                            onclick='openEmp(<?= json_encode($empJs, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
                         <form method="post" style="display:inline;" data-confirm="تأكيد؟">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="action" value="toggle_employee">
@@ -1046,7 +1064,15 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('e_name').value = d ? d.full_name : '';
         document.getElementById('e_branch').value = d && d.branch_id ? d.branch_id : '';
         document.getElementById('e_job').value = d && d.job_title ? d.job_title : '';
-        document.getElementById('e_salary').value = d ? d.base_salary : '0';
+        if (d && d.base_salary === undefined) {
+            document.getElementById('e_salary').disabled = true;
+            document.getElementById('e_salary').value = '';
+            document.getElementById('e_salary').placeholder = 'مقفول — Ctrl+L';
+        } else {
+            document.getElementById('e_salary').disabled = false;
+            document.getElementById('e_salary').placeholder = '';
+            document.getElementById('e_salary').value = d ? d.base_salary : '0';
+        }
         document.getElementById('e_salary_mode').value = (d && d.salary_mode) ? d.salary_mode : 'hours';
         document.getElementById('e_exp_hours').value = (d && d.expected_monthly_hours !== null && d.expected_monthly_hours !== undefined) ? d.expected_monthly_hours : '';
         document.getElementById('e_phone').value = d && d.phone ? d.phone : '';
