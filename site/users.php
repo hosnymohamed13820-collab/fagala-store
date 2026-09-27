@@ -642,8 +642,10 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-grid">
                 <div class="form-row">
                     <label for="f_password">الباسورد <span id="passLabel">*</span></label>
-                    <input type="password" name="password" id="f_password" autocomplete="new-password">
+                    <input type="password" name="password" id="f_password" minlength="8" autocomplete="new-password">
                     <div class="hint" id="passHint" style="display:none;">اتركه فارغاً لعدم التغيير</div>
+                    <div class="hint">٨ حروف على الأقل</div>
+                    <div id="passErr" class="hint" style="display:none;color:var(--neg);font-weight:600;"></div>
                 </div>
                 <div class="form-row">
                     <label for="f_salary">الدور *</label>
@@ -872,6 +874,8 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('passLabel').textContent = '*';
         document.getElementById('passHint').style.display = 'none';
         document.getElementById('f_password').required = true;
+        var passErr = document.getElementById('passErr');
+        if (passErr) passErr.style.display = 'none';
         modal.classList.add('open');
     }
 
@@ -887,6 +891,8 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('f_password').required = false;
         document.getElementById('passLabel').textContent = '';
         document.getElementById('passHint').style.display = 'block';
+        var passErr = document.getElementById('passErr');
+        if (passErr) passErr.style.display = 'none';
         // الدور والفرع (نقطة 6: ما يضيعوش)
         document.getElementById('f_role').value = data.role_id || '';
         document.getElementById('f_branch').value = (data.branch_id === '' || data.branch_id == null) ? '' : data.branch_id;
@@ -973,6 +979,43 @@ require_once __DIR__ . '/includes/header.php';
     modal.addEventListener('click', e => {
         if (e.target === modal) closeModal();
     });
+
+    var userForm = document.getElementById('userForm');
+    var pw = document.getElementById('f_password');
+    var passErr = document.getElementById('passErr');
+
+    function showPassError(len) {
+        var msg = 'الباسورد لازم ٨ حروف على الأقل — انت كاتب ' + len;
+        if (passErr) {
+            passErr.textContent = msg;
+            passErr.style.display = 'block';
+        }
+        if (typeof fgToast === 'function') {
+            fgToast(msg, 'err');
+        }
+        if (pw) pw.focus();
+    }
+
+    if (pw) {
+        pw.addEventListener('input', function() {
+            if (passErr) passErr.style.display = 'none';
+        });
+        pw.addEventListener('invalid', function(e) {
+            if (pw.value !== '' && pw.value.length < 8) {
+                e.preventDefault();
+                showPassError(pw.value.length);
+            }
+        });
+    }
+
+    if (userForm) {
+        userForm.addEventListener('submit', function(e) {
+            if (pw && pw.value !== '' && pw.value.length < 8) {
+                e.preventDefault();
+                showPassError(pw.value.length);
+            }
+        });
+    }
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

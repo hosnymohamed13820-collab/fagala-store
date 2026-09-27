@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($username === '' || $password === '') {
             $error = 'من فضلك أدخل اسم المستخدم والباسورد.';
         } elseif (($lockLeft = login_lock_minutes($username, $_SERVER['REMOTE_ADDR'] ?? null)) > 0) {
-            // حماية ضد تخمين الباسورد: 5 محاولات فاشلة = قفل 15 دقيقة
+            // حماية ضد تخمين الباسورد: 5 محاولات فاشلة = قفل 5 دقايق
             $error = 'محاولات كتير غلط. استنى ' . $lockLeft . ' دقيقة وحاول تاني.';
         } elseif (attempt_login($username, $password)) {
             header('Location: ' . first_allowed_module());

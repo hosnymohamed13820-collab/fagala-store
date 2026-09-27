@@ -179,7 +179,7 @@ function module_parts(): array
  * خلال آخر LOGIN_LOCK_MINUTES دقيقة.
  */
 const LOGIN_MAX_FAILS     = 5;
-const LOGIN_LOCK_MINUTES  = 15;
+const LOGIN_LOCK_MINUTES  = 5;
 
 /**
  * الدخول مقفول مؤقتًا؟ بترجّع عدد الدقايق الفاضلة (0 = مفتوح).
