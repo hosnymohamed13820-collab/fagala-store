@@ -29,6 +29,7 @@ const SYNC_AGENT_TOKENS = [
     // agent_ashraqa.ps1 — نبضة بس (الداتا بتروح sync_ashraqa.php).
     // 🔴 نفس ASHRAQA_SYNC_TOKEN في sync_ashraqa.php — لو اتغيّر هناك غيّره هنا.
     'ashraqa' => 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS',
+    'sms_phone' => 'sms_638d41ecfeb47c0e949323da3f7e292ca2107baf',
 ];
 
 // الوكلاء المسموح لهم يبعتوا على sync_branch.php

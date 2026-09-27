@@ -1,0 +1,76 @@
+name: Android Build
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Sign Release APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.6'   # مفيش gradle-wrapper.jar في الريبو — Gradle بيتسطّب هنا مباشرة
+
+      - name: Verify Signing Secrets
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASS" ]; then
+            echo "::error::ضيف secrets التوقيع (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD) في إعدادات الريبو."
+            exit 1
+          fi
+
+      - name: Decode Keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          echo "$KS_B64" | base64 -d > keystore.jks
+
+      - name: Run Unit Tests
+        run: |
+          gradle testReleaseUnitTest
+
+      - name: Assemble Release APK
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/android/keystore.jks   # مسار كامل — النسبي بيتحسب من android/app ومايلاقيهوش
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          gradle assembleRelease
+          # 🔴 لو التوقيع ماشتغلش Gradle بيطلّع app-release-unsigned.apk من غير ما يشتكي
+          if ls app/build/outputs/apk/release/*unsigned*.apk >/dev/null 2>&1; then
+            echo "::error::الـAPK طلع من غير توقيع"; exit 1
+          fi
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sms-bridge-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

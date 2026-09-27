@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:fillViewport="true"
+    android:layoutDirection="rtl">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp" />
+
+        <!-- تحذير البطارية -->
+        <LinearLayout
+            android:id="@+id/layoutBatteryWarn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/warn_bg"
+            android:padding="14dp"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/battery_warn_title"
+                android:textColor="@color/warn_text"
+                android:textStyle="bold"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/battery_warn_msg"
+                android:textColor="@color/warn_text"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btnBatteryOpt"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/battery_btn"
+                android:backgroundTint="@color/warn_border"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- إعدادات الربط -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/surface"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/server_url_label"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/editServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:text="https://hosnimanagement.com/sms_hook.php"
+                android:textSize="14sp"
+                android:layoutDirection="ltr"
+                android:layout_marginBottom="12dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/token_label"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <EditText
+                android:id="@+id/editToken"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword"
+                android:hint="أدخل التوكن السري"
+                android:textSize="14sp"
+                android:layoutDirection="ltr"
+                android:layout_marginBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnTestConnection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/test_connection"
+                android:backgroundTint="@color/primary"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/txtTestResult"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- كارت الحالة -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/surface"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/status_title"
+                android:textColor="@color/text_primary"
+                android:textStyle="bold"
+                android:textSize="15sp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:id="@+id/txtQueueCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="في الطابور المحلي: 0"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/txtSentCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="تم الإرسال للموقع: 0"
+                android:textColor="@color/pos"
+                android:textSize="14sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/txtLastSuccess"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="آخر إرسال ناجح: لم يتم بعد"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/txtLastError"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="آخر خطأ: لا يوجد"
+                android:textColor="@color/neg"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- سحب القديم -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/surface"
+            android:padding="16dp">
+
+            <Button
+                android:id="@+id/btnBackfill"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/backfill_button"
+                android:backgroundTint="@color/text_secondary"
+                android:textColor="#FFFFFF" />
+
+            <TextView
+                android:id="@+id/txtBackfillProgress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

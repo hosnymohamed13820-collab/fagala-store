@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">رسايل إنستاباي</string>
+    <string name="server_url_label">رابط السيرفر (Webhook URL)</string>
+    <string name="token_label">توكن الحماية (Secret Token)</string>
+    <string name="test_connection">جرّب الاتصال</string>
+    <string name="backfill_button">اسحب الرسايل القديمة</string>
+    <string name="status_title">حالة المزامنة</string>
+    <string name="queue_count_label">في الطابور المحلي: %d</string>
+    <string name="sent_count_label">تم الإرسال للموقع: %d</string>
+    <string name="last_success_label">آخر إرسال ناجح: %s</string>
+    <string name="last_error_label">آخر خطأ: %s</string>
+    <string name="battery_warn_title">تحذير استهلاك البطارية</string>
+    <string name="battery_warn_msg">التطبيق قد يتوقف عن استقبال الرسايل في الخلفية إذا لم يتم استثناؤه من توفير البطارية.</string>
+    <string name="battery_btn">استثناء من توفير البطارية</string>
+    <string name="permission_required">يلزم منح صلاحية قراءة واستقبال الرسايل لتشغيل التطبيق.</string>
+</resources>
