@@ -383,45 +383,7 @@ $activeBranches = $pdo->query('SELECT id, name, sto_id, ext_balance_src FROM bra
 //  ⚠️ المجموعة نوع full مابتعرضش زرار «تحديد أصناف» خالص —
 //     القاعدة: اللي بدأ فواتير كاملة يفضل كده.
 // =====================================================================
-/**
- * مخازن **الفروع** (مش الإدارة).
- *
- * ⚠️ المنطق معكوس عن قصد. أول محاولة كانت بتدوّر على الإدارة بـ
- *    `in_receiving = 0`، وده فشل لأن **الإدارة أصلاً مش مسجّلة في
- *    جدول branches** — هي مش فرع استلامات فمحدش عملها. النتيجة كانت
- *    خريطة فاضية → الفلتر يتوقف → كل الفواتير تظهر. (بلاغ محمد 14/08)
- *
- *    الصح: نعرّف **الفروع** (اللي متسجّلة فعلاً وليها sto_id عشان
- *    أرصدة المخزون)، وأي حاجة غيرها = الإدارة.
- *
- * @return array [sto_id => true]
- */
-function grp_branch_stores(): array
-{
-    static $m = null;
-    if ($m !== null) return $m;
-    $m = [];
-    try {
-        $q = db()->query(
-            'SELECT sto_id FROM branches
-             WHERE in_receiving = 1 AND sto_id IS NOT NULL AND sto_id > 0'
-        );
-        foreach ($q as $b) $m[(int) $b['sto_id']] = true;
-    } catch (Throwable $ex) { /* تجاهل */ }
-    return $m;
-}
-
-/**
- * الفاتورة دي بتاعة الإدارة؟
- * = مخزنها مش واحد من مخازن الفروع المعروفة.
- * الفاتورة اللي مخزنها فاضي أو صفر بتتحسب إدارة (الأأمن — ما نخفيش شغل).
- */
-function grp_is_admin_inv(array $iv): bool
-{
-    $br = grp_branch_stores();
-    if (!$br) return true;   // مفيش فروع متسجّلة — مانفلترش
-    return !isset($br[(int) ($iv['company_branch_id'] ?? 0)]);
-}
+// grp_branch_stores() و grp_is_admin_inv() اتنقلوا لـ receiving_lib.php (بريف ٧٩)
 
 /** شخاطة «فواتير الإدارة بس» — بتتحط تحت خانة البحث في الوضعين */
 function grp_admin_toggle(int $branchCount): string
@@ -1478,6 +1440,10 @@ $adminCount = $branchCount = 0;
 $openInvoice = null;
 $items = [];
 $distId = 0;
+$isReturnDoc = false;
+$isBranchInv = false;
+$noDistDoc   = false;
+$branchName  = '';
 
 try {
     if ($openInvoiceId !== null) {
@@ -1492,6 +1458,17 @@ try {
                 $openInvoice['doc_type'] = $openDt;
             }
             $isReturnDoc = $openInvoice && (int)($openInvoice['doc_type'] ?? 0) === 6;
+            // فاتورة فرع (شراء أو مردود) = نفس تعريف قايمة «فواتير الفروع الأخرى» — مابتتوزعش (بريف ٧٩)
+            $isBranchInv = $openInvoice && !grp_is_admin_inv(['company_branch_id' => $openInvoice['company_branch'] ?? 0]);
+            // من غير توزيع: مردود الإدارة (بريف ٧١) + فواتير الفروع (بريف ٧٩)
+            $noDistDoc = $isReturnDoc || $isBranchInv;
+
+            if ($isBranchInv) {
+                $cbId = (int) ($openInvoice['company_branch'] ?? 0);
+                $bq = $pdo->prepare('SELECT name FROM branches WHERE sto_id = ? LIMIT 1');
+                $bq->execute([$cbId]);
+                $branchName = (string) ($bq->fetchColumn() ?: ('فرع #' . $cbId));
+            }
             // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
             // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
             $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
@@ -1999,7 +1976,13 @@ require_once __DIR__ . '/includes/header.php';
             <div class="m"><span class="l">الصافي:</span> <span class="v"><?= number_format((float)$openInvoice['net_amount'],2) ?></span></div>
             <div class="m"><span class="l">الإجمالي:</span> <span class="v"><?= number_format((float)$openInvoice['total_amount'],2) ?></span></div>
             <div class="m"><span class="l">التاريخ:</span> <span class="v"><?= e(date('Y-m-d', strtotime((string)$openInvoice['invoice_date']))) ?></span></div>
-            <?php if ($isReturnDoc): ?>
+            <?php if ($isBranchInv): ?>
+                <?php if ($isReturnDoc): ?>
+                    <div class="m"><span class="doc-badge refund">مردود <?= e($branchName) ?></span></div>
+                <?php else: ?>
+                    <div class="m"><span class="doc-badge">فاتورة <?= e($branchName) ?></span></div>
+                <?php endif; ?>
+            <?php elseif ($isReturnDoc): ?>
                 <div class="m"><span class="doc-badge refund">مردود شراء</span></div>
             <?php else: ?>
             <?php
@@ -2025,7 +2008,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php /* لافتة قراءة بس، محسوبة وقت تحميل الصفحة. التحذير اللي
                  بيظهر وقت قفل الحالة يدوي بيسأل السيرفر من جديد
                  (فرع `dry`) لأن جدول التوزيع بيتحفظ من غير ريفرش. */ ?>
-        <?php if (!$isReturnDoc && !$isManual && !empty($pendingItems)): ?>
+        <?php if (!$noDistDoc && !$isManual && !empty($pendingItems)): ?>
             <div class="card" style="background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn-text, var(--warn));padding:12px 16px;border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
                 <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;margin-top:2px;"></i>
                 <div>
@@ -2057,7 +2040,7 @@ require_once __DIR__ . '/includes/header.php';
             <button class="btn btn-sm btn-primary" type="button" onclick="openLookup()">
                 <i class="ti ti-search"></i> بحث صنف
             </button>
-            <?php if (!$isReturnDoc): ?>
+            <?php if (!$noDistDoc): ?>
             <button class="btn btn-sm btn-res-pull" type="button" onclick="openReservationPull()">
                 <i class="ti ti-users"></i> سحب أعداد الفروع
             </button>
@@ -2089,7 +2072,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
-        <?php if (!$isReturnDoc): ?>
+        <?php if (!$noDistDoc): ?>
         <!-- بوب أب سحب أعداد الفروع -->
         <div class="lookup-overlay" id="resPullOverlay" onclick="if(event.target===this)closeReservationPull()">
             <div class="lookup-box" style="max-width:850px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
@@ -2140,7 +2123,7 @@ require_once __DIR__ . '/includes/header.php';
                     }
                 }
             ?>
-            <?php if (!$isReturnDoc): ?>
+            <?php if (!$noDistDoc): ?>
                 <?php if ($isGuardOff): ?>
                     <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
                         🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
@@ -2157,7 +2140,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?= mrk_bulk_bar() ?>
             <?php endif; ?>
             <?= ifl_bar() ?>
-            <?php if ($isReturnDoc): ?>
+            <?php if ($noDistDoc): ?>
             <div class="lines-wrap">
             <table class="lines-table" id="linesTable" data-xt-min="1">
                 <thead>
@@ -2388,7 +2371,7 @@ require_once __DIR__ . '/includes/header.php';
         </a>
     </div>
 
-    <?php if (!$isReturnDoc): ?>
+    <?php if (!$noDistDoc): ?>
     <!-- تصدير أسعار البيع — مستقل تمامًا عن حالة التوزيع، شغّال في أي وقت -->
     <div class="card" style="margin-bottom:16px;">
         <div class="section-title">أسعار البيع</div>
@@ -2414,18 +2397,29 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <?php endif; ?>
 
-    <?php if ($isReturnDoc): ?>
-    <!-- كارت ملف المردود -->
+    <?php if ($noDistDoc): ?>
+    <!-- كارت ملف المردود / الفاتورة -->
     <div class="card" id="returnDlCard" style="margin-bottom:16px;">
-        <div class="section-title">ملف المردود</div>
+        <div class="section-title"><?= $isReturnDoc ? 'ملف المردود' : 'ملف الفاتورة' ?></div>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
-            ملف TEXT واحد فيه كل أصناف المردود بكميتها كاملة (كود الصنف، الكمية، سعر التكلفة). المردود مابيتوزعش على الفروع.
+            <?= $isReturnDoc
+                ? 'ملف TEXT واحد فيه كل أصناف المردود بكميتها كاملة (كود الصنف، الكمية، سعر التكلفة). المردود مابيتوزعش على الفروع.'
+                : 'ملف TEXT واحد فيه كل أصناف الفاتورة بكميتها كاملة (كود الصنف، الكمية، سعر التكلفة). فاتورة الفرع مابتتوزعش.' ?>
         </p>
         <?= ifl_skip_note($skipMap) ?>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <?php
+                $exportUrl = 'return_export.php?invoice=' . urlencode((string)$openInvoice['inv_id'])
+                    . '&suffix=' . urlencode((string)($openInvoice['suffix'] ?? $openSuffix ?? ''));
+                if ($isBranchInv) {
+                    $exportUrl .= '&cb=' . (int)($openInvoice['company_branch'] ?? 0)
+                               . '&dt=' . (int)($openInvoice['doc_type'] ?? 0);
+                }
+                $btnLabel = $isBranchInv ? 'ملف الفاتورة (TXT)' : 'تنزيل ملف المردود';
+            ?>
             <a class="btn" style="background:var(--pos-fill);"
-               href="return_export.php?invoice=<?= e((string)$openInvoice['inv_id']) ?>&suffix=<?= e((string)($openInvoice['suffix'] ?? $openSuffix ?? '')) ?>">
-                <i class="ti ti-download"></i> تنزيل ملف المردود
+               href="<?= e($exportUrl) ?>">
+                <i class="ti ti-download"></i> <?= e($btnLabel) ?>
             </a>
         </div>
     </div>
@@ -3454,7 +3448,8 @@ require_once __DIR__ . '/includes/header.php';
                     $fullKey = $invNo . '|' . $invCb . '|' . $invDt;
                     $fallbackKey = $invNo . '|*|*';
                     $isRet = (int)($inv['doc_type'] ?? 0) === 6;
-                    if ($isRet) {
+                    $noStatus = $isRet || !$isAdm;
+                    if ($noStatus) {
                         $st = 'ret';
                         $stLabel = '—';
                         $stClass = '';
@@ -3464,7 +3459,7 @@ require_once __DIR__ . '/includes/header.php';
                     }
                     $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
-                    <tr class="inv-row<?= ($st==='done' && !$isRet)?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.($isRet ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ($isRet): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><?php if ($isRet): ?><span style="color:var(--ink-400);">—</span><?php else: ?><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span><?php endif; ?></td><?php endif; ?></tr>
+                    <tr class="inv-row<?= ($st==='done' && !$noStatus)?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.($isRet ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ($isRet): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><?php if ($noStatus): ?><span style="color:var(--ink-400);">—</span><?php else: ?><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span><?php endif; ?></td><?php endif; ?></tr>
                 <?php endforeach; ?>
                 <?php endforeach; /* المجموعات الفرعية (شراء/مردود) */ ?>
             <?php endforeach; ?>

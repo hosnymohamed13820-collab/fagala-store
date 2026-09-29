@@ -2639,3 +2639,44 @@ function reservation_pull_apply(
     }
 }
 
+/**
+ * مخازن **الفروع** (مش الإدارة).
+ *
+ * ⚠️ المنطق معكوس عن قصد. أول محاولة كانت بتدوّر على الإدارة بـ
+ *    `in_receiving = 0`، وده فشل لأن **الإدارة أصلاً مش مسجّلة في
+ *    جدول branches** — هي مش فرع استلامات فمحدش عملها. النتيجة كانت
+ *    خريطة فاضية → الفلتر يتوقف → كل الفواتير تظهر. (بلاغ محمد 14/08)
+ *
+ *    الصح: نعرّف **الفروع** (اللي متسجّلة فعلاً وليها sto_id عشان
+ *    أرصدة المخزون)، وأي حاجة غيرها = الإدارة.
+ *
+ * @return array [sto_id => true]
+ */
+function grp_branch_stores(): array
+{
+    static $m = null;
+    if ($m !== null) return $m;
+    $m = [];
+    try {
+        $q = db()->query(
+            'SELECT sto_id FROM branches
+             WHERE in_receiving = 1 AND sto_id IS NOT NULL AND sto_id > 0'
+        );
+        foreach ($q as $b) $m[(int) $b['sto_id']] = true;
+    } catch (Throwable $ex) { /* تجاهل */ }
+    return $m;
+}
+
+/**
+ * الفاتورة دي بتاعة الإدارة؟
+ * = مخزنها مش واحد من مخازن الفروع المعروفة.
+ * الفاتورة اللي مخزنها فاضي أو صفر بتتحسب إدارة (الأأمن — ما نخفيش شغل).
+ */
+function grp_is_admin_inv(array $iv): bool
+{
+    $br = grp_branch_stores();
+    if (!$br) return true;   // مفيش فروع متسجّلة — مانفلترش
+    return !isset($br[(int) ($iv['company_branch_id'] ?? 0)]);
+}
+
+

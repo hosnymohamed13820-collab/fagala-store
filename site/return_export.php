@@ -1,12 +1,12 @@
 <?php
 /**
- * return_export.php — تصدير ملف TEXT لمردود الشراء بالكامل
+ * return_export.php — تصدير ملف TEXT لمردود الشراء أو فاتورة الفرع بالكامل
  * نظام الفجالة ستور المالي
  *
- * الفورمات (بدون هيدر، سطر لكل صنف في المردود بكميته كاملة):
+ * الفورمات (بدون هيدر، سطر لكل صنف بكميته كاملة):
  *   كود_الصنف <TAB> الكمية <TAB> سعر_التكلفة
  *
- * المدخلات: ?invoice=STH_ID&suffix=YY_MM
+ * المدخلات: ?invoice=STH_ID&suffix=YY_MM[&cb=COMPANY_BRANCH&dt=DOC_TYPE]
  */
 require_once __DIR__ . '/auth.php';
 require_permission('invoices');
@@ -20,21 +20,32 @@ $invoiceId = $_GET['invoice'] ?? null;
 // ⚠️ الـ suffix إجباري: STH_ID بيتكرر بين جدول الفواتير غير المحفوظة
 //    (YY_MM) والجداول الشهرية المرحّلة.
 $suffix    = trim((string) ($_GET['suffix'] ?? '')) ?: null;
+$cb        = isset($_GET['cb']) && $_GET['cb'] !== '' ? (int) $_GET['cb'] : null;
+$dt        = isset($_GET['dt']) && $_GET['dt'] !== '' ? (int) $_GET['dt'] : null;
 
 if ($invoiceId === null || $suffix === null) {
     http_response_code(400);
     die('بيانات غير مكتملة.');
 }
 
-$invHeader = sqlsrv_fetch_invoice_header($invoiceId, $suffix);
+$invHeader = sqlsrv_fetch_invoice_header($invoiceId, $suffix, $cb, $dt);
 if (!$invHeader) {
     http_response_code(404);
     die('الفاتورة غير موجودة.');
 }
+if ($cb !== null && !isset($invHeader['company_branch'])) {
+    $invHeader['company_branch'] = $cb;
+}
+if ($dt !== null && !isset($invHeader['doc_type'])) {
+    $invHeader['doc_type'] = $dt;
+}
 
-if ((int) ($invHeader['doc_type'] ?? 0) !== 6) {
+$isRet    = (int) ($invHeader['doc_type'] ?? 0) === 6;
+$isBranch = !grp_is_admin_inv(['company_branch_id' => $invHeader['company_branch'] ?? 0]);
+
+if (!$isRet && !$isBranch) {
     http_response_code(400);
-    die('الملف ده للمردود بس.');
+    die('الملف ده للمردود وفواتير الفروع بس — فاتورة شراء الإدارة ليها ملفات الفروع.');
 }
 
 // دمج السطور المتكررة لنفس الصنف في سطر واحد بإجمالي الكمية
@@ -58,7 +69,7 @@ $kept     = $filtered['kept'];
 
 if (empty($kept)) {
     http_response_code(404);
-    die('كل أصناف المردود معلّمة «لا ينزل في التقرير» — الملف هيطلع فاضي.');
+    die('كل أصناف ' . ($isRet ? 'المردود' : 'الفاتورة') . ' معلّمة «لا ينزل في التقرير» — الملف هيطلع فاضي.');
 }
 
 $lines = [];
@@ -71,7 +82,14 @@ foreach ($kept as $code => $qty) {
 }
 $content = implode("\r\n", $lines) . "\r\n";
 
-$filename = 'return_' . $invHeader['inv_no'] . '.txt';
+$invNo = (string) ($invHeader['inv_no'] ?? '');
+if ($isBranch) {
+    $cbVal = (int) ($invHeader['company_branch'] ?? 0);
+    $typeSlug = $isRet ? 'return' : 'purchase';
+    $filename = 'branch' . $cbVal . '_' . $typeSlug . '_' . $invNo . '.txt';
+} else {
+    $filename = 'return_' . $invNo . '.txt';
+}
 
 header('Content-Type: text/plain; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
