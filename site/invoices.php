@@ -1472,6 +1472,8 @@ try {
             // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
             // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
             $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
+            // بريف ٨٠: إجمالي الكميات — من نفس $items المدموج اللي بيترسم في الجدول
+            $totalQty = array_sum(array_map(fn($it) => (float) ($it['quantity'] ?? 0), $items));
             $distRecord = ensure_distribution_record($openInvoice, $uid);
             $distId = (int) $distRecord['id'];
             // إجمالي ما اتوزّع لكل فرع (لإظهار أزرار التحميل)
@@ -1635,6 +1637,29 @@ try {
         } else {
             $invoices = sqlsrv_fetch_invoices(2026);
         }
+
+        // بريف ٨٠: عدد الأصناف لكل فاتورة — استعلام واحد مجمّع لكل الفواتير.
+        // «الصنف» = صف بعد merge_invoice_items(): نفس الدمج بـtrim(item_code)،
+        // ولو الكود فاضي '#'.item_id — عشان القايمة والشاشة يطلّعوا نفس الرقم.
+        // لو الجدول مش موجود (القايمة جاية من الجسر) ← العمود يطلع «—» والصفحة ماتقعش.
+        $itemCountMap = [];
+        try {
+            $nExpr = "COUNT(DISTINCT CASE WHEN TRIM(COALESCE(item_code,'')) <> '' THEN TRIM(item_code)
+                                          ELSE CONCAT('#', COALESCE(item_id, 0)) END)";
+            if ($tab === 'unposted') {
+                // hq_unposted_lines مفيهاش suffix — المفتاح sth_id|YY_MM زي sqlsrv_fetch_unposted_invoices()
+                foreach (db()->query("SELECT sth_id, {$nExpr} AS n_items FROM hq_unposted_lines GROUP BY sth_id") as $r) {
+                    $itemCountMap[$r['sth_id'] . '|YY_MM'] = (int) $r['n_items'];
+                }
+            } else {
+                foreach (db()->query("SELECT sth_id, suffix, {$nExpr} AS n_items FROM hq_invoice_lines GROUP BY sth_id, suffix") as $r) {
+                    $itemCountMap[$r['sth_id'] . '|' . $r['suffix']] = (int) $r['n_items'];
+                }
+            }
+        } catch (Throwable $ex) {
+            $itemCountMap = [];
+        }
+
         // تجميع بالفرع: الإدارة فوق، بعدها الفروع
         $invoiceGroups = group_invoices_by_branch($invoices);
 
@@ -1774,6 +1799,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <style>
+    .inv-table .inv-nitems { text-align:center; }   /* بريف ٨٠ — عدد الأصناف في القايمة */
     .ilk-bar { background:var(--surface); border-radius:12px; padding:11px 15px; margin-bottom:16px;
         display:flex; gap:10px; align-items:center;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
@@ -1976,6 +2002,8 @@ require_once __DIR__ . '/includes/header.php';
             <div class="m"><span class="l">الصافي:</span> <span class="v"><?= number_format((float)$openInvoice['net_amount'],2) ?></span></div>
             <div class="m"><span class="l">الإجمالي:</span> <span class="v"><?= number_format((float)$openInvoice['total_amount'],2) ?></span></div>
             <div class="m"><span class="l">التاريخ:</span> <span class="v"><?= e(date('Y-m-d', strtotime((string)$openInvoice['invoice_date']))) ?></span></div>
+            <div class="m"><span class="l">عدد الأصناف:</span> <span class="v"><?= count($items) ?></span></div>
+            <div class="m"><span class="l">إجمالي الكميات:</span> <span class="v"><?= e(qty_fmt((float) ($totalQty ?? 0))) ?></span></div>
             <?php if ($isBranchInv): ?>
                 <?php if ($isReturnDoc): ?>
                     <div class="m"><span class="doc-badge refund">مردود <?= e($branchName) ?></span></div>
@@ -3387,6 +3415,7 @@ require_once __DIR__ . '/includes/header.php';
                 <col style="width:48px;">
                 <col style="width:13%;">
                 <col style="width:12%;">
+                <col style="width:7%;">
                 <col style="width:11%;">
                 <col>
                 <col style="width:13%;">
@@ -3394,14 +3423,14 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($tab==='posted'): ?><col style="width:13%;"><?php endif; ?>
             </colgroup>
             <thead><tr>
-                <th>#</th><th>رقم الفاتورة</th><th>التاريخ</th>
+                <th>#</th><th>رقم الفاتورة</th><th>التاريخ</th><th>عدد الأصناف</th>
                 <th>كود المورد</th><th>اسم المورد</th><th>الإجمالي</th><th>الصافي</th>
                 <?php if ($tab==='posted'): ?><th>الحالة</th><?php endif; ?>
             </tr></thead>
             <tbody title="اضغط لفتح أصناف الفاتورة">
             <?php $rowNo = 0; foreach ($invoiceGroups as $g): ?>
                 <?php
-                    $colspan = $tab==='posted' ? 8 : 7;
+                    $colspan = $tab==='posted' ? 9 : 8;   // بريف ٨٠: +عمود «عدد الأصناف»
                     $isAdm = !empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1;
                     $gScope = $isAdm ? 'admin' : 'branch';
                     $bIcon = $isAdm ? 'ti-building-bank' : 'ti-building-store';
@@ -3459,7 +3488,7 @@ require_once __DIR__ . '/includes/header.php';
                     }
                     $nTxt = trim((string)($invNotes[$fullKey] ?? ($invNotes[$fallbackKey] ?? (inv_status_match($invNotes, $invNo, $invCb, $invDt) ?? ''))));
                 ?>
-                    <tr class="inv-row<?= ($st==='done' && !$noStatus)?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.($isRet ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ($isRet): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><?php if ($noStatus): ?><span style="color:var(--ink-400);">—</span><?php else: ?><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span><?php endif; ?></td><?php endif; ?></tr>
+                    <tr class="inv-row<?= ($st==='done' && !$noStatus)?' inv-done':'' ?>" data-st="<?= e($st) ?>" data-scope="<?= $gScope ?>" data-s="<?= e(mb_strtolower($invNo.' '.($inv['supplier_name'] ?? '').' '.($inv['supplier_code'] ?? '').' '.($isRet ? 'مردود شراء refund' : '').' '.$nTxt)) ?>" onclick="openInvoice('<?= e($inv['inv_id']) ?>','<?= e($inv['suffix'] ?? '') ?>','<?= e($invCb !== '*' ? $invCb : '') ?>','<?= e($invDt !== '*' ? $invDt : '') ?>')"><td><?= $rowNo ?></td><td class="inv-no"><?= e($invNo) ?><?php if ($isRet): ?> <span class="doc-badge refund">مردود شراء</span><?php endif; ?><?php if ($nTxt !== ''): ?> <span class="inv-note-text" title="<?= e($nTxt) ?>"><i class="ti ti-note"></i> <?= e(mb_strimwidth($nTxt, 0, 120, '…')) ?></span><?php endif; ?></td><td class="inv-date"><?= e(date('Y-m-d', strtotime((string)$inv['invoice_date']))) ?></td><td class="inv-nitems"><?= isset($itemCountMap[$inv['inv_id'] . '|' . ($inv['suffix'] ?? '')]) ? (int) $itemCountMap[$inv['inv_id'] . '|' . ($inv['suffix'] ?? '')] : '—' ?></td><td class="inv-scode"><?= e($inv['supplier_code'] ?? '—') ?></td><td class="inv-supplier" title="<?= e($inv['supplier_name'] ?? '') ?>"><?= e($inv['supplier_name'] ?? '—') ?></td><td><?= number_format((float)$inv['total_amount'],2) ?></td><td><?= number_format((float)$inv['net_amount'],2) ?></td><?php if ($tab==='posted'): ?><td><?php if ($noStatus): ?><span style="color:var(--ink-400);">—</span><?php else: ?><span class="st-badge <?= $stClass ?>"><?= e($stLabel) ?></span><?php endif; ?></td><?php endif; ?></tr>
                 <?php endforeach; ?>
                 <?php endforeach; /* المجموعات الفرعية (شراء/مردود) */ ?>
             <?php endforeach; ?>

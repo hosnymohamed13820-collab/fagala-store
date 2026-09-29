@@ -2679,4 +2679,21 @@ function grp_is_admin_inv(array $iv): bool
     return !isset($br[(int) ($iv['company_branch_id'] ?? 0)]);
 }
 
+/**
+ * تنسيق كمية للعرض (بريف ٨٠): رقم صحيح من غير كسور (1,250 مش 1,250.00)،
+ * ولو فيه كسر يطلع لحد ٣ أرقام من غير أصفار في الآخر (12.5).
+ * نفس منطق return_export.php + فاصلة آلاف للجزء الصحيح. عرض بس — مابيرجعش للسيرفر.
+ */
+function qty_fmt(float $q): string
+{
+    if ($q == (int) $q) {
+        return number_format((int) $q, 0, '.', ',');
+    }
+    $s = rtrim(rtrim(number_format($q, 3, '.', ''), '0'), '.');
+    [$int, $frac] = array_pad(explode('.', $s, 2), 2, '');
+    $neg = str_starts_with($int, '-');
+    $int = number_format((int) ltrim($int, '-'), 0, '.', ',');
+    return ($neg ? '-' : '') . $int . ($frac !== '' ? '.' . $frac : '');
+}
+
 
