@@ -1,6 +1,9 @@
 # =====================================================================
 #  agent_ashraqa.ps1 - Ashraqa branch balance sync agent
 #  Version 1.3  (2026-08-23)  - delta + no code-shape filter
+#  Version 1.6  (2026-09-30)  - also sends purchase invoices and purchase
+#                               returns to sync_ashraqa_purchases.php
+#                               (section 0 below). Balances unchanged.
 #
 #  WHY THE CODE FILTER WENT AWAY (1.3):
 #    The query used to drop any code shorter than 8 chars, assuming
@@ -62,7 +65,7 @@ $SyncToken = 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS'
 # cannot tell "PC is off" apart from "no stock changed".
 $BeatUrl  = 'https://hosnimanagement.com/sync_beat.php'
 $AgentKey = 'ashraqa'      # must match agent_status.agent_key on the site
-$AgentVer = '1.5'
+$AgentVer = '1.6'
 
 # Heartbeat token: the beat now uses the agent's own secret token, and the
 # website verifies that it belongs to 'ashraqa'.
@@ -170,6 +173,227 @@ try {
 } catch { }
 
 Write-Log '--- Sync started ---'
+
+# ---------------------------------------------------------------------
+#  0) Purchase invoices + purchase returns  (new in 1.6 - 2026-09-30)
+#
+#  WHY: Ashraqa records the goods it sends to OUR branches as a
+#  "purchase return" (SSTT 115) to supplier 8 ("the branches, Mr Mohamed
+#  Essam"), with the branch name typed in NOTS. The branch books the
+#  same goods as "bought from HQ", so HQ has no matching invoice and no
+#  stock. The site needs these lines, item by item, to reconcile them.
+#
+#  - Runs at most once every $PurchEveryMin minutes (the agent itself
+#    runs every 2 min for balances - this part does not need that).
+#  - Sends only the invoices whose content changed; once a day sends
+#    everything since $PurchSince (mode=full) so a deleted invoice on
+#    their side also disappears on ours.
+#  - Own state file, own endpoint. It NEVER throws and NEVER exits:
+#    a failure here is logged and the balance sync below runs as usual.
+#  - Read-only on their DB, same READ UNCOMMITTED as the balance query.
+# ---------------------------------------------------------------------
+$PurchUrl       = 'https://hosnimanagement.com/sync_ashraqa_purchases.php'
+$PurchStateFile = Join-Path $PSScriptRoot 'agent_ashraqa.purch.json'
+$PurchSince     = '2026-07-01'
+$PurchEveryMin  = 30
+$PurchFullHours = 24
+
+$PurchQuery = @"
+SET NOCOUNT ON;
+
+WITH Codes AS (
+    SELECT b.ProductID AS item_id, LTRIM(RTRIM(b.Barcode)) AS barcode
+    FROM ItemBarcodes b
+    WHERE b.Barcode IS NOT NULL AND LTRIM(RTRIM(b.Barcode)) <> ''
+
+    UNION
+
+    SELECT i.ID AS item_id, LTRIM(RTRIM(i.MainBarcode)) AS barcode
+    FROM Item i
+    WHERE i.MainBarcode IS NOT NULL AND LTRIM(RTRIM(i.MainBarcode)) <> ''
+)
+SELECT p.SSTT_ID                                   AS sstt,
+       p.BRCH_ID                                   AS brch,
+       p.FY_NO                                     AS fy,
+       p.add_doc                                   AS doc,
+       CONVERT(varchar(10), p.Zdate, 120)          AS doc_date,
+       p.supplier_id                               AS supplier_id,
+       s.supplier_name                             AS supplier_name,
+       CAST(p.Net_invoice   AS DECIMAL(16,3))      AS net,
+       CAST(p.Total_Invoice AS DECIMAL(16,3))      AS total,
+       CAST(ISNULL(p.Cancel_Doc, 0) AS int)        AS cancelled,
+       p.NOTS                                      AS notes,
+       p.Supplier_invoice_number                   AS supplier_inv_no,
+       p.Internal_No                               AS internal_no,
+       CONVERT(varchar(19), p.LAST_MODIFY_DATE, 120) AS last_modify,
+       ROW_NUMBER() OVER (PARTITION BY p.SSTT_ID, p.BRCH_ID, p.FY_NO, p.add_doc
+                          ORDER BY d.serial, d.index_row)  AS line_no,
+       d.ID_item                                   AS item_id,
+       LTRIM(RTRIM(d.CODE))                        AS code,
+       STUFF((SELECT '|' + c.barcode FROM Codes c WHERE c.item_id = d.ID_item
+              FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 1, '') AS barcodes,
+       LTRIM(RTRIM(i.description))                 AS name,
+       d.id_unit                                   AS unit_id,
+       CAST(ISNULL(d.unit_q, 1) AS DECIMAL(12,3))  AS unit_q,
+       CAST(d.Quantity   AS DECIMAL(16,3))         AS qty,
+       CAST(d.unit_price AS DECIMAL(16,3))         AS price,
+       CAST(d.TOTVALUE   AS DECIMAL(16,3))         AS line_total
+FROM Purchases p
+LEFT JOIN supplier s          ON s.ID = p.supplier_id
+LEFT JOIN Purchases_details d ON d.DOC_NO = p.add_doc AND d.SSTT_ID = p.SSTT_ID
+                             AND d.BRCH_ID = p.BRCH_ID AND d.FY_NO = p.FY_NO
+LEFT JOIN Item i              ON i.ID = d.ID_item
+WHERE p.SSTT_ID IN (113, 115)
+  AND p.Zdate >= '$PurchSince'
+ORDER BY p.SSTT_ID, p.BRCH_ID, p.FY_NO, p.add_doc, line_no;
+"@
+
+function Get-Nz {
+    param($Value)
+    if ($Value -is [System.DBNull] -or $null -eq $Value) { return $null }
+    return $Value
+}
+
+function Sync-Purchases {
+    try {
+        # --- throttle: at most once every $PurchEveryMin minutes ---
+        $pst = $null
+        if (Test-Path $PurchStateFile) {
+            try { $pst = Get-Content $PurchStateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $pst = $null }
+        }
+        $now = Get-Date
+        if ($pst -and $pst.lastRun) {
+            $mins = ($now - [datetime]$pst.lastRun).TotalMinutes
+            if ($mins -lt $PurchEveryMin) { return }
+        }
+
+        $prevFp = @{}
+        if ($pst -and $pst.fp) {
+            foreach ($p in $pst.fp.PSObject.Properties) { $prevFp[$p.Name] = [string]$p.Value }
+        }
+        $lastFull = $null
+        if ($pst -and $pst.lastFull) { $lastFull = [datetime]$pst.lastFull }
+        $forceFull = ($prevFp.Count -eq 0) -or ($null -eq $lastFull) -or (($now - $lastFull).TotalHours -ge $PurchFullHours)
+
+        # --- read ---
+        if ($UseWindowsAuth) {
+            $cs = "Server=$SqlServer;Database=$SqlDatabase;Integrated Security=True;TrustServerCertificate=True;Connection Timeout=30"
+        } else {
+            $cs = "Server=$SqlServer;Database=$SqlDatabase;User Id=$SqlUser;Password=$SqlPassword;TrustServerCertificate=True;Connection Timeout=30"
+        }
+        $pc = New-Object System.Data.SqlClient.SqlConnection($cs)
+        $pc.Open()
+        $pcmd = $pc.CreateCommand()
+        $pcmd.CommandText    = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $PurchQuery
+        $pcmd.CommandTimeout = 300
+        $pad = New-Object System.Data.SqlClient.SqlDataAdapter($pcmd)
+        $ptab = New-Object System.Data.DataTable
+        [void]$pad.Fill($ptab)
+        $pc.Close()
+
+        # --- group rows into invoices (rows arrive ordered by key, line_no) ---
+        $invs  = [ordered]@{}
+        foreach ($r in $ptab.Rows) {
+            $key = '{0}-{1}-{2}-{3}' -f $r['sstt'], $r['brch'], $r['fy'], $r['doc']
+            if (-not $invs.Contains($key)) {
+                $invs[$key] = [ordered]@{
+                    sstt            = [int]$r['sstt']
+                    brch            = [int]$r['brch']
+                    fy              = [int]$r['fy']
+                    doc             = [int]$r['doc']
+                    date            = [string]$r['doc_date']
+                    supplier_id     = Get-Nz $r['supplier_id']
+                    supplier_name   = Get-Nz $r['supplier_name']
+                    net             = [double](Get-Nz $r['net'])
+                    total           = [double](Get-Nz $r['total'])
+                    cancelled       = [int]$r['cancelled']
+                    notes           = Get-Nz $r['notes']
+                    supplier_inv_no = Get-Nz $r['supplier_inv_no']
+                    internal_no     = Get-Nz $r['internal_no']
+                    last_modify     = Get-Nz $r['last_modify']
+                    lines           = New-Object System.Collections.ArrayList
+                }
+            }
+            # An invoice with no lines still comes back once, with a NULL item.
+            if (-not ($r['item_id'] -is [System.DBNull])) {
+                $null = $invs[$key].lines.Add([ordered]@{
+                    line_no  = [int]$r['line_no']
+                    item_id  = [int]$r['item_id']
+                    code     = Get-Nz $r['code']
+                    barcodes = Get-Nz $r['barcodes']
+                    name     = Get-Nz $r['name']
+                    unit_id  = Get-Nz $r['unit_id']
+                    unit_q   = [double](Get-Nz $r['unit_q'])
+                    qty      = [double](Get-Nz $r['qty'])
+                    price    = [double](Get-Nz $r['price'])
+                    total    = [double](Get-Nz $r['line_total'])
+                })
+            }
+        }
+
+        # --- fingerprint each invoice; keep only the changed ones ---
+        $md5  = [System.Security.Cryptography.MD5]::Create()
+        $curFp = @{}
+        $send  = New-Object System.Collections.ArrayList
+        foreach ($k in $invs.Keys) {
+            $json = $invs[$k] | ConvertTo-Json -Depth 5 -Compress
+            $hash = [BitConverter]::ToString($md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($json))).Replace('-', '')
+            $curFp[$k] = $hash
+            if ($forceFull -or -not $prevFp.ContainsKey($k) -or $prevFp[$k] -ne $hash) {
+                $null = $send.Add($invs[$k])
+            }
+        }
+
+        $mode = if ($forceFull) { 'full' } else { 'partial' }
+        Write-Log "[purch] read $($ptab.Rows.Count) lines / $($invs.Count) invoices - to send: $($send.Count) ($mode)"
+
+        if ($send.Count -gt 0 -or $forceFull) {
+            $body  = @{ token = $SyncToken; mode = $mode; since = $PurchSince; invoices = $send } |
+                     ConvertTo-Json -Depth 6 -Compress
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+            Write-Log ("[purch] payload {0} KB" -f [math]::Round($bytes.Length / 1KB, 1))
+
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $resp = Invoke-RestMethod -Uri $PurchUrl -Method Post -Body $bytes `
+                    -ContentType 'application/json; charset=utf-8' `
+                    -Headers @{ 'X-Sync-Token' = $SyncToken } -TimeoutSec 120
+
+            if ($resp.ok -ne $true) {
+                # State NOT saved (fp) -> the same invoices go again next time.
+                # lastRun IS saved -> next try in $PurchEveryMin min, not in 2 min.
+                Write-Log "[purch] server rejected: $($resp.error)"
+                @{ lastRun = $now.ToString('o'); lastFull = $pst.lastFull; fp = $prevFp } |
+                    ConvertTo-Json -Depth 3 -Compress | Set-Content $PurchStateFile -Encoding UTF8
+                return
+            }
+            Write-Log "[purch] OK - invoices: $($resp.invoices) | lines: $($resp.lines) | skipped: $($resp.skipped)"
+        }
+
+        $newFull = if ($forceFull) { $now.ToString('o') } else { $pst.lastFull }
+        @{ lastRun = $now.ToString('o'); lastFull = $newFull; fp = $curFp } |
+            ConvertTo-Json -Depth 3 -Compress | Set-Content $PurchStateFile -Encoding UTF8
+    }
+    catch {
+        # Never let this part break the balance sync.
+        Write-Log "[purch] failed: $($_.Exception.Message)"
+        # Record the attempt time (fingerprints untouched) so a broken
+        # endpoint is retried every $PurchEveryMin min, NOT every 2 min -
+        # a full upload every 2 min is what got the office IP banned on
+        # 2026-08-08.
+        try {
+            $keepFp = @{}; $keepFull = $null
+            if (Test-Path $PurchStateFile) {
+                $old = Get-Content $PurchStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($old.fp) { foreach ($p in $old.fp.PSObject.Properties) { $keepFp[$p.Name] = [string]$p.Value } }
+                $keepFull = $old.lastFull
+            }
+            @{ lastRun = (Get-Date).ToString('o'); lastFull = $keepFull; fp = $keepFp } |
+                ConvertTo-Json -Depth 3 -Compress | Set-Content $PurchStateFile -Encoding UTF8
+        } catch { }
+    }
+}
+
+Sync-Purchases
 
 # ---------------------------------------------------------------------
 #  1) Read balances from SQL Server
