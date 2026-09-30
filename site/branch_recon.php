@@ -11,6 +11,9 @@ require_once __DIR__ . '/auth.php';
 require_permission('branch_recon');
 require_once __DIR__ . '/recon_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';
+require_once __DIR__ . '/recon_alerts_lib.php';
+
+const RECON_ALERTS_START = '2026-10-01'; // كل الأزواج اتقفلت ٣٠/٩ ما عدا الإدارة↔بونجور
 
 $pdo  = db();
 $uid  = (int) current_user()['id'];
@@ -75,7 +78,14 @@ try {
     }
 } catch (Throwable) {}
 
-$from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : $stStart;
+$activeTab = trim((string)($_GET['tab'] ?? ''));
+if ($activeTab === 'alerts') {
+    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : RECON_ALERTS_START;
+} elseif ($activeTab === 'ashraqa') {
+    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : '2026-07-01';
+} else {
+    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : $stStart;
+}
 $to   = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'])) ? $_GET['to'] : date('Y-m-d');
 
 $allParties = recon_all_parties();
@@ -166,46 +176,246 @@ if ($isDetailView) {
         exit;
     }
 } else {
-    // -------------------------------------------------------------
-    // الشاشة العامة: جدول الأزواج العشرة
-    // -------------------------------------------------------------
-    $matrix = recon_get_matrix($pdo, $from, $to);
-    $pairs  = recon_get_all_pairs($matrix);
+    if ($activeTab === 'alerts') {
+        // ---------------------------------------------------------
+        // تاب التنبيهات: اكتشاف الأخطاء والتكرار والمطابقة
+        // ---------------------------------------------------------
+        $pFilter = trim((string)($_GET['p'] ?? ''));
+        $showDone = !empty($_GET['show_done']);
+        $labels = [];
+        foreach ($allParties as $pk => $p) {
+            $labels[$pk] = $p['label'];
+        }
 
-    $totPairsCount = count($pairs);
-    $matchCount = 0;
-    $mismatchCount = 0;
-    foreach ($pairs as $p) {
-        if ($p['is_match']) {
-            $matchCount++;
+        $tAlerts0 = microtime(true);
+        $alertDocs = recon_alerts_load($pdo, $from, $to, $allParties);
+        $allDetectedAlerts = recon_alerts_detect($alertDocs, $from, $to, date('Y-m-d'), $labels);
+        $alertsPerfTime = microtime(true) - $tAlerts0;
+
+        if ($pFilter !== '' && isset($allParties[$pFilter])) {
+            $allDetectedAlerts = array_values(array_filter($allDetectedAlerts, function ($al) use ($pFilter) {
+                return in_array($pFilter, $al['pair'] ?? [], true);
+            }));
+        }
+
+        // استعلام واحد لعلامات التلوين
+        $alertSthIds = [];
+        foreach ($allDetectedAlerts as $al) {
+            foreach ($al['docs'] as $dKey) {
+                $parts = explode('_', $dKey);
+                if (isset($parts[0]) && is_numeric($parts[0])) {
+                    $alertSthIds[] = (int)$parts[0];
+                }
+            }
+        }
+        $reconMarks = recon_get_marks($pdo, $alertSthIds);
+
+        $alerts = [];
+        $doneAlerts = [];
+        foreach ($allDetectedAlerts as $al) {
+            $isGreen = false;
+            foreach ($al['docs'] as $dKey) {
+                if (($reconMarks[$dKey] ?? '') === 'green') {
+                    $isGreen = true;
+                    break;
+                }
+            }
+            if ($isGreen) {
+                $doneAlerts[] = $al;
+                if ($showDone) {
+                    $alerts[] = $al;
+                }
+            } else {
+                $alerts[] = $al;
+            }
+        }
+        $doneCount = count($doneAlerts);
+
+        $redCount = 0; $redAmt = 0.0;
+        $yellowCount = 0; $yellowAmt = 0.0;
+        $grayCount = 0; $grayAmt = 0.0;
+        foreach ($alerts as $al) {
+            if ($al['level'] === 'red') {
+                $redCount++;
+                $redAmt += (float)$al['amount'];
+            } elseif ($al['level'] === 'yellow') {
+                $yellowCount++;
+                $yellowAmt += (float)$al['amount'];
+            } elseif ($al['level'] === 'gray') {
+                $grayCount++;
+                $grayAmt += (float)$al['amount'];
+            }
+        }
+    } elseif ($activeTab === 'ashraqa') {
+        // ---------------------------------------------------------
+        // تاب مشتريات إشراقة: قائمة الفواتير وتفاصيل السطور
+        // ---------------------------------------------------------
+        $docParam = trim((string)($_GET['doc'] ?? ''));
+        $ashraqaDetailMode = false;
+        $ashDoc = null;
+        $ashLines = [];
+        $ashCodesMap = [];
+        $ashDocNotFound = false;
+
+        if ($docParam !== '') {
+            $ashraqaDetailMode = true;
+            if (!preg_match('/^(\d+)-(\d+)-(\d+)-(\d+)$/', $docParam, $dm)) {
+                $ashDocNotFound = true;
+            } else {
+                $sstt   = (int)$dm[1];
+                $brch   = (int)$dm[2];
+                $fy     = (int)$dm[3];
+                $addDoc = (int)$dm[4];
+
+                // استعلام ١ لتفاصيل فاتورة إشراقة (الرأس)
+                $stDoc = $pdo->prepare("SELECT sstt_id, brch_id, fy_no, add_doc, doc_date, supplier_id, supplier_name,
+                                               net_amount, total_amount, cancelled, notes, supplier_inv_no
+                                        FROM ashraqa_purchases
+                                        WHERE sstt_id = ? AND brch_id = ? AND fy_no = ? AND add_doc = ?
+                                        LIMIT 1");
+                $stDoc->execute([$sstt, $brch, $fy, $addDoc]);
+                $ashDoc = $stDoc->fetch(PDO::FETCH_ASSOC);
+
+                if (!$ashDoc) {
+                    $ashDocNotFound = true;
+                } else {
+                    // استعلام ٢ لتفاصيل فاتورة إشراقة (السطور)
+                    $stLines = $pdo->prepare("SELECT line_no, item_id, code, barcodes, item_name, unit_q, quantity, unit_price, line_total
+                                              FROM ashraqa_purchase_lines
+                                              WHERE sstt_id = ? AND brch_id = ? AND fy_no = ? AND add_doc = ?
+                                              ORDER BY line_no ASC");
+                    $stLines->execute([$sstt, $brch, $fy, $addDoc]);
+                    $ashLines = $stLines->fetchAll(PDO::FETCH_ASSOC);
+
+                    // استعلام ٣ لـ hq_codes بكل باركودات الفاتورة
+                    $allBarcodes = [];
+                    foreach ($ashLines as $ln) {
+                        if (!empty($ln['barcodes'])) {
+                            $bcs = explode('|', $ln['barcodes']);
+                            foreach ($bcs as $b) {
+                                $b = trim($b);
+                                if ($b !== '') {
+                                    $allBarcodes[] = $b;
+                                }
+                            }
+                        }
+                    }
+                    $allBarcodes = array_values(array_unique($allBarcodes));
+                    if (!empty($allBarcodes)) {
+                        $inBc = implode(',', array_fill(0, count($allBarcodes), '?'));
+                        $stCodes = $pdo->prepare("SELECT code, name FROM hq_codes WHERE code IN ($inBc)");
+                        $stCodes->execute($allBarcodes);
+                        while ($r = $stCodes->fetch(PDO::FETCH_ASSOC)) {
+                            $ashCodesMap[trim($r['code'])] = $r['name'];
+                        }
+                    }
+                }
+            }
         } else {
-            $mismatchCount++;
+            // استعلام موردين إشراقة للفلتر
+            $stSupps = $pdo->query("SELECT DISTINCT supplier_id, supplier_name
+                                    FROM ashraqa_purchases
+                                    WHERE supplier_id IS NOT NULL
+                                    ORDER BY supplier_name ASC");
+            $ashSuppliers = $stSupps->fetchAll(PDO::FETCH_ASSOC);
+
+            $ashSstt = isset($_GET['sstt']) ? (int)$_GET['sstt'] : 0;
+            $ashSupplier = isset($_GET['supplier']) ? (int)$_GET['supplier'] : 0;
+            $ashSearch = trim((string)($_GET['q'] ?? ''));
+            $ashShowCancelled = !empty($_GET['show_cancelled']);
+
+            $ashWhere = ["p.doc_date >= ? AND p.doc_date <= ?"];
+            $ashParams = [$from, $to];
+
+            if ($ashSstt === 113 || $ashSstt === 115) {
+                $ashWhere[] = "p.sstt_id = ?";
+                $ashParams[] = $ashSstt;
+            }
+            if ($ashSupplier > 0) {
+                $ashWhere[] = "p.supplier_id = ?";
+                $ashParams[] = $ashSupplier;
+            }
+            if ($ashSearch !== '') {
+                $ashWhere[] = "(p.notes LIKE ? OR CAST(p.add_doc AS CHAR) LIKE ?)";
+                $ashParams[] = '%' . $ashSearch . '%';
+                $ashParams[] = '%' . $ashSearch . '%';
+            }
+            if (!$ashShowCancelled) {
+                $ashWhere[] = "p.cancelled = 0";
+            }
+
+            $whereStr = implode(' AND ', $ashWhere);
+
+            // استعلام واحد لقايمة إشراقة بـ LEFT JOIN مجمعة
+            $sqlAshList = "SELECT p.sstt_id, p.brch_id, p.fy_no, p.add_doc,
+                                  p.doc_date, p.supplier_id, p.supplier_name,
+                                  p.net_amount, p.cancelled, p.notes,
+                                  COUNT(l.line_no) AS items_count,
+                                  COALESCE(SUM(l.quantity * l.unit_q), 0) AS total_pieces
+                           FROM ashraqa_purchases p
+                           LEFT JOIN ashraqa_purchase_lines l
+                             ON l.sstt_id = p.sstt_id AND l.brch_id = p.brch_id AND l.fy_no = p.fy_no AND l.add_doc = p.add_doc
+                           WHERE $whereStr
+                           GROUP BY p.sstt_id, p.brch_id, p.fy_no, p.add_doc
+                           ORDER BY p.doc_date DESC, p.add_doc DESC";
+            $stAshList = $pdo->prepare($sqlAshList);
+            $stAshList->execute($ashParams);
+            $ashInvoices = $stAshList->fetchAll(PDO::FETCH_ASSOC);
+
+            $totAshBuy = 0.0;
+            $totAshRet = 0.0;
+            foreach ($ashInvoices as $ai) {
+                if ((int)$ai['cancelled'] === 0) {
+                    if ((int)$ai['sstt_id'] === 113) {
+                        $totAshBuy += (float)$ai['net_amount'];
+                    } elseif ((int)$ai['sstt_id'] === 115) {
+                        $totAshRet += (float)$ai['net_amount'];
+                    }
+                }
+            }
         }
-    }
+    } else {
+        // -------------------------------------------------------------
+        // الشاشة العامة: جدول الأزواج العشرة (الفروق)
+        // -------------------------------------------------------------
+        $matrix = recon_get_matrix($pdo, $from, $to);
+        $pairs  = recon_get_all_pairs($matrix);
 
-    // تصدير إكسيل لجدول الأزواج
-    if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
-        require_once __DIR__ . '/xlsx_lib.php';
-        $x = new SimpleXlsx('مطابقة الفروع');
-        $headerTitle = 'مطابقة بضاعة الفروع والإدارة — من ' . $from . ' حتى ' . $to;
-        $x->addRow([$headerTitle]);
-        $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
-        $x->addBlank();
-        $x->addRow(['من', 'إلى', 'صافي اللي خرج (دفاتر من)', 'صافي اللي وصل (دفاتر إلى)', 'الفرق', 'الحالة'], true);
-
+        $totPairsCount = count($pairs);
+        $matchCount = 0;
+        $mismatchCount = 0;
         foreach ($pairs as $p) {
-            $statusText = $p['is_match'] ? 'متطابق' : ($p['diff'] > 0 ? ('دفاتر ' . $p['from_label'] . ' فيها أكتر') : ('دفاتر ' . $p['to_label'] . ' فيها أكتر'));
-            $x->addRow([
-                $p['from_label'],
-                $p['to_label'],
-                round($p['net_sent'], 2),
-                round($p['net_recv'], 2),
-                round($p['diff'], 2),
-                $statusText,
-            ]);
+            if ($p['is_match']) {
+                $matchCount++;
+            } else {
+                $mismatchCount++;
+            }
         }
-        $x->download('BRANCHES_RECONCILIATION_' . $from . '_' . $to . '.xlsx');
-        exit;
+
+        // تصدير إكسيل لجدول الأزواج
+        if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
+            require_once __DIR__ . '/xlsx_lib.php';
+            $x = new SimpleXlsx('مطابقة الفروع');
+            $headerTitle = 'مطابقة بضاعة الفروع والإدارة — من ' . $from . ' حتى ' . $to;
+            $x->addRow([$headerTitle]);
+            $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
+            $x->addBlank();
+            $x->addRow(['من', 'إلى', 'صافي اللي خرج (دفاتر من)', 'صافي اللي وصل (دفاتر إلى)', 'الفرق', 'الحالة'], true);
+
+            foreach ($pairs as $p) {
+                $statusText = $p['is_match'] ? 'متطابق' : ($p['diff'] > 0 ? ('دفاتر ' . $p['from_label'] . ' فيها أكتر') : ('دفاتر ' . $p['to_label'] . ' فيها أكتر'));
+                $x->addRow([
+                    $p['from_label'],
+                    $p['to_label'],
+                    round($p['net_sent'], 2),
+                    round($p['net_recv'], 2),
+                    round($p['diff'], 2),
+                    $statusText,
+                ]);
+            }
+            $x->download('BRANCHES_RECONCILIATION_' . $from . '_' . $to . '.xlsx');
+            exit;
+        }
     }
 }
 
@@ -637,6 +847,351 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php else: ?>
     <!-- ========================================================= -->
+    <!-- تابات الشاشة الرئيسية                                     -->
+    <!-- ========================================================= -->
+    <div class="tabs" style="margin-bottom:18px;">
+        <a href="branch_recon.php?from=<?= e($activeTab === '' ? $from : $stStart) ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === '' ? 'active' : '' ?>">الفروق</a>
+        <a href="branch_recon.php?tab=alerts&from=<?= e($activeTab === 'alerts' ? $from : RECON_ALERTS_START) ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === 'alerts' ? 'active' : '' ?>">تنبيهات</a>
+        <a href="branch_recon.php?tab=ashraqa&from=<?= e($activeTab === 'ashraqa' ? $from : '2026-07-01') ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === 'ashraqa' ? 'active' : '' ?>">مشتريات إشراقة</a>
+    </div>
+
+<?php if ($activeTab === 'alerts'): ?>
+    <!-- ========================================================= -->
+    <!-- تاب التنبيهات                                             -->
+    <!-- ========================================================= -->
+    <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+        <div>
+            <span class="section-title" style="margin-bottom:0;">تنبيهات مطابقة الفروع والإدارة</span>
+            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+                الفترة من <?= e($from) ?> حتى <?= e($to) ?>
+            </div>
+        </div>
+        <form method="get" class="filter-form" style="margin-bottom:0;">
+            <input type="hidden" name="tab" value="alerts">
+            <?php if ($showDone): ?>
+                <input type="hidden" name="show_done" value="1">
+            <?php endif; ?>
+            <label>الطرف
+                <select name="p" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                    <option value="">كل الأطراف</option>
+                    <?php foreach ($allParties as $pk => $p): ?>
+                        <option value="<?= e($pk) ?>" <?= $pFilter === $pk ? 'selected' : '' ?>><?= e($p['label']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>من <input type="date" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+            <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+        </form>
+    </div>
+
+    <!-- ٣ كروت إحصائية للتنبيهات -->
+    <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
+        <div class="sum-card" style="background:var(--neg-soft);border-color:var(--neg);">
+            <div class="label" style="color:var(--neg);">أحمر (حرج)</div>
+            <div class="val" style="color:var(--neg);"><?= (int)$redCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($redAmt, 2) ?>)</span></div>
+        </div>
+        <div class="sum-card" style="background:var(--warn-soft);border-color:var(--warn);">
+            <div class="label" style="color:var(--warn);">أصفر (تنبيه)</div>
+            <div class="val" style="color:var(--warn);"><?= (int)$yellowCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($yellowAmt, 2) ?>)</span></div>
+        </div>
+        <div class="sum-card" style="background:var(--line-soft);border-color:var(--line);">
+            <div class="label" style="color:var(--ink-500);">رمادي (متابعة)</div>
+            <div class="val" style="color:var(--ink-900);"><?= (int)$grayCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($grayAmt, 2) ?>)</span></div>
+        </div>
+    </div>
+
+    <?php if (empty($alerts)): ?>
+        <div class="card empty" style="text-align:center;padding:30px;color:var(--pos);font-size:15px;font-weight:600;">
+            مفيش حاجة غلط من <?= e($from) ?> لحد <?= e($to) ?> ✅
+        </div>
+    <?php else: ?>
+        <?php foreach ($alerts as $al): ?>
+            <?php
+            $borderColor = 'var(--line)';
+            $iconClass = 'ti ti-alert-circle';
+            $iconColor = 'var(--ink-500)';
+            if ($al['level'] === 'red') {
+                $borderColor = 'var(--neg)';
+                $iconClass = 'ti ti-alert-circle';
+                $iconColor = 'var(--neg)';
+            } elseif ($al['level'] === 'yellow') {
+                $borderColor = 'var(--warn)';
+                $iconClass = 'ti ti-alert-triangle';
+                $iconColor = 'var(--warn)';
+            } elseif ($al['level'] === 'gray') {
+                $borderColor = 'var(--ink-300)';
+                $iconClass = 'ti ti-clock';
+                $iconColor = 'var(--ink-500)';
+            }
+            ?>
+            <div class="card" style="border-right:4px solid <?= $borderColor ?>;padding:16px 20px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:280px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                            <i class="<?= $iconClass ?>" style="font-size:18px;color:<?= $iconColor ?>;"></i>
+                            <span style="font-size:14px;font-weight:600;color:var(--ink-900);line-height:1.5;"><?= e($al['text']) ?></span>
+                        </div>
+                        <div style="font-size:13px;color:var(--ink-600);margin-top:4px;padding-right:26px;">
+                            <strong>الحل:</strong> <?= e($al['fix']) ?>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="branch_recon.php?a=<?= urlencode($al['pair'][0]) ?>&b=<?= urlencode($al['pair'][1]) ?>&from=<?= urlencode($from) ?>&to=<?= urlencode($to) ?>" class="btn btn-sm btn-ghost" style="white-space:nowrap;">
+                            <i class="ti ti-external-link"></i> افتح الزوج
+                        </a>
+                    </div>
+                </div>
+
+                <?php if (!empty($al['lines'])): ?>
+                    <details style="margin-top:10px;padding-right:26px;">
+                        <summary style="cursor:pointer;color:var(--accent-text);font-size:13px;font-weight:600;">
+                            الأصناف (<?= count($al['lines']) ?>)
+                        </summary>
+                        <div style="overflow-x:auto;margin-top:8px;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>الصنف</th>
+                                        <th>كمية/سعر عند <?= e($labels[$al['pair'][0]] ?? $al['pair'][0]) ?></th>
+                                        <th>كمية/سعر عند <?= e($labels[$al['pair'][1]] ?? $al['pair'][1]) ?></th>
+                                        <th>الفرق</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($al['lines'] as $ln): ?>
+                                        <tr>
+                                            <td><?= e($ln['name']) ?></td>
+                                            <td><?= $ln['q1'] > 0 ? (number_format($ln['q1'], 2) . ' × ' . number_format($ln['p1'], 2)) : '—' ?></td>
+                                            <td><?= $ln['q2'] > 0 ? (number_format($ln['q2'], 2) . ' × ' . number_format($ln['p2'], 2)) : '—' ?></td>
+                                            <td style="font-weight:600;color:var(--neg);"><?= number_format($ln['diff'], 2) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+
+    <?php if ($doneCount > 0): ?>
+        <div style="text-align:center;margin:16px 0;">
+            <?php if ($showDone): ?>
+                <a href="branch_recon.php?tab=alerts&from=<?= urlencode($from) ?>&to=<?= urlencode($to) ?>&p=<?= urlencode($pFilter) ?>&show_done=0" class="btn btn-sm btn-ghost">
+                    إخفاء اللي اتقفل (<?= $doneCount ?>)
+                </a>
+            <?php else: ?>
+                <a href="branch_recon.php?tab=alerts&from=<?= urlencode($from) ?>&to=<?= urlencode($to) ?>&p=<?= urlencode($pFilter) ?>&show_done=1" class="btn btn-sm btn-ghost">
+                    اعرض اللي اتقفل (<?= $doneCount ?>)
+                </a>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
+<?php elseif ($activeTab === 'ashraqa' && $ashraqaDetailMode): ?>
+    <!-- ========================================================= -->
+    <!-- تاب مشتريات إشراقة: تفاصيل الفاتورة                        -->
+    <!-- ========================================================= -->
+    <div style="margin-bottom:14px;">
+        <a href="branch_recon.php?tab=ashraqa&from=<?= urlencode($from) ?>&to=<?= urlencode($to) ?>" class="btn btn-sm btn-ghost">
+            <i class="ti ti-arrow-right"></i> رجوع لقائمة مشتريات إشراقة
+        </a>
+    </div>
+
+    <?php if ($ashDocNotFound || !$ashDoc): ?>
+        <div class="card empty" style="text-align:center;padding:30px;color:var(--neg);font-size:15px;font-weight:600;">
+            الفاتورة مش موجودة
+        </div>
+    <?php else: ?>
+        <div class="card" style="margin-bottom:18px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+                <div>
+                    <span class="section-title" style="margin-bottom:4px;font-size:17px;">
+                        فاتورة <?= (int)$ashDoc['sstt_id'] === 113 ? 'شراء' : 'مرتجع شراء' ?> رقم <?= e($ashDoc['add_doc']) ?>
+                        <?php if ((int)$ashDoc['cancelled'] === 1): ?>
+                            <span style="font-size:12px;background:var(--neg-soft);color:var(--neg);padding:2px 8px;border-radius:6px;font-weight:600;margin-right:8px;">ملغية</span>
+                        <?php endif; ?>
+                    </span>
+                    <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+                        التاريخ: <?= e($ashDoc['doc_date']) ?> · المورد: <?= e($ashDoc['supplier_name']) ?> (<?= (int)$ashDoc['supplier_id'] ?>)
+                        <?php if (!empty($ashDoc['notes'])): ?>
+                            · ملاحظات: <?= e($ashDoc['notes']) ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div style="font-size:18px;font-weight:700;color:var(--ink-900);direction:ltr;text-align:right;">
+                    <?= number_format((float)$ashDoc['net_amount'], 2) ?>
+                </div>
+            </div>
+
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;">#</th>
+                            <th>الصنف عندهم</th>
+                            <th>الباركود</th>
+                            <th>صنفنا</th>
+                            <th>الكمية</th>
+                            <th>السعر</th>
+                            <th>الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($ashLines as $ln): ?>
+                            <?php
+                            $bcs = !empty($ln['barcodes']) ? explode('|', $ln['barcodes']) : [];
+                            $firstBc = trim($bcs[0] ?? '');
+                            $ourName = null;
+                            foreach ($bcs as $bc) {
+                                $bc = trim($bc);
+                                if ($bc !== '' && isset($ashCodesMap[$bc])) {
+                                    $ourName = $ashCodesMap[$bc];
+                                    break;
+                                }
+                            }
+                            $uq = (float)$ln['unit_q'];
+                            $q  = (float)$ln['quantity'];
+                            ?>
+                            <tr>
+                                <td><?= (int)$ln['line_no'] ?></td>
+                                <td style="font-weight:600;"><?= e($ln['item_name']) ?></td>
+                                <td style="direction:ltr;text-align:right;font-family:monospace;"><?= e($firstBc) ?></td>
+                                <td>
+                                    <?php if ($ourName !== null): ?>
+                                        <span style="color:var(--ink-900);"><?= e($ourName) ?></span>
+                                    <?php else: ?>
+                                        <span style="color:var(--warn);font-weight:600;">مش متعرّف عندنا</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (abs($uq - 1.0) >= 0.001 && $uq > 0.0001): ?>
+                                        <?= number_format($q, 2) ?> × <?= number_format($uq, 2) ?> = <?= number_format($q * $uq, 2) ?> قطعة
+                                    <?php else: ?>
+                                        <?= number_format($q, 2) ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="direction:ltr;text-align:right;"><?= number_format((float)$ln['unit_price'], 2) ?></td>
+                                <td style="direction:ltr;text-align:right;font-weight:600;"><?= number_format((float)$ln['line_total'], 2) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <?php endif; ?>
+
+<?php elseif ($activeTab === 'ashraqa'): ?>
+    <!-- ========================================================= -->
+    <!-- تاب مشتريات إشراقة: قائمة الفواتير                        -->
+    <!-- ========================================================= -->
+    <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+        <div>
+            <span class="section-title" style="margin-bottom:0;">مشتريات إشراقة</span>
+            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+                الفترة من <?= e($from) ?> حتى <?= e($to) ?>
+            </div>
+        </div>
+        <form method="get" class="filter-form" style="margin-bottom:0;">
+            <input type="hidden" name="tab" value="ashraqa">
+            <label>النوع
+                <select name="sstt" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                    <option value="0">الكل</option>
+                    <option value="113" <?= $ashSstt === 113 ? 'selected' : '' ?>>شراء 113</option>
+                    <option value="115" <?= $ashSstt === 115 ? 'selected' : '' ?>>مرتجع شراء 115</option>
+                </select>
+            </label>
+            <label>المورد
+                <select name="supplier" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                    <option value="0">كل الموردين</option>
+                    <?php foreach ($ashSuppliers as $sp): ?>
+                        <option value="<?= (int)$sp['supplier_id'] ?>" <?= $ashSupplier === (int)$sp['supplier_id'] ? 'selected' : '' ?>><?= e($sp['supplier_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label>بحث <input type="text" name="q" value="<?= e($ashSearch) ?>" placeholder="رقم الفاتورة أو الملاحظات" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);"></label>
+            <label>من <input type="date" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+            <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+            <label style="cursor:pointer;">
+                <input type="checkbox" name="show_cancelled" value="1" <?= $ashShowCancelled ? 'checked' : '' ?> onchange="this.form.submit()"> اعرض الملغي
+            </label>
+        </form>
+    </div>
+
+    <!-- ٣ كروت إحصائية لإشراقة -->
+    <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
+        <div class="sum-card">
+            <div class="label">عدد الفواتير</div>
+            <div class="val"><?= count($ashInvoices) ?></div>
+        </div>
+        <div class="sum-card" style="background:var(--pos-soft);border-color:var(--pos);">
+            <div class="label" style="color:var(--pos);">إجمالي الشراء</div>
+            <div class="val" style="color:var(--pos);direction:ltr;text-align:right;"><?= number_format($totAshBuy, 2) ?></div>
+        </div>
+        <div class="sum-card" style="background:var(--neg-soft);border-color:var(--neg);">
+            <div class="label" style="color:var(--neg);">إجمالي المرتجع</div>
+            <div class="val" style="color:var(--neg);direction:ltr;text-align:right;"><?= number_format($totAshRet, 2) ?></div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;">
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الرقم</th>
+                        <th>النوع</th>
+                        <th>التاريخ</th>
+                        <th>المورد</th>
+                        <th>الملاحظات</th>
+                        <th>عدد الأصناف</th>
+                        <th>إجمالي القطع</th>
+                        <th>الصافي</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($ashInvoices)): ?>
+                        <tr><td colspan="8" class="empty">لا توجد فواتير مطابقة للبحث</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($ashInvoices as $ai): ?>
+                            <?php
+                            $rowDocKey = $ai['sstt_id'] . '-' . $ai['brch_id'] . '-' . $ai['fy_no'] . '-' . $ai['add_doc'];
+                            $rowUrl = 'branch_recon.php?tab=ashraqa&doc=' . urlencode($rowDocKey) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
+                            $isCanc = ((int)$ai['cancelled'] === 1);
+                            ?>
+                            <tr class="recon-row" onclick="window.location='<?= $rowUrl ?>'" style="<?= $isCanc ? 'opacity:0.55;' : '' ?>">
+                                <td style="font-weight:700;">
+                                    <a href="<?= $rowUrl ?>" class="inv-link" onclick="event.stopPropagation();">
+                                        <?= e($ai['add_doc']) ?>
+                                    </a>
+                                </td>
+                                <td>
+                                    <?= (int)$ai['sstt_id'] === 113 ? 'شراء' : 'مرتجع شراء' ?>
+                                    <?php if ($isCanc): ?>
+                                        <span style="font-size:11px;background:var(--line-soft);color:var(--ink-500);padding:1px 6px;border-radius:4px;margin-right:4px;">ملغية</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= e($ai['doc_date']) ?></td>
+                                <td><?= e($ai['supplier_name']) ?></td>
+                                <td style="color:var(--ink-600);font-size:13px;max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="<?= e($ai['notes']) ?>">
+                                    <?= e($ai['notes']) ?>
+                                </td>
+                                <td><?= (int)$ai['items_count'] ?></td>
+                                <td style="direction:ltr;text-align:right;"><?= number_format((float)$ai['total_pieces'], 2) ?></td>
+                                <td style="font-weight:700;direction:ltr;text-align:right;">
+                                    <?= number_format((float)$ai['net_amount'], 2) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<?php else: ?>
+    <!-- ========================================================= -->
     <!-- الشاشة الرئيسية: جدول الأزواج العشرة                     -->
     <!-- ========================================================= -->
     <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
@@ -736,6 +1291,7 @@ require_once __DIR__ . '/includes/header.php';
         </table>
         </div>
     </div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
