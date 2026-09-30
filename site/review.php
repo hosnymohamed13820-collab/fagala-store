@@ -1886,12 +1886,10 @@ function shift_cashier_amounts(array $s): array {
             if (match) visibleCustody++;
         });
 
-        var visibleInstapay = 0;
-        document.querySelectorAll('#pane_instapay .rv-pending-permit').forEach(function(el) {
-            var match = (branchId === 'all' || el.dataset.branch === String(branchId) || el.dataset.branch === '0' || !el.dataset.branch);
-            el.hidden = !match;
-            if (match) visibleInstapay++;
-        });
+        // أذونات إنستا مابتتفلترش بالفرع: خزينة إنستا مركزية، و`data-branch` فيها
+        // فرع التكلفة (رقم من جدول تاني غير أزرار الفروع فوق). الفلترة كانت بتخفي
+        // الأذونات على أي جهاز متخزّن عليه فرع في rv_branch — تبان على الموبايل وتختفي على الكمبيوتر.
+        var visibleInstapay = document.querySelectorAll('#pane_instapay .rv-pending-permit').length;
 
         document.querySelectorAll('#pane_history .shift-card, #pane_custody .rv-custody-history').forEach(function(el) {
             var match = (branchId === 'all' || el.dataset.branch === String(branchId));
