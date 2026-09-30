@@ -1255,7 +1255,7 @@ if ($tab === 'salaries') {
 
         $empAdvRows          = $advRowsByEmp[$empId] ?? [];
         $maxLedgerCap        = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
-        $remCap              = min($maxLedgerCap, $pot);
+        $remCap              = $maxLedgerCap;
         $monthlyAdvOwed      = 0.0;
         $monthlyAdvTakeCalc  = 0.0;
         $standingAdvOwed     = 0.0;
@@ -1331,6 +1331,12 @@ if ($tab === 'salaries') {
                                + $cashierCarry, 2);
         $carryToAdvance  = max(0.0, $carryToAdvance);
 
+        // حساب صافي العرض (بريف ٩٠): يعرض بالسالب لو المطلوب خصمه > الوعاء
+        $potInitial         = ($noExpected && !$isFixed) ? 0.0 : ($gross + $bon);
+        $cashierReq         = cashier_deficit_carry_enabled() ? $cashierTake : $cashierApplied;
+        $requiredDeductions = $totalAdvances + $penFull + $defFull + $cashierReq;
+        $displayNet         = ($noExpected && !$isFixed) ? 0.0 : round($potInitial - $requiredDeductions, 2);
+
         $payrollData[] = [
             'id'                        => $empId,
             'full_name'                 => $e['full_name'],
@@ -1371,9 +1377,120 @@ if ($tab === 'salaries') {
             'carry_to_advance'          => $carryToAdvance,
             'total_deductions'          => $totalDeductions,
             'net_salary'                => $net,
+            'display_net'               => $displayNet,
             'is_paid'                   => $isPaid,
         ];
     }
+}
+
+// تصدير إكسيل لجدول الرواتب بآخر حالة (بريف ٩٠)
+if ($tab === 'salaries' && ($_GET['export'] ?? '') === 'xlsx') {
+    if (!can('hr:salaries') || !sens_unlocked()) {
+        http_response_code(403);
+        die('غير مصرّح — البيانات الحساسة مقفولة أو لا تملك الصلاحية.');
+    }
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx('الرواتب');
+    $x->addRow(['رواتب الفترة من ' . $salFrom . ' إلى ' . $salTo . ' — تاريخ التصدير: ' . date('Y-m-d H:i')]);
+    $x->addBlank();
+
+    $headers = [
+        'الموظف',
+        'الفرع',
+        'ساعات العمل',
+        'أيام العمل',
+        'أيام الإجازة',
+        'أيام الاستحقاق',
+        'الأساسي',
+        'قيمة اليوم',
+        'الاستحقاق قبل الخصم',
+        'المكافآت',
+        'سلف الشهر',
+        'المخصوم من سلف الشهر',
+        'سلف مستديمة',
+        'المخصوم من المستديمة',
+        'عجز الكاشير',
+        'المخصوم من العجز',
+        'الخصومات',
+        'الصافي',
+        'هيتصرف',
+        'هيفضل عليه',
+        'الحالة',
+    ];
+    $x->addRow($headers, true);
+
+    $totGross = 0.0;
+    $totBonuses = 0.0;
+    $totDeductions = 0.0;
+    $totToPay = 0.0;
+    $totRemaining = 0.0;
+
+    foreach ($payrollData as $p) {
+        $grossVal = ($p['no_expected'] && !$p['is_fixed']) ? 0.0 : (float)$p['gross_salary'];
+        $bonVal   = (float)$p['total_bonuses'];
+        $dedVal   = (float)$p['total_deductions'];
+        $dispNet  = (float)($p['display_net'] ?? $p['net_salary']);
+        $netVal   = (float)$p['net_salary'];
+        $remVal   = $dispNet < 0 ? abs($dispNet) : 0.0;
+        $statusTxt = $p['is_paid'] ? 'اتصرف' : 'مااتصرفش';
+
+        $totGross += $grossVal;
+        $totBonuses += $bonVal;
+        $totDeductions += $dedVal;
+        $totToPay += $netVal;
+        $totRemaining += $remVal;
+
+        $x->addRow([
+            $p['full_name'],
+            $p['branch_name'] ?: '—',
+            $p['is_fixed'] ? 0.0 : round((float)$p['work_hours'], 2),
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['work_days'], 2),
+            (int)$p['leave_days'],
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['due_days_calc'], 2),
+            round((float)$p['base_salary'], 2),
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['day_rate'], 2),
+            round($grossVal, 2),
+            round($bonVal, 2),
+            round((float)$p['monthly_adv_owed'], 2),
+            round((float)$p['monthly_adv_take'], 2),
+            round((float)$p['standing_adv_owed'], 2),
+            round((float)$p['standing_adv_take'], 2),
+            round((float)$p['cashier_deficit_calc'], 2),
+            round((float)$p['cashier_deficit'], 2),
+            round($dedVal, 2),
+            round($dispNet, 2),
+            round($netVal, 2),
+            round($remVal, 2),
+            $statusTxt,
+        ]);
+    }
+
+    $x->addRow([
+        'الإجمالي',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        round($totGross, 2),
+        round($totBonuses, 2),
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        round($totDeductions, 2),
+        '',
+        round($totToPay, 2),
+        round($totRemaining, 2),
+        '',
+    ], true);
+
+    $x->download('رواتب_' . $salFrom . '_' . $salTo . '.xlsx');
+    exit;
 }
 
 $page_title    = 'الموارد البشرية';
@@ -1791,6 +1908,7 @@ $statusBadge = function($st) {
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
             <div class="section-title" style="margin-bottom:0;">حساب واستحقاق الرواتب للفترة</div>
             <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-ghost" id="btnExportSalaries" title="تصدير جدول الرواتب بآخر حالة"><i class="ti ti-file-spreadsheet"></i> تصدير إكسيل</button>
                 <button type="button" class="btn btn-ghost" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف فردي</button>
             </div>
         </div>
@@ -1856,10 +1974,15 @@ $statusBadge = function($st) {
                 // 🔴 مفيش استعلام جديد: لو حسبناه باستعلام تاني هيبقى فيه
                 //    احتمال يختلف عن اللي الجدول تحته بيعرضه.
                 $salTotalNet = 0.0; $salTotalCount = 0;
+                $salNegTotal = 0.0; $salNegCount = 0;
                 foreach ($payrollData as $p) {
                     if ($p['no_expected'] && !$p['is_fixed']) continue;   // مايتحسبش ومايتصرفش
                     $salTotalNet += (float) $p['net_salary'];
                     $salTotalCount++;
+                    if ((float)($p['display_net'] ?? $p['net_salary']) < 0) {
+                        $salNegTotal += abs((float)$p['display_net']);
+                        $salNegCount++;
+                    }
                 }
                 $salSkipped = count($payrollData) - $salTotalCount;
             ?>
@@ -1868,6 +1991,9 @@ $statusBadge = function($st) {
                     <div class="sc-label">إجمالي الصافي</div>
                     <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">ج.م</span></div>
                     <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف محسوب</div>
+                    <div class="sc-sub" id="salNegNotice" style="color:var(--neg);<?= $salNegCount > 0 ? '' : 'display:none;' ?>">
+                        + عليهم <span id="salNegTotalVal"><?= number_format($salNegTotal, 2) ?></span> ج.م (<span id="salNegCountVal"><?= $salNegCount ?></span> موظف)
+                    </div>
                     <?php if ($salSkipped > 0): ?>
                         <div class="sc-sub" id="salUncalcNotice" style="color:var(--warn);">
                             <?= $salSkipped ?> من غير ساعات متوقّعة — بيبانوا في الجدول ومش داخلين في الإجمالي
@@ -1905,6 +2031,7 @@ $statusBadge = function($st) {
                 <?php foreach ($payrollData as $p): ?>
                     <tr data-emp-id="<?= $p['id'] ?>"
                         data-salary-mode="<?= e($p['salary_mode']) ?>"
+                        data-no-expected="<?= $p['no_expected'] ? '1' : '0' ?>"
                         data-base-salary="<?= $p['base_salary'] ?>"
                         data-work-days="<?= $p['work_days'] ?>"
                         data-leave-days="<?= $p['leave_days'] ?>"
@@ -2097,13 +2224,18 @@ $statusBadge = function($st) {
                             </span>
                         </td>
                         <?php
+                        $displayNet = (float)($p['display_net'] ?? $p['net_salary']);
                         $netTitle = '';
-                        if (!$p['no_expected'] && $p['carry_to_advance'] > 0.005) {
-                            $netTitle = 'المرتب مشالش ' . number_format($p['carry_to_advance'], 2) . ' — هينزلوا سلفة مستديمة على الموظف';
+                        if (!$p['no_expected']) {
+                            if ($displayNet < 0) {
+                                $netTitle = 'المرتب مايكفيش — هيتصرف 0 و' . number_format(abs($displayNet), 2) . ' هيفضل على الموظف (سلف باقية + مرحّل)';
+                            } elseif ($p['carry_to_advance'] > 0.005) {
+                                $netTitle = 'المرتب مشالش ' . number_format($p['carry_to_advance'], 2) . ' — هينزلوا سلفة مستديمة على الموظف';
+                            }
                         }
                         ?>
-                        <td class="cell-net" title="<?= e($netTitle) ?>" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
-                            <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
+                        <td class="cell-net" title="<?= e($netTitle) ?>" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($displayNet >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
+                            <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($displayNet, 2) ?>
                         </td>
                         <td>
                             <?php if ($p['is_paid']): ?>
@@ -2908,6 +3040,12 @@ $statusBadge = function($st) {
 
         var totalDeductions = advApplied + penaltiesApplied + deficitsApplied + cashierApplied;
 
+        // حساب صافي العرض (بريف ٩٠): يعرض بالسالب لو المطلوب خصمه > الوعاء
+        var potInitial = (tr.dataset.noExpected === '1' && !isFixed) ? 0 : (gross + bonuses);
+        var cashierReq = cashierCarryEnabled ? cashierTake : cashierApplied;
+        var reqDeductions = advTaken + penalties + deficits + cashierReq;
+        var displayNet = (tr.dataset.noExpected === '1' && !isFixed) ? 0 : (potInitial - reqDeductions);
+
         var grossCell = tr.querySelector('.cell-gross');
         if (grossCell) {
             grossCell.textContent = gross.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -2921,12 +3059,21 @@ $statusBadge = function($st) {
 
         var netCell = tr.querySelector('.cell-net');
         if (netCell) {
-            netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-            netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
-            // المرحّل الإجمالي اللي المرتب مشالوش — هينزل سلفة مستديمة على الموظف
-            netCell.title = carryToAdvance > 0.005
-                ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
-                : '';
+            if (tr.dataset.noExpected === '1' && !isFixed) {
+                netCell.textContent = 'غير محدد';
+                netCell.style.color = 'var(--warn)';
+                netCell.title = '';
+            } else {
+                netCell.textContent = displayNet.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+                netCell.style.color = displayNet >= 0 ? 'var(--pos)' : 'var(--neg)';
+                if (displayNet < 0) {
+                    netCell.title = 'المرتب مايكفيش — هيتصرف 0 و' + Math.abs(displayNet).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' هيفضل على الموظف (سلف باقية + مرحّل)';
+                } else {
+                    netCell.title = carryToAdvance > 0.005
+                        ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
+                        : '';
+                }
+            }
         }
 
         // 🔴 الكارت فوق لازم يتحدّث مع أي تعديل — من غير كده محمد يعدّل
@@ -2964,7 +3111,7 @@ $statusBadge = function($st) {
         }
 
         window.salRefreshTotal = function () {
-            var total = 0, count = 0, skipped = 0;
+            var total = 0, count = 0, skipped = 0, negTotal = 0, negCount = 0;
             var trs = table.tBodies[0] ? table.tBodies[0].rows : [];
             for (var r = 0; r < trs.length; r++) {
                 var tr = trs[r];
@@ -2977,7 +3124,13 @@ $statusBadge = function($st) {
                     skipped++;
                     continue;
                 }
-                total += num(cell.textContent);
+                var val = num(cell.textContent);
+                if (val < 0) {
+                    negTotal += Math.abs(val);
+                    negCount++;
+                } else {
+                    total += val;
+                }
                 count++;
             }
             valEl.firstChild.nodeValue =
@@ -2990,6 +3143,15 @@ $statusBadge = function($st) {
                     uncalcEl.textContent = skipped + ' من غير ساعات متوقّعة — بيبانوا في الجدول ومش داخلين في الإجمالي';
                 } else {
                     uncalcEl.style.display = 'none';
+                }
+            }
+            var negNoticeEl = document.getElementById('salNegNotice');
+            if (negNoticeEl) {
+                if (negCount > 0) {
+                    negNoticeEl.style.display = '';
+                    negNoticeEl.innerHTML = '+ عليهم <span id="salNegTotalVal">' + negTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span> ج.م (<span id="salNegCountVal">' + negCount + '</span> موظف)';
+                } else {
+                    negNoticeEl.style.display = 'none';
                 }
             }
         };
@@ -3080,7 +3242,7 @@ $statusBadge = function($st) {
             value: val
         });
 
-        fetch('hr.php', {
+        var p = fetch('hr.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: body.toString(),
@@ -3113,6 +3275,52 @@ $statusBadge = function($st) {
             input.value = saved;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             setInd(input, '✗ اتصال', 'var(--neg)');
+        });
+
+        window._salLastSavePromise = p;
+        return p;
+    }
+
+    var btnExport = document.getElementById('btnExportSalaries');
+    if (btnExport) {
+        btnExport.addEventListener('click', function() {
+            var exportUrl = '?tab=salaries&export=xlsx'
+                + '&from=' + encodeURIComponent('<?= e($salFrom) ?>')
+                + '&to=' + encodeURIComponent('<?= e($salTo) ?>')
+                + '&month=' + encodeURIComponent('<?= e($salMonth) ?>');
+
+            var active = document.activeElement;
+            var needWait = false;
+            if (active && active.matches && active.matches('.leave-days-input, .due-days-input, .bonus-input, .monthly-take-input, .standing-take-input, .cashier-take-input')) {
+                needWait = true;
+                active.blur();
+            }
+
+            if (needWait && window._salLastSavePromise) {
+                btnExport.disabled = true;
+                btnExport.innerHTML = '<i class="ti ti-loader"></i> جاري الحفظ...';
+                Promise.resolve(window._salLastSavePromise).catch(function(){}).then(function() {
+                    setTimeout(function() {
+                        window.location.href = exportUrl;
+                        setTimeout(function() {
+                            btnExport.disabled = false;
+                            btnExport.innerHTML = '<i class="ti ti-file-spreadsheet"></i> تصدير إكسيل';
+                        }, 2000);
+                    }, 100);
+                });
+            } else if (needWait) {
+                btnExport.disabled = true;
+                btnExport.innerHTML = '<i class="ti ti-loader"></i> جاري الحفظ...';
+                setTimeout(function() {
+                    window.location.href = exportUrl;
+                    setTimeout(function() {
+                        btnExport.disabled = false;
+                        btnExport.innerHTML = '<i class="ti ti-file-spreadsheet"></i> تصدير إكسيل';
+                    }, 2000);
+                }, 600);
+            } else {
+                window.location.href = exportUrl;
+            }
         });
     }
 
