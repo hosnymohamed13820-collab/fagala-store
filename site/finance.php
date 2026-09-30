@@ -1100,16 +1100,26 @@ function issue_disbursement_order(
     float $amount,
     string $date,
     ?string $notes = null,
-    ?int $userId = null
+    ?int $userId = null,
+    ?int $sourceTreasuryId = null
 ): int {
     if ($amount <= 0) {
         throw new InvalidArgumentException('مبلغ الإذن لازم يكون أكبر من صفر.');
     }
+    $pdo = db();
+    if ($sourceTreasuryId !== null) {
+        $stChk = $pdo->prepare("SELECT id, type, is_active FROM treasuries WHERE id = ? LIMIT 1");
+        $stChk->execute([$sourceTreasuryId]);
+        $tRow = $stChk->fetch(PDO::FETCH_ASSOC);
+        if (!$tRow || (int)$tRow['is_active'] !== 1 || in_array($tRow['type'], ['cash', 'branch_custody', 'employee_custody'], true)) {
+            throw new RuntimeException('الخزينة دي ماينفعش يطلع منها إذن عهدة.');
+        }
+    }
     // إذون العهدة بقت تطلع من الخزينة الرئيسية مش من خزينة الكاش
     // (2026-08-22). خزينة الكاش بقت استلام وتحويل بس.
-    $cashId = require_main_treasury();
+    // الافتراضي الرئيسية (قرار ٢٢ أغسطس) — إذن إنستا بيبعت خزينته
+    $cashId = $sourceTreasuryId ?? require_main_treasury();
 
-    $pdo = db();
     $own = !$pdo->inTransaction();
     if ($own) $pdo->beginTransaction();
     try {
@@ -1178,14 +1188,24 @@ function issue_employee_disbursement_order(
     float $amount,
     string $date,
     ?string $notes = null,
-    ?int $userId = null
+    ?int $userId = null,
+    ?int $sourceTreasuryId = null
 ): int {
     if ($amount <= 0) {
         throw new InvalidArgumentException('مبلغ الإذن لازم يكون أكبر من صفر.');
     }
-    $cashId = require_main_treasury();
-
     $pdo = db();
+    if ($sourceTreasuryId !== null) {
+        $stChk = $pdo->prepare("SELECT id, type, is_active FROM treasuries WHERE id = ? LIMIT 1");
+        $stChk->execute([$sourceTreasuryId]);
+        $tRow = $stChk->fetch(PDO::FETCH_ASSOC);
+        if (!$tRow || (int)$tRow['is_active'] !== 1 || in_array($tRow['type'], ['cash', 'branch_custody', 'employee_custody'], true)) {
+            throw new RuntimeException('الخزينة دي ماينفعش يطلع منها إذن عهدة.');
+        }
+    }
+    // الافتراضي الرئيسية (قرار ٢٢ أغسطس) — إذن إنستا بيبعت خزينته
+    $cashId = $sourceTreasuryId ?? require_main_treasury();
+
     $own = !$pdo->inTransaction();
     if ($own) $pdo->beginTransaction();
     try {

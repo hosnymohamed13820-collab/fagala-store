@@ -116,7 +116,7 @@ function treasury_validate_op(string $action, array $in): void
  * @param int|null $outMovementId معرّف الحركة المرتجع من treasury_movement إن وُجد
  * @return string رسالة الفلاش الناتجة عن العملية
  */
-function treasury_apply_op(string $action, array $in, int $uid, ?int &$outMovementId = null): string
+function treasury_apply_op(string $action, array $in, int $uid, ?int &$outMovementId = null, bool $custodyFromChosen = false): string
 {
     $pdo = db();
     $tid    = (int) ($in['treasury_id'] ?? 0);
@@ -141,13 +141,21 @@ function treasury_apply_op(string $action, array $in, int $uid, ?int &$outMoveme
         $ct->execute([$bId]);
         $ctId = (int) $ct->fetchColumn();
         if (!$ctId) throw new RuntimeException('لا توجد خزينة عهدة لهذا الفرع.');
-        issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid);
+        if ($custodyFromChosen) {
+            issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid, $tid);
+        } else {
+            issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid);
+        }
         $flash = 'تم صرف العهدة للفرع (الخزينة نقصت وعهدة الفرع زادت).';
     }
     elseif ($action === 'disbursement' && $opType === 'employee_custody') {
         $empId = (int) ($in['employee_id'] ?? 0);
         if ($empId <= 0) throw new RuntimeException('اختر الموظف للعهدة.');
-        issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid);
+        if ($custodyFromChosen) {
+            issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid, $tid);
+        } else {
+            issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid);
+        }
         $flash = 'تم صرف العهدة للموظف (الخزينة نقصت وعهدة الموظف زادت).';
     }
     elseif ($action === 'receipt' && $opType === 'advance') {

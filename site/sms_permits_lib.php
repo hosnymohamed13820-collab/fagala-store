@@ -126,7 +126,7 @@ function sms_permit_approve(int $permitId, int $uid): string
     $movementId = null;
 
     try {
-        $flashMsg = treasury_apply_op((string) $p['action'], $payload, $uid, $movementId);
+        $flashMsg = treasury_apply_op((string) $p['action'], $payload, $uid, $movementId, true);
     } catch (Throwable $e) {
         // الفلوس ماتحركتش ← الإذن يرجع pending والمحاسب يقدر يعيد
         $pdo->prepare("UPDATE sms_permits SET status='pending', reviewed_by=NULL, reviewed_at=NULL WHERE id=?")
