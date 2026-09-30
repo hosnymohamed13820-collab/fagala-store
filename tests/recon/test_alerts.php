@@ -2,7 +2,7 @@
 /**
  * tests/recon/test_alerts.php
  * اختبار خوارزمية تنبيهات مطابقة الفروع (recon_alerts_detect)
- * يغطي الحالات أ١ إلى أ١٢ في عقد الاكتمال للبريف ٨٤.
+ * يغطي الحالات أ١ إلى أ١٤ في عقود الاكتمال للبريفين ٨٤ و ٨٥.
  *
  * 🔴 لا يتصل بقاعدة البيانات ولا يستدعي config.php أو recon_lib.php
  */
@@ -22,7 +22,7 @@ $showFrom = '2026-10-01';
 $showTo   = '2026-10-20';
 
 $testsPassed = 0;
-$totalTests  = 12;
+$totalTests  = 14;
 
 function assertTest(bool $condition, string $testId, string $description, ?string $detail = null): bool
 {
@@ -40,7 +40,7 @@ function assertTest(bool $condition, string $testId, string $description, ?strin
     }
 }
 
-echo "=== تشغيل اختبارات تنبيهات المطابقة (أ١ - أ١٢) ===\n";
+echo "=== تشغيل اختبارات تنبيهات المطابقة (أ١ - أ١٤) ===\n";
 
 // -------------------------------------------------------------------------
 // أ١: دجلة شراء 10 من hq (5/10، صنفين 1×5 و2×3) + hq مردود 20 لدجلة بنفس الأصناف (5/10)
@@ -510,6 +510,142 @@ $docs_a12 = [
 $res_a12 = recon_alerts_detect($docs_a12, $showFrom, $showTo, $today, $labels);
 $pass_a12 = (count($res_a12) === 1 && $res_a12[0]['kind'] === 'unposted' && $res_a12[0]['level'] === 'yellow');
 assertTest($pass_a12, 'أ١٢', 'فاتورة الإدارة غير مرحلة unposted=true ← unposted أصفر', json_encode($res_a12, JSON_UNESCAPED_UNICODE));
+
+// -------------------------------------------------------------------------
+// أ١٣: الإدارة مردود 90 و91 لدجلة نفس الأصناف والكميات (5/10 و7/10)؛ دجلة شراء 95 و96 بنفس الأصناف (5/10 و7/10)
+// المتوقع: صفر تنبيهات
+// -------------------------------------------------------------------------
+$items_a13 = [
+    1 => ['q' => 5.0, 'p' => 20.0, 'name' => 'صنف أ'],
+];
+$docs_a13 = [
+    [
+        'key'      => '90_0',
+        'sth_id'   => 90,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6, // مردود
+        'no'       => '90',
+        'date'     => '2026-10-05',
+        'amount'   => 100.0,
+        'unposted' => false,
+        'items'    => $items_a13,
+    ],
+    [
+        'key'      => '91_0',
+        'sth_id'   => 91,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6, // مردود
+        'no'       => '91',
+        'date'     => '2026-10-07',
+        'amount'   => 100.0,
+        'unposted' => false,
+        'items'    => $items_a13,
+    ],
+    [
+        'key'      => '95_0',
+        'sth_id'   => 95,
+        'suffix'   => '0',
+        'party'    => 'degla',
+        'counter'  => 'hq',
+        'type'     => 2, // شراء
+        'no'       => '95',
+        'date'     => '2026-10-05',
+        'amount'   => 100.0,
+        'unposted' => false,
+        'items'    => $items_a13,
+    ],
+    [
+        'key'      => '96_0',
+        'sth_id'   => 96,
+        'suffix'   => '0',
+        'party'    => 'degla',
+        'counter'  => 'hq',
+        'type'     => 2, // شراء
+        'no'       => '96',
+        'date'     => '2026-10-07',
+        'amount'   => 100.0,
+        'unposted' => false,
+        'items'    => $items_a13,
+    ],
+];
+$res_a13 = recon_alerts_detect($docs_a13, $showFrom, $showTo, $today, $labels);
+assertTest(count($res_a13) === 0, 'أ١٣', 'توأم عند الإدارة وتوأم عند الفرع بنفس الأصناف ← صفر تنبيهات', json_encode($res_a13, JSON_UNESCAPED_UNICODE));
+
+// -------------------------------------------------------------------------
+// أ١٤: دجلة شراء 100 (3 أصناف، مبلغ 250) و101 (نفس الـ3 + 17 صنف تاني، مبلغ 13,000)
+//      والإدارة مردود 110 = نفس 100 و111 = نفس 101
+// المتوقع: صفر تنبيهات
+// -------------------------------------------------------------------------
+$items_3 = [
+    1 => ['q' => 1.0, 'p' => 50.0, 'name' => 'صنف 1'],
+    2 => ['q' => 2.0, 'p' => 50.0, 'name' => 'صنف 2'],
+    3 => ['q' => 1.0, 'p' => 100.0, 'name' => 'صنف 3'],
+];
+$items_20 = $items_3;
+for ($it = 4; $it <= 20; $it++) {
+    $items_20[$it] = ['q' => 1.0, 'p' => 750.0, 'name' => "صنف {$it}"];
+}
+
+$docs_a14 = [
+    [
+        'key'      => '100_0',
+        'sth_id'   => 100,
+        'suffix'   => '0',
+        'party'    => 'degla',
+        'counter'  => 'hq',
+        'type'     => 2, // شراء
+        'no'       => '100',
+        'date'     => '2026-10-05',
+        'amount'   => 250.0,
+        'unposted' => false,
+        'items'    => $items_3,
+    ],
+    [
+        'key'      => '101_0',
+        'sth_id'   => 101,
+        'suffix'   => '0',
+        'party'    => 'degla',
+        'counter'  => 'hq',
+        'type'     => 2, // شراء
+        'no'       => '101',
+        'date'     => '2026-10-07',
+        'amount'   => 13000.0,
+        'unposted' => false,
+        'items'    => $items_20,
+    ],
+    [
+        'key'      => '110_0',
+        'sth_id'   => 110,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6, // مردود
+        'no'       => '110',
+        'date'     => '2026-10-05',
+        'amount'   => 250.0,
+        'unposted' => false,
+        'items'    => $items_3,
+    ],
+    [
+        'key'      => '111_0',
+        'sth_id'   => 111,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6, // مردود
+        'no'       => '111',
+        'date'     => '2026-10-07',
+        'amount'   => 13000.0,
+        'unposted' => false,
+        'items'    => $items_20,
+    ],
+];
+$res_a14 = recon_alerts_detect($docs_a14, $showFrom, $showTo, $today, $labels);
+assertTest(count($res_a14) === 0, 'أ١٤', 'احتواء بدون نسبة 80% لا يعتبر تكرار وكل فاتورة تقابل نظيرتها ← صفر تنبيهات', json_encode($res_a14, JSON_UNESCAPED_UNICODE));
 
 echo "\n------------------------------------------------------------\n";
 if ($testsPassed === $totalTests) {

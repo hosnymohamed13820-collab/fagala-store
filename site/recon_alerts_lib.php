@@ -248,8 +248,10 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
 
     // -------------------------------------------------------------
     // ١) تكرار: نفس party ونفس counter ونفس type، والفرق <= 60 يوم
+    // بند ١ (بريف ٨٥): «الأقدم جوّه الأحدث» يعدّ تكرار بس لو old['amount'] >= 0.8 * new['amount']
+    // بند ٢ (بريف ٨٥): خطوة ١ مابقتش تحط $used — بتحسب بس خريطة التوائم $twins
     // -------------------------------------------------------------
-    $duplicates = [];
+    $twins = [];
     $docList = array_values($docsByKey);
     $nDocs = count($docList);
 
@@ -262,12 +264,12 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
 
     for ($i = 0; $i < $nDocs; $i++) {
         $old = $docList[$i];
-        if (isset($used[$old['key']])) {
+        if (isset($twins[$old['key']])) {
             continue;
         }
         for ($j = $i + 1; $j < $nDocs; $j++) {
             $new = $docList[$j];
-            if (isset($used[$new['key']])) {
+            if (isset($twins[$new['key']])) {
                 continue;
             }
             if ($old['party'] !== $new['party'] || $old['counter'] !== $new['counter'] || (int)$old['type'] !== (int)$new['type']) {
@@ -280,7 +282,8 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
 
             $sim = recon_alerts_calc_sim($old, $new);
             $isDup = ($sim >= 0.999);
-            if (!$isDup && count($old['items']) >= 3) {
+            // شرط الاحتواء: قديم جوه جديد، >= 3 أصناف، ومبلغ القديم >= 0.8 * مبلغ الجديد
+            if (!$isDup && count($old['items']) >= 3 && (float)$old['amount'] >= 0.8 * (float)$new['amount']) {
                 $allContained = true;
                 foreach ($old['items'] as $itId => $itOld) {
                     if (!isset($new['items'][$itId]) || abs((float)$itOld['q'] - (float)$new['items'][$itId]['q']) >= 0.001) {
@@ -294,41 +297,46 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
             }
 
             if ($isDup) {
-                $duplicates[$new['key']] = [
+                $twins[$new['key']] = [
                     'old'        => $old,
                     'new'        => $new,
                     'fixed'      => false,
                     'cancel_doc' => null,
                 ];
-                $used[$new['key']] = true;
+                // 🔴 خطوة ١ مابقتش تحط $used
             }
         }
     }
 
     // -------------------------------------------------------------
     // ٢) لغوا بعض جوه نفس الطرف (نفس party و counter، type عكس، <= 75 يوم، sim >= 0.8)
-    // الفواتير المكررة الأحدث من خطوة ١ بتدخل ولها الأولوية
+    // بند ٢ (بريف ٨٥): بتشتغل على التوائم الأحدث بس (اللي ليها $twinOf) — هي اللي بتطلع fixed_dup.
+    // أي زوج «لغوا بعض» مالوش علاقة بتوأم مايتعملش هنا.
     // -------------------------------------------------------------
     $step2Candidates = [];
-    $allDocsForStep2 = [];
-    foreach ($docList as $d) {
-        // تدخل الفواتير غير المستخدمة، وكذلك الفواتير المكررة من خطوة ١
-        if (!isset($used[$d['key']]) || isset($duplicates[$d['key']])) {
-            $allDocsForStep2[] = $d;
+    for ($i = 0; $i < $nDocs; $i++) {
+        $dA = $docList[$i];
+        if (isset($used[$dA['key']])) {
+            continue;
         }
-    }
-    $nStep2 = count($allDocsForStep2);
-
-    for ($i = 0; $i < $nStep2; $i++) {
-        $dA = $allDocsForStep2[$i];
-        for ($j = $i + 1; $j < $nStep2; $j++) {
-            $dB = $allDocsForStep2[$j];
+        for ($j = $i + 1; $j < $nDocs; $j++) {
+            $dB = $docList[$j];
+            if (isset($used[$dB['key']])) {
+                continue;
+            }
             if ($dA['party'] !== $dB['party'] || $dA['counter'] !== $dB['counter']) {
                 continue;
             }
             if ((int)$dA['type'] === (int)$dB['type']) {
                 continue;
             }
+            // شرط بريف ٨٥: لازم واحد منهم على الأقل يكون توأم أحدث (له twinOf)
+            $isTwinA = isset($twins[$dA['key']]);
+            $isTwinB = isset($twins[$dB['key']]);
+            if (!$isTwinA && !$isTwinB) {
+                continue;
+            }
+
             $days = recon_alerts_days_diff($dA['date'], $dB['date']);
             if ($days > 75.0) {
                 continue;
@@ -338,94 +346,65 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
                 continue;
             }
 
-            $isDupA = isset($duplicates[$dA['key']]);
-            $isDupB = isset($duplicates[$dB['key']]);
-            $hasDup = ($isDupA || $isDupB) ? 1 : 0;
-
             $step2Candidates[] = [
-                'has_dup' => $hasDup,
-                'days'    => $days,
-                'sim'     => $sim,
-                'docA'    => $dA,
-                'docB'    => $dB,
+                'days'  => $days,
+                'sim'   => $sim,
+                'docA'  => $dA,
+                'docB'  => $dB,
             ];
         }
     }
 
-    // ترتيب المرشحين: المكررة أولاً، ثم الأقرب في التاريخ، ثم أعلى تشابه
+    // ترتيب المرشحين: الأقرب في التاريخ أولاً، ثم أعلى تشابه
     usort($step2Candidates, function ($a, $b) {
-        if ($a['has_dup'] !== $b['has_dup']) {
-            return $b['has_dup'] <=> $a['has_dup'];
-        }
         if (abs($a['days'] - $b['days']) > 0.001) {
             return $a['days'] <=> $b['days'];
         }
         return $b['sim'] <=> $a['sim'];
     });
 
-    $step2Used = [];
     foreach ($step2Candidates as $cand) {
         $kA = $cand['docA']['key'];
         $kB = $cand['docB']['key'];
-        if (isset($step2Used[$kA]) || isset($step2Used[$kB])) {
+        if (isset($used[$kA]) || isset($used[$kB])) {
             continue;
         }
 
-        $step2Used[$kA] = true;
-        $step2Used[$kB] = true;
         $used[$kA] = true;
         $used[$kB] = true;
 
-        if (isset($duplicates[$kA])) {
-            $duplicates[$kA]['fixed'] = true;
-            $duplicates[$kA]['cancel_doc'] = $cand['docB'];
-        }
-        if (isset($duplicates[$kB])) {
-            $duplicates[$kB]['fixed'] = true;
-            $duplicates[$kB]['cancel_doc'] = $cand['docA'];
-        }
-    }
-
-    // بناء تنبيهات خطوة ١ و ٢ (المكررة والمصلحة)
-    foreach ($duplicates as $newKey => $dup) {
-        $newDoc = $dup['new'];
-        $oldDoc = $dup['old'];
-        $partyLabel = $labels[$newDoc['party']] ?? $newDoc['party'];
-        $typeLabel  = ((int)$newDoc['type'] === 2) ? 'شراء' : 'مردود';
-        $p1 = explode('-', $newDoc['date']);
-        $d1 = ($p1[2] ?? '') . '/' . ($p1[1] ?? '');
-        $p2 = explode('-', $oldDoc['date']);
-        $d2 = ($p2[2] ?? '') . '/' . ($p2[1] ?? '');
-        $amtStr = number_format($newDoc['amount'], 2);
-
-        if ($dup['fixed'] && $dup['cancel_doc']) {
-            $no3 = $dup['cancel_doc']['no'];
-            $rawAlerts[] = [
-                'kind'   => 'fixed_dup',
-                'level'  => 'gray',
-                'amount' => (float)$newDoc['amount'],
-                'text'   => "{$partyLabel} {$typeLabel} {$newDoc['no']} كانت مكررة من {$oldDoc['no']}، واتعملها عكس في {$no3}.",
-                'fix'    => 'مفيش حاجة مطلوبة.',
-                'docs'   => [$newDoc['key'], $oldDoc['key'], $dup['cancel_doc']['key']],
-                'pair'   => [$newDoc['party'], $newDoc['counter']],
-                'lines'  => [],
-            ];
+        if (isset($twins[$kA])) {
+            $twins[$kA]['fixed'] = true;
+            $twins[$kA]['cancel_doc'] = $cand['docB'];
+            $twinDoc   = $twins[$kA]['new'];
+            $oldDoc    = $twins[$kA]['old'];
+            $cancelDoc = $cand['docB'];
         } else {
-            $rawAlerts[] = [
-                'kind'   => 'dup',
-                'level'  => 'red',
-                'amount' => (float)$newDoc['amount'],
-                'text'   => "{$partyLabel} سجّلت {$typeLabel} {$newDoc['no']} يوم {$d1} بـ{$amtStr}، ونفس الأصناف والكميات متسجّلة قبلها في {$typeLabel} {$oldDoc['no']} يوم {$d2}.",
-                'fix'    => "غالباً اتسجّلت مرتين ← {$partyLabel} تمسح {$newDoc['no']}، ولو ماينفعش تعمل عكسها على نفس الحساب.",
-                'docs'   => [$newDoc['key'], $oldDoc['key']],
-                'pair'   => [$newDoc['party'], $newDoc['counter']],
-                'lines'  => [],
-            ];
+            $twins[$kB]['fixed'] = true;
+            $twins[$kB]['cancel_doc'] = $cand['docA'];
+            $twinDoc   = $twins[$kB]['new'];
+            $oldDoc    = $twins[$kB]['old'];
+            $cancelDoc = $cand['docA'];
         }
+
+        $partyLabel = $labels[$twinDoc['party']] ?? $twinDoc['party'];
+        $typeLabel  = ((int)$twinDoc['type'] === 2) ? 'شراء' : 'مردود';
+        $rawAlerts[] = [
+            'kind'   => 'fixed_dup',
+            'level'  => 'gray',
+            'amount' => (float)$twinDoc['amount'],
+            'text'   => "{$partyLabel} {$typeLabel} {$twinDoc['no']} كانت مكررة من {$oldDoc['no']}، واتعملها عكس في {$cancelDoc['no']}.",
+            'fix'    => 'مفيش حاجة مطلوبة.',
+            'docs'   => [$twinDoc['key'], $oldDoc['key'], $cancelDoc['key']],
+            'pair'   => [$twinDoc['party'], $twinDoc['counter']],
+            'lines'  => [],
+        ];
     }
 
     // -------------------------------------------------------------
     // ٣) المقابل المباشر (X عند A على حساب B و Y عند B على حساب A، type عكس، <= 75 يوم، sim >= 0.8)
+    // بند ٢ (بريف ٨٥): بتشتغل على كل اللي فاضل — والتوائم معاهم.
+    // في الترتيب: sim ← الأيام ← المبلغ ← الأقدم (date ثم sth_id).
     // -------------------------------------------------------------
     $step3Candidates = [];
     $remainingDocs = [];
@@ -467,7 +446,7 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
         }
     }
 
-    // ترتيب أزواج خطوة ٣: sim تنازلي ← فرق الأيام تصاعدي ← فرق المبلغ تصاعدي
+    // ترتيب أزواج خطوة ٣: sim تنازلي ← فرق الأيام تصاعدي ← فرق المبلغ تصاعدي ← الأقدم أولاً
     usort($step3Candidates, function ($a, $b) {
         if (abs($a['sim'] - $b['sim']) > 0.0001) {
             return $b['sim'] <=> $a['sim'];
@@ -475,7 +454,39 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
         if (abs($a['days'] - $b['days']) > 0.001) {
             return $a['days'] <=> $b['days'];
         }
-        return $a['amt_diff'] <=> $b['amt_diff'];
+        if (abs($a['amt_diff'] - $b['amt_diff']) > 0.01) {
+            return $a['amt_diff'] <=> $b['amt_diff'];
+        }
+
+        // الأقدم أولاً: date ثم sth_id
+        $docsA = [$a['docX'], $a['docY']];
+        usort($docsA, function ($d1, $d2) {
+            $c = strcmp($d1['date'], $d2['date']);
+            if ($c !== 0) return $c;
+            return $d1['sth_id'] <=> $d2['sth_id'];
+        });
+
+        $docsB = [$b['docX'], $b['docY']];
+        usort($docsB, function ($d1, $d2) {
+            $c = strcmp($d1['date'], $d2['date']);
+            if ($c !== 0) return $c;
+            return $d1['sth_id'] <=> $d2['sth_id'];
+        });
+
+        $cmpDate1 = strcmp($docsA[0]['date'], $docsB[0]['date']);
+        if ($cmpDate1 !== 0) {
+            return $cmpDate1;
+        }
+        $cmpSth1 = $docsA[0]['sth_id'] <=> $docsB[0]['sth_id'];
+        if ($cmpSth1 !== 0) {
+            return $cmpSth1;
+        }
+
+        $cmpDate2 = strcmp($docsA[1]['date'], $docsB[1]['date']);
+        if ($cmpDate2 !== 0) {
+            return $cmpDate2;
+        }
+        return $docsA[1]['sth_id'] <=> $docsB[1]['sth_id'];
     });
 
     foreach ($step3Candidates as $cand) {
@@ -600,6 +611,41 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
                 'lines'  => $priceDiffItems,
             ];
         }
+    }
+
+    // -------------------------------------------------------------
+    // بعد خطوة ٣: أي فاتورة فاضلة من غير مقابل وليها $twinOf ← dup أحمر
+    // وتطلع من الحسابات قبل خطوة ٤. لو اتربطت في خطوة ٣ ← مفيش dup.
+    // -------------------------------------------------------------
+    foreach ($twins as $newKey => $twin) {
+        if ($twin['fixed']) {
+            continue;
+        }
+        if (isset($used[$newKey])) {
+            continue;
+        }
+
+        $newDoc = $twin['new'];
+        $oldDoc = $twin['old'];
+        $partyLabel = $labels[$newDoc['party']] ?? $newDoc['party'];
+        $typeLabel  = ((int)$newDoc['type'] === 2) ? 'شراء' : 'مردود';
+        $p1 = explode('-', $newDoc['date']);
+        $d1 = ($p1[2] ?? '') . '/' . ($p1[1] ?? '');
+        $p2 = explode('-', $oldDoc['date']);
+        $d2 = ($p2[2] ?? '') . '/' . ($p2[1] ?? '');
+        $amtStr = number_format($newDoc['amount'], 2);
+
+        $rawAlerts[] = [
+            'kind'   => 'dup',
+            'level'  => 'red',
+            'amount' => (float)$newDoc['amount'],
+            'text'   => "{$partyLabel} سجّلت {$typeLabel} {$newDoc['no']} يوم {$d1} بـ{$amtStr}، ونفس الأصناف والكميات متسجّلة قبلها في {$typeLabel} {$oldDoc['no']} يوم {$d2}.",
+            'fix'    => "غالباً اتسجّلت مرتين ← {$partyLabel} تمسح {$newDoc['no']}، ولو ماينفعش تعمل عكسها على نفس الحساب.",
+            'docs'   => [$newDoc['key'], $oldDoc['key']],
+            'pair'   => [$newDoc['party'], $newDoc['counter']],
+            'lines'  => [],
+        ];
+        $used[$newKey] = true;
     }
 
     // -------------------------------------------------------------
