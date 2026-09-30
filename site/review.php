@@ -11,6 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_permission('review');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/push_lib.php';
+require_once __DIR__ . '/sms_permits_lib.php';
 
 $pdo  = db();
 $uid  = (int) current_user()['id'];
@@ -113,6 +114,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // 🔴 الإشعار **عمره ما يوقّع الرفض**. الرفض اتحفظ خلاص.
                         error_log('notify custody rejection error: ' . $e->getMessage());
                     }
+                }
+            } elseif (($_POST['kind'] ?? '') === 'sms_permit' || in_array($_POST['action'] ?? '', ['approve_sms_permit', 'reject_sms_permit'], true)) {
+                $pAction   = $_POST['action'] ?? '';
+                $permitId  = (int) ($_POST['permit_id'] ?? 0);
+                // الدالتين بيرموا RuntimeException لو فيه مشكلة — الـcatch بتاع البلوك ده
+                // هو اللي بيطلّع رسالة الخطأ. approve بترجّع رسالة الخزينة، وreject مابترجّعش حاجة.
+                if ($pAction === 'approve_sms_permit') {
+                    $flash = 'تم اعتماد الإذن: ' . sms_permit_approve($permitId, $uid);
+                } elseif ($pAction === 'reject_sms_permit') {
+                    $note = trim((string)($_POST['rejection_note'] ?? ''));
+                    sms_permit_reject($permitId, $uid, $note);
+                    $flash = 'تم رفض الإذن — ينفع يتعمل إذن جديد على نفس الرسالة.';
+                } else {
+                    throw new RuntimeException('إجراء غير صحيح.');
                 }
             } elseif (($_POST['action'] ?? '') === 'shift_date_branch') {
                 $shiftId = (int) ($_POST['shift_id'] ?? 0);
@@ -372,6 +387,44 @@ $custodyHistory = $pdo->query(
       ORDER BY bc.reviewed_at DESC LIMIT 50"
 )->fetchAll();
 
+// ===== أذونات إنستا باي المقدّمة للمراجعة =====
+// try: لو local/upgrade_sms_permits.sql لسه ماتشغّلش على السيرفر، الصفحة ماتقعش — التاب يبقى فاضي بس.
+$pendingPermits = [];
+$reviewedPermits = [];
+try {
+    $pendingPermits = $pdo->query(
+        "SELECT p.*, s.sender, s.body, s.received_at AS sms_received_at,
+                u_cr.full_name AS creator_name
+           FROM sms_permits p
+           JOIN sms_inbox s ON s.id = p.sms_id
+           LEFT JOIN users u_cr ON u_cr.id = p.created_by
+          WHERE p.status IN ('pending', 'approving')
+          ORDER BY p.id DESC"
+    )->fetchAll(PDO::FETCH_ASSOC);
+
+    $reviewedPermits = $pdo->query(
+        "SELECT p.*, s.sender, s.body, s.received_at AS sms_received_at,
+                u_cr.full_name AS creator_name,
+                u_rv.full_name AS reviewer_name
+           FROM sms_permits p
+           JOIN sms_inbox s ON s.id = p.sms_id
+           LEFT JOIN users u_cr ON u_cr.id = p.created_by
+           LEFT JOIN users u_rv ON u_rv.id = p.reviewed_by
+          WHERE p.status IN ('approved', 'rejected')
+          ORDER BY p.reviewed_at DESC, p.id DESC
+          LIMIT 50"
+    )->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('sms_permits: ' . $e->getMessage());
+}
+
+// قواميس الأسماء للعرض والتحليل (استعلام واحد لكل جدول بدون prepare جوه حلقة)
+$allTreasuries = $pdo->query("SELECT id, name FROM treasuries")->fetchAll(PDO::FETCH_KEY_PAIR);
+$allAccounts   = $pdo->query("SELECT id, name FROM accounts")->fetchAll(PDO::FETCH_KEY_PAIR);
+$allSuppliers  = $pdo->query("SELECT id, name FROM suppliers")->fetchAll(PDO::FETCH_KEY_PAIR);
+$allEmployees  = $pdo->query("SELECT id, full_name FROM employees")->fetchAll(PDO::FETCH_KEY_PAIR);
+$allBranches   = $pdo->query("SELECT id, name FROM branches")->fetchAll(PDO::FETCH_KEY_PAIR);
+
 // الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
 try {
     $reviewBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
@@ -390,7 +443,18 @@ foreach ($pendingCustody as $c) {
     $bid = (int)$c['branch_id'];
     $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
 }
-$totalPendingReviewCount = count($pending) + count($pendingCustody);
+$pendingInstapayCount = 0;
+foreach ($pendingPermits as $p) {
+    if ($p['status'] === 'pending') {
+        $pendingInstapayCount++;
+    }
+    $pl = json_decode((string)$p['payload'], true) ?: [];
+    $bId = (int)($pl['cost_branch_id'] ?? $pl['branch_id'] ?? 0);
+    if ($bId > 0) {
+        $reviewBranchCounts[$bId] = ($reviewBranchCounts[$bId] ?? 0) + 1;
+    }
+}
+$totalPendingReviewCount = count($pending) + count($pendingCustody) + $pendingInstapayCount;
 
 // استعلام مشاكل تسلسل الورديات لو مسموح
 $seqIssues = [];
@@ -570,6 +634,7 @@ function shift_cashier_amounts(array $s): array {
 <div class="rv-tabs">
     <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_custody')">العهد (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
+    <button class="rv-tab" id="tab_instapay_btn" onclick="rvTab(this,'pane_instapay')">إنستا (<span id="cnt_instapay"><?= $pendingInstapayCount ?></span>)</button>
     <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
     <?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
         <button class="rv-tab" id="tab_seq_btn" onclick="rvTab(this,'pane_seq')">تسلسل الورديات (<?= $openSeqCount ?> مفتوحة)</button>
@@ -724,6 +789,191 @@ function shift_cashier_amounts(array $s): array {
                 </div>
             </div>
         <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<!-- إنستا باي -->
+<div class="rv-pane" id="pane_instapay">
+    <?php if (empty($pendingPermits)): ?>
+        <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش أذونات إنستا في انتظار المراجعة.</div>
+    <?php else: ?>
+        <?php foreach ($pendingPermits as $p):
+            $pl = json_decode((string)$p['payload'], true) ?: [];
+            $isReceipt = ($p['action'] === 'receipt');
+            $typeLabel = $isReceipt ? 'إذن قبض' : 'إذن صرف';
+            $amtColor = $isReceipt ? 'var(--pos)' : 'var(--neg)';
+            $isApproving = ($p['status'] === 'approving');
+            $targetLabel = '—';
+            if (!empty($pl['entry_code_id']) && isset($allAccounts[$pl['entry_code_id']])) {
+                $targetLabel = 'حساب: ' . e($allAccounts[$pl['entry_code_id']]);
+            } elseif (!empty($pl['supplier_id']) && isset($allSuppliers[$pl['supplier_id']])) {
+                $targetLabel = 'مورد: ' . e($allSuppliers[$pl['supplier_id']]);
+            } elseif (!empty($pl['employee_id']) && isset($allEmployees[$pl['employee_id']])) {
+                $targetLabel = 'موظف: ' . e($allEmployees[$pl['employee_id']]);
+            }
+            $tName = (!empty($pl['treasury_id']) && isset($allTreasuries[$pl['treasury_id']])) ? $allTreasuries[$pl['treasury_id']] : '—';
+            $desc = $pl['description'] ?? '';
+            $notes = $pl['notes'] ?? '';
+            $displayNote = trim($desc . ($desc !== '' && $notes !== '' ? ' · ' : '') . $notes);
+            $pBranchId = (int)($pl['cost_branch_id'] ?? $pl['branch_id'] ?? 0);
+        ?>
+            <div class="shift-card rv-pending-permit" data-branch="<?= $pBranchId ?>">
+                <div class="sc-head">
+                    <div>
+                        <div class="sc-title">
+                            <span class="badge" style="background:<?= $isReceipt ? 'var(--pos-soft, #e6f4ea)' : 'var(--neg-soft, #fce8e6)' ?>;color:<?= $amtColor ?>;font-weight:700;margin-inline-end:6px;">
+                                <?= $typeLabel ?>
+                            </span>
+                            <b>إذن #<?= (int)$p['id'] ?></b>
+                            <span class="sc-sub">
+                                بواسطة <?= e($p['creator_name'] ?? '—') ?> · <?= e($p['created_at']) ?>
+                            </span>
+                        </div>
+                        <div style="font-size:12px;color:var(--ink-500);margin-top:4px;">
+                            الرسالة: <b><?= e($p['sender']) ?></b> · <?= e($p['sms_received_at']) ?>
+                            <span style="color:var(--ink-700);display:block;margin-top:2px;background:var(--bg);padding:4px 8px;border-radius:6px;">
+                                <?= e($p['body']) ?>
+                            </span>
+                        </div>
+                    </div>
+                    <?php if ($isApproving): ?>
+                        <span class="badge" style="background:var(--neg-soft, #fef3c7);color:#b45309;font-weight:700;padding:6px 12px;font-size:13px;">
+                            <i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> جاري الاعتماد...
+                        </span>
+                    <?php endif; ?>
+                </div>
+
+                <div class="sc-stats" style="margin-top:12px;">
+                    <div class="sc-stat">
+                        <div class="l">الطرف</div>
+                        <div class="v" style="font-size:15px;"><?= $targetLabel ?></div>
+                    </div>
+                    <div class="sc-stat">
+                        <div class="l">الخزينة</div>
+                        <div class="v" style="font-size:15px;"><?= e($tName) ?></div>
+                    </div>
+                    <div class="sc-stat">
+                        <div class="l">المبلغ</div>
+                        <div class="v" style="font-size:20px;font-weight:700;color:<?= $amtColor ?>;">
+                            <?= ltr_out(number_format((float)$p['amount'], 2)) ?> ج.م
+                        </div>
+                    </div>
+                    <div class="sc-stat">
+                        <div class="l">البيان</div>
+                        <div class="v" style="font-size:13px;font-weight:normal;"><?= e($displayNote ?: '—') ?></div>
+                    </div>
+                </div>
+
+                <?php if (!$isApproving): ?>
+                    <div style="display:flex;gap:10px;margin-top:14px;align-items:flex-start;flex-wrap:wrap;">
+                        <!-- فورم الاعتماد -->
+                        <form method="post" onsubmit="return confirm('تأكيد اعتماد الإذن بمبلغ <?= number_format((float)$p['amount'], 2) ?> ج.م وترحيل حركة الخزينة؟');">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="kind" value="sms_permit">
+                            <input type="hidden" name="action" value="approve_sms_permit">
+                            <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
+                            <button type="submit" class="btn-review btn-approve" style="min-width:130px;">
+                                <i class="ti ti-check"></i> اعتماد
+                            </button>
+                        </form>
+
+                        <!-- زر الرفض لإظهار حقل الملاحظة -->
+                        <button type="button" class="btn-review btn-reject" style="min-width:100px;"
+                                onclick="toggleRejectBox(<?= (int)$p['id'] ?>)">
+                            <i class="ti ti-x"></i> رفض
+                        </button>
+                    </div>
+
+                    <!-- صندوق الرفض المنسدل -->
+                    <div id="reject_box_<?= (int)$p['id'] ?>" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--line);">
+                        <form method="post" onsubmit="return validatePermitReject(this);">
+                            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="kind" value="sms_permit">
+                            <input type="hidden" name="action" value="reject_sms_permit">
+                            <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
+                            <label style="display:block;font-size:13px;color:var(--ink-500);margin-bottom:5px;">سبب الرفض (إجباري):</label>
+                            <div style="display:flex;gap:8px;">
+                                <input type="text" name="rejection_note" class="form-input" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" placeholder="اكتب سبب الرفض..." required>
+                                <button type="submit" class="btn-review btn-reject" style="min-width:110px;background:var(--neg);color:#fff;">
+                                    تأكيد الرفض
+                                </button>
+                                <button type="button" class="btn-review" style="background:var(--line-soft);color:var(--ink-700);" onclick="toggleRejectBox(<?= (int)$p['id'] ?>)">
+                                    إلغاء
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+
+    <!-- آخر 50 إذن تم مراجعته -->
+    <?php if (!empty($reviewedPermits)): ?>
+        <div class="section-head" style="margin-top:30px;">آخر أذونات إنستا تمت مراجعتها</div>
+        <div class="card" style="overflow-x:auto;padding:0;">
+            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:right;">
+                <thead>
+                    <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
+                        <th style="padding:10px 12px;">#</th>
+                        <th style="padding:10px 12px;">النوع</th>
+                        <th style="padding:10px 12px;">المبلغ</th>
+                        <th style="padding:10px 12px;">الطرف</th>
+                        <th style="padding:10px 12px;">الخزينة</th>
+                        <th style="padding:10px 12px;">الحالة</th>
+                        <th style="padding:10px 12px;">المراجع</th>
+                        <th style="padding:10px 12px;">تاريخ المراجعة</th>
+                        <th style="padding:10px 12px;">رقم الحركة / سبب الرفض</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($reviewedPermits as $rp):
+                        $rpl = json_decode((string)$rp['payload'], true) ?: [];
+                        $isApp = ($rp['status'] === 'approved');
+                        $isRc = ($rp['action'] === 'receipt');
+                        $tLabel = '—';
+                        if (!empty($rpl['entry_code_id']) && isset($allAccounts[$rpl['entry_code_id']])) {
+                            $tLabel = 'حساب: ' . e($allAccounts[$rpl['entry_code_id']]);
+                        } elseif (!empty($rpl['supplier_id']) && isset($allSuppliers[$rpl['supplier_id']])) {
+                            $tLabel = 'مورد: ' . e($allSuppliers[$rpl['supplier_id']]);
+                        } elseif (!empty($rpl['employee_id']) && isset($allEmployees[$rpl['employee_id']])) {
+                            $tLabel = 'موظف: ' . e($allEmployees[$rpl['employee_id']]);
+                        }
+                        $rtName = (!empty($rpl['treasury_id']) && isset($allTreasuries[$rpl['treasury_id']])) ? $allTreasuries[$rpl['treasury_id']] : '—';
+                    ?>
+                        <tr style="border-bottom:1px solid var(--line-soft);">
+                            <td style="padding:8px 12px;font-weight:600;"><?= (int)$rp['id'] ?></td>
+                            <td style="padding:8px 12px;">
+                                <span style="color:<?= $isRc ? 'var(--pos)' : 'var(--neg)' ?>;font-weight:600;">
+                                    <?= $isRc ? 'قبض' : 'صرف' ?>
+                                </span>
+                            </td>
+                            <td style="padding:8px 12px;font-weight:700;color:<?= $isRc ? 'var(--pos)' : 'var(--neg)' ?>;">
+                                <?= ltr_out(number_format((float)$rp['amount'], 2)) ?>
+                            </td>
+                            <td style="padding:8px 12px;"><?= $tLabel ?></td>
+                            <td style="padding:8px 12px;"><?= e($rtName) ?></td>
+                            <td style="padding:8px 12px;">
+                                <span class="badge" style="background:<?= $isApp ? 'var(--pos-soft, #e6f4ea)' : 'var(--neg-soft, #fce8e6)' ?>;color:<?= $isApp ? 'var(--pos)' : 'var(--neg)' ?>;font-weight:600;">
+                                    <?= $isApp ? 'معتمد' : 'مرفوض' ?>
+                                </span>
+                            </td>
+                            <td style="padding:8px 12px;"><?= e($rp['reviewer_name'] ?? '—') ?></td>
+                            <td style="padding:8px 12px;"><?= e($rp['reviewed_at'] ?? '—') ?></td>
+                            <td style="padding:8px 12px;">
+                                <?php if ($isApp && !empty($rp['movement_id'])): ?>
+                                    <span style="color:var(--accent-text);font-weight:600;">حركة #<?= (int)$rp['movement_id'] ?></span>
+                                <?php elseif (!$isApp && !empty($rp['review_note'])): ?>
+                                    <span style="color:var(--neg);"><?= e($rp['review_note']) ?></span>
+                                <?php else: ?>
+                                    —
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     <?php endif; ?>
 </div>
 
@@ -1596,6 +1846,23 @@ function shift_cashier_amounts(array $s): array {
         });
     })();
 
+    function toggleRejectBox(id) {
+        var el = document.getElementById('reject_box_' + id);
+        if (el) {
+            el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+        }
+    }
+
+    function validatePermitReject(form) {
+        var note = form.rejection_note.value.trim();
+        if (!note) {
+            alert('سبب الرفض إجباري.');
+            form.rejection_note.focus();
+            return false;
+        }
+        return confirm('تأكيد رفض الإذن؟');
+    }
+
     function filterReviewBranch(branchId) {
         try {
             localStorage.setItem('rv_branch', String(branchId));
@@ -1619,6 +1886,13 @@ function shift_cashier_amounts(array $s): array {
             if (match) visibleCustody++;
         });
 
+        var visibleInstapay = 0;
+        document.querySelectorAll('#pane_instapay .rv-pending-permit').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId) || el.dataset.branch === '0' || !el.dataset.branch);
+            el.hidden = !match;
+            if (match) visibleInstapay++;
+        });
+
         document.querySelectorAll('#pane_history .shift-card, #pane_custody .rv-custody-history').forEach(function(el) {
             var match = (branchId === 'all' || el.dataset.branch === String(branchId));
             el.hidden = !match;
@@ -1633,6 +1907,8 @@ function shift_cashier_amounts(array $s): array {
         if (cp) cp.textContent = visiblePending;
         var cc = document.getElementById('cnt_custody');
         if (cc) cc.textContent = visibleCustody;
+        var ci = document.getElementById('cnt_instapay');
+        if (ci) ci.textContent = visibleInstapay;
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -1650,6 +1926,11 @@ function shift_cashier_amounts(array $s): array {
             var sBtn = document.getElementById('tab_seq_btn');
             if (sBtn) {
                 rvTab(sBtn, 'pane_seq');
+            }
+        } else if (urlParams.get('tab') === 'instapay') {
+            var iBtn = document.getElementById('tab_instapay_btn');
+            if (iBtn) {
+                rvTab(iBtn, 'pane_instapay');
             }
         }
     });

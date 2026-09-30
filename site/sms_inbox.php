@@ -9,22 +9,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
-require_login();
-
-if (!is_owner()) {
-    http_response_code(403);
-    echo '<div style="font-family:sans-serif;text-align:center;padding:50px 20px;">'
-        . '<h2>غير مصرح لك</h2>'
-        . '<p style="color:#666;">الصفحة دي متاحة لمالك النظام فقط.</p>'
-        . '<a href="dashboard.php" style="color:#1e6fbf;">الرجوع للرئيسية</a>'
-        . '</div>';
-    exit;
-}
+require_permission('sms_inbox');
 
 require_once __DIR__ . '/sync_tokens.php';
 $pdo = db();
 
-// معالجة حفظ كلمات الفلتر عبر AJAX
+// معالجة حفظ كلمات الفلتر وتسجيل الأذونات عبر AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -34,7 +24,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = $_POST['action'] ?? '';
+    if ($action === 'create_permit') {
+        require_once __DIR__ . '/sms_permits_lib.php';
+        $smsId = (int) ($_POST['sms_id'] ?? 0);
+        $permitAction = (string) ($_POST['permit_action'] ?? '');
+        $uid = (int) current_user()['id'];
+        try {
+            $permitId = sms_permit_create($smsId, $permitAction, $_POST, $uid);
+            echo json_encode(['ok' => true, 'permit_id' => $permitId], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (Throwable $e) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+
     if ($action === 'save_setting') {
+        if (!is_owner()) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'العملية دي للمالك فقط.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         $key = trim((string) ($_POST['key'] ?? ''));
         $val = trim((string) ($_POST['value'] ?? ''));
 
@@ -129,7 +140,32 @@ $moreCount = $totalCountFiltered - 500;
 
 // (٤) بيانات الربط
 $hookUrl   = 'https://hosnimanagement.com/sms_hook.php';
-$hookToken = (string) (SYNC_AGENT_TOKENS['sms_phone'] ?? '');
+$hookToken = is_owner() ? (string) (SYNC_AGENT_TOKENS['sms_phone'] ?? '') : '';
+
+require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sms_permits_lib.php';
+
+$costBranches = cost_branches_list();
+$suppliers = $pdo->query('SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll(PDO::FETCH_ASSOC);
+$employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll(PDO::FETCH_ASSOC);
+$branchesForCustody = $pdo->query('SELECT b.id, b.name FROM branches b JOIN treasuries t ON t.branch_id=b.id AND t.type="branch_custody" WHERE b.is_active=1 ORDER BY b.name')->fetchAll(PDO::FETCH_ASSOC);
+// نفس ترتيب treasury.php — جدول treasuries مفيهوش sort_order
+$allTreasuries = $pdo->query('SELECT id, name, type, show_in_receipts FROM treasuries WHERE is_active=1 ORDER BY FIELD(type, "cash","main","visa","instapay","card","branch_custody","employee_custody"), name')->fetchAll(PDO::FETCH_ASSOC);
+$instapayTreasuryId = 0;
+foreach ($allTreasuries as $t) {
+    if ($t['type'] === 'instapay') {
+        $instapayTreasuryId = (int) $t['id'];
+        break;
+    }
+}
+
+$smsIds = array_map(fn($m) => (int) $m['id'], $messages);
+// try: قبل ما local/upgrade_sms_permits.sql يتشغّل الجدول مش موجود — الصفحة تفضل شغالة
+try {
+    $permitsMap = sms_permits_for($smsIds);
+} catch (Throwable $e) {
+    $permitsMap = [];
+}
 
 $page_title    = 'رسايل إنستاباي';
 $active_module = 'sms_inbox';
@@ -165,6 +201,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <?php if (is_owner()): ?>
     <!-- (٢) بيانات ربط التطبيق -->
     <div class="card" style="padding:18px;margin-bottom:24px;background:var(--surface);">
         <h3 style="margin:0 0 12px 0;font-size:15px;display:flex;align-items:center;gap:6px;">
@@ -199,6 +236,7 @@ require_once __DIR__ . '/includes/header.php';
             اكتب البيانات دي في شاشة التطبيق على موبايلك واضغط «جرّب الاتصال». التوكن محمي ولا تظهره إلا عند الحاجة.
         </div>
     </div>
+    <?php endif; ?>
 
     <!-- (٣) كلمات الفلتر -->
     <div class="card" style="padding:18px;margin-bottom:24px;">
@@ -315,7 +353,7 @@ require_once __DIR__ . '/includes/header.php';
                             <th style="padding:10px 8px;width:100px;text-align:left;">المبلغ</th>
                             <th style="padding:10px 8px;">الطرف</th>
                             <th style="padding:10px 8px;width:120px;">الرقم المرجعي</th>
-                            <th style="padding:10px 8px;width:90px;text-align:left;">المتاح</th>
+                            <th style="padding:10px 8px;width:130px;text-align:center;">القيد</th>
                             <th style="padding:10px 8px;width:110px;">الراسل</th>
                             <th style="padding:10px 8px;">نص الرسالة</th>
                             <th style="padding:10px 8px;width:70px;text-align:center;">المصدر</th>
@@ -339,7 +377,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="padding:10px 8px;white-space:nowrap;text-align:center;">
                                     <?php
                                         if ($m['kind'] === 'in') {
-                                            echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">داخل</span>';
+                                             echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">داخل</span>';
                                         } elseif ($m['kind'] === 'out') {
                                             echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg-soft);color:var(--neg);">خارج</span>';
                                         } elseif ($m['kind'] === 'card') {
@@ -363,8 +401,35 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:right;font-family:monospace;font-size:12px;">
                                     <?= e($m['ref'] ?? '—') ?>
                                 </td>
-                                <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:left;font-size:12px;">
-                                    <?= $m['available'] !== null ? number_format((float) $m['available'], 2) : '<span style="color:var(--ink-400);">—</span>' ?>
+                                <td style="padding:10px 8px;text-align:center;white-space:nowrap;" id="spCell_<?= (int) $m['id'] ?>">
+                                    <?php
+                                        $sp = $permitsMap[(int) $m['id']] ?? null;
+                                        if ($sp && $sp['status'] === 'approved'):
+                                    ?>
+                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">
+                                            ✓ اتسجّل (إذن #<?= (int) $sp['id'] ?>)
+                                        </span>
+                                    <?php elseif ($sp && ($sp['status'] === 'pending' || $sp['status'] === 'approving')): ?>
+                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--warn-soft);color:var(--warn);">
+                                            مستني المراجعة
+                                        </span>
+                                    <?php else: ?>
+                                        <button type="button" class="btn btn-sm"
+                                                onclick="openPermitModal(<?= htmlspecialchars(json_encode([
+                                                    'id'     => (int) $m['id'],
+                                                    'kind'   => (string) $m['kind'],
+                                                    'amount' => (float) ($m['amount'] ?? 0),
+                                                    'date'   => substr((string) ($m['txn_at'] ?: $m['sms_at']), 0, 10),
+                                                    'party'  => (string) ($m['party'] ?? ''),
+                                                ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>)">
+                                            سجّل إذن
+                                        </button>
+                                        <?php if ($sp && $sp['status'] === 'rejected' && !empty($sp['review_note'])): ?>
+                                            <div style="font-size:11px;color:var(--neg);margin-top:3px;">
+                                                اترفض: <?= e($sp['review_note']) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
                                 </td>
                                 <td style="padding:10px 8px;font-weight:600;white-space:nowrap;font-size:12px;">
                                     <?= e($m['sender']) ?>
@@ -487,6 +552,363 @@ function filterSmsTable() {
     }
     var noRes = document.getElementById('smsNoResults');
     if (noRes) noRes.style.display = (rows.length > 0 && shown === 0) ? '' : 'none';
+}
+</script>
+
+<style>
+/* Modal أذونات إنستاباي */
+.modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
+    z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
+.modal-bg.open { display:flex; }
+.modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
+.modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
+.form-row { margin-bottom:14px; }
+.form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
+.form-row input, .form-row select, .form-row textarea {
+    width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
+    font-size:14px; font-family:inherit; background:var(--line-soft); box-sizing:border-box; }
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
+.modal-actions { display:flex; gap:10px; margin-top:20px; }
+.form-row input.trs-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;box-sizing:border-box; }
+.trs-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;background:var(--surface); }
+.trs-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
+.trs-pick-opt:hover { background:var(--bg); }
+.trs-pick-chosen { margin-top:8px;font-size:13px;color:var(--pos);font-weight:600; }
+</style>
+
+<div class="modal-bg" id="spModal">
+    <div class="modal">
+        <h3 id="spModalTitle" style="display:flex;align-items:center;gap:8px;">
+            <i class="ti ti-receipt"></i> سجّل إذن من الرسالة
+        </h3>
+        <div id="spError" style="display:none;background:var(--neg-soft);color:var(--neg);padding:10px 14px;border-radius:var(--r);font-size:13px;margin-bottom:14px;"></div>
+        <form id="spForm" onsubmit="handleSpSubmit(event)">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="create_permit">
+            <input type="hidden" name="sms_id" id="spSmsId" value="">
+            <input type="hidden" name="permit_action" id="spPermitAction" value="receipt">
+
+            <div class="form-row">
+                <label for="spActionSelect">نوع الإذن</label>
+                <select id="spActionSelect" onchange="spChangeAction(this.value)">
+                    <option value="receipt">إذن استلام (نقدية داخلة)</option>
+                    <option value="disbursement">إذن صرف (نقدية خارجة)</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <label for="spTreasury">الخزينة</label>
+                <select name="treasury_id" id="spTreasury" required>
+                    <?php foreach ($allTreasuries as $t): ?>
+                        <option value="<?= (int)$t['id'] ?>"
+                                data-type="<?= e($t['type']) ?>"
+                                data-receipt="<?= (int)($t['show_in_receipts'] ?? 1) ?>"
+                                <?= (int)$t['id'] === $instapayTreasuryId ? 'selected' : '' ?>>
+                            <?= e($t['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- نوع العملية -->
+            <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
+                <label for="spOpType">تصنيف العملية</label>
+                <select name="op_type" id="spOpType" onchange="spToggleOpType()">
+                    <option value="normal">عادي</option>
+                    <option value="supplier">مورد</option>
+                    <option value="advance">سلفة موظف</option>
+                    <option value="custody">عهدة فرع</option>
+                    <option value="employee_custody" id="spOptEmpCustody" style="display:none;">عهدة موظف</option>
+                </select>
+
+                <!-- مورد -->
+                <div id="spSupplierBox" style="display:none;margin-top:12px;">
+                    <input type="text" id="spSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                           oninput="filterSpSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
+                    <div id="spSuppList" class="trs-pick-list">
+                        <?php foreach ($suppliers as $s): ?>
+                            <div class="sp-supp-opt trs-pick-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                 onclick="pickSpSupp(this)">
+                                <?= e($s['name']) ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <input type="hidden" name="supplier_id" id="spSuppId" value="">
+                    <div id="spSuppChosen" class="trs-pick-chosen"></div>
+                </div>
+
+                <!-- سلفة أو عهدة موظف -->
+                <div id="spAdvanceBox" style="display:none;margin-top:12px;">
+                    <input type="text" id="spEmpSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                           oninput="filterSpEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
+                    <div id="spEmpList" class="trs-pick-list">
+                        <?php foreach ($employees as $emp): ?>
+                            <div class="sp-emp-opt trs-pick-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
+                                 onclick="pickSpEmp(this)">
+                                <?= e($emp['full_name']) ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <input type="hidden" name="employee_id" id="spEmpId" value="">
+                    <div id="spEmpChosen" class="trs-pick-chosen"></div>
+                </div>
+
+                <!-- عهدة فرع -->
+                <div id="spCustodyBox" style="display:none;margin-top:12px;">
+                    <label for="spCustodyBranch">الفرع</label>
+                    <select name="branch_id" id="spCustodyBranch">
+                        <option value="">— اختر الفرع —</option>
+                        <?php foreach ($branchesForCustody as $b): ?>
+                            <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row" id="spAccountRow">
+                <label>القيد</label>
+                <?= acctree_field('entry_code_id', null, '— بدون قيد —', 'all', 'spEntryCode') ?>
+            </div>
+
+            <div class="form-row" id="spCostBranchRow">
+                <label for="spCostBranch">اسم الفرع</label>
+                <select name="cost_branch_id" id="spCostBranch">
+                    <option value="">— بدون تحديد —</option>
+                    <?php foreach ($costBranches as $cb): ?>
+                        <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <label for="spAmount">المبلغ</label>
+                <input type="text" inputmode="decimal" data-money name="amount" id="spAmount" required
+                       autocomplete="off" placeholder="0" aria-label="المبلغ">
+            </div>
+
+            <div class="form-row">
+                <label for="spDate">التاريخ</label>
+                <input type="date" name="date" id="spDate" required>
+            </div>
+
+            <div class="form-row">
+                <label for="spDesc">البيان</label>
+                <input type="text" name="description" id="spDesc" placeholder="البيان" aria-label="البيان">
+            </div>
+
+            <div class="form-row">
+                <label for="spNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                <textarea name="notes" id="spNotes" rows="2" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn" id="spSubmitBtn">حفظ الإذن</button>
+                <button type="button" class="btn btn-cancel" onclick="closePermitModal()">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<?= acctree_data() ?>
+<script src="assets/acctree.js?v=3"></script>
+
+<script>
+var defaultInstapayTreasuryId = <?= (int) $instapayTreasuryId ?>;
+
+function openPermitModal(msg) {
+    document.getElementById('spError').style.display = 'none';
+    document.getElementById('spError').textContent = '';
+    document.getElementById('spSmsId').value = msg.id;
+
+    var act = (msg.kind === 'in') ? 'receipt' : 'disbursement';
+    document.getElementById('spActionSelect').value = act;
+    spChangeAction(act);
+
+    // المبلغ
+    document.getElementById('spAmount').value = (msg.amount > 0) ? msg.amount : '';
+    // التاريخ
+    document.getElementById('spDate').value = msg.date || '<?= date('Y-m-d') ?>';
+    // الخزينة الافتراضية: إنستاباي
+    var trSelect = document.getElementById('spTreasury');
+    if (defaultInstapayTreasuryId) {
+        trSelect.value = defaultInstapayTreasuryId;
+    }
+    // البيان
+    var desc = '';
+    if (msg.kind === 'in') {
+        desc = msg.party ? ('داخل من ' + msg.party) : 'تحويل داخل';
+    } else if (msg.kind === 'out') {
+        desc = msg.party ? ('خارج إلى ' + msg.party) : 'تحويل خارج';
+    } else if (msg.kind === 'card') {
+        desc = msg.party ? ('خصم كارت ' + msg.party) : 'خصم كارت';
+    }
+    document.getElementById('spDesc').value = desc;
+    document.getElementById('spNotes').value = '';
+
+    // نوع العملية: عادي
+    document.getElementById('spOpType').value = 'normal';
+    spToggleOpType();
+
+    // تفريغ المورد والموظف والفرع
+    document.getElementById('spSuppId').value = '';
+    document.getElementById('spSuppChosen').textContent = '';
+    document.getElementById('spEmpId').value = '';
+    document.getElementById('spEmpChosen').textContent = '';
+    document.getElementById('spCustodyBranch').value = '';
+    document.getElementById('spCostBranch').value = '';
+
+    // تصفير القيد
+    if (typeof acctreeSet === 'function') {
+        acctreeSet(document.getElementById('spEntryCode'), '');
+    }
+
+    document.getElementById('spModal').classList.add('open');
+}
+
+function closePermitModal() {
+    document.getElementById('spModal').classList.remove('open');
+}
+
+function spChangeAction(act) {
+    document.getElementById('spPermitAction').value = act;
+    var trSelect = document.getElementById('spTreasury');
+    var opts = trSelect.options;
+    for (var i = 0; i < opts.length; i++) {
+        var opt = opts[i];
+        var isCash = opt.getAttribute('data-type') === 'cash';
+        var showInRec = parseInt(opt.getAttribute('data-receipt') || '1', 10);
+        if (act === 'receipt') {
+            opt.style.display = showInRec ? '' : 'none';
+        } else {
+            opt.style.display = isCash ? 'none' : '';
+        }
+    }
+
+    var opSelect = document.getElementById('spOpType');
+    var optEmpC = document.getElementById('spOptEmpCustody');
+    if (act === 'receipt') {
+        opSelect.options[0].text = 'استلام عادي';
+        opSelect.options[1].text = 'استلام من مورد';
+        opSelect.options[2].text = 'رد سلفة من موظف';
+        opSelect.options[3].text = 'استلام عهدة من فرع';
+        if (optEmpC) optEmpC.style.display = 'none';
+        if (opSelect.value === 'employee_custody') opSelect.value = 'normal';
+        document.getElementById('spSubmitBtn').textContent = 'حفظ الإذن (استلام)';
+    } else {
+        opSelect.options[0].text = 'صرف عادي';
+        opSelect.options[1].text = 'صرف لمورد';
+        opSelect.options[2].text = 'سلفة لموظف';
+        opSelect.options[3].text = 'عهدة لفرع';
+        if (optEmpC) optEmpC.style.display = '';
+        document.getElementById('spSubmitBtn').textContent = 'حفظ الإذن (صرف)';
+    }
+    spToggleOpType();
+}
+
+function spToggleOpType() {
+    var v = document.getElementById('spOpType').value;
+    var accRow = document.getElementById('spAccountRow');
+    var costRow = document.getElementById('spCostBranchRow');
+    var suppBox = document.getElementById('spSupplierBox');
+    var advBox = document.getElementById('spAdvanceBox');
+    var cstBox = document.getElementById('spCustodyBox');
+
+    if (v === 'normal') {
+        accRow.style.display = '';
+        costRow.style.display = '';
+        suppBox.style.display = 'none';
+        advBox.style.display = 'none';
+        cstBox.style.display = 'none';
+    } else if (v === 'supplier') {
+        accRow.style.display = 'none';
+        costRow.style.display = '';
+        suppBox.style.display = '';
+        advBox.style.display = 'none';
+        cstBox.style.display = 'none';
+    } else if (v === 'advance' || v === 'employee_custody') {
+        accRow.style.display = 'none';
+        costRow.style.display = 'none';
+        suppBox.style.display = 'none';
+        advBox.style.display = '';
+        cstBox.style.display = 'none';
+    } else if (v === 'custody') {
+        accRow.style.display = 'none';
+        costRow.style.display = 'none';
+        suppBox.style.display = 'none';
+        advBox.style.display = 'none';
+        cstBox.style.display = '';
+    }
+}
+
+function filterSpSupps() {
+    var q = (document.getElementById('spSuppSearch').value || '').trim().toLowerCase();
+    var items = document.querySelectorAll('.sp-supp-opt');
+    for (var i = 0; i < items.length; i++) {
+        var n = items[i].dataset.name.toLowerCase();
+        items[i].style.display = (!q || n.indexOf(q) !== -1) ? '' : 'none';
+    }
+}
+
+function pickSpSupp(el) {
+    document.getElementById('spSuppId').value = el.dataset.id;
+    document.getElementById('spSuppChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+    document.getElementById('spSuppSearch').value = '';
+    filterSpSupps();
+}
+
+function filterSpEmps() {
+    var q = (document.getElementById('spEmpSearch').value || '').trim().toLowerCase();
+    var items = document.querySelectorAll('.sp-emp-opt');
+    for (var i = 0; i < items.length; i++) {
+        var n = items[i].dataset.name.toLowerCase();
+        items[i].style.display = (!q || n.indexOf(q) !== -1) ? '' : 'none';
+    }
+}
+
+function pickSpEmp(el) {
+    document.getElementById('spEmpId').value = el.dataset.id;
+    document.getElementById('spEmpChosen').textContent = 'تم اختيار: ' + el.dataset.name;
+    document.getElementById('spEmpSearch').value = '';
+    filterSpEmps();
+}
+
+function handleSpSubmit(e) {
+    e.preventDefault();
+    var btn = document.getElementById('spSubmitBtn');
+    btn.disabled = true;
+    var errBox = document.getElementById('spError');
+    errBox.style.display = 'none';
+    errBox.textContent = '';
+
+    var form = document.getElementById('spForm');
+    var fd = new FormData(form);
+
+    fetch('sms_inbox.php', { method: 'POST', body: fd })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            btn.disabled = false;
+            if (d.ok) {
+                closePermitModal();
+                var smsId = fd.get('sms_id');
+                var cell = document.getElementById('spCell_' + smsId);
+                if (cell) {
+                    cell.innerHTML = '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--warn-soft);color:var(--warn);">مستني المراجعة</span>';
+                }
+                if (typeof fgToast === 'function') {
+                    fgToast('تم تسجيل الإذن ومستني مراجعة المحاسب', 'ok');
+                } else {
+                    alert('تم تسجيل الإذن ومستني مراجعة المحاسب');
+                }
+            } else {
+                errBox.textContent = d.error || 'فشل حفظ الإذن.';
+                errBox.style.display = '';
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            errBox.textContent = 'خطأ اتصال أثناء حفظ الإذن.';
+            errBox.style.display = '';
+        });
 }
 </script>
 

@@ -12,6 +12,7 @@
 require_once __DIR__ . '/auth.php';
 require_permission('treasury:statement');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/treasury_ops_lib.php';
 
 $pdo       = db();
 $flash     = '';
@@ -166,99 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // بعض من غير ريفريش. الدالة `set_journal_account()` لسه
             // موجودة في finance.php لو حد تاني بينديها.
             if ($action === 'receipt' || $action === 'disbursement') {
-                $tid    = (int) ($_POST['treasury_id'] ?? 0);
-                $amount = money_post('amount');
-                if ($amount <= 0) throw new RuntimeException('المبلغ لازم يكون أكبر من صفر.');
-                $date   = fin_valid_date((string) ($_POST['date'] ?? date('Y-m-d')));
-                $desc   = trim($_POST['description'] ?? '');
-                $opType = $_POST['op_type'] ?? 'normal';  // normal / advance / custody
-                $entryCodeId = ($_POST['entry_code_id'] ?? '') !== '' ? (int) $_POST['entry_code_id'] : null;
-                $notes  = trim($_POST['notes'] ?? '');
-
-                if ($action === 'disbursement' && $opType === 'advance') {
-                    $empId = (int) ($_POST['employee_id'] ?? 0);
-                    if ($empId <= 0) throw new RuntimeException('اختر الموظف للسلفة.');
-                    disburse_advance($empId, $amount, $tid, $date, $desc ?: null, $uid);
-                    $flash = 'تم صرف السلفة وتسجيلها على الموظف.';
-                }
-                elseif ($action === 'disbursement' && $opType === 'custody') {
-                    $bId = (int) ($_POST['branch_id'] ?? 0);
-                    if ($bId <= 0) throw new RuntimeException('اختر الفرع للعهدة.');
-                    $ct = $pdo->prepare("SELECT id FROM treasuries WHERE branch_id=? AND type='branch_custody' LIMIT 1");
-                    $ct->execute([$bId]);
-                    $ctId = (int) $ct->fetchColumn();
-                    if (!$ctId) throw new RuntimeException('لا توجد خزينة عهدة لهذا الفرع.');
-                    issue_disbursement_order($bId, $ctId, $amount, $date, $desc ?: null, $uid);
-                    $flash = 'تم صرف العهدة للفرع (الخزينة نقصت وعهدة الفرع زادت).';
-                }
-                elseif ($action === 'disbursement' && $opType === 'employee_custody') {
-                    $empId = (int) ($_POST['employee_id'] ?? 0);
-                    if ($empId <= 0) throw new RuntimeException('اختر الموظف للعهدة.');
-                    issue_employee_disbursement_order($empId, $amount, $date, $desc ?: null, $uid);
-                    $flash = 'تم صرف العهدة للموظف (الخزينة نقصت وعهدة الموظف زادت).';
-                }
-                elseif ($action === 'receipt' && $opType === 'advance') {
-                    $empId = (int) ($_POST['employee_id'] ?? 0);
-                    if ($empId <= 0) throw new RuntimeException('اختر الموظف لرد السلفة.');
-                    recover_advance($empId, $amount, $tid, $date, $desc ?: null, $uid);
-                    $flash = 'تم رد السلفة وخصمها من رصيد الموظف.';
-                }
-                elseif ($action === 'receipt' && $opType === 'custody') {
-                    $bId = (int) ($_POST['branch_id'] ?? 0);
-                    if ($bId <= 0) throw new RuntimeException('اختر الفرع لاستلام العهدة.');
-                    receive_custody($bId, $amount, $tid, $date, $desc ?: null, $uid);
-                    $flash = 'تم استلام العهدة من الفرع (الخزينة زادت وعهدة الفرع نقصت).';
-                }
-                elseif ($opType === 'supplier') {
-                    $suppId = (int) ($_POST['supplier_id'] ?? 0);
-                    if ($suppId <= 0) {
-                        throw new RuntimeException('اختر المورد.');
-                    }
-                    $stSupp = $pdo->prepare('SELECT id, name FROM suppliers WHERE id = ? AND is_active = 1 LIMIT 1');
-                    $stSupp->execute([$suppId]);
-                    $supp = $stSupp->fetch();
-                    if (!$supp) {
-                        throw new RuntimeException('المورد غير موجود أو غير نشط.');
-                    }
-                    sync_dynamic_accounts();
-                    $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
-                    $stAcc->execute([$suppId]);
-                    $accId = (int) $stAcc->fetchColumn();
-                    if (!$accId) {
-                        throw new RuntimeException('المورد ده مالوش حساب في شجرة الحسابات — اتأكد إن فيه أب «موردين» في التعريفات.');
-                    }
-                    $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
-                        ? (int) $_POST['cost_branch_id'] : null;
-                    if (empty($costBranchId)) {
-                        throw new RuntimeException('اختار الفرع.');
-                    }
-                    $opDesc = $desc !== ''
-                        ? $desc
-                        : (($action === 'disbursement' ? 'صرف للمورد ' : 'استلام من المورد ') . $supp['name']);
-                    treasury_movement(
-                        $tid, $action, $amount, $date, $opDesc, $uid,
-                        $accId, $costBranchId, $notes !== '' ? $notes : null
-                    );
-                    $flash = ($action === 'disbursement')
-                        ? 'تم تسجيل الصرف للمورد.'
-                        : 'تم تسجيل الاستلام من المورد.';
-                }
-                else {
-                    // القيد والفرع إجباريين في الاستلام والصرف العادي
-                    if (empty($entryCodeId)) {
-                        throw new RuntimeException('اختار القيد.');
-                    }
-                    // فرع التكلفة (تحليلي) — اسمه cost_branch_id في الفورم عشان
-                    // ما يتعارضش مع branch_id بتاع صرف/استلام العهدة.
-                    $costBranchId = ($_POST['cost_branch_id'] ?? '') !== ''
-                        ? (int) $_POST['cost_branch_id'] : null;
-                    if (empty($costBranchId)) {
-                        throw new RuntimeException('اختار الفرع.');
-                    }
-                    treasury_movement($tid, $action, $amount, $date, $desc ?: null, $uid,
-                                      $entryCodeId, $costBranchId, $notes ?: null);
-                    $flash = ($action === 'receipt') ? 'تم تسجيل الاستلام.' : 'تم تسجيل الصرف.';
-                }
+                $flash = treasury_apply_op($action, $_POST, $uid);
             }
             elseif ($action === 'transfer') {
                 $from   = (int) ($_POST['from_treasury_id'] ?? 0);
