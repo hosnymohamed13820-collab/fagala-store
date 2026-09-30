@@ -11,12 +11,12 @@ import java.net.URL
  */
 object Net {
 
-    const val ALLOWED_HOST = "hosnimanagement.com"
+    val ALLOWED_HOSTS = setOf("hosnimanagement.com", "ashraqa.hosnimanagement.com")
 
     /**
      * فحص أمان الرابط:
      * - لازم يبدأ بـ https://
-     * - الـ host لازم يطابق hosnimanagement.com تماماً بدون أي تلاعب
+     * - الـ host لازم يطابق أحد الدومينات المعتمدة تماماً بدون أي تلاعب
      * - ممنوع وجود userInfo في الرابط
      */
     fun isAllowedUrl(urlStr: String): Boolean {
@@ -26,7 +26,7 @@ object Net {
             val scheme = uri.scheme?.lowercase()
             val host = uri.host?.lowercase()
             val userInfo = uri.userInfo
-            scheme == "https" && host == ALLOWED_HOST && userInfo == null
+            scheme == "https" && host in ALLOWED_HOSTS && userInfo == null
         } catch (e: Exception) {
             false
         }
@@ -37,7 +37,7 @@ object Net {
      */
     fun openSafe(urlStr: String): HttpURLConnection {
         if (!isAllowedUrl(urlStr)) {
-            throw SecurityException("الرابط غير مسموح به، مسموح فقط بـ https://$ALLOWED_HOST")
+            throw SecurityException("الرابط غير مسموح به، مسموح فقط بـ hosnimanagement.com أو ashraqa.hosnimanagement.com عبر HTTPS")
         }
         val url = URL(urlStr.trim())
         val conn = url.openConnection() as HttpURLConnection

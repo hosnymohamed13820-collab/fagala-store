@@ -107,6 +107,7 @@ function all_modules(): array
         'definitions'   => ['label' => 'التعريفات',         'icon' => 'ti-adjustments',     'url' => 'definitions.php'],
         'settings'      => ['label' => 'الإعدادات',         'icon' => 'ti-settings',         'url' => 'settings.php'],
         'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
+        'sms_inbox'     => ['label' => 'رسايل إنستاباي',    'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
     ];
 }
 

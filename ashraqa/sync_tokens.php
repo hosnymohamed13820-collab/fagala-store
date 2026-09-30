@@ -24,6 +24,7 @@ const SYNC_AGENT_TOKENS = [
     // agent_ashraqa_web.ps1 — بيلعب دور «الإدارة» على موقع إشراقة.
     // 🔴 نفس HQ_SYNC_TOKEN في ashraqa/sync_hq.php — لو اتغيّر هناك غيّره هنا.
     'hq' => 'ashweb_15c488c25181d22bec038b314ba6a679',
+    'sms_phone' => 'sms_ash_365d9671970117b9506e46de4c985e0a01c3bbc5',
 ];
 
 // مفيش فرع بيبعت على موقع إشراقة — sync_branch.php هناك بيرفض أي طلب

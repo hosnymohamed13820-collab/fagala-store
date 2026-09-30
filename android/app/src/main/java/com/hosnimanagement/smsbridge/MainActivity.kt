@@ -120,11 +120,11 @@ class MainActivity : AppCompatActivity() {
         val url   = editServerUrl.text.toString().trim().ifEmpty { DEFAULT_URL }
         val token = editToken.text.toString().trim()
 
-        // 🔴 الرابط مقفول على https://hosnimanagement.com — أي رابط تاني يترفض
+        // 🔴 الرابط مقفول على الدومينات المعتمدة فقط — أي رابط تاني يترفض
         if (!Net.isAllowedUrl(url)) {
             txtTestResult.visibility = View.VISIBLE
             txtTestResult.setTextColor(ContextCompat.getColor(this, R.color.neg))
-            txtTestResult.text = "❌ الرابط لازم يبدأ بـ https://${Net.ALLOWED_HOST}/"
+            txtTestResult.text = "❌ الرابط لازم يكون على دومين hosnimanagement.com أو ashraqa.hosnimanagement.com عبر HTTPS"
             return false
         }
 
