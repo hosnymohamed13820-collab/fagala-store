@@ -80,6 +80,19 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         $openByFp[$r['fingerprint']] = $r;
     }
 
+    // اللي الأونر قفله بإيده وهو لسه موجود = «معروف ومش مشكلة» — مايتفتحش تاني
+    // ولا يبعت إشعار كل ١٠ دقايق. أول ما يختفي من الفحص، بيتشال من القايمة دي،
+    // فلو رجع بعد كده يبقى حادثة جديدة بجد.
+    $stIgn = $pdo->prepare(
+        "SELECT id, check_code, fingerprint FROM rabt_incidents
+          WHERE agent_key = ? AND status = 'closed' AND close_reason = 'قفلها الأونر'"
+    );
+    $stIgn->execute([$agent]);
+    $ignoredByFp = [];
+    foreach ($stIgn->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $ignoredByFp[$r['fingerprint']] = $r;
+    }
+
     $seenFpsInPayload = [];
     $newIncidents = [];
     $inWindow = $overrideInWindow !== null ? $overrideInWindow : agent_in_window();
@@ -104,6 +117,7 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         if ($fp === '') continue;
 
         $seenFpsInPayload[$fp] = true;
+        if (isset($ignoredByFp[$fp]) && !isset($openByFp[$fp])) continue;
         $branch = !empty($f['branch']) ? trim((string) $f['branch']) : null;
         $title = mb_substr(trim((string) ($f['title'] ?? $f['summary'] ?? '')), 0, 200);
         $details = null;
@@ -143,6 +157,20 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         if (in_array($row['check_code'], $checked, true) && !isset($seenFpsInPayload[$fp])) {
             $toCloseIds[] = (int) $row['id'];
         }
+    }
+
+    // المقفول بإيد الأونر واختفى من الفحص ← يطلع من «المعروف»
+    $goneIgnored = [];
+    foreach ($ignoredByFp as $fp => $row) {
+        if (in_array($row['check_code'], $checked, true) && !isset($seenFpsInPayload[$fp])) {
+            $goneIgnored[] = (int) $row['id'];
+        }
+    }
+    if (!empty($goneIgnored)) {
+        $inG = implode(',', array_fill(0, count($goneIgnored), '?'));
+        $pdo->prepare(
+            "UPDATE rabt_incidents SET close_reason = 'قفلها الأونر — اختفت' WHERE id IN ($inG)"
+        )->execute($goneIgnored);
     }
 
     if (!empty($toCloseIds)) {
