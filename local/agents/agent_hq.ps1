@@ -31,6 +31,10 @@ $GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
 $AgentVer  = '2.4'
 
+# The replication program is repl_true.exe on HQ but Repltrue.exe on the
+# branches (seen on Bonjour Oct 2 2026). Every process check uses both.
+$ReplProcNames = @('repl_true', 'Repltrue')
+
 # Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
 $SyncToken = 'hq_48c4cfd7ec51ede3faf01c94aba41504e95f7b9b'
 
@@ -274,7 +278,7 @@ function Invoke-ReplRestart {
     }
 
     # 3. Motion check: if process is running, verify queue is not moving
-    $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+    $procs = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
     if ($procs.Count -gt 0) {
         try {
             $mTable = Invoke-Sql @"
@@ -307,12 +311,12 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
     # 4. Kill repl_true process
     Write-Log "[repl] killing repl_true process..."
     try {
-        Get-Process -Name repl_true -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue | Stop-Process -Force
     } catch { }
 
     $killed = $false
     for ($i = 0; $i -lt 30; $i++) {
-        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        $pLeft = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
         if ($pLeft.Count -eq 0) {
             $killed = $true
             break
@@ -320,7 +324,7 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
         Start-Sleep -Seconds 1
     }
     if (-not $killed) {
-        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        $pLeft = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
         Write-Log "[repl] could not kill $($pLeft.Count)"
         return @{ ok = $false; text = "could not kill $($pLeft.Count)" }
     }
@@ -337,7 +341,7 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
     $finalCount = 0
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 1
-        $pAfter = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        $pAfter = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
         if ($pAfter.Count -eq 1) {
             $finalCount = 1
             break
@@ -364,7 +368,7 @@ function Check-ReplAutoWatchdog {
     try {
         $rState = Get-ReplRestartState
         $now = Get-Date
-        $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        $procs = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
 
         if ($procs.Count -eq 0) {
             if (-not $rState.downSince) {
@@ -491,7 +495,7 @@ function Invoke-Guard {
         # H01: repl_true process count != 1 or Event Log crash in last hour
         # -----------------------------------------------------------------
         try {
-            $h01Procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+            $h01Procs = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
             if ($h01Procs.Count -ne 1) {
                 $findings += @{
                     code    = 'H01'
@@ -506,7 +510,7 @@ function Invoke-Guard {
             try {
                 $oneHourAgo = (Get-Date).AddHours(-1)
                 $crashes = @(Get-EventLog -LogName Application -Source "Application Error" -InstanceId 1000 -After $oneHourAgo -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Message -like "*repl_true.exe*" })
+                    Where-Object { $_.Message -like "*repl_true.exe*" -or $_.Message -like "*Repltrue.exe*" })
                 if ($crashes.Count -gt 0) {
                     $firstCrashTime = $crashes[0].TimeGenerated.ToString('yyyy-MM-dd HH:mm:ss')
                     $findings += @{
@@ -783,7 +787,7 @@ FROM (
         # -----------------------------------------------------------------
         try {
             $errDir = $null
-            $proc = Get-Process -Name repl_true -ErrorAction SilentlyContinue | Select-Object -First 1
+            $proc = Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($proc -and $proc.Path) {
                 $pDir = [System.IO.Path]::GetDirectoryName($proc.Path)
                 $cand1 = Join-Path $pDir 'repl_error'
