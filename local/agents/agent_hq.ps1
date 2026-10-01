@@ -27,8 +27,9 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 # when nothing changed. Without it, silence is ambiguous: we cannot
 # tell a dead PC from a quiet sales day.
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
+$GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.3'
+$AgentVer  = '2.4'
 
 # Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
 $SyncToken = 'hq_48c4cfd7ec51ede3faf01c94aba41504e95f7b9b'
@@ -206,16 +207,971 @@ function Invoke-Sql {
 }
 
 # ---------------------------------------------------------------------
-#  Heartbeat - tiny "I am alive" ping, sent once at the end of a run.
-#
-#  Payload is a few bytes, so it costs nothing next to a data batch.
-#  It is what lets the website tell these two apart:
-#      beat + no data  = agent healthy, no sales since last run
-#      no beat         = PC off, agent crashed, or token wrong
-#
-#  Never throws: a failed heartbeat must not fail the sync.
+#  REPL RESTART & WATCHDOG (Brief 94)
 # ---------------------------------------------------------------------
-$script:BeatRows = 0
+function Get-ReplRestartState {
+    $path = Join-Path $PSScriptRoot "repl_restart.json"
+    if (Test-Path $path) {
+        try {
+            $content = Get-Content -Path $path -Raw -Encoding UTF8 -ErrorAction Stop
+            if ($content) { return ($content | ConvertFrom-Json) }
+        } catch { }
+    }
+    return [PSCustomObject]@{
+        attempts          = @()
+        motionFingerprint = ''
+        motionTime        = ''
+        downSince         = ''
+        multiAlertTime    = ''
+        pendingCmdResult  = $null
+        pendingReplAction = $null
+    }
+}
+
+function Save-ReplRestartState {
+    param($StateObj)
+    $path = Join-Path $PSScriptRoot "repl_restart.json"
+    try {
+        $json = $StateObj | ConvertTo-Json -Depth 4 -Compress
+        Set-Content -Path $path -Value $json -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        Write-Log "[repl] could not save repl_restart.json: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ReplRestart {
+    Write-Log "[repl] restart requested"
+
+    # 1. Hold file: if repl_hold.txt is present and < 4 hours old, abort
+    $holdFile = Join-Path $PSScriptRoot 'repl_hold.txt'
+    if (Test-Path $holdFile) {
+        try {
+            $holdAge = (Get-Date) - (Get-Item $holdFile).LastWriteTime
+            if ($holdAge.TotalHours -lt 4) {
+                Write-Log "[repl] restart aborted: hold file present and < 4h old"
+                return @{ ok = $false; text = 'hold file' }
+            }
+        } catch { }
+    }
+
+    # 2. Limit: max 3 attempts in the last 60 minutes
+    $rState = Get-ReplRestartState
+    $now = Get-Date
+    $recentAttempts = @()
+    if ($rState.attempts) {
+        foreach ($att in $rState.attempts) {
+            try {
+                $dt = [datetime]$att
+                if (($now - $dt).TotalMinutes -lt 60) {
+                    $recentAttempts += $att
+                }
+            } catch { }
+        }
+    }
+    if ($recentAttempts.Count -ge 3) {
+        Write-Log "[repl] restart aborted: limit 3/hour"
+        return @{ ok = $false; text = 'limit 3/hour' }
+    }
+
+    # 3. Motion check: if process is running, verify queue is not moving
+    $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0) {
+        try {
+            $mTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
+       (SELECT ISNULL(MAX(drr_id), 0) FROM db_repl_receive_hist) AS max_hist,
+       (SELECT COUNT(*) FROM STO_TRANS_HEADER_REPL) AS c_repl;
+"@
+            if ($mTable.Rows.Count -gt 0) {
+                $mr = $mTable.Rows[0]
+                $curMotion = "$($mr['c_recv'])|$($mr['max_hist'])|$($mr['c_repl'])"
+                if ($rState.motionFingerprint -and $rState.motionTime) {
+                    $mAge = ($now - [datetime]$rState.motionTime).TotalMinutes
+                    if ($mAge -lt 15 -or $curMotion -ne $rState.motionFingerprint) {
+                        Write-Log "[repl] restart aborted: busy - queue moving"
+                        return @{ ok = $false; text = 'busy - queue moving' }
+                    }
+                }
+            }
+        } catch {
+            Write-Log "[repl] motion check error: $($_.Exception.Message)"
+        }
+    }
+
+    # Record attempt timestamp in state
+    $recentAttempts += $now.ToString('o')
+    $rState.attempts = $recentAttempts
+    Save-ReplRestartState $rState
+
+    # 4. Kill repl_true process
+    Write-Log "[repl] killing repl_true process..."
+    try {
+        Get-Process -Name repl_true -ErrorAction SilentlyContinue | Stop-Process -Force
+    } catch { }
+
+    $killed = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        if ($pLeft.Count -eq 0) {
+            $killed = $true
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $killed) {
+        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        Write-Log "[repl] could not kill $($pLeft.Count)"
+        return @{ ok = $false; text = "could not kill $($pLeft.Count)" }
+    }
+
+    # 5. Start via FagalaReplStart scheduled task
+    Write-Log "[repl] starting FagalaReplStart task..."
+    try {
+        Start-ScheduledTask -TaskName 'FagalaReplStart' -ErrorAction Stop
+    } catch {
+        Write-Log "[repl] FagalaReplStart task missing: $($_.Exception.Message)"
+        return @{ ok = $false; text = 'FagalaReplStart task missing' }
+    }
+
+    $finalCount = 0
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Seconds 1
+        $pAfter = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        if ($pAfter.Count -eq 1) {
+            $finalCount = 1
+            break
+        }
+        if ($pAfter.Count -gt 1) {
+            $finalCount = $pAfter.Count
+            break
+        }
+    }
+
+    if ($finalCount -eq 1) {
+        Write-Log "[repl] restarted successfully (1 copy running)"
+        return @{ ok = $true; text = 'ok' }
+    } elseif ($finalCount -eq 0) {
+        Write-Log "[repl] started 0 (user logged off?)"
+        return @{ ok = $false; text = 'started 0 (user logged off?)' }
+    } else {
+        Write-Log "[repl] started $finalCount"
+        return @{ ok = $false; text = "started $finalCount" }
+    }
+}
+
+function Check-ReplAutoWatchdog {
+    try {
+        $rState = Get-ReplRestartState
+        $now = Get-Date
+        $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+
+        if ($procs.Count -eq 0) {
+            if (-not $rState.downSince) {
+                $rState.downSince = $now.ToString('o')
+                Save-ReplRestartState $rState
+                Write-Log "[watchdog] repl_true is down, recorded timestamp"
+            } else {
+                $downMin = ($now - [datetime]$rState.downSince).TotalMinutes
+                if ($downMin -ge 10) {
+                    Write-Log "[watchdog] repl_true down for $([int]$downMin) min -> invoking restart"
+                    $res = Invoke-ReplRestart
+                    $rState.downSince = ''
+                    $resText = if ($res.text) { [string]$res.text } else { '' }
+                    if ($resText.Length -gt 180) { $resText = $resText.Substring(0, 180) }
+                    $rState.pendingReplAction = @{
+                        ok   = [bool]$res.ok
+                        text = "auto start: $resText"
+                    }
+                    Save-ReplRestartState $rState
+                }
+            }
+        } elseif ($procs.Count -eq 1) {
+            $dirty = $false
+            if ($rState.downSince) {
+                $rState.downSince = ''
+                $dirty = $true
+            }
+            try {
+                $mTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
+       (SELECT ISNULL(MAX(drr_id), 0) FROM db_repl_receive_hist) AS max_hist,
+       (SELECT COUNT(*) FROM STO_TRANS_HEADER_REPL) AS c_repl;
+"@
+                if ($mTable.Rows.Count -gt 0) {
+                    $mr = $mTable.Rows[0]
+                    # motionTime = when the queue LAST CHANGED (not when we last looked),
+                    # so the restart check really means "no movement for 15 minutes".
+                    $fpNow = "$($mr['c_recv'])|$($mr['max_hist'])|$($mr['c_repl'])"
+                    if ($fpNow -ne $rState.motionFingerprint -or -not $rState.motionTime) {
+                        $rState.motionFingerprint = $fpNow
+                        $rState.motionTime = $now.ToString('o')
+                        $dirty = $true
+                    }
+                }
+            } catch { }
+            if ($dirty) { Save-ReplRestartState $rState }
+        } else {
+            # Multiple copies running (> 1)
+            $sendMultiAlert = $true
+            if ($rState.multiAlertTime) {
+                try {
+                    $alertAge = ($now - [datetime]$rState.multiAlertTime).TotalMinutes
+                    if ($alertAge -lt 60) { $sendMultiAlert = $false }
+                } catch { }
+            }
+            if ($sendMultiAlert) {
+                $rState.multiAlertTime = $now.ToString('o')
+                $rState.pendingReplAction = @{
+                    ok   = $false
+                    text = "$($procs.Count) copies of repl_true running"
+                }
+                Save-ReplRestartState $rState
+                Write-Log "[watchdog] alert: $($procs.Count) copies of repl_true running"
+            }
+        }
+    } catch {
+        Write-Log "[watchdog] error: $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------
+#  RABT GUARD (Brief 94 - HQ only)
+# ---------------------------------------------------------------------
+function Get-GuardSha1 {
+    param([string]$InputStr)
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($InputStr)
+        $hashBytes = $sha1.ComputeHash($bytes)
+        return [System.BitConverter]::ToString($hashBytes).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha1.Dispose()
+    }
+}
+
+function Invoke-Guard {
+    $guardStatePath = Join-Path $PSScriptRoot "guard_state.json"
+    $guardState = $null
+    if (Test-Path $guardStatePath) {
+        try {
+            $raw = Get-Content -Path $guardStatePath -Raw -Encoding UTF8 -ErrorAction Stop
+            if ($raw) { $guardState = ($raw | ConvertFrom-Json) }
+        } catch { }
+    }
+    if (-not $guardState) {
+        $guardState = [PSCustomObject]@{
+            last_run          = ''
+            h04_count         = 0
+            h04_time          = ''
+            h14_last_checked  = [PSCustomObject]@{}
+            h17_last_checked  = [PSCustomObject]@{}
+        }
+    }
+
+    $now = Get-Date
+    if ($guardState.last_run) {
+        try {
+            $lastRunAge = ($now - [datetime]$guardState.last_run).TotalSeconds
+            if ($lastRunAge -lt 580) {
+                # Guard runs once every ~10 minutes, throttle
+                return
+            }
+        } catch { }
+    }
+
+    Write-Log "[guard] starting 12 checks..."
+    $findings = @()
+    $checked  = @()
+    $branchMap = @{ 2 = 'zahraa'; 3 = 'bonjour'; 5 = 'degla'; 6 = 'abc' }
+
+    try {
+        # -----------------------------------------------------------------
+        # H01: repl_true process count != 1 or Event Log crash in last hour
+        # -----------------------------------------------------------------
+        try {
+            $h01Procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+            if ($h01Procs.Count -ne 1) {
+                $findings += @{
+                    code    = 'H01'
+                    branch  = 'hq'
+                    summary = "repl_true process count is $($h01Procs.Count) (expected 1)"
+                    details = "Running processes: $($h01Procs.Count)"
+                    restart = $null
+                    sha     = Get-GuardSha1 "H01|count"
+                }
+            }
+
+            try {
+                $oneHourAgo = (Get-Date).AddHours(-1)
+                $crashes = @(Get-EventLog -LogName Application -Source "Application Error" -InstanceId 1000 -After $oneHourAgo -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Message -like "*repl_true.exe*" })
+                if ($crashes.Count -gt 0) {
+                    $firstCrashTime = $crashes[0].TimeGenerated.ToString('yyyy-MM-dd HH:mm:ss')
+                    $findings += @{
+                        code    = 'H01'
+                        branch  = 'hq'
+                        summary = "repl_true.exe crash found in Event Log (count: $($crashes.Count))"
+                        details = ($crashes | Select-Object -First 5 | ForEach-Object { "$($_.TimeGenerated): $($_.Message)" }) -join "`n"
+                        restart = $null
+                        sha     = Get-GuardSha1 "H01|crash|$firstCrashTime"
+                    }
+                }
+            } catch { }
+
+            $checked += 'H01'
+        } catch {
+            Write-Log "[guard] H01 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H02: Last import age > 120 minutes per branch
+        # -----------------------------------------------------------------
+        try {
+            $h02Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT brch_id, MAX(max_d) AS last_import, DATEDIFF(MINUTE, MAX(max_d), GETDATE()) AS age_min
+FROM (
+    SELECT brch_id, MAX(drr_import_date) AS max_d FROM db_repl_receive WHERE brch_id IN (2, 3, 5, 6) GROUP BY brch_id
+    UNION ALL
+    SELECT brch_id, MAX(drr_import_date) AS max_d FROM db_repl_receive_hist WHERE brch_id IN (2, 3, 5, 6) GROUP BY brch_id
+) u
+GROUP BY brch_id;
+"@
+            $importPath = 'D:\Repl\Import\HQ'
+            $importFiles = @()
+            if (Test-Path $importPath) {
+                $importFiles = @(Get-ChildItem -Path $importPath -Filter "*.txt" -ErrorAction SilentlyContinue)
+            }
+            $brchPrefixes = @{ 2 = '02'; 3 = '03'; 5 = '05'; 6 = '06' }
+
+            foreach ($r in $h02Table.Rows) {
+                $bId = [int]$r['brch_id']
+                $bKey = $branchMap[$bId]
+                $ageMin = if ($r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 9999 }
+                $lastImportStr = if ($r['last_import'] -isnot [DBNull]) { [string]$r['last_import'] } else { 'never' }
+
+                if ($ageMin -gt 120) {
+                    $prefix = $brchPrefixes[$bId]
+                    $hasFiles = $false
+                    if ($importFiles.Count -gt 0) {
+                        $hasFiles = ($importFiles | Where-Object { $_.Name -like "BB_${prefix}_*" -or $_.Name -like "${prefix}_*" }).Count -gt 0
+                    }
+                    $targetRestart = if ($hasFiles) { 'hq' } else { $bKey }
+
+                    $findings += @{
+                        code    = 'H02'
+                        branch  = $bKey
+                        summary = "Last import for $bKey was $ageMin min ago (last: $lastImportStr)"
+                        details = "Branch: $bKey (id $bId)`nLast import: $lastImportStr`nAge: $ageMin minutes`nFiles in Import/HQ: $(if ($hasFiles) { 'yes' } else { 'none' })"
+                        restart = $targetRestart
+                        sha     = Get-GuardSha1 "H02|$bKey|$bKey"
+                    }
+                }
+            }
+            $checked += 'H02'
+        } catch {
+            Write-Log "[guard] H02 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H03: Stuck queue command age > 60 min
+        # -----------------------------------------------------------------
+        try {
+            $h03Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT brch_id, MIN(drs_id_ref) AS first_ref,
+       DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) AS age_min,
+       COUNT(*) AS cnt
+FROM db_repl_receive
+WHERE drr_execute_flag = 0 AND brch_id IN (2, 3, 5, 6)
+GROUP BY brch_id
+HAVING DATEDIFF(MINUTE, MIN(ISNULL(drr_import_date, create_date)), GETDATE()) > 60;
+"@
+            foreach ($r in $h03Table.Rows) {
+                $bId = [int]$r['brch_id']
+                $bKey = $branchMap[$bId]
+                $firstRef = [string]$r['first_ref']
+                $ageMin = [int]$r['age_min']
+                $cnt = [int]$r['cnt']
+
+                $findings += @{
+                    code    = 'H03'
+                    branch  = $bKey
+                    summary = "Replication queue stuck for $bKey (first ref: $firstRef, age: $ageMin min, total waiting: $cnt)"
+                    details = "Branch: $bKey (id $bId)`nFirst stuck drs_id_ref: $firstRef`nAge: $ageMin minutes`nTotal waiting: $cnt"
+                    restart = 'hq'
+                    sha     = Get-GuardSha1 "H03|$bKey|$firstRef"
+                }
+            }
+            $checked += 'H03'
+        } catch {
+            Write-Log "[guard] H03 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H04: STO_TRANS_HEADER_REPL > 100 not decreasing for 15 min
+        # -----------------------------------------------------------------
+        try {
+            $h04Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT COUNT(*) AS c FROM STO_TRANS_HEADER_REPL;
+"@
+            $h04Count = [int]$h04Table.Rows[0]['c']
+
+            if ($h04Count -gt 100) {
+                if ($guardState.h04_count -and $guardState.h04_time) {
+                    $prevH04Count = [int]$guardState.h04_count
+                    $h04Age = ($now - [datetime]$guardState.h04_time).TotalMinutes
+                    if ($h04Age -ge 15 -and $h04Count -ge $prevH04Count) {
+                        $findings += @{
+                            code    = 'H04'
+                            branch  = 'hq'
+                            summary = "STO_TRANS_HEADER_REPL stagnant (> 100) for $([int]$h04Age) min (count: $h04Count, previous: $prevH04Count)"
+                            details = "Current count: $h04Count`nPrevious count: $prevH04Count`nStagnant duration: $([int]$h04Age) minutes"
+                            restart = 'hq'
+                            sha     = Get-GuardSha1 "H04|hq|H04"
+                        }
+                    }
+                } else {
+                    $guardState.h04_count = $h04Count
+                    $guardState.h04_time = $now.ToString('o')
+                }
+            } else {
+                $guardState.h04_count = $h04Count
+                $guardState.h04_time = $now.ToString('o')
+            }
+            $checked += 'H04'
+        } catch {
+            Write-Log "[guard] H04 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H05: Import files sequence gap / duplicates / old / delayed
+        # -----------------------------------------------------------------
+        try {
+            $importPath = 'D:\Repl\Import\HQ'
+            if (Test-Path $importPath) {
+                $maxRefTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT brch_id, MAX(max_ref) AS max_ref
+FROM (
+    SELECT brch_id, MAX(drs_id_ref) AS max_ref FROM db_repl_receive WHERE brch_id IN (2, 3, 5, 6) GROUP BY brch_id
+    UNION ALL
+    SELECT brch_id, MAX(drs_id_ref) AS max_ref FROM db_repl_receive_hist WHERE brch_id IN (2, 3, 5, 6) GROUP BY brch_id
+) u GROUP BY brch_id;
+"@
+                $expectedMap = @{}
+                $maxRefMap   = @{}
+                foreach ($mr in $maxRefTable.Rows) {
+                    $bId = [int]$mr['brch_id']
+                    $mRef = if ($mr['max_ref'] -isnot [DBNull]) { [int64]$mr['max_ref'] } else { 0 }
+                    $maxRefMap[$bId] = $mRef
+                    $expectedMap[$bId] = $mRef + 1
+                }
+
+                $txtFiles = @(Get-ChildItem -Path $importPath -Filter "*.txt" -ErrorAction SilentlyContinue)
+                $branchFiles = @{ 2 = @(); 3 = @(); 5 = @(); 6 = @() }
+
+                foreach ($file in $txtFiles) {
+                    $matchedBId = $null
+                    if ($file.Name -match '^(?:BB_)?02_') { $matchedBId = 2 }
+                    elseif ($file.Name -match '^(?:BB_)?03_') { $matchedBId = 3 }
+                    elseif ($file.Name -match '^(?:BB_)?05_') { $matchedBId = 5 }
+                    elseif ($file.Name -match '^(?:BB_)?06_') { $matchedBId = 6 }
+
+                    if ($matchedBId) {
+                        $firstNum = $null
+                        try {
+                            $stream = [System.IO.File]::OpenRead($file.FullName)
+                            $buf = New-Object byte[] 200
+                            $bytesRead = $stream.Read($buf, 0, 200)
+                            $stream.Close()
+                            $stream.Dispose()
+                            $txtHeader = [System.Text.Encoding]::Unicode.GetString($buf, 0, $bytesRead)
+                            $firstLine = ($txtHeader -split "`r?`n")[0]
+                            $firstCell = ($firstLine -split "`t")[0].Trim()
+                            if ($firstCell -match '^\d+$') {
+                                $firstNum = [int64]$firstCell
+                            }
+                        } catch { }
+
+                        $branchFiles[$matchedBId] += @{
+                            file      = $file
+                            first_num = $firstNum
+                        }
+                    }
+                }
+
+                foreach ($bId in @(2, 3, 5, 6)) {
+                    $bKey = $branchMap[$bId]
+                    $fList = $branchFiles[$bId]
+                    if ($fList.Count -eq 0) { continue }
+
+                    $exp = if ($expectedMap.ContainsKey($bId)) { $expectedMap[$bId] } else { 1 }
+                    $lastRecv = if ($maxRefMap.ContainsKey($bId)) { $maxRefMap[$bId] } else { 0 }
+
+                    # Delayed check (> 60 min)
+                    $oldestFile = $fList | Sort-Object { $_.file.LastWriteTime } | Select-Object -First 1
+                    if ($oldestFile) {
+                        $fAge = ($now - $oldestFile.file.LastWriteTime).TotalMinutes
+                        if ($fAge -gt 60) {
+                            $findings += @{
+                                code    = 'H05'
+                                branch  = $bKey
+                                summary = "File in Import/HQ delayed > 60 min for $bKey ($($oldestFile.file.Name), age $([int]$fAge) min)"
+                                details = "File: $($oldestFile.file.Name)`nPath: $($oldestFile.file.FullName)`nAge: $([int]$fAge) min"
+                                restart = $null
+                                sha     = Get-GuardSha1 "H05|$bKey|delayed|$($oldestFile.first_num)"
+                            }
+                        }
+                    }
+
+                    # Sequence gap check
+                    $hasExpected = ($fList | Where-Object { $_.first_num -eq $exp }).Count -gt 0
+                    if (-not $hasExpected -and $fList.Count -gt 0) {
+                        $firstAvail = ($fList | Where-Object { $_.first_num } | Sort-Object { $_.first_num } | Select-Object -First 1).first_num
+                        $findings += @{
+                            code    = 'H05'
+                            branch  = $bKey
+                            summary = "Sequence gap in Import/HQ for $($bKey): expected $exp, but first file starts at $firstAvail"
+                            details = "Expected drs_id_ref: $exp`nFiles present for branch: $($fList.Count)`nLowest file start: $firstAvail"
+                            restart = $null
+                            sha     = Get-GuardSha1 "H05|$bKey|gap|$exp"
+                        }
+                    }
+
+                    # Duplicate and old files check
+                    $seenNums = @{}
+                    foreach ($item in $fList) {
+                        if ($item.first_num -ne $null) {
+                            $fNum = $item.first_num
+                            if ($fNum -le $lastRecv) {
+                                $findings += @{
+                                    code    = 'H05'
+                                    branch  = $bKey
+                                    summary = "Old file in Import/HQ for $($bKey): starts at $fNum <= last received $lastRecv ($($item.file.Name))"
+                                    details = "File: $($item.file.Name)`nStart num: $fNum`nLast received: $lastRecv"
+                                    restart = $null
+                                    sha     = Get-GuardSha1 "H05|$bKey|old|$fNum"
+                                }
+                            }
+                            if ($seenNums.ContainsKey($fNum)) {
+                                $findings += @{
+                                    code    = 'H05'
+                                    branch  = $bKey
+                                    summary = "Duplicate start num in Import/HQ for $($bKey): $fNum in $($item.file.Name) and $($seenNums[$fNum].Name)"
+                                    details = "First file: $($seenNums[$fNum].Name)`nSecond file: $($item.file.Name)`nStart number: $fNum"
+                                    restart = $null
+                                    sha     = Get-GuardSha1 "H05|$bKey|duplicate|$fNum"
+                                }
+                            } else {
+                                $seenNums[$fNum] = $item.file
+                            }
+                        }
+                    }
+                }
+            }
+            $checked += 'H05'
+        } catch {
+            Write-Log "[guard] H05 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H06: Error log of today > 5MB or log folder missing
+        # -----------------------------------------------------------------
+        try {
+            $errDir = $null
+            $proc = Get-Process -Name repl_true -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($proc -and $proc.Path) {
+                $pDir = [System.IO.Path]::GetDirectoryName($proc.Path)
+                $cand1 = Join-Path $pDir 'repl_error'
+                $cand2 = Join-Path ([System.IO.Path]::GetDirectoryName($pDir)) 'repl_error'
+                if (Test-Path $cand1) { $errDir = $cand1 }
+                elseif (Test-Path $cand2) { $errDir = $cand2 }
+            }
+            if (-not $errDir) {
+                $candDef = 'D:\PowerTech\exe_v4_20220707  autorepl\repl_error'
+                $candDef2 = 'D:\PowerTech\repl_error'
+                if (Test-Path $candDef) { $errDir = $candDef }
+                elseif (Test-Path $candDef2) { $errDir = $candDef2 }
+            }
+
+            if (-not $errDir) {
+                $findings += @{
+                    code    = 'H06'
+                    branch  = 'hq'
+                    summary = "Log folder repl_error not found"
+                    details = "Could not locate repl_error directory near repl_true.exe or default paths"
+                    restart = $null
+                    sha     = Get-GuardSha1 "H06|hq|not_found"
+                }
+            } else {
+                $todayStr = (Get-Date).ToString('yyMMdd')
+                $errFile = Join-Path $errDir "error$todayStr.TXT"
+                if (Test-Path $errFile) {
+                    $fLen = (Get-Item $errFile).Length
+                    if ($fLen -gt 5MB) {
+                        $mbSize = [math]::Round($fLen / 1MB, 2)
+                        $findings += @{
+                            code    = 'H06'
+                            branch  = 'hq'
+                            summary = "Error log today exceeds 5MB ($mbSize MB) - loop suspected"
+                            details = "File: $errFile`nSize: $mbSize MB ($fLen bytes)"
+                            restart = $null
+                            sha     = Get-GuardSha1 "H06|hq|$todayStr"
+                        }
+                    }
+                }
+            }
+            $checked += 'H06'
+        } catch {
+            Write-Log "[guard] H06 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H07: Orphan rows in sto_trans_lines_ex_repl (catalog M4)
+        # -----------------------------------------------------------------
+        try {
+            $h07Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT sth_id_ref, stl_line_no, sth_id, sto_id, CREATE_DATE
+FROM sto_trans_lines_ex_repl
+WHERE CREATE_DATE < DATEADD(day, -30, GETDATE())
+   OR NOT EXISTS (SELECT 1 FROM STO_TRANS_HEADER_REPL h WHERE h.STH_ID_REF = sto_trans_lines_ex_repl.sth_id_ref);
+"@
+            if ($h07Table.Rows.Count -gt 0) {
+                $totalCnt = $h07Table.Rows.Count
+                $detLines = @("Total orphan rows: $totalCnt")
+                for ($i = 0; $i -lt [math]::Min(50, $totalCnt); $i++) {
+                    $hr = $h07Table.Rows[$i]
+                    $detLines += "ref:$($hr['sth_id_ref']) line:$($hr['stl_line_no']) sth:$($hr['sth_id']) sto:$($hr['sto_id']) date:$($hr['CREATE_DATE'])"
+                }
+                $detStr = $detLines -join "`n"
+
+                for ($i = 0; $i -lt [math]::Min(50, $totalCnt); $i++) {
+                    $hr = $h07Table.Rows[$i]
+                    $sRef = [string]$hr['sth_id_ref']
+                    $lNo  = [string]$hr['stl_line_no']
+                    $findings += @{
+                        code    = 'H07'
+                        branch  = 'hq'
+                        summary = "Orphan row in sto_trans_lines_ex_repl (ref: $sRef, line: $lNo)"
+                        details = $detStr
+                        restart = $null
+                        sha     = Get-GuardSha1 "H07|hq|$sRef|$lNo"
+                    }
+                }
+            }
+            $checked += 'H07'
+        } catch {
+            Write-Log "[guard] H07 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H08: Return line linked to wrong/missing source (catalog M5)
+        # -----------------------------------------------------------------
+        try {
+            $h08Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT h.BRCH_ID, h.STH_DOC_NO, l.STH_ID_REF, l.STL_LINE_NO, l.STS_ID_REF, s.sth_id AS link_owner
+FROM STO_TRANS_HEADER_REPL h JOIN STO_TRANS_LINES_REPL l ON l.STH_ID_REF = h.STH_ID_REF
+LEFT JOIN (SELECT sts_id, sth_id FROM sto_trans_source_index_repl UNION ALL SELECT sts_id, sth_id FROM sto_trans_source_index) s ON s.sts_id = l.STS_ID_REF
+WHERE h.SSTT_ID = 17 AND (s.sts_id IS NULL OR s.sth_id <> l.STH_ID);
+"@
+            if ($h08Table.Rows.Count -gt 0) {
+                $seenH08 = @{}
+                foreach ($r in $h08Table.Rows) {
+                    $bId = [int]$r['BRCH_ID']
+                    $bKey = if ($branchMap.ContainsKey($bId)) { $branchMap[$bId] } else { "brch_$bId" }
+                    $sthRef = [string]$r['STH_ID_REF']
+                    $docNo = [string]$r['STH_DOC_NO']
+                    $k = "$bKey|$sthRef"
+                    if (-not $seenH08.ContainsKey($k)) {
+                        $seenH08[$k] = $true
+                        $findings += @{
+                            code    = 'H08'
+                            branch  = $bKey
+                            summary = "Return document with invalid source link (branch: $bKey, doc: $docNo, ref: $sthRef)"
+                            details = "Branch: $bKey (id $bId)`nDoc No: $docNo`nSTH_ID_REF: $sthRef`nSTS_ID_REF: $($r['STS_ID_REF'])`nLink Owner: $($r['link_owner'])"
+                            restart = $null
+                            sha     = Get-GuardSha1 "H08|$bKey|$sthRef"
+                        }
+                    }
+                }
+            }
+            $checked += 'H08'
+        } catch {
+            Write-Log "[guard] H08 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H10: Document stuck in STO_TRANS_HEADER_REPL > 7 days
+        # -----------------------------------------------------------------
+        try {
+            $h10Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT BRCH_ID, STH_DOC_NO, SSTT_ID, STH_ID_REF, CREATE_DATE
+FROM STO_TRANS_HEADER_REPL
+WHERE CREATE_DATE < DATEADD(day, -7, GETDATE());
+"@
+            if ($h10Table.Rows.Count -gt 0) {
+                for ($i = 0; $i -lt [math]::Min(50, $h10Table.Rows.Count); $i++) {
+                    $r = $h10Table.Rows[$i]
+                    $bId = [int]$r['BRCH_ID']
+                    $bKey = if ($branchMap.ContainsKey($bId)) { $branchMap[$bId] } else { "brch_$bId" }
+                    $sthRef = [string]$r['STH_ID_REF']
+                    $docNo = [string]$r['STH_DOC_NO']
+                    $cDate = [string]$r['CREATE_DATE']
+
+                    $findings += @{
+                        code    = 'H10'
+                        branch  = $bKey
+                        summary = "Document stuck > 7 days in REPL waiting (branch: $bKey, doc: $docNo, date: $cDate)"
+                        details = "Branch: $bKey (id $bId)`nDoc No: $docNo`nType: $($r['SSTT_ID'])`nSTH_ID_REF: $sthRef`nCreated: $cDate"
+                        restart = $null
+                        sha     = Get-GuardSha1 "H10|$bKey|$sthRef"
+                    }
+                }
+            }
+            $checked += 'H10'
+        } catch {
+            Write-Log "[guard] H10 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H13: Orphan document in REPL header without index row > 2 hours (catalog M7)
+        # -----------------------------------------------------------------
+        try {
+            $h13Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT h.BRCH_ID, h.STH_DOC_NO, h.SSTT_ID, h.STH_ID_REF, h.CREATE_DATE FROM STO_TRANS_HEADER_REPL h
+WHERE NOT EXISTS (SELECT 1 FROM STO_TRANS_INDEX_REPL i WHERE i.brch_id = h.BRCH_ID AND i.sth_id_ref = h.STH_ID_REF)
+  AND h.CREATE_DATE < DATEADD(hour, -2, GETDATE());
+"@
+            if ($h13Table.Rows.Count -gt 0) {
+                for ($i = 0; $i -lt [math]::Min(50, $h13Table.Rows.Count); $i++) {
+                    $r = $h13Table.Rows[$i]
+                    $bId = [int]$r['BRCH_ID']
+                    $bKey = if ($branchMap.ContainsKey($bId)) { $branchMap[$bId] } else { "brch_$bId" }
+                    $sthRef = [string]$r['STH_ID_REF']
+                    $docNo = [string]$r['STH_DOC_NO']
+                    $cDate = [string]$r['CREATE_DATE']
+
+                    $findings += @{
+                        code    = 'H13'
+                        branch  = $bKey
+                        summary = "Orphan document in REPL waiting without index row > 2h (branch: $bKey, doc: $docNo)"
+                        details = "Branch: $bKey (id $bId)`nDoc No: $docNo`nSTH_ID_REF: $sthRef`nCreated: $cDate"
+                        restart = $null
+                        sha     = Get-GuardSha1 "H13|$bKey|$sthRef"
+                    }
+                }
+            }
+            $checked += 'H13'
+        } catch {
+            Write-Log "[guard] H13 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H14: Received sequence gap or brch_last_receive jumped ahead
+        # -----------------------------------------------------------------
+        try {
+            $jumpTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT b.brch_id, b.brch_last_receive, m.max_recv
+FROM branches b
+JOIN (
+    SELECT brch_id, MAX(drs_id_ref) AS max_recv
+    FROM (
+        SELECT brch_id, drs_id_ref FROM db_repl_receive WHERE brch_id IN (2, 3, 5, 6)
+        UNION ALL
+        SELECT brch_id, drs_id_ref FROM db_repl_receive_hist WHERE brch_id IN (2, 3, 5, 6)
+    ) u GROUP BY brch_id
+) m ON m.brch_id = b.brch_id
+WHERE b.brch_last_receive > m.max_recv;
+"@
+            foreach ($jr in $jumpTable.Rows) {
+                $bId = [int]$jr['brch_id']
+                $bKey = if ($branchMap.ContainsKey($bId)) { $branchMap[$bId] } else { "brch_$bId" }
+                $counterVal = [int64]$jr['brch_last_receive']
+                $maxRecvVal = [int64]$jr['max_recv']
+
+                $findings += @{
+                    code    = 'H14'
+                    branch  = $bKey
+                    summary = "Counter jumped ahead for $($bKey): brch_last_receive ($counterVal) > MAX drs_id_ref ($maxRecvVal)"
+                    details = "Branch: $bKey (id $bId)`nbrch_last_receive: $counterVal`nMAX received: $maxRecvVal`nDifference: $($counterVal - $maxRecvVal)"
+                    restart = $null
+                    sha     = Get-GuardSha1 "H14|$bKey|jump|$counterVal"
+                }
+            }
+
+            if (-not $guardState.h14_last_checked) {
+                $guardState.h14_last_checked = [PSCustomObject]@{}
+            }
+
+            foreach ($bId in @(2, 3, 5, 6)) {
+                $bKey = $branchMap[$bId]
+                $maxTbl = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT MAX(m) AS max_id FROM (
+    SELECT MAX(drs_id_ref) AS m FROM db_repl_receive WHERE brch_id = $bId
+    UNION ALL
+    SELECT MAX(drs_id_ref) AS m FROM db_repl_receive_hist WHERE brch_id = $bId
+) u;
+"@
+                if ($maxTbl.Rows.Count -gt 0 -and $maxTbl.Rows[0]['max_id'] -isnot [DBNull]) {
+                    $maxId = [int64]$maxTbl.Rows[0]['max_id']
+                    $startId = 0
+                    $bIdStr = [string]$bId
+                    if ($guardState.h14_last_checked.$bIdStr) {
+                        $startId = [int64]$guardState.h14_last_checked.$bIdStr
+                    } else {
+                        $startId = [math]::Max(1, $maxId - 50000)
+                    }
+
+                    if ($maxId -gt $startId) {
+                        $gapSql = @"
+SET NOCOUNT ON;
+SELECT t.drs_id_ref AS gap_start, t.drs_id_ref + 1 AS missing_id
+FROM (
+    SELECT drs_id_ref FROM db_repl_receive WHERE brch_id = $bId AND drs_id_ref BETWEEN $startId AND $maxId
+    UNION
+    SELECT drs_id_ref FROM db_repl_receive_hist WHERE brch_id = $bId AND drs_id_ref BETWEEN $startId AND $maxId
+) t
+WHERE t.drs_id_ref < $maxId
+  AND NOT EXISTS (
+      SELECT 1 FROM (
+          SELECT drs_id_ref FROM db_repl_receive WHERE brch_id = $bId AND drs_id_ref BETWEEN $startId AND $maxId
+          UNION
+          SELECT drs_id_ref FROM db_repl_receive_hist WHERE brch_id = $bId AND drs_id_ref BETWEEN $startId AND $maxId
+      ) t2 WHERE t2.drs_id_ref = t.drs_id_ref + 1
+  );
+"@
+                        $gapTable = Invoke-Sql $gapSql
+                        if ($gapTable.Rows.Count -gt 0) {
+                            for ($g = 0; $g -lt [math]::Min(50, $gapTable.Rows.Count); $g++) {
+                                $gr = $gapTable.Rows[$g]
+                                $gStart = [int64]$gr['gap_start']
+                                $missId = [int64]$gr['missing_id']
+                                $findings += @{
+                                    code    = 'H14'
+                                    branch  = $bKey
+                                    summary = "Received sequence gap for $bKey starting at $gStart (missing $missId)"
+                                    details = "Branch: $bKey (id $bId)`nGap after: $gStart`nMissing order: $missId`nRange checked: $startId to $maxId"
+                                    restart = $null
+                                    sha     = Get-GuardSha1 "H14|$bKey|$gStart"
+                                }
+                            }
+                        }
+                        $guardState.h14_last_checked | Add-Member -MemberType NoteProperty -Name $bIdStr -Value $maxId -Force
+                    }
+                }
+            }
+            $checked += 'H14'
+        } catch {
+            Write-Log "[guard] H14 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H17: Errors recorded in drr_error column
+        # -----------------------------------------------------------------
+        try {
+            if (-not $guardState.h17_last_checked) {
+                $guardState.h17_last_checked = [PSCustomObject]@{}
+            }
+
+            foreach ($bId in @(2, 3, 5, 6)) {
+                $bKey = $branchMap[$bId]
+                $bIdStr = [string]$bId
+                $lastChecked = 0
+                if ($guardState.h17_last_checked.$bIdStr) {
+                    $lastChecked = [int64]$guardState.h17_last_checked.$bIdStr
+                } else {
+                    $mRefTbl = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT MAX(m) AS max_id FROM (
+    SELECT MAX(drs_id_ref) AS m FROM db_repl_receive WHERE brch_id = $bId
+    UNION ALL
+    SELECT MAX(drs_id_ref) AS m FROM db_repl_receive_hist WHERE brch_id = $bId
+) u;
+"@
+                    if ($mRefTbl.Rows.Count -gt 0 -and $mRefTbl.Rows[0]['max_id'] -isnot [DBNull]) {
+                        $lastChecked = [math]::Max(0, [int64]$mRefTbl.Rows[0]['max_id'] - 50000)
+                    }
+                }
+
+                $errSql = @"
+SET NOCOUNT ON;
+SELECT brch_id, drs_id_ref, drr_error, create_date
+FROM (
+    SELECT brch_id, drs_id_ref, drr_error, create_date FROM db_repl_receive
+    WHERE brch_id = $bId AND drr_error IS NOT NULL AND LTRIM(RTRIM(drr_error)) <> '' AND drs_id_ref > $lastChecked
+    UNION ALL
+    SELECT brch_id, drs_id_ref, drr_error, create_date FROM db_repl_receive_hist
+    WHERE brch_id = $bId AND drr_error IS NOT NULL AND LTRIM(RTRIM(drr_error)) <> '' AND drs_id_ref > $lastChecked
+) u
+ORDER BY drs_id_ref;
+"@
+                $errTable = Invoke-Sql $errSql
+                $maxSeenInTbl = $lastChecked
+                if ($errTable.Rows.Count -gt 0) {
+                    for ($e = 0; $e -lt [math]::Min(50, $errTable.Rows.Count); $e++) {
+                        $er = $errTable.Rows[$e]
+                        $drsRef = [int64]$er['drs_id_ref']
+                        if ($drsRef -gt $maxSeenInTbl) { $maxSeenInTbl = $drsRef }
+                        $errTxt = [string]$er['drr_error']
+                        $cDate  = [string]$er['create_date']
+
+                        $findings += @{
+                            code    = 'H17'
+                            branch  = $bKey
+                            summary = "Replication error on $bKey (ref $drsRef): $(if ($errTxt.Length -gt 80) { $errTxt.Substring(0, 80) + '...' } else { $errTxt })"
+                            details = "Branch: $bKey (id $bId)`ndrs_id_ref: $drsRef`nError: $errTxt`nDate: $cDate"
+                            restart = $null
+                            sha     = Get-GuardSha1 "H17|$bKey|$drsRef"
+                        }
+                    }
+                }
+                $guardState.h17_last_checked | Add-Member -MemberType NoteProperty -Name $bIdStr -Value $maxSeenInTbl -Force
+            }
+            $checked += 'H17'
+        } catch {
+            Write-Log "[guard] H17 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # Send findings to sync_guard.php
+        # -----------------------------------------------------------------
+        if ($checked.Count -gt 0) {
+            try {
+                $guardPayload = @{
+                    agent    = 'hq'
+                    checked  = $checked
+                    findings = $findings
+                } | ConvertTo-Json -Depth 6 -Compress
+
+                $guardBytes = [System.Text.Encoding]::UTF8.GetBytes($guardPayload)
+                $guardResp = Invoke-RestMethod -Uri $GuardUrl -Method Post -Body $guardBytes `
+                             -ContentType 'application/json; charset=utf-8' `
+                             -Headers @{ 'X-Sync-Token' = $SyncToken } -TimeoutSec 60
+
+                Write-Log "[guard] sent findings ($($findings.Count) findings, $($checked.Count) checked): stored=$($guardResp.stored) resolved=$($guardResp.resolved)"
+            } catch {
+                Write-Log "[guard] upload to sync_guard.php failed: $($_.Exception.Message)"
+            }
+        }
+    } catch {
+        Write-Log "[guard] top-level error: $($_.Exception.Message)"
+    } finally {
+        $guardState.last_run = $now.ToString('o')
+        try {
+            $guardState | ConvertTo-Json -Depth 5 -Compress | Set-Content -Path $guardStatePath -Encoding UTF8
+        } catch { }
+    }
+}
 
 # ---------------------------------------------------------------------
 #  Replication queue (Anzmah db_repl_receive). The replication stops at
@@ -288,20 +1244,75 @@ function Send-Beat {
     param([int]$Rows = 0, [string]$ErrorText = '')
 
     try {
-        $body = @{
-            agent   = $AgentKey
-            rows    = $Rows
-            error   = $ErrorText
-            version = $AgentVer
-            host    = $env:COMPUTERNAME
-            repl    = (Get-ReplQueue)
-            repl_send = (Get-ReplSend)
-        } | ConvertTo-Json -Compress
+        $rState = Get-ReplRestartState
+        $beatCmdResult = $null
+        $beatReplAction = $null
 
+        if ($rState.pendingCmdResult) {
+            $cTxt = [string]$rState.pendingCmdResult.text
+            if ($cTxt.Length -gt 200) { $cTxt = $cTxt.Substring(0, 200) }
+            $beatCmdResult = @{
+                id   = [int]$rState.pendingCmdResult.id
+                ok   = [bool]$rState.pendingCmdResult.ok
+                text = $cTxt
+            }
+        }
+        if ($rState.pendingReplAction) {
+            $aTxt = [string]$rState.pendingReplAction.text
+            if ($aTxt.Length -gt 200) { $aTxt = $aTxt.Substring(0, 200) }
+            $beatReplAction = @{
+                ok   = [bool]$rState.pendingReplAction.ok
+                text = $aTxt
+            }
+        }
+
+        $bodyObj = [ordered]@{
+            agent     = $AgentKey
+            rows      = $Rows
+            error     = $ErrorText
+            version   = $AgentVer
+            host      = $env:COMPUTERNAME
+            repl      = (Get-ReplQueue)
+            repl_send = (Get-ReplSend)
+        }
+        if ($beatCmdResult)  { $bodyObj['cmd_result']  = $beatCmdResult }
+        if ($beatReplAction) { $bodyObj['repl_action'] = $beatReplAction }
+
+        $body = $bodyObj | ConvertTo-Json -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
-        $null = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
+        $resp = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
                 -ContentType 'application/json; charset=utf-8' `
                 -Headers @{ 'X-Sync-Token' = $SyncToken } -TimeoutSec 20
+
+        # Success - clear pending items that were sent
+        if ($rState.pendingCmdResult -or $rState.pendingReplAction) {
+            $rState.pendingCmdResult = $null
+            $rState.pendingReplAction = $null
+            Save-ReplRestartState $rState
+        }
+
+        # Check if server returned a command
+        if ($resp -and $resp.cmd -and $resp.cmd.id) {
+            $cmdId = [int]$resp.cmd.id
+            $cmdName = [string]$resp.cmd.name
+            Write-Log "[beat] received command $cmdName (id $cmdId)"
+            if ($cmdName -eq 'restart_repl') {
+                $rResult = Invoke-ReplRestart
+                $rState.pendingCmdResult = @{
+                    id   = $cmdId
+                    ok   = [bool]$rResult.ok
+                    text = [string]$rResult.text
+                }
+            } else {
+                $rState.pendingCmdResult = @{
+                    id   = $cmdId
+                    ok   = $false
+                    text = 'unknown cmd'
+                }
+            }
+            Save-ReplRestartState $rState
+        }
+
         Write-Log "[beat] sent (rows=$Rows)"
     } catch {
         Write-Log "[beat] failed: $($_.Exception.Message)"
@@ -1114,6 +2125,9 @@ if (-not $allOk) {
     if (-not $okPurchased) { $failed += 'purchased' }
     $beatErr = 'sections failed: ' + ($failed -join ', ')
 }
+
+Check-ReplAutoWatchdog
+Invoke-Guard
 Send-Beat -Rows $script:BeatRows -ErrorText $beatErr
 
 if ($allOk) {
@@ -1197,4 +2211,17 @@ if ($allOk) {
 #  seconds. If any section uploads on every run while nothing is
 #  actually changing in the ERP, that is the same bug coming back -
 #  stop and fix it before it builds up again.
+#
+# ---------------------------------------------------------------------
+#  REPL RESTART HELPER TASK (FagalaReplStart)
+#
+#  Run ONCE per machine logged in as the interactive cashier/user:
+#
+#    $p = Get-Process repl_true -ErrorAction SilentlyContinue | Select-Object -First 1
+#    $exe = if ($p -and $p.Path) { $p.Path } else { 'D:\PowerTech\exe_v4_20220707  autorepl\repl_true.exe' }
+#    $dir = [System.IO.Path]::GetDirectoryName($exe)
+#    $act = New-ScheduledTaskAction -Execute 'powershell.exe' `
+#         -Argument "-WindowStyle Minimized -Command Start-Process -FilePath `"$exe`" -WorkingDirectory `"$dir`" -WindowStyle Minimized"
+#    $prn = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+#    Register-ScheduledTask -TaskName 'FagalaReplStart' -Action $act -Principal $prn -Force
 # =====================================================================

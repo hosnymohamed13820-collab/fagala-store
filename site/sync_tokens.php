@@ -30,6 +30,7 @@ const SYNC_AGENT_TOKENS = [
     // 🔴 نفس ASHRAQA_SYNC_TOKEN في sync_ashraqa.php — لو اتغيّر هناك غيّره هنا.
     'ashraqa' => 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS',
     'sms_phone' => 'sms_638d41ecfeb47c0e949323da3f7e292ca2107baf',
+    'guard_watch' => 'a221dee4938c9e9bbd000042bebb15ac6b3d2266', // برنامج كلود على جهاز محمد — guard_feed.php / guard_note.php بس
 ];
 
 // الوكلاء المسموح لهم يبعتوا على sync_branch.php

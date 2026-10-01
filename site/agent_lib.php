@@ -391,6 +391,8 @@ function agent_repl_beat(string $key, array $repl): void
             'ربط ' . $label . ' واقف',
             $waiting . ' أمر مستني من ' . agent_ago($age) . ' — أول أمر واقف رقم ' . ($firstId ?? '؟'),
             'settings.php#agents');
+        require_once __DIR__ . '/rabt_guard_lib.php';
+        rabt_queue_restart($key, 'طابور الفرع واقف');
         return;
     }
 
@@ -415,6 +417,8 @@ function agent_repl_beat(string $key, array $repl): void
             'ربط ' . $label . ' مابيستلمش',
             'آخر أمر ' . $curRecv . ' والإدارة وصلت ' . $hqLastSent . ' (ثابت من ' . agent_ago($staleMin) . ')',
             'settings.php#agents');
+        require_once __DIR__ . '/rabt_guard_lib.php';
+        rabt_queue_restart($key, 'الفرع مابيستلمش');
         return;
     }
 }
@@ -469,6 +473,8 @@ function agent_repl_send_beat(string $key, array $s): void
         'الإدارة مابتطلّعش ملفات ربط',
         $pending . ' أمر مستني تصدير من ' . agent_ago($pendAge),
         'settings.php#agents');
+    require_once __DIR__ . '/rabt_guard_lib.php';
+    rabt_queue_restart('hq', 'الإدارة مابتطلّعش ملفات ربط');
 }
 
 function agent_exists(string $key): bool

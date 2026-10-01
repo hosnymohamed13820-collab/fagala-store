@@ -53,7 +53,7 @@ if ($agent === '' || !preg_match('/^[a-z0-9_]{2,32}$/', $agent)) {
     beat_die('Bad agent key.');
 }
 
-if (!synctok_ok($agent, $token, array_diff(array_keys(SYNC_AGENT_TOKENS), ['sms_phone']))) beat_die('Unauthorized.', 401);
+if (!synctok_ok($agent, $token, array_diff(array_keys(SYNC_AGENT_TOKENS), ['sms_phone', 'guard_watch']))) beat_die('Unauthorized.', 401);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/agent_lib.php';
@@ -84,7 +84,20 @@ try {
         catch (Throwable $ex) { /* الأعمدة لسه مااتضافتش — النبضة نفسها نجحت */ }
     }
 
-    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    // أوامر حارس الربط (بريف ٩٤) — استلام نتائج وتنفيذ أوامر إعادة التشغيل
+    $cmdToReturn = null;
+    try {
+        require_once __DIR__ . '/rabt_guard_lib.php';
+        $cmdToReturn = rabt_handle_beat_commands($agent, $in);
+    } catch (Throwable $ex) {
+        // الجداول ممكن تبقى لسه ما اتعملتش — النبضة نفسها لازم تنجح زي النهارده
+    }
+
+    $out = ['ok' => true];
+    if ($cmdToReturn !== null) {
+        $out['cmd'] = $cmdToReturn;
+    }
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $ex) {
     beat_die('Server error.', 500);
 }

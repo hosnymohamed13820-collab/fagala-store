@@ -73,7 +73,7 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$AgentVer   = '1.3'
+$AgentVer   = '1.4'
 
 # Send everything (ignore the delta) once every N runs, so a lost
 # update can never stay lost forever. 180 runs x 5 min = ~15 hours.
@@ -150,6 +150,278 @@ function Release-Lock {
 #  (drr_import_date - create_date is when HQ made it, can be days older),
 #  and the first stuck command. Never throws: $null = "could not read".
 # ---------------------------------------------------------------------
+#  SQL helper
+# ---------------------------------------------------------------------
+function Invoke-Sql {
+    param([string]$Query)
+
+    if ($UseWindowsAuth) {
+        $cs = "Server=$SqlServer;Database=$SqlDatabase;Integrated Security=True;Connect Timeout=30"
+    } else {
+        $cs = "Server=$SqlServer;Database=$SqlDatabase;User Id=$SqlUser;Password=$SqlPassword;Connect Timeout=30"
+    }
+
+    $conn = New-Object System.Data.SqlClient.SqlConnection $cs
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
+        # replication never wait on us. A value mid-write can be read once; the next
+        # run (2 min) corrects it. We only read - nothing here writes to this DB.
+        $cmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Query
+        $cmd.CommandTimeout = 120
+        $ad = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
+        $dt = New-Object System.Data.DataTable
+        $null = $ad.Fill($dt)
+        # NOTE: the comma is load-bearing. "return $dt" makes PowerShell unroll
+        #       the DataTable into a DataRow array, and then $table.Rows yields
+        #       objects whose columns read back empty - every row ships as
+        #       item_id=0 and the website rejects the lot. Do not remove it.
+        return ,$dt
+    } finally {
+        $conn.Close()
+        $conn.Dispose()
+    }
+}
+
+# ---------------------------------------------------------------------
+#  REPL RESTART & WATCHDOG (Brief 94)
+# ---------------------------------------------------------------------
+function Get-ReplRestartState {
+    $path = Join-Path $PSScriptRoot "repl_restart.json"
+    if (Test-Path $path) {
+        try {
+            $content = Get-Content -Path $path -Raw -Encoding UTF8 -ErrorAction Stop
+            if ($content) { return ($content | ConvertFrom-Json) }
+        } catch { }
+    }
+    return [PSCustomObject]@{
+        attempts          = @()
+        motionFingerprint = ''
+        motionTime        = ''
+        downSince         = ''
+        multiAlertTime    = ''
+        pendingCmdResult  = $null
+        pendingReplAction = $null
+    }
+}
+
+function Save-ReplRestartState {
+    param($StateObj)
+    $path = Join-Path $PSScriptRoot "repl_restart.json"
+    try {
+        $json = $StateObj | ConvertTo-Json -Depth 4 -Compress
+        Set-Content -Path $path -Value $json -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        Write-Log "[repl] could not save repl_restart.json: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ReplRestart {
+    Write-Log "[repl] restart requested"
+
+    # 1. Hold file: if repl_hold.txt is present and < 4 hours old, abort
+    $holdFile = Join-Path $PSScriptRoot 'repl_hold.txt'
+    if (Test-Path $holdFile) {
+        try {
+            $holdAge = (Get-Date) - (Get-Item $holdFile).LastWriteTime
+            if ($holdAge.TotalHours -lt 4) {
+                Write-Log "[repl] restart aborted: hold file present and < 4h old"
+                return @{ ok = $false; text = 'hold file' }
+            }
+        } catch { }
+    }
+
+    # 2. Limit: max 3 attempts in the last 60 minutes
+    $rState = Get-ReplRestartState
+    $now = Get-Date
+    $recentAttempts = @()
+    if ($rState.attempts) {
+        foreach ($att in $rState.attempts) {
+            try {
+                $dt = [datetime]$att
+                if (($now - $dt).TotalMinutes -lt 60) {
+                    $recentAttempts += $att
+                }
+            } catch { }
+        }
+    }
+    if ($recentAttempts.Count -ge 3) {
+        Write-Log "[repl] restart aborted: limit 3/hour"
+        return @{ ok = $false; text = 'limit 3/hour' }
+    }
+
+    # 3. Motion check: if process is running, verify queue is not moving
+    $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+    if ($procs.Count -gt 0) {
+        try {
+            $mTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
+       (SELECT ISNULL(MAX(drr_id), 0) FROM db_repl_receive_hist) AS max_hist,
+       (SELECT COUNT(*) FROM STO_TRANS_HEADER_REPL) AS c_repl;
+"@
+            if ($mTable.Rows.Count -gt 0) {
+                $mr = $mTable.Rows[0]
+                $curMotion = "$($mr['c_recv'])|$($mr['max_hist'])|$($mr['c_repl'])"
+                if ($rState.motionFingerprint -and $rState.motionTime) {
+                    $mAge = ($now - [datetime]$rState.motionTime).TotalMinutes
+                    if ($mAge -lt 15 -or $curMotion -ne $rState.motionFingerprint) {
+                        Write-Log "[repl] restart aborted: busy - queue moving"
+                        return @{ ok = $false; text = 'busy - queue moving' }
+                    }
+                }
+            }
+        } catch {
+            Write-Log "[repl] motion check error: $($_.Exception.Message)"
+        }
+    }
+
+    # Record attempt timestamp in state
+    $recentAttempts += $now.ToString('o')
+    $rState.attempts = $recentAttempts
+    Save-ReplRestartState $rState
+
+    # 4. Kill repl_true process
+    Write-Log "[repl] killing repl_true process..."
+    try {
+        Get-Process -Name repl_true -ErrorAction SilentlyContinue | Stop-Process -Force
+    } catch { }
+
+    $killed = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        if ($pLeft.Count -eq 0) {
+            $killed = $true
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $killed) {
+        $pLeft = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        Write-Log "[repl] could not kill $($pLeft.Count)"
+        return @{ ok = $false; text = "could not kill $($pLeft.Count)" }
+    }
+
+    # 5. Start via FagalaReplStart scheduled task
+    Write-Log "[repl] starting FagalaReplStart task..."
+    try {
+        Start-ScheduledTask -TaskName 'FagalaReplStart' -ErrorAction Stop
+    } catch {
+        Write-Log "[repl] FagalaReplStart task missing: $($_.Exception.Message)"
+        return @{ ok = $false; text = 'FagalaReplStart task missing' }
+    }
+
+    $finalCount = 0
+    for ($i = 0; $i -lt 30; $i++) {
+        Start-Sleep -Seconds 1
+        $pAfter = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+        if ($pAfter.Count -eq 1) {
+            $finalCount = 1
+            break
+        }
+        if ($pAfter.Count -gt 1) {
+            $finalCount = $pAfter.Count
+            break
+        }
+    }
+
+    if ($finalCount -eq 1) {
+        Write-Log "[repl] restarted successfully (1 copy running)"
+        return @{ ok = $true; text = 'ok' }
+    } elseif ($finalCount -eq 0) {
+        Write-Log "[repl] started 0 (user logged off?)"
+        return @{ ok = $false; text = 'started 0 (user logged off?)' }
+    } else {
+        Write-Log "[repl] started $finalCount"
+        return @{ ok = $false; text = "started $finalCount" }
+    }
+}
+
+function Check-ReplAutoWatchdog {
+    try {
+        $rState = Get-ReplRestartState
+        $now = Get-Date
+        $procs = @(Get-Process -Name repl_true -ErrorAction SilentlyContinue)
+
+        if ($procs.Count -eq 0) {
+            if (-not $rState.downSince) {
+                $rState.downSince = $now.ToString('o')
+                Save-ReplRestartState $rState
+                Write-Log "[watchdog] repl_true is down, recorded timestamp"
+            } else {
+                $downMin = ($now - [datetime]$rState.downSince).TotalMinutes
+                if ($downMin -ge 10) {
+                    Write-Log "[watchdog] repl_true down for $([int]$downMin) min -> invoking restart"
+                    $res = Invoke-ReplRestart
+                    $rState.downSince = ''
+                    $resText = if ($res.text) { [string]$res.text } else { '' }
+                    if ($resText.Length -gt 180) { $resText = $resText.Substring(0, 180) }
+                    $rState.pendingReplAction = @{
+                        ok   = [bool]$res.ok
+                        text = "auto start: $resText"
+                    }
+                    Save-ReplRestartState $rState
+                }
+            }
+        } elseif ($procs.Count -eq 1) {
+            $dirty = $false
+            if ($rState.downSince) {
+                $rState.downSince = ''
+                $dirty = $true
+            }
+            try {
+                $mTable = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
+       (SELECT ISNULL(MAX(drr_id), 0) FROM db_repl_receive_hist) AS max_hist,
+       (SELECT COUNT(*) FROM STO_TRANS_HEADER_REPL) AS c_repl;
+"@
+                if ($mTable.Rows.Count -gt 0) {
+                    $mr = $mTable.Rows[0]
+                    # motionTime = when the queue LAST CHANGED (not when we last looked),
+                    # so the restart check really means "no movement for 15 minutes".
+                    $fpNow = "$($mr['c_recv'])|$($mr['max_hist'])|$($mr['c_repl'])"
+                    if ($fpNow -ne $rState.motionFingerprint -or -not $rState.motionTime) {
+                        $rState.motionFingerprint = $fpNow
+                        $rState.motionTime = $now.ToString('o')
+                        $dirty = $true
+                    }
+                }
+            } catch { }
+            if ($dirty) { Save-ReplRestartState $rState }
+        } else {
+            # Multiple copies running (> 1)
+            $sendMultiAlert = $true
+            if ($rState.multiAlertTime) {
+                try {
+                    $alertAge = ($now - [datetime]$rState.multiAlertTime).TotalMinutes
+                    if ($alertAge -lt 60) { $sendMultiAlert = $false }
+                } catch { }
+            }
+            if ($sendMultiAlert) {
+                $rState.multiAlertTime = $now.ToString('o')
+                $rState.pendingReplAction = @{
+                    ok   = $false
+                    text = "$($procs.Count) copies of repl_true running"
+                }
+                Save-ReplRestartState $rState
+                Write-Log "[watchdog] alert: $($procs.Count) copies of repl_true running"
+            }
+        }
+    } catch {
+        Write-Log "[watchdog] error: $($_.Exception.Message)"
+    }
+}
+
+# ---------------------------------------------------------------------
+#  Replication queue (Anzmah db_repl_receive). The replication stops at
+#  the first command that fails and never writes why, so the queue just
+#  grows in silence (Sep 20-23 2026: 3 days, 797 then 1574 rows).
+#  We report: how many are waiting, minutes since the oldest one ARRIVED
+#  (drr_import_date - create_date is when HQ made it, can be days older),
+#  and the first stuck command. Never throws: $null = "could not read".
+# ---------------------------------------------------------------------
 function Get-ReplQueue {
     try {
         $t = Invoke-Sql @"
@@ -188,18 +460,74 @@ FROM (SELECT COUNT(*) AS n,
 function Send-Beat {
     param([int]$Rows = 0, [string]$ErrorText = '')
     try {
-        $body = @{
+        $rState = Get-ReplRestartState
+        $beatCmdResult = $null
+        $beatReplAction = $null
+
+        if ($rState.pendingCmdResult) {
+            $cTxt = [string]$rState.pendingCmdResult.text
+            if ($cTxt.Length -gt 200) { $cTxt = $cTxt.Substring(0, 200) }
+            $beatCmdResult = @{
+                id   = [int]$rState.pendingCmdResult.id
+                ok   = [bool]$rState.pendingCmdResult.ok
+                text = $cTxt
+            }
+        }
+        if ($rState.pendingReplAction) {
+            $aTxt = [string]$rState.pendingReplAction.text
+            if ($aTxt.Length -gt 200) { $aTxt = $aTxt.Substring(0, 200) }
+            $beatReplAction = @{
+                ok   = [bool]$rState.pendingReplAction.ok
+                text = $aTxt
+            }
+        }
+
+        $bodyObj = [ordered]@{
             agent   = $AgentKey
             rows    = $Rows
             error   = $ErrorText
             version = $AgentVer
             host    = $env:COMPUTERNAME
             repl    = (Get-ReplQueue)
-        } | ConvertTo-Json -Compress
+        }
+        if ($beatCmdResult)  { $bodyObj['cmd_result']  = $beatCmdResult }
+        if ($beatReplAction) { $bodyObj['repl_action'] = $beatReplAction }
+
+        $body = $bodyObj | ConvertTo-Json -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
-        $null = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
+        $resp = Invoke-RestMethod -Uri $BeatUrl -Method Post -Body $bytes `
                 -ContentType 'application/json; charset=utf-8' `
                 -Headers @{ 'X-Sync-Token' = $SyncToken } -TimeoutSec 20
+
+        # Beat delivered successfully -> clear the pending fields from state
+        if ($rState.pendingCmdResult -or $rState.pendingReplAction) {
+            $rState.pendingCmdResult = $null
+            $rState.pendingReplAction = $null
+            Save-ReplRestartState $rState
+        }
+
+        # Check for command from server
+        if ($resp -and $resp.cmd -and $resp.cmd.id) {
+            $cmdId = [int]$resp.cmd.id
+            $cmdName = [string]$resp.cmd.name
+            Write-Log "[beat] received command $cmdName (id $cmdId)"
+            if ($cmdName -eq 'restart_repl') {
+                $rResult = Invoke-ReplRestart
+                $rState.pendingCmdResult = @{
+                    id   = $cmdId
+                    ok   = [bool]$rResult.ok
+                    text = [string]$rResult.text
+                }
+            } else {
+                $rState.pendingCmdResult = @{
+                    id   = $cmdId
+                    ok   = $false
+                    text = 'unknown cmd'
+                }
+            }
+            Save-ReplRestartState $rState
+        }
+
         Write-Log "[beat] sent (rows=$Rows)"
     } catch {
         Write-Log "[beat] failed: $($_.Exception.Message)"
@@ -209,46 +537,12 @@ function Send-Beat {
 function Stop-Run {
     param([int]$Rows, [string]$ErrorText, [int]$Code)
     Release-Lock
+    Check-ReplAutoWatchdog
     Send-Beat -Rows $Rows -ErrorText $ErrorText
     $sec = [int]((Get-Date) - $RunStarted).TotalSeconds
     if ($Code -eq 0) { Write-Log "--- $AgentKey sync finished OK in $sec sec ---" }
     else             { Write-Log "--- $AgentKey sync FAILED in $sec sec ---" }
     exit $Code
-}
-
-# ---------------------------------------------------------------------
-#  SQL helper
-# ---------------------------------------------------------------------
-function Invoke-Sql {
-    param([string]$Query)
-
-    if ($UseWindowsAuth) {
-        $cs = "Server=$SqlServer;Database=$SqlDatabase;Integrated Security=True;Connect Timeout=30"
-    } else {
-        $cs = "Server=$SqlServer;Database=$SqlDatabase;User Id=$SqlUser;Password=$SqlPassword;Connect Timeout=30"
-    }
-
-    $conn = New-Object System.Data.SqlClient.SqlConnection $cs
-    try {
-        $conn.Open()
-        $cmd = $conn.CreateCommand()
-        # READ UNCOMMITTED: read without taking shared locks, so the cashier and the
-        # replication never wait on us. A value mid-write can be read once; the next
-        # run (2 min) corrects it. We only read - nothing here writes to this DB.
-        $cmd.CommandText = "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;`n" + $Query
-        $cmd.CommandTimeout = 120
-        $ad = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
-        $dt = New-Object System.Data.DataTable
-        $null = $ad.Fill($dt)
-        # NOTE: the comma is load-bearing. "return $dt" makes PowerShell unroll
-        #       the DataTable into a DataRow array, and then $table.Rows yields
-        #       objects whose columns read back empty - every row ships as
-        #       item_id=0 and the website rejects the lot. Do not remove it.
-        return ,$dt
-    } finally {
-        $conn.Close()
-        $conn.Dispose()
-    }
 }
 
 # ---------------------------------------------------------------------
@@ -1006,4 +1300,17 @@ if ($allOk) {
 #  finish in a couple of seconds. If it uploads thousands of rows on
 #  every run while the branch is closed, the delta is broken - stop
 #  and fix it before it builds up.
+#
+# ---------------------------------------------------------------------
+#  REPL RESTART HELPER TASK (FagalaReplStart)
+#
+#  Run ONCE per machine logged in as the interactive cashier/user:
+#
+#    $p = Get-Process repl_true -ErrorAction SilentlyContinue | Select-Object -First 1
+#    $exe = if ($p -and $p.Path) { $p.Path } else { 'D:\PowerTech\exe_v4_20220707  autorepl\repl_true.exe' }
+#    $dir = [System.IO.Path]::GetDirectoryName($exe)
+#    $act = New-ScheduledTaskAction -Execute 'powershell.exe' `
+#         -Argument "-WindowStyle Minimized -Command Start-Process -FilePath `"$exe`" -WorkingDirectory `"$dir`" -WindowStyle Minimized"
+#    $prn = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+#    Register-ScheduledTask -TaskName 'FagalaReplStart' -Action $act -Principal $prn -Force
 # =====================================================================

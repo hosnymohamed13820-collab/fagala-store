@@ -675,6 +675,9 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
        style="margin-top:14px;display:inline-block;text-decoration:none;">
         <i class="ti ti-refresh"></i> تحديث
     </a>
+    <?php if (is_owner()): ?>
+    <a href="rabt_guard.php" class="btn" style="margin-top:14px;margin-right:8px;display:inline-block;text-decoration:none;"><i class="ti ti-alert-triangle"></i> حارس الربط</a>
+    <?php endif; ?>
 </div>
 
 <?php if (is_owner()): ?>
