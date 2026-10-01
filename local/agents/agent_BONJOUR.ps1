@@ -73,11 +73,20 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$AgentVer   = '1.4'
+$AgentVer   = '1.5'
 
-# The replication program is repl_true.exe on HQ but Repltrue.exe on the
-# branches (seen on Bonjour Oct 2 2026). Every process check uses both.
-$ReplProcNames = @('repl_true', 'Repltrue')
+# The replication program has a different name on every machine (Oct 2 2026):
+#   HQ repl_true.exe, Bonjour Repltrue.exe, Degla a_true.exe
+# but it always lives in the "...autorepl" folder. a_true.exe is ALSO the name
+# of True V4 (manual posting) in another folder - so a_true counts ONLY when it
+# runs from an autorepl folder. Never kill True V4.
+$ReplProcNames = @('repl_true', 'Repltrue', 'a_true')
+function Get-ReplProcs {
+    @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue | Where-Object {
+        if ($_.Path) { $_.Path -like '*autorepl*' }
+        else { $_.Name -ne 'a_true' }   # path unreadable: trust the unambiguous names only
+    })
+}
 
 # Send everything (ignore the delta) once every N runs, so a lost
 # update can never stay lost forever. 180 runs x 5 min = ~15 hours.
@@ -256,7 +265,7 @@ function Invoke-ReplRestart {
     }
 
     # 3. Motion check: if process is running, verify queue is not moving
-    $procs = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
+    $procs = @((Get-ReplProcs))
     if ($procs.Count -gt 0) {
         try {
             $mTable = Invoke-Sql @"
@@ -289,12 +298,12 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
     # 4. Kill repl_true process
     Write-Log "[repl] killing repl_true process..."
     try {
-        Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue | Stop-Process -Force
+        (Get-ReplProcs) | Stop-Process -Force
     } catch { }
 
     $killed = $false
     for ($i = 0; $i -lt 30; $i++) {
-        $pLeft = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
+        $pLeft = @((Get-ReplProcs))
         if ($pLeft.Count -eq 0) {
             $killed = $true
             break
@@ -302,7 +311,7 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
         Start-Sleep -Seconds 1
     }
     if (-not $killed) {
-        $pLeft = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
+        $pLeft = @((Get-ReplProcs))
         Write-Log "[repl] could not kill $($pLeft.Count)"
         return @{ ok = $false; text = "could not kill $($pLeft.Count)" }
     }
@@ -319,7 +328,7 @@ SELECT (SELECT COUNT(*) FROM db_repl_receive) AS c_recv,
     $finalCount = 0
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Seconds 1
-        $pAfter = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
+        $pAfter = @((Get-ReplProcs))
         if ($pAfter.Count -eq 1) {
             $finalCount = 1
             break
@@ -346,7 +355,7 @@ function Check-ReplAutoWatchdog {
     try {
         $rState = Get-ReplRestartState
         $now = Get-Date
-        $procs = @(Get-Process -Name $ReplProcNames -ErrorAction SilentlyContinue)
+        $procs = @((Get-ReplProcs))
 
         if ($procs.Count -eq 0) {
             if (-not $rState.downSince) {
