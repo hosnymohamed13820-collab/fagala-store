@@ -22,7 +22,7 @@ $showFrom = '2026-10-01';
 $showTo   = '2026-10-20';
 
 $testsPassed = 0;
-$totalTests  = 14;
+$totalTests  = 16;
 
 function assertTest(bool $condition, string $testId, string $description, ?string $detail = null): bool
 {
@@ -40,7 +40,7 @@ function assertTest(bool $condition, string $testId, string $description, ?strin
     }
 }
 
-echo "=== تشغيل اختبارات تنبيهات المطابقة (أ١ - أ١٤) ===\n";
+echo "=== تشغيل اختبارات تنبيهات المطابقة (أ١ - أ١٦) ===\n";
 
 // -------------------------------------------------------------------------
 // أ١: دجلة شراء 10 من hq (5/10، صنفين 1×5 و2×3) + hq مردود 20 لدجلة بنفس الأصناف (5/10)
@@ -646,6 +646,71 @@ $docs_a14 = [
 ];
 $res_a14 = recon_alerts_detect($docs_a14, $showFrom, $showTo, $today, $labels);
 assertTest(count($res_a14) === 0, 'أ١٤', 'احتواء بدون نسبة 80% لا يعتبر تكرار وكل فاتورة تقابل نظيرتها ← صفر تنبيهات', json_encode($res_a14, JSON_UNESCAPED_UNICODE));
+
+// -------------------------------------------------------------------------
+// أ١٥: الإدارة مردود صنف q=30 (قطعة) بسعر قطعة 34.5، cost = 0.817 وmaxf = 50
+// المتوقع: تنبيه unit أحمر واحد، amount = 1470
+// -------------------------------------------------------------------------
+$docs_a15 = [
+    [
+        'key'      => '706_0',
+        'sth_id'   => 706,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6, // مردود
+        'no'       => '706',
+        'date'     => '2026-10-05',
+        'amount'   => 1035.0,
+        'unposted' => false,
+        'items'    => [
+            100 => [
+                'q'    => 30.0,
+                'p'    => 34.5,
+                'name' => 'ظرف DL',
+                'cost' => 0.817,
+                'maxf' => 50.0,
+            ],
+        ],
+    ],
+];
+$res_a15 = recon_alerts_detect($docs_a15, $showFrom, $showTo, $today, $labels);
+$unitAlerts_a15 = array_values(array_filter($res_a15, fn($a) => $a['kind'] === 'unit'));
+$isA15Pass = count($unitAlerts_a15) === 1
+    && $unitAlerts_a15[0]['level'] === 'red'
+    && abs((float)$unitAlerts_a15[0]['amount'] - 1470.0) < 0.01;
+assertTest($isA15Pass, 'أ١٥', 'الإدارة مردود صنف q=30 وسعر 34.5 وcost=0.817 وmaxf=50 ← تنبيه unit أحمر واحد بـ amount=1470', json_encode($res_a15, JSON_UNESCAPED_UNICODE));
+
+// -------------------------------------------------------------------------
+// أ١٦: نفس المستند بس q=1500 وp=0.69
+// المتوقع: مفيش تنبيه unit
+// -------------------------------------------------------------------------
+$docs_a16 = [
+    [
+        'key'      => '706_0',
+        'sth_id'   => 706,
+        'suffix'   => '0',
+        'party'    => 'hq',
+        'counter'  => 'degla',
+        'type'     => 6,
+        'no'       => '706',
+        'date'     => '2026-10-05',
+        'amount'   => 1035.0,
+        'unposted' => false,
+        'items'    => [
+            100 => [
+                'q'    => 1500.0,
+                'p'    => 0.69,
+                'name' => 'ظرف DL',
+                'cost' => 0.817,
+                'maxf' => 50.0,
+            ],
+        ],
+    ],
+];
+$res_a16 = recon_alerts_detect($docs_a16, $showFrom, $showTo, $today, $labels);
+$unitAlerts_a16 = array_values(array_filter($res_a16, fn($a) => $a['kind'] === 'unit'));
+assertTest(count($unitAlerts_a16) === 0, 'أ١٦', 'نفس المستند مع q=1500 وp=0.69 ← لا يوجد تنبيه unit', json_encode($res_a16, JSON_UNESCAPED_UNICODE));
 
 echo "\n------------------------------------------------------------\n";
 if ($testsPassed === $totalTests) {

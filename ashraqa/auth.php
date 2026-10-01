@@ -99,6 +99,7 @@ function all_modules(): array
         'tasks_issue'   => ['label' => 'إصدار المهام',       'icon' => 'ti-send',             'url' => 'tasks_issue.php'],
         'suppliers'     => ['label' => 'الموردون',          'icon' => 'ti-building-store',            'url' => 'suppliers.php'],
         'invoices'      => ['label' => 'الاستلامات',        'icon' => 'ti-package-import',     'url' => 'invoices.php'],
+        'ashraqa_purchases' => ['label' => 'مشتريات ومرتجعات', 'icon' => 'ti-file-invoice', 'url' => 'purchases.php'],
         'receiving'     => ['label' => 'استلام الفواتير',   'icon' => 'ti-truck',              'url' => 'receiving.php'],
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
@@ -260,16 +261,23 @@ function attempt_login(string $username, string $password): bool
     session_regenerate_id(true); // حماية ضد session fixation
 
     $permsVer = 1;
+    $pwVer    = 1;
     try {
-        $stVer = db()->prepare('SELECT perms_version FROM users WHERE id = ?');
+        $stVer = db()->prepare('SELECT perms_version, pw_version FROM users WHERE id = ?');
         $stVer->execute([(int) $user['id']]);
-        $v = $stVer->fetchColumn();
-        if ($v !== false && $v !== null) {
-            $permsVer = (int) $v;
+        $rowVer = $stVer->fetch(PDO::FETCH_ASSOC);
+        if ($rowVer) {
+            if (isset($rowVer['perms_version'])) {
+                $permsVer = (int) $rowVer['perms_version'];
+            }
+            if (isset($rowVer['pw_version'])) {
+                $pwVer = (int) $rowVer['pw_version'];
+            }
         }
     } catch (Throwable $e) {
         // لو العمود لسه ما اتضافش على السيرفر، بنكمّل بالقيمة الافتراضية
         $permsVer = 1;
+        $pwVer    = 1;
     }
 
     $_SESSION['user'] = [
@@ -280,6 +288,7 @@ function attempt_login(string $username, string $password): bool
         'branch_id'     => $user['branch_id'] !== null ? (int) $user['branch_id'] : null,
         'is_owner'      => (int) $user['is_owner'] === 1,
         'perms_version' => $permsVer,
+        'pw_version'    => $pwVer,
     ];
     $_SESSION['app'] = 'ashraqa';
 
@@ -446,7 +455,7 @@ function require_login(): void
 
     try {
         $st = db()->prepare(
-            'SELECT u.is_active, u.perms_version, u.branch_id, u.role_id, r.is_owner
+            'SELECT u.is_active, u.perms_version, u.pw_version, u.branch_id, u.role_id, r.is_owner
                FROM users u JOIN roles r ON r.id = u.role_id
               WHERE u.id = ?'
         );
@@ -458,6 +467,19 @@ function require_login(): void
             logout();
             header('Location: login.php');
             exit;
+        }
+
+        // فحص إصدار الباسورد: لو اتغير الباسورد من جهاز تاني نطلّع الجلسات القديمة
+        if (isset($row['pw_version'])) {
+            $currentPwVer = (int) $row['pw_version'];
+            if (!isset($_SESSION['user']['pw_version'])) {
+                // جلسة قديمة من قبل الرفع: نخزّن القيمة الحالية وما نطلّعوش
+                $_SESSION['user']['pw_version'] = $currentPwVer;
+            } elseif ((int) $_SESSION['user']['pw_version'] !== $currentPwVer) {
+                logout();
+                header('Location: login.php');
+                exit;
+            }
         }
 
         $_SESSION['user']['branch_id'] = $row['branch_id'] !== null ? (int) $row['branch_id'] : null;

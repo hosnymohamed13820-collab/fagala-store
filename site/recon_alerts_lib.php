@@ -99,12 +99,17 @@ function recon_alerts_load(PDO $pdo, string $from, string $to, array $parties): 
     $stmtInvs->execute(array_merge([$queryFrom, $queryTo], $allErpIds));
     $postedInvsRaw = $stmtInvs->fetchAll(PDO::FETCH_ASSOC);
 
-    // استعلام ٢ للمترحل: سطور فواتير hq_invoice_lines مجمعة
+    // استعلام ٢ للمترحل: سطور فواتير hq_invoice_lines مجمعة (بالقطعة + تكلفة ومعامل القطعة)
     $sqlLines = "SELECT l.sth_id, l.suffix, l.item_id, MAX(l.item_name) AS item_name,
-                        SUM(l.quantity) AS total_qty,
-                        SUM(l.quantity * l.unit_price) AS total_val
+                        SUM(l.quantity * COALESCE(c.unit_factor, 1)) AS total_qty,
+                        SUM(l.quantity * l.unit_price)              AS total_val,
+                        MAX(b.cost)                                 AS piece_cost,
+                        MAX(bf.max_factor)                          AS max_factor
                  FROM hq_invoice_lines l
                  INNER JOIN hq_invoices i ON i.sth_id = l.sth_id AND i.suffix = l.suffix
+                 LEFT JOIN hq_codes c  ON c.code = l.item_code AND c.item_id = l.item_id
+                 LEFT JOIN hq_codes b  ON b.item_id = l.item_id AND b.code_type = 0
+                 LEFT JOIN (SELECT item_id, MAX(unit_factor) AS max_factor FROM hq_codes GROUP BY item_id) bf ON bf.item_id = l.item_id
                  WHERE i.invoice_date >= ? AND i.invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
                    AND i.doc_type IN (2, 6)
                    AND i.supplier_id IN ($inErp)
@@ -125,6 +130,8 @@ function recon_alerts_load(PDO $pdo, string $from, string $to, array $parties): 
             'q'    => $qty,
             'p'    => $avgPrice,
             'name' => (string)$lr['item_name'],
+            'cost' => (float)($lr['piece_cost'] ?? 0),
+            'maxf' => (float)($lr['max_factor'] ?? 1),
         ];
     }
 
@@ -167,12 +174,17 @@ function recon_alerts_load(PDO $pdo, string $from, string $to, array $parties): 
     $stmtUnp->execute(array_merge([$queryFrom, $queryTo], $allErpIds));
     $unpInvsRaw = $stmtUnp->fetchAll(PDO::FETCH_ASSOC);
 
-    // استعلام ٤ لغير المترحل: سطور فواتير hq_unposted_lines مجمعة
+    // استعلام ٤ لغير المترحل: سطور فواتير hq_unposted_lines مجمعة (بالقطعة + تكلفة ومعامل القطعة)
     $sqlUnpLines = "SELECT l.sth_id, l.item_id, MAX(l.item_name) AS item_name,
-                           SUM(l.quantity) AS total_qty,
-                           SUM(l.quantity * l.unit_price) AS total_val
+                           SUM(l.quantity * COALESCE(c.unit_factor, 1)) AS total_qty,
+                           SUM(l.quantity * l.unit_price)              AS total_val,
+                           MAX(b.cost)                                 AS piece_cost,
+                           MAX(bf.max_factor)                          AS max_factor
                     FROM hq_unposted_lines l
                     INNER JOIN hq_unposted u ON u.sth_id = l.sth_id
+                    LEFT JOIN hq_codes c  ON c.code = l.item_code AND c.item_id = l.item_id
+                    LEFT JOIN hq_codes b  ON b.item_id = l.item_id AND b.code_type = 0
+                    LEFT JOIN (SELECT item_id, MAX(unit_factor) AS max_factor FROM hq_codes GROUP BY item_id) bf ON bf.item_id = l.item_id
                     WHERE u.invoice_date >= ? AND u.invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
                       AND u.doc_type IN (2, 6)
                       AND u.supplier_id IN ($inErp)
@@ -193,6 +205,8 @@ function recon_alerts_load(PDO $pdo, string $from, string $to, array $parties): 
             'q'    => $qty,
             'p'    => $avgPrice,
             'name' => (string)$lr['item_name'],
+            'cost' => (float)($lr['piece_cost'] ?? 0),
+            'maxf' => (float)($lr['max_factor'] ?? 1),
         ];
     }
 
@@ -609,6 +623,58 @@ function recon_alerts_detect(array $docs, string $showFrom, string $showTo, stri
                 'docs'   => [$dX['key'], $dY['key']],
                 'pair'   => [$dX['party'], $dY['party']],
                 'lines'  => $priceDiffItems,
+            ];
+        }
+    }
+
+    // -------------------------------------------------------------
+    // تنبيه سعر باكو على كود قطعة (unit) — أحمر
+    // لكل مستند في فترة العرض، ولكل صنف فيه:
+    // لو cost > 0 و maxf >= 4 و p / cost >= 4 ← السطر غالباً سعر باكو على كود قطعة
+    // -------------------------------------------------------------
+    foreach ($docsByKey as $doc) {
+        if ($doc['date'] < $showFrom || $doc['date'] > $showTo) {
+            continue;
+        }
+        $unitLines = [];
+        $sumUnitDiffQty = 0.0;
+        $maxfList = [];
+        foreach ($doc['items'] as $itemId => $it) {
+            $cost = (float)($it['cost'] ?? 0);
+            $maxf = (float)($it['maxf'] ?? 0);
+            $p    = (float)($it['p'] ?? 0);
+            $q    = (float)($it['q'] ?? 0);
+            if ($cost > 0.0001 && $maxf >= 4.0 && ($p / $cost) >= 4.0) {
+                $diffQty = $q * ($maxf - 1.0);
+                $sumUnitDiffQty += $diffQty;
+                $maxfList[] = (int)$maxf;
+                $unitLines[] = [
+                    'item_id' => $itemId,
+                    'name'    => (string)($it['name'] ?? ''),
+                    'q1'      => $q,
+                    'p1'      => $p,
+                    'q2'      => $q * $maxf,
+                    'p2'      => $cost,
+                    'diff'    => $diffQty,
+                ];
+            }
+        }
+        if (!empty($unitLines)) {
+            $partyLabel = $labels[$doc['party']] ?? $doc['party'];
+            $typeLabel  = ((int)$doc['type'] === 2) ? 'شراء' : 'مردود';
+            $nItems     = count($unitLines);
+            $distinctMf = array_values(array_unique($maxfList));
+            $maxfStr    = count($distinctMf) === 1 ? (string)$distinctMf[0] : implode('/', $distinctMf);
+
+            $rawAlerts[] = [
+                'kind'   => 'unit',
+                'level'  => 'red',
+                'amount' => $sumUnitDiffQty,
+                'text'   => "{$partyLabel} {$typeLabel} {$doc['no']}: {$nItems} صنف متسجّلين بكود القطعة وسعر الباكو — الكمية الحقيقية غالباً ×{$maxfStr}.",
+                'fix'    => 'افتح المستند وغيّر السطور دي لباركود الباكو بنفس الكمية والسعر — الفلوس مش هتتغيّر.',
+                'docs'   => [$doc['key']],
+                'pair'   => [$doc['party'], $doc['counter']],
+                'lines'  => $unitLines,
             ];
         }
     }

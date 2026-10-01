@@ -161,14 +161,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $newHash = password_hash($newPass, PASSWORD_DEFAULT);
-            $updSt = $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+            $updSt = $pdo->prepare('UPDATE users SET password_hash = ?, pw_version = pw_version + 1 WHERE id = ?');
             $updSt->execute([$newHash, $userId]);
+
+            $stVer = $pdo->prepare('SELECT pw_version FROM users WHERE id = ?');
+            $stVer->execute([$userId]);
+            $newPwVer = (int) $stVer->fetchColumn();
+            $_SESSION['user']['pw_version'] = $newPwVer;
 
             session_regenerate_id(true);
             $_SESSION['pw_fails'] = 0;
             unset($_SESSION['pw_block_until']);
 
-            $_SESSION['flash'] = 'اتغيّر الباسورد. استعمله المرة الجاية وانت داخل.';
+            $_SESSION['flash'] = 'اتغيّر الباسورد، وأي جهاز تاني كان داخل بحسابك هيخرج.';
             $_SESSION['flash_type'] = 'success';
             header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
             exit;
