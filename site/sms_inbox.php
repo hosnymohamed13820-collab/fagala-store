@@ -117,8 +117,13 @@ $totOutCount  = 0;
 $totOutAmount = 0.0;
 $unknownCount = 0;
 
+$foreignCount = 0;
 foreach ($allMessages as $m) {
     $k = $m['kind'];
+    if (!empty($m['foreign'])) {
+        $foreignCount++;   // حساب تاني مش بتاع الشغل — برّه الإجماليات
+        continue;
+    }
     if ($k === 'in') {
         $totInCount++;
         $totInAmount += (float) $m['amount'];
@@ -300,6 +305,11 @@ require_once __DIR__ . '/includes/header.php';
             <div style="font-size:20px;font-weight:700;color:var(--ink-600);"><?= number_format($unknownCount) ?></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">رسائل خارج النمط</div>
         </div>
+        <div class="card" style="padding:14px;border-top:3px solid var(--neg);">
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">حساب تاني (<?= e(implode(' · ', SMS_FOREIGN_ACCOUNTS)) ?>)</div>
+            <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($foreignCount) ?></div>
+            <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">برّه الإجماليات · بالأحمر</div>
+        </div>
     </div>
 
     <div class="card" style="padding:18px;">
@@ -365,7 +375,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $sClass = $m['source'] === 'live' ? 'background:var(--pos-soft);color:var(--pos);' : 'background:var(--ink-100);color:var(--ink-700);';
                                 $sLabel = $m['source'] === 'live' ? 'جديدة' : 'قديمة';
                             ?>
-                            <tr class="sms-row" style="border-bottom:1px solid var(--line);"
+                            <tr class="sms-row" style="border-bottom:1px solid var(--line);<?= !empty($m['foreign']) ? 'background:var(--neg-soft);' : '' ?>"
                                 data-search="<?= e(mb_strtolower($m['sender'] . ' ' . $m['body'] . ' ' . ($m['party'] ?? '') . ' ' . ($m['ref'] ?? '') . ' ' . ($m['device'] ?? ''))) ?>">
                                 <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:right;font-size:12px;">
                                     <?php if ($m['txn_at']): ?>
@@ -404,7 +414,13 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="padding:10px 8px;text-align:center;white-space:nowrap;" id="spCell_<?= (int) $m['id'] ?>">
                                     <?php
                                         $sp = $permitsMap[(int) $m['id']] ?? null;
-                                        if ($sp && $sp['status'] === 'approved'):
+                                        if (!empty($m['foreign']) && !$sp):
+                                    ?>
+                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg);color:#fff;"
+                                              title="حساب تاني على نفس الرقم — مالوش علاقة بالشغل">
+                                            حساب تاني
+                                        </span>
+                                    <?php elseif ($sp && $sp['status'] === 'approved'):
                                     ?>
                                         <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">
                                             ✓ اتسجّل (إذن #<?= (int) $sp['id'] ?>)

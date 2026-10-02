@@ -26,6 +26,10 @@ function sms_permit_create(int $smsId, string $action, array $in, int $uid): int
     if (!$sms) {
         throw new RuntimeException('الرسالة مش موجودة.');
     }
+    // الحماية هنا مش في الزرار بس — POST بإيده ماينفعش يعدّي
+    if (sms_is_foreign((string) $sms['body'])) {
+        throw new RuntimeException('الرسالة دي من حساب تاني مالوش علاقة بالشغل — مالهاش إذن.');
+    }
 
     // ٢. فحص الأذونات السابقة على نفس الرسالة
     $stCheck = $pdo->prepare(

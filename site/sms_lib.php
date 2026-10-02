@@ -20,6 +20,25 @@ if (basename($_SERVER['SCRIPT_NAME'] ?? '') === 'sms_lib.php' || basename($_SERV
 }
 
 /**
+ * حسابات على نفس رقم الموبايل مالهاش علاقة بالشغل (قرار محمد ٣/١٠).
+ * رسايلها بتفضل تتعرض في الصفحة بالأحمر، بس مابتدخلش الإجماليات ومالهاش «سجّل إذن».
+ * شكلها: «تم إضافة تحويل لحظي لحسابكم رقم 0150 …» / «تم تنفيذ تحويل لحظي من حسابكم رقم 0150 …»
+ * (بطاقة الشغل رسايلها «لبطاقتكم/من بطاقتكم مسبقة الدفع» من غير رقم).
+ */
+const SMS_FOREIGN_ACCOUNTS = ['0150'];
+
+function sms_is_foreign(string $body): bool
+{
+    $b = strtr($body, ['٠' => '0', '١' => '1', '٥' => '5']);
+    foreach (SMS_FOREIGN_ACCOUNTS as $acc) {
+        if (preg_match('/حسابكم\s+رقم\s*' . preg_quote($acc, '/') . '(?!\d)/u', $b)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * تحليل نص رسالة البنك واستخراج عناصرها
  *
  * @param string $body   نص الرسالة
@@ -209,6 +228,7 @@ function sms_fetch(PDO $pdo, string $from, string $to, string $kind = 'all'): ar
         $r['txn_at']    = $parsed['txn_at'];
         $r['available'] = $parsed['available'];
         $r['parsed']    = $parsed;
+        $r['foreign']   = sms_is_foreign((string) ($r['body'] ?? ''));
 
         if ($kind === 'in' && $parsed['kind'] !== 'in') {
             continue;
