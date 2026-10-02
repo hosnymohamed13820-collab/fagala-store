@@ -370,6 +370,35 @@ function agent_repl_beat(string $key, array $repl): void
         return;
     }
 
+    // ريستارت بدري من غير إشعار (٢/١٠): الفجالة ودجلة بيقفوا عن الاستلام كل كام ساعة
+    // والريستارت بيحلها في دقايق، فمالوش لازمة نستنى الساعتين بتوع الإشعار.
+    // بعد نص ساعة وقفة ← ريستارت، ومرة كل نص ساعة بالكتير. الوكيل نفسه مابيقفلش
+    // لو الطابور بيتحرك (فحص الحركة) وعنده حد ٣ في الساعة. الإشعار لسه عند $limit.
+    $earlyMin = 30;
+    $stalled = ($waiting > 0 && $age >= $earlyMin) || ($key !== 'hq' && $staleMin >= $earlyMin);
+    // staleMin = من آخر ما الفرع استلم، مش من ساعة ما الإدارة صدّرت. بعد هدوء نص ساعة
+    // أول أمر جديد هيبان «متأخر» قبل ما يلحق يوصل ← نشترط إن فرع تاني استلمه فعلاً.
+    if ($stalled && $waiting === 0 && $curRecv !== null) {
+        $peer = $pdo->prepare(
+            "SELECT 1 FROM agent_status
+              WHERE agent_key NOT IN (?, 'hq') AND repl_last_recv > ? LIMIT 1"
+        );
+        $peer->execute([$key, (string) $curRecv]);
+        $stalled = (bool) $peer->fetchColumn();
+    }
+    if ($stalled && !$isStuck && !$isBehind) {
+        $recent = $pdo->prepare(
+            "SELECT 1 FROM agent_commands
+              WHERE agent_key = ? AND cmd = 'restart_repl' AND created_at >= NOW() - INTERVAL 30 MINUTE
+              LIMIT 1"
+        );
+        $recent->execute([$key]);
+        if (!$recent->fetchColumn()) {
+            require_once __DIR__ . '/rabt_guard_lib.php';
+            rabt_queue_restart($key, 'وقفة ' . ($waiting > 0 ? $age : $staleMin) . ' دقيقة — ريستارت بدري');
+        }
+    }
+
     // تنبيه ١: طابور واقف (الأولوية الأولى)
     if ($isStuck) {
         $claim = $pdo->prepare('UPDATE agent_status SET repl_alerted_at = NOW() WHERE agent_key = ? AND repl_alerted_at IS NULL');
