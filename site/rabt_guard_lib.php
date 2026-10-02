@@ -113,6 +113,24 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         $activeBranches = null;   // مش قادرين نعرف — سيب H02 زي ما هو
     }
 
+    // الريستارت كان بيتبعت مرة واحدة ساعة ما الحادثة تتفتح. ٢/١٠: دجلة ريستارت
+    // ٠٢:٣٧ رجع ok والربط فضل ميت ١٠ ساعات والحارس ساكت. دلوقتي طول ما الحادثة
+    // لسه ظاهرة بيعيد كل ساعة لحد ٣ مرات، وبعد التالتة إشعار إن الموضوع محتاج حد.
+    $restartTries = [];   // incident_id => [count, minutes since last]
+    try {
+        foreach ($pdo->query(
+            "SELECT incident_id, COUNT(*) n, TIMESTAMPDIFF(MINUTE, MAX(created_at), NOW()) age
+               FROM agent_commands
+              WHERE cmd = 'restart_repl' AND incident_id IS NOT NULL
+              GROUP BY incident_id"
+        )->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $restartTries[(int) $r['incident_id']] = [(int) $r['n'], (int) $r['age']];
+        }
+    } catch (Throwable $e) {
+        $restartTries = null;   // مش قادرين نعرف — مانعيدش
+    }
+    $giveUp = [];
+
     $stUpdate = $pdo->prepare(
         'UPDATE rabt_incidents
             SET last_seen = NOW(), seen_count = seen_count + 1, details = ?
@@ -148,7 +166,19 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
 
         if (isset($openByFp[$fp])) {
             // بصمته مفتوحة: نحدّث last_seen و seen_count و details ولا نغيّر status
-            $stUpdate->execute([$details, (int) $openByFp[$fp]['id']]);
+            $incId = (int) $openByFp[$fp]['id'];
+            $stUpdate->execute([$details, $incId]);
+
+            // لسه موجودة بعد الريستارت ← نعيد (كل ساعة، ٣ مرات بالكتير)
+            $inWin = !in_array($code, ['H02', 'H03'], true) || $inWindow;
+            if ($restartKey !== null && $inWin && is_array($restartTries)) {
+                [$n, $age] = $restartTries[$incId] ?? [0, 9999];
+                if ($n < 3 && $age >= 60) {
+                    rabt_queue_restart($restartKey, 'محاولة ' . ($n + 1) . ' — ' . $title, $incId);
+                } elseif ($n >= 3 && $age >= 60 && $age < 70) {
+                    $giveUp[] = $title;   // مرة واحدة: الفحص كل ١٠ دقايق
+                }
+            }
         } else {
             // حادثة جديدة
             $stInsert->execute([$agent, $code, $fp, $branch, $title, $details]);
@@ -220,6 +250,20 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
             notify($pdo, $ids, 'rabt_guard', 'حارس الربط: ' . $countNew . ' مشكلة جديدة', $body, 'rabt_guard.php');
         } catch (Throwable $e) {
             // خطأ إرسال الإشعار لا يفشل استلام الفحوصات
+        }
+    }
+
+    if (!empty($giveUp)) {
+        try {
+            $ids = $pdo->query(
+                'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
+            )->fetchAll(PDO::FETCH_COLUMN);
+            $wid = (int) setting('agent_watcher_id', '0');
+            if ($wid > 0) $ids[] = $wid;
+            require_once __DIR__ . '/push_lib.php';
+            notify($pdo, $ids, 'rabt_guard', 'حارس الربط: ٣ ريستارت ماحلّوش — محتاج حد',
+                $giveUp[0], 'rabt_guard.php');
+        } catch (Throwable $e) {
         }
     }
 
@@ -300,6 +344,12 @@ function rabt_handle_beat_commands(string $agent, array $in): ?array
         'UPDATE agent_commands
             SET status = \'expired\'
           WHERE status = \'pending\' AND created_at < NOW() - INTERVAL 2 HOUR'
+    );
+    // واتسحب ومارجعش نتيجة (الوكيل وقع في النص) — كان بيفضل «جاري» للأبد
+    $pdo->exec(
+        'UPDATE agent_commands
+            SET status = \'expired\', result = \'اتسحب ومارجعش نتيجة\'
+          WHERE status = \'picked\' AND picked_at < NOW() - INTERVAL 2 HOUR'
     );
 
     // د) التقاط أقدم أمر pending لهذا الوكيل
