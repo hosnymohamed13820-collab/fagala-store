@@ -97,6 +97,22 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
     $newIncidents = [];
     $inWindow = $overrideInWindow !== null ? $overrideInWindow : agent_in_window();
 
+    // H02 («الفرع مااستوردش من ساعتين») كان بيصرخ على فرع لسه مافتحش أو مابيبيعش
+    // (٢/١٠ الضهر: دجلة والفجالة صفر فواتير، والحارس فاكر الربط واقف). الفرع اللي
+    // مالوش ولا مستند في آخر ١٥٠ دقيقة في قاعدته هو (br_invoices من وكيله) مفيش حاجة
+    // تتبعت منه أصلاً — نعتبر الفحص سليم. ولو الربط واقف بجد والفرع بيبيع، المستندات
+    // بتوصل هنا من وكيله وH02 بيصرخ عادي.
+    $activeBranches = [];
+    try {
+        $activeBranches = array_flip($pdo->query(
+            'SELECT agent_key FROM br_invoices
+              WHERE invoice_date >= NOW() - INTERVAL 150 MINUTE
+              GROUP BY agent_key'
+        )->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) {
+        $activeBranches = null;   // مش قادرين نعرف — سيب H02 زي ما هو
+    }
+
     $stUpdate = $pdo->prepare(
         'UPDATE rabt_incidents
             SET last_seen = NOW(), seen_count = seen_count + 1, details = ?
@@ -115,6 +131,10 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         $code = trim((string) ($f['code'] ?? ''));
         $fp = trim((string) ($f['fp'] ?? $f['sha'] ?? ''));
         if ($fp === '') continue;
+        if ($code === 'H02' && is_array($activeBranches) && !empty($f['branch'])
+            && !isset($activeBranches[(string) $f['branch']])) {
+            continue;   // فرع مابيبيعش دلوقتي — مش مشكلة ربط (ومش في seen ← المفتوحة تتقفل)
+        }
 
         $seenFpsInPayload[$fp] = true;
         if (isset($ignoredByFp[$fp]) && !isset($openByFp[$fp])) continue;
