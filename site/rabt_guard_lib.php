@@ -169,6 +169,12 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
             $details = is_string($f['details']) ? $f['details'] : json_encode($f['details'], JSON_UNESCAPED_UNICODE);
         }
         $restartKey = !empty($f['restart']) ? trim((string) $f['restart']) : null;
+        // ملف فرع قاعد في Import\HQ أكتر من ساعة = repl_true على الإدارة مابيستوردش (م١).
+        // ٢/١٠: الاستيراد وقف ٢١:٠٧ للأربع فروع والوكيل باعت H05 ده من غير restart، فمحدش
+        // عمل حاجة. الريستارت هنا للإدارة مش للفرع (الملف وصل خلاص).
+        if ($code === 'H05' && $restartKey === null && str_starts_with($title, 'File in Import/HQ delayed')) {
+            $restartKey = 'hq';
+        }
 
         if (isset($openByFp[$fp])) {
             // بصمته مفتوحة: نحدّث last_seen و seen_count و details ولا نغيّر status
