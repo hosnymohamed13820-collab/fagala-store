@@ -154,6 +154,12 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
             continue;   // فرع مابيبيعش دلوقتي — مش مشكلة ربط (ومش في seen ← المفتوحة تتقفل)
         }
 
+        // H05 من غير رقم أول ملف = الملف لسه بينزل (Resilio) والوكيل ماعرفش يقراه، مش فجوة.
+        // ٢/١٠: ١٣ إنذار كاذب على بونجور واي بي سي، كلهم اتقفلوا لوحدهم وكل واحد شغّل تحليل.
+        if ($code === 'H05' && preg_match('/Lowest file start:[ \t]*(\r?\n|$)/', (string) ($f['details'] ?? ''))) {
+            continue;
+        }
+
         $seenFpsInPayload[$fp] = true;
         if (isset($ignoredByFp[$fp]) && !isset($openByFp[$fp])) continue;
         $branch = !empty($f['branch']) ? trim((string) $f['branch']) : null;
