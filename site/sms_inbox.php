@@ -306,7 +306,7 @@ require_once __DIR__ . '/includes/header.php';
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">رسائل خارج النمط</div>
         </div>
         <div class="card" style="padding:14px;border-top:3px solid var(--neg);">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">حساب تاني (<?= e(implode(' · ', SMS_FOREIGN_ACCOUNTS)) ?>)</div>
+            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;"><?= e(SMS_FOREIGN_LABEL) ?> (مش شغل)</div>
             <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($foreignCount) ?></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">برّه الإجماليات · بالأحمر</div>
         </div>
@@ -417,8 +417,8 @@ require_once __DIR__ . '/includes/header.php';
                                         if (!empty($m['foreign']) && !$sp):
                                     ?>
                                         <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg);color:#fff;"
-                                              title="حساب تاني على نفس الرقم — مالوش علاقة بالشغل">
-                                            حساب تاني
+                                              title="<?= e(SMS_FOREIGN_LABEL) ?> — متسجّلة على نفس الرقم ومالهاش علاقة بالشغل">
+                                            مش شغل
                                         </span>
                                     <?php elseif ($sp && $sp['status'] === 'approved'):
                                     ?>

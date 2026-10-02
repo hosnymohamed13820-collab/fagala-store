@@ -28,7 +28,7 @@ function sms_permit_create(int $smsId, string $action, array $in, int $uid): int
     }
     // الحماية هنا مش في الزرار بس — POST بإيده ماينفعش يعدّي
     if (sms_is_foreign((string) $sms['body'])) {
-        throw new RuntimeException('الرسالة دي من حساب تاني مالوش علاقة بالشغل — مالهاش إذن.');
+        throw new RuntimeException('الرسالة دي من البطاقة مسبقة الدفع ومالهاش علاقة بالشغل — مالهاش إذن.');
     }
 
     // ٢. فحص الأذونات السابقة على نفس الرسالة
