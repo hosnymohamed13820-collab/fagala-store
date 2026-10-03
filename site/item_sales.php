@@ -314,12 +314,34 @@ require_once __DIR__ . '/includes/header.php';
 .isl-table tr:hover {
     background: var(--line-soft);
 }
-.isl-table .num {
-    font-family: monospace;
-    font-size: var(--fs-sm, 13px);
+.isl-table .num,
+.isl-table th.num {
+    font-variant-numeric: tabular-nums;
     direction: ltr;
-    text-align: left;
+    text-align: center;
+    white-space: nowrap;
 }
+.isl-table td.isl-name {
+    font-weight: 600;
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.isl-table td.isl-dim { color: var(--ink-500); }
+/* شارة الحالة — نفس ألوان الموقع عشان الليلي */
+.isl-chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: var(--fs-xs, 12px);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.isl-chip-negative { background: var(--neg-soft); color: var(--neg); }
+.isl-chip-zero     { background: var(--warn-soft); color: var(--warn); }
+.isl-chip-near     { background: var(--warn-soft); color: var(--warn); }
+.isl-chip-idle     { background: var(--line-soft); color: var(--ink-600); }
 .isl-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -355,24 +377,24 @@ require_once __DIR__ . '/includes/header.php';
     font-family: monospace;
 }
 .isl-tag-negative {
-    color: #e11d48;
+    color: var(--neg);
     font-weight: 600;
 }
 .isl-tag-zero {
-    color: #f59e0b;
+    color: var(--warn);
     font-weight: 600;
 }
 .isl-tag-near {
-    color: #ea580c;
+    color: var(--warn);
     font-weight: 600;
 }
 .isl-tag-idle {
     color: var(--ink-500);
 }
 .alert-warning {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    color: #92400e;
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    color: var(--warn);
     padding: 10px 16px;
     border-radius: var(--r-md, 8px);
     margin-bottom: 16px;
@@ -562,23 +584,25 @@ require_once __DIR__ . '/includes/header.php';
                 <table class="isl-table" id="stockTable">
                     <thead>
                         <tr>
+                            <th>الحالة</th>
                             <th>الفرع</th>
                             <th>الكود</th>
                             <th>الاسم</th>
                             <th>القسم</th>
-                            <th>الرصيد</th>
-                            <th>مبيعات الفترة</th>
-                            <th>متوسط اليوم</th>
-                            <th>يكفّي كام يوم</th>
+                            <th class="num">الرصيد</th>
+                            <th class="num">مبيعات الفترة</th>
+                            <th class="num">متوسط اليوم</th>
+                            <th class="num">يكفّي كام يوم</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($combinedRows as $r): ?>
                             <tr data-st="<?= $r['status_type'] ?>">
+                                <td><span class="isl-chip isl-chip-<?= e($r['status_type']) ?>"><?= e($r['status_label']) ?></span></td>
                                 <td><?= e($r['store_name']) ?></td>
-                                <td><?= e($r['barcode']) ?></td>
-                                <td style="font-weight:600;"><?= e($r['name']) ?></td>
-                                <td><?= e($r['cat_name']) ?></td>
+                                <td class="num"><?= e($r['barcode']) ?></td>
+                                <td class="isl-name" title="<?= e($r['name']) ?>"><?= e($r['name']) ?></td>
+                                <td class="<?= (int) $r['cat_id'] === 0 ? 'isl-dim' : '' ?>"><?= e($r['cat_name']) ?></td>
                                 <td class="num <?= $r['balance'] < 0 ? 'isl-tag-negative' : '' ?>">
                                     <?= (float)$r['balance'] ?>
                                 </td>
@@ -664,8 +688,8 @@ require_once __DIR__ . '/includes/header.php';
                                     <th>الكود</th>
                                     <th>الاسم</th>
                                     <th>القسم</th>
-                                    <th><?= $byParam === 'revenue' ? 'الإيراد الصافي' : 'الكمية' ?></th>
-                                    <th>الرصيد</th>
+                                    <th class="num"><?= $byParam === 'revenue' ? 'الإيراد الصافي' : 'الكمية' ?></th>
+                                    <th class="num">الرصيد</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -701,8 +725,8 @@ require_once __DIR__ . '/includes/header.php';
                                     <th>الكود</th>
                                     <th>الاسم</th>
                                     <th>القسم</th>
-                                    <th><?= $byParam === 'revenue' ? 'الإيراد الصافي' : 'الكمية' ?></th>
-                                    <th>الرصيد</th>
+                                    <th class="num"><?= $byParam === 'revenue' ? 'الإيراد الصافي' : 'الكمية' ?></th>
+                                    <th class="num">الرصيد</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -753,11 +777,11 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="isl-kpi-card">
                     <div class="isl-kpi-title">إجمالي الربح</div>
-                    <div class="isl-kpi-val" style="color:#059669;"><?= number_format($tot['profit'], 2) ?></div>
+                    <div class="isl-kpi-val" style="color:var(--pos);"><?= number_format($tot['profit'], 2) ?></div>
                 </div>
                 <div class="isl-kpi-card">
                     <div class="isl-kpi-title">هامش الربح العام</div>
-                    <div class="isl-kpi-val" style="color:#2563eb;"><?= $tot['margin'] ?>%</div>
+                    <div class="isl-kpi-val" style="color:var(--fill-strong);"><?= $tot['margin'] ?>%</div>
                 </div>
             </div>
 
@@ -770,11 +794,11 @@ require_once __DIR__ . '/includes/header.php';
                             <thead>
                                 <tr>
                                     <th>الفرع</th>
-                                    <th>الكمية</th>
-                                    <th>الإيراد الصافي</th>
-                                    <th>التكلفة</th>
-                                    <th>الربح</th>
-                                    <th>الهامش</th>
+                                    <th class="num">الكمية</th>
+                                    <th class="num">الإيراد الصافي</th>
+                                    <th class="num">التكلفة</th>
+                                    <th class="num">الربح</th>
+                                    <th class="num">الهامش</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -784,7 +808,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <td class="num"><?= (float)$st['qty'] ?></td>
                                         <td class="num"><?= number_format($st['revenue'], 2) ?></td>
                                         <td class="num"><?= number_format($st['cost'], 2) ?></td>
-                                        <td class="num" style="font-weight:700; color:#059669;"><?= number_format($st['profit'], 2) ?></td>
+                                        <td class="num" style="font-weight:700; color:var(--pos);"><?= number_format($st['profit'], 2) ?></td>
                                         <td class="num"><?= $st['margin'] ?>%</td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -801,11 +825,11 @@ require_once __DIR__ . '/includes/header.php';
                             <thead>
                                 <tr>
                                     <th>القسم</th>
-                                    <th>الكمية</th>
-                                    <th>الإيراد الصافي</th>
-                                    <th>التكلفة</th>
-                                    <th>الربح</th>
-                                    <th>الهامش</th>
+                                    <th class="num">الكمية</th>
+                                    <th class="num">الإيراد الصافي</th>
+                                    <th class="num">التكلفة</th>
+                                    <th class="num">الربح</th>
+                                    <th class="num">الهامش</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -815,7 +839,7 @@ require_once __DIR__ . '/includes/header.php';
                                         <td class="num"><?= (float)$ct['qty'] ?></td>
                                         <td class="num"><?= number_format($ct['revenue'], 2) ?></td>
                                         <td class="num"><?= number_format($ct['cost'], 2) ?></td>
-                                        <td class="num" style="font-weight:700; color:#059669;"><?= number_format($ct['profit'], 2) ?></td>
+                                        <td class="num" style="font-weight:700; color:var(--pos);"><?= number_format($ct['profit'], 2) ?></td>
                                         <td class="num"><?= $ct['margin'] ?>%</td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -838,11 +862,11 @@ require_once __DIR__ . '/includes/header.php';
                                 <th>الكود</th>
                                 <th>الاسم</th>
                                 <th>القسم</th>
-                                <th>الكمية</th>
-                                <th>الإيراد الصافي</th>
-                                <th>التكلفة</th>
-                                <th>الربح</th>
-                                <th>الهامش</th>
+                                <th class="num">الكمية</th>
+                                <th class="num">الإيراد الصافي</th>
+                                <th class="num">التكلفة</th>
+                                <th class="num">الربح</th>
+                                <th class="num">الهامش</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -855,7 +879,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <td class="num"><?= (float)$it['qty'] ?></td>
                                     <td class="num"><?= number_format($it['revenue'], 2) ?></td>
                                     <td class="num"><?= number_format($it['cost'], 2) ?></td>
-                                    <td class="num" style="font-weight:700; color:#059669;"><?= number_format($it['profit'], 2) ?></td>
+                                    <td class="num" style="font-weight:700; color:var(--pos);"><?= number_format($it['profit'], 2) ?></td>
                                     <td class="num"><?= $it['margin'] ?>%</td>
                                 </tr>
                             <?php endforeach; ?>
