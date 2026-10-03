@@ -22,6 +22,7 @@ EMOJI = re.compile(
     '⏩-⏺'            # ⏳ ⏰ ⏸ …
     '✅❌❗⭐⬆⬇️]'
 )
+CSV = re.compile(r'text/csv|fputcsv\(')  # التصدير إكسيل بـSimpleXlsx (قرار محمد ٣/١٠)
 COMMENT = re.compile(r'^\s*(//|\*|/\*|#|<!--|<\?php\s*/\*)')
 
 
@@ -42,6 +43,8 @@ def main():
             text = line[1:]
             if not COMMENT.match(text) and EMOJI.search(text):
                 bad.append((cur, text.strip()))
+            if not COMMENT.match(text) and CSV.search(text):
+                bad.append((cur, 'CSV — استخدم SimpleXlsx: ' + text.strip()))
 
     # ٢) الملفات الجديدة كلها
     for f in git('ls-files', '--others', '--exclude-standard', 'site/', 'ashraqa/').splitlines():
@@ -51,9 +54,11 @@ def main():
             for n, text in enumerate(fh, 1):
                 if not COMMENT.match(text) and EMOJI.search(text):
                     bad.append((f'{f}:{n}', text.strip()))
+                if not COMMENT.match(text) and CSV.search(text):
+                    bad.append((f'{f}:{n}', 'CSV — استخدم SimpleXlsx: ' + text.strip()))
 
     if bad:
-        print(f'  ❌ إيموجي في الواجهة ({len(bad)}) — استخدم أيقونة ti-* من الـsubset:')
+        print(f'  ❌ مخالفة لقواعد الواجهة ({len(bad)}) — إيموجي ← أيقونة ti-* · CSV ← SimpleXlsx:')
         for where, text in bad[:20]:
             print(f'     {where}: {text[:100]}')
         return 1
