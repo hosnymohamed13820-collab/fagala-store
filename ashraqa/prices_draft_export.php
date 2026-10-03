@@ -20,7 +20,7 @@ require_module_access('reports');
 if (!can('reports:noprice')) {
     http_response_code(403);
     die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
-        . '<h2>🚫 غير مصرّح</h2>'
+        . '<h2>غير مصرّح</h2>'
         . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }

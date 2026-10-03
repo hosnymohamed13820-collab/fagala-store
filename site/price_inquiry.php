@@ -102,7 +102,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 <script>
     const resultCard = document.getElementById('resultCard');
     const resultContent = document.getElementById('resultContent');

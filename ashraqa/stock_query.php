@@ -13,7 +13,7 @@ require_module_access('reports');
 if (!can('reports:stock')) {
     http_response_code(403);
     die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
-        . '<h2>🚫 غير مصرّح</h2>'
+        . '<h2>غير مصرّح</h2>'
         . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }
@@ -193,7 +193,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 <script>
     const BRANCHES  = <?= json_encode($branches, JSON_UNESCAPED_UNICODE) ?>;
     const ADMIN_STO = <?= (int) ADMIN_STO_ID ?>;
@@ -243,7 +243,7 @@ require_once __DIR__ . '/includes/header.php';
         const code = inp.value.trim();
         if (!code) return;
         hideSug();
-        setStatus('⏳ بيدور…', 'var(--ink-500)');
+        setStatus('بيدور…', 'var(--ink-500)');
         fetch('stock_query.php?ajax=code&code=' + encodeURIComponent(code))
             .then(r => r.json())
             .then(j => {
@@ -263,7 +263,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.code === row.code)) {
-            setStatus('⚠️ ' + esc(row.name) + ' مضاف قبل كده', 'var(--warn)');
+            setStatus(esc(row.name) + ' مضاف قبل كده', 'var(--warn)');
             return;
         }
         added.push(row);
@@ -303,7 +303,7 @@ require_once __DIR__ . '/includes/header.php';
         if (added.length) { render(added.filter(passes)); return; }
 
         // مفيش أصناف مضافة → نجيب من نظام الشركة بالفلتر
-        setStatus('⏳ بيجيب الأصناف…', 'var(--ink-500)');
+        setStatus('بيجيب الأصناف…', 'var(--ink-500)');
         const p = new URLSearchParams({ajax:'filter', mode:mode});
         if (mode === 'has_stock') {
             // مخزن محدد → نستخدم فلتر الفرع في SQL

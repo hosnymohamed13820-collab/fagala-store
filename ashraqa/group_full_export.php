@@ -104,7 +104,7 @@ foreach ($invoices as $inv) {
     ]);
 }
 if (!empty($data['missing'])) {
-    $x->addRow(['', '⚠️ فيه ' . count($data['missing']) . ' فاتورة مقدرناش نجيب بياناتها']);
+    $x->addRow(['', 'فيه ' . count($data['missing']) . ' فاتورة مقدرناش نجيب بياناتها']);
 }
 $x->addBlank();
 

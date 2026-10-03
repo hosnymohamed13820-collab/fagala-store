@@ -217,10 +217,10 @@ function create_shortage_request(
         $link = 'tasks.php?task=' . $taskId;
 
         if ($source === 'purchase') {
-            $notifTitle = '🛒 طلب مشتريات من فرع ' . $fromName;
+            $notifTitle = 'طلب مشتريات من فرع ' . $fromName;
             $notifBody  = mb_substr('مطلوب توفير ' . $n . ' صنف من المشتريات', 0, 255);
         } else {
-            $notifTitle = '🛒 طلب نواقص من فرع ' . $fromName;
+            $notifTitle = 'طلب نواقص من فرع ' . $fromName;
             $notifBody  = mb_substr('مطلوب تجهيز ' . $n . ' صنف — جهّزوا الطلب وارفعوا إثبات الفاتورة على المهمة', 0, 255);
         }
 
@@ -243,7 +243,7 @@ function create_shortage_request(
                     $pdo,
                     $watchers,
                     'shortage',
-                    '📋 متابعة نواقص',
+                    'متابعة نواقص',
                     mb_substr('فرع ' . $fromName . ' طلب ' . $n . ' صنف من فرع ' . $toName, 0, 255),
                     $link
                 );

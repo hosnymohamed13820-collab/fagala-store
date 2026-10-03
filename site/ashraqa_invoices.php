@@ -1570,7 +1570,7 @@ require_once __DIR__ . '/includes/header.php';
                 }
 
                 const ind = inp.parentElement ? inp.parentElement.querySelector('.sale-ind') : null;
-                if (ind) { ind.textContent = '⏳'; ind.className = 'sale-ind wait'; }
+                if (ind) { ind.innerHTML = '<i class="ti ti-loader ti-spin"></i>'; /* نص ثابت — innerHTML آمن */ ind.className = 'sale-ind wait'; }
 
                 const body = {
                     action: 'save_price',
@@ -1648,7 +1648,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 const extra = noCost > 0 ? '\n(' + noCost + ' صنف من غير تكلفة هيتساب زي ما هو)' : '';
                 if (!confirm('هيتسعّر ' + n + ' صنف بنسبة ' + p + '%\n\n'
-                           + '⚠️ أي سعر بيع موجود دلوقتي هيتكتب فوقه.' + extra + '\n\nتمام؟')) return;
+                           + 'أي سعر بيع موجود دلوقتي هيتكتب فوقه.' + extra + '\n\nتمام؟')) return;
 
                 setNote('بيحفظ ' + n + ' صنف…', 'var(--ink-500)');
                 box.disabled = true;

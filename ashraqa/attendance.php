@@ -267,7 +267,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <?php if ($isCarryOver): ?>
         <div style="background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;
                     font-size:13px;text-align:center;margin-bottom:10px;">
-            ⏰ وردية أمس لسه مفتوحة — سجّل انصرافك
+            <i class="ti ti-clock"></i> وردية أمس لسه مفتوحة — سجّل انصرافك
         </div>
         <?php endif; ?>
         <div class="att-name"><?= e($employee['full_name']) ?></div>
@@ -411,8 +411,8 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                     if (bestPos.coords.accuracy > 500) {
                         const isIos = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
                         const msg = isIos
-                            ? '⚠️ موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> من:<br>الإعدادات ← الخصوصية والأمان ← خدمات الموقع ← مواقع Safari ← أثناء الاستخدام وشغّل الموقع الدقيق.'
-                            : '⚠️ موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> في إعدادات الموقع بالمتصفح.';
+                            ? '<i class="ti ti-alert-triangle"></i> موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> من:<br>الإعدادات ← الخصوصية والأمان ← خدمات الموقع ← مواقع Safari ← أثناء الاستخدام وشغّل الموقع الدقيق.'
+                            : '<i class="ti ti-alert-triangle"></i> موقعك غير دقيق (±' + Math.round(bestPos.coords.accuracy) + ' م). شغّل <strong>الموقع الدقيق</strong> في إعدادات الموقع بالمتصفح.';
                         showHint(msg, 'var(--warn)');
                     }
                 } else {
@@ -572,7 +572,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
                     <?php if ($rowHasIn): ?>
                         <?= e(substr($a['check_in'],0,5)) ?>
-                        <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                        <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;"><i class="ti ti-alert-triangle"></i></span><?php endif; ?>
                     <?php elseif ($rowMissing): ?>
                         <span style="color:var(--warn);font-weight:600;">ناقص</span>
                     <?php else: ?>
@@ -582,7 +582,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
                     <?php if ($rowHasOut): ?>
                         <?= e(substr($a['check_out'],0,5)) ?>
-                        <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;">⚠</span><?php endif; ?>
+                        <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;"><i class="ti ti-alert-triangle"></i></span><?php endif; ?>
                     <?php elseif ($rowMissing): ?>
                         <span style="color:var(--warn);font-weight:600;">ناقص</span>
                     <?php else: ?>

@@ -731,10 +731,10 @@ require_once __DIR__ . '/includes/header.php';
                         .then(function(r){ return r.json(); })
                         .then(function(d){
                             if (d && d.name) box.value = d.name;
-                            else if (d && d.error) box.value = '⚠️ خطأ: ' + d.error;
-                            else box.value = '⚠️ كود غير موجود';
+                            else if (d && d.error) box.value = 'خطأ: ' + d.error;
+                            else box.value = 'كود غير موجود';
                         })
-                        .catch(function(){ box.value = '⚠️ تعذّر الاتصال'; });
+                        .catch(function(){ box.value = 'تعذّر الاتصال'; });
                 }, 150);
             };
         </script>
@@ -982,10 +982,10 @@ require_once __DIR__ . '/includes/header.php';
                         .then(function(r){ return r.json(); })
                         .then(function(d){
                             if (d && d.name) box.value = d.name;
-                            else if (d && d.error) box.value = '⚠️ خطأ: ' + d.error;
-                            else box.value = '⚠️ كود غير موجود';
+                            else if (d && d.error) box.value = 'خطأ: ' + d.error;
+                            else box.value = 'كود غير موجود';
                         })
-                        .catch(function(){ box.value = '⚠️ تعذّر الاتصال'; });
+                        .catch(function(){ box.value = 'تعذّر الاتصال'; });
                 }, 150);
             };
             function stkEsc(s) {
@@ -1033,8 +1033,8 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card">
         <div class="section-title">الأصناف اللي دخّلتها (<?= count(array_filter($comparison['lines'], fn($c)=>!empty($c['_reviewed']))) ?>)</div>
         <p style="color:var(--ink-500);font-size:12px;margin-bottom:10px;">لو كتبت كمية غلط، عدّلها في الخانة واضغط Enter (تتحفظ فوراً)، أو احذف الصنف.</p>
-        <input type="text" id="revInSearch" placeholder="🔍 ابحث..." onkeyup="filterTable('revInSearch','revInTable')"
-               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="🔍 ابحث...">
+        <input type="text" id="revInSearch" placeholder="ابحث..." onkeyup="filterTable('revInSearch','revInTable')"
+               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث...">
         <table id="revInTable">
             <thead><tr><th>الكود</th><th>اسم الصنف</th><th>كمية المراجع</th><th>حذف</th></tr></thead>
             <tbody>
@@ -1118,7 +1118,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($diffLines)): ?>
             <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. <i class="ti ti-confetti"></i></div>
         <?php endif; ?>
-        <input type="text" id="reviewSearch" placeholder="🔍 ابحث في الأصناف المفرّقة..."
+        <input type="text" id="reviewSearch" placeholder="ابحث في الأصناف المفرّقة..."
                onkeyup="filterTable('reviewSearch','reviewTable')"
                style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);<?= empty($diffLines)?'display:none;':'' ?>" aria-label="ابحث في الأصناف المفرّقة">
         <!-- form الحفظ الجماعي (زر تم الانتهاء بيستخدمه) -->
@@ -1224,9 +1224,9 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($lines)): ?>
             <div class="empty">لا توجد أصناف بعد. اضرب كود الصنف وأدخل الكمية.</div>
         <?php else: ?>
-        <input type="text" id="jardSearch" placeholder="🔍 ابحث في أصناف المحضر (بالكود أو الاسم)..."
+        <input type="text" id="jardSearch" placeholder="ابحث في أصناف المحضر (بالكود أو الاسم)..."
                onkeyup="filterTable('jardSearch','jardTable')"
-               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="🔍 ابحث في أصناف المحضر (بالكود أو الاسم)...">
+               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث في أصناف المحضر (بالكود أو الاسم)...">
         <table id="jardTable">
             <thead><tr>
                 <th>الكود</th><th>اسم الصنف</th><th>الوحدة</th><th>كمية الجرد (بوحدة الكود)</th>
@@ -1378,9 +1378,9 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($sheets)): ?>
             <div class="empty"><?= $session ? 'لا توجد محاضر بعد. اضغط "إضافة محضر جرد".' : 'مفيش جلسة جرد نشطة.' ?></div>
         <?php else: ?>
-        <input type="text" id="sheetsFilter" placeholder="🔍 ابحث برقم المحضر / اسم الجارد / المراجع / المكان..."
+        <input type="text" id="sheetsFilter" placeholder="ابحث برقم المحضر / اسم الجارد / المراجع / المكان..."
                onkeyup="filterSheets()"
-               style="width:100%;padding:11px 14px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="🔍 ابحث برقم المحضر / اسم الجارد / المراجع / المكان...">
+               style="width:100%;padding:11px 14px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث برقم المحضر / اسم الجارد / المراجع / المكان...">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
             <span style="font-size:13px;color:var(--ink-500);">الحالة:</span>
             <button type="button" class="status-chip active" data-status="" onclick="filterByStatus(this)">الكل</button>
@@ -1775,6 +1775,6 @@ require_once __DIR__ . '/includes/header.php';
     }
 </script>
 
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

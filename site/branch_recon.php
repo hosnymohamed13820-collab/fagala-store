@@ -902,7 +902,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (empty($alerts)): ?>
         <div class="card empty" style="text-align:center;padding:30px;color:var(--pos);font-size:15px;font-weight:600;">
-            مفيش حاجة غلط من <?= e($from) ?> لحد <?= e($to) ?> ✅
+            <i class="ti ti-circle-check"></i> مفيش حاجة غلط من <?= e($from) ?> لحد <?= e($to) ?>
         </div>
     <?php else: ?>
         <?php foreach ($alerts as $al): ?>

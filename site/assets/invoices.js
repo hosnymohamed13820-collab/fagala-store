@@ -81,7 +81,7 @@ window.INV = window.INV || {};
 
         tr.classList.toggle('disc-locked', hasPct);
         afterCell.innerHTML = _fmtAfter(after) +
-            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>' : '');
+            (hasPct ? '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> <i class="ti ti-star"></i></span>' : '');
         totalCell.textContent = _fmt2(total);
         return total;
     }
@@ -785,7 +785,7 @@ window.INV = window.INV || {};
         const key = input.dataset.code + ':' + input.dataset.branch;
         clearTimeout(saveTimers[key]);
 
-        setInd(input, '⏳', 'var(--warn)');
+        setInd(input, '…', 'var(--warn)');
         const body = new URLSearchParams({
             action: 'group_autosave', csrf: CSRF,
             group_id: GROUP_ID,
@@ -1088,7 +1088,7 @@ window.INV = window.INV || {};
 
         const extra = noCost > 0 ? '\n(' + noCost + ' صنف من غير تكلفة هيتساب زي ما هو)' : '';
         if (!confirm('هيتسعّر ' + n + ' صنف بنسبة ' + p + '%\n\n'
-                   + '⚠️ أي سعر بيع موجود دلوقتي هيتكتب فوقه.' + extra + '\n\nتمام؟')) return;
+                   + 'أي سعر بيع موجود دلوقتي هيتكتب فوقه.' + extra + '\n\nتمام؟')) return;
 
         setNote('بيحفظ ' + n + ' صنف…', 'var(--ink-500)');
         box.disabled = true;
@@ -1190,7 +1190,7 @@ window.INV = window.INV || {};
         if (Math.abs(val - prev) < 0.000001) { inp.classList.remove('dirty'); return; }
 
         const ind = inp.parentElement.querySelector('.sale-ind');
-        if (ind) { ind.textContent = '⏳'; ind.className = 'sale-ind wait'; }
+        if (ind) { ind.innerHTML = '<i class="ti ti-loader ti-spin"></i>'; /* نص ثابت — innerHTML آمن */ ind.className = 'sale-ind wait'; }
 
         // في المجموعة السعر بيتكتب على كل الفواتير اللي فيها الصنف
         const body = GRP_ID > 0
@@ -1755,7 +1755,7 @@ window.INV = window.INV || {};
         const key = input.dataset.code + ':' + input.dataset.branch;
         clearTimeout(saveTimers[key]);
 
-        setInd(input, '⏳', 'var(--warn)');
+        setInd(input, '…', 'var(--warn)');
         const body = new URLSearchParams({
             action: 'autosave', csrf: CSRF,
             distribution_id: DIST_ID,
@@ -2322,7 +2322,7 @@ window.INV = window.INV || {};
         if (isGrp) {
             var solo = parseInt(card.getAttribute('data-solo-count') || '0', 10);
             if (solo > 0) {
-                headMsg += '\n⚠️ ' + solo + ' فاتورة اتبعتت لوحدها ومش هتنزل في الملف ده.';
+                headMsg += '\n' + solo + ' فاتورة اتبعتت لوحدها ومش هتنزل في الملف ده.';
             }
         }
         var msg = headMsg + '\n\n'

@@ -440,7 +440,7 @@ function saveKeywords(textarea) {
 
     var ind = textarea.parentElement.querySelector('.save-ind');
     if (ind) {
-        ind.textContent = '⏱ جاري الحفظ…';
+        ind.innerHTML = '<i class="ti ti-loader ti-spin"></i> جاري الحفظ…'; /* نص ثابت */
         ind.style.color = 'var(--warn)';
     }
 

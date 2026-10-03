@@ -291,7 +291,7 @@ require_once __DIR__ . '/includes/header.php';
         const v = document.getElementById('q').value.trim();
         if (v.length < 2) return;                       // حرف واحد مش بحث
         if (lastRows.length && lastTerm === v) { pick(0); return; }
-        setStatus('⏳ بيدور…');
+        setStatus('بيدور…');
         clearTimeout(sugTimer);                          // ماتعملش نفس البحث مرتين
         fetch('book_orders.php?ajax=search&term=' + encodeURIComponent(v))
             .then(r => r.json())
@@ -306,7 +306,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.id === row.id)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
+            setStatus(row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusFirstQty(row.id);
             return;
         }
@@ -321,7 +321,7 @@ require_once __DIR__ . '/includes/header.php';
         if (row.has_order) {
             setStatus('✓ اتضاف ' + row.name, 'var(--pos)');
         } else {
-            setStatus('⚠️ ' + row.name + ' ملوش طلبية — اتضاف فاضي، اكتب هتجيب منه كام من كل مورد',
+            setStatus(row.name + ' ملوش طلبية — اتضاف فاضي، اكتب هتجيب منه كام من كل مورد',
                       'var(--warn,var(--warn))');
         }
         render();
@@ -429,7 +429,7 @@ require_once __DIR__ . '/includes/header.php';
         const prev = inp.dataset.saved !== undefined ? inp.dataset.saved : (qty[key] || '');
         if (val === prev) return;
 
-        ind.textContent = '⏳'; ind.style.color = 'var(--ink-500)';
+        ind.innerHTML = '<i class="ti ti-loader ti-spin"></i>'; /* نص ثابت — innerHTML آمن */ ind.style.color = 'var(--ink-500)';
 
         fetch('book_orders.php?ajax=save', {
             method: 'POST',
@@ -503,7 +503,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function copyOrder(sup, btn) {
         var lines = orderLines(sup);
-        if (!lines.length) { toast('⚠️ مفيش كتاب بكمية للمورد ده على الشاشة'); return; }
+        if (!lines.length) { toast('مفيش كتاب بكمية للمورد ده على الشاشة'); return; }
 
         copyText(lines.join('\n'));
 

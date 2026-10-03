@@ -35,7 +35,7 @@ foreach ($hrParts as $tabKey => $tabLabel) {
 if (empty($allowedTabs)) {
     http_response_code(403);
     die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
-        . '<h2>🚫 غير مصرّح</h2>'
+        . '<h2>غير مصرّح</h2>'
         . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
         . '<a href="logout.php">تسجيل الخروج</a></div>');
 }
@@ -1799,7 +1799,7 @@ $statusBadge = function($st) {
             <i class="ti ti-arrow-down-left"></i> الشركة مدينة لهم (<?= count($owedToEmps) ?>)
         </div>
         <p style="font-size:13px;color:var(--ink-500);margin:-6px 0 12px;">
-            🔴 دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
+            <i class="ti ti-alert-circle"></i> دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
             (رصيد دائن في سجل حسابه). مابتتخصمش من المرتب، وبتتصرفله لما ترجّعهاله.
         </p>
         <div class="hrs-scroll-x">
@@ -2502,7 +2502,7 @@ $statusBadge = function($st) {
                     $uncertain = ($outside == 0 && $acc !== null && $acc > 100);
                     if ($outside) {
                         $color = 'var(--neg)';
-                        $txt = '⚠ برّة (' . (int)$dist . 'م)';
+                        $txt = '<i class="ti ti-alert-triangle"></i> برّة (' . (int)$dist . 'م)';
                     } elseif ($uncertain) {
                         $color = 'var(--warn)';
                         $txt = '؟ الموقع مش دقيق (' . (int)$dist . 'م ±' . (int)$acc . 'م)';
@@ -3227,7 +3227,7 @@ $statusBadge = function($st) {
         var saved = (input.dataset.saved !== undefined ? input.dataset.saved : '').trim();
         if (salIsEqual(val, saved)) return;
 
-        setInd(input, '⏳', 'var(--warn)');
+        setInd(input, '…', 'var(--warn)');
         var monthInput = document.querySelector('#batchPayrollForm input[name="salary_month"]');
         var csrfInput = document.querySelector('#batchPayrollForm input[name="csrf"]');
         var salMonthVal = monthInput ? monthInput.value : '';

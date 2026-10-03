@@ -1505,7 +1505,7 @@ function shift_cashier_amounts(array $s): array {
         document.getElementById('cmp_body').innerHTML = html;
         var msg = document.getElementById('cmp_msg');
         if (allMatch) { msg.textContent = '✓ أرقامك مطابقة تماماً — يمكنك الاعتماد'; msg.style.background='var(--pos-soft)'; msg.style.color='var(--pos)'; }
-        else { msg.textContent = '⚠ فيه فروقات بين أرقامك وأرقام الموظف — راجع قبل القرار'; msg.style.background='var(--warn-soft)'; msg.style.color='var(--warn)'; }
+        else { msg.textContent = 'فيه فروقات بين أرقامك وأرقام الموظف — راجع قبل القرار'; msg.style.background='var(--warn-soft)'; msg.style.color='var(--warn)'; }
     }
 
     function rvToggle(item) {

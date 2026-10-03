@@ -38,7 +38,7 @@
      * ------------------------------------------------------------ */
     const DUP_GONE_MS = 1500;   // اختفى من الكادر المدة دي = القفل يتفك
     const DUP_LOCK_MS = 5000;   // (للوضع الصارم البديل — مش مستخدم افتراضيًا)
-    const LOCK_MSG    = '⏸ نفس الكود — بعّد الكاميرا وارجع';
+    const LOCK_MSG    = 'نفس الكود — بعّد الكاميرا وارجع';
     const HINT_MSG    = 'وجّه الكاميرا على الباركود';
     let lockTimer = null;  // مراقب رسالة القفل في الوضع المستمر
     let camList = [];      // كاميرات الجهاز
@@ -63,7 +63,7 @@
             '</style>' +
             '<div style="background:#fff;border-radius:16px;padding:18px;max-width:420px;width:100%;box-shadow:0 18px 50px rgba(0,0,0,0.3);">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-                '<span style="font-weight:700;color:#1E1B4B;font-size:16px;">📷 امسح الباركود</span>' +
+                '<span style="font-weight:700;color:#1E1B4B;font-size:16px;"><i class="ti ti-camera"></i> امسح الباركود</span>' +
                 '<button type="button" onclick="closeBarcodeScanner()" style="background:none;border:none;font-size:26px;color:#a8a4c0;cursor:pointer;line-height:1;" aria-label="إغلاق">&times;</button>' +
               '</div>' +
               '<div id="bcReader" style="width:100%;border-radius:12px;overflow:hidden;"></div>' +
@@ -72,9 +72,9 @@
                 '<button type="button" class="bc-ctl" id="bcZoom1" onclick="bcSetZoom(1)" aria-label="زووم واحد">×1</button>' +
                 '<button type="button" class="bc-ctl" id="bcZoom2" onclick="bcSetZoom(2)" aria-label="زووم اتنين">×2</button>' +
                 '<button type="button" class="bc-ctl" id="bcZoom3" onclick="bcSetZoom(3)" aria-label="زووم تلاتة">×3</button>' +
-                '<button type="button" class="bc-ctl" id="bcTorch" onclick="bcToggleTorch()" style="display:none;" aria-label="الكشاف">🔦</button>' +
-                '<button type="button" class="bc-ctl" id="bcSwitch" onclick="bcSwitchCamera()" style="display:none;" aria-label="تبديل الكاميرا">🔄</button>' +
-                '<button type="button" class="bc-ctl" id="bcSoundBtn" onclick="bcToggleSound()" aria-label="صوت المسح">🔊</button>' +
+                '<button type="button" class="bc-ctl" id="bcTorch" onclick="bcToggleTorch()" style="display:none;" aria-label="الكشاف">كشاف</button>' +
+                '<button type="button" class="bc-ctl" id="bcSwitch" onclick="bcSwitchCamera()" style="display:none;" aria-label="تبديل الكاميرا"><i class="ti ti-refresh"></i></button>' +
+                '<button type="button" class="bc-ctl" id="bcSoundBtn" onclick="bcToggleSound()" aria-label="صوت المسح">صوت</button>' +
               '</div>' +
               '<p id="bcHint" style="text-align:center;color:#8884a8;font-size:13px;margin-top:10px;">وجّه الكاميرا على الباركود</p>' +
             '</div>';
@@ -86,7 +86,7 @@
     function syncSoundBtn() {
         const b = document.getElementById('bcSoundBtn');
         if (b) {
-            b.textContent = soundOn ? '🔊' : '🔇';
+            b.textContent = soundOn ? 'صوت' : 'صامت';
             b.classList.toggle('on', soundOn);
         }
     }
@@ -114,16 +114,16 @@
 
     function getCameraErrorMessage(err) {
         if (!navigator.mediaDevices) {
-            return '⚠️ افتح الموقع من Safari نفسه مش من الأيقونة. اكتب الكود يدوياً.';
+            return 'افتح الموقع من Safari نفسه مش من الأيقونة. اكتب الكود يدوياً.';
         }
         const errName = err ? (err.name || '') : '';
         if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
-            return '⚠️ تم حظر الكاميرا: الإعدادات ← Safari ← الكاميرا ← سماح. اكتب الكود يدوياً.';
+            return 'تم حظر الكاميرا: الإعدادات ← Safari ← الكاميرا ← سماح. اكتب الكود يدوياً.';
         }
         if (errName === 'NotReadableError' || errName === 'TrackStartError') {
-            return '⚠️ الكاميرا مفتوحة في برنامج تاني. اكتب الكود يدوياً.';
+            return 'الكاميرا مفتوحة في برنامج تاني. اكتب الكود يدوياً.';
         }
-        return '⚠️ تعذّر تشغيل الكاميرا. اكتب الكود يدوياً.';
+        return 'تعذّر تشغيل الكاميرا. اكتب الكود يدوياً.';
     }
 
     /* ============================================================
@@ -311,7 +311,7 @@
         try { localStorage.setItem('bcSound', soundOn ? '1' : '0'); } catch (e) {}
         const b = document.getElementById('bcSoundBtn');
         if (b) {
-            b.textContent = soundOn ? '🔊' : '🔇';
+            b.textContent = soundOn ? 'صوت' : 'صامت';
             b.classList.toggle('on', soundOn);
         }
         if (soundOn) beep(true);   // عيّنة عشان يسمع إنه اشتغل
@@ -381,7 +381,7 @@
         const safeGo = function () {
             try { go(); } catch (e) {
                 const h = document.getElementById('bcHint');
-                if (h) h.textContent = '⚠️ الكاميرا مشغولة، جرّب 🔄 تاني.';
+                if (h) h.textContent = 'الكاميرا مشغولة، جرّب تاني.';
             }
         };
         if (scanning) scanner.stop().then(safeGo).catch(safeGo); else safeGo();

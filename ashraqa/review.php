@@ -882,7 +882,7 @@ function shift_cashier_amounts(array $s): array {
                 </table>
                 <div class="rv-total" style="color:var(--neg);">إجمالي المصروفات: <span id="rv_exp_t">0.00</span> ج.م</div>
                 <div style="margin-top:12px;background:var(--line-soft);padding:10px 14px;border-radius:9px;font-size:12px;color:var(--ink-600);line-height:1.7;">
-                    ℹ️ <b>آلية الترحيل المالي:</b> عند الاعتماد، يدخل إجمالي الكاش المبيوع (كاش الدرج + المصروفات) كاستلام مبيعات في الخزينة، ثم يُصرف كل بند مصروف كقيد صرف مستقل من نفس الخزينة النقدية بحسابه الخاص.
+                    <i class="ti ti-alert-circle"></i> <b>آلية الترحيل المالي:</b> عند الاعتماد، يدخل إجمالي الكاش المبيوع (كاش الدرج + المصروفات) كاستلام مبيعات في الخزينة، ثم يُصرف كل بند مصروف كقيد صرف مستقل من نفس الخزينة النقدية بحسابه الخاص.
                 </div>
             </div>
 
@@ -1273,7 +1273,7 @@ function shift_cashier_amounts(array $s): array {
         document.getElementById('cmp_body').innerHTML = html;
         var msg = document.getElementById('cmp_msg');
         if (allMatch) { msg.textContent = '✓ أرقامك مطابقة تماماً — يمكنك الاعتماد'; msg.style.background='var(--pos-soft)'; msg.style.color='var(--pos)'; }
-        else { msg.textContent = '⚠ فيه فروقات بين أرقامك وأرقام الموظف — راجع قبل القرار'; msg.style.background='var(--warn-soft)'; msg.style.color='var(--warn)'; }
+        else { msg.textContent = 'فيه فروقات بين أرقامك وأرقام الموظف — راجع قبل القرار'; msg.style.background='var(--warn-soft)'; msg.style.color='var(--warn)'; }
     }
 
     function rvToggle(item) {

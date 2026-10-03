@@ -266,7 +266,7 @@ $prioBadge = function($p) {
             <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);">
                 <div style="font-size:13px;color:var(--ink-500);margin-bottom:8px;">حالة المستهدفين:</div>
                 <?php foreach ($openTargets as $tg): ?>
-                    <span class="tgt-chip <?= $tg['status'] ?>"><?= e($tg['full_name']) ?> <?= $tg['status']==='done'?'✓':'⏳' ?></span>
+                    <span class="tgt-chip <?= $tg['status'] ?>"><?= e($tg['full_name']) ?> <?= $tg['status']==='done'?'✓':'<i class="ti ti-clock"></i>' ?></span>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
@@ -346,7 +346,7 @@ $prioBadge = function($p) {
                     <div class="ti-meta">
                         من: <?= e($t['creator'] ?? '—') ?>
                         <?php if ($t['due_date']): ?> · موعد: <?= e($t['due_date']) ?><?php endif; ?>
-                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent-text);">⏳ مطلوبة</span>' ?>
+                        · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent-text);"><i class="ti ti-clock"></i> مطلوبة</span>' ?>
                     </div>
                 </a>
             <?php endforeach; endif; ?>

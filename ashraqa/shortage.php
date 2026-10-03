@@ -262,7 +262,7 @@ require_once __DIR__ . '/includes/header.php';
 <!-- ===== بوب أب طلب النواقص ===== -->
 <div class="shr-overlay" id="shrOverlay" onclick="if(event.target===this)closeRequest()">
     <div class="shr-modal">
-        <h3 id="shrModalTitle">🛒 إرسال طلب نواقص</h3>
+        <h3 id="shrModalTitle"><i class="ti ti-shopping-cart"></i> إرسال طلب نواقص</h3>
         <div class="shr-summary" id="shrSummary"></div>
 
         <div class="shr-fld">
@@ -316,7 +316,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 <script>
     const BRANCHES  = <?= json_encode($branches, JSON_UNESCAPED_UNICODE) ?>;
     const ADMIN_STO = <?= (int) ADMIN_STO_ID ?>;
@@ -370,7 +370,7 @@ require_once __DIR__ . '/includes/header.php';
         const code = inp.value.trim();
         if (!code) return;
         hideSug();
-        setStatus('⏳ بيدور…', 'var(--ink-500)');
+        setStatus('بيدور…', 'var(--ink-500)');
         fetch('shortage.php?ajax=code&code=' + encodeURIComponent(code))
             .then(r => r.json())
             .then(j => {
@@ -394,7 +394,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.code === row.code)) {
-            setStatus('⚠️ ' + esc(row.name) + ' مضاف قبل كده', 'var(--warn)');
+            setStatus(esc(row.name) + ' مضاف قبل كده', 'var(--warn)');
             // بنركّز على خانة الكمية بتاعته بدل ما نتجاهله
             focusQty(row.code);
             return;
@@ -453,7 +453,7 @@ require_once __DIR__ . '/includes/header.php';
         if (added.length) { render(added.filter(passes)); return; }
 
         // مفيش أصناف مضافة → نجيب بالفلتر
-        setStatus('⏳ بيجيب الأصناف…', 'var(--ink-500)');
+        setStatus('بيجيب الأصناف…', 'var(--ink-500)');
         const p = new URLSearchParams({ajax:'filter', mode:mode});
         if (mode === 'has_stock') {
             const sto = +document.getElementById('branchPick').value || 0;
@@ -566,7 +566,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('srcBranchBtn').classList.toggle('active', !isPurch);
         document.getElementById('srcPurchaseBtn').classList.toggle('active', isPurch);
         document.getElementById('toBranchFld').style.display = isPurch ? 'none' : 'block';
-        document.getElementById('shrModalTitle').textContent = isPurch ? '🛒 طلب من المشتريات' : '🛒 إرسال طلب نواقص';
+        document.getElementById('shrModalTitle').textContent = isPurch ? 'طلب من المشتريات' : 'إرسال طلب نواقص';
         document.getElementById('shrErr').textContent = '';
     }
 

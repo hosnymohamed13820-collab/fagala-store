@@ -595,7 +595,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             
             <div style="margin-bottom:12px;">
-                <input type="text" id="invSearchInput" oninput="filterInvoicesList()" placeholder="🔍 ابحث برقم الفاتورة أو اسم المورد..."
+                <input type="text" id="invSearchInput" oninput="filterInvoicesList()" placeholder="ابحث برقم الفاتورة أو اسم المورد..."
                        style="width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--surface);color:var(--text);box-sizing:border-box;">
             </div>
 

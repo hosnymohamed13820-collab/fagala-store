@@ -310,7 +310,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             <i class="ti ti-device-mobile"></i> نزّل التطبيق على جهازك
         </button>
         <p id="iosHint" style="display:none;margin-top:12px;font-size:12px;color:var(--ink-500);text-align:center;line-height:1.7;">
-            لتثبيت التطبيق على الآيفون: افتح من Safari، اضغط زر المشاركة ⬆️، ثم "إضافة إلى الشاشة الرئيسية".
+            لتثبيت التطبيق على الآيفون: افتح من Safari، اضغط زر المشاركة، ثم "إضافة إلى الشاشة الرئيسية".
         </p>
     </div>
 
@@ -320,7 +320,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=49').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=50').catch(() => {});
             });
         }
 

@@ -2154,7 +2154,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (!$noDistDoc): ?>
                 <?php if ($isGuardOff): ?>
                     <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
-                        🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
+                        <i class="ti ti-lock"></i> حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
                     </div>
                 <?php elseif ($naCount > 0): ?>
                     <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
@@ -2763,7 +2763,7 @@ require_once __DIR__ . '/includes/header.php';
             ?>
             <?php if ($grpHasGuardOff): ?>
                 <div class="status-bar warn-soft" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;font-size:13.5px;font-weight:600;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);">
-                    🔓 حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
+                    <i class="ti ti-lock"></i> حارس رصيد الإدارة متشال عن الفاتورة دي — التوزيع حده كمية الفاتورة بس.
                 </div>
             <?php elseif ($naCount > 0): ?>
                 <div class="sqlsrv-warn" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
@@ -3214,7 +3214,7 @@ require_once __DIR__ . '/includes/header.php';
                                    onkeydown="if(isEnterKey(event)){event.preventDefault();this.blur();}">
                         </td>
                         <td class="c-after js-after"><?= disc_price_txt((float)$r['price_after']) ?><?php
-                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> ★</span>';
+                            if ($isLocked) echo '<span class="disc-star" title="خصم خاص بالصنف — بيتجاهل خصم الفاتورة" style="color:var(--accent-text);font-size:11px;"> <i class="ti ti-star"></i></span>';
                             elseif (!empty($r['adjusted'])) echo '<span class="disc-dot" title="اتعدّل بأقل وحدة ممكنة لضبط الإجمالي" style="color:var(--warn);font-size:11px;"> ●</span>';
                         ?></td>
                         <td class="c-cost js-total"><?= number_format($r['total_after'],2) ?></td>
@@ -3239,7 +3239,7 @@ require_once __DIR__ . '/includes/header.php';
                             color:var(--pos);padding:14px 16px;border-radius:12px;font-size:13.5px;line-height:1.8;">
                     <i class="ti ti-discount-2" style="font-size:20px;flex-shrink:0;"></i>
                     <div>
-                        <b>فيه أصناف بخصم خاص ★.</b> الأصناف اللي كتبت لها نسبة بتتحسب
+                        <b>فيه أصناف بخصم خاص <i class="ti ti-star"></i>.</b> الأصناف اللي كتبت لها نسبة بتتحسب
                         بنسبتها لوحدها وبتتجاهل خصم الفاتورة الكلي. باقي الأصناف ماشية
                         بخصم الفاتورة زي الأول. امسح النسبة عشان الصنف يرجع لخصم الفاتورة.
                     </div>
@@ -3578,7 +3578,7 @@ $iflHasTable = (!empty($openInvoice) && !empty($items))
 <?php endif; ?>
 
 <?php /* بعد بوب أب الأصناف: الـJS بيدوّر على #iflOverlay وقت ما يتحمّل (بريف ٥٧ كان حاطه قبله فعلامات الأصناف كلها وقفت) */ ?>
-<script src="assets/invoices.js?v=3"></script>
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/invoices.js?v=5"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

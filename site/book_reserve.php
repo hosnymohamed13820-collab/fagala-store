@@ -283,7 +283,7 @@ require_once __DIR__ . '/includes/header.php';
                         ✓ الإيصال اتطبع<?= $timePr !== '' ? ' ' . e($timePr) : '' ?>
                     </span>
                 <?php elseif ($pr['state'] === 'queued' || $pr['state'] === 'claimed'): ?>
-                    <span style="color:var(--ink-500);">⏳ الإيصال بيتطبع…</span>
+                    <span style="color:var(--ink-500);"><i class="ti ti-loader ti-spin"></i> الإيصال بيتطبع…</span>
                 <?php elseif ($pr['state'] === 'stuck'): ?>
                     <span style="color:var(--warn);font-weight:bold;">الإيصال ما اتطبعش — الطابعة مقفولة أو الوكيل واقف</span>
                 <?php elseif ($pr['state'] === 'failed'): ?>
@@ -422,7 +422,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 </div>
 
-<script src="assets/barcode_scanner.js?v=7"></script>
+<script src="assets/barcode_scanner.js?v=9"></script>
 <script>
     const CSRF = <?= json_encode(csrf_token()) ?>;
     let added = [];          // الكتب المضافة للحجز الحالي
@@ -479,7 +479,7 @@ require_once __DIR__ . '/includes/header.php';
         const code = inp.value.trim();
         if (!code) return;
         hideSug();
-        setStatus('⏳ بيدور…');
+        setStatus('بيدور…');
         fetch('book_reserve.php?ajax=search&term=' + encodeURIComponent(code))
             .then(r => r.json())
             .then(j => {
@@ -497,7 +497,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function pushRow(row) {
         if (added.some(r => r.code === row.code)) {
-            setStatus('⚠️ ' + row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
+            setStatus(row.name + ' مضاف قبل كده', 'var(--warn,var(--warn))');
             focusQty(row.code);
             return;
         }
