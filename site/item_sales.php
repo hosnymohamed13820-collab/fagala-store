@@ -48,20 +48,21 @@ $catsData   = isl_categories_map();
 $allCats    = $catsData['all_cats'];
 
 // =====================================================================
-//  تصدير CSV (قبل أي HTML وبنفس الحراسة)
+//  تصدير إكسيل (قبل أي HTML وبنفس الحراسة)
+//  نفس SimpleXlsx بتاع التقارير: يمين لشمال، العناوين كحلي، والكود نص
+//  (من غير ما إكسيل يحوّله لرقم ويشيل الأصفار اللي على الشمال).
 // =====================================================================
 $export = trim((string)($_GET['export'] ?? ''));
 if ($export !== '') {
+    require_once __DIR__ . '/xlsx_lib.php';
+
     if ($export === 'stock' && $canStock) {
         $coverDays = (int) setting('item_sales_cover_days', '7');
         $stockData = isl_stock_status($from, $to, $coverDays);
 
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="item_sales_stock_' . $from . '_' . $to . '.csv"');
-        echo "\xEF\xBB\xBF";
-        $out = fopen('php://output', 'w');
-
-        fputcsv($out, ['الفرع', 'كود الصنف', 'اسم الصنف', 'القسم', 'الحالة', 'الرصيد', 'مبيعات الفترة', 'متوسط اليوم', 'يكفّي كام يوم']);
+        $x = new SimpleXlsx('حالة الرصيد');
+        $x->setColumnTypes(['s', 's', 's', 's', 's', 'n', 'n', 'n', 'n']);
+        $x->addRow(['الفرع', 'كود الصنف', 'اسم الصنف', 'القسم', 'الحالة', 'الرصيد', 'مبيعات الفترة', 'متوسط اليوم', 'يكفّي كام يوم'], true);
 
         foreach ($stockData as $sid => $sInfo) {
             if ($stoParam !== null && $stoParam > 0 && $sid !== $stoParam) {
@@ -78,48 +79,51 @@ if ($export !== '') {
                     if ($catParam !== null && $catParam > 0 && (int)$r['cat_id'] !== $catParam) {
                         continue;
                     }
-                    fputcsv($out, [
+                    $x->addRow([
                         $r['store_name'],
-                        $r['barcode'],
+                        (string) $r['barcode'],
                         $r['name'],
                         $r['cat_name'],
                         $stLabel,
                         $r['balance'],
                         $r['qty'],
                         $r['daily_avg'],
-                        $r['days_left'] !== null ? $r['days_left'] : '—',
+                        $r['days_left'] !== null ? $r['days_left'] : '',
                     ]);
                 }
             }
         }
-        fclose($out);
+        $x->download('item_sales_stock_' . $from . '_' . $to . '.xlsx');
         exit;
     }
 
     if ($export === 'movement' && $canMovement) {
         $movementData = isl_movement($from, $to, $stoParam, $catParam, $byParam, 10000);
 
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="item_sales_movement_' . $from . '_' . $to . '.csv"');
-        echo "\xEF\xBB\xBF";
-        $out = fopen('php://output', 'w');
-
         // التكلفة والربح للي معاه جزء الأرباح والأرقام مفتوحة بس
         $withProfit = $canProfit && sens_unlocked();
-        $hdr = ['النوع', 'كود الصنف', 'اسم الصنف', 'القسم', 'الكمية المباعة', 'الإيراد الصافي'];
-        if ($withProfit) $hdr = array_merge($hdr, ['التكلفة', 'الربح', 'الهامش %']);
+        $hdr   = ['النوع', 'كود الصنف', 'اسم الصنف', 'القسم', 'الكمية المباعة', 'الإيراد الصافي'];
+        $types = ['s', 's', 's', 's', 'n', 'n'];
+        if ($withProfit) {
+            $hdr   = array_merge($hdr, ['التكلفة', 'الربح', 'الهامش %']);
+            $types = array_merge($types, ['n', 'n', 'n']);
+        }
         $hdr[] = 'الرصيد';
-        fputcsv($out, $hdr);
+        $types[] = 'n';
+
+        $x = new SimpleXlsx('حركة البيع');
+        $x->setColumnTypes($types);
+        $x->addRow($hdr, true);
 
         foreach (['top' => 'الأكثر مبيعاً', 'bottom' => 'الأقل مبيعاً'] as $k => $lbl) {
             foreach ($movementData[$k] as $r) {
-                $line = [$lbl, $r['barcode'], $r['name'], $r['cat_name'], $r['qty'], $r['revenue']];
-                if ($withProfit) $line = array_merge($line, [$r['cost'], $r['profit'], $r['margin'] . '%']);
+                $line = [$lbl, (string) $r['barcode'], $r['name'], $r['cat_name'], $r['qty'], $r['revenue']];
+                if ($withProfit) $line = array_merge($line, [$r['cost'], $r['profit'], $r['margin']]);
                 $line[] = $r['balance'];
-                fputcsv($out, $line);
+                $x->addRow($line);
             }
         }
-        fclose($out);
+        $x->download('item_sales_movement_' . $from . '_' . $to . '.xlsx');
         exit;
     }
 
@@ -132,27 +136,24 @@ if ($export !== '') {
 
         $profitData = isl_profit($from, $to, $stoParam, $catParam);
 
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="item_sales_profit_' . $from . '_' . $to . '.csv"');
-        echo "\xEF\xBB\xBF";
-        $out = fopen('php://output', 'w');
-
-        fputcsv($out, ['كود الصنف', 'اسم الصنف', 'القسم', 'الكمية المباعة', 'الإيراد الصافي', 'التكلفة', 'الربح', 'الهامش %', 'سطور بدون تكلفة']);
+        $x = new SimpleXlsx('الأرباح');
+        $x->setColumnTypes(['s', 's', 's', 'n', 'n', 'n', 'n', 'n', 'n']);
+        $x->addRow(['كود الصنف', 'اسم الصنف', 'القسم', 'الكمية المباعة', 'الإيراد الصافي', 'التكلفة', 'الربح', 'الهامش %', 'سطور بدون تكلفة'], true);
 
         foreach ($profitData['items'] as $r) {
-            fputcsv($out, [
-                $r['barcode'],
+            $x->addRow([
+                (string) $r['barcode'],
                 $r['name'],
                 $r['cat_name'],
                 $r['qty'],
                 $r['revenue'],
                 $r['cost'],
                 $r['profit'],
-                $r['margin'] . '%',
+                $r['margin'],
                 $r['zero_cost_lines'],
             ]);
         }
-        fclose($out);
+        $x->download('item_sales_profit_' . $from . '_' . $to . '.xlsx');
         exit;
     }
 }
@@ -472,8 +473,8 @@ require_once __DIR__ . '/includes/header.php';
                     'by'     => $byParam,
                 ]);
                 ?>
-                <a href="?<?= $csvQs ?>" class="btn btn-ghost" title="تصدير كل الصفوف إلى إكسيل / CSV">
-                    <i class="ti ti-file-spreadsheet"></i> تصدير CSV
+                <a href="?<?= $csvQs ?>" class="btn btn-ghost" title="تصدير كل الصفوف إلى إكسيل">
+                    <i class="ti ti-file-spreadsheet"></i> تصدير إكسيل
                 </a>
             </div>
         </form>
