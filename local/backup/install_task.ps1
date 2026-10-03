@@ -7,8 +7,10 @@ $bash   = 'C:\Program Files\Git\bin\bash.exe'
 $script = (Resolve-Path (Join-Path $PSScriptRoot 'daily_backup.sh')).Path -replace '\\', '/'
 
 # الفولدر فيه config.php بالباسوردات — مقفول على اليوزر ده + SYSTEM + الأدمن بس
-New-Item -ItemType Directory -Force 'D:agala_backups' | Out-Null
-icacls 'D:agala_backups' /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" /T /Q | Out-Null
+New-Item -ItemType Directory -Force 'D:\fagala_backups' | Out-Null
+icacls 'D:\fagala_backups' /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" /Q | Out-Null
+# الملفات اللي جوه تورث من الفولدر (من غير /reset كانت بتبقى من غير ولا إذن خالص)
+icacls 'D:\fagala_backups\*' /reset /T /C /Q | Out-Null
 
 if (-not (Test-Path $bash)) { throw "Git Bash mesh mawgood: $bash" }
 
