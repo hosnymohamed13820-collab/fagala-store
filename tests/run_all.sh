@@ -52,6 +52,16 @@ else
 fi
 
 echo
+echo "== مفيش إيموجي في الواجهة (السطور الجديدة بس) =="
+PY=""
+for c in python3 python; do command -v $c > /dev/null 2>&1 && $c -c "" > /dev/null 2>&1 && { PY=$c; break; }; done
+if [ -n "$PY" ]; then
+    PYTHONIOENCODING=utf-8 $PY tests/check_no_emoji.py || FAIL=1
+else
+    echo "  ⚠️ مفيش بايثون — فحص الإيموجي ما اتعملش"
+fi
+
+echo
 echo "== بنية PHP — إشراقة =="
 if command -v node > /dev/null 2>&1; then
     node tests/check_php.mjs ashraqa/*.php ashraqa/includes/*.php || FAIL=1

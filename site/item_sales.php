@@ -476,7 +476,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($canProfit): ?>
             <?php $qsProfit = http_build_query(array_merge($_GET, ['tab' => 'profit'])); ?>
             <a href="?<?= $qsProfit ?>" class="isl-tab <?= $tabParam === 'profit' ? 'active' : '' ?>">
-                <i class="ti ti-cash"></i> الأرباح 🔒
+                <i class="ti ti-lock"></i> الأرباح
             </a>
         <?php endif; ?>
     </div>
