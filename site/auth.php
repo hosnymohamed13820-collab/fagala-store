@@ -105,6 +105,7 @@ function all_modules(): array
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
         'analysis'      => ['label' => 'تحليل الموسم',     'icon' => 'ti-calculator'   , 'url' => 'analysis.php'],
+        'item_sales'    => ['label' => 'تحليل المبيعات',   'icon' => 'ti-arrow-up-right', 'url' => 'item_sales.php'],
         'reports'       => ['label' => 'التقارير',          'icon' => 'ti-chart-bar',        'url' => 'reports.php'],
         'definitions'   => ['label' => 'التعريفات',         'icon' => 'ti-adjustments',     'url' => 'definitions.php'],
         'settings'      => ['label' => 'الإعدادات',         'icon' => 'ti-settings',         'url' => 'settings.php'],
@@ -170,6 +171,11 @@ function module_parts(): array
             'statement' => 'الخزينة وكشف الحساب',
             'operate'   => 'صرف واستلام وتحويل',
             'reverse'   => 'قيد عكسي',
+        ],
+        'item_sales' => [
+            'stock'    => 'حالة الرصيد',
+            'movement' => 'حركة البيع',
+            'profit'   => 'الأرباح',
         ],
     ];
 }
