@@ -7,9 +7,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_module_access('ops');
+require_once __DIR__ . '/sensitive_lib.php';
 
 $canPerf  = can('ops:perf');
 $canAudit = can('ops:audit');
+// المدخلات فيها مرتبات ومبالغ — نفس قفل الأرقام الحساسة اللي على الأرباح والمرتبات
+$auditOpen = $canAudit && sens_unlocked();
 
 $tabParam = trim((string) ($_GET['tab'] ?? ''));
 if ($tabParam === '' || !in_array($tabParam, ['perf', 'audit'], true)) {
@@ -28,7 +31,7 @@ $todayCairo = (new \DateTime('now', new \DateTimeZone('Africa/Cairo')))->format(
 //  تصدير إكسيل لسجل العمليات (قبل أي HTML وبنفس الحراسة)
 // =====================================================================
 $export = trim((string) ($_GET['export'] ?? ''));
-if ($export === 'audit' && $canAudit) {
+if ($export === 'audit' && $auditOpen) {
     require_once __DIR__ . '/xlsx_lib.php';
 
     $fromAudit = trim((string) ($_GET['from'] ?? ''));
@@ -270,7 +273,7 @@ $uParam = isset($_GET['user_id']) && trim((string)$_GET['user_id']) !== '' ? (in
 $pParam = trim((string)($_GET['page'] ?? ''));
 $aParam = trim((string)($_GET['action_search'] ?? ''));
 
-if ($canAudit && $tabParam === 'audit') {
+if ($auditOpen && $tabParam === 'audit') {
     try {
         if (function_exists('db')) {
             $pdo = db();
@@ -670,6 +673,8 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
+    <?php elseif ($tabParam === 'audit' && !$auditOpen): ?>
+        <?php sens_lock_screen('سجل العمليات'); ?>
     <?php elseif ($tabParam === 'audit'): ?>
         <?php if (!$canAudit): ?>
             <div class="ops-card ops-empty">

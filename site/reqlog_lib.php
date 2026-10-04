@@ -253,7 +253,7 @@ function reqlog_collect_params(): ?string
  */
 function reqlog_sanitize_value(mixed $value, ?string $keyName = null): mixed
 {
-    if ($keyName !== null && preg_match('/pass|token|csrf|secret|pin/i', $keyName)) {
+    if ($keyName !== null && preg_match('/pass|pwd|token|csrf|secret|pin|otp|api_?key/i', $keyName)) {
         return '***';
     }
 
