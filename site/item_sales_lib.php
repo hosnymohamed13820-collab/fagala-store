@@ -15,6 +15,16 @@ require_once __DIR__ . '/analysis_lib.php';
 const ISL_RET_WARN_PCT = 10;
 const ISL_RET_WARN_MIN = 3;
 
+// أكواد مش أصناف حقيقية — بتطلع من كل التقارير (طلب محمد ٤/١٠).
+// «0» = «فتح درج»: الكاشير بيعمل بيه فاتورة عشان الدرج يتفتح، فكان بيطلع الأول في الأكتر بيعاً.
+const ISL_EXCLUDED_CODES = ['0'];
+
+/** شرط SQL جاهز: «والكود مش من المستبعدين» (القيم ثابتة في الكود، مش من المستخدم). */
+function isl_excluded_sql(string $col): string
+{
+    return $col . " NOT IN ('" . implode("','", array_map('addslashes', ISL_EXCLUDED_CODES)) . "')";
+}
+
 /**
  * تحديد وحساب فترة التقرير وعدد الأيام.
  * الافتراضي: آخر ٣٠ يوماً شاملة اليوم.
@@ -162,7 +172,10 @@ function isl_balances_map(): array
     $balances = [];
     $pdo = db();
     try {
-        $st = $pdo->query('SELECT sto_id, item_id, balance FROM hq_branch_balances');
+        $st = $pdo->query(
+            'SELECT sto_id, item_id, balance FROM hq_branch_balances
+             WHERE item_id NOT IN (SELECT item_id FROM hq_items WHERE ' . isl_excluded_sql('barcode') . ')'
+        );
         foreach ($st as $r) {
             $sid = (int) $r['sto_id'];
             $iid = (int) $r['item_id'];
@@ -234,6 +247,7 @@ function isl_sales(string $from, string $to): array
               AND h.sth_id    = l.sth_id
               AND h.suffix    = l.suffix
             WHERE h.invoice_date >= ? AND h.invoice_date < ?
+              AND " . isl_excluded_sql('l.item_code') . "
             GROUP BY h.agent_key, l.item_id";
 
     $st = $pdo->prepare($sql);
@@ -880,6 +894,7 @@ function isl_monthly(
               AND h.sth_id    = l.sth_id
               AND h.suffix    = l.suffix
             WHERE h.invoice_date >= ? AND h.invoice_date < ?
+              AND " . isl_excluded_sql('l.item_code') . "
             GROUP BY h.agent_key, l.item_id, DATE_FORMAT(h.invoice_date, '%Y-%m')";
 
     $st = $pdo->prepare($sql);

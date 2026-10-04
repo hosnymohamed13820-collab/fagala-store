@@ -13,7 +13,8 @@ require_login();
 require_once __DIR__ . '/daily_summary_lib.php';
 
 $dsUsers = array_map('intval', explode(',', (string) setting('daily_summary_users', '')));
-if (!is_owner() && !in_array((int) current_user()['id'], $dsUsers, true)) {
+// الأونر · صلاحية «التقارير ← الملخص اليومي» · أو اللي في قايمة المستلمين
+if (!can('reports:daily') && !in_array((int) current_user()['id'], $dsUsers, true)) {
     http_response_code(403);
     die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
         . '<h2>غير مصرّح</h2>'
@@ -34,6 +35,11 @@ $nextDay = date('Y-m-d', strtotime($date . ' +1 day'));
 
 $s   = ds_build($date);
 $dts = strtotime($date);
+$cal = ds_month($date);                 // نتيجة شهر اليوم المختار
+$calOpen   = isset($_GET['cal']);
+$prevMonth = date('Y-m-d', strtotime(date('Y-m-01', $dts) . ' -1 month'));
+$nextMonth = date('Y-m-d', strtotime(date('Y-m-01', $dts) . ' +1 month'));
+const DS_MONTHS = ['', 'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
 
 function ds_chip(?float $p): string
 {
@@ -51,7 +57,28 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .ds-nav { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
-    .ds-nav .ds-day { font-size:17px; font-weight:700; color:var(--ink-900); min-width:170px; text-align:center; }
+    .ds-nav .ds-day { font-size:17px; font-weight:700; color:var(--ink-900); min-width:170px; text-align:center;
+        background:none; border:1.5px solid transparent; border-radius:10px; padding:6px 12px; cursor:pointer; font-family:inherit;
+        display:inline-flex; align-items:center; gap:8px; justify-content:center; }
+    .ds-nav .ds-day:hover { border-color:var(--line); }
+    .ds-nav .ds-day .ti { font-size:16px; color:var(--ink-500); }
+    .ds-cal { max-width:620px; margin-bottom:16px; padding:14px; }
+    .ds-cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:15px; color:var(--ink-900); }
+    .ds-cal-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:5px; }
+    .ds-wd { font-size:11px; color:var(--ink-500); text-align:center; padding:2px 0 4px; }
+    .ds-cd { display:flex; flex-direction:column; align-items:center; gap:1px; padding:6px 2px; border-radius:9px;
+        text-decoration:none; border:1.5px solid transparent; min-width:0; font-variant-numeric:tabular-nums; }
+    .ds-cd-n { font-size:13px; font-weight:700; color:var(--ink-900); }
+    .ds-cd-p { font-size:12px; font-weight:700; direction:ltr; unicode-bidi:isolate; }
+    .ds-cd-v { font-size:10px; color:var(--ink-500); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+    .ds-cd-pos { background:var(--pos-soft); } .ds-cd-pos .ds-cd-p { color:var(--pos); }
+    .ds-cd-neg { background:var(--neg-soft); } .ds-cd-neg .ds-cd-p { color:var(--neg); }
+    .ds-cd-mute { background:var(--line-soft); } .ds-cd-mute .ds-cd-p { color:var(--ink-500); }
+    .ds-cd:hover { border-color:var(--line); }
+    .ds-cd.is-cur { border-color:var(--accent-text); }
+    .ds-cd-future { opacity:.35; }
+    .ds-cal-note { font-size:12px; color:var(--ink-500); margin-top:10px; }
+    @media (max-width:520px) { .ds-cd-v { display:none; } }
     .ds-nav .ds-next-ico { display:inline-block; transform:rotate(180deg); }
     .ds-sub { font-size:12px; color:var(--ink-500); margin:-8px 0 14px; }
     .ds-total td { font-weight:700; border-top:2px solid var(--line); }
@@ -62,7 +89,10 @@ require_once __DIR__ . '/includes/header.php';
     <a class="btn btn-ghost btn-sm" href="daily_summary.php?date=<?= e($prevDay) ?>" title="اليوم اللي قبله">
         <i class="ti ti-chevron-left ds-next-ico"></i>
     </a>
-    <div class="ds-day"><?= e(DS_DAY_NAMES[(int) date('w', $dts)]) ?> <?= e(date('j/n/Y', $dts)) ?></div>
+    <button type="button" class="ds-day" id="dsDayBtn" title="اضغط عشان تشوف أيام الشهر">
+        <?= e(DS_DAY_NAMES[(int) date('w', $dts)]) ?> <?= e(date('j/n/Y', $dts)) ?>
+        <i class="ti ti-calendar"></i>
+    </button>
     <?php if ($nextDay <= $today): ?>
     <a class="btn btn-ghost btn-sm" href="daily_summary.php?date=<?= e($nextDay) ?>" title="اليوم اللي بعده">
         <i class="ti ti-chevron-left"></i>
@@ -72,6 +102,49 @@ require_once __DIR__ . '/includes/header.php';
     <a class="btn btn-ghost btn-sm" href="daily_summary.php?date=<?= e($today) ?>">النهاردة</a>
     <?php endif; ?>
 </div>
+<div class="ds-cal card" id="dsCal"<?= $calOpen ? '' : ' hidden' ?>>
+    <div class="ds-cal-head">
+        <a class="btn btn-ghost btn-sm" href="daily_summary.php?date=<?= e($prevMonth) ?>&cal=1" title="الشهر اللي قبله"><i class="ti ti-chevron-left ds-next-ico"></i></a>
+        <strong><?= e(DS_MONTHS[(int) date('n', $dts)]) ?> <?= e(date('Y', $dts)) ?></strong>
+        <?php if ($nextMonth <= $today): ?>
+        <a class="btn btn-ghost btn-sm" href="daily_summary.php?date=<?= e($nextMonth) ?>&cal=1" title="الشهر اللي بعده"><i class="ti ti-chevron-left"></i></a>
+        <?php else: ?><span style="width:34px;"></span><?php endif; ?>
+    </div>
+    <div class="ds-cal-grid">
+        <?php foreach (['السبت', 'الأحد', 'الاتنين', 'التلات', 'الأربع', 'الخميس', 'الجمعة'] as $wd): ?>
+            <div class="ds-wd"><?= e($wd) ?></div>
+        <?php endforeach; ?>
+        <?php
+        // الأسبوع بيبدأ السبت: date('w') للسبت = 6
+        $lead = ((int) date('w', strtotime(date('Y-m-01', $dts))) + 1) % 7;
+        for ($i = 0; $i < $lead; $i++) echo '<div></div>';
+        foreach ($cal as $d => $c):
+            $future = $d > $today;
+            $cls = 'mute';
+            if (!$future && $c['change'] !== null) {
+                $cls = $c['change'] > 0.5 ? 'pos' : ($c['change'] < -0.5 ? 'neg' : 'mute');
+            }
+        ?>
+            <?php if ($future): ?>
+                <div class="ds-cd ds-cd-future"><span class="ds-cd-n"><?= (int) date('j', strtotime($d)) ?></span></div>
+            <?php else: ?>
+                <a class="ds-cd ds-cd-<?= $cls ?><?= $d === $date ? ' is-cur' : '' ?>" href="daily_summary.php?date=<?= e($d) ?>"
+                   title="<?= e(ds_money($c['net'])) ?> ج — الأسبوع اللي فات <?= e(ds_money($c['prev'])) ?>">
+                    <span class="ds-cd-n"><?= (int) date('j', strtotime($d)) ?></span>
+                    <span class="ds-cd-p"><?= $c['change'] !== null ? e(ds_pct($c['change'])) : '—' ?></span>
+                    <span class="ds-cd-v"><?= e(ds_money($c['net'])) ?></span>
+                </a>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+    <div class="ds-cal-note">كل يوم مقارنة بنفس اليوم الأسبوع اللي قبله: أخضر = طلع · أحمر = نزل</div>
+</div>
+<script>
+document.getElementById('dsDayBtn').addEventListener('click', function () {
+    var c = document.getElementById('dsCal');
+    c.hidden = !c.hidden;
+});
+</script>
 <div class="ds-sub">
     مقارنة بنفس اليوم الأسبوع اللي فات (<?= e(DS_DAY_NAMES[(int) date('w', strtotime($s['prev_date']))]) ?> <?= e(date('j/n', strtotime($s['prev_date']))) ?>)
     · صافي المبيعات بعد المرتجع

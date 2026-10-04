@@ -54,8 +54,9 @@ function ds_build(string $date): array
         "SELECT agent_key, DATE(invoice_date) AS d,
                 SUM(CASE WHEN doc_type IN ($inReturns) THEN -net_amount ELSE net_amount END) AS net,
                 SUM(CASE WHEN doc_type IN ($inReturns) THEN 0 ELSE 1 END) AS cnt
-         FROM br_invoices
-         WHERE (invoice_date >= ? AND invoice_date < ?) OR (invoice_date >= ? AND invoice_date < ?)
+         FROM br_invoices h
+         WHERE ((invoice_date >= ? AND invoice_date < ?) OR (invoice_date >= ? AND invoice_date < ?))
+           AND " . ds_real_invoice_sql() . "
          GROUP BY agent_key, DATE(invoice_date)"
     );
     $st->execute([$date, $next, $prev, $prevNext]);
@@ -159,6 +160,79 @@ function ds_build(string $date): array
         'top'          => $top,
         'generated_at' => date('Y-m-d H:i:s'),
     ];
+}
+
+/**
+ * نتيجة الشهر: لكل يوم صافي مبيعات الفروع كلها + التغيير عن نفس اليوم
+ * الأسبوع اللي قبله. استعلام واحد للشهر كله + ٧ أيام قبله.
+ *
+ * @return array<string,array{net:float,prev:float,change:?float}> [Y-m-d => …]
+ */
+function ds_month(string $date): array
+{
+    require_once __DIR__ . '/item_sales_lib.php';
+
+    $first = date('Y-m-01', strtotime($date));
+    $last  = date('Y-m-t', strtotime($date));
+    $from  = date('Y-m-d', strtotime($first . ' -7 days'));
+    $to    = date('Y-m-d', strtotime($last . ' +1 day'));
+
+    // نفس الفروع اللي في جدول اليوم بس (من غير الإدارة)
+    $agentMap = isl_agent_store_map();
+    $agents = [];
+    foreach (an_branch_stores() as $sid) {
+        $ak = array_search($sid, $agentMap, true);
+        if ($ak !== false) {
+            $agents[] = (string) $ak;
+        }
+    }
+    if (empty($agents)) {
+        return [];
+    }
+
+    $returnTypes = array_values(array_filter(array_map(
+        'intval',
+        explode(',', (string) setting('analysis_sales_return_types', '7,17'))
+    ), static fn($x) => $x > 0));
+    if (empty($returnTypes)) {
+        $returnTypes = [7, 17];
+    }
+    $inReturns = implode(',', $returnTypes);
+    $inAgents  = implode(',', array_fill(0, count($agents), '?'));
+
+    $st = db()->prepare(
+        "SELECT DATE(invoice_date) AS d,
+                SUM(CASE WHEN doc_type IN ($inReturns) THEN -net_amount ELSE net_amount END) AS net
+         FROM br_invoices h
+         WHERE invoice_date >= ? AND invoice_date < ? AND agent_key IN ($inAgents)
+           AND " . ds_real_invoice_sql() . "
+         GROUP BY DATE(invoice_date)"
+    );
+    $st->execute(array_merge([$from, $to], $agents));
+    $byDay = [];
+    foreach ($st as $r) {
+        $byDay[(string) $r['d']] = (float) $r['net'];
+    }
+
+    $out = [];
+    for ($t = strtotime($first); $t <= strtotime($last); $t = strtotime('+1 day', $t)) {
+        $d    = date('Y-m-d', $t);
+        $net  = $byDay[$d] ?? 0.0;
+        $prev = $byDay[date('Y-m-d', strtotime($d . ' -7 days'))] ?? 0.0;
+        $out[$d] = ['net' => $net, 'prev' => $prev, 'change' => ds_change($net, $prev)];
+    }
+    return $out;
+}
+
+/**
+ * الفاتورة فيها صنف حقيقي واحد على الأقل. فواتير «فتح درج» لوحدها (كود 0 —
+ * الكاشير بيعملها عشان الدرج يتفتح) كانت بتزوّد عدد الفواتير ٧–١٣ في اليوم لكل فرع.
+ */
+function ds_real_invoice_sql(): string
+{
+    return 'EXISTS (SELECT 1 FROM br_invoice_lines l
+                    WHERE l.agent_key = h.agent_key AND l.sth_id = h.sth_id AND l.suffix = h.suffix
+                      AND ' . isl_excluded_sql('l.item_code') . ')';
 }
 
 /** نسبة التغيير — null لو اليوم القديم صفر أو سالب (مفيش قسمة على صفر). */

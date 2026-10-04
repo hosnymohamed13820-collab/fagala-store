@@ -186,6 +186,7 @@ function module_parts(): array
             'stock'      => 'استعلام أرصدة الأصناف',
             'customers'  => 'داتا العملاء',
             'receiving'  => 'استلام الفواتير',
+            'daily'      => 'الملخص اليومي',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',

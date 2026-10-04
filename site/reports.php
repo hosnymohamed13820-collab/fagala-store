@@ -39,6 +39,11 @@ if (isset($allowedTypes[$requestedType])) {
 } else {
     $type = (string) array_key_first($allowedTypes);
 }
+// الملخص اليومي صفحة لوحدها (daily_summary.php) — التبويب لينك ليها
+if ($type === 'daily') {
+    header('Location: daily_summary.php');
+    exit;
+}
 
 const SALREP_GRACE_DAYS = 5;
 if ($type === 'salaries') {
@@ -1333,6 +1338,7 @@ $reportTypes = [
     'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
+    'daily'=>'الملخص اليومي',
 ];
 
 // بيانات تقرير «داتا العملاء»
@@ -1698,7 +1704,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="rep-tabs">
     <?php foreach ($reportTypes as $k=>$label): ?>
         <?php if (!isset($allowedTypes[$k])) continue; ?>
-        <a href="?type=<?= $k ?>&from=<?= e($from) ?>&to=<?= e($to) ?>"
+        <a href="<?= $k === 'daily' ? 'daily_summary.php' : '?type=' . $k . '&from=' . e($from) . '&to=' . e($to) ?>"
            class="rep-tab <?= $type===$k?'active':'' ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
