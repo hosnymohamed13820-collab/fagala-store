@@ -429,7 +429,11 @@ $dsUsers = $pdo->query(
         · <a href="daily_summary.php">شوف ملخص النهاردة</a>
     </div>
     <div class="form-row">
-        <label><input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?>> شغّال</label>
+        <div class="toggle-wrap">
+            <input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?>>
+            <label for="dsOn" class="st-track"><span class="st-knob"></span></label>
+            <span class="toggle-status" id="dsOnTxt"><?= $dsOn ? 'شغّال' : 'مقفول' ?></span>
+        </div>
     </div>
     <div class="form-row">
         <label for="dsHour">يتبعت الساعة</label>
@@ -439,17 +443,25 @@ $dsUsers = $pdo->query(
             <?php endfor; ?>
         </select>
     </div>
-    <div class="form-row">
-        <label>يوصل لمين</label>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 14px;">
-            <?php foreach ($dsUsers as $u): ?>
-                <label style="font-weight:400;display:flex;gap:6px;align-items:center;">
-                    <input type="checkbox" class="ds-user" value="<?= (int) $u['id'] ?>" <?= in_array((int) $u['id'], $dsSel, true) ? 'checked' : '' ?>>
-                    <?= e($u['full_name']) ?> <span class="fld-hint" style="margin:0;"><?= e((string) $u['role_name']) ?></span>
-                </label>
-            <?php endforeach; ?>
-        </div>
+    <div class="ds-users-lbl">يوصل لمين</div>
+    <div class="ds-users">
+        <?php foreach ($dsUsers as $u): ?>
+            <label class="ds-u">
+                <input type="checkbox" class="ds-user" value="<?= (int) $u['id'] ?>" <?= in_array((int) $u['id'], $dsSel, true) ? 'checked' : '' ?>>
+                <span class="ds-n"><?= e($u['full_name']) ?></span>
+                <span class="ds-r"><?= e((string) $u['role_name']) ?></span>
+            </label>
+        <?php endforeach; ?>
     </div>
+    <style>
+        .ds-users-lbl { font-size:14px; color:var(--ink-700); margin-bottom:8px; font-weight:500; }
+        .ds-users { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:4px 16px; }
+        .ds-u { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:8px; cursor:pointer; min-width:0; }
+        .ds-u:hover { background:var(--line-soft); }
+        .ds-u input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent-text); }
+        .ds-n { font-size:14px; color:var(--ink-900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .ds-r { font-size:12px; color:var(--ink-500); flex:none; }
+    </style>
 </div>
 <script>
 (function () {
@@ -479,7 +491,10 @@ $dsUsers = $pdo->query(
             if (typeof fgToast === 'function') fgToast('تعذّر الاتصال بالسيرفر', 'err');
         });
     }
-    card.addEventListener('change', save);
+    card.addEventListener('change', function () {
+        document.getElementById('dsOnTxt').textContent = document.getElementById('dsOn').checked ? 'شغّال' : 'مقفول';
+        save();
+    });
 })();
 </script>
 <?php endif; ?>
