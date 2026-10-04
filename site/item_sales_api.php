@@ -1,39 +1,33 @@
 <?php
 /**
  * item_sales_api.php — نقطة نهاية JSON لتحليل المبيعات
- * نظام الفجالة ستور المالي (بريف ٩٦)
+ * نظام الفجالة ستور المالي (بريف ٩٦ / بريف ١٠١ / بريف ١٠٦)
  */
 declare(strict_types=1);
 
+define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/api_lib.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/item_sales_lib.php';
 
-header('Content-Type: application/json; charset=utf-8');
+api_begin();
+require_login();
+api_method('GET');
 
 $part = trim((string) ($_GET['part'] ?? ''));
 $allowedParts = ['stock', 'movement', 'profit', 'monthly'];
 
 if (!in_array($part, $allowedParts, true)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'جزء غير صالح أو مفقود'], JSON_UNESCAPED_UNICODE);
-    exit;
+    api_fail('جزء غير صالح أو مفقود', 400, 'bad_request');
 }
-
-require_login();
 
 $permPart = ($part === 'monthly') ? 'movement' : $part;
-if (!can('item_sales:' . $permPart)) {
-    http_response_code(403);
-    echo json_encode(['error' => 'غير مصرح لك بعرض هذا الجزء'], JSON_UNESCAPED_UNICODE);
-    exit;
-}
+api_require('item_sales:' . $permPart);
 
 if ($part === 'profit') {
     if (!sens_unlocked()) {
-        http_response_code(423);
-        echo json_encode(['error' => 'الأرقام الحساسة مقفولة'], JSON_UNESCAPED_UNICODE);
-        exit;
+        api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
     }
 }
 
@@ -63,8 +57,7 @@ if ($part === 'stock') {
             'counts'   => ['negative' => 0, 'zero' => 0, 'near' => 0, 'idle' => 0],
         ];
     }
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    exit;
+    api_ok($data);
 }
 
 if ($part === 'movement') {
@@ -72,14 +65,12 @@ if ($part === 'movement') {
     if (!(can('item_sales:profit') && sens_unlocked())) {
         $data = isl_movement_public($data);
     }
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    exit;
+    api_ok($data);
 }
 
 if ($part === 'profit') {
     $data = isl_profit($fromDate, $toDate, $sto, $cat);
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    exit;
+    api_ok($data);
 }
 
 if ($part === 'monthly') {
@@ -87,6 +78,5 @@ if ($part === 'monthly') {
     $monthlyLimit = min(500, max(1, $limit));
     $targetTo = $to ?: $toDate;
     $data = isl_monthly($targetTo, $months, $sto, $cat, $by, $monthlyLimit);
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    exit;
+    api_ok($data);
 }

@@ -729,3 +729,84 @@ document.addEventListener('DOMContentLoaded', function () { window.initMoneyInpu
     });
 })();
 
+/* ============================================================
+ * apiFetch — استدعاء الـAPI الموحّد (بريف ١٠١)
+ * ------------------------------------------------------------
+ * يرسل ويستقبل JSON، ويضع X-CSRF-Token وIdempotency-Key
+ * للعمليات غير GET، ويعيد المحاولة عند أخطاء الشبكة.
+ * ============================================================ */
+window.apiFetch = function (url, opts) {
+    opts = Object.assign({}, opts);
+    var method = (opts.method || 'GET').toUpperCase();
+    var headers = Object.assign({}, opts.headers || {});
+
+    // وضع Content-Type الافتراضي لو فيه body كائن ومش FormData
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData) && !(opts.body instanceof Blob)) {
+        opts.body = JSON.stringify(opts.body);
+        if (!headers['Content-Type'] && !headers['content-type']) {
+            headers['Content-Type'] = 'application/json';
+        }
+    }
+
+    if (method !== 'GET') {
+        // X-CSRF-Token
+        if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
+            var csrfToken = (window.SENS && window.SENS.csrf) ? window.SENS.csrf : '';
+            if (csrfToken) {
+                headers['X-CSRF-Token'] = csrfToken;
+            }
+        }
+
+        // Idempotency-Key (يولّد مرة واحدة للنداء)
+        if (!headers['Idempotency-Key'] && !headers['idempotency-key']) {
+            var idemKey = '';
+            if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                idemKey = crypto.randomUUID();
+            } else {
+                idemKey = 'idem_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            }
+            headers['Idempotency-Key'] = idemKey;
+        }
+    }
+
+    opts.headers = headers;
+
+    var delays = [1000, 3000];
+    var attempt = 0;
+
+    function doFetch() {
+        return fetch(url, opts)
+            .then(function (response) {
+                return response.json().catch(function () {
+                    return {
+                        ok: false,
+                        error: 'استجابة غير صالحة من السيرفر',
+                        code: 'server'
+                    };
+                }).then(function (json) {
+                    if (json && json.ok) {
+                        return json;
+                    }
+                    var msg = (json && json.error) ? json.error : 'حصل خطأ في العملية';
+                    var err = new Error(msg);
+                    err.error = msg;
+                    err.code = (json && json.code) ? json.code : 'server';
+                    err.status = response.status;
+                    return Promise.reject(err);
+                });
+            })
+            .catch(function (err) {
+                // إعادة المحاولة عند أخطاء الشبكة فقط (بدون status كود)
+                if (typeof err.status === 'undefined' && method !== 'GET' && attempt < delays.length) {
+                    var delay = delays[attempt++];
+                    return new Promise(function (resolve) {
+                        setTimeout(resolve, delay);
+                    }).then(doFetch);
+                }
+                return Promise.reject(err);
+            });
+    }
+
+    return doFetch();
+};
+

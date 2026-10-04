@@ -409,6 +409,39 @@ CREATE TABLE IF NOT EXISTS ...
 توسيع `ENUM` محتاج تعرف قيمه الحالية بالظبط. عمود فاضي معناه واضح
 (`reversed_at IS NULL` = مرتب شغّال) ومابيقفلش الجدول.
 
+---
+
+## 🔌 الـAPI
+
+نفس الداتا للموقع وللتطبيقات (ديسكتوب وموبايل). الشكل الموحّد لأي endpoint:
+```json
+نجاح:  {"ok": true,  "data": ...}
+فشل:   {"ok": false, "error": "رسالة بالعامية", "code": "auth|forbidden|locked|bad_request|server|duplicate"}
+```
+
+| الحالة | HTTP | code |
+|---|---|---|
+| مش داخل | 401 | `auth` |
+| مالوش صلاحية | 403 | `forbidden` |
+| الأرقام الحساسة مقفولة | 423 | `locked` |
+| طلب غلط | 400 | `bad_request` |
+| خطأ في السيرفر | 500 | `server` (التفاصيل في سجل الأخطاء بس، مش في الرد) |
+| نفس العملية بتتبعت وهي لسه شغالة | 409 | `duplicate` |
+
+أول ٥ سطور في أي endpoint:
+```php
+define('API_MODE', true);
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/api_lib.php';
+api_begin();
+require_login();
+```
+
+- أي endpoint بيكتب لازم `api_csrf()` و`api_idempotent()`.
+- الكود الجديد في الجافاسكربت يستخدم `window.apiFetch(url, opts)`.
+
+---
+
 ## ٧) الوكلاء (PowerShell)
 
 - **ASCII خالص.** مفيش حرف عربي ولا محرف خاص — بيتكسر. (وشوف §١١ لباقي مطبّات ويندوز)

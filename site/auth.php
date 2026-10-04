@@ -421,6 +421,24 @@ function can_module(string $moduleKey): bool
 }
 
 /**
+ * توجيه المستخدم غير المسجّل — لصفحة الدخول في وضع الويب، أو رد 401 في وضع الـAPI.
+ */
+function auth_bounce(): void
+{
+    if (defined('API_MODE')) {
+        http_response_code(401);
+        echo json_encode([
+            'ok'    => false,
+            'error' => 'لازم تسجّل دخول',
+            'code'  => 'auth',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    header('Location: login.php');
+    exit;
+}
+
+/**
  * يفرض تسجيل الدخول — لو مش داخل يحوّله لصفحة الدخول.
  * كمان بيتأكد إن الحساب لسه نشط وإن الصلاحيات متزامنة مع أحدث إصدار.
  * يتحط في أول كل صفحة محمية.
@@ -428,21 +446,18 @@ function can_module(string $moduleKey): bool
 function require_login(): void
 {
     if (!is_logged_in()) {
-        header('Location: login.php');
-        exit;
+        auth_bounce();
     }
 
     if (($_SESSION['app'] ?? '') !== 'fagala') {
         logout();
-        header('Location: login.php');
-        exit;
+        auth_bounce();
     }
 
     $userId = (int) ($_SESSION['user']['id'] ?? 0);
     if ($userId <= 0) {
         logout();
-        header('Location: login.php');
-        exit;
+        auth_bounce();
     }
 
     try {
@@ -457,8 +472,7 @@ function require_login(): void
         // لو المستخدم اتمسح أو حسابه اتعطّل وهو شغال، يطرد فوراً
         if (!$row || empty($row['is_active'])) {
             logout();
-            header('Location: login.php');
-            exit;
+            auth_bounce();
         }
 
         // فحص إصدار الباسورد: لو اتغير الباسورد من جهاز تاني نطلّع الجلسات القديمة
@@ -469,8 +483,7 @@ function require_login(): void
                 $_SESSION['user']['pw_version'] = $currentPwVer;
             } elseif ((int) $_SESSION['user']['pw_version'] !== $currentPwVer) {
                 logout();
-                header('Location: login.php');
-                exit;
+                auth_bounce();
             }
         }
 
@@ -506,6 +519,14 @@ function require_permission(string $moduleKey): void
     require_login();
     if (!can($moduleKey)) {
         http_response_code(403);
+        if (defined('API_MODE')) {
+            echo json_encode([
+                'ok'    => false,
+                'error' => 'مالكش صلاحية',
+                'code'  => 'forbidden',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
             . '<h2>غير مصرّح</h2>'
             . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
@@ -522,6 +543,14 @@ function require_module_access(string $moduleKey): void
     require_login();
     if (!can_module($moduleKey)) {
         http_response_code(403);
+        if (defined('API_MODE')) {
+            echo json_encode([
+                'ok'    => false,
+                'error' => 'مالكش صلاحية',
+                'code'  => 'forbidden',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
             . '<h2>غير مصرّح</h2>'
             . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
