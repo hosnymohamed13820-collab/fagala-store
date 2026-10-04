@@ -13,6 +13,20 @@
 require_once __DIR__ . '/errlog_lib.php';
 
 /**
+ * قائمة الـ Origins المسموح بها في الـ API والتطبيق (بريف ١٠١ وبريف ١٠٤).
+ *
+ * @return string[]
+ */
+function api_allowed_origins_list(): array
+{
+    $allowedOriginsStr = 'tauri://localhost,https://tauri.localhost,capacitor://localhost,http://localhost';
+    if (function_exists('setting')) {
+        $allowedOriginsStr = setting('api_allowed_origins', $allowedOriginsStr);
+    }
+    return array_map('trim', explode(',', (string) $allowedOriginsStr));
+}
+
+/**
  * تهيئة بيئة الـAPI: الهيدرز، ومعالج الاستثناءات، والإغلاق الآمن.
  */
 function api_begin(): void
@@ -20,11 +34,7 @@ function api_begin(): void
     // فحص ومعالجة CORS
     $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
     if ($origin !== null && $origin !== '') {
-        $allowedOriginsStr = 'tauri://localhost,https://tauri.localhost,capacitor://localhost,http://localhost';
-        if (function_exists('setting')) {
-            $allowedOriginsStr = setting('api_allowed_origins', $allowedOriginsStr);
-        }
-        $allowedList = array_map('trim', explode(',', (string) $allowedOriginsStr));
+        $allowedList = api_allowed_origins_list();
         if (in_array($origin, $allowedList, true)) {
             header('Access-Control-Allow-Origin: ' . $origin);
             header('Vary: Origin');

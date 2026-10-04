@@ -139,21 +139,34 @@ function errlog_record(string $type, string $msg, string $file = '', int $line =
             $user = (string) ($_SESSION['user']['username'] ?? '');
         }
 
+        // هيدرز التطبيق والجهاز (بريف ١٠٤: X-App-Version و X-Device) — تنضيف بحروف وأرقام ونقط وشرط فقط
+        $rawApp = (string) ($_SERVER['HTTP_X_APP_VERSION'] ?? '');
+        if (strpos($rawApp, '%') !== false) $rawApp = rawurldecode($rawApp);
+        $app    = $rawApp !== '' ? preg_replace('/[^\p{L}\p{N}._-]/u', '', $rawApp) : '';
+        $app    = errlog_cut($app, 30);
+
+        $rawDev = (string) ($_SERVER['HTTP_X_DEVICE'] ?? '');
+        if (strpos($rawDev, '%') !== false) $rawDev = rawurldecode($rawDev);
+        $dev    = $rawDev !== '' ? preg_replace('/[^\p{L}\p{N}._-]/u', '', $rawDev) : '';
+        $dev    = errlog_cut($dev, 60);
+
         errlog_buffer([
             // 🔴 توقيت القاهرة صريح مش date(): السجل بيتحمّل **قبل** config.php
             //    (اللي بيظبط Africa/Cairo)، فأي خطأ قبله كان بيتسجّل UTC —
             //    فرق ٣ ساعات بيبوّظ ترتيب «الأحدث فوق». اتمسك في الاختبار.
-            't'     => (new DateTime('now', new DateTimeZone('Africa/Cairo')))->format('Y-m-d H:i:s'),
-            'type'  => $type,
-            'msg'   => errlog_cut($msg, 600),
-            'file'  => errlog_cut($file, 200),
-            'line'  => $line,
-            'url'   => errlog_request_url(),
-            'uid'   => $uid,
-            'user'  => errlog_cut($user, 60),
-            'trace' => errlog_cut($trace, 1500),
-            'fp'    => $fp,
-            'n'     => 1,
+            't'      => (new DateTime('now', new DateTimeZone('Africa/Cairo')))->format('Y-m-d H:i:s'),
+            'type'   => $type,
+            'msg'    => errlog_cut($msg, 600),
+            'file'   => errlog_cut($file, 200),
+            'line'   => $line,
+            'url'    => errlog_request_url(),
+            'uid'    => $uid,
+            'user'   => errlog_cut($user, 60),
+            'app'    => $app,
+            'device' => $dev,
+            'trace'  => errlog_cut($trace, 1500),
+            'fp'     => $fp,
+            'n'      => 1,
         ]);
     } catch (Throwable $ex) {
         // 🔴 السجل عمره ما يوقّع صفحة
@@ -273,6 +286,7 @@ function errlog_read_grouped(array $files): array
                     'file' => $e['file'] ?? '', 'line' => (int) ($e['line'] ?? 0),
                     'count' => 0, 'first' => $e['t'] ?? '', 'last' => $e['t'] ?? '',
                     'url' => '', 'users' => [], 'trace' => '',
+                    'apps' => [], 'devices' => [],
                 ];
             }
             $g = &$groups[$fp];
@@ -285,12 +299,18 @@ function errlog_read_grouped(array $files): array
             }
             if (($e['t'] ?? '') !== '' && $e['t'] < $g['first']) $g['first'] = $e['t'];
             if (!empty($e['user'])) $g['users'][$e['user']] = true;
+            if (!empty($e['app'])) $g['apps'][$e['app']] = true;
+            if (!empty($e['device'])) $g['devices'][$e['device']] = true;
             unset($g);
         }
         fclose($fh);
     }
 
-    foreach ($groups as &$g) $g['users'] = array_keys($g['users']);
+    foreach ($groups as &$g) {
+        $g['users']   = array_keys($g['users']);
+        $g['apps']    = array_keys($g['apps']);
+        $g['devices'] = array_keys($g['devices']);
+    }
     unset($g);
     usort($groups, fn($a, $b) => strcmp($b['last'], $a['last']));
     return $groups;

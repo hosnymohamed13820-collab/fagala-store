@@ -18,28 +18,108 @@ require_once __DIR__ . '/auth.php';
 //  🔴 قبل require_permission عن قصد — الأخطاء بتحصل عند الكل، مش عند
 //     اللي معاه صلاحية السجل بس. الشرط الوحيد إنه داخل.
 if (($_GET['report'] ?? '') === 'js') {
-    http_response_code(204);
-    if (!is_logged_in() || $_SERVER['REQUEST_METHOD'] !== 'POST') exit;
+    // دعم CORS للتطبيقات المصرّح بها (بريف ١٠٤)
+    require_once __DIR__ . '/api_lib.php';
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+    $isAppOrigin = false;
+    if ($origin !== null && $origin !== '') {
+        $allowedList = api_allowed_origins_list();
+        if (in_array($origin, $allowedList, true)) {
+            $isAppOrigin = true;
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Vary: Origin');
+            header('Access-Control-Allow-Headers: Content-Type, Authorization, X-App-Version, X-Device');
+            header('Access-Control-Allow-Methods: POST, OPTIONS');
+            header('Access-Control-Max-Age: 600');
 
-    // حد أقصى ٢٠ تقرير كل ١٠ دقايق للجلسة الواحدة. المتصفح عنده حد ٣ في
-    // الصفحة، بس ده الحزام التاني لو صفحة بتعمل refresh في حلقة. (RULES §٢)
+            if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+                http_response_code(204);
+                exit;
+            }
+        }
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(204);
+        exit;
+    }
+
+    // حد للطلبات: بالكتير ٣٠ تقرير في الدقيقة لكل IP (ملف بسيط في logs)
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+    $ipSafe = preg_replace('/[^a-zA-Z0-9_.-]/', '_', $ip);
+    $ipFile = ERRLOG_DIR . '/rl_' . md5($ipSafe) . '.json';
     $now = time();
-    $rl  = $_SESSION['errlog_js'] ?? [0, 0];
-    if ($now - (int) $rl[0] > 600) $rl = [$now, 0];
-    if ($rl[1] >= 20) exit;
-    $_SESSION['errlog_js'] = [$rl[0], $rl[1] + 1];
+    $ipCount = 0; $ipStart = $now;
+
+    if (is_file($ipFile)) {
+        $raw = @file_get_contents($ipFile);
+        if ($raw !== false) {
+            $data = json_decode($raw, true);
+            if (is_array($data)) {
+                $ipStart = (int) ($data['start'] ?? $now);
+                $ipCount = (int) ($data['count'] ?? 0);
+                if ($now - $ipStart > 60) {
+                    $ipStart = $now;
+                    $ipCount = 0;
+                }
+            }
+        }
+    }
+
+    if ($ipCount >= 30) {
+        http_response_code(429);
+        exit;
+    }
+
+    $ipCount++;
+    if (!is_dir(ERRLOG_DIR)) {
+        @mkdir(ERRLOG_DIR, 0755, true);
+    }
+    @file_put_contents($ipFile, json_encode(['start' => $ipStart, 'count' => $ipCount]), LOCK_EX);
+    // ملفات العدّاد القديمة (أقدم من ساعة) بتتمسح مرة كل ~١٠٠ تقرير — من غيرها ملف لكل IP يفضل للأبد
+    if (random_int(1, 100) === 1) {
+        foreach ((array) @glob(ERRLOG_DIR . '/rl_*.json') as $f) {
+            if (is_string($f) && @filemtime($f) < $now - 3600) @unlink($f);
+        }
+    }
+
+    // التحقق من هوية المستخدم: عبر توكن Bearer إن وجد أو جلسة المتصفح
+    if (auth_bearer() !== null) {
+        auth_token_login();
+    }
+
+    // لو جاي من المتصفح (مش تطبيق بـ Origin مصرّح بيه) ← لازم يكون مسجل دخول
+    if (!$isAppOrigin && !is_logged_in()) {
+        http_response_code(204);
+        exit;
+    }
+
+    http_response_code(204);
+
+    // حد أقصى ٢٠ تقرير كل ١٠ دقايق للجلسة الواحدة (للمتصفح)
+    if (isset($_SESSION) && is_array($_SESSION) && is_logged_in()) {
+        $rl = $_SESSION['errlog_js'] ?? [0, 0];
+        if ($now - (int) $rl[0] > 600) $rl = [$now, 0];
+        if ($rl[1] >= 20) exit;
+        $_SESSION['errlog_js'] = [$rl[0], $rl[1] + 1];
+    }
 
     $msg = trim((string) ($_POST['m'] ?? ''));
     $src = (string) ($_POST['s'] ?? '');
     if ($msg === '' || $msg === 'Script error.') exit;   // Script error. = سكربت من دومين تاني، مالوش تفاصيل
 
-    // المصدر لازم يكون من موقعنا — إضافات المتصفح عند المستخدم مش شغلنا
-    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
-    $sp   = parse_url($src);
-    if ($src !== '' && (($sp['host'] ?? '') !== $host)) exit;
-    $srcPath = ltrim((string) ($sp['path'] ?? ''), '/');
+    // المصدر: لو متصفح لازم يكون من موقعنا
+    if (!$isAppOrigin) {
+        $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+        $sp   = parse_url($src);
+        if ($src !== '' && (($sp['host'] ?? '') !== $host)) exit;
+        $srcPath = ltrim((string) ($sp['path'] ?? ''), '/');
+    } else {
+        $sp      = parse_url($src);
+        $srcPath = ltrim((string) ($sp['path'] ?? $src), '/');
+    }
 
-    // الصفحة اللي حصل فيها — بتيجي من المتصفح مش من REQUEST_URI بتاع الريكوست ده
+    // الصفحة اللي حصل فيها — بتيجي من المتصفح/التطبيق مش من REQUEST_URI بتاع الريكوست ده
     $_SERVER['REQUEST_URI'] = '/' . ltrim(errlog_cut((string) ($_POST['p'] ?? ''), 300), '/');
 
     $ua = trim((string) ($_POST['ua'] ?? ''));
@@ -167,6 +247,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tr>
                         <th>آخر مرة</th>
                         <th>النوع</th>
+                        <th>من</th>
                         <th>الغلطة</th>
                         <th>المكان</th>
                         <th>الصفحة</th>
@@ -177,9 +258,26 @@ require_once __DIR__ . '/includes/header.php';
                 </thead>
                 <tbody>
                 <?php foreach ($groups as $g): ?>
+                    <?php
+                        $apps = $g['apps'] ?? [];
+                        $devs = $g['devices'] ?? [];
+                        $fromParts = [];
+                        if (!empty($apps)) {
+                            foreach ($apps as $a) {
+                                $fromParts[] = 'تطبيق ' . $a;
+                            }
+                        } else {
+                            $fromParts[] = 'متصفح';
+                        }
+                        $fromStr = implode('، ', $fromParts);
+                        if (count($devs) > 1) {
+                            $fromStr .= ' (' . count($devs) . ' أجهزة)';
+                        }
+                    ?>
                     <tr>
                         <td style="white-space:nowrap;"><?= e($g['last']) ?></td>
                         <td><span class="el-type <?= e($g['type']) ?>"><?= $g['type'] === 'js' ? 'JS' : 'PHP' ?></span></td>
+                        <td style="white-space:nowrap;font-size:12px;color:var(--ink-600);"><?= e($fromStr) ?></td>
                         <td class="el-msg">
                             <?= e($g['msg']) ?>
                             <?php if ($g['trace'] !== ''): ?>
