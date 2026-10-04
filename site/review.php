@@ -618,6 +618,57 @@ function shift_cashier_amounts(array $s): array {
     <div class="flash <?= $flashType ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
+<script>
+    // 🔴 قبل الأزرار مش في آخر الصفحة: الصفحة طويلة، ولو المحاسب داس على فرع قبل ما
+    //    السكربت اللي تحت يتحمّل كان بيطلع «filterReviewBranch is not defined» (سجل الأخطاء ٤/١٠).
+    //    الدالة بتلمس العناصر وقت الضغط بس، فمكانها هنا مايفرقش.
+    function filterReviewBranch(branchId) {
+        try {
+            localStorage.setItem('rv_branch', String(branchId));
+        } catch (e) {}
+
+        document.querySelectorAll('#reviewBranchTabs .btab').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.b === String(branchId));
+        });
+
+        var visiblePending = 0;
+        document.querySelectorAll('#pane_pending .shift-card').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+            if (match) visiblePending++;
+        });
+
+        var visibleCustody = 0;
+        document.querySelectorAll('#pane_custody .rv-pending-custody').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+            if (match) visibleCustody++;
+        });
+
+        // أذونات إنستا مابتتفلترش بالفرع: خزينة إنستا مركزية، و`data-branch` فيها
+        // فرع التكلفة (رقم من جدول تاني غير أزرار الفروع فوق). الفلترة كانت بتخفي
+        // الأذونات على أي جهاز متخزّن عليه فرع في rv_branch — تبان على الموبايل وتختفي على الكمبيوتر.
+        var visibleInstapay = document.querySelectorAll('#pane_instapay .rv-pending-permit').length;
+
+        document.querySelectorAll('#pane_history .shift-card, #pane_custody .rv-custody-history').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+        });
+
+        document.querySelectorAll('#pane_seq .seq-issue-row').forEach(function(el) {
+            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
+            el.hidden = !match;
+        });
+
+        var cp = document.getElementById('cnt_pending');
+        if (cp) cp.textContent = visiblePending;
+        var cc = document.getElementById('cnt_custody');
+        if (cc) cc.textContent = visibleCustody;
+        var ci = document.getElementById('cnt_instapay');
+        if (ci) ci.textContent = visibleInstapay;
+    }
+</script>
+
 <div class="branch-tabs" id="reviewBranchTabs">
     <button type="button" class="btab active" data-b="all" onclick="filterReviewBranch('all')">
         الكل (<?= $totalPendingReviewCount ?>)
@@ -1863,51 +1914,6 @@ function shift_cashier_amounts(array $s): array {
         return confirm('تأكيد رفض الإذن؟');
     }
 
-    function filterReviewBranch(branchId) {
-        try {
-            localStorage.setItem('rv_branch', String(branchId));
-        } catch (e) {}
-
-        document.querySelectorAll('#reviewBranchTabs .btab').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.b === String(branchId));
-        });
-
-        var visiblePending = 0;
-        document.querySelectorAll('#pane_pending .shift-card').forEach(function(el) {
-            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
-            el.hidden = !match;
-            if (match) visiblePending++;
-        });
-
-        var visibleCustody = 0;
-        document.querySelectorAll('#pane_custody .rv-pending-custody').forEach(function(el) {
-            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
-            el.hidden = !match;
-            if (match) visibleCustody++;
-        });
-
-        // أذونات إنستا مابتتفلترش بالفرع: خزينة إنستا مركزية، و`data-branch` فيها
-        // فرع التكلفة (رقم من جدول تاني غير أزرار الفروع فوق). الفلترة كانت بتخفي
-        // الأذونات على أي جهاز متخزّن عليه فرع في rv_branch — تبان على الموبايل وتختفي على الكمبيوتر.
-        var visibleInstapay = document.querySelectorAll('#pane_instapay .rv-pending-permit').length;
-
-        document.querySelectorAll('#pane_history .shift-card, #pane_custody .rv-custody-history').forEach(function(el) {
-            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
-            el.hidden = !match;
-        });
-
-        document.querySelectorAll('#pane_seq .seq-issue-row').forEach(function(el) {
-            var match = (branchId === 'all' || el.dataset.branch === String(branchId));
-            el.hidden = !match;
-        });
-
-        var cp = document.getElementById('cnt_pending');
-        if (cp) cp.textContent = visiblePending;
-        var cc = document.getElementById('cnt_custody');
-        if (cc) cc.textContent = visibleCustody;
-        var ci = document.getElementById('cnt_instapay');
-        if (ci) ci.textContent = visibleInstapay;
-    }
 
     document.addEventListener('DOMContentLoaded', function() {
         var saved = 'all';
