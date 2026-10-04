@@ -364,64 +364,6 @@ require_once __DIR__ . '/includes/header.php';
     background: var(--fill-strong-veil, rgba(255,255,255,0.25));
     color: var(--fill-strong-fg, #fff);
 }
-.isl-table-container {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg, 12px);
-    overflow-x: auto;
-    margin-bottom: var(--sp-6);
-}
-.isl-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--fs-sm, 13.5px);
-}
-.isl-table th {
-    background: var(--bg);
-    color: var(--ink-600);
-    font-weight: 600;
-    padding: 10px 14px;
-    text-align: right;
-    border-bottom: 1px solid var(--line);
-    white-space: nowrap;
-}
-.isl-table td {
-    padding: 9px 14px;
-    border-bottom: 1px solid var(--line-soft, #f1f5f9);
-    color: var(--ink-800);
-}
-.isl-table tr:hover {
-    background: var(--line-soft);
-}
-.isl-table .num,
-.isl-table th.num {
-    font-variant-numeric: tabular-nums;
-    direction: ltr;
-    text-align: center;
-    white-space: nowrap;
-}
-.isl-table td.isl-name {
-    font-weight: 600;
-    max-width: 340px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.isl-table td.isl-dim { color: var(--ink-500); }
-/* شارة الحالة — نفس ألوان الموقع عشان الليلي */
-.isl-chip {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 999px;
-    font-size: var(--fs-xs, 12px);
-    font-weight: 600;
-    white-space: nowrap;
-}
-.isl-chip-negative { background: var(--neg-soft); color: var(--neg); }
-.isl-chip-zero     { background: var(--warn-soft); color: var(--warn); }
-.isl-chip-near     { background: var(--warn-soft); color: var(--warn); }
-.isl-chip-idle     { background: var(--line-soft); color: var(--ink-600); }
-.isl-chip-pos      { background: var(--pos-soft); color: var(--pos); }
 th[data-sort] {
     cursor: pointer;
     user-select: none;
@@ -701,11 +643,11 @@ th.sorted .sort-icon {
             <div class="isl-cap-note">معروض أول <?= ISL_SHOW_MAX ?> صنف من كل حالة بس — العدد الكامل في الزرار، وكل الأصناف في «تصدير».</div>
         <?php endif; ?>
 
-        <div class="isl-table-container">
+        <div class="ftable-wrap">
             <?php if (empty($combinedRows)): ?>
                 <div class="empty-box">مفيش أصناف مطابقة للبحث.</div>
             <?php else: ?>
-                <table class="isl-table" id="stockTable" data-sortable>
+                <table class="ftable" id="stockTable" data-sortable>
                     <thead>
                         <tr>
                             <th data-sort="text">الحالة</th>
@@ -721,12 +663,21 @@ th.sorted .sort-icon {
                     </thead>
                     <tbody>
                         <?php foreach ($combinedRows as $r): ?>
+                            <?php
+                                $chipTypeMap = [
+                                    'negative' => 'neg',
+                                    'zero'     => 'warn',
+                                    'near'     => 'warn',
+                                    'idle'     => 'mute',
+                                ];
+                                $chipClass = $chipTypeMap[$r['status_type']] ?? 'mute';
+                            ?>
                             <tr data-st="<?= $r['status_type'] ?>">
-                                <td data-v="<?= e($r['status_label']) ?>"><span class="isl-chip isl-chip-<?= e($r['status_type']) ?>"><?= e($r['status_label']) ?></span></td>
+                                <td data-v="<?= e($r['status_label']) ?>"><span class="fchip fchip-<?= $chipClass ?>"><?= e($r['status_label']) ?></span></td>
                                 <td data-v="<?= e($r['store_name']) ?>"><?= e($r['store_name']) ?></td>
                                 <td class="num" data-v="<?= e($r['barcode']) ?>"><?= e($r['barcode']) ?></td>
-                                <td class="isl-name" data-v="<?= e($r['name']) ?>" title="<?= e($r['name']) ?>"><?= e($r['name']) ?></td>
-                                <td class="<?= (int) $r['cat_id'] === 0 ? 'isl-dim' : '' ?>" data-v="<?= e($r['cat_name']) ?>"><?= e($r['cat_name']) ?></td>
+                                <td class="name" data-v="<?= e($r['name']) ?>" title="<?= e($r['name']) ?>"><?= e($r['name']) ?></td>
+                                <td class="<?= (int) $r['cat_id'] === 0 ? 'dim' : '' ?>" data-v="<?= e($r['cat_name']) ?>"><?= e($r['cat_name']) ?></td>
                                 <td class="num <?= $r['balance'] < 0 ? 'isl-tag-negative' : '' ?>" data-v="<?= (float)$r['balance'] ?>">
                                     <?= (float)$r['balance'] ?>
                                 </td>
@@ -801,11 +752,11 @@ th.sorted .sort-icon {
             <!-- جدول الأكثر مبيعاً -->
             <div>
                 <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">الأكثر مبيعاً (Top 50)</h3>
-                <div class="isl-table-container">
+                <div class="ftable-wrap">
                     <?php if (empty($movementData['top'])): ?>
                         <div class="empty-box">لا توجد مبيعات في هذه الفترة.</div>
                     <?php else: ?>
-                        <table class="isl-table" data-sortable>
+                        <table class="ftable" data-sortable>
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -830,7 +781,7 @@ th.sorted .sort-icon {
                                         <td class="num" data-v="<?= (float)($r['ret_qty'] ?? 0) ?>">
                                             <?php if (($r['ret_qty'] ?? 0) > 0): ?>
                                                 <?php if (!empty($r['ret_high'])): ?>
-                                                    <span class="isl-chip isl-chip-near"><?= (float)$r['ret_qty'] ?></span>
+                                                    <span class="fchip fchip-warn"><?= (float)$r['ret_qty'] ?></span>
                                                 <?php else: ?>
                                                     <?= (float)$r['ret_qty'] ?>
                                                 <?php endif; ?>
@@ -850,11 +801,11 @@ th.sorted .sort-icon {
             <!-- جدول الأقل مبيعاً -->
             <div>
                 <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">الأقل مبيعاً (Bottom 50 - مبيعاتها > 0)</h3>
-                <div class="isl-table-container">
+                <div class="ftable-wrap">
                     <?php if (empty($movementData['bottom'])): ?>
                         <div class="empty-box">لا توجد مبيعات في هذه الفترة.</div>
                     <?php else: ?>
-                        <table class="isl-table" data-sortable>
+                        <table class="ftable" data-sortable>
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -879,7 +830,7 @@ th.sorted .sort-icon {
                                         <td class="num" data-v="<?= (float)($r['ret_qty'] ?? 0) ?>">
                                             <?php if (($r['ret_qty'] ?? 0) > 0): ?>
                                                 <?php if (!empty($r['ret_high'])): ?>
-                                                    <span class="isl-chip isl-chip-near"><?= (float)$r['ret_qty'] ?></span>
+                                                    <span class="fchip fchip-warn"><?= (float)$r['ret_qty'] ?></span>
                                                 <?php else: ?>
                                                     <?= (float)$r['ret_qty'] ?>
                                                 <?php endif; ?>
@@ -900,11 +851,11 @@ th.sorted .sort-icon {
         <!-- جدول الأكثر مرتجعاً -->
         <div style="margin-top:20px;">
             <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">الأكثر مرتجعاً</h3>
-            <div class="isl-table-container">
+            <div class="ftable-wrap">
                 <?php if (empty($movementData['returns'])): ?>
                     <div class="empty-box">مفيش مرتجعات في الفترة دي.</div>
                 <?php else: ?>
-                    <table class="isl-table" data-sortable>
+                    <table class="ftable" data-sortable>
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -928,7 +879,7 @@ th.sorted .sort-icon {
                                     <td class="num" data-v="<?= (float)$r['ret_qty'] ?>"><?= (float)$r['ret_qty'] ?></td>
                                     <td class="num" data-v="<?= (float)$r['ret_pct'] ?>">
                                         <?php if (!empty($r['ret_high'])): ?>
-                                            <span class="isl-chip isl-chip-near"><?= (float)$r['ret_pct'] ?>%</span>
+                                            <span class="fchip fchip-warn"><?= (float)$r['ret_pct'] ?>%</span>
                                         <?php else: ?>
                                             <?= (float)$r['ret_pct'] ?>%
                                         <?php endif; ?>
@@ -965,11 +916,11 @@ th.sorted .sort-icon {
             </div>
         </div>
 
-        <div class="isl-table-container">
+        <div class="ftable-wrap">
             <?php if (empty($monthlyData['items'])): ?>
                 <div class="empty-box">مفيش مبيعات في الفترة دي.</div>
             <?php else: ?>
-                <table class="isl-table" data-sortable>
+                <table class="ftable" data-sortable>
                     <thead>
                         <tr>
                             <th>#</th>
@@ -1008,13 +959,13 @@ th.sorted .sort-icon {
                                 </td>
                                 <td data-v="<?= e($r['trend'] ?? '') ?>">
                                     <?php if ($r['trend'] === 'up'): ?>
-                                        <span class="isl-chip isl-chip-pos">صاعد</span>
+                                        <span class="fchip fchip-pos">صاعد</span>
                                     <?php elseif ($r['trend'] === 'new'): ?>
-                                        <span class="isl-chip isl-chip-pos">جديد</span>
+                                        <span class="fchip fchip-pos">جديد</span>
                                     <?php elseif ($r['trend'] === 'down'): ?>
-                                        <span class="isl-chip isl-chip-negative">نازل</span>
+                                        <span class="fchip fchip-neg">نازل</span>
                                     <?php elseif ($r['trend'] === 'flat'): ?>
-                                        <span class="isl-chip isl-chip-idle">مستقر</span>
+                                        <span class="fchip fchip-mute">مستقر</span>
                                     <?php else: ?>
                                         —
                                     <?php endif; ?>
@@ -1073,8 +1024,8 @@ th.sorted .sort-icon {
                 <!-- أرباح الفروع -->
                 <div>
                     <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">الأرباح حسب الفرع</h3>
-                    <div class="isl-table-container">
-                        <table class="isl-table" data-sortable>
+                    <div class="ftable-wrap">
+                        <table class="ftable" data-sortable>
                             <thead>
                                 <tr>
                                     <th data-sort="text">الفرع</th>
@@ -1104,8 +1055,8 @@ th.sorted .sort-icon {
                 <!-- أرباح الأقسام -->
                 <div>
                     <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">الأرباح حسب القسم</h3>
-                    <div class="isl-table-container">
-                        <table class="isl-table" data-sortable>
+                    <div class="ftable-wrap">
+                        <table class="ftable" data-sortable>
                             <thead>
                                 <tr>
                                     <th data-sort="text">القسم</th>
@@ -1135,11 +1086,11 @@ th.sorted .sort-icon {
 
             <!-- أعلى ١٠٠ صنف ربحاً -->
             <h3 style="font-size:15px; margin-bottom:8px; color:var(--ink-800);">أعلى ١٠٠ صنف ربحاً</h3>
-            <div class="isl-table-container">
+            <div class="ftable-wrap">
                 <?php if (empty($profitData['items'])): ?>
                     <div class="empty-box">مفيش أصناف مباعة في هذه الفترة.</div>
                 <?php else: ?>
-                    <table class="isl-table" data-sortable>
+                    <table class="ftable" data-sortable>
                         <thead>
                             <tr>
                                 <th>#</th>

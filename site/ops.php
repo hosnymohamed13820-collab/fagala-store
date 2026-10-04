@@ -463,44 +463,7 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--ink-400);
     margin-top: 4px;
 }
-/* تصميم الجدول مطابق لحالة الرصيد في item_sales.php */
-.ops-table-container {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg, 12px);
-    overflow-x: auto;
-    margin-bottom: var(--sp-6, 24px);
-}
-.ops-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--fs-sm, 13.5px);
-}
-.ops-table th {
-    background: var(--bg);
-    color: var(--ink-600);
-    font-weight: 600;
-    padding: 10px 14px;
-    text-align: right;
-    border-bottom: 1px solid var(--line);
-    white-space: nowrap;
-}
-.ops-table td {
-    padding: 9px 14px;
-    border-bottom: 1px solid var(--line-soft, #f1f5f9);
-    color: var(--ink-800);
-}
-.ops-table tr:hover {
-    background: var(--line-soft);
-}
-.ops-table .num,
-.ops-table th.num {
-    font-variant-numeric: tabular-nums;
-    direction: ltr;
-    text-align: center;
-    white-space: nowrap;
-}
-.ops-table td.ops-page-name {
+.ftable td.ops-page-name {
     font-weight: 600;
     font-family: monospace;
     font-size: 13px;
@@ -663,8 +626,8 @@ require_once __DIR__ . '/includes/header.php';
             <div class="ops-sec-title">
                 <i class="ti ti-list"></i> أداء الصفحات
             </div>
-            <div class="ops-table-container">
-                <table class="ops-table">
+            <div class="ftable-wrap">
+                <table class="ftable">
                     <thead>
                         <tr>
                             <th>الصفحة</th>
@@ -698,8 +661,8 @@ require_once __DIR__ . '/includes/header.php';
             <div class="ops-sec-title">
                 <i class="ti ti-clock"></i> أبطأ ٢٠ طلب
             </div>
-            <div class="ops-table-container">
-                <table class="ops-table">
+            <div class="ftable-wrap">
+                <table class="ftable">
                     <thead>
                         <tr>
                             <th class="num">الوقت</th>
@@ -802,8 +765,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             <?php else: ?>
                 <!-- جدول سجل العمليات -->
-                <div class="ops-table-container">
-                    <table class="ops-table">
+                <div class="ftable-wrap">
+                    <table class="ftable">
                         <thead>
                             <tr>
                                 <th class="num">الوقت</th>
@@ -901,8 +864,8 @@ require_once __DIR__ . '/includes/header.php';
                     مفيش أجهزة مسجلة حالياً.
                 </div>
             <?php else: ?>
-                <div class="ops-table-container">
-                    <table class="ops-table">
+                <div class="ftable-wrap">
+                    <table class="ftable">
                         <thead>
                             <tr>
                                 <th>المستخدم</th>

@@ -1787,3 +1787,77 @@ html.fg-dlg-open {
     color: var(--ink-300);
 }
 
+/* =====================================================================
+   مكوّن الجدول الموحّد للموقع كله (.ftable) وشارات الحالة (.fchip)
+   بريف ١٠٣ — استخدام التوكنات فقط ومطابقة الوضعين الفاتح والليلي
+   ===================================================================== */
+.ftable-wrap {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    overflow-x: auto;
+    margin-bottom: var(--sp-6);
+}
+
+.ftable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+}
+
+.ftable th {
+    background: var(--bg);
+    color: var(--ink-600);
+    font-weight: 600;
+    padding: 10px 14px;
+    text-align: right;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+}
+
+.ftable td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--ink-800);
+}
+
+.ftable tr:hover {
+    background: var(--line-soft);
+}
+
+.ftable .num,
+.ftable th.num {
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.ftable td.name {
+    font-weight: 600;
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ftable td.dim {
+    color: var(--ink-500);
+}
+
+/* شارات الحالة الموحّدة (.fchip) */
+.fchip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: var(--r-pill);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.fchip-neg  { background: var(--neg-soft); color: var(--neg); }
+.fchip-warn { background: var(--warn-soft); color: var(--warn); }
+.fchip-pos  { background: var(--pos-soft); color: var(--pos); }
+.fchip-mute { background: var(--line-soft); color: var(--ink-600); }
+
+
