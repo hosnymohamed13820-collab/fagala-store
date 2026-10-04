@@ -10,6 +10,18 @@
  * التخزين والقواعد كلها في errlog_lib.php. الملف على السيرفر:
  *   public_html/logs/errors.log.php   ← بينزل مع الميرورينج
  */
+// تقرير من تطبيق بتوكن: API_MODE قبل auth.php عشان التوكن مايتحوّلش لجلسة كوكي
+// (من غيرها الطلب بيفتح جلسة FGSESS ويفضل داخل حتى لو التوكن اتلغى).
+if (($_GET['report'] ?? '') === 'js') {
+    $authHdr = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    if ($authHdr === '' && function_exists('getallheaders')) {
+        $allHdr  = getallheaders();
+        $authHdr = (string) ($allHdr['Authorization'] ?? $allHdr['authorization'] ?? '');
+    }
+    if (preg_match('/^\s*Bearer\s+\S+/i', $authHdr)) {
+        define('API_MODE', true);
+    }
+}
 require_once __DIR__ . '/auth.php';
 
 // =====================================================================
@@ -83,13 +95,10 @@ if (($_GET['report'] ?? '') === 'js') {
         }
     }
 
-    // التحقق من هوية المستخدم: عبر توكن Bearer إن وجد أو جلسة المتصفح
-    if (auth_bearer() !== null) {
-        auth_token_login();
-    }
-
-    // لو جاي من المتصفح (مش تطبيق بـ Origin مصرّح بيه) ← لازم يكون مسجل دخول
-    if (!$isAppOrigin && !is_logged_in()) {
+    // 🔴 لازم يكون داخل دايماً — بجلسة المتصفح أو بتوكن التطبيق (auth.php عمل ده).
+    //    الـOrigin لوحده مش إثبات: أي حد بره المتصفح يقدر يكتبه، وكان ممكن يغرّق
+    //    السجل لحد ما يتلف ويمسح الأخطاء الحقيقية.
+    if (!is_logged_in()) {
         http_response_code(204);
         exit;
     }
