@@ -142,6 +142,39 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
          VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 1, \'new\')'
     );
 
+    // ١.٥) ملفات أكتر من فرع متأخرة في Import\HQ في نفس اللفّة = الإدارة هي اللي واقفة
+    //      (repl_true عندها مابيستوردش)، مش مشكلة في كل فرع. كانت بتطلع ٣ حوادث في نفس
+    //      الدقيقة لنفس السبب (٥٩ حادثة H05 في ٣ أيام) ← دلوقتي حادثة واحدة «الإدارة».
+    //      البصمة من أقدم ملف لكل فرع، فبتفضل ثابتة طول ما الوقفة مستمرة.
+    $delayed = [];
+    foreach ($findings as $i => $f) {
+        if (is_array($f) && trim((string) ($f['code'] ?? '')) === 'H05'
+            && str_starts_with(trim((string) ($f['title'] ?? $f['summary'] ?? '')), 'File in Import/HQ delayed')) {
+            $delayed[$i] = $f;
+        }
+    }
+    if (count($delayed) >= 2) {
+        $names = [];
+        $lines = [];
+        foreach ($delayed as $i => $f) {
+            $t = trim((string) ($f['title'] ?? $f['summary'] ?? ''));
+            $lines[] = $t;
+            if (preg_match('/\(([^,]+),/', $t, $m)) {
+                $names[] = $m[1];
+            }
+            unset($findings[$i]);
+        }
+        sort($names);
+        $findings[] = [
+            'code'    => 'H05',
+            'branch'  => 'hq',
+            'title'   => 'الإدارة مابتستوردش: ملفات ' . count($delayed) . ' فروع متأخرة في Import\\HQ',
+            'details' => implode("\n", $lines),
+            'restart' => 'hq',
+            'fp'      => sha1('H05|hq|delayed|' . implode('|', $names)),
+        ];
+    }
+
     // ٢) فحص وتحديث أو إدخال كل finding
     foreach ($findings as $f) {
         if (!is_array($f)) continue;
