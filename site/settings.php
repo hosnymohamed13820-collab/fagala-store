@@ -90,6 +90,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // ── الملخص اليومي للإدارة (بريف ١١١) — بيتحفظ لوحده على change، مفيش زرار حفظ ──
+    if (($_POST['action'] ?? '') === 'daily_summary_save') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!is_owner()) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'غير مصرح لك (للأونر فقط).'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'error' => 'انتهت صلاحية الجلسة، حاول مرة أخرى.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        try {
+            $on   = !empty($_POST['on']) && $_POST['on'] === '1' ? '1' : '0';
+            $hour = max(18, min(23, (int) ($_POST['hour'] ?? 23)));
+            // المستلمين: أرقام بس، ويوزرز موجودين فعلاً (استعلام واحد)
+            $ids = array_values(array_unique(array_filter(
+                array_map('intval', explode(',', (string) ($_POST['users'] ?? ''))),
+                static fn($x) => $x > 0
+            )));
+            if ($ids) {
+                $in = implode(',', array_fill(0, count($ids), '?'));
+                $st = $pdo->prepare("SELECT id FROM users WHERE id IN ($in) ORDER BY id");
+                $st->execute($ids);
+                $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+            }
+            $upd = $pdo->prepare(
+                'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+            );
+            $upd->execute(['daily_summary_on', $on]);
+            $upd->execute(['daily_summary_hour', (string) $hour]);
+            $upd->execute(['daily_summary_users', implode(',', $ids)]);
+            echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
+        } catch (Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'حصل خطأ، جرّب تاني'], JSON_UNESCAPED_UNICODE);
+        }
+        exit;
+    }
+
     // ── تغيير باسورد الأونر (بريف ٩٢) ──
     if (($_POST['action'] ?? '') === 'change_password') {
         if (!is_owner()) {
@@ -368,6 +410,78 @@ require_once __DIR__ . '/includes/header.php';
         <button type="submit" class="btn btn-primary">غيّر الباسورد</button>
     </form>
 </div>
+
+<?php
+// ── كارت الملخص اليومي (بريف ١١١) ──
+$dsOn    = (string) setting('daily_summary_on', '0') === '1';
+$dsHour  = (int) setting('daily_summary_hour', '23');
+$dsSel   = array_map('intval', explode(',', (string) setting('daily_summary_users', '')));
+$dsUsers = $pdo->query(
+    'SELECT u.id, u.full_name, r.name_ar AS role_name
+     FROM users u LEFT JOIN roles r ON r.id = u.role_id
+     WHERE u.is_active = 1 ORDER BY r.is_owner DESC, u.full_name'
+)->fetchAll();
+?>
+<div class="card" style="margin-bottom:18px;" id="dailySummaryCard">
+    <h3 style="margin-top:0;margin-bottom:6px;font-size:16px;color:var(--ink-900);">الملخص اليومي</h3>
+    <div class="fld-hint" style="margin-bottom:14px;">
+        إشعار كل ليلة: كل فرع باع كام مقارنة بنفس اليوم الأسبوع اللي فات، والأكتر بيعاً، والأصناف اللي خلصت. أي تغيير هنا بيتحفظ لوحده.
+        · <a href="daily_summary.php">شوف ملخص النهاردة</a>
+    </div>
+    <div class="form-row">
+        <label><input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?>> شغّال</label>
+    </div>
+    <div class="form-row">
+        <label for="dsHour">يتبعت الساعة</label>
+        <select id="dsHour" style="max-width:160px;">
+            <?php for ($h = 18; $h <= 23; $h++): ?>
+                <option value="<?= $h ?>" <?= $h === $dsHour ? 'selected' : '' ?>><?= $h - 12 ?> بالليل (<?= $h ?>:00)</option>
+            <?php endfor; ?>
+        </select>
+    </div>
+    <div class="form-row">
+        <label>يوصل لمين</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 14px;">
+            <?php foreach ($dsUsers as $u): ?>
+                <label style="font-weight:400;display:flex;gap:6px;align-items:center;">
+                    <input type="checkbox" class="ds-user" value="<?= (int) $u['id'] ?>" <?= in_array((int) $u['id'], $dsSel, true) ? 'checked' : '' ?>>
+                    <?= e($u['full_name']) ?> <span class="fld-hint" style="margin:0;"><?= e((string) $u['role_name']) ?></span>
+                </label>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var card = document.getElementById('dailySummaryCard');
+    if (!card) return;
+    function save() {
+        var users = [];
+        card.querySelectorAll('.ds-user:checked').forEach(function (c) { users.push(c.value); });
+        var body = new URLSearchParams();
+        body.append('action', 'daily_summary_save');
+        body.append('csrf', <?= json_encode(csrf_token()) ?>);
+        body.append('on', document.getElementById('dsOn').checked ? '1' : '0');
+        body.append('hour', document.getElementById('dsHour').value);
+        body.append('users', users.join(','));
+        fetch('settings.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (typeof fgToast !== 'function') return;
+            if (d.success) fgToast('اتحفظ', 'ok');
+            else fgToast(d.error || 'ماتحفظش', 'err');
+        })
+        .catch(function () {
+            if (typeof fgToast === 'function') fgToast('تعذّر الاتصال بالسيرفر', 'err');
+        });
+    }
+    card.addEventListener('change', save);
+})();
+</script>
 <?php endif; ?>
 
 <div class="card">
