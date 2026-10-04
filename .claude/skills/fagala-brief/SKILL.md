@@ -75,6 +75,7 @@ description: >
   `recover_advance()` · `disburse_advance()` · `compute_salary()` ·
   `pay_salary()` · `salary_days_from_hours()` · `emp_ledger_add()`
 - **مفيش `ALTER TABLE` ولا `CREATE TABLE` في كود PHP** — الملف في `local/` وبس
+- **أي SQL جديد = ملف في `local/migrations/`** (من بريف ١٠٨): الاسم `YYYYMMDD_NNN_name.sql` · آخر سطر `INSERT IGNORE INTO schema_migrations (name) VALUES ('<الاسم>');` · **من غير اسم القاعدة** · وبعده `bash tests/local/migrations_manifest.sh`. التفاصيل في `local/migrations/README.md`.
 - **مفيش `DELETE` على سجل مالي** — التصفير بـ`UPDATE` والصف يفضل موجود
 - **متضيفش ولا تشيل عمود من أي تقرير** — بيزيح `sum_cards` و`totals` و`$ci`
 - **التصدير إكسيل بـ`SimpleXlsx`، مفيش CSV.** والجدول: `th.num` = `td.num` في المحاذاة، ألوان من التوكنات بس، الحالة شارة.

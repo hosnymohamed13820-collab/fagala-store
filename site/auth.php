@@ -209,6 +209,7 @@ function module_parts(): array
             'perf'    => 'السرعة',
             'audit'   => 'سجل العمليات',
             'devices' => 'الأجهزة',
+            'db'      => 'تعديلات القاعدة',
         ],
     ];
 }

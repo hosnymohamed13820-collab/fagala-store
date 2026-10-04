@@ -66,6 +66,10 @@ echo "== فحص الأمان =="
 bash tests/check_security.sh || FAIL=1
 
 echo
+echo "== ملفات تعديلات القاعدة =="
+bash tests/check_migrations.sh || FAIL=1
+
+echo
 echo "== بنية PHP — إشراقة =="
 if command -v node > /dev/null 2>&1; then
     node tests/check_php.mjs ashraqa/*.php ashraqa/includes/*.php || FAIL=1

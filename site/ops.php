@@ -13,6 +13,7 @@ sens_page(); // من غيرها الفوتر مابيحمّلش سكربت ال�
 $canPerf    = can('ops:perf');
 $canAudit   = can('ops:audit');
 $canDevices = can('ops:devices');
+$canDb      = can('ops:db');
 // المدخلات فيها مرتبات ومبالغ — نفس قفل الأرقام الحساسة اللي على الأرباح والمرتبات
 $auditOpen = $canAudit && sens_unlocked();
 
@@ -41,13 +42,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 $tabParam = trim((string) ($_GET['tab'] ?? ''));
-if ($tabParam === '' || !in_array($tabParam, ['perf', 'audit', 'devices'], true)) {
+if ($tabParam === '' || !in_array($tabParam, ['perf', 'audit', 'devices', 'db'], true)) {
     if ($canPerf) {
         $tabParam = 'perf';
     } elseif ($canAudit) {
         $tabParam = 'audit';
     } elseif ($canDevices) {
         $tabParam = 'devices';
+    } elseif ($canDb) {
+        $tabParam = 'db';
     } else {
         $tabParam = 'perf';
     }
@@ -353,6 +356,29 @@ if ($auditOpen && $tabParam === 'audit') {
 }
 
 // =====================================================================
+//  تبويب «القاعدة» (بريف ١٠٨): ملفات local/migrations مقابل جدول schema_migrations
+// =====================================================================
+$dbRows = [];
+$dbReady = true;
+$dbPending = 0;
+if ($canDb && $tabParam === 'db') {
+    $manifest = (array) (require __DIR__ . '/migrations_manifest.php');
+    $applied = [];
+    try {
+        foreach (db()->query('SELECT name, applied_at FROM schema_migrations') as $r) {
+            $applied[(string) $r['name']] = (string) $r['applied_at'];
+        }
+    } catch (\Throwable $e) {
+        $dbReady = false;
+    }
+    foreach ($manifest as $name) {
+        $at = $applied[$name] ?? null;
+        if ($at === null) $dbPending++;
+        $dbRows[] = ['name' => (string) $name, 'applied_at' => $at];
+    }
+}
+
+// =====================================================================
 //  تجهيز بيانات تبويب الأجهزة (بريف ١٠٢)
 // =====================================================================
 $deviceRows = [];
@@ -585,6 +611,11 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($canDevices): ?>
             <a href="ops.php?tab=devices" class="ops-tab <?= $tabParam === 'devices' ? 'active' : '' ?>">
                 <i class="ti ti-device-mobile"></i> الأجهزة
+            </a>
+        <?php endif; ?>
+        <?php if ($canDb): ?>
+            <a href="ops.php?tab=db" class="ops-tab <?= $tabParam === 'db' ? 'active' : '' ?>">
+                <i class="ti ti-list-check"></i> القاعدة
             </a>
         <?php endif; ?>
     </div>
@@ -938,6 +969,43 @@ require_once __DIR__ . '/includes/header.php';
                     </table>
                 </div>
             <?php endif; ?>
+        <?php endif; ?>
+    <?php elseif ($tabParam === 'db' && $canDb): ?>
+        <?php if (!$dbReady): ?>
+            <div class="ops-card ops-empty">
+                جدول تعديلات القاعدة لسه ماتعملش — شغّل
+                <b>local/migrations/20261004_000_schema_migrations.sql</b> الأول من phpMyAdmin على قاعدة الفجالة.
+            </div>
+        <?php else: ?>
+            <?php if ($dbPending > 0): ?>
+                <p style="margin:0 0 12px;color:var(--warn);font-weight:600;">
+                    فيه <?= (int) $dbPending ?> ملف محتاج يتشغّل على قاعدة الفجالة بالترتيب ده.
+                </p>
+            <?php endif; ?>
+            <div class="ftable-wrap">
+                <table class="ftable">
+                    <thead>
+                        <tr>
+                            <th>الملف</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($dbRows as $dr): ?>
+                            <tr>
+                                <td class="name" title="<?= e($dr['name']) ?>"><?= e($dr['name']) ?>.sql</td>
+                                <td>
+                                    <?php if ($dr['applied_at'] !== null): ?>
+                                        <span class="fchip fchip-pos">اتشغّل <?= e(substr($dr['applied_at'], 0, 16)) ?></span>
+                                    <?php else: ?>
+                                        <span class="fchip fchip-warn">مستني يتشغّل</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         <?php endif; ?>
     <?php endif; ?>
 </div>
