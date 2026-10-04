@@ -19,44 +19,7 @@ if (!can('reports:stock')) {
 }
 require_once __DIR__ . '/stock_query_lib.php';
 
-// ===== AJAX =====
-$ajax = $_GET['ajax'] ?? '';
-if ($ajax !== '') {
-    header('Content-Type: application/json; charset=utf-8');
-    try {
-        switch ($ajax) {
-            // إضافة صنف بالكود (مسح/كتابة)
-            case 'code':
-                $row = stock_item_by_code((string) ($_GET['code'] ?? ''));
-                echo json_encode($row
-                    ? ['ok' => true, 'row' => $row]
-                    : ['ok' => false, 'not_found' => true], JSON_UNESCAPED_UNICODE);
-                break;
-
-            // اقتراحات البحث بالاسم (منسدلة)
-            case 'search':
-                $rows = stock_search_by_name((string) ($_GET['term'] ?? ''), 25);
-                echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
-                break;
-
-            // فلترة من نظام الشركة (لما مفيش أصناف مضافة)
-            case 'filter':
-                $rows = stock_filter_items(
-                    (string) ($_GET['mode'] ?? ''),
-                    (int) ($_GET['sto'] ?? 0),
-                    (float) ($_GET['threshold'] ?? 0)
-                );
-                echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
-                break;
-
-            default:
-                echo json_encode(['ok' => false, 'error' => 'طلب غير معروف'], JSON_UNESCAPED_UNICODE);
-        }
-    } catch (Throwable $ex) {
-        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
+// الداتا (كود · بحث · فلتر) في stock_query_api.php — بريف ١١٠.
 
 $branches = stock_branches_map();
 // أي مخزن فيه رصيد ومش معرّف عندنا — يظهر كعمود "مخزن #رقم"
@@ -215,12 +178,12 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function fetchSug(term) {
-        fetch('stock_query.php?ajax=search&term=' + encodeURIComponent(term))
-            .then(r => r.json())
+        apiFetch('stock_query_api.php?part=search&term=' + encodeURIComponent(term))
             .then(j => {
                 const box = document.getElementById('sug');
-                if (!j.ok || !j.rows.length) { hideSug(); return; }
-                box.innerHTML = j.rows.map(r =>
+                const rows = j.data.rows || [];
+                if (!rows.length) { hideSug(); return; }
+                box.innerHTML = rows.map(r =>
                     '<div class="sq-sug-item" onclick=\'pick(' + JSON.stringify(r).replace(/'/g,"&#39;") + ')\'>' +
                       '<span><b>' + esc(r.name) + '</b><br><span class="sug-code">' + esc(r.code) + '</span></span>' +
                       '<span class="sug-bal">' + fmt(r.total) + '</span>' +
@@ -244,20 +207,17 @@ require_once __DIR__ . '/includes/header.php';
         if (!code) return;
         hideSug();
         setStatus('بيدور…', 'var(--ink-500)');
-        fetch('stock_query.php?ajax=code&code=' + encodeURIComponent(code))
-            .then(r => r.json())
+        apiFetch('stock_query_api.php?part=code&code=' + encodeURIComponent(code))
             .then(j => {
-                if (j.ok) {
+                if (j.data.row) {
                     inp.value = '';
-                    pushRow(j.row);
+                    pushRow(j.data.row);
                     if (navigator.vibrate) navigator.vibrate(50);
-                } else if (j.not_found) {
-                    setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
                 } else {
-                    setStatus('✗ ' + (j.error || 'خطأ'), 'var(--neg)');
+                    setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
                 }
             })
-            .catch(() => setStatus('✗ مفيش اتصال', 'var(--neg)'))
+            .catch(apiErr)
             .finally(() => inp.focus());
     }
 
@@ -304,21 +264,20 @@ require_once __DIR__ . '/includes/header.php';
 
         // مفيش أصناف مضافة → نجيب من نظام الشركة بالفلتر
         setStatus('بيجيب الأصناف…', 'var(--ink-500)');
-        const p = new URLSearchParams({ajax:'filter', mode:mode});
+        const p = new URLSearchParams({part:'filter', mode:mode});
         if (mode === 'has_stock') {
             // مخزن محدد → نستخدم فلتر الفرع في SQL
             const sto = +document.getElementById('branchPick').value || 0;
             if (sto > 0) { p.set('mode', 'branch_only'); p.set('sto', String(sto)); }
         }
         if (mode === 'below') p.set('threshold', document.getElementById('belowVal').value || '0');
-        fetch('stock_query.php?' + p.toString())
-            .then(r => r.json())
+        apiFetch('stock_query_api.php?' + p.toString())
             .then(j => {
-                if (!j.ok) { setStatus('✗ ' + (j.error||'خطأ'), 'var(--neg)'); return; }
-                render(j.rows);
-                setStatus(j.rows.length ? '' : 'مفيش أصناف مطابقة', 'var(--ink-500)');
+                const rows = j.data.rows || [];
+                render(rows);
+                setStatus(rows.length ? '' : 'مفيش أصناف مطابقة', 'var(--ink-500)');
             })
-            .catch(() => setStatus('✗ مفيش اتصال', 'var(--neg)'));
+            .catch(apiErr);
     }
 
     function passes(r) {
@@ -401,6 +360,13 @@ require_once __DIR__ . '/includes/header.php';
         a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
         a.download = 'ارصدة_الاصناف_' + new Date().toISOString().slice(0,10) + '.csv';
         a.click();
+    }
+
+    // فشل الـAPI: الجلسة خلصت ← الصفحة تتحوّل للدخول · من غير status = مفيش نت
+    function apiErr(err) {
+        if (err && err.code === 'auth') { location.reload(); return; }
+        if (err && typeof err.status === 'undefined') { setStatus('✗ مفيش اتصال', 'var(--neg)'); return; }
+        setStatus('✗ ' + ((err && err.error) || 'خطأ'), 'var(--neg)');
     }
 
     function setStatus(msg, color) {

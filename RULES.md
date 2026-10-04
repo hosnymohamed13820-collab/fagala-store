@@ -439,6 +439,7 @@ require_login();
 
 - أي endpoint بيكتب لازم `api_csrf()` و`api_idempotent()`.
 - الكود الجديد في الجافاسكربت يستخدم `window.apiFetch(url, opts)`.
+- **النموذج:** `site/stock_query_api.php` + `site/stock_query.php` (بريف ١١٠). صفحة بتتنقل = الـAJAX اللي جواها يروح `<page>_api.php` بنفس الشكل (ونفس الصلاحية بالظبط)، والصفحة تستخدم `apiFetch`. «مش موجود» = `api_ok` بـ`null` مش `api_fail`. ومفيش `getMessage()` في أي رد.
 
 ### الدخول بتوكن (التطبيقات)
 - التوكن بيتولد من `api_login.php` لكل جهاز (`bin2hex(random_bytes(32))`) ويتبعت في `Authorization: Bearer <token>`.
