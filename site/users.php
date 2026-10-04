@@ -181,6 +181,72 @@ function format_user_perm_chips(array $uperms, array $modules, array $modulePart
     return $chips;
 }
 
+/**
+ * توليد HTML منتقي الصلاحيات (مشترك بين مودال الموظف ومودال الدور — بريف ١٠٧).
+ */
+function perm_picker_html(string $idPrefix): string
+{
+    $modules     = all_modules();
+    $moduleParts = module_parts();
+
+    ob_start();
+    ?>
+    <div class="perms-box">
+        <?php foreach ($modules as $key => $mod): ?>
+            <?php if (isset($moduleParts[$key])): ?>
+                <div class="perm-group">
+                    <label class="perm-item" style="font-weight:600;">
+                        <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                               class="perm-check perm-mod-full" data-mod="<?= e($key) ?>"
+                               onchange="onModuleFullChange(this)">
+                        <span><?= e($mod['label']) ?> (كامل)</span>
+                    </label>
+                    <div class="perm-group-hint">«كامل» يعني كل الأجزاء دلوقتي وأي جزء يتضاف بعدين.</div>
+                    <div class="perm-parts-grid">
+                        <?php foreach ($moduleParts[$key] as $pKey => $pLabel): ?>
+                            <label class="perm-item perm-part-item">
+                                <input type="checkbox" name="permissions[]" value="<?= e($key . ':' . $pKey) ?>"
+                                       class="perm-check perm-part-check" data-mod="<?= e($key) ?>"
+                                       onchange="onPartChange(this)">
+                                <span><?= e($pLabel) ?></span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php else: ?>
+                <label class="perm-item">
+                    <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                           class="perm-check">
+                    <span><?= e($mod['label']) ?></span>
+                </label>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
+// ===== صلاحيات الأدوار (بريف ١٠٧) =====
+// صلاحيات الموظف = صلاحيات دوره ∪ صلاحياته الزيادة (user_permissions).
+// لو جدول role_permissions لسه ماتعملش ← الأدوار فاضية والصفحة شغالة زي الأول.
+$rolePermsReady = true;
+$rolePerms      = [];   // [role_id => [module_key, ...]]
+try {
+    foreach ($pdo->query('SELECT role_id, module_key FROM role_permissions ORDER BY id') as $row) {
+        $rolePerms[(int) $row['role_id']][] = $row['module_key'];
+    }
+} catch (Throwable $e) {
+    $rolePermsReady = false;
+}
+
+/**
+ * الصلاحيات اللي تتخزن للموظف = المتعلّم عليه ناقص اللي جاي من دوره.
+ */
+function user_extra_permissions(array $rawPerms, int $roleId, array $rolePerms): array
+{
+    return array_values(array_diff(sanitize_user_permissions($rawPerms), $rolePerms[$roleId] ?? []));
+}
+
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
@@ -227,7 +293,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $newId = (int) $pdo->lastInsertId();
 
                     $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
-                    $cleanPerms = sanitize_user_permissions((array) $perms);
+                    $cleanPerms = user_extra_permissions((array) $perms, $roleId, $rolePerms);
                     foreach ($cleanPerms as $mk) {
                         $insP->execute([$newId, $mk]);
                     }
@@ -279,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
                         $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
-                        $cleanPerms = sanitize_user_permissions((array) $perms);
+                        $cleanPerms = user_extra_permissions((array) $perms, $roleId, $rolePerms);
                         foreach ($cleanPerms as $mk) {
                             $insP->execute([$userId, $mk]);
                         }
@@ -373,6 +439,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // --- حفظ دور (جديد أو تعديل) — بريف ١٠٧ ---
+        // 🔴 دور الأونر مايتعدّلش من هنا (الأونر أصلاً معاه كل حاجة).
+        //    perms_version لكل موظفين الدور بيزيد عشان الجلسات المفتوحة تقرا الجديد.
+        elseif ($action === 'save_role') {
+            $roleId = (int) ($_POST['role_id'] ?? 0);
+            $nameAr = trim((string) ($_POST['name_ar'] ?? ''));
+            $perms  = sanitize_user_permissions((array) ($_POST['permissions'] ?? []));
+
+            $roleRow = null;
+            if ($roleId > 0) {
+                $st = $pdo->prepare('SELECT id, is_owner FROM roles WHERE id = ?');
+                $st->execute([$roleId]);
+                $roleRow = $st->fetch();
+            }
+
+            if (!$rolePermsReady) {
+                $flash = 'جدول صلاحيات الأدوار لسه ماتعملش — شغّل local/upgrade_role_perms.sql الأول.';
+                $flashType = 'error';
+            } elseif ($nameAr === '' || mb_strlen($nameAr) > 50) {
+                $flash = 'اسم الدور مطلوب (٥٠ حرف بالكتير).';
+                $flashType = 'error';
+            } elseif ($roleId > 0 && !$roleRow) {
+                $flash = 'الدور ده مش موجود.';
+                $flashType = 'error';
+            } elseif ($roleRow && (int) $roleRow['is_owner'] === 1) {
+                $flash = 'دور الأونر مايتعدّلش.';
+                $flashType = 'error';
+            } else {
+                $pdo->beginTransaction();
+                try {
+                    if ($roleId > 0) {
+                        $pdo->prepare('UPDATE roles SET name_ar = ? WHERE id = ?')->execute([$nameAr, $roleId]);
+                    } else {
+                        // roles.name عليه UNIQUE — اسم مؤقت وبعدين role_<id>
+                        $pdo->prepare('INSERT INTO roles (name, name_ar, is_owner) VALUES (?, ?, 0)')
+                            ->execute(['tmp_' . bin2hex(random_bytes(6)), $nameAr]);
+                        $roleId = (int) $pdo->lastInsertId();
+                        $pdo->prepare('UPDATE roles SET name = ? WHERE id = ?')->execute(['role_' . $roleId, $roleId]);
+                    }
+                    $pdo->prepare('DELETE FROM role_permissions WHERE role_id = ?')->execute([$roleId]);
+                    if ($perms) {
+                        $vals = implode(',', array_fill(0, count($perms), '(?, ?)'));
+                        $args = [];
+                        foreach ($perms as $mk) { $args[] = $roleId; $args[] = $mk; }
+                        $pdo->prepare("INSERT IGNORE INTO role_permissions (role_id, module_key) VALUES $vals")->execute($args);
+                    }
+                    $pdo->prepare('UPDATE users SET perms_version = perms_version + 1 WHERE role_id = ?')->execute([$roleId]);
+                    $pdo->commit();
+                    $flash = 'اتحفظ الدور «' . $nameAr . '».';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    error_log('users save_role: ' . $ex->getMessage());
+                    $flash = 'حصل خطأ ومااتحفظش حاجة.';
+                    $flashType = 'error';
+                }
+            }
+        }
+
+        // --- مسح دور — بس لو مفيش ولا موظف عليه (حتى الموقوفين) ---
+        elseif ($action === 'delete_role') {
+            $roleId = (int) ($_POST['role_id'] ?? 0);
+            $st = $pdo->prepare(
+                'SELECT r.is_owner, (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id) AS n
+                 FROM roles r WHERE r.id = ?'
+            );
+            $st->execute([$roleId]);
+            $roleRow = $st->fetch();
+            if (!$roleRow) {
+                $flash = 'الدور ده مش موجود.';
+                $flashType = 'error';
+            } elseif ((int) $roleRow['is_owner'] === 1) {
+                $flash = 'دور الأونر مايتمسحش.';
+                $flashType = 'error';
+            } elseif ((int) $roleRow['n'] > 0) {
+                $flash = 'الدور ده عليه ' . (int) $roleRow['n'] . ' موظف — انقلهم الأول.';
+                $flashType = 'error';
+            } else {
+                $pdo->beginTransaction();
+                try {
+                    if ($rolePermsReady) {
+                        $pdo->prepare('DELETE FROM role_permissions WHERE role_id = ?')->execute([$roleId]);
+                    }
+                    $pdo->prepare('DELETE FROM roles WHERE id = ? AND is_owner = 0')->execute([$roleId]);
+                    $pdo->commit();
+                    $flash = 'اتمسح الدور.';
+                } catch (Throwable $ex) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    error_log('users delete_role: ' . $ex->getMessage());
+                    $flash = 'حصل خطأ ومااتمسحش.';
+                    $flashType = 'error';
+                }
+            }
+        }
+
         // --- تفعيل / إيقاف ---
         elseif ($action === 'toggle') {
             $userId = (int) ($_POST['user_id'] ?? 0);
@@ -428,7 +592,14 @@ foreach ($pdo->query('SELECT user_id, module_key FROM user_permissions') as $row
     $permsByUser[$row['user_id']][] = $row['module_key'];
 }
 
-$roles    = $pdo->query('SELECT id, name_ar, is_owner FROM roles ORDER BY id')->fetchAll();
+$roles    = $pdo->query(
+    'SELECT r.id, r.name_ar, r.is_owner,
+            COUNT(u.id) AS users_all, COALESCE(SUM(u.is_active), 0) AS users_active
+     FROM roles r LEFT JOIN users u ON u.role_id = r.id
+     GROUP BY r.id, r.name_ar, r.is_owner
+     ORDER BY r.id'
+)->fetchAll();
+$view     = (($_GET['view'] ?? '') === 'roles') ? 'roles' : 'users';
 $branches = $pdo->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name')->fetchAll();
 
 $page_title    = 'إدارة المستخدمين';
@@ -510,11 +681,118 @@ require_once __DIR__ . '/includes/header.php';
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
     @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
+    /* تابات الموظفين / الأدوار (بريف ١٠٧) — نفس شكل تابات التعريفات */
+    .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
+    .tab {
+        padding:10px 20px; border-radius:10px; text-decoration:none;
+        color:var(--accent-text); background:var(--surface); font-size:14px; font-weight:500;
+        border:1.5px solid transparent;
+    }
+    .tab.active { background:var(--accent); color:var(--fill-strong-fg); }
+    .tab:not(.active):hover { background:var(--bg); }
+    .perm-chip.role { background:var(--line-soft); color:var(--ink-600); font-weight:600; }
+    .role-tag { font-size:11px; color:var(--ink-500); margin-inline-start:4px; }
 </style>
 
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
 <?php endif; ?>
+
+<div class="tabs">
+    <a href="users.php" class="tab <?= $view === 'users' ? 'active' : '' ?>">الموظفين</a>
+    <a href="users.php?view=roles" class="tab <?= $view === 'roles' ? 'active' : '' ?>">الأدوار</a>
+</div>
+
+<?php if ($view === 'roles'): ?>
+
+<?php if (!$rolePermsReady): ?>
+    <div class="flash error">جدول صلاحيات الأدوار لسه ماتعملش على القاعدة — شغّل <b>local/upgrade_role_perms.sql</b> من phpMyAdmin.</div>
+<?php endif; ?>
+
+<div class="toolbar">
+    <span style="color:var(--ink-500);font-size:14px;">صلاحيات الموظف = صلاحيات دوره + أي صلاحية زيادة ليه هو.</span>
+    <button class="btn" onclick="openRole(null)"<?= $rolePermsReady ? '' : ' disabled' ?>><i class="ti ti-plus"></i> دور جديد</button>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>الدور</th>
+                <th>الموظفين</th>
+                <th>صلاحيات الدور</th>
+                <th>إجراءات</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($roles as $r): ?>
+                <?php $rperms = $rolePerms[(int) $r['id']] ?? []; ?>
+                <tr>
+                    <td style="font-weight:500;"><?= e($r['name_ar']) ?></td>
+                    <td><?= (int) $r['users_active'] ?><?php if ((int) $r['users_all'] > (int) $r['users_active']): ?> <span style="color:var(--ink-400);font-size:12px;">(+<?= (int) $r['users_all'] - (int) $r['users_active'] ?> موقوف)</span><?php endif; ?></td>
+                    <td>
+                        <?php if ($r['is_owner']): ?>
+                            <span class="perm-all">كل الصلاحيات</span>
+                        <?php elseif (empty($rperms)): ?>
+                            <span style="color:var(--ink-400);font-size:12px;">لسه مالوش صلاحيات</span>
+                        <?php else: ?>
+                            <div class="perm-chips">
+                                <?php foreach (format_user_perm_chips($rperms, $modules, $moduleParts) as $chip): ?>
+                                    <span class="perm-chip"<?php if ($chip['title'] !== ''): ?> title="<?= e($chip['title']) ?>"<?php endif; ?>><?= e($chip['text']) ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                    <td>
+                        <?php if (!$r['is_owner'] && $rolePermsReady): ?>
+                            <button class="btn btn-sm btn-ghost"
+                                onclick='openRole(<?= json_encode(['id' => (int) $r['id'], 'name_ar' => $r['name_ar'], 'perms' => $rperms], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'>
+                                تعديل
+                            </button>
+                            <?php if ((int) $r['users_all'] === 0): ?>
+                                <form method="post" style="display:inline;" data-confirm="تمسح الدور «<?= e($r['name_ar']) ?>»؟">
+                                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="action" value="delete_role">
+                                    <input type="hidden" name="role_id" value="<?= (int) $r['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-ghost">مسح</button>
+                                </form>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <span style="color:var(--ink-300);font-size:13px;">—</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+</div>
+
+<!-- ===== Modal: دور ===== -->
+<div class="modal-bg" id="roleModal">
+    <div class="modal">
+        <h3 id="roleTitle">دور جديد</h3>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="save_role">
+            <input type="hidden" name="role_id" id="r_id" value="">
+            <div class="form-row">
+                <label for="r_name">اسم الدور *</label>
+                <input type="text" name="name_ar" id="r_name" maxlength="50" required>
+            </div>
+            <div class="form-row">
+                <label>صلاحيات الدور — كل موظف على الدور ده هياخدها لوحده</label>
+                <?= perm_picker_html('r') ?>
+                <div class="hint">التغيير بيوصل للموظفين اللي فاتحين الموقع من غير خروج ودخول.</div>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="btn">حفظ</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('roleModal').classList.remove('open')">إلغاء</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<?php else: ?>
 
 <div class="toolbar">
     <span style="color:var(--ink-500);font-size:14px;"><?= count($users) ?> مستخدم</span>
@@ -555,13 +833,17 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td><?= e($usr['branch_name'] ?? '—') ?></td>
                     <td>
+                        <?php $hasRolePerms = !empty($rolePerms[(int) $usr['role_id']]); ?>
                         <?php if ($usr['is_owner']): ?>
                             <span class="perm-all">كل الصلاحيات</span>
-                        <?php elseif (empty($uperms)): ?>
+                        <?php elseif (empty($uperms) && !$hasRolePerms): ?>
                             <span style="color:var(--ink-400);font-size:12px;">لا يوجد</span>
                         <?php else: ?>
-                            <?php $chips = format_user_perm_chips($uperms, $modules, $moduleParts); ?>
+                            <?php $chips = $uperms ? format_user_perm_chips($uperms, $modules, $moduleParts) : []; ?>
                             <div class="perm-chips">
+                                <?php if ($hasRolePerms): ?>
+                                    <span class="perm-chip role" title="صلاحيات الدور — بتتعدّل من تاب «الأدوار»"><?= e($usr['role_name']) ?></span>
+                                <?php endif; ?>
                                 <?php foreach ($chips as $chip): ?>
                                     <span class="perm-chip"<?php if ($chip['title'] !== ''): ?> title="<?= e($chip['title']) ?>"<?php endif; ?>><?= e($chip['text']) ?></span>
                                 <?php endforeach; ?>
@@ -717,37 +999,8 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="form-row">
                 <label>الصلاحيات — علّم على اللي عايز تديهاله</label>
-                <div class="perms-box">
-                    <?php foreach ($modules as $key => $mod): ?>
-                        <?php if (isset($moduleParts[$key])): ?>
-                            <div class="perm-group">
-                                <label class="perm-item" style="font-weight:600;">
-                                    <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
-                                           class="perm-check perm-mod-full" data-mod="<?= e($key) ?>"
-                                           onchange="onModuleFullChange(this)">
-                                    <span><?= e($mod['label']) ?> (كامل)</span>
-                                </label>
-                                <div class="perm-group-hint">«كامل» يعني كل الأجزاء دلوقتي وأي جزء يتضاف بعدين.</div>
-                                <div class="perm-parts-grid">
-                                    <?php foreach ($moduleParts[$key] as $pKey => $pLabel): ?>
-                                        <label class="perm-item perm-part-item">
-                                            <input type="checkbox" name="permissions[]" value="<?= e($key . ':' . $pKey) ?>"
-                                                   class="perm-check perm-part-check" data-mod="<?= e($key) ?>"
-                                                   onchange="onPartChange(this)">
-                                            <span><?= e($pLabel) ?></span>
-                                        </label>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
-                        <?php else: ?>
-                            <label class="perm-item">
-                                <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
-                                       class="perm-check">
-                                <span><?= e($mod['label']) ?></span>
-                            </label>
-                        <?php endif; ?>
-                    <?php endforeach; ?>
-                </div>
+                <?= perm_picker_html('u') ?>
+                <div class="hint">المقفول ومكتوب جنبه «من الدور» جاي من دور الموظف — بيتعدّل من تاب «الأدوار».</div>
             </div>
 
             <div class="modal-actions">
@@ -824,6 +1077,8 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<?php endif; ?>
+
 <script>
     function openBulk() {
         document.getElementById('bulkModal').classList.add('open');
@@ -859,6 +1114,63 @@ require_once __DIR__ . '/includes/header.php';
 </script>
 <script>
     const modal = document.getElementById('modal');
+    // صلاحيات كل دور (بريف ١٠٧) — مرة واحدة مع الصفحة، مش fetch مع كل تغيير
+    const ROLE_PERMS = <?= json_encode((object) $rolePerms, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+    // صلاحيات الموظف المفتوح (عشان لو الدور اتغيّر في المودال نرجّع اللي كان معاه هو)
+    let currentUserPerms = [];
+
+    // «كامل» متعلّم ← أجزاءه تتقفل. جوه المنتقي بتاعه بس (فيه منتقي للموظف وواحد للدور).
+    function syncParts(fullCb) {
+        const box = fullCb.closest('.perms-box');
+        box.querySelectorAll('.perm-part-check[data-mod="' + fullCb.dataset.mod + '"]').forEach(cb => {
+            if (cb.hasAttribute('data-role-lock')) return;
+            if (fullCb.checked) { cb.checked = false; cb.disabled = true; }
+            else { cb.disabled = false; }
+        });
+    }
+
+    // صلاحيات الدور المختار تبان متعلّمة ومقفولة ومكتوب جنبها «من الدور».
+    // المقفول مابيتبعتش مع الفورم، والسيرفر كمان بيطرح صلاحيات الدور قبل الحفظ.
+    function applyRoleLock() {
+        if (!modal) return;
+        const box = modal.querySelector('.perms-box');
+        const roleSel = document.getElementById('f_role');
+        const rp = ROLE_PERMS[roleSel ? roleSel.value : ''] || [];
+        box.querySelectorAll('.perm-check[data-role-lock]').forEach(cb => {
+            cb.removeAttribute('data-role-lock');
+            cb.disabled = false;
+            cb.checked = currentUserPerms.includes(cb.value);
+            const t = cb.parentNode.querySelector('.role-tag');
+            if (t) t.remove();
+        });
+        box.querySelectorAll('.perm-mod-full').forEach(syncParts);
+        box.querySelectorAll('.perm-check').forEach(cb => {
+            const fromRole = rp.includes(cb.value)
+                || (cb.classList.contains('perm-part-check') && rp.includes(cb.dataset.mod));
+            if (!fromRole) return;
+            cb.checked = true;
+            cb.disabled = true;
+            cb.setAttribute('data-role-lock', '1');
+            const tag = document.createElement('span');
+            tag.className = 'role-tag';
+            tag.textContent = 'من الدور';
+            cb.parentNode.appendChild(tag);
+        });
+    }
+
+    function openRole(data) {
+        const rm = document.getElementById('roleModal');
+        document.getElementById('roleTitle').textContent = data ? 'تعديل الدور' : 'دور جديد';
+        document.getElementById('r_id').value = data ? data.id : '';
+        document.getElementById('r_name').value = data ? data.name_ar : '';
+        const perms = data && Array.isArray(data.perms) ? data.perms : [];
+        rm.querySelectorAll('.perm-check').forEach(cb => {
+            cb.disabled = false;
+            cb.checked = perms.includes(cb.value);
+        });
+        rm.querySelectorAll('.perm-mod-full').forEach(syncParts);
+        rm.classList.add('open');
+    }
 
     function openAdd() {
         document.getElementById('modalTitle').textContent = 'إضافة مستخدم';
@@ -868,6 +1180,8 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('f_salary').disabled = false;
         document.getElementById('f_salary').placeholder = '';
         clearPerms();
+        currentUserPerms = [];
+        applyRoleLock();
         // إظهار/إخفاء التلميحات
         document.getElementById('f_username').readOnly = false;
         document.getElementById('usernameHint').style.display = 'none';
@@ -915,47 +1229,22 @@ require_once __DIR__ . '/includes/header.php';
         toggleEmp();
         // تعليم الصلاحيات
         clearPerms();
-        const userPerms = Array.isArray(data.perms) ? data.perms : [];
-        document.querySelectorAll('.perm-check').forEach(cb => {
-            cb.checked = userPerms.includes(cb.value);
+        currentUserPerms = Array.isArray(data.perms) ? data.perms : [];
+        modal.querySelectorAll('.perm-check').forEach(cb => {
+            cb.checked = currentUserPerms.includes(cb.value);
         });
-        // لو «كامل» متعلم للمديول، نقفل أجزاءه
-        document.querySelectorAll('.perm-mod-full').forEach(fullCb => {
-            const mod = fullCb.dataset.mod;
-            const partCbs = document.querySelectorAll('.perm-part-check[data-mod="' + mod + '"]');
-            if (fullCb.checked) {
-                partCbs.forEach(cb => {
-                    cb.checked = false;
-                    cb.disabled = true;
-                });
-            } else {
-                partCbs.forEach(cb => {
-                    cb.disabled = false;
-                });
-            }
-        });
+        // لو «كامل» متعلم للمديول، نقفل أجزاءه — وبعدين صلاحيات الدور
+        applyRoleLock();
         modal.classList.add('open');
     }
 
     function onModuleFullChange(fullCb) {
-        const mod = fullCb.dataset.mod;
-        const partCbs = document.querySelectorAll('.perm-part-check[data-mod="' + mod + '"]');
-        if (fullCb.checked) {
-            partCbs.forEach(cb => {
-                cb.checked = false;
-                cb.disabled = true;
-            });
-        } else {
-            partCbs.forEach(cb => {
-                cb.disabled = false;
-            });
-        }
+        syncParts(fullCb);
     }
 
     function onPartChange(partCb) {
-        const mod = partCb.dataset.mod;
-        const fullCb = document.querySelector('.perm-mod-full[data-mod="' + mod + '"]');
-        if (partCb.checked && fullCb) {
+        const fullCb = partCb.closest('.perms-box').querySelector('.perm-mod-full[data-mod="' + partCb.dataset.mod + '"]');
+        if (partCb.checked && fullCb && !fullCb.hasAttribute('data-role-lock')) {
             fullCb.checked = false;
         }
     }
@@ -966,9 +1255,13 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function clearPerms() {
-        document.querySelectorAll('.perm-check').forEach(cb => {
+        if (!modal) return;
+        modal.querySelectorAll('.perm-check').forEach(cb => {
             cb.checked = false;
             cb.disabled = false;
+            cb.removeAttribute('data-role-lock');
+            const t = cb.parentNode.querySelector('.role-tag');
+            if (t) t.remove();
         });
     }
 
@@ -976,9 +1269,12 @@ require_once __DIR__ . '/includes/header.php';
         modal.classList.remove('open');
     }
 
-    modal.addEventListener('click', e => {
-        if (e.target === modal) closeModal();
-    });
+    if (modal) {
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeModal();
+        });
+        document.getElementById('f_role').addEventListener('change', applyRoleLock);
+    }
 
     var userForm = document.getElementById('userForm');
     var pw = document.getElementById('f_password');

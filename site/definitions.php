@@ -481,6 +481,9 @@ require_once __DIR__ . '/includes/header.php';
 <div class="tabs">
     <a href="?tab=branches"   class="tab <?= $tab==='branches'?'active':'' ?>">الفروع</a>
     <a href="?tab=employees"  class="tab <?= $tab==='employees'?'active':'' ?>">الموظفون</a>
+    <?php if (is_owner()): ?>
+        <a href="users.php?view=roles" class="tab">الأدوار</a>
+    <?php endif; ?>
     <a href="?tab=treasuries" class="tab <?= $tab==='treasuries'?'active':'' ?>">الخزائن</a>
     <a href="?tab=categories" class="tab <?= $tab==='categories'?'active':'' ?>">تصنيفات المصروفات</a>
 </div>

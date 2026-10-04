@@ -390,13 +390,34 @@ function auth_token_login(): void
 }
 
 /**
+ * جلب الصلاحيات الفعلية للمستخدم: اتحاد صلاحيات دوره وصلاحياته الشخصية (بريف ١٠٧).
+ *
+ * @return string[]
+ */
+function user_effective_permissions(int $userId): array
+{
+    try {
+        $stmt = db()->prepare(
+            'SELECT module_key FROM user_permissions WHERE user_id = ?
+             UNION
+             SELECT rp.module_key FROM role_permissions rp JOIN users u ON u.role_id = rp.role_id WHERE u.id = ?'
+        );
+        $stmt->execute([$userId, $userId]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $e) {
+        // لو جدول role_permissions مش موجود (الـSQL لسه ماتشغّلش)، ارجع للصلاحيات المباشرة
+        $stmt = db()->prepare('SELECT module_key FROM user_permissions WHERE user_id = ?');
+        $stmt->execute([$userId]);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+}
+
+/**
  * تحميل صلاحيات المستخدم وتخزينها في الجلسة.
  */
 function load_permissions(int $userId): void
 {
-    $stmt = db()->prepare('SELECT module_key FROM user_permissions WHERE user_id = ?');
-    $stmt->execute([$userId]);
-    $_SESSION['permissions'] = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    $_SESSION['permissions'] = user_effective_permissions($userId);
 }
 
 /**

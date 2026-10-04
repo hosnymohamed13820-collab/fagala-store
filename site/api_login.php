@@ -79,10 +79,8 @@ $ins->execute([$userId, $tokenHash, $deviceName, $pwVer, $ip]);
 db()->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$userId]);
 log_login($userId, $username, $ip, true);
 
-// جلب الصلاحيات
-$stPerms = db()->prepare('SELECT module_key FROM user_permissions WHERE user_id = ?');
-$stPerms->execute([$userId]);
-$perms = $stPerms->fetchAll(PDO::FETCH_COLUMN);
+// جلب الصلاحيات الفعلية (صلاحيات دوره + صلاحياته الزيادة، بريف ١٠٧)
+$perms = user_effective_permissions($userId);
 
 api_ok([
     'token' => $rawToken,
