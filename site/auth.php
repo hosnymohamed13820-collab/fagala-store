@@ -19,10 +19,28 @@ errlog_install();
 // قياس السرعة — بيسجّل أداء كل صفحة من غير ما يغيّر سلوكها (بريف ٩٩).
 require_once __DIR__ . '/reqlog_lib.php';
 reqlog_install();
-require_once __DIR__ . '/config.php';
 
-// ===== بدء الجلسة بإعدادات آمنة =====
-if (session_status() === PHP_SESSION_NONE) {
+/**
+ * استخراج توكن Bearer من هيدر Authorization إن وجد.
+ */
+function auth_bearer(): ?string
+{
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null;
+    if (!$header && function_exists('getallheaders')) {
+        $all = getallheaders();
+        $header = $all['Authorization'] ?? $all['authorization'] ?? null;
+    }
+    if ($header && preg_match('/^\s*Bearer\s+(\S+)\s*$/i', (string) $header, $m)) {
+        return trim($m[1]);
+    }
+    return null;
+}
+
+// ===== بدء الجلسة بإعدادات آمنة أو تخطيها لطلبات التوكن =====
+if (defined('API_MODE') && auth_bearer() !== null) {
+    $_SESSION = [];
+    define('API_BEARER', true);
+} elseif (session_status() === PHP_SESSION_NONE) {
     // secure: الكوكي ماتتبعتش إلا على HTTPS.
     // بنكتشف البروتوكول تلقائي عشان اللوكال (XAMPP على http) يفضل شغال.
     $isHttps =
@@ -68,6 +86,12 @@ if (session_status() === PHP_SESSION_NONE) {
             'samesite' => 'Lax',
         ]);
     }
+}
+
+require_once __DIR__ . '/config.php';
+
+if (defined('API_BEARER')) {
+    auth_token_login();
 }
 
 // هيدرز الحماية — مراجعة ٢٢ سبتمبر ٢٠٢٦ (clickjacking · MIME sniffing · إخفاء نسخة PHP)
@@ -182,8 +206,9 @@ function module_parts(): array
             'profit'   => 'الأرباح',
         ],
         'ops' => [
-            'perf'  => 'السرعة',
-            'audit' => 'سجل العمليات',
+            'perf'    => 'السرعة',
+            'audit'   => 'سجل العمليات',
+            'devices' => 'الأجهزة',
         ],
     ];
 }
@@ -272,6 +297,21 @@ function attempt_login(string $username, string $password): bool
         $pwVer    = 1;
     }
 
+    auth_fill_session($user, $permsVer, $pwVer);
+
+    // تحديث آخر دخول
+    db()->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')
+        ->execute([(int) $user['id']]);
+
+    log_login((int) $user['id'], $username, $ip, true);
+    return true;
+}
+
+/**
+ * ملء بيانات الجلسة للمستخدم (مشترك بين الدخول العادي والتوكن).
+ */
+function auth_fill_session(array $user, int $permsVer, int $pwVer): void
+{
     $_SESSION['user'] = [
         'id'            => (int) $user['id'],
         'username'      => $user['username'],
@@ -286,13 +326,67 @@ function attempt_login(string $username, string $password): bool
 
     // تحميل صلاحيات المستخدم في الجلسة (مرة واحدة)
     load_permissions((int) $user['id']);
+}
 
-    // تحديث آخر دخول
-    db()->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')
-        ->execute([(int) $user['id']]);
+/**
+ * تسجيل الدخول عبر توكن Bearer للـ API.
+ */
+function auth_token_login(): void
+{
+    $token = auth_bearer();
+    if ($token === null || $token === '') {
+        return;
+    }
 
-    log_login((int) $user['id'], $username, $ip, true);
-    return true;
+    $tokenHash = hash('sha256', $token);
+
+    try {
+        $st = db()->prepare(
+            'SELECT t.id AS token_id, t.pw_version AS token_pw_ver, t.revoked_at, t.last_used_at,
+                    u.id, u.username, u.full_name, u.role_id, u.branch_id, u.is_active,
+                    u.perms_version, u.pw_version AS user_pw_ver,
+                    r.is_owner
+             FROM api_tokens t
+             JOIN users u ON u.id = t.user_id
+             JOIN roles r ON r.id = u.role_id
+             WHERE t.token_hash = ?'
+        );
+        $st->execute([$tokenHash]);
+        $row = $st->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return;
+        }
+
+        if (!empty($row['revoked_at'])) {
+            return;
+        }
+
+        if (empty($row['is_active'])) {
+            return;
+        }
+
+        $tokenPwVer = (int) $row['token_pw_ver'];
+        $userPwVer  = (int) ($row['user_pw_ver'] ?? 1);
+        if ($tokenPwVer !== $userPwVer) {
+            return;
+        }
+
+        $permsVer = (int) ($row['perms_version'] ?? 1);
+        auth_fill_session($row, $permsVer, $userPwVer);
+        $_SESSION['app'] = 'fagala';
+
+        // تحديث آخر استخدام لو أقدم من 5 دقايق
+        $lastUsed = !empty($row['last_used_at']) ? strtotime((string) $row['last_used_at']) : 0;
+        if ((time() - $lastUsed) > 300) {
+            $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+            db()->prepare('UPDATE api_tokens SET last_used_at = NOW(), last_ip = ? WHERE id = ?')
+                ->execute([$ip, (int) $row['token_id']]);
+        }
+    } catch (Throwable $e) {
+        // لو الجدول لسه مش موجود أو أي عطل، سكوت (require_login هيرجع 401)
+        return;
+    }
 }
 
 /**

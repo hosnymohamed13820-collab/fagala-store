@@ -440,6 +440,13 @@ require_login();
 - أي endpoint بيكتب لازم `api_csrf()` و`api_idempotent()`.
 - الكود الجديد في الجافاسكربت يستخدم `window.apiFetch(url, opts)`.
 
+### الدخول بتوكن (التطبيقات)
+- التوكن بيتولد من `api_login.php` لكل جهاز (`bin2hex(random_bytes(32))`) ويتبعت في `Authorization: Bearer <token>`.
+- القاعدة بتخزن `sha256` بس (`api_tokens`). ممنوع تخزين أو تسجيل التوكن الصريح إطلاقاً.
+- التوكن بيموت تلقائياً لو اتلغى، أو اتعطل اليوزر، أو اتغير باسورد اليوزر (`users.pw_version`).
+- طلبات التوكن مابتفتحش سيشن PHP، ومابتكتبش كوكي، ومعفية من الـCSRF (الكوكي من الموقع لسه محتاج CSRF).
+- الـCORS محدد من إعداد `api_allowed_origins` فقط وممنوع استخدام `*` أو `Allow-Credentials`.
+
 ---
 
 ## ٧) الوكلاء (PowerShell)

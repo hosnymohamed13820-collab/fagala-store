@@ -17,6 +17,28 @@ require_once __DIR__ . '/errlog_lib.php';
  */
 function api_begin(): void
 {
+    // فحص ومعالجة CORS
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+    if ($origin !== null && $origin !== '') {
+        $allowedOriginsStr = 'tauri://localhost,https://tauri.localhost,capacitor://localhost,http://localhost';
+        if (function_exists('setting')) {
+            $allowedOriginsStr = setting('api_allowed_origins', $allowedOriginsStr);
+        }
+        $allowedList = array_map('trim', explode(',', (string) $allowedOriginsStr));
+        if (in_array($origin, $allowedList, true)) {
+            header('Access-Control-Allow-Origin: ' . $origin);
+            header('Vary: Origin');
+            header('Access-Control-Allow-Headers: Authorization, Content-Type, Idempotency-Key, X-CSRF-Token');
+            header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+            header('Access-Control-Max-Age: 600');
+
+            if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+                http_response_code(204);
+                exit;
+            }
+        }
+    }
+
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
 
@@ -108,6 +130,9 @@ function api_method(string ...$allowed): void
  */
 function api_csrf(): void
 {
+    if (defined('API_BEARER')) {
+        return;
+    }
     $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
     if ($method === 'GET') {
         return;

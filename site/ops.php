@@ -8,18 +8,46 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_module_access('ops');
 require_once __DIR__ . '/sensitive_lib.php';
+sens_page(); // من غيرها الفوتر مابيحمّلش سكربت القفل فزرار «اظهر الأرقام» مابيشتغلش
 
-$canPerf  = can('ops:perf');
-$canAudit = can('ops:audit');
+$canPerf    = can('ops:perf');
+$canAudit   = can('ops:audit');
+$canDevices = can('ops:devices');
 // المدخلات فيها مرتبات ومبالغ — نفس قفل الأرقام الحساسة اللي على الأرباح والمرتبات
 $auditOpen = $canAudit && sens_unlocked();
 
+// معالجة إلغاء توكن جهاز
+$deviceMsg = '';
+$deviceErr = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'revoke_token') {
+    if (!$canDevices) {
+        $deviceErr = 'مالكش صلاحية إدارة الأجهزة';
+    } elseif (!is_owner()) {
+        $deviceErr = 'إلغاء أجهزة المستخدمين متاح للأونر بس';
+    } elseif (!csrf_verify($_POST['csrf'] ?? '')) {
+        $deviceErr = 'انتهت صلاحية الجلسة، حاول مرة أخرى';
+    } else {
+        $tokenId = (int) ($_POST['token_id'] ?? 0);
+        if ($tokenId > 0) {
+            try {
+                $stRevoke = db()->prepare('UPDATE api_tokens SET revoked_at = NOW() WHERE id = ? AND revoked_at IS NULL');
+                $stRevoke->execute([$tokenId]);
+                $deviceMsg = 'تم إلغاء التوكن للجهاز بنجاح';
+            } catch (\Throwable $e) {
+                $deviceErr = 'حصل خطأ أثناء إلغاء التوكن';
+            }
+        }
+    }
+}
+
 $tabParam = trim((string) ($_GET['tab'] ?? ''));
-if ($tabParam === '' || !in_array($tabParam, ['perf', 'audit'], true)) {
+if ($tabParam === '' || !in_array($tabParam, ['perf', 'audit', 'devices'], true)) {
     if ($canPerf) {
         $tabParam = 'perf';
     } elseif ($canAudit) {
         $tabParam = 'audit';
+    } elseif ($canDevices) {
+        $tabParam = 'devices';
     } else {
         $tabParam = 'perf';
     }
@@ -324,6 +352,30 @@ if ($auditOpen && $tabParam === 'audit') {
     }
 }
 
+// =====================================================================
+//  تجهيز بيانات تبويب الأجهزة (بريف ١٠٢)
+// =====================================================================
+$deviceRows = [];
+if ($canDevices && $tabParam === 'devices') {
+    try {
+        if (function_exists('db')) {
+            $pdo = db();
+            $dSql = "SELECT t.id, t.user_id, t.device_name, t.pw_version AS token_pw_ver,
+                            t.created_at, t.last_used_at, t.last_ip, t.revoked_at,
+                            u.username, u.full_name, u.pw_version AS user_pw_ver, u.is_active
+                     FROM api_tokens t
+                     LEFT JOIN users u ON u.id = t.user_id
+                     ORDER BY t.id DESC";
+            $dSt = $pdo->query($dSql);
+            if ($dSt) {
+                $deviceRows = $dSt->fetchAll(\PDO::FETCH_ASSOC);
+            }
+        }
+    } catch (\Throwable $e) {
+        $deviceRows = [];
+    }
+}
+
 $pageTitle = 'المراقبة';
 require_once __DIR__ . '/includes/header.php';
 ?>
@@ -565,6 +617,11 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($canAudit): ?>
             <a href="ops.php?tab=audit" class="ops-tab <?= $tabParam === 'audit' ? 'active' : '' ?>">
                 <i class="ti ti-clock"></i> سجل العمليات
+            </a>
+        <?php endif; ?>
+        <?php if ($canDevices): ?>
+            <a href="ops.php?tab=devices" class="ops-tab <?= $tabParam === 'devices' ? 'active' : '' ?>">
+                <i class="ti ti-device-mobile"></i> الأجهزة
             </a>
         <?php endif; ?>
     </div>
@@ -819,6 +876,103 @@ require_once __DIR__ . '/includes/header.php';
                             </a>
                         <?php endif; ?>
                     </div>
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
+    <?php elseif ($tabParam === 'devices'): ?>
+        <?php if (!$canDevices): ?>
+            <div class="ops-card ops-empty">
+                مالكش صلاحية تشوف الأجهزة.
+            </div>
+        <?php else: ?>
+            <?php if ($deviceMsg !== ''): ?>
+                <div style="background:var(--pos-soft, #ecfdf5);color:var(--pos, #047857);padding:12px 16px;border-radius:var(--r-md, 8px);margin-bottom:16px;font-size:14px;border:1px solid currentColor;">
+                    <?= e($deviceMsg) ?>
+                </div>
+            <?php endif; ?>
+            <?php if ($deviceErr !== ''): ?>
+                <div style="background:var(--neg-soft, #fef2f2);color:var(--neg, #b91c1c);padding:12px 16px;border-radius:var(--r-md, 8px);margin-bottom:16px;font-size:14px;border:1px solid currentColor;">
+                    <?= e($deviceErr) ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (empty($deviceRows)): ?>
+                <div class="ops-card ops-empty">
+                    مفيش أجهزة مسجلة حالياً.
+                </div>
+            <?php else: ?>
+                <div class="ops-table-container">
+                    <table class="ops-table">
+                        <thead>
+                            <tr>
+                                <th>المستخدم</th>
+                                <th>اسم الجهاز</th>
+                                <th class="num">تاريخ الإنشاء</th>
+                                <th class="num">آخر استخدام</th>
+                                <th class="num">آخر IP</th>
+                                <th style="text-align:center;">الحالة</th>
+                                <?php if (is_owner()): ?>
+                                    <th style="text-align:center;">إجراء</th>
+                                <?php endif; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($deviceRows as $dr): ?>
+                                <?php
+                                    $isRevoked = !empty($dr['revoked_at']);
+                                    $tokenPw = (int) ($dr['token_pw_ver'] ?? 1);
+                                    $userPw  = (int) ($dr['user_pw_ver'] ?? 1);
+                                    $pwChanged = ($tokenPw !== $userPw);
+                                    $isUserActive = !empty($dr['is_active']);
+
+                                    if ($isRevoked) {
+                                        $statusLabel = 'ملغي';
+                                        $statusStyle = 'background:var(--neg-soft, #fef2f2);color:var(--neg, #b91c1c);';
+                                    } elseif ($pwChanged) {
+                                        $statusLabel = 'باسورد اتغيّر';
+                                        $statusStyle = 'background:var(--warn-soft, #fffbeb);color:var(--warn, #b45309);';
+                                    } elseif (!$isUserActive) {
+                                        $statusLabel = 'المستخدم معطّل';
+                                        $statusStyle = 'background:var(--ink-100, #f1f5f9);color:var(--ink-600, #475569);';
+                                    } else {
+                                        $statusLabel = 'شغال';
+                                        $statusStyle = 'background:var(--pos-soft, #ecfdf5);color:var(--pos, #047857);';
+                                    }
+
+                                    $canRevoke = is_owner() && !$isRevoked;
+                                ?>
+                                <tr>
+                                    <td>
+                                        <strong><?= e($dr['full_name'] ?? ($dr['username'] ?? ('مستخدم #' . $dr['user_id']))) ?></strong>
+                                        <div style="font-size:12px;color:var(--ink-500);"><?= e($dr['username'] ?? '') ?></div>
+                                    </td>
+                                    <td><?= e($dr['device_name']) ?></td>
+                                    <td class="num" style="color:var(--ink-500);"><?= e($dr['created_at']) ?></td>
+                                    <td class="num" style="color:var(--ink-600);"><?= e($dr['last_used_at'] ?? '—') ?></td>
+                                    <td class="num" style="color:var(--ink-600);"><?= e($dr['last_ip'] ?? '—') ?></td>
+                                    <td style="text-align:center;">
+                                        <span class="ops-badge-status" style="<?= $statusStyle ?>"><?= $statusLabel ?></span>
+                                    </td>
+                                    <?php if (is_owner()): ?>
+                                        <td style="text-align:center;">
+                                            <?php if ($canRevoke): ?>
+                                                <form method="post" action="ops.php?tab=devices" style="display:inline;" onsubmit="return confirm('متأكد إنك عاوز تلغي الجهاز ده؟');">
+                                                    <input type="hidden" name="action" value="revoke_token">
+                                                    <input type="hidden" name="token_id" value="<?= (int) $dr['id'] ?>">
+                                                    <input type="hidden" name="csrf" value="<?= csrf_token() ?>">
+                                                    <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--neg);border-color:currentColor;">
+                                                        إلغاء
+                                                    </button>
+                                                </form>
+                                            <?php else: ?>
+                                                <span style="color:var(--ink-400);">—</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    <?php endif; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
             <?php endif; ?>
         <?php endif; ?>
