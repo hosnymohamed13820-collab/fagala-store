@@ -12,7 +12,7 @@ require_once __DIR__ . '/item_sales_lib.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $part = trim((string) ($_GET['part'] ?? ''));
-$allowedParts = ['stock', 'movement', 'profit'];
+$allowedParts = ['stock', 'movement', 'profit', 'monthly'];
 
 if (!in_array($part, $allowedParts, true)) {
     http_response_code(400);
@@ -22,7 +22,8 @@ if (!in_array($part, $allowedParts, true)) {
 
 require_login();
 
-if (!can('item_sales:' . $part)) {
+$permPart = ($part === 'monthly') ? 'movement' : $part;
+if (!can('item_sales:' . $permPart)) {
     http_response_code(403);
     echo json_encode(['error' => 'غير مصرح لك بعرض هذا الجزء'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -77,6 +78,15 @@ if ($part === 'movement') {
 
 if ($part === 'profit') {
     $data = isl_profit($fromDate, $toDate, $sto, $cat);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($part === 'monthly') {
+    $months = (int) ($_GET['months'] ?? 6);
+    $monthlyLimit = min(500, max(1, $limit));
+    $targetTo = $to ?: $toDate;
+    $data = isl_monthly($targetTo, $months, $sto, $cat, $by, $monthlyLimit);
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
 }

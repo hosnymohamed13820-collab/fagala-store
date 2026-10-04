@@ -11,6 +11,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/analysis_lib.php';
 
+// ثوابت تنبيه المرتفع العالي (بريف ١٠٦)
+const ISL_RET_WARN_PCT = 10;
+const ISL_RET_WARN_MIN = 3;
+
 /**
  * تحديد وحساب فترة التقرير وعدد الأيام.
  * الافتراضي: آخر ٣٠ يوماً شاملة اليوم.
@@ -177,7 +181,7 @@ function isl_balances_map(): array
  *
  * @param string $from تاريخ البداية (YYYY-MM-DD)
  * @param string $to تاريخ النهاية (YYYY-MM-DD)
- * @return array{by_store:array<int,array<int,array{qty:float,revenue:float,cost:float,zero_cost_lines:int,fallback_name:string,fallback_code:string}>>,by_item:array<int,array{qty:float,revenue:float,cost:float,zero_cost_lines:int,fallback_name:string,fallback_code:string}>}
+ * @return array{by_store:array<int,array<int,array{qty:float,revenue:float,cost:float,zero_cost_lines:int,sold_qty:float,ret_qty:float,ret_revenue:float,fallback_name:string,fallback_code:string}>>,by_item:array<int,array{qty:float,revenue:float,cost:float,zero_cost_lines:int,sold_qty:float,ret_qty:float,ret_revenue:float,fallback_name:string,fallback_code:string}>}
  */
 function isl_sales(string $from, string $to): array
 {
@@ -215,6 +219,13 @@ function isl_sales(string $from, string $to): array
                 END) AS revenue,
                 SUM(CASE WHEN h.doc_type IN ($inReturns) THEN -(l.quantity * l.cost_price) ELSE (l.quantity * l.cost_price) END) AS cost,
                 SUM(CASE WHEN l.cost_price = 0 THEN 1 ELSE 0 END) AS zero_cost_lines,
+                SUM(CASE WHEN h.doc_type NOT IN ($inReturns) THEN l.quantity ELSE 0 END) AS sold_qty,
+                SUM(CASE WHEN h.doc_type IN ($inReturns) THEN l.quantity ELSE 0 END) AS ret_qty,
+                SUM(CASE
+                    WHEN h.doc_type IN ($inReturns) THEN
+                        (l.quantity * l.unit_price * (CASE WHEN h.total_amount > 0 THEN (h.net_amount / h.total_amount) ELSE 1.0 END))
+                    ELSE 0
+                END) AS ret_revenue,
                 MAX(l.item_name) AS fallback_name,
                 MAX(l.item_code) AS fallback_code
             FROM br_invoice_lines l
@@ -243,6 +254,9 @@ function isl_sales(string $from, string $to): array
         $rev = (float) $r['revenue'];
         $cst = (float) $r['cost'];
         $zcl = (int) $r['zero_cost_lines'];
+        $soldQty = (float) $r['sold_qty'];
+        $retQty = (float) $r['ret_qty'];
+        $retRev = (float) $r['ret_revenue'];
         $fbName = (string) ($r['fallback_name'] ?? '');
         $fbCode = (string) ($r['fallback_code'] ?? '');
 
@@ -252,6 +266,9 @@ function isl_sales(string $from, string $to): array
                 'revenue'         => 0.0,
                 'cost'            => 0.0,
                 'zero_cost_lines' => 0,
+                'sold_qty'        => 0.0,
+                'ret_qty'         => 0.0,
+                'ret_revenue'     => 0.0,
                 'fallback_name'   => $fbName,
                 'fallback_code'   => $fbCode,
             ];
@@ -260,6 +277,9 @@ function isl_sales(string $from, string $to): array
         $byStore[$stoId][$iid]['revenue'] += $rev;
         $byStore[$stoId][$iid]['cost'] += $cst;
         $byStore[$stoId][$iid]['zero_cost_lines'] += $zcl;
+        $byStore[$stoId][$iid]['sold_qty'] += $soldQty;
+        $byStore[$stoId][$iid]['ret_qty'] += $retQty;
+        $byStore[$stoId][$iid]['ret_revenue'] += $retRev;
         if ($fbName !== '') $byStore[$stoId][$iid]['fallback_name'] = $fbName;
         if ($fbCode !== '') $byStore[$stoId][$iid]['fallback_code'] = $fbCode;
 
@@ -269,6 +289,9 @@ function isl_sales(string $from, string $to): array
                 'revenue'         => 0.0,
                 'cost'            => 0.0,
                 'zero_cost_lines' => 0,
+                'sold_qty'        => 0.0,
+                'ret_qty'         => 0.0,
+                'ret_revenue'     => 0.0,
                 'fallback_name'   => $fbName,
                 'fallback_code'   => $fbCode,
             ];
@@ -277,6 +300,9 @@ function isl_sales(string $from, string $to): array
         $byItem[$iid]['revenue'] += $rev;
         $byItem[$iid]['cost'] += $cst;
         $byItem[$iid]['zero_cost_lines'] += $zcl;
+        $byItem[$iid]['sold_qty'] += $soldQty;
+        $byItem[$iid]['ret_qty'] += $retQty;
+        $byItem[$iid]['ret_revenue'] += $retRev;
         if ($fbName !== '') $byItem[$iid]['fallback_name'] = $fbName;
         if ($fbCode !== '') $byItem[$iid]['fallback_code'] = $fbCode;
     }
@@ -450,15 +476,14 @@ function isl_movement(
     }
 
     $candidates = [];
+    $returnCandidates = [];
 
     foreach ($pool as $iid => $s) {
         $qty = (float) $s['qty'];
         $rev = (float) $s['revenue'];
-
-        // شرط الأكثر والأقل: اللي اتباع منه فعلاً (> 0)
-        if ($qty <= 0) {
-            continue;
-        }
+        $soldQty = (float) ($s['sold_qty'] ?? 0.0);
+        $retQty = (float) ($s['ret_qty'] ?? 0.0);
+        $retRev = (float) ($s['ret_revenue'] ?? 0.0);
 
         $catInfo = $catsMap[$iid] ?? null;
         $itemCatId = $catInfo ? (int) $catInfo['is1_id'] : 0;
@@ -486,19 +511,37 @@ function isl_movement(
         $profit = $rev - $cst;
         $margin = ($rev > 0) ? round(($profit / $rev) * 100, 1) : 0.0;
 
-        $candidates[] = [
-            'item_id'  => $iid,
-            'barcode'  => $barcode,
-            'name'     => $name,
-            'cat_id'   => $itemCatId,
-            'cat_name' => $catName,
-            'qty'      => $qty,
-            'revenue'  => round($rev, 2),
-            'cost'     => round($cst, 2),
-            'profit'   => round($profit, 2),
-            'margin'   => $margin,
-            'balance'  => $bal,
+        $retPct = ($soldQty > 0) ? round(($retQty / $soldQty) * 100, 1) : 0.0;
+        $retHigh = ($retPct >= ISL_RET_WARN_PCT && $retQty >= ISL_RET_WARN_MIN);
+
+        $rowBase = [
+            'item_id'     => $iid,
+            'barcode'     => $barcode,
+            'name'        => $name,
+            'cat_id'      => $itemCatId,
+            'cat_name'    => $catName,
+            'qty'         => $qty,
+            'sold_qty'    => $soldQty,
+            'ret_qty'     => $retQty,
+            'ret_revenue' => round($retRev, 2),
+            'ret_pct'     => $retPct,
+            'ret_high'    => $retHigh,
+            'revenue'     => round($rev, 2),
+            'cost'        => round($cst, 2),
+            'profit'      => round($profit, 2),
+            'margin'      => $margin,
+            'balance'     => $bal,
         ];
+
+        // شرط الأكثر والأقل: اللي اتباعت كميته الصافية فعلاً (> 0)
+        if ($qty > 0) {
+            $candidates[] = $rowBase;
+        }
+
+        // شرط الأكثر مرتجعاً: أي صنف ret_qty > 0 حتى لو صافيه صفر أو سالب
+        if ($retQty > 0) {
+            $returnCandidates[] = $rowBase;
+        }
     }
 
     // فرز الأكثر (تنازلي)
@@ -521,11 +564,23 @@ function isl_movement(
     });
     $bottom = array_slice($bottom, 0, $limit);
 
+    // فرز الأكثر مرتجعاً (تنازلي بـ ret_qty لو qty وبـ ret_revenue لو revenue)
+    $retKey = ($by === 'revenue') ? 'ret_revenue' : 'ret_qty';
+    $returns = $returnCandidates;
+    usort($returns, static function ($a, $b) use ($retKey) {
+        if ($b[$retKey] == $a[$retKey]) {
+            return $a['item_id'] <=> $b['item_id'];
+        }
+        return ($b[$retKey] > $a[$retKey]) ? 1 : -1;
+    });
+    $returns = array_slice($returns, 0, $limit);
+
     return [
-        'top'    => $top,
-        'bottom' => $bottom,
-        'by'     => $by,
-        'limit'  => $limit,
+        'top'     => $top,
+        'bottom'  => $bottom,
+        'returns' => $returns,
+        'by'      => $by,
+        'limit'   => $limit,
     ];
 }
 
@@ -536,7 +591,7 @@ function isl_movement(
  */
 function isl_movement_public(array $data): array
 {
-    foreach (['top', 'bottom'] as $k) {
+    foreach (['top', 'bottom', 'returns'] as $k) {
         foreach ($data[$k] ?? [] as $i => $r) {
             unset($data[$k][$i]['cost'], $data[$k][$i]['profit'], $data[$k][$i]['margin']);
         }
@@ -710,5 +765,272 @@ function isl_profit(
         'by_cat'          => $catList,
         'totals'          => $totals,
         'zero_cost_lines' => $totalZeroCost,
+    ];
+}
+
+/**
+ * تحليل مبيعات الأصناف شهرياً (بريف ١٠٦).
+ * استعلام واحد فقط على br_invoice_lines + br_invoices.
+ *
+ * @param string $to تاريخ النهاية (YYYY-MM-DD)
+ * @param int $months عدد الشهور (3, 6, 12 - غير ذلك 6)
+ * @param int|null $stoId رقم المخزن أو null لكل الفروع
+ * @param int|null $catId رقم القسم أو null لكل الأقسام
+ * @param string $by 'qty' أو 'revenue'
+ * @param int $limit أقصى عدد للأصناف
+ * @return array
+ */
+function isl_monthly(
+    string $to,
+    int $months = 6,
+    ?int $stoId = null,
+    ?int $catId = null,
+    string $by = 'qty',
+    int $limit = 100
+): array {
+    $toClean = trim($to);
+    if ($toClean === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $toClean)) {
+        $toClean = date('Y-m-d');
+    }
+
+    if (!in_array($months, [3, 6, 12], true)) {
+        $months = 6;
+    }
+
+    $by = ($by === 'revenue') ? 'revenue' : 'qty';
+    $limit = max(1, $limit);
+
+    // حساب الشهور المطلوبة بالتاريخ
+    $toTimestamp = strtotime($toClean);
+    $toY = (int) date('Y', $toTimestamp);
+    $toM = (int) date('m', $toTimestamp);
+    $toD = (int) date('d', $toTimestamp);
+    $daysInToMonth = (int) date('t', $toTimestamp);
+
+    $isPartial = ($toD < $daysInToMonth);
+
+    // تحديد الشهور المطلوبة من الأقدم للأحدث
+    $arMonths = [
+        1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+        5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+        9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
+    ];
+
+    $monthSlots = []; // ['2026-07' => ['ym'=>'2026-07', 'label'=>'...', 'partial'=>bool, 'until'=>int|null]]
+    for ($i = $months - 1; $i >= 0; $i--) {
+        // حساب السنة والشهر بإرجاع $i شهراً من ($toY, $toM)
+        $mTotal = ($toY * 12 + $toM) - $i;
+        $y = intdiv($mTotal - 1, 12);
+        $m = (($mTotal - 1) % 12) + 1;
+        $ym = sprintf('%04d-%02d', $y, $m);
+
+        $partial = false;
+        $until = null;
+        if ($i === 0 && $isPartial) {
+            $partial = true;
+            $until = $toD;
+        }
+
+        $mLabel = $arMonths[$m] . ' ' . $y;
+
+        $monthSlots[$ym] = [
+            'ym'            => $ym,
+            'key'           => $ym,
+            'label'         => $mLabel,
+            'partial'       => $partial,
+            'is_partial'    => $partial,
+            'until'         => $until,
+            'days_in_range' => $until,
+        ];
+    }
+
+    $firstYm = array_key_first($monthSlots);
+    $startDate = $firstYm . '-01';
+    $endDateExclusive = date('Y-m-d', strtotime($toClean . ' +1 day'));
+
+    $agentMap = isl_agent_store_map();
+
+    // أنواع المرتجع من الإعدادات
+    $returnTypes = array_values(array_filter(array_map(
+        'intval',
+        explode(',', (string) setting('analysis_sales_return_types', '7,17'))
+    ), static fn($x) => $x > 0));
+    if (empty($returnTypes)) {
+        $returnTypes = [7, 17];
+    }
+    $inReturns = implode(',', $returnTypes);
+
+    $pdo = db();
+
+    // استعلام واحد مجمّع لكل (agent_key, item_id, ym)
+    $sql = "SELECT
+                h.agent_key,
+                l.item_id,
+                DATE_FORMAT(h.invoice_date, '%Y-%m') AS ym,
+                SUM(CASE WHEN h.doc_type IN ($inReturns) THEN -l.quantity ELSE l.quantity END) AS net_qty,
+                SUM(CASE
+                    WHEN h.doc_type IN ($inReturns) THEN
+                        - (l.quantity * l.unit_price * (CASE WHEN h.total_amount > 0 THEN (h.net_amount / h.total_amount) ELSE 1.0 END))
+                    ELSE
+                        (l.quantity * l.unit_price * (CASE WHEN h.total_amount > 0 THEN (h.net_amount / h.total_amount) ELSE 1.0 END))
+                END) AS net_revenue
+            FROM br_invoice_lines l
+            JOIN br_invoices h
+              ON  h.agent_key = l.agent_key
+              AND h.sth_id    = l.sth_id
+              AND h.suffix    = l.suffix
+            WHERE h.invoice_date >= ? AND h.invoice_date < ?
+            GROUP BY h.agent_key, l.item_id, DATE_FORMAT(h.invoice_date, '%Y-%m')";
+
+    $st = $pdo->prepare($sql);
+    $st->execute([$startDate, $endDateExclusive]);
+
+    $activeMonthsSet = [];
+    $itemMonthlyData = []; // [item_id => ['ym' => val, ...]]
+
+    foreach ($st as $r) {
+        $ak = (string) ($r['agent_key'] ?? '');
+        $sid = $agentMap[$ak] ?? null;
+        if ($sid === null) {
+            continue;
+        }
+
+        // تطبيق فلتر الفرع
+        if ($stoId !== null && $stoId > 0 && $sid !== $stoId) {
+            continue;
+        }
+
+        $ym = (string) $r['ym'];
+        if (!isset($monthSlots[$ym])) {
+            continue;
+        }
+
+        $activeMonthsSet[$ym] = true;
+
+        $iid = (int) $r['item_id'];
+        $val = ($by === 'revenue') ? (float) $r['net_revenue'] : (float) $r['net_qty'];
+
+        if (!isset($itemMonthlyData[$iid][$ym])) {
+            $itemMonthlyData[$iid][$ym] = 0.0;
+        }
+        $itemMonthlyData[$iid][$ym] += $val;
+    }
+
+    // تصفية الشهور المعروضة: الشهر الذي ليس فيه أي فاتورة في النطاق بعد فلتر الفرع لا يظهر
+    $displayMonths = [];
+    foreach ($monthSlots as $ym => $info) {
+        if (isset($activeMonthsSet[$ym])) {
+            $displayMonths[] = $info;
+        }
+    }
+
+    // تحديد آخر شهرين كاملين لحساب الاتجاه
+    $fullMonths = [];
+    foreach ($displayMonths as $mInfo) {
+        if (empty($mInfo['partial'])) {
+            $fullMonths[] = $mInfo['ym'];
+        }
+    }
+    $hasTwoFull = count($fullMonths) >= 2;
+    $prevFullYm = $hasTwoFull ? $fullMonths[count($fullMonths) - 2] : null;
+    $lastFullYm = $hasTwoFull ? $fullMonths[count($fullMonths) - 1] : null;
+
+    // جلب الخرائط القائمة
+    $itemsMap = isl_items_map();
+    $catsData = isl_categories_map();
+    $catsMap  = $catsData['by_item'];
+    $balances = isl_balances_map();
+
+    $candidateRows = [];
+
+    foreach ($itemMonthlyData as $iid => $byM) {
+        // فلتر القسم
+        $catInfo = $catsMap[$iid] ?? null;
+        $itemCatId = $catInfo ? (int) $catInfo['is1_id'] : 0;
+        $catName = $catInfo ? $catInfo['cat_name'] : 'بدون قسم';
+
+        if ($catId !== null && $catId > 0 && $itemCatId !== $catId) {
+            continue;
+        }
+
+        // حساب إجمالي الشهور المعروضة
+        $total = 0.0;
+        $byMonthClean = [];
+        foreach ($displayMonths as $mInfo) {
+            $ym = $mInfo['ym'];
+            $v = (float) ($byM[$ym] ?? 0.0);
+            $total += $v;
+            $byMonthClean[$ym] = ($by === 'revenue') ? round($v, 2) : (float)$v;
+        }
+
+        // الصنف الذي إجماليه <= 0 مايطلعش
+        if ($total <= 0) {
+            continue;
+        }
+
+        // حساب الاتجاه
+        $trend = null;
+        if ($hasTwoFull && $prevFullYm !== null && $lastFullYm !== null) {
+            $prevVal = (float) ($byM[$prevFullYm] ?? 0.0);
+            $lastVal = (float) ($byM[$lastFullYm] ?? 0.0);
+
+            if ($prevVal <= 0 && $lastVal > 0) {
+                $trend = 'new';
+            } elseif ($lastVal >= ($prevVal * 1.25)) {
+                $trend = 'up';
+            } elseif ($lastVal <= ($prevVal * 0.75)) {
+                $trend = 'down';
+            } else {
+                $trend = 'flat';
+            }
+        }
+
+        $master = $itemsMap[$iid] ?? null;
+        $name = $master && $master['name'] !== '' ? $master['name'] : "صنف #$iid";
+        $barcode = $master && $master['barcode'] !== '' ? $master['barcode'] : "—";
+
+        // الرصيد
+        $bal = 0.0;
+        if ($stoId !== null && $stoId > 0) {
+            $bal = (float) ($balances[$stoId][$iid] ?? 0.0);
+        } else {
+            foreach ($balances as $stBal) {
+                $bal += (float) ($stBal[$iid] ?? 0.0);
+            }
+        }
+
+        $candidateRows[] = [
+            'item_id'  => $iid,
+            'barcode'  => $barcode,
+            'name'     => $name,
+            'cat_id'   => $itemCatId,
+            'cat_name' => $catName,
+            'by_month' => $byMonthClean,
+            'months'   => $byMonthClean,
+            'total'    => ($by === 'revenue') ? round($total, 2) : (float)$total,
+            'trend'    => $trend,
+            'balance'  => $bal,
+        ];
+    }
+
+    $totalItems = count($candidateRows);
+
+    // ترتيب الصفوف بالإجمالي تنازلي
+    usort($candidateRows, static function ($a, $b) {
+        if ($b['total'] == $a['total']) {
+            return $a['item_id'] <=> $b['item_id'];
+        }
+        return ($b['total'] > $a['total']) ? 1 : -1;
+    });
+
+    $pagedRows = array_slice($candidateRows, 0, $limit);
+
+    return [
+        'months'      => $displayMonths,
+        'rows'        => $pagedRows,
+        'items'       => $pagedRows,
+        'by'          => $by,
+        'limit'       => $limit,
+        'total_items' => $totalItems,
     ];
 }
