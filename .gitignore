@@ -13,8 +13,8 @@ project_users.json
 *.log
 
 # رفع المستخدمين
-uploads/
-site/uploads/
+**/uploads/*
+!**/uploads/.htaccess
 
 # مؤقتات
 *.tmp
