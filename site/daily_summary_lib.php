@@ -310,7 +310,11 @@ function ds_maybe_send(PDO $pdo): void
         if ((string) setting('daily_summary_on', '0') !== '1') {
             return;
         }
-        if ((int) date('G') < (int) setting('daily_summary_hour', '23')) {
+        // الساعة 24 = «12 بالليل بالظبط»: بيتبعت أول دقيقة في اليوم الجديد،
+        // والملخص بيبقى لليوم اللي لسه خلص (إمبارح) مش لليوم الجديد الفاضي.
+        $hour     = (int) setting('daily_summary_hour', '23');
+        $midnight = $hour === 24;
+        if (!$midnight && (int) date('G') < $hour) {
             return;
         }
 
@@ -324,7 +328,7 @@ function ds_maybe_send(PDO $pdo): void
 
         // 🔴 مرة واحدة في اليوم حتى لو وركرين اشتغلوا في نفس الثانية:
         //    اللي يكسب الـUPDATE هو اللي يبعت، والتاني rowCount = 0 فيرجع.
-        $today = date('Y-m-d');
+        $today = $midnight ? date('Y-m-d', strtotime('-1 day')) : date('Y-m-d');
         $pdo->prepare(
             "INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('daily_summary_last', '')"
         )->execute();

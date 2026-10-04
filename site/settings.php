@@ -105,7 +105,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         try {
             $on   = !empty($_POST['on']) && $_POST['on'] === '1' ? '1' : '0';
-            $hour = max(18, min(23, (int) ($_POST['hour'] ?? 23)));
+            // 18–23 = الساعة دي من نفس اليوم · 24 = 12 بالليل بالظبط (ملخص اليوم اللي خلص)
+            $hour = (int) ($_POST['hour'] ?? 24);
+            if ($hour !== 24) {
+                $hour = max(18, min(23, $hour));
+            }
             // المستلمين: أرقام بس، ويوزرز موجودين فعلاً (استعلام واحد)
             $ids = array_values(array_unique(array_filter(
                 array_map('intval', explode(',', (string) ($_POST['users'] ?? ''))),
@@ -441,8 +445,8 @@ $dsUsers = $pdo->query(
     <div class="form-row">
         <label for="dsHour">يتبعت الساعة</label>
         <select id="dsHour" style="max-width:160px;" disabled>
-            <?php for ($h = 18; $h <= 23; $h++): ?>
-                <option value="<?= $h ?>" <?= $h === $dsHour ? 'selected' : '' ?>><?= $h - 12 ?> بالليل (<?= $h ?>:00)</option>
+            <?php for ($h = 18; $h <= 24; $h++): ?>
+                <option value="<?= $h ?>" <?= $h === $dsHour ? 'selected' : '' ?>><?= $h - 12 ?> بالليل (<?= $h === 24 ? '00' : $h ?>:00)</option>
             <?php endfor; ?>
         </select>
     </div>

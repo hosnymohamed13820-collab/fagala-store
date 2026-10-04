@@ -25,7 +25,8 @@ if (!can('reports:daily') && !in_array((int) current_user()['id'], $dsUsers, tru
 // الافتراضي: النهاردة لو عدّينا ساعة الإرسال، وإلا إمبارح (اليوم لسه مكمّلش)
 $date = trim((string) ($_GET['date'] ?? ''));
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || strtotime($date) === false) {
-    $date = (int) date('G') >= (int) setting('daily_summary_hour', '23')
+    $dsSendHour = (int) setting('daily_summary_hour', '23');
+    $date = ($dsSendHour === 24 || (int) date('G') >= $dsSendHour)
         ? date('Y-m-d')
         : date('Y-m-d', strtotime('-1 day'));
 }
