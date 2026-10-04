@@ -16,6 +16,9 @@
 // بيتفرّج بس ومابيغيّرش سلوك أي صفحة (شوف القواعد في errlog_lib.php).
 require_once __DIR__ . '/errlog_lib.php';
 errlog_install();
+// قياس السرعة — بيسجّل أداء كل صفحة من غير ما يغيّر سلوكها (بريف ٩٩).
+require_once __DIR__ . '/reqlog_lib.php';
+reqlog_install();
 require_once __DIR__ . '/config.php';
 
 // ===== بدء الجلسة بإعدادات آمنة =====
@@ -110,6 +113,7 @@ function all_modules(): array
         'definitions'   => ['label' => 'التعريفات',         'icon' => 'ti-adjustments',     'url' => 'definitions.php'],
         'settings'      => ['label' => 'الإعدادات',         'icon' => 'ti-settings',         'url' => 'settings.php'],
         'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
+        'ops'           => ['label' => 'المراقبة',         'icon' => 'ti-chart-bar',        'url' => 'ops.php'],
         'sms_inbox'     => ['label' => 'رسايل إنستاباي',   'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
     ];
 }
@@ -176,6 +180,9 @@ function module_parts(): array
             'stock'    => 'حالة الرصيد',
             'movement' => 'حركة البيع',
             'profit'   => 'الأرباح',
+        ],
+        'ops' => [
+            'perf' => 'السرعة',
         ],
     ];
 }
