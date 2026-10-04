@@ -169,6 +169,7 @@ if [ -n "$PHP_BIN" ]; then
     "$PHP_BIN" tests/finance/test_salary.php > "$LOG/sal.log" 2>&1         && tail -1 "$LOG/sal.log" || { cat "$LOG/sal.log"; FAIL=1; }
     "$PHP_BIN" tests/finance/test_distribution.php > "$LOG/dist.log" 2>&1 && tail -1 "$LOG/dist.log" || { cat "$LOG/dist.log"; FAIL=1; }
     "$PHP_BIN" tests/finance/test_custody.php > "$LOG/cust.log" 2>&1      && tail -1 "$LOG/cust.log" || { cat "$LOG/cust.log"; FAIL=1; }
+    "$PHP_BIN" tests/finance/test_treasury.php > "$LOG/tres.log" 2>&1     && tail -1 "$LOG/tres.log" || { cat "$LOG/tres.log"; FAIL=1; }
 else
     echo "  ❌ php مش ملقي — اختبارات منطق الفلوس ما اتفحصتش."
     echo "     حط المسار الكامل في PHP_BIN، أو ضيف فولدر php.exe للـPATH."
