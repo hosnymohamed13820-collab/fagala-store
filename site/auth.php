@@ -182,7 +182,8 @@ function module_parts(): array
             'profit'   => 'الأرباح',
         ],
         'ops' => [
-            'perf' => 'السرعة',
+            'perf'  => 'السرعة',
+            'audit' => 'سجل العمليات',
         ],
     ];
 }
