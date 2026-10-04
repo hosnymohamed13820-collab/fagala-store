@@ -422,22 +422,25 @@ $dsUsers = $pdo->query(
      WHERE u.is_active = 1 ORDER BY r.is_owner DESC, u.full_name'
 )->fetchAll();
 ?>
-<div class="card" style="margin-bottom:18px;" id="dailySummaryCard">
-    <h3 style="margin-top:0;margin-bottom:6px;font-size:16px;color:var(--ink-900);">الملخص اليومي</h3>
+<div class="card ds-locked" style="margin-bottom:18px;" id="dailySummaryCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
+        <h3 style="margin:0;font-size:16px;color:var(--ink-900);">الملخص اليومي</h3>
+        <button type="button" class="fld-edit" id="dsEdit" title="مقفول عشان محدش يغيّر حاجة بالغلط — اضغط عشان تعدّل">تعديل</button>
+    </div>
     <div class="fld-hint" style="margin-bottom:14px;">
         إشعار كل ليلة: كل فرع باع كام مقارنة بنفس اليوم الأسبوع اللي فات، والأكتر بيعاً، والأصناف اللي خلصت. أي تغيير هنا بيتحفظ لوحده.
         · <a href="daily_summary.php">شوف ملخص النهاردة</a>
     </div>
     <div class="form-row">
         <div class="toggle-wrap">
-            <input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?>>
+            <input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?> disabled>
             <label for="dsOn" class="st-track"><span class="st-knob"></span></label>
             <span class="toggle-status" id="dsOnTxt"><?= $dsOn ? 'شغّال' : 'مقفول' ?></span>
         </div>
     </div>
     <div class="form-row">
         <label for="dsHour">يتبعت الساعة</label>
-        <select id="dsHour" style="max-width:160px;">
+        <select id="dsHour" style="max-width:160px;" disabled>
             <?php for ($h = 18; $h <= 23; $h++): ?>
                 <option value="<?= $h ?>" <?= $h === $dsHour ? 'selected' : '' ?>><?= $h - 12 ?> بالليل (<?= $h ?>:00)</option>
             <?php endfor; ?>
@@ -446,8 +449,9 @@ $dsUsers = $pdo->query(
     <div class="ds-users-lbl">يوصل لمين</div>
     <div class="ds-users">
         <?php foreach ($dsUsers as $u): ?>
-            <label class="ds-u">
-                <input type="checkbox" class="ds-user" value="<?= (int) $u['id'] ?>" <?= in_array((int) $u['id'], $dsSel, true) ? 'checked' : '' ?>>
+            <?php $dsChecked = in_array((int) $u['id'], $dsSel, true); ?>
+            <label class="ds-u<?= $dsChecked ? '' : ' ds-off' ?>">
+                <input type="checkbox" class="ds-user" value="<?= (int) $u['id'] ?>" <?= $dsChecked ? 'checked' : '' ?> disabled>
                 <span class="ds-n"><?= e($u['full_name']) ?></span>
                 <span class="ds-r"><?= e((string) $u['role_name']) ?></span>
             </label>
@@ -461,6 +465,11 @@ $dsUsers = $pdo->query(
         .ds-u input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent-text); }
         .ds-n { font-size:14px; color:var(--ink-900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .ds-r { font-size:12px; color:var(--ink-500); flex:none; }
+        /* مقفول: بيظهر اللي بيوصلهم بس، ومفيش حاجة تتداس */
+        .ds-locked .ds-u.ds-off { display:none; }
+        .ds-locked .ds-u { cursor:default; }
+        .ds-locked .ds-u:hover { background:none; }
+        .ds-locked .st-track { opacity:.6; cursor:default; }
     </style>
 </div>
 <script>
@@ -491,9 +500,20 @@ $dsUsers = $pdo->query(
             if (typeof fgToast === 'function') fgToast('تعذّر الاتصال بالسيرفر', 'err');
         });
     }
-    card.addEventListener('change', function () {
+    card.addEventListener('change', function (ev) {
+        if (card.classList.contains('ds-locked')) return;
         document.getElementById('dsOnTxt').textContent = document.getElementById('dsOn').checked ? 'شغّال' : 'مقفول';
+        if (ev.target.classList.contains('ds-user')) {
+            ev.target.closest('.ds-u').classList.toggle('ds-off', !ev.target.checked);
+        }
         save();
+    });
+    // مقفول افتراضياً — «تعديل» يفتح، و«قفل» يرجّعه (اللي اتغيّر اتحفظ خلاص)
+    var btn = document.getElementById('dsEdit');
+    btn.addEventListener('click', function () {
+        var open = card.classList.toggle('ds-locked') === false;
+        card.querySelectorAll('#dsOn, #dsHour, .ds-user').forEach(function (f) { f.disabled = !open; });
+        btn.textContent = open ? 'قفل' : 'تعديل';
     });
 })();
 </script>
