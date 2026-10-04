@@ -45,7 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
                     $accTxt = $acc !== null ? (int)$acc : '—';
                     $errTxt = $geoErr !== '' ? $geoErr : '—';
                     $uaTxt  = mb_substr($geoUa, 0, 150);
-                    errlog_record('geo', "رفض بصمة: موظف #{$employee['id']} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
+                    $distTxt = isset($geo['dist']) ? (int)$geo['dist'] . ' م من الفرع (المسموح ' . (int)($geo['radius'] ?? 0) . ')' : 'المسافة مش معروفة';
+                    errlog_record('geo', "رفض بصمة: موظف #{$employee['id']} · {$distTxt} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
                     throw new RuntimeException($reason);
                 }
                 $geo['lat'] = $lat; $geo['lng'] = $lng; $geo['acc'] = $acc;
