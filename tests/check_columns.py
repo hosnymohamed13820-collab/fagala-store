@@ -102,8 +102,8 @@ def parse_schema(local_dir):
                 if m_col:
                     tables[current_tbl].add(m_col.group(1).lower())
 
-    # قراءة كل ملفات local/*.sql التانية
-    for fpath in sorted(local_dir.glob('*.sql')):
+    # قراءة كل ملفات local/*.sql التانية + local/migrations/*.sql (من بريف ١٠٨ الـSQL الجديد هناك)
+    for fpath in sorted(local_dir.glob('*.sql')) + sorted(local_dir.glob('migrations/*.sql')):
         if fpath.name == 'schema_live.sql':
             continue
         with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:

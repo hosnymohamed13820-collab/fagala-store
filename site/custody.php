@@ -54,6 +54,7 @@ if (!empty($u['branch_id'])) {
 
 // الموظف المختار لعهدة الموظف
 $allEmployees = $pdo->query('SELECT id, full_name, job_title, branch_id FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+$allSuppliers = $pdo->query('SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
 
 // جلب موظف المستخدم الحالي (إن وُجد)
 $uEmpStmt = $pdo->prepare("SELECT id, full_name FROM employees WHERE user_id = ? AND is_active = 1 LIMIT 1");
@@ -104,7 +105,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $desc      = trim($_POST['description'] ?? '');
                 $amount    = (float) ($_POST['amount'] ?? 0);
                 $entryCodeId = ($_POST['entry_code_id'] ?? '') !== '' ? (int) $_POST['entry_code_id'] : null;
-                if ($desc === '') throw new RuntimeException('بيان المصروف مطلوب.');
+                $lineType    = trim($_POST['line_type'] ?? 'expense');
+                if (!in_array($lineType, ['expense', 'advance', 'supplier'], true)) {
+                    $lineType = 'expense';
+                }
+                $advEmployeeId = (!empty($_POST['adv_employee_id'])) ? (int) $_POST['adv_employee_id'] : null;
+                $supplierId    = (!empty($_POST['supplier_id'])) ? (int) $_POST['supplier_id'] : null;
+
+                if ($lineType === 'expense' && $desc === '') {
+                    throw new RuntimeException('بيان المصروف مطلوب.');
+                }
 
                 $stC = $pdo->prepare("SELECT branch_id, employee_id FROM branch_custody WHERE id=?");
                 $stC->execute([$custodyId]);
@@ -117,8 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الفرع.');
                 }
 
-                add_custody_expense($custodyId, $date, $desc, $amount, $uid, $entryCodeId);
-                $flash = 'تم تسجيل المصروف.';
+                add_custody_expense($custodyId, $date, $desc, $amount, $uid, $entryCodeId, $lineType, $advEmployeeId, $supplierId);
+                $flash = 'تم تسجيل العملية.';
                 if (!empty($cRow['employee_id'])) {
                     $prgTarget = 'custody.php?tab=employee&emp=' . (int)$cRow['employee_id'];
                 } elseif (!empty($cRow['branch_id'])) {
@@ -342,9 +352,13 @@ require_once __DIR__ . '/includes/header.php';
         $empCustody = current_custody_for_employee($selectedEmpId);
         if ($empCustody) {
             $stExp = $pdo->prepare(
-                "SELECT cl.*, ec.name AS entry_code_name
+                "SELECT cl.*, ec.name AS entry_code_name,
+                        emp.full_name AS adv_emp_name,
+                        supp.name AS supp_name
                  FROM custody_lines cl
                  LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
+                 LEFT JOIN employees emp ON emp.id = cl.employee_id
+                 LEFT JOIN suppliers supp ON supp.id = cl.supplier_id
                  WHERE cl.custody_id = ?
                  ORDER BY cl.id DESC"
             );
@@ -449,17 +463,43 @@ require_once __DIR__ . '/includes/header.php';
         <div class="grid2">
             <!-- المصروفات -->
             <div class="card">
-                <div class="section-title">المصروفات</div>
+                <div class="section-title">اللي اتصرف من العهدة</div>
                 <?php if ($canEditThisEmpCustody): ?>
                 <form method="post" class="form-inline" style="margin-bottom:16px;">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="add_expense">
                     <input type="hidden" name="custody_id" value="<?= (int)$empCustody['id'] ?>">
-                    <div class="fld" style="max-width:150px;">
+                    <div class="fld" style="max-width:130px;">
+                        <label>النوع</label>
+                        <select name="line_type" id="empLineType" onchange="toggleCustodyLineType(this.value)">
+                            <option value="expense">مصروف</option>
+                            <option value="advance">سلفة لموظف</option>
+                            <option value="supplier">دفعة لمورد</option>
+                        </select>
+                    </div>
+                    <div class="fld" id="fldEntryCode" style="max-width:150px;">
                         <label>القيد</label>
                         <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
                     </div>
-                    <div class="fld"><label>البيان</label><input type="text" name="description" required aria-label="البيان"></div>
+                    <div class="fld" id="fldAdvEmployee" style="max-width:160px;display:none;">
+                        <label>الموظف</label>
+                        <select name="adv_employee_id">
+                            <option value="">— اختر الموظف —</option>
+                            <?php foreach ($allEmployees as $em): ?>
+                                <option value="<?= (int)$em['id'] ?>"><?= e($em['full_name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="fld" id="fldSupplier" style="max-width:160px;display:none;">
+                        <label>المورد</label>
+                        <select name="supplier_id">
+                            <option value="">— اختر المورد —</option>
+                            <?php foreach ($allSuppliers as $sp): ?>
+                                <option value="<?= (int)$sp['id'] ?>"><?= e($sp['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="fld"><label>البيان</label><input type="text" name="description" id="empLineDesc" required aria-label="البيان" placeholder="اختياري للسلف والموردين"></div>
                     <div class="fld" style="max-width:110px;"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
                     <div class="fld" style="max-width:140px;"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
                     <button type="submit" class="btn btn-sm">إضافة</button>
@@ -474,13 +514,30 @@ require_once __DIR__ . '/includes/header.php';
                     <?php foreach ($empExpenses as $ex): ?>
                         <tr>
                             <td><?= e($ex['expense_date']) ?></td>
-                            <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                            <td><?php
+                                $lt = $ex['line_type'] ?? 'expense';
+                                if ($lt === 'advance') {
+                                    echo '<span class="fchip fchip-warn">سلفة: ' . e($ex['adv_emp_name'] ?: 'موظف') . '</span>';
+                                } elseif ($lt === 'supplier') {
+                                    echo '<span class="fchip fchip-mute">مورد: ' . e($ex['supp_name'] ?: 'مورد') . '</span>';
+                                } else {
+                                    echo !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>';
+                                }
+                            ?></td>
                             <td><?= e($ex['description']) ?></td>
                             <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                             <?php if ($canEditThisEmpCustody): ?>
                             <td>
+                                <?php
+                                    $delMsg = "إلغاء المصروف ده؟\n\n" . $ex['description'] . " — " . money_fmt((float)$ex['amount']) . "\n\nالمبلغ هيرجع لخزينة عهدة الموظف.";
+                                    if (($ex['line_type'] ?? '') === 'advance') {
+                                        $delMsg = "إلغاء السلفة دي؟\n\n" . $ex['description'] . " — " . money_fmt((float)$ex['amount']) . "\n\nالسلفة هتتلغي ومش هتنزل على الموظف.";
+                                    } elseif (($ex['line_type'] ?? '') === 'supplier') {
+                                        $delMsg = "إلغاء دفعة المورد دي؟\n\n" . $ex['description'] . " — " . money_fmt((float)$ex['amount']) . "\n\nالمبلغ هيرجع لخزينة عهدة الموظف.";
+                                    }
+                                ?>
                                 <form method="post" style="margin:0;"
-                                      data-confirm="إلغاء المصروف ده؟&#10;&#10;<?= e($ex['description']) ?> — <?= e(money_fmt((float)$ex['amount'])) ?>&#10;&#10;المبلغ هيرجع لخزينة عهدة الموظف." data-confirm-danger>
+                                      data-confirm="<?= e($delMsg) ?>" data-confirm-danger>
                                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="delete_expense">
                                     <input type="hidden" name="line_id" value="<?= (int)$ex['id'] ?>">
@@ -960,6 +1017,25 @@ require_once __DIR__ . '/includes/header.php';
                 return false;
             }
         });
+    }
+
+    function toggleCustodyLineType(val) {
+        const fldEntry = document.getElementById('fldEntryCode');
+        const fldEmp   = document.getElementById('fldAdvEmployee');
+        const fldSupp  = document.getElementById('fldSupplier');
+        const descInp  = document.getElementById('empLineDesc');
+
+        if (fldEntry) fldEntry.style.display = (val === 'expense') ? '' : 'none';
+        if (fldEmp)   fldEmp.style.display   = (val === 'advance') ? '' : 'none';
+        if (fldSupp)  fldSupp.style.display  = (val === 'supplier') ? '' : 'none';
+
+        if (descInp) {
+            if (val === 'expense') {
+                descInp.required = true;
+            } else {
+                descInp.required = false;
+            }
+        }
     }
 </script>
 

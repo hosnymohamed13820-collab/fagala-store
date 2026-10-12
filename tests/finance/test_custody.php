@@ -421,6 +421,153 @@ try {
         "الفرق الإجمالي: {$netMoneyFlow}"
     );
 
+    // -----------------------------------------------------------------
+    // 10) بريف 112: سلف الموظفين ودفعات الموردين من عهدة الموظف
+    // -----------------------------------------------------------------
+    $empAdvBeneficiaryId = 990113;
+    $pdo->prepare(
+        "INSERT INTO employees (id, full_name, branch_id, is_active) VALUES (?, 'موظف مستلف اختبار ١١٢', ?, 1)"
+    )->execute([$empAdvBeneficiaryId, $branchId]);
+
+    // تجهيز مورد وحسابه في الشجرة
+    $supp112Id = 990112;
+    $pdo->prepare(
+        "INSERT INTO suppliers (id, name, is_active) VALUES (?, 'مورد اختبار ١١٢', 1)"
+    )->execute([$supp112Id]);
+
+    $stSuppParent = $pdo->query("SELECT id FROM accounts WHERE dynamic_src = 'suppliers' LIMIT 1");
+    $suppParentId = (int) $stSuppParent->fetchColumn();
+    $suppAccId = 990112;
+    $pdo->prepare(
+        "INSERT INTO accounts (id, parent_id, name, type, is_active, src_table, src_id)
+         VALUES (?, ?, 'مورد اختبار ١١٢', 'liability', 1, 'suppliers', ?)"
+    )->execute([$suppAccId, $suppParentId ?: null, $supp112Id]);
+
+    // عهدة موظف جديدة نظيفة لاختبار سيناريو بريف 112
+    $empCustOwnerId = 990114;
+    $pdo->prepare(
+        "INSERT INTO employees (id, full_name, branch_id, is_active) VALUES (?, 'مسؤول عهدة اختبار ١١٢', ?, 1)"
+    )->execute([$empCustOwnerId, $branchId]);
+
+    // الحالة 1: إذن صرف 1000 لعهدة الموظف
+    issue_employee_disbursement_order($empCustOwnerId, 1000.0, '2026-10-12', 'عهدة بريف 112', 1);
+    $stC112 = $pdo->prepare("SELECT * FROM branch_custody WHERE employee_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1");
+    $stC112->execute([$empCustOwnerId]);
+    $c112Row = $stC112->fetch(PDO::FETCH_ASSOC);
+    $c112Id = (int) $c112Row['id'];
+
+    $ok112_1 = ($c112Id > 0) && num_eq((float)$c112Row['closing_balance'], 1000.0);
+    assert_case('١١٢٠١ — عهدة موظف: إذن صرف 1000 يفتح عهدة برصيد 1000', $ok112_1);
+
+    // الحالة 7: محاولة صرف سلفة على عهدة فرع ← ترمي Exception
+    $branchCustodyBlocked = false;
+    try {
+        add_custody_expense($custodyId, '2026-10-12', 'سلفة غير مسموحة', 100.0, 1, null, 'advance', $empAdvBeneficiaryId);
+    } catch (Throwable $e) {
+        $branchCustodyBlocked = true;
+    }
+    assert_case('١١٢٠٧ — حارس عهدة الفرع: رفض صرف سلفة لموظف من عهدة الفرع', $branchCustodyBlocked);
+
+    // الحالة 8: محاولة صرف لموظف أو مورد غير موجود ← ترمي Exception
+    $missingEntitiesBlocked = false;
+    try {
+        add_custody_expense($c112Id, '2026-10-12', 'موظف وهمي', 100.0, 1, null, 'advance', 888888);
+    } catch (Throwable $e) {
+        try {
+            add_custody_expense($c112Id, '2026-10-12', 'مورد وهمي', 100.0, 1, null, 'supplier', null, 888888);
+        } catch (Throwable $e2) {
+            $missingEntitiesBlocked = true;
+        }
+    }
+    assert_case('١١٢٠٨ — حراس التحقق: رفض صرف لموظف أو مورد غير موجود', $missingEntitiesBlocked);
+
+    // الحالة 2: صرف سلفة لموظف تاني (200 ج) من العهدة
+    $mainBalBeforeAdv = get_t_bal($pdo, $mainTreasuryId);
+    $advLine1 = add_custody_expense($c112Id, '2026-10-12', '', 200.0, 1, null, 'advance', $empAdvBeneficiaryId);
+    $c112Row2 = get_c_row($pdo, $c112Id);
+    $mainBalAfterAdv = get_t_bal($pdo, $mainTreasuryId);
+
+    $stAdvCheck = $pdo->prepare("SELECT COUNT(*) FROM employee_advances WHERE employee_id = ?");
+    $stAdvCheck->execute([$empAdvBeneficiaryId]);
+    $advCount = (int) $stAdvCheck->fetchColumn();
+
+    $stLedgerCheck = $pdo->prepare("SELECT COUNT(*) FROM employee_ledger WHERE employee_id = ?");
+    $stLedgerCheck->execute([$empAdvBeneficiaryId]);
+    $ledgerCount = (int) $stLedgerCheck->fetchColumn();
+
+    $stLineRow = $pdo->prepare("SELECT * FROM custody_lines WHERE id = ?");
+    $stLineRow->execute([$advLine1]);
+    $advLineRow = $stLineRow->fetch(PDO::FETCH_ASSOC);
+
+    $ok112_2 = num_eq((float)$c112Row2['closing_balance'], 800.0)
+        && num_eq($mainBalAfterAdv, $mainBalBeforeAdv)
+        && ($advCount === 0)
+        && ($ledgerCount === 0)
+        && (($advLineRow['line_type'] ?? '') === 'advance')
+        && ((int)$advLineRow['employee_id'] === $empAdvBeneficiaryId)
+        && str_contains($advLineRow['description'], 'موظف مستلف');
+    assert_case('١١٢٠٢ — عهدة موظف: صرف سلفة 200 لموظف ينزل رصيد العهدة لـ 800 دون المساس بالخزينة الرئيسية أو شؤون العاملين', $ok112_2);
+
+    // الحالة 3: صرف دفعة لمورد (300 ج) من العهدة
+    $mainBalBeforeSupp = get_t_bal($pdo, $mainTreasuryId);
+    $suppLine1 = add_custody_expense($c112Id, '2026-10-12', '', 300.0, 1, null, 'supplier', null, $supp112Id);
+    $c112Row3 = get_c_row($pdo, $c112Id);
+    $mainBalAfterSupp = get_t_bal($pdo, $mainTreasuryId);
+
+    $stLineSupp = $pdo->prepare("SELECT * FROM custody_lines WHERE id = ?");
+    $stLineSupp->execute([$suppLine1]);
+    $suppLineRow = $stLineSupp->fetch(PDO::FETCH_ASSOC);
+
+    $ok112_3 = num_eq((float)$c112Row3['closing_balance'], 500.0)
+        && num_eq($mainBalAfterSupp, $mainBalBeforeSupp)
+        && (($suppLineRow['line_type'] ?? '') === 'supplier')
+        && ((int)$suppLineRow['supplier_id'] === $supp112Id)
+        && ((int)$suppLineRow['entry_code_id'] === $suppAccId)
+        && str_contains($suppLineRow['description'], 'مورد اختبار');
+    assert_case('١١٢٠٣ — عهدة موظف: صرف دفعة لمورد 300 ينزل رصيد العهدة لـ 500 ويربط بحساب الشجرة دون المساس بالخزينة الرئيسية', $ok112_3);
+
+    // الحالة 4: مسح سلفة قبل التقديم
+    delete_custody_expense($advLine1, 1);
+    $c112Row4 = get_c_row($pdo, $c112Id);
+    $ok112_4 = num_eq((float)$c112Row4['closing_balance'], 700.0) && num_eq((float)$c112Row4['total_expenses'], 300.0);
+    assert_case('١١٢٠٤ — عهدة موظف: مسح سلفة قبل التقديم يعيد رصيد العهدة لـ 700', $ok112_4);
+
+    // الحالة 5: إعادة صرف السلفة (200 ج) + تقديم العهدة للجرد
+    $advLine2 = add_custody_expense($c112Id, '2026-10-12', '', 200.0, 1, null, 'advance', $empAdvBeneficiaryId);
+    $c112Row5 = get_c_row($pdo, $c112Id);
+    submit_custody_count($c112Id, 500.0, date('Y-m-d'), 1);
+    $c112Row5Sub = get_c_row($pdo, $c112Id);
+    $ok112_5 = num_eq((float)$c112Row5['closing_balance'], 500.0)
+        && ($c112Row5Sub['status'] === 'pending_review')
+        && num_eq((float)$c112Row5Sub['counted_cash'], 500.0);
+    assert_case('١١٢٠٥ — عهدة موظف: إعادة صرف السلفة وتقديم الجرد يضع العهدة pending_review برصيد 500', $ok112_5);
+
+    // الحالة 6: اعتماد المحاسب للعهدة
+    $mainBalBeforeApprove = get_t_bal($pdo, $mainTreasuryId);
+    $revResult = save_custody_review($c112Id, 500.0, 'approved', null, 1);
+    $c112Row6 = get_c_row($pdo, $c112Id);
+    $mainBalAfterApprove = get_t_bal($pdo, $mainTreasuryId);
+
+    // فحص السلفة في employee_advances
+    $stAdvApproved = $pdo->prepare("SELECT * FROM employee_advances WHERE employee_id = ? ORDER BY id DESC LIMIT 1");
+    $stAdvApproved->execute([$empAdvBeneficiaryId]);
+    $advRowApproved = $stAdvApproved->fetch(PDO::FETCH_ASSOC);
+
+    // فحص كشف حساب الموظف في employee_ledger
+    $stLedgerApproved = $pdo->prepare("SELECT * FROM employee_ledger WHERE employee_id = ? ORDER BY id DESC LIMIT 1");
+    $stLedgerApproved->execute([$empAdvBeneficiaryId]);
+    $ledgerRowApproved = $stLedgerApproved->fetch(PDO::FETCH_ASSOC);
+
+    $ok112_6 = ($c112Row6['status'] === 'closed')
+        && !empty($advRowApproved)
+        && ($advRowApproved['status'] === 'pending')
+        && num_eq((float)$advRowApproved['amount'], 200.0)
+        && !empty($ledgerRowApproved)
+        && ($ledgerRowApproved['direction'] === 'debit')
+        && num_eq((float)$ledgerRowApproved['amount'], 200.0)
+        && num_eq($mainBalAfterApprove, $mainBalBeforeApprove + 500.0);
+    assert_case('١١٢٠٦ — اعتماد المحاسب: اعتماد العهدة ينزل السلفة في employee_advances وقيد مدين في employee_ledger وصافي الكاش بالخزينة', $ok112_6);
+
 } finally {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

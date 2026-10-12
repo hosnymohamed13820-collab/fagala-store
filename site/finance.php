@@ -1305,28 +1305,81 @@ function add_custody_expense(
     string $description,
     float $amount,
     ?int $userId = null,
-    ?int $entryCodeId = null
+    ?int $entryCodeId = null,
+    string $lineType = 'expense',
+    ?int $advEmployeeId = null,
+    ?int $supplierId = null
 ): int {
     if ($amount <= 0) {
         throw new InvalidArgumentException('مبلغ المصروف لازم يكون أكبر من صفر.');
+    }
+    if (!in_array($lineType, ['expense', 'advance', 'supplier'], true)) {
+        $lineType = 'expense';
     }
     $pdo = db();
     $own = !$pdo->inTransaction();
     if ($own) $pdo->beginTransaction();
     try {
         // تأكد إن العهدة مفتوحة أو مرفوضة واقرأ خزينتها
-        $st = $pdo->prepare("SELECT status, custody_treasury_id FROM branch_custody WHERE id=? FOR UPDATE");
+        $st = $pdo->prepare("SELECT status, custody_treasury_id, employee_id FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
         $row = $st->fetch();
         if (!$row || !in_array($row['status'], ['open', 'rejected'], true)) {
             throw new RuntimeException('مينفعش تضيف مصروف لعهدة مقفولة أو مقدّمة للمراجعة.');
         }
         $custodyTreasuryId = (int) $row['custody_treasury_id'];
+        $isEmpCustody = !empty($row['employee_id']);
+
+        if ($lineType === 'advance') {
+            if (!$isEmpCustody) {
+                throw new RuntimeException('السلفة من عهدة موظف بس.');
+            }
+            if (!$advEmployeeId || $advEmployeeId <= 0) {
+                throw new RuntimeException('الموظف غير موجود أو غير نشط.');
+            }
+            $chkEmp = $pdo->prepare('SELECT full_name FROM employees WHERE id = ? AND is_active = 1');
+            $chkEmp->execute([$advEmployeeId]);
+            $advEmpName = $chkEmp->fetchColumn();
+            if ($advEmpName === false) {
+                throw new RuntimeException('الموظف غير موجود أو غير نشط.');
+            }
+            $entryCodeId = null;
+            if (trim($description) === '') {
+                $description = 'سلفة للموظف: ' . $advEmpName;
+            }
+        } elseif ($lineType === 'supplier') {
+            if (!$isEmpCustody) {
+                throw new RuntimeException('دفعة المورد من عهدة موظف بس.');
+            }
+            if (!$supplierId || $supplierId <= 0) {
+                throw new RuntimeException('المورد غير موجود أو غير نشط.');
+            }
+            $chkSupp = $pdo->prepare('SELECT name FROM suppliers WHERE id = ? AND is_active = 1');
+            $chkSupp->execute([$supplierId]);
+            $suppName = $chkSupp->fetchColumn();
+            if ($suppName === false) {
+                throw new RuntimeException('المورد غير موجود أو غير نشط.');
+            }
+            sync_dynamic_accounts();
+            $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
+            $stAcc->execute([$supplierId]);
+            $accId = (int) $stAcc->fetchColumn();
+            if (!$accId) {
+                throw new RuntimeException('المورد ده مالوش حساب في شجرة الحسابات — اتأكد إن فيه أب «موردين» في التعريفات.');
+            }
+            $entryCodeId = $accId;
+            if (trim($description) === '') {
+                $description = 'صرف للمورد ' . $suppName;
+            }
+        } else {
+            $advEmployeeId = null;
+            $supplierId = null;
+        }
 
         $pdo->prepare(
-            'INSERT INTO custody_lines (custody_id, expense_date, description, amount, entry_code_id, created_by)
-             VALUES (?, ?, ?, ?, ?, ?)'
-        )->execute([$custodyId, $date, $description, $amount, $entryCodeId, $userId]);
+            'INSERT INTO custody_lines (custody_id, line_type, expense_date, description, amount, entry_code_id, employee_id, supplier_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$custodyId, $lineType, $date, $description, $amount, $entryCodeId, $advEmployeeId, $supplierId, $userId]);
         $lineId = (int) $pdo->lastInsertId();
 
         // حدّث الإجماليات المحاسبية (حساب صريح: آخر المدة = أول المدة − المصروفات)
@@ -1635,6 +1688,11 @@ function save_custody_review(
 
             // المصاريف تنزل على الخزينة الرئيسية مباشرة (مدين) وتتسوى من خزينة العهدة
             $linesStmt = $pdo->prepare('SELECT * FROM custody_lines WHERE custody_id=?');
+            // السلفة من العهدة بتنزل على الموظف هنا بس (بريف ١١٢) — نفس disburse_advance() من غير قيد خزينة تاني
+            $insAdv = $pdo->prepare(
+                'INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes)
+                 VALUES (?, ?, ?, "pending", ?)'
+            );
             $linesStmt->execute([$custodyId]);
             $custodyExpenses = $linesStmt->fetchAll();
             foreach ($custodyExpenses as $cl) {
@@ -1647,6 +1705,13 @@ function save_custody_review(
                              $expDate, 'custody_expense_main', (int)$cl['id'], $userId, $pdo, $ecId);
                 post_journal($custodyTreasuryId, 0, $expAmt, 'تسوية مصروف عهدة موظف: ' . $expDesc,
                              $expDate, 'custody_expense_settle', (int)$cl['id'], $userId, $pdo, $ecId);
+
+                if (($cl['line_type'] ?? '') === 'advance' && !empty($cl['employee_id'])) {
+                    $advEmpId = (int) $cl['employee_id'];
+                    $insAdv->execute([$advEmpId, $expAmt, $expDate, $expDesc]);
+                    $advId = (int) $pdo->lastInsertId();
+                    emp_ledger_add($advEmpId, 'debit', $expAmt, $expDate, 'advance', $expDesc, $cashId, 'advance', $advId, $userId, $pdo);
+                }
             }
 
             // عجز أو زيادة في الكاش المستلم
