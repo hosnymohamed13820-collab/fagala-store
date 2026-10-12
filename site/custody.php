@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $custodyId = (int) ($_POST['custody_id'] ?? 0);
                 $date      = $_POST['date'] ?? date('Y-m-d');
                 $desc      = trim($_POST['description'] ?? '');
-                $amount    = (float) ($_POST['amount'] ?? 0);
+                $amount    = money_post('amount');
                 $entryCodeId = ($_POST['entry_code_id'] ?? '') !== '' ? (int) $_POST['entry_code_id'] : null;
                 $lineType    = trim($_POST['line_type'] ?? 'expense');
                 if (!in_array($lineType, ['expense', 'advance', 'supplier'], true)) {
@@ -313,8 +313,12 @@ require_once __DIR__ . '/includes/header.php';
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
+    .form-row input, .form-row select, .form-row textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line);
         border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
+    .form-row input.cst-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px; }
+    .cst-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px; }
+    .cst-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
+    .cst-pick-chosen { margin-top:8px;font-size:13px;color:var(--pos);font-weight:600; }
     /* شريط حالة العهدة — لونه بيقول للكاشير هو في أنهي مرحلة */
     .status-bar { display:flex; gap:11px; align-items:flex-start; padding:14px 16px;
         border-radius:12px; margin-bottom:18px; font-size:14px; line-height:1.65; }
@@ -480,45 +484,9 @@ require_once __DIR__ . '/includes/header.php';
             <div class="card">
                 <div class="section-title">اللي اتصرف من العهدة</div>
                 <?php if ($canEditThisEmpCustody): ?>
-                <form method="post" class="form-inline" style="margin-bottom:16px;">
-                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                    <input type="hidden" name="action" value="add_expense">
-                    <input type="hidden" name="custody_id" value="<?= (int)$empCustody['id'] ?>">
-                    <div class="fld" style="max-width:130px;">
-                        <label>النوع</label>
-                        <select name="line_type" id="empLineType" onchange="toggleCustodyLineType(this.value)">
-                            <option value="expense">مصروف</option>
-                            <option value="advance">سلفة لموظف</option>
-                            <option value="supplier">دفعة لمورد</option>
-                        </select>
-                    </div>
-                    <div class="fld" id="fldEntryCode" style="max-width:150px;">
-                        <label>القيد</label>
-                        <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
-                    </div>
-                    <div class="fld" id="fldAdvEmployee" style="max-width:160px;display:none;">
-                        <label>الموظف</label>
-                        <select name="adv_employee_id">
-                            <option value="">— اختر الموظف —</option>
-                            <?php foreach ($allEmployees as $em): ?>
-                                <option value="<?= (int)$em['id'] ?>"><?= e($em['full_name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="fld" id="fldSupplier" style="max-width:160px;display:none;">
-                        <label>المورد</label>
-                        <select name="supplier_id">
-                            <option value="">— اختر المورد —</option>
-                            <?php foreach ($allSuppliers as $sp): ?>
-                                <option value="<?= (int)$sp['id'] ?>"><?= e($sp['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="fld"><label>البيان</label><input type="text" name="description" id="empLineDesc" required aria-label="البيان" placeholder="اختياري للسلف والموردين"></div>
-                    <div class="fld" style="max-width:110px;"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-                    <div class="fld" style="max-width:140px;"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
-                    <button type="submit" class="btn btn-sm">إضافة</button>
-                </form>
+                <div style="margin-bottom:16px;">
+                    <button type="button" class="btn" onclick="openModal('expenseModal')"><i class="ti ti-plus"></i> صرف من العهدة</button>
+                </div>
                 <?php endif; ?>
                 <?php if (empty($empExpenses)): ?>
                     <div class="empty">لا توجد مصروفات بعد.</div>
@@ -738,19 +706,9 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card">
             <div class="section-title">المصروفات</div>
             <?php if ($canEditCustody): ?>
-            <form method="post" class="form-inline" style="margin-bottom:16px;">
-                <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                <input type="hidden" name="action" value="add_expense">
-                <input type="hidden" name="custody_id" value="<?= (int)$custody['id'] ?>">
-                <div class="fld" style="max-width:150px;">
-                    <label>القيد</label>
-                    <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
-                </div>
-                <div class="fld"><label>البيان</label><input type="text" name="description" required aria-label="البيان"></div>
-                <div class="fld" style="max-width:110px;"><label>المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-                <div class="fld" style="max-width:140px;"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>"></div>
-                <button type="submit" class="btn btn-sm">إضافة</button>
-            </form>
+            <div style="margin-bottom:16px;">
+                <button type="button" class="btn" onclick="openModal('expenseModal')"><i class="ti ti-plus"></i> صرف من العهدة</button>
+            </div>
             <?php endif; ?>
             <?php if (empty($expenses)): ?>
                 <div class="empty">لا توجد مصروفات بعد.</div>
@@ -889,7 +847,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; // قفل if (!$branchId): ... else ?>
 <?php endif; // قفل if ($activeTab === 'employee'): ... else ?>
 
-<!-- Modal: إذن صرف لفرع -->
+<!-- Modal: إصدار إذن صرف لفرع -->
 <?php if ($canIssue && $canBranchCustody): ?>
 <div class="modal-bg" id="orderModal">
     <div class="modal">
@@ -919,13 +877,149 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<!-- Modal: صرف من العهدة -->
+<?php
+$showExpenseModal = false;
+$expCustodyId = 0;
+$expCustodyName = '';
+$expIsEmp = false;
+
+if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCustody)) {
+    $showExpenseModal = true;
+    $expCustodyId = (int) $empCustody['id'];
+    $expCustodyName = $selectedEmpName ?: 'الموظف';
+    $expIsEmp = true;
+} elseif ($activeTab === 'branch' && !empty($canEditCustody) && !empty($custody)) {
+    $showExpenseModal = true;
+    $expCustodyId = (int) $custody['id'];
+    $expCustodyName = $branchName ?: 'الفرع';
+    $expIsEmp = false;
+}
+?>
+<?php if ($showExpenseModal): ?>
+<div class="modal-bg" id="expenseModal">
+    <div class="modal">
+        <h3>صرف من العهدة</h3>
+        <form method="post" id="expenseForm" onsubmit="return handleExpenseSubmit(event)">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="add_expense">
+            <input type="hidden" name="custody_id" value="<?= $expCustodyId ?>">
+
+            <div id="cstFormBody">
+                <div class="form-row" id="cstEntryCodeRow">
+                    <label>القيد</label>
+                    <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
+                </div>
+
+                <div class="form-row">
+                    <label for="cstAmount">المبلغ</label>
+                    <input type="text" inputmode="decimal" data-money name="amount" id="cstAmount" required
+                           autocomplete="off" placeholder="0" aria-label="المبلغ">
+                </div>
+
+                <div class="form-row">
+                    <label for="cstDate">التاريخ</label>
+                    <input type="date" name="date" id="cstDate" value="<?= date('Y-m-d') ?>" required>
+                </div>
+
+                <div class="form-row">
+                    <label for="cstDesc">البيان</label>
+                    <input type="text" name="description" id="cstDesc" required aria-label="البيان" placeholder="سبب الصرف">
+                </div>
+
+                <?php if ($expIsEmp): ?>
+                <!-- نوع الصرف: مصروف / سلفة لموظف / دفعة لمورد (في عهدة الموظف بس) -->
+                <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
+                    <label for="cstLineType">نوع الصرف</label>
+                    <select name="line_type" id="cstLineType" onchange="toggleCstLineType()">
+                        <option value="expense">مصروف</option>
+                        <option value="advance">سلفة لموظف</option>
+                        <option value="supplier">دفعة لمورد</option>
+                    </select>
+
+                    <!-- سلفة لموظف -->
+                    <div id="cstAdvanceBox" style="display:none;margin-top:12px;">
+                        <input type="text" id="cstEmpSearch" class="cst-pick-search" placeholder="ابحث باسم الموظف..."
+                               oninput="filterCstEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
+                        <div id="cstEmpList" class="cst-pick-list">
+                            <?php foreach ($allEmployees as $emp): ?>
+                                <div class="cst-emp-opt cst-pick-opt" data-id="<?= (int)$emp['id'] ?>" data-name="<?= e($emp['full_name']) ?>"
+                                     onclick="pickCstEmp(this)">
+                                    <?= e($emp['full_name']) ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="adv_employee_id" id="cstEmpId" value="">
+                        <div id="cstEmpChosen" class="cst-pick-chosen"></div>
+                    </div>
+
+                    <!-- دفعة لمورد -->
+                    <div id="cstSupplierBox" style="display:none;margin-top:12px;">
+                        <input type="text" id="cstSuppSearch" class="cst-pick-search" placeholder="ابحث باسم المورد..."
+                               oninput="filterCstSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
+                        <div id="cstSuppList" class="cst-pick-list">
+                            <?php foreach ($allSuppliers as $s): ?>
+                                <div class="cst-supp-opt cst-pick-opt" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>"
+                                     onclick="pickCstSupp(this)">
+                                    <?= e($s['name']) ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <input type="hidden" name="supplier_id" id="cstSuppId" value="">
+                        <div id="cstSuppChosen" class="cst-pick-chosen"></div>
+                    </div>
+                </div>
+                <?php else: ?>
+                <input type="hidden" name="line_type" id="cstLineType" value="expense">
+                <?php endif; ?>
+
+                <div class="modal-actions">
+                    <button type="submit" class="btn">تسجيل الصرف</button>
+                    <button type="button" class="btn btn-cancel" onclick="closeModal('expenseModal')">إلغاء</button>
+                </div>
+            </div>
+
+            <!-- خطوة التأكيد قبل تسجيل الصرف -->
+            <div id="cstConfirmBox" style="display:none;">
+                <div style="background:var(--line-soft);padding:16px;border-radius:12px;border:1.5px solid var(--line);margin-bottom:18px;line-height:1.7;font-size:14px;color:var(--ink-800);">
+                    انت على وشك تسجيل مصروف بقيمة <b id="cstConfirmAmount"></b> جنيه من عهدة «<span><?= e($expCustodyName) ?></span>».<br>
+                    <span id="cstConfirmLineDetail"></span><br>
+                    متأكد إن المبلغ ده هيتخصم من العهدة دي؟
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn" id="cstConfirmBtn" onclick="confirmExpense()">تأكيد الصرف</button>
+                    <button type="button" class="btn btn-cancel" onclick="cancelExpenseConfirm()">إلغاء</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <?= acctree_data(true) ?>
 <script src="assets/acctree.js?v=3"></script>
 <script>
     function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
-    function closeModal(id){ const el = document.getElementById(id); if (el) el.classList.remove('open'); }
+    function closeModal(id){
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('open');
+        if (id === 'expenseModal' && typeof resetExpenseModal === 'function') resetExpenseModal();
+    }
     document.querySelectorAll('.modal-bg').forEach(m => {
-        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+        m.addEventListener('click', e => {
+            if (e.target === m) {
+                m.classList.remove('open');
+                if (m.id === 'expenseModal' && typeof resetExpenseModal === 'function') resetExpenseModal();
+            }
+        });
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            const expM = document.getElementById('expenseModal');
+            if (expM && expM.classList.contains('open')) {
+                closeModal('expenseModal');
+            }
+        }
     });
 
     // ===== جرد عهدة الفرع =====
@@ -1034,23 +1128,195 @@ require_once __DIR__ . '/includes/header.php';
         });
     }
 
-    function toggleCustodyLineType(val) {
-        const fldEntry = document.getElementById('fldEntryCode');
-        const fldEmp   = document.getElementById('fldAdvEmployee');
-        const fldSupp  = document.getElementById('fldSupplier');
-        const descInp  = document.getElementById('empLineDesc');
+    // ===== صرف من العهدة (مودال) =====
+    let cstExpenseConfirmed = false;
+    let cstExpenseSending = false;
 
-        if (fldEntry) fldEntry.style.display = (val === 'expense') ? '' : 'none';
-        if (fldEmp)   fldEmp.style.display   = (val === 'advance') ? '' : 'none';
-        if (fldSupp)  fldSupp.style.display  = (val === 'supplier') ? '' : 'none';
+    function handleExpenseSubmit(e) {
+        if (!cstExpenseConfirmed) {
+            e.preventDefault();
+            const form = document.getElementById('expenseForm');
+            if (!form) return false;
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return false;
+            }
+            const amtInput = form.querySelector('input[name="amount"]');
+            const amtVal = typeof moneyVal === 'function' ? moneyVal(amtInput) : (parseFloat((amtInput.value || '').replace(/,/g, '')) || 0);
+            if (amtVal <= 0) {
+                fgToast('اكتب مبلغ أكبر من صفر.', 'warn');
+                return false;
+            }
+            const lineTypeEl = document.getElementById('cstLineType');
+            const lineType = lineTypeEl ? lineTypeEl.value : 'expense';
+
+            if (lineType === 'advance') {
+                const empId = document.getElementById('cstEmpId');
+                if (!empId || !empId.value) {
+                    fgToast('اختار الموظف.', 'warn');
+                    return false;
+                }
+            } else if (lineType === 'supplier') {
+                const suppId = document.getElementById('cstSuppId');
+                if (!suppId || !suppId.value) {
+                    fgToast('اختار المورد.', 'warn');
+                    return false;
+                }
+            }
+
+            const formattedAmt = amtVal.toLocaleString('en-US', {
+                minimumFractionDigits: (amtVal % 1 === 0 ? 0 : 2),
+                maximumFractionDigits: 2
+            });
+            const cstAmtEl = document.getElementById('cstConfirmAmount');
+            if (cstAmtEl) cstAmtEl.textContent = formattedAmt;
+
+            const cstDetailEl = document.getElementById('cstConfirmLineDetail');
+            if (cstDetailEl) {
+                if (lineType === 'expense') {
+                    const accLabel = form.querySelector('.act-label');
+                    const entryText = (accLabel && accLabel.textContent.trim()) ? accLabel.textContent.trim() : '— بدون —';
+                    cstDetailEl.textContent = 'القيد: ' + entryText;
+                } else if (lineType === 'advance') {
+                    const empChosen = document.getElementById('cstEmpChosen');
+                    const empText = empChosen ? empChosen.textContent.replace('تم اختيار:', '').trim() : '';
+                    cstDetailEl.textContent = 'سلفة: ' + empText + ' — هتنزل عليه لما المحاسب يعتمد إقفال العهدة.';
+                } else if (lineType === 'supplier') {
+                    const suppChosen = document.getElementById('cstSuppChosen');
+                    const suppText = suppChosen ? suppChosen.textContent.replace('تم اختيار:', '').trim() : '';
+                    cstDetailEl.textContent = 'مورد: ' + suppText;
+                }
+            }
+
+            document.getElementById('cstFormBody').style.display = 'none';
+            document.getElementById('cstConfirmBox').style.display = 'block';
+            return false;
+        }
+    }
+
+    function setCstSending(sending) {
+        cstExpenseSending = sending;
+        const btn = document.getElementById('cstConfirmBtn');
+        if (!btn) return;
+        if (typeof fgBusy === 'function') {
+            fgBusy(btn, sending, 'جاري الصرف…');
+        } else {
+            btn.disabled = sending;
+        }
+    }
+
+    function confirmExpense() {
+        if (cstExpenseSending) return;
+        cstExpenseConfirmed = true;
+        setCstSending(true);
+        const form = document.getElementById('expenseForm');
+        if (typeof formSubmit === 'function') {
+            formSubmit(form);
+        } else if (form) {
+            form.submit();
+        }
+    }
+
+    function cancelExpenseConfirm() {
+        cstExpenseConfirmed = false;
+        setCstSending(false);
+        const confirmBox = document.getElementById('cstConfirmBox');
+        const formBody = document.getElementById('cstFormBody');
+        if (confirmBox) confirmBox.style.display = 'none';
+        if (formBody) formBody.style.display = 'block';
+    }
+
+    function resetExpenseModal() {
+        cstExpenseConfirmed = false;
+        setCstSending(false);
+        const confirmBox = document.getElementById('cstConfirmBox');
+        const formBody = document.getElementById('cstFormBody');
+        if (confirmBox) confirmBox.style.display = 'none';
+        if (formBody) formBody.style.display = 'block';
+
+        const lt = document.getElementById('cstLineType');
+        if (lt && lt.tagName === 'SELECT') {
+            lt.value = 'expense';
+            toggleCstLineType();
+        }
+    }
+
+    function toggleCstLineType() {
+        const lt = document.getElementById('cstLineType');
+        const val = lt ? lt.value : 'expense';
+        const rowEntry = document.getElementById('cstEntryCodeRow');
+        const boxAdv   = document.getElementById('cstAdvanceBox');
+        const boxSupp  = document.getElementById('cstSupplierBox');
+        const descInp  = document.getElementById('cstDesc');
+
+        if (rowEntry) rowEntry.style.display = (val === 'expense') ? '' : 'none';
+        if (boxAdv)   boxAdv.style.display   = (val === 'advance') ? 'block' : 'none';
+        if (boxSupp)  boxSupp.style.display  = (val === 'supplier') ? 'block' : 'none';
 
         if (descInp) {
-            if (val === 'expense') {
-                descInp.required = true;
-            } else {
-                descInp.required = false;
-            }
+            descInp.required = (val === 'expense');
         }
+
+        if (val !== 'advance') {
+            const empId = document.getElementById('cstEmpId');
+            const empChosen = document.getElementById('cstEmpChosen');
+            const empSearch = document.getElementById('cstEmpSearch');
+            if (empId) empId.value = '';
+            if (empChosen) empChosen.textContent = '';
+            if (empSearch) empSearch.value = '';
+            document.querySelectorAll('.cst-emp-opt').forEach(o => {
+                o.style.display = '';
+                o.style.background = '';
+            });
+        }
+        if (val !== 'supplier') {
+            const suppId = document.getElementById('cstSuppId');
+            const suppChosen = document.getElementById('cstSuppChosen');
+            const suppSearch = document.getElementById('cstSuppSearch');
+            if (suppId) suppId.value = '';
+            if (suppChosen) suppChosen.textContent = '';
+            if (suppSearch) suppSearch.value = '';
+            document.querySelectorAll('.cst-supp-opt').forEach(o => {
+                o.style.display = '';
+                o.style.background = '';
+            });
+        }
+    }
+
+    function filterCstSupps() {
+        const input = document.getElementById('cstSuppSearch');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        document.querySelectorAll('.cst-supp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+
+    function pickCstSupp(el) {
+        const suppId = document.getElementById('cstSuppId');
+        const suppChosen = document.getElementById('cstSuppChosen');
+        if (suppId) suppId.value = el.dataset.id;
+        if (suppChosen) suppChosen.textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.cst-supp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
+    }
+
+    function filterCstEmps() {
+        const input = document.getElementById('cstEmpSearch');
+        const q = (input ? input.value : '').trim().toLowerCase();
+        document.querySelectorAll('.cst-emp-opt').forEach(o => {
+            const name = (o.dataset.name || '').toLowerCase();
+            o.style.display = (!q || name.includes(q)) ? '' : 'none';
+        });
+    }
+
+    function pickCstEmp(el) {
+        const empId = document.getElementById('cstEmpId');
+        const empChosen = document.getElementById('cstEmpChosen');
+        if (empId) empId.value = el.dataset.id;
+        if (empChosen) empChosen.textContent = 'تم اختيار: ' + el.dataset.name;
+        document.querySelectorAll('.cst-emp-opt').forEach(o => o.style.background = '');
+        el.style.background = 'var(--pos-soft)';
     }
 </script>
 
