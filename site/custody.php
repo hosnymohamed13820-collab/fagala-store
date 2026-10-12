@@ -123,6 +123,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
                     throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الموظف.');
                 }
+                // 🔴 الموظف العادي يشتغل على عهدته هو بس — الشاشة بتخفي الباقي، والطلب لازم يرفض كمان
+                //    (من غير ده كان يقدر يبعت رقم عهدة موظف تاني ويضيف عليها سلفة لأي حد)
+                if (!empty($cRow['employee_id']) && !is_owner() && (int) $cRow['employee_id'] !== $currentUserEmpId) {
+                    throw new RuntimeException('دي مش عهدتك.');
+                }
                 if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
                     throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الفرع.');
                 }
@@ -145,6 +150,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$cRow) throw new RuntimeException('المصروف غير موجود.');
                 if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
                     throw new RuntimeException('غير مصرح لك بإلغاء مصروف عهدة الموظف.');
+                }
+                // 🔴 الموظف العادي يشتغل على عهدته هو بس — الشاشة بتخفي الباقي، والطلب لازم يرفض كمان
+                //    (من غير ده كان يقدر يبعت رقم عهدة موظف تاني ويضيف عليها سلفة لأي حد)
+                if (!empty($cRow['employee_id']) && !is_owner() && (int) $cRow['employee_id'] !== $currentUserEmpId) {
+                    throw new RuntimeException('دي مش عهدتك.');
                 }
                 if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
                     throw new RuntimeException('غير مصرح لك بإلغاء مصروف عهدة الفرع.');
@@ -170,6 +180,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$cRow) throw new RuntimeException('العهدة غير موجودة.');
                 if (!empty($cRow['employee_id']) && !$canEmployeeCustody) {
                     throw new RuntimeException('غير مصرح لك بإقفال عهدة الموظف.');
+                }
+                // 🔴 الموظف العادي يشتغل على عهدته هو بس — الشاشة بتخفي الباقي، والطلب لازم يرفض كمان
+                //    (من غير ده كان يقدر يبعت رقم عهدة موظف تاني ويضيف عليها سلفة لأي حد)
+                if (!empty($cRow['employee_id']) && !is_owner() && (int) $cRow['employee_id'] !== $currentUserEmpId) {
+                    throw new RuntimeException('دي مش عهدتك.');
                 }
                 if (!empty($cRow['branch_id']) && empty($cRow['employee_id']) && !$canBranchCustody) {
                     throw new RuntimeException('غير مصرح لك بإقفال عهدة الفرع.');
