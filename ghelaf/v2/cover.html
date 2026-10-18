@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bleed Out Case</title>
+<style>
+/* الوحدة = ٠٫١ مم. الكانفاس ٧٩٫٥×١٦٥٫٢ مم = الموبايل ٧٣٫٥×١٥٩٫٢ + ٣ مم نزيف من كل ناحية */
+@font-face { font-family: Bodoni; src: url(../fonts/BodoniModa-400.ttf); }
+@font-face { font-family: FiraX; src: url(../fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-400.ttf); font-weight: 400; }
+
+:root { --blood: #c41e16; --ink: #f3eee8; --dim: #8a1a14; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 795px; height: 1652px; overflow: hidden;
+  background: radial-gradient(120% 60% at 50% 100%, #1a0404, #050303 60%); }
+
+/* دايرة الضوء ورا الراس — بتختفي من تحت عند الكتاف */
+.sun { position: absolute; left: 40px; top: 70px; width: 760px; height: 760px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, #e3321f, var(--blood) 55%, #7d0f0b);
+  -webkit-mask-image: linear-gradient(#000 58%, transparent 86%); }
+.face { position: absolute; left: -70px; top: 10px; width: 935px; }
+
+/* جرين وخدوش فوق كل حاجة عشان الإحساس المطبوع */
+.grain { position: absolute; inset: 0; opacity: .32; mix-blend-mode: overlay; pointer-events: none; }
+
+.spine { position: absolute; right: 56px; top: 250px; writing-mode: vertical-rl;
+  font: 400 40px/1 Bodoni; letter-spacing: 3px; color: #160404; z-index: 1; }
+.tag { position: absolute; left: 0; right: 0; top: 1150px; text-align: center;
+  font: 300 19px/1 FiraC; letter-spacing: 12px; color: #a3241c; }
+
+.lyrics { position: absolute; left: 70px; right: 70px; color: var(--ink); }
+.l1 { top: 1195px; font: 400 29.5px/42px FiraC; white-space: nowrap; }
+.l1 em { font-style: normal; color: #ff5a44; }
+.rule { position: absolute; left: 70px; width: 120px; top: 1468px; height: 3px; background: var(--blood); }
+.l2 { top: 1490px; text-align: right; font: 700 30px/37px FiraX; letter-spacing: .5px; text-transform: uppercase; }
+.l2.todo { color: #5a1612; }
+
+.sig { position: absolute; left: 0; right: 0; bottom: 48px; text-align: center;
+  font: 400 22px/1 Bodoni; letter-spacing: 3px; color: var(--blood); }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <div class="sun"></div>
+  <img class="face" src="face.png" alt="">
+
+  <div class="spine">AFTER HOURS</div>
+  <div class="tag">THE WEEKND · 2020</div>
+
+  <div class="lyrics l1">
+    Well, I don't wanna touch the sky no more<br>
+    I just wanna feel the ground when I'm coming down<br>
+    It's been way too long<br>
+    And been way too long<br>
+    And I don't even wanna get high no more<br>
+    <em>Just want it out of my life</em>
+  </div>
+
+  <div class="rule"></div>
+  <!-- سطور Heartless — محمد هيبعتها -->
+  <div class="lyrics l2 todo">[ Heartless — your lines here ]</div>
+
+  <svg class="grain" width="795" height="1652">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+</div>
+</body>
+</html>
