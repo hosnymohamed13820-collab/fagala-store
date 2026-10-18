@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>After Hours Case</title>
+<style>
+/* وحدة القياس: بكسل البوستر الأصلي — ٥٦١ وحدة = ٧٣٫٥ مم (عرض ريلمي GT ماستر)
+   ٣ مم نزيف حوالين = ٢٣ وحدة تقريباً */
+@font-face { font-family: Bodoni; src: url(fonts/BodoniModa-400.ttf); }
+@font-face { font-family: Archivo; src: url(fonts/ArchivoBlack.ttf); }
+@font-face { font-family: FiraX; src: url(fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(fonts/FiraSansCond-400.ttf); font-weight: 400; }
+@font-face { font-family: Tinos; src: url(fonts/Tinos.ttf); }
+
+:root { --red: #6a1212; --white: #f4f1ec; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 607px; height: 1261px; overflow: hidden; background: #060606; }
+#poster { position: absolute; left: 23px; top: 30px; width: 561px; height: 1200px; color: var(--white); }
+
+.photo { position: absolute; left: 0; top: 0; width: 561px; height: 760px;
+  background: url(photo.png) 0 0 / 561px 760px no-repeat;
+  -webkit-mask-image: linear-gradient(#000 82%, transparent); }
+.glow { position: absolute; left: -80px; top: 560px; width: 520px; height: 300px;
+  background: radial-gradient(closest-side, rgba(150,10,10,.35), transparent); }
+
+.title { position: absolute; left: 0; right: 0; top: 50px; text-align: center;
+  font: 63px/1 Bodoni; color: var(--red); letter-spacing: -1px; }
+
+.sb-head { position: absolute; left: 33px; top: 462px; font: 41px/1 Archivo; letter-spacing: -.5px; }
+.sb-lines { position: absolute; left: 0; width: 420px; top: 501px; text-align: center;
+  font: 700 28px/25.6px FiraX; letter-spacing: -.2px; }
+.sb-small { position: absolute; left: 0; width: 402px; top: 612px; text-align: center; }
+.sb-small b { display: block; font: 16px/1 Archivo; letter-spacing: -.3px; }
+.sb-small span { display: block; margin-top: 3px; font: 400 15.5px/1 FiraC; }
+
+.hills { position: absolute; left: 306px; top: 672px; transform-origin: 0 0; transform: rotate(-27deg); }
+.hills h3 { margin: 0 0 2px 72px; font: 400 20px/1 Tinos; letter-spacing: .3px; }
+.hills p { margin: 0; font: 400 13.6px/15.5px FiraC; white-space: nowrap; }
+
+.callout { position: absolute; left: 42px; top: 760px; font-family: Tinos; }
+.callout h3 { margin: 0 0 10px; font: 400 24px/1 Tinos; letter-spacing: .3px; }
+.callout p { margin: 0; font-size: 24.5px; line-height: 29px; white-space: nowrap; }
+
+.bleed { position: absolute; left: 401px; top: 1142px; transform-origin: 0 0; transform: rotate(-90deg);
+  display: flex; flex-direction: column; }
+.bleed h3 { margin: 0 0 2px; font: 400 21px/1 FiraC; letter-spacing: .4px; }
+.bleed p { margin: 0; font: 300 12.6px/17.5px FiraC; white-space: nowrap; }
+
+.foot { position: absolute; left: 0; width: 560px; top: 1101px; text-align: center;
+  font: 21px/20px Bodoni; color: #c42020; letter-spacing: -.2px; }
+
+/* معاينة بس — مابتطلعش في ملف الطباعة */
+body.preview #canvas::after { content: ""; position: absolute; inset: 23px; border-radius: 70px;
+  box-shadow: 0 0 0 200px rgba(255,255,255,.92); }
+body.preview .cam { position: absolute; left: 23px; top: 23px; width: 210px; height: 290px;
+  margin: 46px; border-radius: 40px; border: 2px dashed #3cf; background: rgba(51,204,255,.12); z-index: 2; }
+.cam { display: none; }
+body.preview .cam { display: block; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <div class="cam"></div>
+  <div id="poster">
+    <div class="photo"></div>
+    <div class="glow"></div>
+    <div class="title">AFTER HOURS</div>
+
+    <div class="sb-head">STARBOY</div>
+    <div class="sb-lines">
+      Switch up my style, I take any lane<br>
+      I switch up my cup, I kill any pain<br>
+      Look what you've done<br>
+      I'm a motherfuckin' starboy
+    </div>
+    <div class="sb-small">
+      <b>STARBOY</b>
+      <span>We don't pray for love, we just pray for cars</span>
+    </div>
+
+    <div class="hills">
+      <h3>THE HILLS</h3>
+      <p>I only call you when it's half past five</p>
+      <p>The only time that I'll be by your side</p>
+      <p>I only love it when you touch me, not feel me</p>
+      <p>When I'm f-up, that's the real me</p>
+    </div>
+
+    <div class="callout">
+      <h3>CALL OUT MY NAME</h3>
+      <p>I said I didn’t feel nothing baby, but I lied</p>
+      <p>I almost cut a piece of myself for your life</p>
+      <p>Guess I was just another pit stop</p>
+      <p>'Til you made up your mind</p>
+      <p>You just wasted my time</p>
+    </div>
+
+    <div class="bleed">
+      <h3>UNTIL I BLEED OUT</h3>
+      <p>Well, I don't wanna touch the sky no more</p>
+      <p>I just wanna feel the ground when I'm coming down</p>
+      <p>It's been way too long</p>
+      <p>And been way too long</p>
+      <p>And I don't even wanna get high no more</p>
+      <p>Just want it out of my life</p>
+    </div>
+
+    <div class="foot">AFTER<br>AFTER HOURS</div>
+  </div>
+</div>
+</body>
+</html>
