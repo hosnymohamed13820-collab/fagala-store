@@ -703,9 +703,13 @@ function require_permission(string $moduleKey): void
                 . '<p>حسابك مشاهدة بس في الصفحة دي.</p>'
                 . '<a href="logout.php">تسجيل الخروج</a></div>');
         } elseif ($method === 'GET' || $method === 'HEAD') {
+            // لو القفل فشل نرفض — من غيره الصفحة بتتفتح بكتابة مفتوحة
             try {
                 db()->exec('SET SESSION TRANSACTION READ ONLY');
-            } catch (Throwable $e) {}
+            } catch (Throwable $e) {
+                http_response_code(403);
+                exit('حسابك مشاهدة بس، وماقدرناش نقفل الكتابة — جرّب تاني.');
+            }
         }
     }
 
@@ -758,9 +762,13 @@ function require_module_access(string $moduleKey): void
                 . '<p>حسابك مشاهدة بس في الصفحة دي.</p>'
                 . '<a href="logout.php">تسجيل الخروج</a></div>');
         } elseif ($method === 'GET' || $method === 'HEAD') {
+            // لو القفل فشل نرفض — من غيره الصفحة بتتفتح بكتابة مفتوحة
             try {
                 db()->exec('SET SESSION TRANSACTION READ ONLY');
-            } catch (Throwable $e) {}
+            } catch (Throwable $e) {
+                http_response_code(403);
+                exit('حسابك مشاهدة بس، وماقدرناش نقفل الكتابة — جرّب تاني.');
+            }
         }
     }
 
