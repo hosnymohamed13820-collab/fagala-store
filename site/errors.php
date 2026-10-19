@@ -190,8 +190,6 @@ require_once __DIR__ . '/includes/header.php';
     .card { background:var(--surface); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow-sm); margin-bottom:16px; }
     /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
     .btn { padding: 8px 16px; font-size: 13.5px; }
-    .btn-danger { background:var(--neg-fill); color:#fff; }
-    .btn-danger:hover { background:var(--neg-fill); color:#fff; opacity:.9; }
 
     .el-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .el-sub { color:var(--ink-500); font-size:13px; margin-top:4px; }

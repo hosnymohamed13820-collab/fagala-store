@@ -331,36 +331,13 @@ require_once __DIR__ . '/includes/header.php';
 <style>
 /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
 .btn { padding: 8px 16px; font-size: 13.5px; font-weight: 600; border: 1px solid transparent; }
-.btn-ghost {
-    background: var(--surface);
-    color: var(--text);
-    border-color: var(--line);
-}
-.btn-ghost:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--accent-text);
-}
-.btn-success {
-    background: var(--pos-fill);
-    color: #fff;
-}
-.btn-success:hover {
-    background: var(--pos-fill);
-    color: #fff;
-}
-.btn-danger {
-    background: var(--neg-fill);
-    color: #fff;
-}
-.btn-danger:hover {
-    background: var(--neg-fill);
-    color: #fff;
-}
+/* لازم يفضل هنا: .btn اللي فوقه بييجي بعد fagala.css فبيغلب .btn-sm بتاعها */
 .btn-sm {
     padding: 4px 10px;
     font-size: 12px;
 }
+/* الإطار: .btn اللي فوق بيحط border transparent فبيغلب إطار الزرار المخطّط اللي في fagala.css */
+.btn.btn-outline { border-color: var(--line); }
 .status-pill {
     display: inline-block;
     padding: 3px 8px;
@@ -482,7 +459,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
         <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-package"></i> استلام الفواتير في الفروع</h2>
         <?php if ($isOwner || $isSupervisor || can('receiving:diffs') || $userBranchId !== null): ?>
-            <a href="receiving_diffs.php" class="btn btn-ghost"><i class="ti ti-chart-bar"></i> صفحة الفروقات الشاملة</a>
+            <a href="receiving_diffs.php" class="btn btn-outline"><i class="ti ti-chart-bar"></i> صفحة الفروقات الشاملة</a>
         <?php endif; ?>
     </div>
 

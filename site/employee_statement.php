@@ -200,22 +200,6 @@ require_once __DIR__ . '/includes/header.php';
     }
     /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
     .btn { font-size: 13px; font-weight: 600; }
-    .btn-secondary {
-        background: var(--line-soft);
-        color: var(--ink-700);
-    }
-    .btn-secondary:hover {
-        background: var(--line);
-        color: var(--ink-700);
-    }
-    .btn-ghost {
-        background: transparent;
-        color:var(--accent-text);
-    }
-    .btn-ghost:hover {
-        background: var(--accent-soft);
-        color:var(--accent-text);
-    }
     .empty {
         text-align: center;
         padding: 40px 20px;

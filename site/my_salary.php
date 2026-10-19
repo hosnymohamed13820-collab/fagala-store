@@ -229,14 +229,6 @@ if (!sens_unlocked()) {
     }
     /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
     .btn { font-size: 13px; font-weight: 600; }
-    .btn-secondary {
-        background: var(--line-soft);
-        color: var(--ink-700);
-    }
-    .btn-secondary:hover {
-        background: var(--line);
-        color: var(--ink-700);
-    }
 </style>
 
 <div class="salary-wrap">

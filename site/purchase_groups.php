@@ -146,9 +146,6 @@ require_once __DIR__ . '/includes/header.php';
     /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
     .btn { white-space: nowrap; }
 
-    .btn-secondary { background:var(--surface); color:var(--ink-700); border:1.5px solid var(--line); }
-    .btn-secondary:hover { background:var(--line-soft); color:var(--ink-700); }
-
     .btn-branch { background:var(--surface); color:var(--ink-700); border:1.5px solid var(--line);
                   border-radius:20px; padding:4px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
                   transition:all .15s; font-family:inherit; }
