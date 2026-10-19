@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Heartless Case v8</title>
+<style>
+/* v8: ترتيب هادي زي كفرات جراباتكم (اسم فوق · دايرة ورا الراس · أسامي في الركنين)
+   بلمستنا: «سين سيتي» + أحمر دم + خط إيد
+   الوحدة = ٠٫١ مم · الكانفاس ٧٩٫٥×١٦٥٫٢ مم بالنزيف · فتحة الكاميرا x ٩٢–٣٢٣ / y ٨٩–٤٩١ */
+@font-face { font-family: Archivo; src: url(../fonts/ArchivoBlack.ttf); }
+@font-face { font-family: Bodoni; src: url(../fonts/BodoniModa-400.ttf); }
+@font-face { font-family: FiraX; src: url(../fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-400.ttf); font-weight: 400; }
+@font-face { font-family: Script; src: url(../fonts/MrsSaintDelafield.ttf); }
+
+:root { --coal: #0a0405; --wine: #4a0a0f; --blood: #c0141c; --hot: #e3221e; --ink: #f1ece8; --mute: #a99a97; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 795px; height: 1652px; overflow: hidden;
+  background: radial-gradient(90% 60% at 50% 55%, #1a0608, var(--coal) 70%); }
+
+/* الاسم تحت الكاميرا — أبيض وضله أحمر طبقات (زي البروز) */
+.title { position: absolute; left: 0; right: 0; top: 512px; text-align: center; font: 400 78px/1 Archivo; z-index: 2; letter-spacing: 1px;
+  color: var(--ink); text-shadow: 3px 3px 0 var(--blood), 6px 6px 0 var(--wine), 0 0 30px rgba(227,34,30,.25); }
+.album { position: absolute; left: 0; right: 0; top: 592px; text-align: center; font: 400 84px/1 Script; z-index: 2; color: var(--hot); }
+.lines { position: absolute; left: 0; right: 0; top: 684px; z-index: 2; text-align: center; font: 400 17.5px/27px FiraC;
+  letter-spacing: 4px; color: var(--mute); }
+
+/* دايرة دم بنقط هاف تون خفيفة */
+.moon { position: absolute; left: 92px; top: 800px; width: 610px; height: 610px; border-radius: 50%;
+  background: radial-gradient(rgba(0,0,0,.28) 1.1px, transparent 1.7px) 0 0 / 8px 8px,
+              radial-gradient(circle at 42% 36%, #e8301f, var(--blood) 52%, #6e0b0e); }
+.moon::after { content: ""; position: absolute; inset: -18px; border-radius: 50%; border: 2px solid rgba(192,20,28,.45); }
+.portrait { position: absolute; left: 37px; top: 712px; width: 720px; }
+
+/* الركنين تحت */
+.corner { position: absolute; top: 1478px; font: 700 40px/1 FiraX; letter-spacing: 2px; color: var(--hot); }
+.corner.l { left: 70px; }
+.corner.r { right: 70px; text-align: right; font: 400 40px/1 Bodoni; letter-spacing: 1px; }
+
+.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .7; mix-blend-mode: screen; pointer-events: none;
+  -webkit-mask-image: radial-gradient(200px 260px at 397px 1050px, transparent 70%, #000 100%); }
+.grain { position: absolute; inset: 0; opacity: .3; mix-blend-mode: overlay; pointer-events: none; }
+.vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(0,0,0,.6)); }
+
+body.guide #canvas::before { content: ""; position: absolute; inset: 30px; border: 2px dashed #3cf; border-radius: 90px; z-index: 9; }
+body.guide #canvas::after { content: ""; position: absolute; left: 92px; top: 89px; width: 231px; height: 402px; border-radius: 34px;
+  border: 2px dashed #3cf; background: rgba(51,204,255,.18); z-index: 9; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <div class="title">THE WEEKND</div>
+  <div class="album">after hours</div>
+  <div class="lines">
+    ALL THIS MONEY AND THIS PAIN GOT ME HEARTLESS<br>
+    JUST WANT IT OUT OF MY LIFE
+  </div>
+
+  <div class="moon"></div>
+  <img class="portrait" src="portrait.png" alt="">
+
+  <div class="corner l">THE<br>WEEKND</div>
+  <div class="corner r">AFTER<br>HOURS</div>
+
+  <img class="dust" src="dust.png" alt="">
+  <div class="vignette"></div>
+  <svg class="grain" width="795" height="1652">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+</div>
+</body>
+</html>
