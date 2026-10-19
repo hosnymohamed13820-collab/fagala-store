@@ -468,11 +468,49 @@ function current_user(): ?array
 }
 
 /**
- * هل المستخدم الحالي أونر؟
+ * هل المستخدم الحالي أونر حقيقي؟
+ */
+function is_real_owner(): bool
+{
+    return is_logged_in() && !empty($_SESSION['user']['is_owner']);
+}
+
+/**
+ * مشاهدة بس بيشوف كل اللي المالك بيشوفه، على GET بس، والقاعدة مقفولة كتابة.
  */
 function is_owner(): bool
 {
-    return is_logged_in() && !empty($_SESSION['user']['is_owner']);
+    if (is_real_owner()) {
+        return true;
+    }
+
+    if (!is_logged_in()) {
+        return false;
+    }
+
+    $perms = $_SESSION['permissions'] ?? [];
+    if (!in_array('view_all', $perms, true)) {
+        return false;
+    }
+
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if ($method !== 'GET' && $method !== 'HEAD') {
+        return false;
+    }
+
+    static $locked = false;
+    if (!$locked) {
+        try {
+            db()->exec('SET SESSION TRANSACTION READ ONLY');
+        } catch (Throwable $e) {
+            http_response_code(403);
+            exit('حسابك مشاهدة بس، وماقدرناش نقفل الكتابة — جرّب تاني.');
+        }
+        $locked = true;
+    }
+
+    $GLOBALS['VIEW_ALL_PAGE'] = true;
+    return true;
 }
 
 /**
@@ -489,7 +527,7 @@ function can(string $moduleKey): bool
     if (!is_logged_in()) {
         return false;
     }
-    if (is_owner()) {
+    if (is_real_owner()) {
         return true;
     }
 
@@ -525,7 +563,7 @@ function can_module(string $moduleKey): bool
     if (!is_logged_in()) {
         return false;
     }
-    if (is_owner()) {
+    if (is_real_owner()) {
         return true;
     }
 
@@ -558,7 +596,7 @@ function can_module(string $moduleKey): bool
  */
 function view_all_borrowed(string $moduleKey): bool
 {
-    if (!is_logged_in() || is_owner()) {
+    if (!is_logged_in() || is_real_owner()) {
         return false;
     }
     $perms = $_SESSION['permissions'] ?? [];

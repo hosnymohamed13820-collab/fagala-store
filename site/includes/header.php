@@ -188,7 +188,7 @@ require_once __DIR__ . '/nav_icons.php';
                 <div class="user-avatar"><?= e(mb_substr($u['full_name'], 0, 1)) ?></div>
                 <div class="user-info">
                     <div class="name"><?= e($u['full_name']) ?></div>
-                    <div class="role"><?= is_owner() ? 'أونر' : e($u['username']) ?></div>
+                    <div class="role"><?= is_real_owner() ? 'أونر' : e($u['username']) ?></div>
                 </div>
             </div>
             <a href="logout.php" class="btn-logout">
