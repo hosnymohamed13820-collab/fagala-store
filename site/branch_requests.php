@@ -14,58 +14,18 @@
 require_once __DIR__ . '/auth.php';
 require_permission('shortage');
 require_once __DIR__ . '/book_lib.php';
+require_once __DIR__ . '/shortage_lib.php';
 
 $uid      = (int) current_user()['id'];
 $myBranch = (int) (current_user()['branch_id'] ?? 0);
 $resScope = book_res_scope(is_owner(), $myBranch);
 
-// (١) الفروع النشطة
-$branches = db()->query(
-    'SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name'
-)->fetchAll();
-
-// (٢) سطور طلبات النواقص للمشتريات فقط (استعلام واحد للصفحة كلها)
-$stLines = db()->query(
-    "SELECT l.id, l.request_id, l.item_id, l.code, l.item_name, l.qty, l.status,
-            r.from_branch_id, r.created_at
-     FROM shortage_request_lines l
-     JOIN shortage_requests r ON r.id = l.request_id
-     WHERE r.source = 'purchase'
-       AND l.status IN ('open', 'grouped', 'purchased')
-     ORDER BY r.created_at ASC, l.id ASC"
-)->fetchAll();
-
-// (٣) سطور حجوزات الكتب المفتوحة (استعلام واحد للصفحة كلها)
-$resSql = "SELECT l.id, l.reservation_id, l.item_id, l.code, l.item_name, l.qty, l.allocated_qty, l.stage,
-            r.branch_id, r.customer_name, r.customer_phone, r.created_at
-     FROM book_reservation_lines l
-     JOIN book_reservations r ON r.id = l.reservation_id
-     WHERE r.status = 'open'";
-$resParams = [];
-if ($resScope !== null) {
-    $resSql .= " AND (r.branch_id = ? OR r.created_by = ?)";
-    $resParams[] = $resScope;
-    $resParams[] = $uid;
-}
-$resSql .= " ORDER BY r.created_at ASC, l.id ASC";
-
-$stmt = db()->prepare($resSql);
-$stmt->execute($resParams);
-$resLines = $stmt->fetchAll();
-
-// تجميع النواقص حسب الفرع الطالب
-$shortagesByBranch = [];
-foreach ($stLines as $sl) {
-    $bId = (int)($sl['from_branch_id'] ?? 0);
-    $shortagesByBranch[$bId][] = $sl;
-}
-
-// تجميع الحجوزات حسب الفرع
-$reservationsByBranch = [];
-foreach ($resLines as $rl) {
-    $bId = (int)($rl['branch_id'] ?? 0);
-    $reservationsByBranch[$bId][] = $rl;
-}
+$data = branch_requests_data($resScope, $uid);
+$branches             = $data['branches'];
+$stLines              = $data['lines'];
+$resLines             = $data['reservations'];
+$shortagesByBranch    = $data['shortages_by_branch'];
+$reservationsByBranch = $data['reservations_by_branch'];
 
 $sLabels = [
     'open'      => 'مفتوح',
