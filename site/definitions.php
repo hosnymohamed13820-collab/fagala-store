@@ -1044,7 +1044,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 
 <script>
     function show(id){ document.getElementById(id).classList.add('open'); }

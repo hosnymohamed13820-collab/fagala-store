@@ -956,6 +956,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
                     <!-- دفعة لمورد -->
                     <div id="cstSupplierBox" style="display:none;margin-top:12px;">
                         <input type="text" id="cstSuppSearch" class="cst-pick-search" placeholder="ابحث باسم المورد..."
+                               data-picker-search="#cstSuppList" data-item=".cst-supp-opt" data-empty="مفيش مورد بالاسم ده"
                                oninput="filterCstSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                         <div id="cstSuppList" class="cst-pick-list">
                             <?php foreach ($allSuppliers as $s): ?>
@@ -997,7 +998,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 <?php endif; ?>
 
 <?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 <script>
     function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
     function closeModal(id){
@@ -1285,9 +1286,10 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 
     function filterCstSupps() {
         const input = document.getElementById('cstSuppSearch');
-        const q = (input ? input.value : '').trim().toLowerCase();
+        if (input && input._fgFilter) { input._fgFilter(); return; }
+        const q = window.fgNorm ? window.fgNorm(input ? input.value : '') : (input ? input.value : '').trim().toLowerCase();
         document.querySelectorAll('.cst-supp-opt').forEach(o => {
-            const name = (o.dataset.name || '').toLowerCase();
+            const name = window.fgNorm ? window.fgNorm(o.dataset.name || '') : (o.dataset.name || '').toLowerCase();
             o.style.display = (!q || name.includes(q)) ? '' : 'none';
         });
     }

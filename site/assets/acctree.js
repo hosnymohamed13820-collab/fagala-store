@@ -137,6 +137,22 @@
         var box = ctx.colB;
         box.innerHTML = '<div class="act-col-title">تفرعات: ' + esc(node.name) + '</div>';
 
+        var kids = ctx.idx.kids[node.id] || [];
+
+        // لو الأب المختار ليه أكتر من ١٠ تفرعات ← خانة بحث صغيرة (بريف ١٢٩)
+        var searchInput = null;
+        if (kids.length > 10) {
+            var searchWrap = document.createElement('div');
+            searchWrap.style.cssText = 'padding:4px 8px 6px;position:sticky;top:25px;background:var(--surface,#fff);z-index:2;';
+            searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'act-search';
+            searchInput.placeholder = 'بحث في التفرعات...';
+            searchInput.style.cssText = 'width:100%;font-size:12px;padding:5px 8px;border-radius:6px;box-sizing:border-box;';
+            searchWrap.appendChild(searchInput);
+            box.appendChild(searchWrap);
+        }
+
         if (backTo) {
             var back = mkRow('\u203A رجوع لـ ' + backTo.name, 'act-back');
             back.addEventListener('click', function (ev) {
@@ -153,16 +169,52 @@
         });
         box.appendChild(self);
 
-        (ctx.idx.kids[node.id] || []).forEach(function (r) {
+        var rowsContainer = document.createElement('div');
+        rowsContainer.className = 'act-kids-rows';
+
+        var emptyMsg = document.createElement('div');
+        emptyMsg.className = 'act-hint';
+        emptyMsg.style.cssText = 'padding:14px 10px;display:none;';
+        emptyMsg.textContent = 'مفيش نتايج بالاسم ده';
+        box.appendChild(emptyMsg);
+
+        kids.forEach(function (r) {
             var kid = hasKids(ctx, r.id);
             var row = mkRow(r.name, null, kid ? '\u2039' : '');
+            row.setAttribute('data-nm', norm(r.name));
             row.addEventListener('click', function (ev) {
                 ev.stopPropagation();
                 if (kid) drawKids(ctx, r, node);
                 else choose(ctx, r);
             });
-            box.appendChild(row);
+            rowsContainer.appendChild(row);
         });
+        box.appendChild(rowsContainer);
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var q = norm(searchInput.value);
+                var rowEls = rowsContainer.children;
+                var visibleCount = 0;
+                for (var i = 0; i < rowEls.length; i++) {
+                    var el = rowEls[i];
+                    var nm = el.getAttribute('data-nm') || '';
+                    var match = !q || nm.indexOf(q) !== -1;
+                    el.style.display = match ? '' : 'none';
+                    if (match) visibleCount++;
+                }
+                emptyMsg.style.display = (visibleCount === 0) ? 'block' : 'none';
+            });
+            searchInput.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Escape') {
+                    ev.stopPropagation();
+                    searchInput.value = '';
+                    searchInput.dispatchEvent(new Event('input'));
+                }
+            });
+            try { setTimeout(function () { searchInput.focus(); }, 10); } catch (e) {}
+        }
+
         box.scrollTop = 0;
     }
 

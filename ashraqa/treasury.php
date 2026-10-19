@@ -1188,7 +1188,7 @@ $today = date('Y-m-d');
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 <script>
     function openModal(id){
         if (id === 'disburseModal') resetDisburseModal();

@@ -847,6 +847,7 @@ $today = date('Y-m-d');
                 </select>
                 <div id="recSupplierBox" style="display:none;margin-top:12px;">
                     <input type="text" id="recSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                           data-picker-search="#recSuppList" data-item=".rec-supp-opt" data-empty="مفيش مورد بالاسم ده"
                            oninput="filterRecSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                     <div id="recSuppList" class="trs-pick-list">
                         <?php foreach ($suppliers as $s): ?>
@@ -967,6 +968,7 @@ $today = date('Y-m-d');
                     <!-- صرف لمورد -->
                     <div id="supplierBox" style="display:none;margin-top:12px;">
                         <input type="text" id="suppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                               data-picker-search="#suppList" data-item=".supp-opt" data-empty="مفيش مورد بالاسم ده"
                                oninput="filterSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                         <div id="suppList" class="trs-pick-list">
                             <?php foreach ($suppliers as $s): ?>
@@ -1100,7 +1102,7 @@ $today = date('Y-m-d');
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 <script>
     function openModal(id){
         if (id === 'disburseModal') resetDisburseModal();
@@ -1281,9 +1283,11 @@ $today = date('Y-m-d');
         if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
     }
     function filterSupps(){
-        const q = (document.getElementById('suppSearch').value || '').trim().toLowerCase();
+        var inp = document.getElementById('suppSearch');
+        if (inp && inp._fgFilter) { inp._fgFilter(); return; }
+        const q = window.fgNorm ? window.fgNorm(inp ? inp.value : '') : (inp ? inp.value : '').trim().toLowerCase();
         document.querySelectorAll('.supp-opt').forEach(o => {
-            const name = (o.dataset.name || '').toLowerCase();
+            const name = window.fgNorm ? window.fgNorm(o.dataset.name || '') : (o.dataset.name || '').toLowerCase();
             o.style.display = (!q || name.includes(q)) ? '' : 'none';
         });
     }
@@ -1328,9 +1332,11 @@ $today = date('Y-m-d');
         if (t !== 'normal' && t !== 'supplier') nb.querySelector('textarea').value = '';
     }
     function filterRecSupps(){
-        const q = (document.getElementById('recSuppSearch').value || '').trim().toLowerCase();
+        var inp = document.getElementById('recSuppSearch');
+        if (inp && inp._fgFilter) { inp._fgFilter(); return; }
+        const q = window.fgNorm ? window.fgNorm(inp ? inp.value : '') : (inp ? inp.value : '').trim().toLowerCase();
         document.querySelectorAll('.rec-supp-opt').forEach(o => {
-            const name = (o.dataset.name || '').toLowerCase();
+            const name = window.fgNorm ? window.fgNorm(o.dataset.name || '') : (o.dataset.name || '').toLowerCase();
             o.style.display = (!q || name.includes(q)) ? '' : 'none';
         });
     }

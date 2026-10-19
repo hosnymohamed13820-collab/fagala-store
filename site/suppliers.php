@@ -94,6 +94,7 @@ if ($tab === 'statement') {
     $to   = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'])) ? $_GET['to'] : date('Y-m-d');
 
     $hasErp = suppliers_has_erp_col($pdo);
+    $allSuppList = $pdo->query('SELECT id, name FROM suppliers WHERE is_active = 1 ORDER BY name')->fetchAll();
 
     if ($selectedSupplierId <= 0) {
         // (أ) الملخص: ٣ استعلامات مجمعة
@@ -564,6 +565,14 @@ require_once __DIR__ . '/includes/header.php';
             <form method="get" class="filter-form" style="margin-bottom:0;">
                 <input type="hidden" name="tab" value="statement">
                 <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+                <label>كشف مورد
+                    <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="if(this.value && this.value!='0') this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                        <option value="0">اختر مورد...</option>
+                        <?php foreach ($allSuppList as $sp): ?>
+                            <option value="<?= (int)$sp['id'] ?>"><?= e($sp['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
                 <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
                 <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
                 <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
@@ -714,8 +723,14 @@ require_once __DIR__ . '/includes/header.php';
 
             <form method="get" class="filter-form" style="margin-bottom:0;">
                 <input type="hidden" name="tab" value="statement">
-                <input type="hidden" name="supplier" value="<?= $selectedSupplierId ?>">
                 <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+                <label>تغيير المورد
+                    <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                        <?php foreach ($allSuppList as $sp): ?>
+                            <option value="<?= (int)$sp['id'] ?>" <?= $selectedSupplierId === (int)$sp['id'] ? 'selected' : '' ?>><?= e($sp['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
                 <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
                 <label>إلى <input type="date" name="to" value="<?= e($to) ?>"></label>
                 <button type="submit" class="btn btn-sm">تطبيق</button>

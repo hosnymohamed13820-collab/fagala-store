@@ -810,3 +810,161 @@ window.apiFetch = function (url, opts) {
     return doFetch();
 };
 
+/* ============================================================
+ * منتقي وبحث الموردين الموحد (بريف ١٢٩)
+ * تطبيع الحروف العربية (أ/ا/إ/آ، ة/ه، ي/ى) مع رسالة عند عدم وجود نتايج
+ * ============================================================ */
+(function () {
+    function fgNorm(s) {
+        return String(s || '').toLowerCase()
+            .replace(/[\u064B-\u0652\u0640]/g, '')
+            .replace(/[\u0623\u0625\u0622\u0671]/g, '\u0627')
+            .replace(/\u0649/g, '\u064A')
+            .replace(/\u0629/g, '\u0647')
+            .trim();
+    }
+    window.fgNorm = fgNorm;
+
+    // تهيئة خانة بحث لقائمة عناصر (divs أو select options)
+    function initSearchablePicker(input, target, itemSelector, emptyMsg) {
+        if (!input || !target) return;
+        emptyMsg = emptyMsg || 'مفيش مورد بالاسم ده';
+
+        if (target.tagName === 'SELECT') {
+            var select = target;
+            var masterOptions = Array.prototype.slice.call(select.options);
+
+            function filterSelect() {
+                var q = fgNorm(input.value);
+                var currentVal = select.value;
+                var matchCount = 0;
+                var hasSelected = false;
+
+                select.innerHTML = '';
+
+                masterOptions.forEach(function (opt) {
+                    var val = opt.value;
+                    var text = opt.text;
+                    var isDefault = (val === '0' || val === '');
+                    var match = isDefault || !q || fgNorm(text).indexOf(q) !== -1;
+
+                    if (match) {
+                        select.appendChild(opt);
+                        if (!isDefault) matchCount++;
+                        if (val === currentVal) hasSelected = true;
+                    }
+                });
+
+                if (matchCount === 0 && q) {
+                    var emptyOpt = document.createElement('option');
+                    emptyOpt.disabled = true;
+                    emptyOpt.selected = true;
+                    emptyOpt.value = '';
+                    emptyOpt.textContent = emptyMsg;
+                    select.appendChild(emptyOpt);
+                } else if (hasSelected) {
+                    select.value = currentVal;
+                } else if (select.options.length > 0) {
+                    select.selectedIndex = 0;
+                }
+            }
+
+            input.addEventListener('input', filterSelect);
+            input.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Escape') {
+                    input.value = '';
+                    filterSelect();
+                } else if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    var nonDefaultOpts = Array.prototype.slice.call(select.options).filter(function (o) {
+                        return o.value !== '0' && o.value !== '' && !o.disabled;
+                    });
+                    if (nonDefaultOpts.length === 1) {
+                        select.value = nonDefaultOpts[0].value;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                }
+            });
+            input._fgFilter = filterSelect;
+        } else {
+            var list = target;
+            var emptyEl = list.querySelector('.picker-empty-msg');
+            if (!emptyEl) {
+                emptyEl = document.createElement('div');
+                emptyEl.className = 'picker-empty-msg';
+                emptyEl.style.cssText = 'padding:14px 10px;text-align:center;font-size:13px;color:var(--ink-500);display:none;';
+                emptyEl.textContent = emptyMsg;
+                list.appendChild(emptyEl);
+            }
+
+            function filterList() {
+                var q = fgNorm(input.value);
+                var items = list.querySelectorAll(itemSelector || '.trs-pick-opt, .cst-pick-opt, [data-name]');
+                var matchCount = 0;
+
+                items.forEach(function (it) {
+                    var nm = it.getAttribute('data-name') || it.textContent;
+                    var match = !q || fgNorm(nm).indexOf(q) !== -1;
+                    it.style.display = match ? '' : 'none';
+                    if (match) matchCount++;
+                });
+
+                emptyEl.style.display = (matchCount === 0) ? 'block' : 'none';
+            }
+
+            input.addEventListener('input', filterList);
+            input.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Escape') {
+                    input.value = '';
+                    filterList();
+                }
+            });
+            input._fgFilter = filterList;
+        }
+    }
+    window.fgInitSearchablePicker = initSearchablePicker;
+
+    function scanSearchablePickers(root) {
+        root = root || document;
+
+        root.querySelectorAll('input[data-picker-search]').forEach(function (inp) {
+            if (inp._fgPickerReady) return;
+            var targetSel = inp.getAttribute('data-picker-search') || inp.getAttribute('data-target');
+            if (!targetSel) return;
+            var target = document.querySelector(targetSel);
+            if (!target) return;
+            var itemSel = inp.getAttribute('data-item') || null;
+            var emptyMsg = inp.getAttribute('data-empty') || 'مفيش مورد بالاسم ده';
+            initSearchablePicker(inp, target, itemSel, emptyMsg);
+            inp._fgPickerReady = true;
+        });
+
+        root.querySelectorAll('select[data-searchable]').forEach(function (sel) {
+            if (sel._fgPickerReady) return;
+            var inpSel = sel.getAttribute('data-search-input');
+            var inp = inpSel ? document.querySelector(inpSel) : null;
+
+            if (!inp) {
+                inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'select-search-inp';
+                inp.placeholder = sel.getAttribute('data-placeholder') || 'بحث في الموردين...';
+                inp.style.cssText = 'padding:6px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);width:130px;box-sizing:border-box;margin-inline-end:6px;';
+                sel.parentNode.insertBefore(inp, sel);
+            }
+            var emptyMsg = sel.getAttribute('data-empty') || 'مفيش مورد بالاسم ده';
+            initSearchablePicker(inp, sel, null, emptyMsg);
+            sel._fgPickerReady = true;
+        });
+    }
+    window.fgScanPickers = scanSearchablePickers;
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+            scanSearchablePickers();
+        });
+    } else {
+        scanSearchablePickers();
+    }
+})();
+

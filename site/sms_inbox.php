@@ -640,6 +640,7 @@ function filterSmsTable() {
                 <!-- مورد -->
                 <div id="spSupplierBox" style="display:none;margin-top:12px;">
                     <input type="text" id="spSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                           data-picker-search="#spSuppList" data-item=".sp-supp-opt" data-empty="مفيش مورد بالاسم ده"
                            oninput="filterSpSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                     <div id="spSuppList" class="trs-pick-list">
                         <?php foreach ($suppliers as $s): ?>
@@ -726,7 +727,7 @@ function filterSmsTable() {
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 
 <script>
 var defaultInstapayTreasuryId = <?= (int) $instapayTreasuryId ?>;
@@ -857,10 +858,12 @@ function spToggleOpType() {
 }
 
 function filterSpSupps() {
-    var q = (document.getElementById('spSuppSearch').value || '').trim().toLowerCase();
+    var input = document.getElementById('spSuppSearch');
+    if (input && input._fgFilter) { input._fgFilter(); return; }
+    var q = window.fgNorm ? window.fgNorm(input ? input.value : '') : (input ? input.value : '').trim().toLowerCase();
     var items = document.querySelectorAll('.sp-supp-opt');
     for (var i = 0; i < items.length; i++) {
-        var n = items[i].dataset.name.toLowerCase();
+        var n = window.fgNorm ? window.fgNorm(items[i].dataset.name || '') : (items[i].dataset.name || '').toLowerCase();
         items[i].style.display = (!q || n.indexOf(q) !== -1) ? '' : 'none';
     }
 }

@@ -1103,7 +1103,7 @@ require_once __DIR__ . '/includes/header.php';
                 </select>
             </label>
             <label>المورد
-                <select name="supplier" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
                     <option value="0">كل الموردين</option>
                     <?php foreach ($ashSuppliers as $sp): ?>
                         <option value="<?= (int)$sp['supplier_id'] ?>" <?= $ashSupplier === (int)$sp['supplier_id'] ? 'selected' : '' ?>><?= e($sp['supplier_name']) ?></option>

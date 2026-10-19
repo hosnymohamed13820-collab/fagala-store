@@ -848,7 +848,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=3"></script>
+<script src="assets/acctree.js?v=4"></script>
 <script>
     function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
     function closeModal(id){ const el = document.getElementById(id); if (el) el.classList.remove('open'); }
