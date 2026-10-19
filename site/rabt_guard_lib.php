@@ -175,6 +175,40 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
         ];
     }
 
+    // ١.٦) H10 دفعة واحدة لكل فرع لو فيه أكتر من مستند متأخر لنفس الفرع
+    $h10ByBranch = [];
+    foreach ($findings as $i => $f) {
+        if (is_array($f) && trim((string) ($f['code'] ?? '')) === 'H10') {
+            $br = trim((string) ($f['branch'] ?? ''));
+            $h10ByBranch[$br][$i] = $f;
+        }
+    }
+    foreach ($h10ByBranch as $br => $items) {
+        if (count($items) >= 2) {
+            $lines = [];
+            $dates = [];
+            foreach ($items as $i => $f) {
+                $t = trim((string) ($f['title'] ?? $f['summary'] ?? ''));
+                $lines[] = $t;
+                if (preg_match('/date:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i', $t, $m)) {
+                    $dates[] = sprintf('%04d-%02d-%02d', (int) $m[3], (int) $m[1], (int) $m[2]);
+                } elseif (preg_match('/date:\s*(\d{4})-(\d{1,2})-(\d{1,2})/i', $t, $m)) {
+                    $dates[] = sprintf('%04d-%02d-%02d', (int) $m[1], (int) $m[2], (int) $m[3]);
+                }
+                unset($findings[$i]);
+            }
+            $oldestDate = !empty($dates) ? min($dates) : date('Y-m-d');
+            $findings[] = [
+                'code'    => 'H10',
+                'branch'  => $br,
+                'title'   => 'مستندات واقفة أكتر من ٧ أيام في ' . $br . ': ' . count($items) . ' مستند',
+                'details' => implode("\n", $lines),
+                'restart' => null,
+                'fp'      => sha1('H10|' . $br . '|batch|' . $oldestDate),
+            ];
+        }
+    }
+
     // ٢) فحص وتحديث أو إدخال كل finding
     foreach ($findings as $f) {
         if (!is_array($f)) continue;
@@ -310,6 +344,42 @@ function rabt_process_findings(array $payload, ?bool $overrideInWindow = null): 
                 $giveUp[0], 'rabt_guard.php');
         } catch (Throwable $e) {
         }
+    }
+
+    // ٤.٥) تذكير كل ٦ ساعات للحوادث المفتوحة القديمة
+    try {
+        $stDue = $pdo->query(
+            "SELECT id, title, TIMESTAMPDIFF(HOUR, first_seen, NOW()) AS age_hours
+               FROM rabt_incidents
+              WHERE status <> 'closed'
+                AND first_seen < NOW() - INTERVAL 6 HOUR
+                AND (reminded_at IS NULL OR reminded_at < NOW() - INTERVAL 6 HOUR)
+              ORDER BY first_seen ASC"
+        );
+        $dueRows = $stDue ? $stDue->fetchAll(PDO::FETCH_ASSOC) : [];
+        if (!empty($dueRows)) {
+            $ids = $pdo->query(
+                'SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1'
+            )->fetchAll(PDO::FETCH_COLUMN);
+            $wid = (int) setting('agent_watcher_id', '0');
+            if ($wid > 0) $ids[] = $wid;
+
+            $countDue = count($dueRows);
+            $oldest = $dueRows[0];
+            $ageH = (int) ($oldest['age_hours'] ?? 0);
+            $title = 'حارس الربط: ' . $countDue . ' مشكلة لسه مفتوحة';
+            $body = $oldest['title'] . ' — من ' . $ageH . ' ساعة';
+
+            require_once __DIR__ . '/push_lib.php';
+            notify($pdo, $ids, 'rabt_guard', $title, $body, 'rabt_guard.php');
+
+            $dueIds = array_column($dueRows, 'id');
+            $inDue = implode(',', array_fill(0, count($dueIds), '?'));
+            $pdo->prepare("UPDATE rabt_incidents SET reminded_at = NOW() WHERE id IN ($inDue)")
+                ->execute($dueIds);
+        }
+    } catch (Throwable $e) {
+        // لو العمود مش موجود أو فشل الإرسال — الحارس مايقعش
     }
 
     // ٥) حساب عدد الحوادث المفتوحة حالياً

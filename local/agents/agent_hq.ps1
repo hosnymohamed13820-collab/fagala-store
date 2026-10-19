@@ -29,7 +29,7 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.5'
+$AgentVer  = '2.6'
 
 # The replication program has a different name on every machine (Oct 2 2026):
 #   HQ repl_true.exe, Bonjour Repltrue.exe, Degla a_true.exe
@@ -42,6 +42,146 @@ function Get-ReplProcs {
         if ($_.Path) { $_.Path -like '*autorepl*' }
         else { $_.Name -ne 'a_true' }   # path unreadable: trust the unambiguous names only
     })
+}
+
+if (-not ([System.Management.Automation.PSTypeName]'ReplWinHelper').Type) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class ReplWinHelper {
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumChildWindows(IntPtr hWnd, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    public static string GetText(IntPtr hWnd) {
+        StringBuilder sb = new StringBuilder(512);
+        GetWindowText(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    public static string GetClass(IntPtr hWnd) {
+        StringBuilder sb = new StringBuilder(256);
+        GetClassName(hWnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    public static List<IntPtr> GetDialogsForPid(uint targetPid) {
+        List<IntPtr> result = new List<IntPtr>();
+        EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+            uint pid;
+            GetWindowThreadProcessId(hWnd, out pid);
+            if (pid == targetPid) {
+                if (GetClass(hWnd) == "#32770") {
+                    result.Add(hWnd);
+                }
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    public static List<IntPtr> GetChildren(IntPtr hWndParent) {
+        List<IntPtr> result = new List<IntPtr>();
+        EnumChildWindows(hWndParent, delegate(IntPtr hWnd, IntPtr lParam) {
+            result.Add(hWnd);
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+}
+"@
+}
+
+function Close-ReplDialogs {
+    param(
+        [System.Diagnostics.Process[]]$Processes = $null
+    )
+    if ($null -eq $Processes) {
+        $Processes = @(Get-ReplProcs)
+    }
+    if ($null -eq $Processes -or $Processes.Count -eq 0) {
+        return @()
+    }
+
+    $results = @()
+    $okLabels = @('OK', '&OK', 'Yes', '&Yes', [regex]::Unescape('\u0645\u0648\u0627\u0641\u0642'))
+
+    foreach ($proc in $Processes) {
+        if ($null -eq $proc -or $proc.HasExited) { continue }
+        $dialogs = [ReplWinHelper]::GetDialogsForPid([uint32]$proc.Id)
+
+        foreach ($dlg in $dialogs) {
+            if ($results.Count -ge 10) { break }
+
+            $title = [ReplWinHelper]::GetText($dlg)
+            $children = [ReplWinHelper]::GetChildren($dlg)
+
+            $staticTexts = @()
+            $btnHandle = [IntPtr]::Zero
+
+            foreach ($child in $children) {
+                $cls = [ReplWinHelper]::GetClass($child)
+                $txt = [ReplWinHelper]::GetText($child)
+
+                if ($cls -eq 'Static') {
+                    if ($txt -and $txt.Trim()) {
+                        $staticTexts += $txt.Trim()
+                    }
+                } elseif ($cls -eq 'Button') {
+                    if ($btnHandle -eq [IntPtr]::Zero -and $txt) {
+                        $t = $txt.Trim()
+                        if ($okLabels -contains $t) {
+                            $btnHandle = $child
+                        }
+                    }
+                }
+            }
+
+            $bodyText = if ($staticTexts.Count -gt 0) { $staticTexts -join ' ' } else { '' }
+            $action = 'click_ok'
+
+            if ($btnHandle -ne [IntPtr]::Zero) {
+                [void][ReplWinHelper]::SendMessage($btnHandle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+                $action = 'click_ok'
+            } else {
+                [void][ReplWinHelper]::PostMessage($dlg, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+                $action = 'wm_close'
+            }
+
+            Write-Log "[guard] dismissed repl dialog: $title | $bodyText"
+            $results += [PSCustomObject]@{
+                title  = $title
+                text   = $bodyText
+                pid    = $proc.Id
+                action = $action
+            }
+        }
+        if ($results.Count -ge 10) { break }
+    }
+
+    return ,$results
 }
 
 # Secret token - must equal SYNC_AGENT_TOKENS['hq'] in site/sync_tokens.php
@@ -501,6 +641,28 @@ function Invoke-Guard {
 
     try {
         # -----------------------------------------------------------------
+        # H18: Auto-dismiss replication dialogs
+        # -----------------------------------------------------------------
+        try {
+            $dismissed = @(Close-ReplDialogs)
+            if ($dismissed.Count -gt 0) {
+                $firstDlg = $dismissed[0]
+                $firstText = if ($firstDlg.text) { $firstDlg.text } else { $firstDlg.title }
+                $findings += @{
+                    code    = 'H18'
+                    branch  = 'hq'
+                    summary = "Auto-OK on $($dismissed.Count) repl dialog(s): $($firstDlg.title)"
+                    details = ($dismissed | ForEach-Object { "$($_.title) (PID $($_.pid)): $($_.text)" }) -join "`n"
+                    restart = $null
+                    sha     = Get-GuardSha1 "H18|$firstText"
+                }
+            }
+            $checked += 'H18'
+        } catch {
+            Write-Log "[guard] H18 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
         # H01: repl_true process count != 1 or Event Log crash in last hour
         # -----------------------------------------------------------------
         try {
@@ -539,7 +701,7 @@ function Invoke-Guard {
         }
 
         # -----------------------------------------------------------------
-        # H02: Last import age > 120 minutes per branch
+        # H02: Last import age > 45 minutes per branch
         # -----------------------------------------------------------------
         try {
             $h02Table = Invoke-Sql @"
@@ -565,7 +727,7 @@ GROUP BY brch_id;
                 $ageMin = if ($r['age_min'] -isnot [DBNull]) { [int]$r['age_min'] } else { 9999 }
                 $lastImportStr = if ($r['last_import'] -isnot [DBNull]) { [string]$r['last_import'] } else { 'never' }
 
-                if ($ageMin -gt 120) {
+                if ($ageMin -gt 45) {
                     $prefix = $brchPrefixes[$bId]
                     $hasFiles = $false
                     if ($importFiles.Count -gt 0) {
@@ -725,15 +887,15 @@ FROM (
                     $exp = if ($expectedMap.ContainsKey($bId)) { $expectedMap[$bId] } else { 1 }
                     $lastRecv = if ($maxRefMap.ContainsKey($bId)) { $maxRefMap[$bId] } else { 0 }
 
-                    # Delayed check (> 60 min)
+                    # Delayed check (> 30 min)
                     $oldestFile = $fList | Sort-Object { $_.file.LastWriteTime } | Select-Object -First 1
                     if ($oldestFile) {
                         $fAge = ($now - $oldestFile.file.LastWriteTime).TotalMinutes
-                        if ($fAge -gt 60) {
+                        if ($fAge -gt 30) {
                             $findings += @{
                                 code    = 'H05'
                                 branch  = $bKey
-                                summary = "File in Import/HQ delayed > 60 min for $bKey ($($oldestFile.file.Name), age $([int]$fAge) min)"
+                                summary = "File in Import/HQ delayed > 30 min for $bKey ($($oldestFile.file.Name), age $([int]$fAge) min)"
                                 details = "File: $($oldestFile.file.Name)`nPath: $($oldestFile.file.FullName)`nAge: $([int]$fAge) min"
                                 restart = $null
                                 sha     = Get-GuardSha1 "H05|$bKey|delayed|$($oldestFile.first_num)"
@@ -927,7 +1089,8 @@ WHERE h.SSTT_ID = 17 AND (s.sts_id IS NULL OR s.sth_id <> l.STH_ID);
 SET NOCOUNT ON;
 SELECT BRCH_ID, STH_DOC_NO, SSTT_ID, STH_ID_REF, CREATE_DATE
 FROM STO_TRANS_HEADER_REPL
-WHERE CREATE_DATE < DATEADD(day, -7, GETDATE());
+WHERE CREATE_DATE < DATEADD(day, -7, GETDATE())
+ORDER BY CREATE_DATE, STH_ID_REF;
 "@
             if ($h10Table.Rows.Count -gt 0) {
                 for ($i = 0; $i -lt [math]::Min(50, $h10Table.Rows.Count); $i++) {
