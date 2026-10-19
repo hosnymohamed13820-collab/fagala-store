@@ -83,6 +83,10 @@ try {
 
 $stored = 0;
 $skipped = 0;
+$suppInserted  = 0;
+$suppLinked    = 0;
+$suppUnchanged = 0;
+$suppConflicts = [];
 
 try {
     $pdo->beginTransaction();
@@ -397,6 +401,95 @@ try {
             ]);
             $stored++;
         }
+    } elseif ($kind === 'suppliers') {
+        // كتالوج الموردين من برنامج True (بريف ١١٧)
+        // بنقرأ كل الموردين في استعلام واحد قبل الحلقة
+        $stSupp = $pdo->query('SELECT id, name, erp_supplier_id FROM suppliers');
+        $byErp  = [];   // erp_supplier_id => row
+        $byName = [];  // trim(name) => row
+        foreach ($stSupp as $s) {
+            $row = [
+                'id'              => (int) $s['id'],
+                'name'            => trim((string) $s['name']),
+                'erp_supplier_id' => $s['erp_supplier_id'] !== null ? (int) $s['erp_supplier_id'] : null,
+            ];
+            if ($row['erp_supplier_id'] !== null) {
+                $byErp[$row['erp_supplier_id']] = $row;
+            }
+            $byName[$row['name']] = $row;
+        }
+
+        $updLink = $pdo->prepare('UPDATE suppliers SET erp_supplier_id = ? WHERE id = ?');
+        $insSupp = $pdo->prepare('INSERT INTO suppliers (name, erp_supplier_id, is_active) VALUES (?, ?, 1)');
+
+        $suppInserted  = 0;
+        $suppLinked    = 0;
+        $suppUnchanged = 0;
+        $suppConflicts = [];
+
+        foreach ($rows as $r) {
+            if (!is_array($r)) {
+                $skipped++;
+                continue;
+            }
+            $suppId = (int) ($r['supp_id'] ?? 0);
+            $name   = trim(mb_substr(trim((string) ($r['name'] ?? '')), 0, 120)); // name varchar(120)
+
+            if ($suppId <= 0 || $name === '') {
+                $skipped++;
+                continue;
+            }
+
+            // الحالة ١: فيه مورد عندنا erp_supplier_id = supp_id
+            if (isset($byErp[$suppId])) {
+                $suppUnchanged++;
+                continue;
+            }
+
+            // فحص الاسم إذا كان موجود مسبقاً
+            if (isset($byName[$name])) {
+                $existing = $byName[$name];
+                if ($existing['erp_supplier_id'] === null) {
+                    // الحالة ٢: مفيش erp_supplier_id، نربطه
+                    $updLink->execute([$suppId, $existing['id']]);
+                    $existing['erp_supplier_id'] = $suppId;
+                    $byErp[$suppId] = $existing;
+                    $byName[$name]  = $existing;
+                    $suppLinked++;
+                    $stored++;
+                } else {
+                    // الحالة ٤: الاسم موجود بس مربوط بـ erp_supplier_id تاني
+                    $suppConflicts[] = [
+                        'supp_id' => $suppId,
+                        'name'    => $name,
+                    ];
+                    $skipped++;
+                }
+                continue;
+            }
+
+            // الحالة ٣: مفيش خالص — نضيفه
+            // uq_supplier_name بيقارن بـcollation القاعدة (كابيتال/سمول · مسافات) مش زي PHP،
+            // فاسم «جديد» عندنا ممكن يبقى مكرر عندها — يتسجّل تعارض بدل ما يوقّع الدفعة كلها كل مرة
+            try {
+                $insSupp->execute([$name, $suppId]);
+            } catch (PDOException $e) {
+                if ($e->getCode() !== '23000') throw $e;
+                $suppConflicts[] = ['supp_id' => $suppId, 'name' => $name];
+                $skipped++;
+                continue;
+            }
+            $newId = (int) $pdo->lastInsertId();
+            $newRow = [
+                'id'              => $newId,
+                'name'            => $name,
+                'erp_supplier_id' => $suppId,
+            ];
+            $byErp[$suppId] = $newRow;
+            $byName[$name]  = $newRow;
+            $suppInserted++;
+            $stored++;
+        }
     } elseif ($kind === 'item_cats') {
         // تصنيف الأصناف (القسم الأول) — المصدر ITEMS.IS1_ID
         // بيتستخدم في فلترة "الكتب الخارجية" في موديول الحجز.
@@ -492,6 +585,17 @@ try {
             ->execute([$kind, 0, 'error', mb_substr($ex->getMessage(), 0, 255)]);
     } catch (Throwable $ignore) {}
     hq_die('Write failed.', 500);
+}
+
+if ($kind === 'suppliers') {
+    echo json_encode([
+        'ok'        => true,
+        'inserted'  => $suppInserted,
+        'linked'    => $suppLinked,
+        'unchanged' => $suppUnchanged,
+        'conflicts' => $suppConflicts,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 echo json_encode([

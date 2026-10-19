@@ -29,7 +29,7 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.6'
+$AgentVer  = '2.7'
 
 # The replication program has a different name on every machine (Oct 2 2026):
 #   HQ repl_true.exe, Bonjour Repltrue.exe, Degla a_true.exe
@@ -2200,6 +2200,44 @@ try {
 } catch {
     Write-Log "Item cats query failed: $($_.Exception.Message)"
     $okCats = $false
+}
+
+# ---------------------------------------------------------------------
+#  6b) SUPPLIERS - catalog of suppliers from True ERP (brief 117)
+# ---------------------------------------------------------------------
+$suppSql = @"
+SET NOCOUNT ON;
+SELECT SUPP_ID AS supp_id,
+       LTRIM(RTRIM(SUPP_CODE)) AS code,
+       LTRIM(RTRIM(SUPP_NAME1)) AS name
+FROM SUPPLIERS;
+"@
+
+$okSuppliers = $true
+try {
+    $suppTable = Invoke-Sql $suppSql
+    Write-Log "Read $($suppTable.Rows.Count) supplier rows."
+    $suppRows = New-Object System.Collections.ArrayList
+    foreach ($r in $suppTable.Rows) {
+        $null = $suppRows.Add([ordered]@{
+            supp_id = [int]$r['supp_id']
+            code    = [string]$r['code']
+            name    = [string]$r['name']
+        })
+    }
+    $suppPayload = @{ token = $SyncToken; kind = 'suppliers'; rows = $suppRows } | ConvertTo-Json -Depth 4 -Compress
+    if (-not (Test-Changed 'suppliers' $suppPayload)) {
+        Write-Log "[suppliers] unchanged - nothing to send."
+    } else {
+        if (Send-Payload $suppPayload "suppliers ($($suppRows.Count) rows)") {
+            Set-Sent 'suppliers' $suppPayload
+        } else {
+            $okSuppliers = $false
+        }
+    }
+} catch {
+    Write-Log "Suppliers query failed: $($_.Exception.Message)"
+    $okSuppliers = $false
 }
 
 # ---------------------------------------------------------------------
