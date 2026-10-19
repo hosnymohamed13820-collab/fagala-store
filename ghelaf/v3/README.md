@@ -1,0 +1,12 @@
+# v3 — Heartless / Until I Bleed Out — ريلمي GT ماستر إديشن
+
+| الملف | فيه إيه |
+|---|---|
+| `cover_print.png` | **ملف الطباعة** — ٧٩٫٥×١٦٥٫٢ مم (٣ مم نزيف) ~٦٠٠ dpi |
+| `mockup.png` | موكاب على الموبايل — مكان الكاميرا **تقريبي** |
+| `cover.html` / `mockup.html` | التصميم والموكاب |
+| `portrait.png` | البورتريه بباليتة الدم + شفافية الأطراف (`prep_portrait.py` من `src/portrait.jpg`) |
+
+الباليتة: فحمي `#080304` · نبيتي `#4a0a0f` · دم `#b0121b` · أحمر فاتح `#e2281f`
+
+ارندر: `python3 prep_portrait.py && NODE_PATH=$(npm root -g) node render.js`

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Heartless Case</title>
+<style>
+/* الوحدة = ٠٫١ مم. الكانفاس ٧٩٫٥×١٦٥٫٢ مم = الموبايل ٧٣٫٥×١٥٩٫٢ + ٣ مم نزيف من كل ناحية
+   الكاميرا فوق شمال لحد ~٤٦ مم — الوش بيبدأ تحتها */
+@font-face { font-family: Bodoni; src: url(../fonts/BodoniModa-400.ttf); }
+@font-face { font-family: FiraX; src: url(../fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-400.ttf); font-weight: 400; }
+
+:root { --coal: #080304; --wine: #4a0a0f; --blood: #b0121b; --hot: #e2281f; --ink: #f2ebe6; --mute: #b9a7a3; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 795px; height: 1652px; overflow: hidden;
+  background:
+    radial-gradient(70% 34% at 50% 44%, rgba(122,10,18,.55), transparent 70%),
+    linear-gradient(var(--coal) 0, #0d0405 55%, #2a0609 100%); }
+
+/* الماستهيد فوق يمين جنب الكاميرا */
+.mast { position: absolute; right: 68px; top: 78px; text-align: right; color: var(--blood); }
+.mast h1 { margin: 0; font: 400 92px/.86 Bodoni; letter-spacing: -2px; }
+.mast small { display: block; margin-top: 16px; font: 300 17px/1 FiraC; letter-spacing: 11px; color: var(--mute); margin-right: -11px; }
+
+.portrait { position: absolute; left: -52px; top: 318px; width: 900px; }
+
+.lyrics { position: absolute; left: 68px; right: 68px; }
+.heart { top: 1058px; font: 700 28.5px/37px FiraX; color: var(--ink); white-space: nowrap; }
+.heart b { color: var(--hot); text-transform: uppercase; letter-spacing: 1px; }
+.rule { position: absolute; left: 68px; top: 1334px; width: 92px; height: 3px; background: var(--blood); }
+.rule::after { content: "XO"; position: absolute; left: 108px; top: -9px; font: 300 17px/1 FiraC; letter-spacing: 4px; color: var(--blood); }
+.bleed { top: 1362px; font: 300 24.5px/31.5px FiraC; color: var(--mute); white-space: nowrap; }
+.bleed em { font-style: normal; font-weight: 400; color: var(--ink); }
+
+.grain { position: absolute; inset: 0; opacity: .28; mix-blend-mode: overlay; pointer-events: none; }
+.vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55)); }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <div class="mast">
+    <h1>AFTER<br>HOURS</h1>
+    <small>THE WEEKND</small>
+  </div>
+
+  <img class="portrait" src="portrait.png" alt="">
+
+  <div class="lyrics heart">
+    Never need a bitch, I'm what a bitch need<br>
+    Tryna find the one that can fix me<br>
+    I've been runnin' through the money, need a hit; please<br>
+    Why? 'Cause I'm <b>heartless</b><br>
+    And I'm back to my ways 'cause I'm <b>heartless</b><br>
+    All this money and this pain got me <b>heartless</b><br>
+    Low life for life 'cause I'm <b>heartless</b>
+  </div>
+
+  <div class="rule"></div>
+
+  <div class="lyrics bleed">
+    Well, I don't wanna touch the sky no more<br>
+    I just wanna feel the ground when I'm coming down<br>
+    It's been way too long<br>
+    And been way too long<br>
+    And I don't even wanna get high no more<br>
+    <em>Just want it out of my life</em>
+  </div>
+
+  <div class="vignette"></div>
+  <svg class="grain" width="795" height="1652">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+</div>
+</body>
+</html>
