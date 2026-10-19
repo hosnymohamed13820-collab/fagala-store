@@ -19,9 +19,10 @@ html, body { margin: 0; background: #000; }
     linear-gradient(var(--coal) 0, #0d0405 55%, #2a0609 100%); }
 
 /* الماستهيد فوق يمين جنب الكاميرا */
-.mast { position: absolute; right: 68px; top: 64px; text-align: right; color: var(--blood); }
+.mast { position: absolute; right: 68px; top: 88px; text-align: right; color: var(--blood); }
 .mast h1 { margin: 0; font: 400 92px/.86 Bodoni; letter-spacing: -2px; }
-.mast small { display: block; margin-bottom: 14px; font: 300 17px/1 FiraC; letter-spacing: 11px; color: var(--mute); margin-right: -11px; }
+.mast .name { display: block; margin: 0 -6px 10px 0; font: 700 62px/1 FiraX; letter-spacing: 6px; color: var(--ink);
+  text-shadow: 0 0 18px rgba(226,40,31,.35); }
 
 .portrait { position: absolute; left: -52px; top: 318px; width: 900px; }
 
@@ -48,7 +49,8 @@ html, body { margin: 0; background: #000; }
 /* ضوء أحمر داخل من الركن */
 .leak { position: absolute; right: -180px; top: 380px; width: 520px; height: 620px; border-radius: 50%;
   background: radial-gradient(closest-side, rgba(226,40,31,.32), transparent); mix-blend-mode: screen; }
-.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .55; mix-blend-mode: screen; pointer-events: none; }
+.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .55; mix-blend-mode: screen; pointer-events: none;
+  -webkit-mask-image: radial-gradient(200px 260px at 395px 760px, transparent 70%, #000 100%); }
 .drips { position: absolute; left: 0; top: 0; }
 
 /* ===== رموز ===== */
@@ -77,29 +79,25 @@ html, body { margin: 0; background: #000; }
 <body>
 <div id="canvas">
   <div class="mast">
-    <small>THE WEEKND</small>
+    <span class="name">THE WEEKND</span>
     <h1>AFTER<br>HOURS</h1>
   </div>
 
   <div class="leak"></div>
-  <img class="ghost" src="portrait.png" alt="">
   <img class="portrait" src="portrait.png" alt="">
-  <img class="slice s1" src="portrait.png" alt="">
-  <img class="slice s2" src="portrait.png" alt="">
-  <img class="slice s3" src="portrait.png" alt="">
 
   <div class="vf"><i></i><i></i><i></i><i></i>
     <span class="rec">REC</span><span class="tc">03:14 AM</span><span class="tc2">LAS VEGAS</span>
   </div>
 
   <!-- نقط دم نازلة من HOURS -->
-  <svg class="drips" width="795" height="1652" fill="#b0121b">
+  <svg class="drips" width="795" height="1652" fill="#b0121b"><g transform="translate(0 70)">
     <path d="M436 232 q4 0 4 6 v38 a7 7 0 1 1 -8 0 v-38 q0 -6 4 -6z"/>
     <path d="M545 232 q3 0 3 5 v74 a6.5 6.5 0 1 1 -7 0 v-74 q0 -5 4 -5z"/>
     <path d="M612 232 q2 0 2 4 v18 a5 5 0 1 1 -5 0 v-18 q0 -4 3 -4z"/>
     <path d="M700 232 q3 0 3 5 v52 a6 6 0 1 1 -7 0 v-52 q0 -5 4 -5z"/>
     <circle cx="545" cy="356" r="4"/><circle cx="700" cy="322" r="3"/>
-  </svg>
+  </g></svg>
 
   <div class="trk" style="top:1060px">03<small>HEARTLESS</small></div>
   <svg class="heart-mark" viewBox="0 0 100 92" fill="none" stroke="#4a0a0f" stroke-width="3">
