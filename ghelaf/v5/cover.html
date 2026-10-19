@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Heartless Case v5</title>
+<style>
+/* الوحدة = ٠٫١ مم. الكانفاس ٧٩٫٥×١٦٥٫٢ مم = الموبايل ٧٣٫٥×١٥٩٫٢ + ٣ مم نزيف
+   فتحة الكاميرا: x ٩٢–٣٢٣ · y ٨٩–٤٩١ (بالنزيف) — الوش بيبدأ تحتها */
+@font-face { font-family: Bodoni; src: url(../fonts/BodoniModa-400.ttf); }
+@font-face { font-family: FiraX; src: url(../fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-400.ttf); font-weight: 400; }
+
+:root { --coal: #080304; --wine: #4a0a0f; --blood: #b0121b; --hot: #e2281f; --ink: #f2ebe6; --mute: #b9a7a3; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 795px; height: 1652px; overflow: hidden;
+  background: radial-gradient(80% 40% at 50% 46%, #2a0609, var(--coal) 70%), var(--coal); }
+
+/* الطبقات: الصورة ← العنوان ← الراس تاني فوق العنوان (فيبان إن العنوان ورا الراس) */
+.portrait, .head { position: absolute; left: -93px; top: 333px; width: 1000px; }
+.title { position: absolute; left: 0; right: 0; top: 522px; text-align: center;
+  font: 400 186px/.8 Bodoni; letter-spacing: -5px; color: var(--blood); }
+.drips { position: absolute; left: 0; top: 0; }
+
+/* فوق يمين جنب الكاميرا: الاسم + سطور Until I Bleed Out */
+.name { position: absolute; right: 64px; top: 92px; font: 700 62px/1 FiraX; letter-spacing: 6px; color: var(--ink);
+  text-shadow: 0 0 18px rgba(226,40,31,.35); }
+.bleed { position: absolute; right: 68px; top: 186px; text-align: right; font: 300 24px/32px FiraC; color: var(--mute); }
+.bleed em { font-style: normal; font-weight: 400; color: var(--ink); }
+.bleed::before { content: ""; display: block; width: 60px; height: 3px; background: var(--blood); margin: 0 0 16px auto; }
+
+/* الكوبليه — وآخر كلمة فيه هي البطل */
+.verse { position: absolute; left: 68px; right: 60px; top: 1092px; font: 700 27.5px/35px FiraX; color: var(--ink); white-space: nowrap; }
+.verse .hero { display: block; margin: 2px 0 0 -5px; font: 700 142px/1 FiraX; letter-spacing: 7px; color: var(--hot);
+  text-shadow: 0 0 30px rgba(226,40,31,.35); }
+
+.leak { position: absolute; right: -200px; top: 560px; width: 520px; height: 640px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(226,40,31,.22), transparent); mix-blend-mode: screen; }
+.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .5; mix-blend-mode: screen; pointer-events: none;
+  -webkit-mask-image: radial-gradient(230px 300px at 394px 766px, transparent 70%, #000 100%); }
+.grain { position: absolute; inset: 0; opacity: .26; mix-blend-mode: overlay; pointer-events: none; }
+.vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55)); }
+
+body.guide #canvas::before { content: ""; position: absolute; inset: 30px; border: 2px dashed #3cf; border-radius: 90px; z-index: 9; }
+body.guide #canvas::after { content: ""; position: absolute; left: 92px; top: 89px; width: 231px; height: 402px; border-radius: 34px;
+  border: 2px dashed #3cf; background: rgba(51,204,255,.18); z-index: 9; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <img class="portrait" src="portrait.png" alt="">
+  <div class="title">AFTER<br>HOURS</div>
+  <img class="head" src="head.png" alt="">
+  <div class="leak"></div>
+
+  <div class="name">THE WEEKND</div>
+  <div class="bleed">
+    It's been way too long<br>
+    And been way too long<br>
+    <em>Just want it out of my life</em>
+  </div>
+
+  <div class="verse">
+    Never need a bitch, I'm what a bitch need<br>
+    Tryna find the one that can fix me<br>
+    I've been runnin' through the money, need a hit; please<br>
+    Why? 'Cause I'm heartless<br>
+    And I'm back to my ways 'cause I'm heartless<br>
+    All this money and this pain got me heartless<br>
+    Low life for life 'cause I'm
+    <span class="hero">HEARTLESS</span>
+  </div>
+
+  <img class="dust" src="dust.png" alt="">
+  <div class="vignette"></div>
+  <svg class="grain" width="795" height="1652">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+</div>
+</body>
+</html>
