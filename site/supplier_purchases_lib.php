@@ -52,10 +52,17 @@ function sp_source_rows(string $from, string $to, ?int $branch = null): array
     $whereSql = implode(' AND ', $where);
 
     // استعلام واحد مجمّع يربط مع جدول suppliers لجلب payment_type
-    // والترتيب بالكود كرقم ثم كنص
+    // والترتيب بالكود كرقم ثم كنص.
+    //
+    // التجميع بالكود بس — لأن الاسم بيتخزّن مع كل فاتورة في hq_invoices،
+    // فلو المورد اتغيّر اسمه في True في نص الفترة كان بيطلع سطرين (تقرير True
+    // بيجمّع بالمورد). والاسم المعروض = اسم **أحدث فاتورة** في الفترة:
+    // GROUP_CONCAT مرتب بالتاريخ تنازلي وبعدين أول عنصر بالفاصل \x1F.
+    // (مفيش قلق من قص GROUP_CONCAT الافتراضي ١٠٢٤ بايت: القص بيحصل في الآخر
+    //  والاسم الأحدث محفوظ في الأول.)
     $sql = "SELECT
                 COALESCE(h.supplier_code, '') AS supplier_code,
-                COALESCE(h.supplier_name, '') AS supplier_name,
+                SUBSTRING_INDEX(GROUP_CONCAT(h.supplier_name ORDER BY h.invoice_date DESC SEPARATOR '\x1F'), '\x1F', 1) AS supplier_name,
                 MAX(s.payment_type) AS payment_type,
                 SUM(CASE WHEN h.doc_type = 2 THEN h.net_amount ELSE 0 END) AS purchases,
                 SUM(CASE WHEN h.doc_type = 6 THEN h.net_amount ELSE 0 END) AS returns_amount,
@@ -63,7 +70,7 @@ function sp_source_rows(string $from, string $to, ?int $branch = null): array
             FROM hq_invoices h
             LEFT JOIN suppliers s ON s.erp_supplier_id = h.supplier_id
             WHERE $whereSql
-            GROUP BY h.supplier_code, h.supplier_name
+            GROUP BY h.supplier_code
             ORDER BY CAST(h.supplier_code AS UNSIGNED) ASC, h.supplier_code ASC";
 
     $stmt = $pdo->prepare($sql);
