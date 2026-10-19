@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Heartless Case v7</title>
+<style>
+/* v7 = v6 «سين سيتي» + من v4: الماستهيد بنقط الدم · كادر REC · أرقام التراكات · الضوء الجانبي
+   الوحدة = ٠٫١ مم · الكانفاس ٧٩٫٥×١٦٥٫٢ مم بالنزيف · فتحة الكاميرا x ٩٢–٣٢٣ / y ٨٩–٤٩١ */
+@font-face { font-family: Bodoni; src: url(../fonts/BodoniModa-400.ttf); }
+@font-face { font-family: FiraX; src: url(../fonts/FiraSansXCond-700.ttf); font-weight: 700; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-300.ttf); font-weight: 300; }
+@font-face { font-family: FiraC; src: url(../fonts/FiraSansCond-400.ttf); font-weight: 400; }
+@font-face { font-family: Script; src: url(../fonts/MrsSaintDelafield.ttf); }
+
+:root { --coal: #070304; --blood: #c0141c; --hot: #e3221e; --ink: #f1ece8; --mute: #a99a97; }
+html, body { margin: 0; background: #000; }
+#canvas { position: relative; width: 795px; height: 1652px; overflow: hidden; background: var(--coal); }
+
+.portrait { position: absolute; left: -32px; top: 296px; width: 860px; }
+
+/* فوق يمين جنب الكاميرا — من v4 */
+.mast { position: absolute; right: 68px; top: 88px; text-align: right; color: var(--blood); }
+.mast .name { display: block; margin: 0 -6px 10px 0; font: 700 62px/1 FiraX; letter-spacing: 6px; color: var(--ink);
+  text-shadow: 0 0 18px rgba(227,34,30,.35); }
+.mast h1 { margin: 0; font: 400 92px/.86 Bodoni; letter-spacing: -2px; }
+.drips { position: absolute; left: 0; top: 0; }
+
+/* كادر كاميرا حوالين الوش — من v4 */
+.vf { position: absolute; left: 118px; top: 506px; width: 559px; height: 520px; }
+.vf i { position: absolute; width: 34px; height: 34px; border: 0 solid rgba(241,236,232,.7); }
+.vf i:nth-child(1) { left: 0; top: 0; border-width: 2px 0 0 2px; }
+.vf i:nth-child(2) { right: 0; top: 0; border-width: 2px 2px 0 0; }
+.vf i:nth-child(3) { left: 0; bottom: 0; border-width: 0 0 2px 2px; }
+.vf i:nth-child(4) { right: 0; bottom: 0; border-width: 0 2px 2px 0; }
+.vf span { position: absolute; top: 12px; font: 400 18px/1 FiraC; letter-spacing: 3px; color: var(--ink); }
+.vf .rec { left: 46px; }
+.vf .rec::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--hot); margin-right: 8px; box-shadow: 0 0 8px var(--hot); }
+.vf .tc { right: 46px; }
+.vf .loc { right: 46px; top: auto; bottom: 12px; color: var(--mute); }
+
+/* رقم التراك — من v4 */
+.trk { position: absolute; font: 400 40px/1 Bodoni; color: var(--blood); }
+.trk small { display: block; margin-top: 4px; font: 300 14px/1 FiraC; letter-spacing: 3px; color: var(--mute); }
+
+.leak { position: absolute; right: -200px; top: 480px; width: 520px; height: 640px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(227,34,30,.26), transparent); mix-blend-mode: screen; }
+
+/* خطوط ضوء أحمر زي أنوار فيجاس وهي بتجري */
+.streak { position: absolute; left: -40px; right: -40px; height: 4px; filter: blur(3px); mix-blend-mode: screen;
+  background: linear-gradient(90deg, transparent, rgba(227,34,30,.75) 30%, rgba(255,120,100,.9) 52%, rgba(227,34,30,.6) 70%, transparent); }
+
+/* السطر الوحيد من Heartless */
+.lyric { position: absolute; left: 0; right: 0; top: 1246px; text-align: center; }
+.lyric small { display: block; font: 400 25px/1 FiraC; letter-spacing: 8px; margin-right: -8px; color: var(--ink); }
+.lyric em { display: block; margin-top: -6px; font: 400 150px/1.05 Script; font-style: normal; color: var(--hot);
+  text-shadow: 0 0 26px rgba(227,34,30,.45); }
+/* والسطر التاني من Until I Bleed Out */
+.sign { position: absolute; left: 0; right: 0; top: 1508px; text-align: center;
+  font: 300 20px/1 FiraC; letter-spacing: 7px; margin-right: -7px; color: var(--mute); }
+
+.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .45; mix-blend-mode: screen; pointer-events: none;
+  -webkit-mask-image: radial-gradient(230px 300px at 399px 766px, transparent 70%, #000 100%); }
+.grain { position: absolute; inset: 0; opacity: .24; mix-blend-mode: overlay; pointer-events: none; }
+.vignette { position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 46%, transparent 55%, rgba(0,0,0,.6)); }
+
+body.guide #canvas::before { content: ""; position: absolute; inset: 30px; border: 2px dashed #3cf; border-radius: 90px; z-index: 9; }
+body.guide #canvas::after { content: ""; position: absolute; left: 92px; top: 89px; width: 231px; height: 402px; border-radius: 34px;
+  border: 2px dashed #3cf; background: rgba(51,204,255,.18); z-index: 9; }
+</style>
+</head>
+<body>
+<div id="canvas">
+  <img class="portrait" src="portrait.png" alt="">
+
+  <div class="leak"></div>
+  <div class="mast"><span class="name">THE WEEKND</span><h1>AFTER<br>HOURS</h1></div>
+  <!-- نقط دم نازلة من HOURS -->
+  <svg class="drips" width="795" height="1652" fill="#c0141c"><g transform="translate(0 70)">
+    <path d="M436 232 q4 0 4 6 v38 a7 7 0 1 1 -8 0 v-38 q0 -6 4 -6z"/>
+    <path d="M545 232 q3 0 3 5 v74 a6.5 6.5 0 1 1 -7 0 v-74 q0 -5 4 -5z"/>
+    <path d="M612 232 q2 0 2 4 v18 a5 5 0 1 1 -5 0 v-18 q0 -4 3 -4z"/>
+    <path d="M700 232 q3 0 3 5 v52 a6 6 0 1 1 -7 0 v-52 q0 -5 4 -5z"/>
+    <circle cx="545" cy="356" r="4"/><circle cx="700" cy="322" r="3"/>
+  </g></svg>
+
+  <div class="vf"><i></i><i></i><i></i><i></i>
+    <span class="rec">REC</span><span class="tc">03:14 AM</span><span class="loc">LAS VEGAS</span>
+  </div>
+
+  <div class="streak" style="top:1362px"></div>
+  <div class="streak" style="top:1388px; height:2px; opacity:.6; left:120px"></div>
+  <div class="streak" style="top:1416px; height:6px; opacity:.45; right:180px"></div>
+
+  <div class="lyric">
+    <small>ALL THIS MONEY AND THIS PAIN</small>
+    <em>got me heartless</em>
+  </div>
+  <div class="sign">just want it out of my life</div>
+  <div class="trk" style="left:68px; top:1478px">03<small>HEARTLESS</small></div>
+  <div class="trk" style="right:68px; top:1478px; text-align:right">14<small>BLEED OUT</small></div>
+
+  <img class="dust" src="dust.png" alt="">
+  <div class="vignette"></div>
+  <svg class="grain" width="795" height="1652">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+</div>
+</body>
+</html>
