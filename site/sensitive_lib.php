@@ -5,6 +5,10 @@ const SENS_MAX_FAILS    = 5;
 const SENS_BLOCK_SECONDS = 300;
 
 function sens_unlocked(): bool {
+    // بريف ١٣٠: الصفحة مفتوحة بالاستعارة (view_all) ← الباسورد مابيفتحش الأرقام
+    if (!empty($GLOBALS['VIEW_ALL_PAGE'])) {
+        return false;
+    }
     return !empty($_SESSION['sens_until']) && (int) $_SESSION['sens_until'] > time();
 }
 
@@ -31,6 +35,10 @@ function sens_mask(string $html): string {
 }
 
 function sens_eye(): string {
+    // بريف ١٣٠: في الصفحة المستعارة مفيش زرار «اظهر الأرقام» — الباسورد مش هيفتحها
+    if (!empty($GLOBALS['VIEW_ALL_PAGE'])) {
+        return '<span class="sens-eye-main" style="color:inherit;opacity:.85"><i class="ti ti-lock"></i> الأرقام مقفولة — حسابك مشاهدة بس</span>';
+    }
     $unlocked = sens_unlocked();
     $icon = $unlocked ? 'ti-lock' : 'ti-eye';
     $text = $unlocked ? 'اقفل' : 'اظهر الأرقام';
@@ -44,6 +52,15 @@ function sens_eye(): string {
 
 function sens_lock_screen(string $what): void {
     $safeWhat = htmlspecialchars($what, ENT_QUOTES, 'UTF-8');
+    // بريف ١٣٠: صفحة مستعارة ← مفيش زرار فتح، وباسورد المستخدم مش هيفيد
+    if (!empty($GLOBALS['VIEW_ALL_PAGE'])) {
+        echo '<div class="sens-lock-card">'
+            . '<div class="sens-lock-icon"><i class="ti ti-lock"></i></div>'
+            . '<h2 class="sens-lock-title">' . $safeWhat . ' مقفولة</h2>'
+            . '<p class="sens-lock-msg">الأرقام مقفولة — حسابك مشاهدة بس</p>'
+            . '</div>';
+        return;
+    }
     echo '<div class="sens-lock-card">'
         . '<div class="sens-lock-icon"><i class="ti ti-lock"></i></div>'
         . '<h2 class="sens-lock-title">' . $safeWhat . ' مقفولة</h2>'

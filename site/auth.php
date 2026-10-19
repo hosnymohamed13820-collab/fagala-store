@@ -711,6 +711,8 @@ function require_permission(string $moduleKey): void
                 http_response_code(403);
                 exit('حسابك مشاهدة بس، وماقدرناش نقفل الكتابة — جرّب تاني.');
             }
+            // بريف ١٣٠: الصفحة دي مفتوحة بالاستعارة — المكتبة بتقفل الأرقام الحساسة
+            $GLOBALS['VIEW_ALL_PAGE'] = true;
         }
     }
 
@@ -770,6 +772,8 @@ function require_module_access(string $moduleKey): void
                 http_response_code(403);
                 exit('حسابك مشاهدة بس، وماقدرناش نقفل الكتابة — جرّب تاني.');
             }
+            // بريف ١٣٠: الصفحة دي مفتوحة بالاستعارة — المكتبة بتقفل الأرقام الحساسة
+            $GLOBALS['VIEW_ALL_PAGE'] = true;
         }
     }
 
