@@ -11,23 +11,6 @@ require_once __DIR__ . '/auth.php';
 require_permission('price_inquiry');
 require_once __DIR__ . '/price_lib.php';
 
-// طلب AJAX للبحث (يرجّع JSON)
-if (isset($_GET['ajax'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    try {
-        if ($_GET['ajax'] === 'barcode') {
-            $res = lookup_price_by_barcode($_GET['code'] ?? '');
-            echo json_encode($res ?: ['error' => 'الصنف غير موجود'], JSON_UNESCAPED_UNICODE);
-        } elseif ($_GET['ajax'] === 'search') {
-            echo json_encode(search_items($_GET['term'] ?? ''), JSON_UNESCAPED_UNICODE);
-        } else {
-            echo json_encode(['error' => 'طلب غير معروف']);
-        }
-    } catch (Throwable $ex) {
-        echo json_encode(['error' => 'خطأ في الاتصال: ' . $ex->getMessage()], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
 
 $page_title    = 'استعلام الأسعار';
 $active_module = 'price_inquiry';
@@ -111,9 +94,14 @@ require_once __DIR__ . '/includes/header.php';
     function doLookup() {
         const code = document.getElementById('barcode').value.trim();
         if (!code) return;
-        fetch('price_inquiry.php?ajax=barcode&code=' + encodeURIComponent(code))
-            .then(r => r.json())
-            .then(showResult)
+        apiFetch('price_inquiry_api.php?part=barcode&code=' + encodeURIComponent(code))
+            .then(j => {
+                if (j.data && j.data.row) {
+                    showResult(j.data.row);
+                } else {
+                    showResult({ error: 'الصنف غير موجود' });
+                }
+            })
             .catch(() => showError('تعذّر الاتصال.'));
     }
 
@@ -155,9 +143,9 @@ require_once __DIR__ . '/includes/header.php';
         const term = document.getElementById('nameSearch').value.trim();
         const box = document.getElementById('searchResults');
         if (term.length < 2) { box.innerHTML = ''; return; }
-        fetch('price_inquiry.php?ajax=search&term=' + encodeURIComponent(term))
-            .then(r => r.json())
-            .then(list => {
+        apiFetch('price_inquiry_api.php?part=search&term=' + encodeURIComponent(term))
+            .then(j => {
+                const list = (j.data && j.data.rows) ? j.data.rows : [];
                 if (!Array.isArray(list) || list.length === 0) { box.innerHTML = '<div class="hint">لا نتائج</div>'; return; }
                 box.innerHTML = list.map(it =>
                     '<div class="sr-item" onclick="pickItem(\'' + encodeURIComponent(it.code) + '\')">' +

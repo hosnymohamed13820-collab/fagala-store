@@ -29,30 +29,6 @@ if ($ajax !== '') {
     header('Content-Type: application/json; charset=utf-8');
     try {
         switch ($ajax) {
-            // إضافة صنف بالكود (مسح/كتابة)
-            case 'code':
-                $row = stock_item_by_code((string) ($_GET['code'] ?? ''));
-                echo json_encode($row
-                    ? ['ok' => true, 'row' => $row]
-                    : ['ok' => false, 'not_found' => true, 'local_ready' => stock_local_ready()], JSON_UNESCAPED_UNICODE);
-                break;
-
-            // اقتراحات البحث بالاسم (منسدلة)
-            case 'search':
-                $rows = stock_search_by_name((string) ($_GET['term'] ?? ''), 25);
-                echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
-                break;
-
-            // فلترة (لما مفيش أصناف مضافة)
-            case 'filter':
-                $rows = stock_filter_items(
-                    (string) ($_GET['mode'] ?? ''),
-                    (int) ($_GET['sto'] ?? 0),
-                    (float) ($_GET['threshold'] ?? 0)
-                );
-                echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
-                break;
-
             // إرسال طلب النواقص
             case 'submit':
                 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -342,12 +318,12 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function fetchSug(term) {
-        fetch('shortage.php?ajax=search&term=' + encodeURIComponent(term))
-            .then(r => r.json())
+        apiFetch('shortage_api.php?part=search&term=' + encodeURIComponent(term))
             .then(j => {
                 const box = document.getElementById('sug');
-                if (!j.ok || !j.rows.length) { hideSug(); return; }
-                box.innerHTML = j.rows.map(r =>
+                const rows = (j.data && j.data.rows) ? j.data.rows : [];
+                if (!rows.length) { hideSug(); return; }
+                box.innerHTML = rows.map(r =>
                     '<div class="sq-sug-item" onclick=\'pick(' + JSON.stringify(r).replace(/'/g,"&#39;") + ')\'>' +
                       '<span><b>' + esc(r.name) + '</b><br><span class="sug-code">' + esc(r.code) + '</span></span>' +
                       '<span class="sug-bal">' + fmt(r.total) + '</span>' +
@@ -371,24 +347,20 @@ require_once __DIR__ . '/includes/header.php';
         if (!code) return;
         hideSug();
         setStatus('بيدور…', 'var(--ink-500)');
-        fetch('shortage.php?ajax=code&code=' + encodeURIComponent(code))
-            .then(r => r.json())
+        apiFetch('shortage_api.php?part=code&code=' + encodeURIComponent(code))
             .then(j => {
-                if (j.ok) {
+                const d = j.data || {};
+                if (d.row) {
                     inp.value = '';
-                    pushRow(j.row);
+                    pushRow(d.row);
                     if (navigator.vibrate) navigator.vibrate(50);
-                } else if (j.not_found) {
-                    if (j.local_ready === false) {
-                        setStatus('✗ الصنف ده مش في مرآة الإدارة. شغّل وكيل مزامنة الإدارة وجرّب تاني.', 'var(--neg)');
-                    } else {
-                        setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
-                    }
+                } else if (d.local_ready === false) {
+                    setStatus('✗ الصنف ده مش في مرآة الإدارة. شغّل وكيل مزامنة الإدارة وجرّب تاني.', 'var(--neg)');
                 } else {
-                    setStatus('✗ ' + (j.error || 'خطأ'), 'var(--neg)');
+                    setStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'var(--neg)');
                 }
             })
-            .catch(() => setStatus('✗ مفيش اتصال', 'var(--neg)'))
+            .catch(err => setStatus('✗ ' + (err.error || 'مفيش اتصال'), 'var(--neg)'))
             .finally(() => inp.focus());
     }
 
@@ -454,20 +426,19 @@ require_once __DIR__ . '/includes/header.php';
 
         // مفيش أصناف مضافة → نجيب بالفلتر
         setStatus('بيجيب الأصناف…', 'var(--ink-500)');
-        const p = new URLSearchParams({ajax:'filter', mode:mode});
+        const p = new URLSearchParams({part:'filter', mode:mode});
         if (mode === 'has_stock') {
             const sto = +document.getElementById('branchPick').value || 0;
             if (sto > 0) { p.set('mode', 'branch_only'); p.set('sto', String(sto)); }
         }
         if (mode === 'below') p.set('threshold', document.getElementById('belowVal').value || '0');
-        fetch('shortage.php?' + p.toString())
-            .then(r => r.json())
+        apiFetch('shortage_api.php?' + p.toString())
             .then(j => {
-                if (!j.ok) { setStatus('✗ ' + (j.error||'خطأ'), 'var(--neg)'); return; }
-                render(j.rows);
-                setStatus(j.rows.length ? '' : 'مفيش أصناف مطابقة', 'var(--ink-500)');
+                const rows = (j.data && j.data.rows) ? j.data.rows : [];
+                render(rows);
+                setStatus(rows.length ? '' : 'مفيش أصناف مطابقة', 'var(--ink-500)');
             })
-            .catch(() => setStatus('✗ مفيش اتصال', 'var(--neg)'));
+            .catch(err => setStatus('✗ ' + (err.error || 'مفيش اتصال'), 'var(--neg)'));
     }
 
     function passes(r) {
