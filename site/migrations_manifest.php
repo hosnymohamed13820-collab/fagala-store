@@ -4,4 +4,5 @@ return [
     '20261004_000_schema_migrations',
     '20261012_000_custody_line_types',
     '20261012_001_rabt_reminded',
+    '20261019_000_supplier_payment_type',
 ];
