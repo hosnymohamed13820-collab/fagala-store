@@ -45,6 +45,8 @@ $ctx = [
     'user_branch_id' => $userBranchId,
     'is_owner'       => $isOwner,
     'is_supervisor'  => $isSupervisor,
+        // الجزء نفسه بالحرف — can() بترجّع true لأي حد معاه موديول receiving كامل
+        'can_diffs'      => in_array('receiving:diffs', $_SESSION['permissions'] ?? [], true),
     'can_view'       => $canView,
 ];
 

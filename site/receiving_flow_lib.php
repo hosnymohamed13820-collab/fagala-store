@@ -441,9 +441,17 @@ function receiving_diffs_data(array $ctx, array $filters): array
 
     $pdo = db();
 
+    // موظف الفرع بيشوف فرعه بس (قرار محمد ١٩/١٠/٢٠٢٦ — قبلها كان بيشوف الخمس فروع).
+    // الكل: المالك · مشرف الاستلام · صلاحية receiving:diffs. null = كل الفروع.
+    // ومين مالوش فرع أو فرعه الإدارة (6) بيشوف الكل برضه.
+    $ub     = (int) ($ctx['user_branch_id'] ?? 0);
+    $seeAll = !empty($ctx['is_owner']) || !empty($ctx['is_supervisor']) || !empty($ctx['can_diffs'])
+              || $ub <= 0 || $ub === 6;
+    $scope  = $seeAll ? null : $ub;
+
     // الحالة الأولى: مفيش فاتورة ولا مجموعة مختارة ← قايمة اللي ليه استلام مفتوح
     if ($groupId <= 0 && $distId <= 0) {
-        $stAvailable = $pdo->query(
+        $stAvailable = $pdo->prepare(
             "SELECT r.group_id, r.distribution_id,
                     MAX(r.created_at) AS last_date,
                     g.name AS group_name,
@@ -451,11 +459,13 @@ function receiving_diffs_data(array $ctx, array $filters): array
                     COUNT(DISTINCT r.branch_id) AS branches_count
              FROM receipts r
              LEFT JOIN invoice_groups g ON g.id = r.group_id AND r.group_id > 0
-             LEFT JOIN invoice_distribution d ON d.id = r.distribution_id AND r.distribution_id > 0
+             LEFT JOIN invoice_distribution d ON d.id = r.distribution_id AND r.distribution_id > 0"
+            . ($scope !== null ? " WHERE r.branch_id = ?" : "") . "
              GROUP BY r.group_id, r.distribution_id
              ORDER BY last_date DESC"
         );
-        $out['available_list'] = $stAvailable ? $stAvailable->fetchAll() : [];
+        $stAvailable->execute($scope !== null ? [$scope] : []);
+        $out['available_list'] = $stAvailable->fetchAll();
         return $out;
     }
 
@@ -480,15 +490,19 @@ function receiving_diffs_data(array $ctx, array $filters): array
     $out['title'] = $title;
 
     // جلب الفروع الخمسة (باستثناء الإدارة 6)
-    $branches = $pdo->query('SELECT id, name FROM branches WHERE id <> 6 AND is_active = 1 ORDER BY id')->fetchAll();
+    $stBr = $pdo->prepare('SELECT id, name FROM branches WHERE id <> 6 AND is_active = 1'
+        . ($scope !== null ? ' AND id = ?' : '') . ' ORDER BY id');
+    $stBr->execute($scope !== null ? [$scope] : []);
+    $branches = $stBr->fetchAll();
     $out['branches'] = $branches;
 
     // جلب سجلات receipts المفتوحة لهذا السياق
     $stReceipts = $pdo->prepare(
         'SELECT id, branch_id, status FROM receipts
-         WHERE (group_id = ? AND distribution_id = 0) OR (group_id = 0 AND distribution_id = ?)'
+         WHERE ((group_id = ? AND distribution_id = 0) OR (group_id = 0 AND distribution_id = ?))'
+        . ($scope !== null ? ' AND branch_id = ?' : '')
     );
-    $stReceipts->execute([$groupId, $distId]);
+    $stReceipts->execute($scope !== null ? [$groupId, $distId, $scope] : [$groupId, $distId]);
     $receiptsByBranch = [];
     $receiptIds = [];
     foreach ($stReceipts->fetchAll() as $rc) {
@@ -512,7 +526,7 @@ function receiving_diffs_data(array $ctx, array $filters): array
         $stDistLines = $pdo->query(
             "SELECT dl.notes AS item_code, dl.branch_id, SUM(dl.amount) AS distributed_qty
              FROM invoice_distribution_lines dl
-             WHERE dl.distribution_id IN ($inClause) AND dl.amount > 0 AND dl.branch_id <> 6
+             WHERE dl.distribution_id IN ($inClause) AND dl.amount > 0 AND dl.branch_id <> 6" . ($scope !== null ? ' AND dl.branch_id = ' . $scope : '') . "
              GROUP BY dl.notes, dl.branch_id"
         );
         $distRows = $stDistLines ? $stDistLines->fetchAll() : [];
