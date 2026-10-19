@@ -55,7 +55,7 @@ html, body { margin: 0; background: #000; }
 
 /* ===== رموز ===== */
 /* كادر كاميرا حوالين الوش */
-.vf { position: absolute; left: 118px; top: 500px; width: 559px; height: 540px; }
+.vf { position: absolute; left: 118px; top: 512px; width: 559px; height: 515px; }
 .vf i { position: absolute; width: 34px; height: 34px; border: 0 solid rgba(242,235,230,.7); }
 .vf i:nth-child(1) { left: 0; top: 0; border-width: 2px 0 0 2px; }
 .vf i:nth-child(2) { right: 0; top: 0; border-width: 2px 2px 0 0; }
@@ -74,6 +74,9 @@ html, body { margin: 0; background: #000; }
 .barcode div { height: 96px; background: repeating-linear-gradient(90deg,
   var(--mute) 0 2px, transparent 2px 4px, var(--mute) 4px 5px, transparent 5px 8px, var(--mute) 8px 11px, transparent 11px 12px, var(--mute) 12px 13px, transparent 13px 16px); opacity: .75; }
 .barcode span { display: block; margin-top: 5px; font: 300 10px/1 FiraC; letter-spacing: 1.5px; color: var(--mute); }
+body.guide #canvas::before { content: ""; position: absolute; inset: 30px; border: 2px dashed #3cf; border-radius: 90px; z-index: 9; }
+body.guide #canvas::after { content: ""; position: absolute; left: 92px; top: 89px; width: 231px; height: 402px; border-radius: 34px;
+  border: 2px dashed #3cf; background: rgba(51,204,255,.18); z-index: 9; }
 </style>
 </head>
 <body>
