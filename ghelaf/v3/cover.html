@@ -19,9 +19,9 @@ html, body { margin: 0; background: #000; }
     linear-gradient(var(--coal) 0, #0d0405 55%, #2a0609 100%); }
 
 /* الماستهيد فوق يمين جنب الكاميرا */
-.mast { position: absolute; right: 68px; top: 78px; text-align: right; color: var(--blood); }
+.mast { position: absolute; right: 68px; top: 64px; text-align: right; color: var(--blood); }
 .mast h1 { margin: 0; font: 400 92px/.86 Bodoni; letter-spacing: -2px; }
-.mast small { display: block; margin-top: 16px; font: 300 17px/1 FiraC; letter-spacing: 11px; color: var(--mute); margin-right: -11px; }
+.mast small { display: block; margin-bottom: 14px; font: 300 17px/1 FiraC; letter-spacing: 11px; color: var(--mute); margin-right: -11px; }
 
 .portrait { position: absolute; left: -52px; top: 318px; width: 900px; }
 
@@ -36,17 +36,76 @@ html, body { margin: 0; background: #000; }
 .grain { position: absolute; inset: 0; opacity: .28; mix-blend-mode: overlay; pointer-events: none; }
 .vignette { position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0,0,0,.55)); }
+
+/* ===== إفكتات ===== */
+/* شبح: نسخة مزحزحة من الصورة — إحساس الدوخة والوجع */
+.ghost { position: absolute; left: -38px; top: 314px; width: 900px; opacity: .28; mix-blend-mode: screen; filter: blur(1.5px); }
+/* جلتش: شرايح من الصورة متزحلقة عند العين والبق */
+.slice { position: absolute; left: -52px; top: 318px; width: 900px; }
+.s1 { clip-path: inset(38.6% 24% 59.4% 26%); transform: translateX(18px); }
+.s2 { clip-path: inset(41.2% 30% 58.1% 28%); transform: translateX(-12px); filter: brightness(1.5); }
+.s3 { clip-path: inset(62.5% 32% 36.4% 34%); transform: translateX(10px); }
+/* ضوء أحمر داخل من الركن */
+.leak { position: absolute; right: -180px; top: 380px; width: 520px; height: 620px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(226,40,31,.32), transparent); mix-blend-mode: screen; }
+.dust { position: absolute; inset: 0; width: 795px; height: 1652px; opacity: .55; mix-blend-mode: screen; pointer-events: none; }
+.drips { position: absolute; left: 0; top: 0; }
+
+/* ===== رموز ===== */
+/* كادر كاميرا حوالين الوش */
+.vf { position: absolute; left: 118px; top: 486px; width: 559px; height: 520px; }
+.vf i { position: absolute; width: 34px; height: 34px; border: 0 solid rgba(242,235,230,.7); }
+.vf i:nth-child(1) { left: 0; top: 0; border-width: 2px 0 0 2px; }
+.vf i:nth-child(2) { right: 0; top: 0; border-width: 2px 2px 0 0; }
+.vf i:nth-child(3) { left: 0; bottom: 0; border-width: 0 0 2px 2px; }
+.vf i:nth-child(4) { right: 0; bottom: 0; border-width: 0 2px 2px 0; }
+.vf .rec { position: absolute; left: 46px; top: 10px; font: 400 16px/1 FiraC; letter-spacing: 3px; color: var(--ink); }
+.vf .rec::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: var(--hot); margin-right: 8px; box-shadow: 0 0 8px var(--hot); }
+.vf .tc { position: absolute; right: 46px; top: 10px; font: 400 16px/1 FiraC; letter-spacing: 3px; color: var(--ink); }
+.vf .tc2 { position: absolute; right: 46px; bottom: 10px; font: 300 14px/1 FiraC; letter-spacing: 3px; color: var(--mute); }
+
+/* رقم التراك في الألبوم */
+.trk { position: absolute; right: 68px; font: 400 40px/1 Bodoni; color: var(--blood); }
+.trk small { display: block; text-align: right; font: 300 12px/1 FiraC; letter-spacing: 3px; color: var(--mute); margin-top: 4px; }
+.heart-mark { position: absolute; right: 50px; top: 1196px; width: 108px; opacity: .95; }
+.barcode { position: absolute; right: 68px; top: 1470px; width: 58px; text-align: center; }
+.barcode div { height: 96px; background: repeating-linear-gradient(90deg,
+  var(--mute) 0 2px, transparent 2px 4px, var(--mute) 4px 5px, transparent 5px 8px, var(--mute) 8px 11px, transparent 11px 12px, var(--mute) 12px 13px, transparent 13px 16px); opacity: .75; }
+.barcode span { display: block; margin-top: 5px; font: 300 10px/1 FiraC; letter-spacing: 1.5px; color: var(--mute); }
 </style>
 </head>
 <body>
 <div id="canvas">
   <div class="mast">
-    <h1>AFTER<br>HOURS</h1>
     <small>THE WEEKND</small>
+    <h1>AFTER<br>HOURS</h1>
   </div>
 
+  <div class="leak"></div>
+  <img class="ghost" src="portrait.png" alt="">
   <img class="portrait" src="portrait.png" alt="">
+  <img class="slice s1" src="portrait.png" alt="">
+  <img class="slice s2" src="portrait.png" alt="">
+  <img class="slice s3" src="portrait.png" alt="">
 
+  <div class="vf"><i></i><i></i><i></i><i></i>
+    <span class="rec">REC</span><span class="tc">03:14 AM</span><span class="tc2">LAS VEGAS</span>
+  </div>
+
+  <!-- نقط دم نازلة من HOURS -->
+  <svg class="drips" width="795" height="1652" fill="#b0121b">
+    <path d="M436 232 q4 0 4 6 v38 a7 7 0 1 1 -8 0 v-38 q0 -6 4 -6z"/>
+    <path d="M545 232 q3 0 3 5 v74 a6.5 6.5 0 1 1 -7 0 v-74 q0 -5 4 -5z"/>
+    <path d="M612 232 q2 0 2 4 v18 a5 5 0 1 1 -5 0 v-18 q0 -4 3 -4z"/>
+    <path d="M700 232 q3 0 3 5 v52 a6 6 0 1 1 -7 0 v-52 q0 -5 4 -5z"/>
+    <circle cx="545" cy="356" r="4"/><circle cx="700" cy="322" r="3"/>
+  </svg>
+
+  <div class="trk" style="top:1060px">03<small>HEARTLESS</small></div>
+  <svg class="heart-mark" viewBox="0 0 100 92" fill="none" stroke="#4a0a0f" stroke-width="3">
+    <path d="M50 88 L10 48 A22 22 0 0 1 50 14 A22 22 0 0 1 90 48 Z" fill="rgba(74,10,15,.35)"/>
+    <path d="M50 14 L44 32 L55 44 L43 58 L52 70 L50 88" stroke="#b0121b" stroke-width="2.5"/>
+  </svg>
   <div class="lyrics heart">
     Never need a bitch, I'm what a bitch need<br>
     Tryna find the one that can fix me<br>
@@ -59,6 +118,7 @@ html, body { margin: 0; background: #000; }
 
   <div class="rule"></div>
 
+  <div class="trk" style="top:1364px">14<small>BLEED OUT</small></div>
   <div class="lyrics bleed">
     Well, I don't wanna touch the sky no more<br>
     I just wanna feel the ground when I'm coming down<br>
@@ -68,6 +128,8 @@ html, body { margin: 0; background: #000; }
     <em>Just want it out of my life</em>
   </div>
 
+  <div class="barcode"><div></div><span>XO·2020</span></div>
+  <img class="dust" src="dust.png" alt="">
   <div class="vignette"></div>
   <svg class="grain" width="795" height="1652">
     <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix type="saturate" values="0"/></filter>
