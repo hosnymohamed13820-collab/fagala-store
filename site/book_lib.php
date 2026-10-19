@@ -206,6 +206,27 @@ function book_catalog_with_orders(string $term = '', int $limit = 500): array
 }
 
 /**
+ * بحث طلبيات الكتب — نفس اللي كان جوه `ajax=search` في book_orders.php
+ * بالحرف (بريف ١٢٧)، عشان الصفحة والـapi مايكرروهوش.
+ *
+ * بترجّع نفس صفوف book_catalog_with_orders() وزوّد عليها `has_order`.
+ *
+ * @return array
+ */
+function book_orders_search(string $term): array
+{
+    $rows = book_catalog_with_orders($term, 25);
+    foreach ($rows as &$r) {
+        // "ليه طلبية" = فيه مورد واحد على الأقل بكمية أكبر من صفر
+        $has = false;
+        foreach ($r['sup'] as $s) { if ((float) $s['req'] > 0) { $has = true; break; } }
+        $r['has_order'] = $has;
+    }
+    unset($r);
+    return $rows;
+}
+
+/**
  * حفظ خانة واحدة (كمية مطلوبة أو كمية مورد).
  *
  * @param string $field 'req' أو 'sup'

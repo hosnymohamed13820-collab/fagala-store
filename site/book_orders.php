@@ -30,55 +30,6 @@ require_once __DIR__ . '/auth.php';
 require_permission('shortage');
 require_once __DIR__ . '/book_lib.php';
 
-$uid = (int) current_user()['id'];
-
-// ===== AJAX =====
-$ajax = $_GET['ajax'] ?? '';
-if ($ajax !== '') {
-    header('Content-Type: application/json; charset=utf-8');
-    try {
-        switch ($ajax) {
-            // بحث بالاسم — بيرجّع الكتاب ومعاه كمية كل مورد
-            case 'search':
-                $rows = book_catalog_with_orders((string) ($_GET['term'] ?? ''), 25);
-                foreach ($rows as &$r) {
-                    // "ليه طلبية" = فيه مورد واحد على الأقل بكمية أكبر من صفر
-                    $has = false;
-                    foreach ($r['sup'] as $s) { if ((float) $s['req'] > 0) { $has = true; break; } }
-                    $r['has_order'] = $has;
-                }
-                unset($r);
-                echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
-                break;
-
-            // حفظ خانة واحدة (كمية مطلوبة / كمية مورد)
-            case 'save':
-                if ($_SERVER['REQUEST_METHOD'] !== 'POST') throw new RuntimeException('طلب غير صالح.');
-                if (!csrf_verify((string) ($_POST['csrf'] ?? ''))) {
-                    throw new RuntimeException('انتهت صلاحية الجلسة — اعمل ريفريش.');
-                }
-                $raw = trim((string) ($_POST['qty'] ?? ''));
-                book_save_qty(
-                    (int) ($_POST['book'] ?? 0),
-                    (int) ($_POST['supplier'] ?? 0),
-                    (string) ($_POST['field'] ?? 'req'),
-                    $raw === '' ? null : (float) $raw,
-                    $uid
-                );
-                // النسخ بقى في المتصفح من اللي على الشاشة، فمفيش
-                // حاجة تترد هنا غير التأكيد.
-                echo json_encode(['ok' => true]);
-                break;
-
-            default:
-                echo json_encode(['ok' => false, 'error' => 'طلب غير معروف']);
-        }
-    } catch (Throwable $ex) {
-        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
-
 $suppliers = book_suppliers();
 
 $page_title    = 'طلبيات الكتب';
@@ -251,11 +202,10 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function fetchSug(term) {
-        fetch('book_orders.php?ajax=search&term=' + encodeURIComponent(term))
-            .then(r => r.json())
+        apiFetch('book_orders_api.php?part=search&term=' + encodeURIComponent(term))
             .then(j => {
                 const box = document.getElementById('sug');
-                lastRows = (j.ok && j.rows) ? j.rows : [];
+                lastRows = j.data.rows;
                 lastTerm = term;
                 if (!lastRows.length) {
                     box.innerHTML = '<div class="bo-sug-item" style="cursor:default;color:var(--ink-500);">' +
@@ -293,10 +243,9 @@ require_once __DIR__ . '/includes/header.php';
         if (lastRows.length && lastTerm === v) { pick(0); return; }
         setStatus('بيدور…');
         clearTimeout(sugTimer);                          // ماتعملش نفس البحث مرتين
-        fetch('book_orders.php?ajax=search&term=' + encodeURIComponent(v))
-            .then(r => r.json())
+        apiFetch('book_orders_api.php?part=search&term=' + encodeURIComponent(v))
             .then(j => {
-                lastRows = (j.ok && j.rows) ? j.rows : [];
+                lastRows = j.data.rows;
                 lastTerm = v;
                 if (lastRows.length) pick(0);
                 else setStatus('✗ مفيش كتاب بالاسم ده في الكتالوج', 'var(--neg)');
@@ -431,30 +380,28 @@ require_once __DIR__ . '/includes/header.php';
 
         ind.innerHTML = '<i class="ti ti-loader ti-spin"></i>'; /* نص ثابت — innerHTML آمن */ ind.style.color = 'var(--ink-500)';
 
-        fetch('book_orders.php?ajax=save', {
+        apiFetch('book_orders_api.php?action=save', {
             method: 'POST',
-            body: new URLSearchParams({
-                csrf: CSRF, book: inp.dataset.book, supplier: inp.dataset.sup,
+            // الهيدر باليد: الصفحة دي مابتعرّفش window.SENS، فـapiFetch
+            // مش هيلاقي توكن يبعته لوحده.
+            headers: { 'X-CSRF-Token': CSRF },
+            body: {
+                book: inp.dataset.book, supplier: inp.dataset.sup,
                 field: inp.dataset.field, qty: val
-            })
-        })
-        .then(r => r.json())
-        .then(j => {
-            if (j.ok) {
-                inp.dataset.saved = val;
-                qty[key] = val;
-                ind.textContent = '✓'; ind.style.color = 'var(--pos)';
-                setTimeout(() => { ind.textContent = ''; }, 1400);
-                updateCounts();
-                markHasOrder(inp.dataset.book);
-            } else {
-                ind.textContent = '✗'; ind.style.color = 'var(--neg)';
-                toast('✗ ' + (j.error || 'فشل الحفظ'));
             }
         })
-        .catch(() => {
+        .then(() => {
+            inp.dataset.saved = val;
+            qty[key] = val;
+            ind.textContent = '✓'; ind.style.color = 'var(--pos)';
+            setTimeout(() => { ind.textContent = ''; }, 1400);
+            updateCounts();
+            markHasOrder(inp.dataset.book);
+        })
+        .catch(err => {
             ind.textContent = '✗'; ind.style.color = 'var(--neg)';
-            toast('✗ مفيش اتصال');
+            // فيه status = السيرفر رد بخطأ · مفيش = الشبكة وقعت
+            toast('✗ ' + (typeof err.status !== 'undefined' ? (err.error || 'فشل الحفظ') : 'مفيش اتصال'));
         });
     }
 
