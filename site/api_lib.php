@@ -121,6 +121,9 @@ function api_require(string $perm): void
     if (!can($perm)) {
         api_fail('مالكش صلاحية', 403, 'forbidden');
     }
+    if (view_all_borrowed($perm)) {
+        $GLOBALS['VIEW_ALL_PAGE'] = true;
+    }
 }
 
 /**
