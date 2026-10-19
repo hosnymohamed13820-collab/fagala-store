@@ -15,7 +15,6 @@ require_once __DIR__ . '/auth.php';
 require_permission('receiving');
 require_once __DIR__ . '/receiving_flow_lib.php';
 
-$pdo  = db();
 $user = current_user();
 $uid  = (int) ($user['id'] ?? 0);
 $userBranchId = !empty($user['branch_id']) ? (int) $user['branch_id'] : null;
@@ -32,6 +31,27 @@ if (!$canView) {
 
 $groupId = isset($_GET['g']) ? (int) $_GET['g'] : 0;
 $distId  = isset($_GET['d']) ? (int) $_GET['d'] : 0;
+
+// 🔴 كل استعلامات الصفحة اتطلعت لدالة receiving_diffs_data() في receiving_flow_lib.php
+//    — نفس الدالة اللي receiving_diffs_api.php بينده عليها، فالشكل واحد للويب
+//    وللتطبيقات. الـHTML تحت بيرسم من نفس أسماء المتغيّرات زي ما كان.
+$diffsData = receiving_diffs_data(
+    [
+        'uid'            => $uid,
+        'user_branch_id' => $userBranchId,
+        'is_owner'       => $isOwner,
+        'is_supervisor'  => $isSupervisor,
+        'can_view'       => $canView,
+    ],
+    ['group_id' => $groupId, 'distribution_id' => $distId]
+);
+
+$availableList    = $diffsData['available_list'];
+$isGrp            = $diffsData['is_group'];
+$title            = $diffsData['title'];
+$branches         = $diffsData['branches'];
+$receiptsByBranch = $diffsData['receipts_by_branch'];
+$itemsMap         = $diffsData['items'];
 
 $active_module = 'receiving';
 require_once __DIR__ . '/includes/header.php';
@@ -98,23 +118,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- قايمة لاختيار الفاتورة أو المجموعة -->
         <div class="card diff-card">
             <h3 style="font-size:15px;margin-top:0;">اختر فاتورة أو مجموعة لعرض فروقاتها:</h3>
-            <?php
-            $stAvailable = $pdo->query(
-                "SELECT r.group_id, r.distribution_id,
-                        MAX(r.created_at) AS last_date,
-                        g.name AS group_name,
-                        d.invoice_no,
-                        COUNT(DISTINCT r.branch_id) AS branches_count
-                 FROM receipts r
-                 LEFT JOIN invoice_groups g ON g.id = r.group_id AND r.group_id > 0
-                 LEFT JOIN invoice_distribution d ON d.id = r.distribution_id AND r.distribution_id > 0
-                 GROUP BY r.group_id, r.distribution_id
-                 ORDER BY last_date DESC"
-            );
-            $availableList = $stAvailable ? $stAvailable->fetchAll() : [];
-
-            if (empty($availableList)):
-            ?>
+            <?php if (empty($availableList)): ?>
                 <p style="color:var(--ink-400);margin:14px 0;">لا توجد فواتير أو مجموعات مفتوح لها استلام حالياً.</p>
             <?php else: ?>
                 <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
@@ -135,119 +139,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
         </div>
 
-    <?php else:
-        // جلب سياق المجموعة أو الفاتورة
-        $isGrp = $groupId > 0;
-        $title = '';
-        if ($isGrp) {
-            $stG = $pdo->prepare('SELECT name FROM invoice_groups WHERE id = ?');
-            $stG->execute([$groupId]);
-            $gName = $stG->fetchColumn();
-            $title = 'مجموعة فواتير #' . $groupId . ($gName ? ' — ' . $gName : '');
-        } else {
-            $stD = $pdo->prepare('SELECT invoice_no FROM invoice_distribution WHERE id = ?');
-            $stD->execute([$distId]);
-            $invNo = $stD->fetchColumn();
-            $title = 'فاتورة مفردة #' . ($invNo ?: $distId);
-        }
-
-        // جلب الفروع الخمسة (باستثناء الإدارة 6)
-        $branches = $pdo->query('SELECT id, name FROM branches WHERE id <> 6 AND is_active = 1 ORDER BY id')->fetchAll();
-
-        // جلب سجلات receipts المفتوحة لهذا السياق
-        $stReceipts = $pdo->prepare(
-            'SELECT id, branch_id, status FROM receipts
-             WHERE (group_id = ? AND distribution_id = 0) OR (group_id = 0 AND distribution_id = ?)'
-        );
-        $stReceipts->execute([$groupId, $distId]);
-        $receiptsByBranch = [];
-        $receiptIds = [];
-        foreach ($stReceipts->fetchAll() as $rc) {
-            $b = (int) $rc['branch_id'];
-            $receiptsByBranch[$b] = $rc;
-            $receiptIds[] = (int) $rc['id'];
-        }
-
-        // جلب معرفات التوزيع
-        $distIds = receiving_ctx_dist_ids($distId, $groupId);
-        $distIdsClean = array_values(array_unique(array_filter(array_map('intval', $distIds), fn($x) => $x > 0)));
-
-        $itemsMap = [];
-        $codes = [];
-
-        if (!empty($distIdsClean)) {
-            $inClause = implode(',', $distIdsClean);
-
-            // جلب الكميات الموزعة لكل صنف وكل فرع
-            $stDistLines = $pdo->query(
-                "SELECT dl.notes AS item_code, dl.branch_id, SUM(dl.amount) AS distributed_qty
-                 FROM invoice_distribution_lines dl
-                 WHERE dl.distribution_id IN ($inClause) AND dl.amount > 0 AND dl.branch_id <> 6
-                 GROUP BY dl.notes, dl.branch_id"
-            );
-            $distRows = $stDistLines ? $stDistLines->fetchAll() : [];
-
-            foreach ($distRows as $dr) {
-                $c   = trim((string)$dr['item_code']);
-                $bid = (int)$dr['branch_id'];
-                $qty = (float)$dr['distributed_qty'];
-                if ($c === '') continue;
-
-                $codes[] = $c;
-                if (!isset($itemsMap[$c])) {
-                    $itemsMap[$c] = [
-                        'item_code'   => $c,
-                        'item_name'   => $c,
-                        'by_branch'   => [],
-                    ];
-                }
-                $itemsMap[$c]['by_branch'][$bid]['dist'] = $qty;
-            }
-
-            // جلب الكميات الممسوحة لكل صنف وكل فرع
-            if (!empty($receiptIds)) {
-                $rcIn = implode(',', array_unique($receiptIds));
-                $stScanned = $pdo->query(
-                    "SELECT r.branch_id, rl.item_code, SUM(rl.scanned_qty) AS scanned_qty
-                     FROM receipt_lines rl
-                     JOIN receipts r ON r.id = rl.receipt_id
-                     WHERE r.id IN ($rcIn)
-                     GROUP BY r.branch_id, rl.item_code"
-                );
-                $scannedRows = $stScanned ? $stScanned->fetchAll() : [];
-
-                foreach ($scannedRows as $sr) {
-                    $c   = trim((string)$sr['item_code']);
-                    $bid = (int)$sr['branch_id'];
-                    $sq  = (float)$sr['scanned_qty'];
-                    if (isset($itemsMap[$c])) {
-                        $itemsMap[$c]['by_branch'][$bid]['scan'] = $sq;
-                    }
-                }
-            }
-
-            // جلب أسماء الأصناف باستعلام واحد مجمّع
-            if (!empty($codes)) {
-                $codesUnique = array_values(array_unique($codes));
-                $placeholders = implode(',', array_fill(0, count($codesUnique), '?'));
-                $stNames = $pdo->prepare(
-                    "SELECT c.code AS item_code, i.name AS item_name
-                     FROM hq_codes c
-                     JOIN hq_items i ON i.item_id = c.item_id
-                     WHERE c.code IN ($placeholders)"
-                );
-                $stNames->execute($codesUnique);
-                foreach ($stNames->fetchAll() as $nr) {
-                    $c = (string)$nr['item_code'];
-                    if (isset($itemsMap[$c])) {
-                        $itemsMap[$c]['item_name'] = (string)($nr['item_name'] ?: $c);
-                    }
-                }
-            }
-        }
-
-        uasort($itemsMap, fn($a, $b) => strcmp($a['item_name'], $b['item_name']));
-    ?>
+    <?php else: ?>
 
         <div class="card diff-card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">

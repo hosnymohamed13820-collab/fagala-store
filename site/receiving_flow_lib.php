@@ -402,3 +402,183 @@ function receipt_resolve_scanned_code(PDO $pdo, int $receiptId, string $scannedC
     return ['ok' => false, 'error' => 'الصنف ده مش في الفاتورة'];
 }
 
+/**
+ * داتا صفحة «فروقات الاستلام بين الفروع» (بريف ١٢٦).
+ *
+ * 🔴 استعلامات receiving_diffs.php اتنقلت هنا **بالحرف** — من غير أي تصليح —
+ *    عشان receiving_diffs_api.php ينادي نفس الدالة ويرجّع نفس الشكل،
+ *    والـHTML في الصفحة يفضل زي ما هو بيقرا نفس أسماء المفاتيح دي.
+ *
+ * @param array $ctx     سياق الصلاحية زي ما الصفحة بتحسبه:
+ *                       uid · user_branch_id · is_owner · is_supervisor · can_view
+ * @param array $filters الفلاتر من الرابط: group_id (g) · distribution_id (d)
+ * @return array {
+ *     group_id, distribution_id, is_group, title,
+ *     available_list, branches, receipts_by_branch, items
+ * }
+ */
+function receiving_diffs_data(array $ctx, array $filters): array
+{
+    $groupId = (int) ($filters['group_id'] ?? 0);
+    $distId  = (int) ($filters['distribution_id'] ?? 0);
+
+    $out = [
+        'group_id'           => $groupId,
+        'distribution_id'    => $distId,
+        'is_group'           => false,
+        'title'              => '',
+        'available_list'     => [],
+        'branches'           => [],
+        'receipts_by_branch' => [],
+        'items'              => [],
+    ];
+
+    // نفس شرط الصلاحية اللي الصفحة بتفحصه قبل أي استعلام — الصفحة والـapi
+    // بيحسبوا $ctx بنفس الطريقة وبيعدّوه هنا، فالدالة ماتستنتجش حاجة من الجلسة.
+    if (empty($ctx['can_view'])) {
+        return $out;
+    }
+
+    $pdo = db();
+
+    // الحالة الأولى: مفيش فاتورة ولا مجموعة مختارة ← قايمة اللي ليه استلام مفتوح
+    if ($groupId <= 0 && $distId <= 0) {
+        $stAvailable = $pdo->query(
+            "SELECT r.group_id, r.distribution_id,
+                    MAX(r.created_at) AS last_date,
+                    g.name AS group_name,
+                    d.invoice_no,
+                    COUNT(DISTINCT r.branch_id) AS branches_count
+             FROM receipts r
+             LEFT JOIN invoice_groups g ON g.id = r.group_id AND r.group_id > 0
+             LEFT JOIN invoice_distribution d ON d.id = r.distribution_id AND r.distribution_id > 0
+             GROUP BY r.group_id, r.distribution_id
+             ORDER BY last_date DESC"
+        );
+        $out['available_list'] = $stAvailable ? $stAvailable->fetchAll() : [];
+        return $out;
+    }
+
+    // الحالة التانية: فيه سياق مختار ← فروقات الاستلام
+
+    // جلب سياق المجموعة أو الفاتورة
+    $isGrp = $groupId > 0;
+    $out['is_group'] = $isGrp;
+
+    $title = '';
+    if ($isGrp) {
+        $stG = $pdo->prepare('SELECT name FROM invoice_groups WHERE id = ?');
+        $stG->execute([$groupId]);
+        $gName = $stG->fetchColumn();
+        $title = 'مجموعة فواتير #' . $groupId . ($gName ? ' — ' . $gName : '');
+    } else {
+        $stD = $pdo->prepare('SELECT invoice_no FROM invoice_distribution WHERE id = ?');
+        $stD->execute([$distId]);
+        $invNo = $stD->fetchColumn();
+        $title = 'فاتورة مفردة #' . ($invNo ?: $distId);
+    }
+    $out['title'] = $title;
+
+    // جلب الفروع الخمسة (باستثناء الإدارة 6)
+    $branches = $pdo->query('SELECT id, name FROM branches WHERE id <> 6 AND is_active = 1 ORDER BY id')->fetchAll();
+    $out['branches'] = $branches;
+
+    // جلب سجلات receipts المفتوحة لهذا السياق
+    $stReceipts = $pdo->prepare(
+        'SELECT id, branch_id, status FROM receipts
+         WHERE (group_id = ? AND distribution_id = 0) OR (group_id = 0 AND distribution_id = ?)'
+    );
+    $stReceipts->execute([$groupId, $distId]);
+    $receiptsByBranch = [];
+    $receiptIds = [];
+    foreach ($stReceipts->fetchAll() as $rc) {
+        $b = (int) $rc['branch_id'];
+        $receiptsByBranch[$b] = $rc;
+        $receiptIds[] = (int) $rc['id'];
+    }
+    $out['receipts_by_branch'] = $receiptsByBranch;
+
+    // جلب معرفات التوزيع
+    $distIds = receiving_ctx_dist_ids($distId, $groupId);
+    $distIdsClean = array_values(array_unique(array_filter(array_map('intval', $distIds), fn($x) => $x > 0)));
+
+    $itemsMap = [];
+    $codes = [];
+
+    if (!empty($distIdsClean)) {
+        $inClause = implode(',', $distIdsClean);
+
+        // جلب الكميات الموزعة لكل صنف وكل فرع
+        $stDistLines = $pdo->query(
+            "SELECT dl.notes AS item_code, dl.branch_id, SUM(dl.amount) AS distributed_qty
+             FROM invoice_distribution_lines dl
+             WHERE dl.distribution_id IN ($inClause) AND dl.amount > 0 AND dl.branch_id <> 6
+             GROUP BY dl.notes, dl.branch_id"
+        );
+        $distRows = $stDistLines ? $stDistLines->fetchAll() : [];
+
+        foreach ($distRows as $dr) {
+            $c   = trim((string)$dr['item_code']);
+            $bid = (int)$dr['branch_id'];
+            $qty = (float)$dr['distributed_qty'];
+            if ($c === '') continue;
+
+            $codes[] = $c;
+            if (!isset($itemsMap[$c])) {
+                $itemsMap[$c] = [
+                    'item_code'   => $c,
+                    'item_name'   => $c,
+                    'by_branch'   => [],
+                ];
+            }
+            $itemsMap[$c]['by_branch'][$bid]['dist'] = $qty;
+        }
+
+        // جلب الكميات الممسوحة لكل صنف وكل فرع
+        if (!empty($receiptIds)) {
+            $rcIn = implode(',', array_unique($receiptIds));
+            $stScanned = $pdo->query(
+                "SELECT r.branch_id, rl.item_code, SUM(rl.scanned_qty) AS scanned_qty
+                 FROM receipt_lines rl
+                 JOIN receipts r ON r.id = rl.receipt_id
+                 WHERE r.id IN ($rcIn)
+                 GROUP BY r.branch_id, rl.item_code"
+            );
+            $scannedRows = $stScanned ? $stScanned->fetchAll() : [];
+
+            foreach ($scannedRows as $sr) {
+                $c   = trim((string)$sr['item_code']);
+                $bid = (int)$sr['branch_id'];
+                $sq  = (float)$sr['scanned_qty'];
+                if (isset($itemsMap[$c])) {
+                    $itemsMap[$c]['by_branch'][$bid]['scan'] = $sq;
+                }
+            }
+        }
+
+        // جلب أسماء الأصناف باستعلام واحد مجمّع
+        if (!empty($codes)) {
+            $codesUnique = array_values(array_unique($codes));
+            $placeholders = implode(',', array_fill(0, count($codesUnique), '?'));
+            $stNames = $pdo->prepare(
+                "SELECT c.code AS item_code, i.name AS item_name
+                 FROM hq_codes c
+                 JOIN hq_items i ON i.item_id = c.item_id
+                 WHERE c.code IN ($placeholders)"
+            );
+            $stNames->execute($codesUnique);
+            foreach ($stNames->fetchAll() as $nr) {
+                $c = (string)$nr['item_code'];
+                if (isset($itemsMap[$c])) {
+                    $itemsMap[$c]['item_name'] = (string)($nr['item_name'] ?: $c);
+                }
+            }
+        }
+    }
+
+    uasort($itemsMap, fn($a, $b) => strcmp($a['item_name'], $b['item_name']));
+    $out['items'] = array_values($itemsMap);
+
+    return $out;
+}
+
