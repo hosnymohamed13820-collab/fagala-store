@@ -751,7 +751,8 @@ window.apiFetch = function (url, opts) {
     if (method !== 'GET') {
         // X-CSRF-Token
         if (!headers['X-CSRF-Token'] && !headers['x-csrf-token']) {
-            var csrfToken = (window.SENS && window.SENS.csrf) ? window.SENS.csrf : '';
+            var metaCsrf = document.querySelector('meta[name="csrf-token"]');
+            var csrfToken = (window.SENS && window.SENS.csrf) ? window.SENS.csrf : (metaCsrf ? metaCsrf.getAttribute('content') : '');
             if (csrfToken) {
                 headers['X-CSRF-Token'] = csrfToken;
             }
