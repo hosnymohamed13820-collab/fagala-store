@@ -139,6 +139,7 @@ function all_modules(): array
         'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
         'ops'           => ['label' => 'المراقبة',         'icon' => 'ti-chart-bar',        'url' => 'ops.php'],
         'sms_inbox'     => ['label' => 'رسايل إنستاباي',   'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
+        'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
 }
 
@@ -493,6 +494,12 @@ function can(string $moduleKey): bool
 
     $perms = $_SESSION['permissions'] ?? [];
 
+    // بريف ١١٨: لو view_all في الصلاحيات والطلب GET أو HEAD ترجع true
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (in_array('view_all', $perms, true) && ($method === 'GET' || $method === 'HEAD')) {
+        return true;
+    }
+
     // لو مفتاح مركّب: مسموح لو معاه المديول كامل كـ wildcard أو معاه الجزء بالتحديد
     if (str_contains($moduleKey, ':')) {
         [$mod] = explode(':', $moduleKey, 2);
@@ -522,6 +529,13 @@ function can_module(string $moduleKey): bool
     }
 
     $perms = $_SESSION['permissions'] ?? [];
+
+    // بريف ١١٨: لو view_all في الصلاحيات والطلب GET أو HEAD ترجع true
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (in_array('view_all', $perms, true) && ($method === 'GET' || $method === 'HEAD')) {
+        return true;
+    }
+
     if (in_array($moduleKey, $perms, true)) {
         return true;
     }
@@ -535,6 +549,42 @@ function can_module(string $moduleKey): bool
     }
 
     return false;
+}
+
+/**
+ * هل الصلاحية دي جت للمستخدم الحالي بسبب view_all بس (مش من صلاحياته الحقيقية)؟
+ * بريف ١١٨: بتستخدم لتحديد ما إذا كان الدخول للصفحة عدى بفضل view_all بس.
+ */
+function view_all_borrowed(string $moduleKey): bool
+{
+    if (!is_logged_in() || is_owner()) {
+        return false;
+    }
+    $perms = $_SESSION['permissions'] ?? [];
+    if (!in_array('view_all', $perms, true)) {
+        return false;
+    }
+
+    // فحص الصلاحية الحقيقية (بدون view_all)
+    if (str_contains($moduleKey, ':')) {
+        [$mod] = explode(':', $moduleKey, 2);
+        if (in_array($mod, $perms, true) || in_array($moduleKey, $perms, true)) {
+            return false;
+        }
+    } else {
+        if (in_array($moduleKey, $perms, true)) {
+            return false;
+        }
+        $prefix = $moduleKey . ':';
+        $prefixLen = strlen($prefix);
+        foreach ($perms as $p) {
+            if (strncmp((string) $p, $prefix, $prefixLen) === 0) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -634,19 +684,50 @@ function require_login(): void
 function require_permission(string $moduleKey): void
 {
     require_login();
+
+    // بريف ١١٨: لو الدخول للصفحة نفسها عدى بسبب view_all بس
+    if (view_all_borrowed($moduleKey)) {
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        if ($method === 'POST') {
+            http_response_code(403);
+            if (defined('API_MODE')) {
+                echo json_encode([
+                    'ok'    => false,
+                    'error' => 'حسابك مشاهدة بس في الصفحة دي',
+                    'code'  => 'forbidden',
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+                . '<h2>غير مصرّح</h2>'
+                . '<p>حسابك مشاهدة بس في الصفحة دي.</p>'
+                . '<a href="logout.php">تسجيل الخروج</a></div>');
+        } elseif ($method === 'GET' || $method === 'HEAD') {
+            try {
+                db()->exec('SET SESSION TRANSACTION READ ONLY');
+            } catch (Throwable $e) {}
+        }
+    }
+
     if (!can($moduleKey)) {
         http_response_code(403);
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $perms = $_SESSION['permissions'] ?? [];
+        $isViewAllPost = ($method === 'POST' && in_array('view_all', $perms, true));
+        $msg = $isViewAllPost ? 'حسابك مشاهدة بس في الصفحة دي' : 'مالكش صلاحية';
+        $htmlMsg = $isViewAllPost ? 'حسابك مشاهدة بس في الصفحة دي.' : 'ليس لديك صلاحية للوصول إلى هذه الصفحة.';
+
         if (defined('API_MODE')) {
             echo json_encode([
                 'ok'    => false,
-                'error' => 'مالكش صلاحية',
+                'error' => $msg,
                 'code'  => 'forbidden',
             ], JSON_UNESCAPED_UNICODE);
             exit;
         }
         die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
             . '<h2>غير مصرّح</h2>'
-            . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+            . '<p>' . $htmlMsg . '</p>'
             . '<a href="logout.php">تسجيل الخروج</a></div>');
     }
 }
@@ -658,19 +739,50 @@ function require_permission(string $moduleKey): void
 function require_module_access(string $moduleKey): void
 {
     require_login();
+
+    // بريف ١١٨: لو الدخول للصفحة نفسها عدى بسبب view_all بس
+    if (view_all_borrowed($moduleKey)) {
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        if ($method === 'POST') {
+            http_response_code(403);
+            if (defined('API_MODE')) {
+                echo json_encode([
+                    'ok'    => false,
+                    'error' => 'حسابك مشاهدة بس في الصفحة دي',
+                    'code'  => 'forbidden',
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
+                . '<h2>غير مصرّح</h2>'
+                . '<p>حسابك مشاهدة بس في الصفحة دي.</p>'
+                . '<a href="logout.php">تسجيل الخروج</a></div>');
+        } elseif ($method === 'GET' || $method === 'HEAD') {
+            try {
+                db()->exec('SET SESSION TRANSACTION READ ONLY');
+            } catch (Throwable $e) {}
+        }
+    }
+
     if (!can_module($moduleKey)) {
         http_response_code(403);
+        $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+        $perms = $_SESSION['permissions'] ?? [];
+        $isViewAllPost = ($method === 'POST' && in_array('view_all', $perms, true));
+        $msg = $isViewAllPost ? 'حسابك مشاهدة بس في الصفحة دي' : 'مالكش صلاحية';
+        $htmlMsg = $isViewAllPost ? 'حسابك مشاهدة بس في الصفحة دي.' : 'ليس لديك صلاحية للوصول إلى هذه الصفحة.';
+
         if (defined('API_MODE')) {
             echo json_encode([
                 'ok'    => false,
-                'error' => 'مالكش صلاحية',
+                'error' => $msg,
                 'code'  => 'forbidden',
             ], JSON_UNESCAPED_UNICODE);
             exit;
         }
         die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">'
             . '<h2>غير مصرّح</h2>'
-            . '<p>ليس لديك صلاحية للوصول إلى هذه الصفحة.</p>'
+            . '<p>' . $htmlMsg . '</p>'
             . '<a href="logout.php">تسجيل الخروج</a></div>');
     }
 }
@@ -682,6 +794,7 @@ function require_module_access(string $moduleKey): void
 function first_allowed_module(): string
 {
     foreach (all_modules() as $key => $mod) {
+        if ($mod['url'] === '') continue; // view_all صلاحية مالهاش صفحة (بريف ١١٨)
         if (can_module($key)) {
             return $mod['url'];
         }

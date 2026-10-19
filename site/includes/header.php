@@ -22,6 +22,7 @@ $storeName   = setting('store_name', 'مكتبات الفجالة ستور');
 $pageTitle   = $page_title   ?? 'النظام المالي';
 $active      = $active_module ?? '';
 $modules     = all_modules();
+unset($modules['view_all']); // صلاحية مشاهدة فقط — لا تظهر في القائمة الجانبية (بريف ١١٨)
 $vapidPublicKey = (string) setting('vapid_public_key', '');
 require_once __DIR__ . '/nav_icons.php';
 ?>

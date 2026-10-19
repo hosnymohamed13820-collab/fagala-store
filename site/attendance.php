@@ -82,10 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $employee) {
                     $where = ' (تنبيه: كنت خارج نطاق الفرع بمسافة ' . (int)$res['dist'] . ' متر — تم إبلاغ الموارد البشرية)';
                     $flashType = 'error';
                 } elseif (!empty($res['uncertain'])) {
-                    $accTxt = $acc !== null ? (int)$acc : '—';
-                    $errTxt = $geoErr !== '' ? $geoErr : '—';
-                    $uaTxt  = mb_substr($geoUa, 0, 150);
-                    errlog_record('geo', "موقع مش دقيق: موظف #{$employee['id']} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
+                    $accTxt  = $acc !== null ? (int)$acc : '—';
+                    $errTxt  = $geoErr !== '' ? $geoErr : '—';
+                    $uaTxt   = mb_substr($geoUa, 0, 150);
+                    $distTxt = isset($geo['dist']) ? (int)$geo['dist'] . ' م من الفرع (المسموح ' . (int)($geo['radius'] ?? 0) . ')' : 'المسافة مش معروفة';
+                    errlog_record('geo', "موقع مش دقيق: موظف #{$employee['id']} · {$distTxt} · دقة ±{$accTxt} م · خطأ الموقع: {$errTxt} · {$uaTxt}", __FILE__, __LINE__);
                     $grace = (int)setting('geofence_uncertain_grace', '3');
                     $prev = geofence_consecutive_uncertain((int)$employee['id'], (int)($geo['radius'] ?: 50));
                     $rem = max(0, $grace - ($prev + 1));
@@ -379,7 +380,11 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             if (submitting) return;               // الإرسال الفعلي (بعد ما جبنا الموقع)
             e.preventDefault();
 
-            if (uaEl) uaEl.value = (navigator.userAgent || '').slice(0, 200);
+            if (uaEl) {
+                const isPwa = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+                const modePrefix = isPwa ? 'PWA · ' : 'BROWSER · ';
+                uaEl.value = (modePrefix + (navigator.userAgent || '')).slice(0, 200);
+            }
 
             if (!navigator.geolocation) {
                 // المتصفح مبيدعمش الموقع → نرسل من غير إحداثيات
@@ -429,7 +434,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
             }
 
             timeoutId = setTimeout(function(){
-                doSubmit(3); // 3 = TIMEOUT
+                doSubmit('T15'); // T15 = مؤقتنا إحنا مش خطأ من الموبايل
             }, 15000);
 
             watchId = navigator.geolocation.watchPosition(
