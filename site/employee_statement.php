@@ -10,84 +10,21 @@
  */
 require_once __DIR__ . '/auth.php';
 require_login();
-require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/salary_view_lib.php';
 
 $pdo = db();
 $u = current_user();
 $uid = (int)($u['id'] ?? 0);
 
 $isManager = is_owner() || can('hr:advances');
-$targetEmpId = null;
-$employee = null;
-$notLinked = false;
+$requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
-if ($isManager) {
-    if (isset($_GET['emp']) && (int)$_GET['emp'] > 0) {
-        $targetEmpId = (int)$_GET['emp'];
-        $st = $pdo->prepare('SELECT id, full_name FROM employees WHERE id = ?');
-        $st->execute([$targetEmpId]);
-        $employee = $st->fetch(PDO::FETCH_ASSOC);
-    } else {
-        // لو الأونر أو صاحب الصلاحية ما حددش موظف، نعرض كشف حسابه لو حسابه مربوط بموظف
-        $st = $pdo->prepare('SELECT id, full_name FROM employees WHERE user_id = ?');
-        $st->execute([$uid]);
-        $employee = $st->fetch(PDO::FETCH_ASSOC);
-        if ($employee) {
-            $targetEmpId = (int)$employee['id'];
-        }
-    }
-} else {
-    // الموظف العادي: الربط من حسابه فقط، وأي باراميتر ?emp= يتم تجاهله تماماً
-    $st = $pdo->prepare('SELECT id, full_name FROM employees WHERE user_id = ?');
-    $st->execute([$uid]);
-    $employee = $st->fetch(PDO::FETCH_ASSOC);
-    if ($employee) {
-        $targetEmpId = (int)$employee['id'];
-    } else {
-        $notLinked = true;
-    }
-}
-
-// جلب حركات كشف الحساب
-$rows = [];
-if ($employee && $targetEmpId > 0) {
-    $st = $pdo->prepare(
-        'SELECT el.*, t.name AS treasury_name
-         FROM employee_ledger el
-         LEFT JOIN treasuries t ON t.id = el.treasury_id
-         WHERE el.employee_id = ?
-         ORDER BY el.entry_date ASC, el.id ASC'
-    );
-    $st->execute([$targetEmpId]);
-    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-}
-
-// حساب الرصيد التراكمي في PHP باستعلام واحد مجمّع
-$runningBalance = 0.0;
-$ledgerEntries = [];
-foreach ($rows as $r) {
-    $amount = (float)$r['amount'];
-    $dir = $r['direction'];
-    if ($dir === 'debit') {
-        $runningBalance += $amount;
-    } else {
-        $runningBalance -= $amount;
-    }
-    $ledgerEntries[] = [
-        'id'            => (int)$r['id'],
-        'entry_date'    => $r['entry_date'],
-        'direction'     => $dir,
-        'amount'        => $amount,
-        'move_type'     => $r['move_type'],
-        'description'   => $r['description'] ?? '',
-        'treasury_id'   => $r['treasury_id'],
-        'treasury_name' => $r['treasury_name'] ?? '',
-        'ref_type'      => $r['ref_type'],
-        'ref_id'        => $r['ref_id'],
-        'running_bal'   => $runningBalance,
-    ];
-}
-$currentBalance = $runningBalance;
+$data = employee_statement_data($uid, $isManager, $requestedEmpId, $pdo);
+$targetEmpId    = $data['target_emp_id'];
+$employee       = $data['employee'];
+$notLinked      = $data['not_linked'];
+$ledgerEntries  = $data['ledger_entries'];
+$currentBalance = $data['current_balance'];
 
 // مسميات أنواع الحركات بالعامية
 $moveTypeLabels = [
@@ -97,37 +34,6 @@ $moveTypeLabels = [
     'cancel'           => 'إلغاء سلفة',
     'opening'          => 'رصيد افتتاحي',
 ];
-
-/**
- * دالة مساعدة لتنسيق الرصيد بالكلام والألوان (بدون إشارة ناقص)
- */
-function format_ledger_balance(float $bal): array {
-    if (abs($bal) < 0.005) {
-        return [
-            'label' => 'مفيش رصيد',
-            'full'  => 'مفيش رصيد',
-            'color' => 'var(--ink-700)',
-            'bg'    => 'var(--line-soft)',
-            'type'  => 'zero',
-        ];
-    }
-    if ($bal > 0) {
-        return [
-            'label' => number_format($bal, 2) . ' عليه',
-            'full'  => number_format($bal, 2) . ' عليه',
-            'color' => 'var(--neg)',
-            'bg'    => 'var(--neg-soft)',
-            'type'  => 'debit',
-        ];
-    }
-    return [
-        'label' => number_format(abs($bal), 2) . ' له',
-        'full'  => number_format(abs($bal), 2) . ' له',
-        'color' => 'var(--pos)',
-        'bg'    => 'var(--pos-soft)',
-        'type'  => 'credit',
-    ];
-}
 
 $curBalInfo = format_ledger_balance($currentBalance);
 

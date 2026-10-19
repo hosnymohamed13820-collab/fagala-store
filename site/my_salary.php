@@ -10,76 +10,22 @@
  */
 require_once __DIR__ . '/auth.php';
 require_login();
-require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/salary_view_lib.php';
 
 $pdo = db();
 $u = current_user();
 $uid = (int)($u['id'] ?? 0);
 
 $isManager = is_owner() || can('hr:salaries');
-$targetEmpId = null;
-$employee = null;
-$notLinked = false;
+$requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
-if ($isManager) {
-    if (isset($_GET['emp']) && (int)$_GET['emp'] > 0) {
-        $targetEmpId = (int)$_GET['emp'];
-        $st = $pdo->prepare('SELECT id, full_name, salary_mode FROM employees WHERE id = ?');
-        $st->execute([$targetEmpId]);
-        $employee = $st->fetch(PDO::FETCH_ASSOC);
-    } else {
-        // لو الأونر أو مسؤول الرواتب ما حددش موظف، نعرض مرتب حسابه لو مربوط بموظف
-        $st = $pdo->prepare('SELECT id, full_name, salary_mode FROM employees WHERE user_id = ?');
-        $st->execute([$uid]);
-        $employee = $st->fetch(PDO::FETCH_ASSOC);
-        if ($employee) {
-            $targetEmpId = (int)$employee['id'];
-        }
-    }
-} else {
-    // الموظف العادي: الربط من حسابه فقط، وأي باراميتر ?emp= يتم تجاهله تماماً
-    $st = $pdo->prepare('SELECT id, full_name, salary_mode FROM employees WHERE user_id = ?');
-    $st->execute([$uid]);
-    $employee = $st->fetch(PDO::FETCH_ASSOC);
-    if ($employee) {
-        $targetEmpId = (int)$employee['id'];
-    } else {
-        $notLinked = true;
-    }
-}
-
-// جلب آخر مرتب مصروف
-$salary = null;
-$showDetails = false;
-$expiredOrNoSalary = false;
-
-if ($employee && $targetEmpId > 0) {
-    $salStmt = $pdo->prepare(
-        'SELECT * FROM salaries
-         WHERE employee_id = ? AND status = "paid" AND reversed_at IS NULL
-         ORDER BY paid_at DESC, id DESC
-         LIMIT 1'
-    );
-    $salStmt->execute([$targetEmpId]);
-    $salary = $salStmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($salary) {
-        if ($isManager) {
-            // صاحب الصلاحية يشوف في أي وقت بدون التقيد بنافذة الأسبوع
-            $showDetails = true;
-        } else {
-            // الموظف العادي: نافذة ٧ أيام من paid_at
-            $paidTime = !empty($salary['paid_at']) ? strtotime($salary['paid_at']) : 0;
-            if ($paidTime > 0 && (time() - $paidTime) <= (7 * 86400)) {
-                $showDetails = true;
-            } else {
-                $expiredOrNoSalary = true;
-            }
-        }
-    } else {
-        $expiredOrNoSalary = true;
-    }
-}
+$data = my_salary_data($uid, $isManager, $requestedEmpId, $pdo);
+$targetEmpId       = $data['target_emp_id'];
+$employee          = $data['employee'];
+$notLinked         = $data['not_linked'];
+$salary            = $data['salary'];
+$showDetails       = $data['show_details'];
+$expiredOrNoSalary = $data['expired_or_no_salary'];
 
 $page_title = 'تفاصيل المرتب';
 $active_module = ''; // مش موديول في القايمة الجانبية
