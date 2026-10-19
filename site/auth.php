@@ -188,6 +188,7 @@ function module_parts(): array
             'customers'  => 'داتا العملاء',
             'receiving'  => 'استلام الفواتير',
             'daily'      => 'الملخص اليومي',
+            'supplier_purchases' => 'مشتريات مورد',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',

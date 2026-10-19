@@ -1294,7 +1294,7 @@ if ($type === 'salaries' && !sens_unlocked()) {
 //    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
 //    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
 //    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
-if ($export && $type !== 'stocktake' && $type !== 'customers') {
+if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supplier_purchases') {
     if ($type === 'salaries' && !sens_unlocked()) {
         http_response_code(403);
         exit('الرواتب مقفولة');
@@ -1339,7 +1339,57 @@ $reportTypes = [
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
     'daily'=>'الملخص اليومي',
+    'supplier_purchases'=>'مشتريات مورد',
 ];
+
+// بيانات تقرير «مشتريات مورد»
+$spReport = null;
+$spBranches = [];
+$spSelBranch = null;
+if ($type === 'supplier_purchases') {
+    require_once __DIR__ . '/supplier_purchases_lib.php';
+    try {
+        $spBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
+    } catch (Throwable) {
+        $spBranches = [];
+    }
+    $spSelBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+    $spReport = supplier_purchases_report($from, $to, $spSelBranch);
+
+    if ($export) {
+        require_once __DIR__ . '/xlsx_lib.php';
+        $x = new SimpleXlsx('مشتريات مورد');
+        $x->setColumnTypes(['s', 's', 's', 'n', 'n', 'n', 'n']);
+        $x->addRow(['كود المورد', 'اسم المورد', 'نوع المورد', 'إجمالي مشتريات', 'مردودات مشتريات', 'إجمالي الخصومات', 'الصافي'], true);
+
+        foreach ($spReport['rows'] as $r) {
+            $pTypeLabel = $r['payment_type'] === 'cash' ? 'كاش' : ($r['payment_type'] === 'credit' ? 'آجل' : '—');
+            $x->addRow([
+                (string)$r['code'],
+                $r['name'],
+                $pTypeLabel,
+                $r['purchases'],
+                $r['returns'] > 0 ? -$r['returns'] : 0,
+                $r['discounts'],
+                $r['net'],
+            ]);
+        }
+
+        $tot = $spReport['totals'];
+        $x->addRow([
+            'الإجمالي (' . $tot['count'] . ')',
+            '',
+            '',
+            $tot['purchases'],
+            $tot['returns'] > 0 ? -$tot['returns'] : 0,
+            $tot['discounts'],
+            $tot['net'],
+        ], true);
+
+        $x->download('supplier_purchases_' . $from . '_' . $to . '.xlsx');
+        exit;
+    }
+}
 
 // بيانات تقرير «داتا العملاء»
 $custRows = []; $custReady = true; $custMsg = ''; $custBranches = []; $custBranchName = '';
@@ -1817,8 +1867,17 @@ require_once __DIR__ . '/includes/header.php';
             <option value="approved" <?= $selRecStatus === 'approved' ? 'selected' : '' ?>>معتمدة</option>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'supplier_purchases'): ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($spBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= $spSelBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -2469,6 +2528,74 @@ require_once __DIR__ . '/includes/header.php';
         </tbody>
     </table>
     </div>
+    <?php endif; ?>
+</div>
+
+<?php elseif ($type === 'supplier_purchases'): ?>
+<?php /* ===== تقرير «مشتريات مورد» (بريف ١٢٥) ===== */ ?>
+<div class="card">
+    <div class="rep-title">تقرير مشتريات مورد<?= $spSelBranch !== null ? ' — ' . e(array_column($spBranches, 'name', 'id')[$spSelBranch] ?? 'فرع ' . $spSelBranch) : ' — كل الفروع' ?></div>
+    <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format($spReport['totals']['count']) ?> مورد</div>
+
+    <?php if (empty($spReport['rows'])): ?>
+        <div class="empty">لا توجد بيانات في هذه الفترة.</div>
+    <?php else: ?>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th class="num">كود المورد</th>
+                        <th>اسم المورد</th>
+                        <th style="text-align:center;">نوع المورد</th>
+                        <th class="num">إجمالي مشتريات</th>
+                        <th class="num">مردودات مشتريات</th>
+                        <th class="num">إجمالي الخصومات</th>
+                        <th class="num">الصافي</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($spReport['rows'] as $r): ?>
+                        <tr>
+                            <td class="num"><?= e($r['code']) ?></td>
+                            <td class="name" title="<?= e($r['name']) ?>"><?= e($r['name']) ?></td>
+                            <td style="text-align:center;">
+                                <?php if ($r['payment_type'] === 'cash'): ?>
+                                    <span class="fchip fchip-pos">كاش</span>
+                                <?php elseif ($r['payment_type'] === 'credit'): ?>
+                                    <span class="fchip fchip-warn">آجل</span>
+                                <?php else: ?>
+                                    <span class="dim">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="num"><?= number_format($r['purchases'], 2) ?></td>
+                            <td class="num" style="<?= $r['returns'] > 0 ? 'color:var(--neg);' : '' ?>">
+                                <?= $r['returns'] > 0 ? '(' . number_format($r['returns'], 2) . ')' : '0.00' ?>
+                            </td>
+                            <td class="num dim"><?= number_format($r['discounts'], 2) ?></td>
+                            <td class="num" style="font-weight:600;<?= $r['net'] < 0 ? 'color:var(--neg);' : '' ?>">
+                                <?= $r['net'] < 0 ? '(' . number_format(abs($r['net']), 2) . ')' : number_format($r['net'], 2) ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <?php $tot = $spReport['totals']; ?>
+                    <tr style="background:var(--bg);font-weight:700;">
+                        <td class="num">الإجمالي</td>
+                        <td class="name"><?= number_format($tot['count']) ?> مورد</td>
+                        <td></td>
+                        <td class="num"><?= number_format($tot['purchases'], 2) ?></td>
+                        <td class="num" style="<?= $tot['returns'] > 0 ? 'color:var(--neg);' : '' ?>">
+                            <?= $tot['returns'] > 0 ? '(' . number_format($tot['returns'], 2) . ')' : '0.00' ?>
+                        </td>
+                        <td class="num dim"><?= number_format($tot['discounts'], 2) ?></td>
+                        <td class="num" style="<?= $tot['net'] < 0 ? 'color:var(--neg);' : '' ?>">
+                            <?= $tot['net'] < 0 ? '(' . number_format(abs($tot['net']), 2) . ')' : number_format($tot['net'], 2) ?>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
     <?php endif; ?>
 </div>
 

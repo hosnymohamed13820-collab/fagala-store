@@ -402,16 +402,17 @@ try {
             $stored++;
         }
     } elseif ($kind === 'suppliers') {
-        // كتالوج الموردين من برنامج True (بريف ١١٧)
-        // بنقرأ كل الموردين في استعلام واحد قبل الحلقة
-        $stSupp = $pdo->query('SELECT id, name, erp_supplier_id FROM suppliers');
+        // كتالوج الموردين من برنامج True (بريف ١١٧ + بريف ١٢٥)
+        // بنقرأ كل الموردين في استعلام واحد قبل الحلقة (بما فيه erp_supplier_code)
+        $stSupp = $pdo->query('SELECT id, name, erp_supplier_id, erp_supplier_code FROM suppliers');
         $byErp  = [];   // erp_supplier_id => row
         $byName = [];  // trim(name) => row
         foreach ($stSupp as $s) {
             $row = [
-                'id'              => (int) $s['id'],
-                'name'            => trim((string) $s['name']),
-                'erp_supplier_id' => $s['erp_supplier_id'] !== null ? (int) $s['erp_supplier_id'] : null,
+                'id'                => (int) $s['id'],
+                'name'              => trim((string) $s['name']),
+                'erp_supplier_id'   => $s['erp_supplier_id'] !== null ? (int) $s['erp_supplier_id'] : null,
+                'erp_supplier_code' => $s['erp_supplier_code'] !== null ? (string) $s['erp_supplier_code'] : null,
             ];
             if ($row['erp_supplier_id'] !== null) {
                 $byErp[$row['erp_supplier_id']] = $row;
@@ -419,8 +420,9 @@ try {
             $byName[$row['name']] = $row;
         }
 
-        $updLink = $pdo->prepare('UPDATE suppliers SET erp_supplier_id = ? WHERE id = ?');
-        $insSupp = $pdo->prepare('INSERT INTO suppliers (name, erp_supplier_id, is_active) VALUES (?, ?, 1)');
+        $updCode = $pdo->prepare('UPDATE suppliers SET erp_supplier_code = ? WHERE id = ?');
+        $updLink = $pdo->prepare('UPDATE suppliers SET erp_supplier_id = ?, erp_supplier_code = ? WHERE id = ?');
+        $insSupp = $pdo->prepare('INSERT INTO suppliers (name, erp_supplier_id, erp_supplier_code, is_active) VALUES (?, ?, ?, 1)');
 
         $suppInserted  = 0;
         $suppLinked    = 0;
@@ -432,8 +434,9 @@ try {
                 $skipped++;
                 continue;
             }
-            $suppId = (int) ($r['supp_id'] ?? 0);
-            $name   = trim(mb_substr(trim((string) ($r['name'] ?? '')), 0, 120)); // name varchar(120)
+            $suppId   = (int) ($r['supp_id'] ?? 0);
+            $name     = trim(mb_substr(trim((string) ($r['name'] ?? '')), 0, 120)); // name varchar(120)
+            $suppCode = isset($r['code']) && trim((string)$r['code']) !== '' ? trim((string)$r['code']) : null;
 
             if ($suppId <= 0 || $name === '') {
                 $skipped++;
@@ -442,6 +445,14 @@ try {
 
             // الحالة ١: فيه مورد عندنا erp_supplier_id = supp_id
             if (isset($byErp[$suppId])) {
+                $curr = $byErp[$suppId];
+                if ($suppCode !== null && $curr['erp_supplier_code'] !== $suppCode) {
+                    $updCode->execute([$suppCode, $curr['id']]);
+                    $curr['erp_supplier_code'] = $suppCode;
+                    $byErp[$suppId] = $curr;
+                    $byName[$curr['name']] = $curr;
+                    $stored++;
+                }
                 $suppUnchanged++;
                 continue;
             }
@@ -450,9 +461,10 @@ try {
             if (isset($byName[$name])) {
                 $existing = $byName[$name];
                 if ($existing['erp_supplier_id'] === null) {
-                    // الحالة ٢: مفيش erp_supplier_id، نربطه
-                    $updLink->execute([$suppId, $existing['id']]);
-                    $existing['erp_supplier_id'] = $suppId;
+                    // الحالة ٢: مفيش erp_supplier_id، نربطه ونحط الكود
+                    $updLink->execute([$suppId, $suppCode, $existing['id']]);
+                    $existing['erp_supplier_id']   = $suppId;
+                    $existing['erp_supplier_code'] = $suppCode;
                     $byErp[$suppId] = $existing;
                     $byName[$name]  = $existing;
                     $suppLinked++;
@@ -468,11 +480,11 @@ try {
                 continue;
             }
 
-            // الحالة ٣: مفيش خالص — نضيفه
+            // الحالة ٣: مفيش خالص — نضيفه مع الكود
             // uq_supplier_name بيقارن بـcollation القاعدة (كابيتال/سمول · مسافات) مش زي PHP،
             // فاسم «جديد» عندنا ممكن يبقى مكرر عندها — يتسجّل تعارض بدل ما يوقّع الدفعة كلها كل مرة
             try {
-                $insSupp->execute([$name, $suppId]);
+                $insSupp->execute([$name, $suppId, $suppCode]);
             } catch (PDOException $e) {
                 if ($e->getCode() !== '23000') throw $e;
                 $suppConflicts[] = ['supp_id' => $suppId, 'name' => $name];
@@ -481,9 +493,10 @@ try {
             }
             $newId = (int) $pdo->lastInsertId();
             $newRow = [
-                'id'              => $newId,
-                'name'            => $name,
-                'erp_supplier_id' => $suppId,
+                'id'                => $newId,
+                'name'              => $name,
+                'erp_supplier_id'   => $suppId,
+                'erp_supplier_code' => $suppCode,
             ];
             $byErp[$suppId] = $newRow;
             $byName[$name]  = $newRow;

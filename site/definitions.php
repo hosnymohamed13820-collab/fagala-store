@@ -17,6 +17,31 @@ $flashType = 'success';
 $tab       = $_GET['tab'] ?? 'branches';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // AJAX: حفظ نوع المورد (كاش / آجل / فارغ) تلقائياً عند التغيير (بريف ١٢٥)
+    if (($_POST['action'] ?? '') === 'update_supplier_payment_type') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!csrf_verify($_POST['csrf'] ?? '')) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'انتهت صلاحية الجلسة، أعد تحميل الصفحة.']);
+            exit;
+        }
+
+        $suppId = (int) ($_POST['id'] ?? 0);
+        $pType  = trim((string) ($_POST['payment_type'] ?? ''));
+        if (!in_array($pType, ['cash', 'credit', ''], true)) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'نوع المورد غير صالح.']);
+            exit;
+        }
+
+        $val = $pType === '' ? null : $pType;
+        $st = $pdo->prepare('UPDATE suppliers SET payment_type = ? WHERE id = ?');
+        $st->execute([$val, $suppId]);
+
+        echo json_encode(['ok' => true]);
+        exit;
+    }
+
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
         $flashType = 'error';
@@ -422,6 +447,24 @@ $activeBranches = array_filter($branches, fn($b) => $b['is_active']);
 // المستخدمون المتاحون للربط بموظف (لتسجيل الحضور)
 $linkUsers = $pdo->query('SELECT id, full_name, username FROM users WHERE is_active=1 ORDER BY full_name')->fetchAll();
 
+// بيانات الموردين لتاب «الموردين» (بريف ١٢٥)
+$defSuppliers = [];
+$defSuppFilter = trim((string)($_GET['filter'] ?? 'all'));
+if ($tab === 'suppliers') {
+    // كود True: erp_supplier_code، ولو فاضي من hq_invoices.supplier_code بالـ erp_supplier_id
+    // استعلام مجمّع واحد بدون استعلام جوه حلقة
+    $suppSql = "SELECT
+                    s.id,
+                    s.name,
+                    s.payment_type,
+                    COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS display_code
+                FROM suppliers s
+                LEFT JOIN hq_invoices h ON h.supplier_id = s.erp_supplier_id
+                GROUP BY s.id, s.name, s.payment_type, s.erp_supplier_code
+                ORDER BY CAST(display_code AS UNSIGNED) ASC, display_code ASC, s.name ASC";
+    $defSuppliers = $pdo->query($suppSql)->fetchAll();
+}
+
 $page_title    = 'التعريفات';
 $active_module = 'definitions';
 require_once __DIR__ . '/sensitive_lib.php';
@@ -485,6 +528,7 @@ require_once __DIR__ . '/includes/header.php';
         <a href="users.php?view=roles" class="tab">الأدوار</a>
     <?php endif; ?>
     <a href="?tab=treasuries" class="tab <?= $tab==='treasuries'?'active':'' ?>">الخزائن</a>
+    <a href="?tab=suppliers"  class="tab <?= $tab==='suppliers'?'active':'' ?>">الموردين</a>
     <a href="?tab=categories" class="tab <?= $tab==='categories'?'active':'' ?>">تصنيفات المصروفات</a>
 </div>
 
@@ -852,6 +896,55 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+<?php elseif ($tab === 'suppliers'): ?>
+    <div class="toolbar">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <span style="color:var(--ink-500);font-size:14px;"><?= count($defSuppliers) ?> مورد</span>
+            <div style="display:inline-flex;gap:4px;background:var(--line-soft);padding:3px;border-radius:8px;">
+                <button type="button" class="btn btn-sm <?= $defSuppFilter==='all'?'':'btn-ghost' ?>" id="fltAll" onclick="setSuppFilter('all')" style="border-radius:6px;">الكل</button>
+                <button type="button" class="btn btn-sm <?= $defSuppFilter==='missing'?'':'btn-ghost' ?>" id="fltMissing" onclick="setSuppFilter('missing')" style="border-radius:6px;">من غير نوع</button>
+            </div>
+        </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <?php if (empty($defSuppliers)): ?>
+            <div class="empty">لا يوجد موردين.</div>
+        <?php else: ?>
+        <div class="ftable-wrap" style="margin-bottom:0;border:none;border-radius:0;">
+            <table class="ftable" id="suppliersTable">
+                <thead>
+                    <tr>
+                        <th class="num" style="width:120px;">كود True</th>
+                        <th>اسم المورد</th>
+                        <th style="width:200px;">النوع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($defSuppliers as $s):
+                    $hasType = !empty($s['payment_type']);
+                ?>
+                    <tr class="supp-row" data-has-type="<?= $hasType ? '1' : '0' ?>" data-id="<?= (int)$s['id'] ?>">
+                        <td class="num"><?= e($s['display_code']) ?></td>
+                        <td class="name" style="max-width:none;" title="<?= e($s['name']) ?>"><?= e($s['name']) ?></td>
+                        <td>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <select class="supp-ptype" data-prev="<?= e($s['payment_type'] ?? '') ?>"
+                                        style="padding:6px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--ink-800);">
+                                    <option value="" <?= empty($s['payment_type']) ? 'selected' : '' ?>>—</option>
+                                    <option value="cash" <?= ($s['payment_type'] ?? '') === 'cash' ? 'selected' : '' ?>>كاش</option>
+                                    <option value="credit" <?= ($s['payment_type'] ?? '') === 'credit' ? 'selected' : '' ?>>آجل</option>
+                                </select>
+                                <span class="supp-saved" style="color:var(--pos);font-weight:700;display:none;">✓</span>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+    </div>
+
 <?php else: // categories ?>
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($accFlat) ?> حساب</span>
@@ -1128,6 +1221,69 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('treHint').style.display =
             (sel && sel.value === 'main') ? 'block' : 'none';
     }
+
+    // ===== الموردين: فلتر وتحديث النوع تلقائياً (بريف ١٢٥) =====
+    function setSuppFilter(flt) {
+        var rows = document.querySelectorAll('.supp-row');
+        rows.forEach(function(r) {
+            if (flt === 'missing') {
+                r.style.display = r.dataset.hasType === '0' ? '' : 'none';
+            } else {
+                r.style.display = '';
+            }
+        });
+        var bAll = document.getElementById('fltAll');
+        var bMis = document.getElementById('fltMissing');
+        if (bAll && bMis) {
+            if (flt === 'missing') {
+                bMis.classList.remove('btn-ghost');
+                bAll.classList.add('btn-ghost');
+            } else {
+                bAll.classList.remove('btn-ghost');
+                bMis.classList.add('btn-ghost');
+            }
+        }
+    }
+
+    document.querySelectorAll('.supp-ptype').forEach(function(sel) {
+        sel.addEventListener('change', async function() {
+            var row = sel.closest('.supp-row');
+            var suppId = row ? row.dataset.id : 0;
+            var newVal = sel.value;
+            var oldVal = sel.dataset.prev || '';
+            var check = row ? row.querySelector('.supp-saved') : null;
+
+            var fd = new FormData();
+            fd.append('action', 'update_supplier_payment_type');
+            fd.append('id', suppId);
+            fd.append('payment_type', newVal);
+            fd.append('csrf', '<?= e(csrf_token()) ?>');
+
+            try {
+                var res = await fetch('definitions.php', {
+                    method: 'POST',
+                    body: fd,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                var data = await res.json();
+                if (!res.ok || !data.ok) {
+                    throw new Error(data.error || 'فشل حفظ نوع المورد.');
+                }
+                // نجاح الحفظ
+                sel.dataset.prev = newVal;
+                if (row) {
+                    row.dataset.hasType = newVal !== '' ? '1' : '0';
+                }
+                if (check) {
+                    check.style.display = 'inline';
+                    setTimeout(function() { check.style.display = 'none'; }, 2000);
+                }
+            } catch (err) {
+                alert(err.message || 'حصل خطأ أثناء الحفظ');
+                sel.value = oldVal;
+            }
+        });
+    });
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
