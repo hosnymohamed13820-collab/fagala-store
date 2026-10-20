@@ -29,7 +29,7 @@ $SyncUrl = 'https://hosnimanagement.com/sync_hq.php'
 $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.7'
+$AgentVer  = '2.8'
 
 # The replication program has a different name on every machine (Oct 2 2026):
 #   HQ repl_true.exe, Bonjour Repltrue.exe, Degla a_true.exe
@@ -1114,6 +1114,44 @@ ORDER BY CREATE_DATE, STH_ID_REF;
             $checked += 'H10'
         } catch {
             Write-Log "[guard] H10 error: $($_.Exception.Message)"
+        }
+
+        # -----------------------------------------------------------------
+        # H14: Unposted transactions in STO_TRANS_HEADER_REPL > 24 hours
+        # One finding per (branch x transaction type)
+        # -----------------------------------------------------------------
+        try {
+            $h14Table = Invoke-Sql @"
+SET NOCOUNT ON;
+SELECT BRCH_ID, SSTT_ID, COUNT(*) AS stuck_count,
+       MIN(CREATE_DATE) AS oldest, MAX(CREATE_DATE) AS newest
+FROM STO_TRANS_HEADER_REPL
+WHERE CREATE_DATE < DATEADD(hour, -24, GETDATE())
+GROUP BY BRCH_ID, SSTT_ID
+ORDER BY BRCH_ID, SSTT_ID;
+"@
+            if ($h14Table.Rows.Count -gt 0) {
+                foreach ($r in $h14Table.Rows) {
+                    $bId = [int]$r['BRCH_ID']
+                    $bKey = if ($branchMap.ContainsKey($bId)) { $branchMap[$bId] } else { "brch_$bId" }
+                    $ssttId = [string]$r['SSTT_ID']
+                    $n = [int]$r['stuck_count']
+                    $oldest = [string]$r['oldest']
+                    $newest = [string]$r['newest']
+
+                    $findings += @{
+                        code    = 'H14'
+                        branch  = $bKey
+                        summary = "Unposted > 24h in REPL (branch: $bKey, type: $ssttId, count: $n, oldest: $oldest)"
+                        details = "Branch: $bKey (id $bId)`nType: $ssttId`nCount: $n`nOldest: $oldest`nNewest: $newest"
+                        restart = $null
+                        sha     = Get-GuardSha1 "H14|$bKey|$ssttId"
+                    }
+                }
+            }
+            $checked += 'H14'
+        } catch {
+            Write-Log "[guard] H14 error: $($_.Exception.Message)"
         }
 
         # -----------------------------------------------------------------
