@@ -48,22 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        if ($delGroupId > 0) {
-            $stIds = $pdo->prepare('SELECT id FROM receipts WHERE group_id = ?');
-            $stIds->execute([$delGroupId]);
-        } else {
-            $stIds = $pdo->prepare('SELECT id FROM receipts WHERE distribution_id = ?');
-            $stIds->execute([$delDistId]);
-        }
-        $rcIds = $stIds->fetchAll(PDO::FETCH_COLUMN);
-        if (!empty($rcIds)) {
-            $ph = implode(',', array_fill(0, count($rcIds), '?'));
-            $pdo->prepare("DELETE FROM receipt_lines WHERE receipt_id IN ($ph)")->execute($rcIds);
-            $pdo->prepare("DELETE FROM receipts WHERE id IN ($ph)")->execute($rcIds);
-            $links = array_map(fn($id) => 'receiving.php?r=' . $id, $rcIds);
-            $lph = implode(',', array_fill(0, count($links), '?'));
-            $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link IN ($lph)")->execute($links);
-        }
+        receipt_delete_by_invoice($pdo, $delGroupId, $delDistId);
         echo json_encode(['ok' => true]);
         exit;
     }
@@ -80,9 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['ok' => false, 'error' => 'إلغاء الاستلام متاح للأونر فقط.']);
             exit;
         }
-        $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link = ?")->execute(['receiving.php?r=' . $receiptId]);
-        $pdo->prepare('DELETE FROM receipt_lines WHERE receipt_id = ?')->execute([$receiptId]);
-        $pdo->prepare('DELETE FROM receipts WHERE id = ?')->execute([$receiptId]);
+        receipt_delete($pdo, $receiptId);
         echo json_encode(['ok' => true]);
         exit;
     }
@@ -147,34 +130,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'review') {
-        if ($receipt['status'] !== 'receiving') {
-            echo json_encode(['ok' => false, 'error' => 'لا يمكن إنهاء المراجعة في هذه الحالة.']);
-            exit;
+        try {
+            receipt_review($pdo, $receipt, $uid, $supervisorId);
+            echo json_encode(['ok' => true]);
+        } catch (RuntimeException $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
-        $st = $pdo->prepare("UPDATE receipts SET status='received', received_at=NOW(), received_by=? WHERE id=? AND status='receiving'");
-        $st->execute([$uid, $receiptId]);
-
-        // إشعار للأونر ولمسؤول الاستلامات
-        $notifUsers = [];
-        $stOwner = $pdo->query('SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1');
-        foreach ($stOwner->fetchAll() as $ow) {
-            $notifUsers[] = (int) $ow['id'];
-        }
-        if ($supervisorId > 0 && !in_array($supervisorId, $notifUsers, true)) {
-            $notifUsers[] = $supervisorId;
-        }
-        if (!empty($notifUsers)) {
-            notify(
-                $pdo,
-                $notifUsers,
-                'receiving',
-                'تمت مراجعة استلام بضاعة فرع ' . $receipt['branch_name'],
-                'قام الفرع بمراجعة الاستلام والمحضر في انتظار الاعتماد النهائي.',
-                'receiving.php?r=' . $receiptId
-            );
-        }
-
-        echo json_encode(['ok' => true]);
         exit;
     }
 
@@ -184,44 +145,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['ok' => false, 'error' => 'رفض الاستلام متاح للأونر والمشرف فقط.']);
             exit;
         }
-        if ($receipt['status'] !== 'received') {
-            echo json_encode(['ok' => false, 'error' => 'لا يمكن رفض الاستلام إلا في حالة بانتظار الاعتماد (تم الاستلام).']);
-            exit;
+        $senderName = $user['full_name'] ?? ($isOwner ? 'الأونر' : 'مشرف الاستلامات');
+        try {
+            receipt_reject_review($pdo, $receipt, $uid, (string)($_POST['reason'] ?? ''), $senderName);
+            echo json_encode(['ok' => true]);
+        } catch (RuntimeException $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
-        $reason = trim((string)($_POST['reason'] ?? ''));
-        if ($reason === '') {
-            echo json_encode(['ok' => false, 'error' => 'يرجى كتابة سبب رفض الاستلام للتوضيح للفرع.']);
-            exit;
-        }
-
-        $st = $pdo->prepare("UPDATE receipts SET status='receiving', reject_reason=?, rejected_at=NOW(), rejected_by=? WHERE id=? AND status='received'");
-        $st->execute([$reason, $uid, $receiptId]);
-
-        // إشعار لمستخدمي الفرع والقائم بالاستلام
-        $notifUsers = [];
-        $bId = (int)$receipt['branch_id'];
-        $stBranchUsers = $pdo->prepare('SELECT id FROM users WHERE branch_id = ? AND is_active = 1');
-        $stBranchUsers->execute([$bId]);
-        foreach ($stBranchUsers->fetchAll() as $bu) {
-            $notifUsers[] = (int) $bu['id'];
-        }
-        if (!empty($receipt['received_by']) && !in_array((int)$receipt['received_by'], $notifUsers, true)) {
-            $notifUsers[] = (int)$receipt['received_by'];
-        }
-
-        if (!empty($notifUsers)) {
-            $senderName = $user['full_name'] ?? ($isOwner ? 'الأونر' : 'مشرف الاستلامات');
-            notify(
-                $pdo,
-                $notifUsers,
-                'receiving',
-                'تم رفض استلام بضاعة فرع ' . $receipt['branch_name'],
-                'تم رفض الاستلام بواسطة ' . $senderName . ' — السبب: ' . $reason,
-                'receiving.php?r=' . $receiptId
-            );
-        }
-
-        echo json_encode(['ok' => true]);
         exit;
     }
 
@@ -230,13 +160,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['ok' => false, 'error' => 'اعتماد الاستلام متاح للأونر فقط.']);
             exit;
         }
-        if ($receipt['status'] !== 'received') {
-            echo json_encode(['ok' => false, 'error' => 'يجب أن يكون الاستلام مراجعاً (تم الاستلام) قبل الاعتماد.']);
-            exit;
+        try {
+            receipt_approve($pdo, $receipt, $uid);
+            echo json_encode(['ok' => true]);
+        } catch (RuntimeException $e) {
+            echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
         }
-        $st = $pdo->prepare("UPDATE receipts SET status='approved', approved_at=NOW(), approved_by=? WHERE id=? AND status='received'");
-        $st->execute([$uid, $receiptId]);
-        echo json_encode(['ok' => true]);
         exit;
     }
 

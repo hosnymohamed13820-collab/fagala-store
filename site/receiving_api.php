@@ -10,8 +10,13 @@
  *   ?part=lookup     (POST) receipt_id · code     ← {item_code, scanned_code, item_name, scanned_qty}
  *   ?part=scan       (POST) receipt_id · code · qty ← {…, added_qty}
  *   ?part=update_qty (POST) receipt_id · code · qty ← {item_code, scanned_qty}
+ *   ?part=review     (POST) receipt_id            ← null   (فرع المحضر · receiving ← received)
+ *   ?part=reject_review (POST) receipt_id · reason ← null  (أونر/مشرف · received ← receiving)
+ *   ?part=approve    (POST) receipt_id            ← null   (أونر بس · received ← approved)
+ *   ?part=delete_receipt (POST) receipt_id        ← null   (أونر بس)
+ *   ?part=delete_invoice_receipts (POST) group_id · distribution_id ← null (أونر بس)
  *
- * مرحلة (أ) بس: review · reject_review · approve · delete_* مش هنا (بريف تاني).
+ * مرحلة (أ) = القراية والمسح · مرحلة (ب) = المراجعة/الرفض/الاعتماد/الحذف.
  * كل المنطق في receiving_flow_lib.php — الصفحة بتنادي نفس الدوال، فمفيش سطر
  * SQL متعاد هنا ومفيش رقم بيتصرف في مكان غير اللي بيتعرض في التاني.
  */
@@ -40,7 +45,9 @@ $canManageAll = $isOwner || $isSupervisor;
 $part = (string) ($_GET['part'] ?? '');
 
 $reads  = ['list', 'get'];
-$writes = ['start', 'lookup', 'scan', 'update_qty'];
+$writes = ['start', 'lookup', 'scan', 'update_qty',
+           'review', 'reject_review', 'approve',
+           'delete_receipt', 'delete_invoice_receipts'];
 
 if (!in_array($part, $reads, true) && !in_array($part, $writes, true)) {
     api_fail('جزء غير معروف', 400, 'bad_request');
@@ -83,11 +90,34 @@ api_idempotent();
 
 $in = api_input();
 
+// ===== الحذف الجماعي — زي الصفحة بالحرف: قبل جلب المحضر وقبل حارس النطاق =====
+if ($part === 'delete_invoice_receipts') {
+    if (!$isOwner) {
+        api_fail('إلغاء الفواتير متاح للأونر فقط.', 403, 'forbidden');
+    }
+    $delGroupId = (int) ($in['group_id'] ?? 0);
+    $delDistId  = (int) ($in['distribution_id'] ?? 0);
+    if ($delGroupId <= 0 && $delDistId <= 0) {
+        api_fail('معرف الفاتورة أو المجموعة غير صحيح.', 422, 'invalid');
+    }
+    receipt_delete_by_invoice($pdo, $delGroupId, $delDistId);
+    api_ok(null);
+}
+
 // نفس اللي الصفحة بتعمله: receipt_id من الـbody (أو r من الرابط)
 $receiptId = (int) ($in['receipt_id'] ?? ($_GET['r'] ?? 0));
 $receipt = receipt_get($pdo, $receiptId);
 if (!$receipt) {
     api_fail('سجل الاستلام غير موجود.', 404, 'not_found');
+}
+
+// حذف محضر مفرد — زي الصفحة: بعد جلب المحضر وقبل حارس النطاق، وأونر بس
+if ($part === 'delete_receipt') {
+    if (!$isOwner) {
+        api_fail('إلغاء الاستلام متاح للأونر فقط.', 403, 'forbidden');
+    }
+    receipt_delete($pdo, $receiptId);
+    api_ok(null);
 }
 
 // نفس حارس النطاق اللي الصفحة بتستدعيه قبل أي عملية كتابة — الرفض هنا 403
@@ -118,6 +148,28 @@ try {
         case 'update_qty':
             // سالب = صفر زي الصفحة بالحرف (الدالة نفسها بتعملها)
             api_ok(receipt_set_qty($pdo, $receipt, (string) ($in['code'] ?? ''), (float) ($in['qty'] ?? 0), $uid));
+
+        case 'review':
+            // فرع المحضر بس (حارس النطاق فوق) — نفس شرط الصفحة
+            receipt_review($pdo, $receipt, $uid, $supervisorId);
+            api_ok(null);
+
+        case 'reject_review':
+            // 🔴 نفس شرط الصفحة: $canManageAll — والبريف بيقول 403 مش 422
+            if (!$canManageAll) {
+                api_fail('رفض الاستلام متاح للأونر والمشرف فقط.', 403, 'forbidden');
+            }
+            $senderName = $user['full_name'] ?? ($isOwner ? 'الأونر' : 'مشرف الاستلامات');
+            receipt_reject_review($pdo, $receipt, $uid, (string) ($in['reason'] ?? ''), $senderName);
+            api_ok(null);
+
+        case 'approve':
+            // 🔴 الأونر بس (is_owner الحقيقي عشان الـparts كلها POST)
+            if (!$isOwner) {
+                api_fail('اعتماد الاستلام متاح للأونر فقط.', 403, 'forbidden');
+            }
+            receipt_approve($pdo, $receipt, $uid);
+            api_ok(null);
     }
 } catch (RuntimeException $e) {
     api_fail($e->getMessage(), 422, 'invalid');

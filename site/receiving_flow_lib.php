@@ -759,6 +759,146 @@ function receipt_set_qty(PDO $pdo, array $receipt, string $code, float $qty, int
 }
 
 /**
+ * إنهاء مراجعة الاستلام (كان `action=review` جوّه receiving.php — بريف ١٥٥).
+ *
+ * receiving ← received + إشعار للأونر ولمسؤول الاستلامات.
+ * 🔴 `notify()` بيبعت إشعار موبايل حقيقي — على Laragon امسح صفوف الطابور
+ *    اللي بتتكتب في الاختبار، و`push_worker.php` ممنوع يتشغّل.
+ */
+function receipt_review(PDO $pdo, array $receipt, int $uid, int $supervisorId): void
+{
+    $receiptId = (int) $receipt['id'];
+    if ($receipt['status'] !== 'receiving') {
+        throw new RuntimeException('لا يمكن إنهاء المراجعة في هذه الحالة.');
+    }
+    $st = $pdo->prepare("UPDATE receipts SET status='received', received_at=NOW(), received_by=? WHERE id=? AND status='receiving'");
+    $st->execute([$uid, $receiptId]);
+
+    // إشعار للأونر ولمسؤول الاستلامات
+    $notifUsers = [];
+    $stOwner = $pdo->query('SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.is_owner = 1 AND u.is_active = 1');
+    foreach ($stOwner->fetchAll() as $ow) {
+        $notifUsers[] = (int) $ow['id'];
+    }
+    if ($supervisorId > 0 && !in_array($supervisorId, $notifUsers, true)) {
+        $notifUsers[] = $supervisorId;
+    }
+    if (!empty($notifUsers)) {
+        notify(
+            $pdo,
+            $notifUsers,
+            'receiving',
+            'تمت مراجعة استلام بضاعة فرع ' . $receipt['branch_name'],
+            'قام الفرع بمراجعة الاستلام والمحضر في انتظار الاعتماد النهائي.',
+            'receiving.php?r=' . $receiptId
+        );
+    }
+}
+
+/**
+ * رفض الاستلام وإعادة فتحه للفرع (كان `action=reject_review` — بريف ١٥٥).
+ *
+ * received ← receiving + سبب الرفض + إشعار لموظفي الفرع واللي استلم.
+ * صلاحية `$canManageAll` بتتحرس بره الدالة زي الصفحة (الصفحة بترجّع JSON
+ * والـAPI بيرجّع 403 — مش 422).
+ */
+function receipt_reject_review(PDO $pdo, array $receipt, int $uid, string $reason, string $senderName): void
+{
+    $receiptId = (int) $receipt['id'];
+    if ($receipt['status'] !== 'received') {
+        throw new RuntimeException('لا يمكن رفض الاستلام إلا في حالة بانتظار الاعتماد (تم الاستلام).');
+    }
+    $reason = trim($reason);
+    if ($reason === '') {
+        throw new RuntimeException('يرجى كتابة سبب رفض الاستلام للتوضيح للفرع.');
+    }
+
+    $st = $pdo->prepare("UPDATE receipts SET status='receiving', reject_reason=?, rejected_at=NOW(), rejected_by=? WHERE id=? AND status='received'");
+    $st->execute([$reason, $uid, $receiptId]);
+
+    // إشعار لمستخدمي الفرع والقائم بالاستلام
+    $notifUsers = [];
+    $bId = (int) $receipt['branch_id'];
+    $stBranchUsers = $pdo->prepare('SELECT id FROM users WHERE branch_id = ? AND is_active = 1');
+    $stBranchUsers->execute([$bId]);
+    foreach ($stBranchUsers->fetchAll() as $bu) {
+        $notifUsers[] = (int) $bu['id'];
+    }
+    if (!empty($receipt['received_by']) && !in_array((int) $receipt['received_by'], $notifUsers, true)) {
+        $notifUsers[] = (int) $receipt['received_by'];
+    }
+
+    if (!empty($notifUsers)) {
+        notify(
+            $pdo,
+            $notifUsers,
+            'receiving',
+            'تم رفض استلام بضاعة فرع ' . $receipt['branch_name'],
+            'تم رفض الاستلام بواسطة ' . $senderName . ' — السبب: ' . $reason,
+            'receiving.php?r=' . $receiptId
+        );
+    }
+}
+
+/**
+ * اعتماد الاستلام نهائياً (كان `action=approve` — بريف ١٥٥).
+ *
+ * received ← approved. صلاحية الأونر بس بتتحرس بره الدالة.
+ */
+function receipt_approve(PDO $pdo, array $receipt, int $uid): void
+{
+    if ($receipt['status'] !== 'received') {
+        throw new RuntimeException('يجب أن يكون الاستلام مراجعاً (تم الاستلام) قبل الاعتماد.');
+    }
+    $st = $pdo->prepare("UPDATE receipts SET status='approved', approved_at=NOW(), approved_by=? WHERE id=? AND status='received'");
+    $st->execute([$uid, (int) $receipt['id']]);
+}
+
+/**
+ * حذف محضر استلام فرع واحد + سطوره وإشعاراته (كان `action=delete_receipt` — بريف ١٥٥).
+ *
+ * 🔴 نفس ترتيب الصفحة بالحرف: notifications ← receipt_lines ← receipts،
+ *    ومن غير transaction — الصفحة مش عاملاه (بريف ١٥٥ بند الحذف).
+ */
+function receipt_delete(PDO $pdo, int $receiptId): void
+{
+    $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link = ?")->execute(['receiving.php?r=' . $receiptId]);
+    $pdo->prepare('DELETE FROM receipt_lines WHERE receipt_id = ?')->execute([$receiptId]);
+    $pdo->prepare('DELETE FROM receipts WHERE id = ?')->execute([$receiptId]);
+}
+
+/**
+ * حذف كل محاضر فاتورة/مجموعة من الاستلامات (كان `action=delete_invoice_receipts` — بريف ١٥٥).
+ *
+ * 🔴 ترتيب الصفحة بالحرف هنا مختلف عن الحذف المفرد: receipt_lines ← receipts
+ *    ← notifications (بعد ما بيتبني رابط كل محضر). ومن غير transaction كمان.
+ *
+ * @param int $groupId معرّف المجموعة (0 = مش مستخدم)
+ * @param int $distId  معرّف التوزيع (بيتقرا بس لو group_id = 0)
+ */
+function receipt_delete_by_invoice(PDO $pdo, int $groupId, int $distId): void
+{
+    if ($groupId > 0) {
+        $stIds = $pdo->prepare('SELECT id FROM receipts WHERE group_id = ?');
+        $stIds->execute([$groupId]);
+    } else {
+        $stIds = $pdo->prepare('SELECT id FROM receipts WHERE distribution_id = ?');
+        $stIds->execute([$distId]);
+    }
+    $rcIds = $stIds->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($rcIds)) {
+        return;
+    }
+
+    $ph = implode(',', array_fill(0, count($rcIds), '?'));
+    $pdo->prepare("DELETE FROM receipt_lines WHERE receipt_id IN ($ph)")->execute($rcIds);
+    $pdo->prepare("DELETE FROM receipts WHERE id IN ($ph)")->execute($rcIds);
+    $links = array_map(fn($id) => 'receiving.php?r=' . $id, $rcIds);
+    $lph = implode(',', array_fill(0, count($links), '?'));
+    $pdo->prepare("DELETE FROM notifications WHERE type = 'receiving' AND link IN ($lph)")->execute($links);
+}
+
+/**
  * داتا صفحة «فروقات الاستلام بين الفروع» (بريف ١٢٦).
  *
  * 🔴 استعلامات receiving_diffs.php اتنقلت هنا **بالحرف** — من غير أي تصليح —
