@@ -8,18 +8,15 @@
 require_once __DIR__ . '/auth.php';
 require_permission('tasks_issue');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/tasks_lib.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
 
-$branches  = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 ORDER BY name')->fetchAll();
-$usersList = $pdo->query(
-    'SELECT u.id, u.full_name, b.name AS branch_name
-     FROM users u
-     LEFT JOIN branches b ON b.id = u.branch_id
-     WHERE u.is_active=1 ORDER BY u.full_name'
-)->fetchAll();
+$targetsData = tasks_issue_targets_data();
+$branches    = $targetsData['branches'];
+$usersList   = $targetsData['users'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {

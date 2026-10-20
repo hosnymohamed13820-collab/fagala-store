@@ -11,6 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_permission('tasks');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/shortage_lib.php';   // بيانات النواقص + المرفقات + can_view_task
+require_once __DIR__ . '/tasks_lib.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
@@ -82,68 +83,19 @@ if (isset($_SESSION['flash'])) {
 //    القديم للأبد.
 //    السجل مابيضيعش: اللي عمل المهمة بيفضل شايفها في قايمة «اللي
 //    أصدرتها» تحت بحالتها.
-$inbox = $pdo->prepare(
-    "SELECT t.*, tt.status AS my_status, tt.done_at, u.full_name AS creator
-     FROM task_targets tt
-     JOIN tasks t ON t.id = tt.task_id
-     LEFT JOIN users u ON u.id = t.created_by
-     WHERE tt.user_id = ? AND t.status <> 'closed'
-     ORDER BY (tt.status='pending') DESC, FIELD(t.priority,'urgent','important','normal'), t.id DESC
-     LIMIT 200"
-);
-$inbox->execute([$uid]);
-$inbox = $inbox->fetchAll();
-
-// المهام اللي أنا أصدرتها
-$sent = $pdo->prepare(
-    "SELECT t.*,
-            (SELECT COUNT(*) FROM task_targets x WHERE x.task_id=t.id) AS total,
-            (SELECT COUNT(*) FROM task_targets x WHERE x.task_id=t.id AND x.status='done') AS done
-     FROM tasks t WHERE t.created_by = ? ORDER BY t.id DESC LIMIT 200"
-);
-$sent->execute([$uid]);
-$sent = $sent->fetchAll();
+$inbox = tasks_inbox_list($uid);
+$sent = tasks_sent_list($uid);
 
 // تفاصيل مهمة مفتوحة
 $openTask = null; $openTargets = []; $openComments = [];
 if ($openTaskId > 0) {
-    $st = $pdo->prepare(
-        "SELECT t.*, u.full_name AS creator FROM tasks t
-         LEFT JOIN users u ON u.id=t.created_by WHERE t.id=?"
-    );
-    $st->execute([$openTaskId]);
-    $openTask = $st->fetch();
-    // أتأكد إني مصرّح أشوفها (منشئها أو مستهدف فيها)
-    if ($openTask) {
-        $chk = $pdo->prepare('SELECT status FROM task_targets WHERE task_id=? AND user_id=?');
-        $chk->execute([$openTaskId, $uid]);
-        $myTarget = $chk->fetchColumn();
-        $amCreator = (int)$openTask['created_by'] === $uid;
-        // مسؤول متابعة النواقص بيشوف مهام النواقص حتى لو مش مستهدف
-        $amSupervisor = ($openTask['ref_type'] ?? '') === 'shortage'
-                        && $uid > 0 && $uid === shortage_supervisor_id();
-        if ($myTarget === false && !$amCreator && !is_owner() && !$amSupervisor) {
-            $openTask = null; // مش مصرّح
-        } else {
-            $openTask['my_target_status'] = $myTarget !== false ? $myTarget : null;
-            $tt = $pdo->prepare(
-                "SELECT tt.*, u.full_name FROM task_targets tt
-                 JOIN users u ON u.id=tt.user_id WHERE tt.task_id=? ORDER BY u.full_name"
-            );
-            $tt->execute([$openTaskId]);
-            $openTargets = $tt->fetchAll();
-            $tc = $pdo->prepare(
-                "SELECT tc.*, u.full_name FROM task_comments tc
-                 LEFT JOIN users u ON u.id=tc.user_id WHERE tc.task_id=? ORDER BY tc.id ASC"
-            );
-            $tc->execute([$openTaskId]);
-            $openComments = $tc->fetchAll();
-            // بيانات طلب النواقص المرتبط (لو المهمة من موديول النواقص)
-            $openShortage = ($openTask['ref_type'] ?? '') === 'shortage'
-                ? shortage_by_task($openTaskId) : null;
-            // مرفقات المهمة
-            $openAttachments = task_attachments($openTaskId);
-        }
+    $detail = tasks_get_detail($openTaskId, $uid);
+    if ($detail) {
+        $openTask        = $detail['task'];
+        $openTargets     = $detail['targets'];
+        $openComments    = $detail['comments'];
+        $openShortage    = $detail['shortage'];
+        $openAttachments = $detail['attachments'];
     }
 }
 
