@@ -461,7 +461,9 @@ if ($tab === 'suppliers') {
                 FROM suppliers s
                 LEFT JOIN hq_invoices h ON h.supplier_id = s.erp_supplier_id
                 GROUP BY s.id, s.name, s.payment_type, s.erp_supplier_code
-                ORDER BY CAST(display_code AS UNSIGNED) ASC, display_code ASC, s.name ASC";
+                ORDER BY CAST(COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS UNSIGNED) ASC,
+                         COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') ASC,
+                         s.name ASC";
     $defSuppliers = $pdo->query($suppSql)->fetchAll();
 }
 
