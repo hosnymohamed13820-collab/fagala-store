@@ -5,6 +5,7 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/stocktake_places_lib.php';
 require_login();
 if (!is_owner()) { http_response_code(403); exit('للأونر فقط.'); }
 
@@ -12,14 +13,7 @@ $pdo = db();
 $flash = ''; $flashType = '';
 
 // إنشاء الجدول تلقائياً لو مش موجود (بدل ما تشغّل SQL يدوي)
-$pdo->exec("CREATE TABLE IF NOT EXISTS `stocktake_places` (
-  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name`       VARCHAR(255) NOT NULL,
-  `sort_order` INT NOT NULL DEFAULT 0,
-  `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+stp_ready();
 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -30,25 +24,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($action === 'add') {
                 // إضافة أماكن (سطر لكل مكان)
-                $lines = preg_split('/\r\n|\r|\n/', trim($_POST['places'] ?? ''));
-                $n = 0;
-                $max = (int)$pdo->query('SELECT COALESCE(MAX(sort_order),0) FROM stocktake_places')->fetchColumn();
-                $ins = $pdo->prepare('INSERT INTO stocktake_places (name, sort_order) VALUES (?, ?)');
-                foreach ($lines as $ln) {
-                    $ln = trim($ln);
-                    if ($ln === '') continue;
-                    $ins->execute([$ln, ++$max]);
-                    $n++;
-                }
+                $n = stp_add((string)($_POST['places'] ?? ''));
                 $flash = "تمت إضافة $n مكان."; $flashType = 'success';
             } elseif ($action === 'delete') {
-                $pdo->prepare('DELETE FROM stocktake_places WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+                stp_delete((int)($_POST['id'] ?? 0));
                 $flash = 'تم الحذف.'; $flashType = 'success';
             } elseif ($action === 'delete_all') {
-                $pdo->exec('DELETE FROM stocktake_places');
+                stp_delete_all();
                 $flash = 'تم مسح جميع الأقسام والأرفف.'; $flashType = 'success';
             } elseif ($action === 'toggle') {
-                $pdo->prepare('UPDATE stocktake_places SET is_active=1-is_active WHERE id=?')->execute([(int)($_POST['id'] ?? 0)]);
+                stp_toggle((int)($_POST['id'] ?? 0));
                 $flash = 'تم التحديث.'; $flashType = 'success';
             }
         } catch (Throwable $ex) {
@@ -57,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$places = $pdo->query('SELECT * FROM stocktake_places ORDER BY sort_order, id')->fetchAll();
+$places = stp_list();
 
 $page_title = 'أقسام وأرفف الجرد';
 $active_module = 'stocktake';
