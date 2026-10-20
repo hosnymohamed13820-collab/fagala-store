@@ -9,6 +9,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/rabt_guard_lib.php';
 
 require_login();
 
@@ -29,43 +30,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string) ($_POST['action'] ?? '');
         if ($action === 'close') {
             $id = (int) ($_POST['id'] ?? 0);
-            if ($id > 0) {
-                $st = $pdo->prepare(
-                    "UPDATE rabt_incidents
-                        SET status = 'closed', closed_at = NOW(), close_reason = 'قفلها الأونر'
-                      WHERE id = ? AND status <> 'closed'"
-                );
-                $st->execute([$id]);
-                if ($st->rowCount() > 0) {
-                    $flash = 'اتقفلت الحادثة بنجاح.';
-                }
+            if ($id > 0 && rabt_guard_close_incident($id, 'قفلها الأونر')) {
+                $flash = 'اتقفلت الحادثة بنجاح.';
             }
         }
     }
 }
 
 // ٣ استعلامات بالظبط:
-// ١) الحوادث المفتوحة
-$openIncidents = $pdo->query(
-    "SELECT * FROM rabt_incidents
-      WHERE status <> 'closed'
-      ORDER BY last_seen DESC, id DESC"
-)->fetchAll(PDO::FETCH_ASSOC);
-
-// ٢) أوامر إعادة التشغيل (آخر ٥٠)
-$commands = $pdo->query(
-    "SELECT * FROM agent_commands
-      ORDER BY id DESC
-      LIMIT 50"
-)->fetchAll(PDO::FETCH_ASSOC);
-
-// ٣) الحوادث المقفولة (آخر ٥٠)
-$closedIncidents = $pdo->query(
-    "SELECT * FROM rabt_incidents
-      WHERE status = 'closed'
-      ORDER BY closed_at DESC, id DESC
-      LIMIT 50"
-)->fetchAll(PDO::FETCH_ASSOC);
+$openIncidents   = rabt_guard_open_incidents();
+$commands        = rabt_guard_recent_commands(50);
+$closedIncidents = rabt_guard_closed_incidents(50);
 
 $page_title    = 'حارس الربط';
 $active_module = 'settings';

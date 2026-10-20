@@ -496,3 +496,74 @@ function rabt_handle_beat_commands(string $agent, array $in): ?array
 
     return null;
 }
+
+/**
+ * جلب الحوادث المفتوحة لحارس الربط (بريف ١٤٧).
+ *
+ * @return array
+ */
+function rabt_guard_open_incidents(): array
+{
+    return db()->query(
+        "SELECT * FROM rabt_incidents
+          WHERE status <> 'closed'
+          ORDER BY last_seen DESC, id DESC"
+    )->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * جلب أوامر الوكلاء الأخيرة (بريف ١٤٧).
+ *
+ * @param int $limit
+ * @return array
+ */
+function rabt_guard_recent_commands(int $limit = 50): array
+{
+    $st = db()->prepare(
+        "SELECT * FROM agent_commands
+          ORDER BY id DESC
+          LIMIT " . (int) $limit
+    );
+    $st->execute();
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * جلب الحوادث المغلقة الأخيرة (بريف ١٤٧).
+ *
+ * @param int $limit
+ * @return array
+ */
+function rabt_guard_closed_incidents(int $limit = 50): array
+{
+    $st = db()->prepare(
+        "SELECT * FROM rabt_incidents
+          WHERE status = 'closed'
+          ORDER BY closed_at DESC, id DESC
+          LIMIT " . (int) $limit
+    );
+    $st->execute();
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * إغلاق حادثة في حارس الربط (بريف ١٤٧).
+ *
+ * @param int $incidentId
+ * @param string $reason
+ * @return bool
+ */
+function rabt_guard_close_incident(int $incidentId, string $reason = 'قفلها الأونر'): bool
+{
+    if ($incidentId <= 0) {
+        return false;
+    }
+    $st = db()->prepare(
+        "UPDATE rabt_incidents
+            SET status = 'closed', closed_at = NOW(), close_reason = ?
+          WHERE id = ? AND status <> 'closed'"
+    );
+    $st->execute([$reason, $incidentId]);
+    return $st->rowCount() > 0;
+}
+
