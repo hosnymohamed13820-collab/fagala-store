@@ -11,6 +11,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('remote_scan');
+require_once __DIR__ . '/remote_scan_lib.php';
 
 $session = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['s'] ?? ''));
 $uid = (int) (current_user()['id'] ?? 0);
@@ -19,12 +20,7 @@ $uid = (int) (current_user()['id'] ?? 0);
 if (($_GET['action'] ?? '') === 'devices') {
     header('Content-Type: application/json; charset=utf-8');
     try {
-        $rows = db()->query(
-            'SELECT session_code, hostname,
-                    TIMESTAMPDIFF(SECOND, last_seen, NOW()) AS ago
-             FROM scan_agents
-             ORDER BY (TIMESTAMPDIFF(SECOND, last_seen, NOW()) > 15), last_seen DESC'
-        )->fetchAll();
+        $rows = rs_devices();
         echo json_encode(['ok' => true, 'devices' => $rows], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -44,13 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'wake'
     header('Content-Type: application/json; charset=utf-8');
     try {
         if (!csrf_verify($_POST['csrf'] ?? '')) throw new RuntimeException('انتهت الجلسة، اعمل تحديث.');
-        $s = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['session'] ?? ''));
-        if ($s === '' || strlen($s) < 2) throw new RuntimeException('كود الاقتران غلط.');
         // الجهاز لازم يكون مسجّل نفسه قبل كده (INSERT من scan_pull)
-        db()->prepare(
-            'UPDATE scan_agents SET wake_until = NOW() + INTERVAL 3 MINUTE
-             WHERE session_code = ?'
-        )->execute([$s]);
+        rs_wake((string) ($_POST['session'] ?? ''));
         echo json_encode(['ok' => true]);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -63,12 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     header('Content-Type: application/json; charset=utf-8');
     try {
         if (!csrf_verify($_POST['csrf'] ?? '')) throw new RuntimeException('انتهت الجلسة، اعمل تحديث.');
-        $s = strtoupper(preg_replace('/[^A-Za-z0-9_-]/', '', $_POST['session'] ?? ''));
-        $b = trim((string) ($_POST['barcode'] ?? ''));
-        if ($s === '' || strlen($s) < 2)  throw new RuntimeException('كود الاقتران غلط.');
-        if ($b === '' || strlen($b) > 64) throw new RuntimeException('باركود غير صالح.');
-        db()->prepare('INSERT INTO scan_queue (session_code, barcode, created_by) VALUES (?, ?, ?)')
-            ->execute([$s, $b, $uid]);
+        rs_push(
+            (string) ($_POST['session'] ?? ''),
+            (string) ($_POST['barcode'] ?? ''),
+            $uid
+        );
         echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
