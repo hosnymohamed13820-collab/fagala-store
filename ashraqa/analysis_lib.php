@@ -556,8 +556,23 @@ function an_batch(int $id): ?array
     return $st->fetch() ?: null;
 }
 
+/**
+ * عمل رفعة جديدة.
+ *
+ * 🔴 الفحص هنا وفي الصفحة بنفس الرسايل بالظبط — الصفحة بتعرضه للمستخدم
+ *    قبل ما تلمس القاعدة، والـAPI (analysis_api.php) بيرجعه 422. لازم
+ *    الاتنين يبقوا متطابقين.
+ */
 function an_batch_create(string $label, string $from, string $to, ?int $uid): int
 {
+    $label = trim($label);
+    $from  = trim($from);
+    $to    = trim($to);
+    if ($label === '' || $from === '' || $to === '') {
+        throw new RuntimeException('اكتب الاسم والفترة كاملة.');
+    }
+    if ($from > $to) throw new RuntimeException('تاريخ البداية بعد النهاية.');
+
     db()->prepare(
         'INSERT INTO shortage_batches (source, period_from, period_to, label, created_by)
          VALUES (\'manual\', ?, ?, ?, ?)'
@@ -565,10 +580,16 @@ function an_batch_create(string $label, string $from, string $to, ?int $uid): in
     return (int) db()->lastInsertId();
 }
 
-/** المسح بيشيل البنود معاه (ON DELETE CASCADE). */
-function an_batch_delete(int $id): void
+/**
+ * المسح بيشيل البنود معاه (ON DELETE CASCADE).
+ *
+ * @return int عدد الرفعات اللي اتمسحت (0 = مفيش رفعة بالرقم ده)
+ */
+function an_batch_delete(int $id): int
 {
-    db()->prepare('DELETE FROM shortage_batches WHERE id = ?')->execute([$id]);
+    $st = db()->prepare('DELETE FROM shortage_batches WHERE id = ?');
+    $st->execute([$id]);
+    return $st->rowCount();
 }
 
 /** تحديث العدادات بعد أي رفع أو مسح — استعلام واحد، مش حلقة. */
@@ -695,6 +716,20 @@ function an_import(int $batchId, int $stoId, array $rows, array $map): array
 function an_import_erp(int $batchId, string $from, string $to): array
 {
     $pdo = db();
+
+    // 🔴 نفس فحوص الصفحة بالرسايل نفسها — الـAPI بيرجعها 422 بدل ما
+    //    يضرب في foreign key ويفشل بخطأ سيرفر.
+    if ($batchId <= 0 || !an_batch($batchId)) {
+        throw new RuntimeException('الرفعة مش موجودة.');
+    }
+    $from = trim($from);
+    $to   = trim($to);
+    if ($from === '' || $to === '') {
+        throw new RuntimeException('اختار فترة البداية والنهاية.');
+    }
+    if ($from > $to) {
+        throw new RuntimeException('تاريخ البداية بعد النهاية.');
+    }
 
     // ١) خريطة الفرع ← المخزن من الداتا نفسها (مش مكتوبة في الكود)
     $stMap = $pdo->query('SELECT agent_key, sto_id FROM hq_branch_balances GROUP BY agent_key, sto_id');
