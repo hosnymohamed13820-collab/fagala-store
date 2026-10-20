@@ -1130,3 +1130,96 @@ function stk_xlsx_col(int $idx): string
     }
     return $letters;
 }
+
+/**
+ * بيانات المحضر وتفاصيله (لصفحة الجرد والـAPI).
+ */
+function stk_get_sheet(int $sheetId): ?array
+{
+    $st = db()->prepare(
+        "SELECT sh.*, b.name AS branch_name, u.full_name AS counter_name, r.full_name AS reviewer_name
+         FROM stocktake_sheets sh
+         LEFT JOIN branches b ON b.id=sh.branch_id
+         LEFT JOIN users u ON u.id=sh.counted_by
+         LEFT JOIN users r ON r.id=sh.reviewed_by
+         WHERE sh.id=?"
+    );
+    $st->execute([$sheetId]);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * سطور محضر الجرد (مرتبة من الأحدث للأقدم).
+ */
+function stk_sheet_lines(int $sheetId): array
+{
+    $st = db()->prepare('SELECT * FROM stocktake_lines WHERE sheet_id=? ORDER BY id DESC');
+    $st->execute([$sheetId]);
+    return $st->fetchAll();
+}
+
+/**
+ * قائمة المحاضر لجلسة الجرد النشطة (مرتبة برقم المحضر تنازلياً).
+ */
+function stk_active_sheets(int $sessionId): array
+{
+    $st = db()->prepare(
+        "SELECT sh.*, b.name AS branch_name, u.full_name AS counter_name, r.full_name AS reviewer_name,
+                (SELECT COUNT(*) FROM stocktake_lines WHERE sheet_id=sh.id) AS items_count
+         FROM stocktake_sheets sh
+         LEFT JOIN branches b ON b.id=sh.branch_id
+         LEFT JOIN users u ON u.id=sh.counted_by
+         LEFT JOIN users r ON r.id=sh.reviewed_by
+         WHERE sh.session_id=? ORDER BY sh.sheet_no DESC"
+    );
+    $st->execute([$sessionId]);
+    return $st->fetchAll();
+}
+
+/**
+ * تجميع المحاضر حسب القسم (العرض الشجري للأقسام).
+ */
+function stk_group_sheets(array $sheets): array
+{
+    $sheetGroups = [];
+    foreach ($sheets as $shRow) {
+        $note = trim($shRow['place_note'] ?? '');
+        if ($note === '') {
+            $section = $shRow['branch_name'] ?? 'بدون قسم';
+        } else {
+            $parts = preg_split('/\s*[-–]\s*/u', $note, 2);
+            $section = trim($parts[0]) !== '' ? trim($parts[0]) : $note;
+        }
+        if (!isset($sheetGroups[$section])) $sheetGroups[$section] = [];
+        $sheetGroups[$section][] = $shRow;
+    }
+    return $sheetGroups;
+}
+
+/**
+ * قائمة الفروع النشطة للجرد.
+ */
+function stk_branches_list(): array
+{
+    return db()->query('SELECT id, name FROM branches WHERE is_active=1 ORDER BY name')->fetchAll();
+}
+
+/**
+ * قائمة المستخدمين النشطين (للأونر).
+ */
+function stk_users_list(): array
+{
+    return db()->query('SELECT id, full_name FROM users WHERE is_active=1 ORDER BY full_name')->fetchAll();
+}
+
+/**
+ * قائمة أماكن الجرد (الأقسام والأرفف).
+ */
+function stk_places_list(): array
+{
+    try {
+        return db()->query('SELECT name FROM stocktake_places WHERE is_active=1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $ex) {
+        return [];
+    }
+}

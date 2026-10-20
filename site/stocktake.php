@@ -64,17 +64,14 @@ $uid = (int) $u['id'];
 $owner = is_owner();
 $flash = ''; $flashType = 'success';
 
-$branches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 ORDER BY name')->fetchAll();
+$branches = stk_branches_list();
 // قائمة المستخدمين (للأونر — لإعادة تعيين الجرد/المراجعة)
 $allUsers = [];
 if (is_owner()) {
-    $allUsers = $pdo->query('SELECT id, full_name FROM users WHERE is_active=1 ORDER BY full_name')->fetchAll();
+    $allUsers = stk_users_list();
 }
 // أماكن الجرد (الأقسام/الأرفف) — لو الجدول موجود
-$stkPlaces = [];
-try {
-    $stkPlaces = $pdo->query('SELECT name FROM stocktake_places WHERE is_active=1 ORDER BY sort_order, id')->fetchAll(PDO::FETCH_COLUMN);
-} catch (Throwable $ex) { $stkPlaces = []; }
+$stkPlaces = stk_places_list();
 $session = stk_active_session();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -410,20 +407,9 @@ if (isset($_GET['msg'])) { $flash = $_GET['msg']; $flashType = isset($_GET['merg
 // المحضر المفتوح
 $openSheet = null; $lines = [];
 if (isset($_GET['sheet'])) {
-    $s = $pdo->prepare(
-        "SELECT sh.*, b.name AS branch_name, u.full_name AS counter_name, r.full_name AS reviewer_name
-         FROM stocktake_sheets sh
-         LEFT JOIN branches b ON b.id=sh.branch_id
-         LEFT JOIN users u ON u.id=sh.counted_by
-         LEFT JOIN users r ON r.id=sh.reviewed_by
-         WHERE sh.id=?"
-    );
-    $s->execute([(int)$_GET['sheet']]);
-    $openSheet = $s->fetch();
+    $openSheet = stk_get_sheet((int)$_GET['sheet']);
     if ($openSheet) {
-        $l = $pdo->prepare('SELECT * FROM stocktake_lines WHERE sheet_id=? ORDER BY id DESC');
-        $l->execute([(int)$openSheet['id']]);
-        $lines = $l->fetchAll();
+        $lines = stk_sheet_lines((int)$openSheet['id']);
     }
 }
 
@@ -444,33 +430,11 @@ if ($openSheet) {
 // قائمة المحاضر في الجلسة النشطة
 $sheets = [];
 if ($session) {
-    $sh = $pdo->prepare(
-        "SELECT sh.*, b.name AS branch_name, u.full_name AS counter_name, r.full_name AS reviewer_name,
-                (SELECT COUNT(*) FROM stocktake_lines WHERE sheet_id=sh.id) AS items_count
-         FROM stocktake_sheets sh
-         LEFT JOIN branches b ON b.id=sh.branch_id
-         LEFT JOIN users u ON u.id=sh.counted_by
-         LEFT JOIN users r ON r.id=sh.reviewed_by
-         WHERE sh.session_id=? ORDER BY sh.sheet_no DESC"
-    );
-    $sh->execute([(int)$session['id']]);
-    $sheets = $sh->fetchAll();
+    $sheets = stk_active_sheets((int)$session['id']);
 }
 
 // تجميع المحاضر حسب اسم القسم (الجزء قبل "-" في المكان) للعرض الشجري
-$sheetGroups = [];
-foreach ($sheets as $shRow) {
-    $note = trim($shRow['place_note'] ?? '');
-    if ($note === '') {
-        $section = $shRow['branch_name'] ?? 'بدون قسم';
-    } else {
-        // "الأقلام - الرف الأول" → القسم = "الأقلام"
-        $parts = preg_split('/\s*[-–]\s*/u', $note, 2);
-        $section = trim($parts[0]) !== '' ? trim($parts[0]) : $note;
-    }
-    if (!isset($sheetGroups[$section])) $sheetGroups[$section] = [];
-    $sheetGroups[$section][] = $shRow;
-}
+$sheetGroups = stk_group_sheets($sheets);
 
 // بحث عن صنف داخل كل المحاضر
 $searchTerm = trim($_GET['q'] ?? '');
