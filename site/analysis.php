@@ -386,7 +386,7 @@ require_once __DIR__ . '/includes/header.php';
     /* الأرقام: خانات متساوية العرض، واتجاه لاتيني عشان السالب يطلع
        «-16» مش «16-» جوه الصفحة العربية */
     .an-tbl td.num { font-variant-numeric:tabular-nums; direction:ltr; }
-    .an-tbl td.z   { color:var(--ink-300); }       /* الصفر يخفت عشان العين تمسك الأرقام الحقيقية */
+    .an-tbl td.z   { color:var(--ink-400); }       /* الصفر يخفت عشان العين تمسك الأرقام الحقيقية */
     .an-tbl td.neg { color:var(--neg); font-weight:600; }
 
     /* عمودا الكود والاسم بيفضلوا ثابتين وانت بتلف يمين وشمال */

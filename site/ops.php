@@ -493,7 +493,7 @@ require_once __DIR__ . '/includes/header.php';
     font-weight: 600;
     font-family: monospace;
     font-size: 13px;
-    color: var(--accent, #0f766e);
+    color: var(--accent-text, #0f766e);
 }
 .ops-sec-title {
     font-size: 16px;

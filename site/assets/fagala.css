@@ -254,7 +254,7 @@
         }
                 .num-pos { color: var(--pos); }
         .num-neg { color: var(--neg); }
-        .num-zero { color: var(--ink-300); }
+        .num-zero { color: var(--ink-400); }
 
         /* تركيز واضح للكيبورد (إتاحة) */
         :focus-visible {
@@ -327,10 +327,13 @@
         /* ===== التخطيط ===== */
         .layout { display: flex; min-height: 100vh; }
         /* ===== Sidebar ===== */
+        /* 🔴 نص الشريط الجانبي لون صريح مش توكن (بريف ١٥٠): الشريط غامق في الوضعين،
+           و--ink-300 الليلي #4a5a75 على #0a111c = ٢٫٧ و--ink-400 النهاري #5e6e86
+           على #16233d = ٣٫٠٢ — الاتنين بيسقطوا. #94a3b8 = ٦٫١٠ نهاري / ٧٫٣٨ ليلي. */
         .sidebar {
             width: 250px;
             background: var(--sidebar);
-            color: var(--ink-300);
+            color: #94a3b8;
             display: flex;
             flex-direction: column;
             position: fixed;
@@ -369,7 +372,7 @@
             align-items: center;
             gap: 12px;
             padding: 11px 20px;
-            color: var(--ink-300);
+            color: #94a3b8;
             text-decoration: none;
             font-size: 14.5px;
             transition: color .18s, background .18s;
@@ -386,7 +389,7 @@
             justify-content: center;
             border-radius: 9px;
             background: rgba(255,255,255,.05);
-            color: var(--ink-300);
+            color: #94a3b8;
             transition: background .18s, color .18s, box-shadow .22s;
         }
         .nav-item i {
@@ -1122,7 +1125,7 @@
             width: 100%;
             padding: 9px;
             background: rgba(255,255,255,0.06);
-            color: var(--ink-300);
+            color: #94a3b8;
             text-decoration: none;
             border-radius: 8px;
             font-size: 14px;
@@ -1165,7 +1168,7 @@
         .notif-item.unread .ni-title { font-weight: 700; }
         .ni-title { font-size: 14px; color: var(--ink-900); }
         .ni-body { font-size: 13px; color: var(--ink-500); margin-top: 3px; }
-        .ni-time { font-size: 11px; color: var(--ink-300); margin-top: 4px; }
+        .ni-time { font-size: 11px; color: var(--ink-400); margin-top: 4px; }
         .notif-empty { text-align: center; color: var(--ink-400); padding: 30px; font-size: 14px; }
 
         /* ===== سلايدر الوضع الليلي ===== */
@@ -1190,7 +1193,7 @@
         :root[data-theme="dark"] .tt-track { background: var(--accent); border-color: var(--accent); }
         /* الزرار على اليمين في الوضع الفاتح، وبيمشي شمال في الليلي.
            translateX فيزيائي مش منطقي — السالب شمال حتى في RTL. */
-        :root[data-theme="dark"] .tt-knob { transform: translateX(-20px); color: var(--accent); }
+        :root[data-theme="dark"] .tt-knob { transform: translateX(-20px); color: var(--accent-text); }
 
         /* ===== أيقونة السلايدر: شمس في الفاتح ↔ هلال في الليلي (بريف ٤٩) =====
            الـSVG جوّه header.php. الشكل كله بـtransform بس (مش r ولا cx) عشان
@@ -1216,7 +1219,7 @@
         .topbar .menu-toggle {
             display: none;
             background: none; border: none;
-            font-size: 24px; color: var(--purple);
+            font-size: 24px; color: var(--accent-text);
             cursor: pointer;
         }
         .content { padding: 24px; }
@@ -1525,7 +1528,7 @@
     cursor:pointer; font-size:13px; color:var(--ink-800);
 }
 .act-row:hover { background:var(--bg); }
-.act-arrow { width:13px; flex-shrink:0; color:var(--accent); font-size:10px; }
+.act-arrow { width:13px; flex-shrink:0; color:var(--accent-text); font-size:10px; }
 .act-dot   { width:13px; flex-shrink:0; }
 .act-dot::before {
     content:''; display:block; width:4px; height:4px; border-radius:50%;
@@ -1785,7 +1788,7 @@ html.fg-dlg-open {
     display: block;
     font-size: 28px;
     margin: 0 auto 8px;
-    color: var(--ink-300);
+    color: var(--ink-400);
 }
 
 /* =====================================================================

@@ -972,7 +972,7 @@ require_once __DIR__ . '/includes/header.php';
             foreach ($accFlat as $c): ?>
                 <tr>
                     <td style="font-weight:<?= (int)$c['depth']===0 ? '500' : '400' ?>;padding-right:<?= 12 + (int)$c['depth']*22 ?>px;">
-                        <?php if ((int)$c['depth'] > 0): ?><span style="color:var(--ink-300);">└ </span><?php endif; ?>
+                        <?php if ((int)$c['depth'] > 0): ?><span style="color:var(--ink-400);">└ </span><?php endif; ?>
                         <?= e($c['name']) ?>
                         <?php if (!empty($c['dynamic_src'])): $n = $accAutoCount[(int)$c['id']] ?? 0; ?>
                             <span style="font-size:11px;color:var(--ink-400);">
@@ -981,7 +981,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td>
                     <td style="font-size:12px;color:var(--ink-500);"><?= e($accTypeLabels[$c['type']] ?? $c['type']) ?></td>
-                    <td><?= !empty($c['is_custody']) ? '<span class="tag-on">عهدة</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                    <td><?= !empty($c['is_custody']) ? '<span class="tag-on">عهدة</span>' : '<span style="color:var(--ink-400);">—</span>' ?></td>
                     <td><span class="badge <?= $c['is_active']?'active':'inactive' ?>"><?= $c['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <button class="btn btn-sm btn-ghost"

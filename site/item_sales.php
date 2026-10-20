@@ -381,7 +381,7 @@ th[data-sort]:hover {
 }
 th.sorted .sort-icon {
     opacity: 1;
-    color: var(--accent, #0f766e);
+    color: var(--accent-text, #0f766e);
 }
 .sort-asc {
     transform: rotate(180deg);

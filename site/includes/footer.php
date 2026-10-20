@@ -49,7 +49,7 @@
     font-weight: 600;
 }
 .sens-eye-sub {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--ink-500);
     margin-top: 1px;
 }
@@ -166,7 +166,7 @@
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
      لاستثناء جدول: <table data-xt-off> -->
-<script src="assets/xtable.js?v=9"></script>
+<script src="assets/xtable.js?v=10"></script>
 <script src="assets/anicons.js?v=1"></script>
 </body>
 </html>

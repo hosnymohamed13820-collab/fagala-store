@@ -1599,7 +1599,7 @@ $statusBadge = function($st) {
     .hrs-neg5 { color:var(--neg);font-weight:500; }
     .hrs-neg-badge { color:var(--neg);background:var(--neg-soft); }
     .hrs-muted { color:var(--ink-500); }
-    .hrs-faint { color:var(--ink-300); }
+    .hrs-faint { color:var(--ink-400); }
 </style>
 
 <?php if ($flash): ?>
@@ -2402,7 +2402,7 @@ $statusBadge = function($st) {
                         <?php if ($s['reversed_at'] === null && is_owner()): ?>
                             <a href="hr.php?tab=salaries&confirm_reverse=<?= (int)$s['id'] ?>" class="btn btn-sm btn-reject" title="إرجاع صرف المرتب"><i class="ti ti-rotate"></i> إرجاع</a>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:12px;">—</span>
+                            <span style="color:var(--ink-400);font-size:12px;">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -2529,7 +2529,7 @@ $statusBadge = function($st) {
                         <?php if ($inLoc || $outLoc): ?>
                             <div style="display:flex;flex-direction:column;gap:2px;"><?= $inLoc ?><?= $outLoc ?></div>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:12px;">—</span>
+                            <span style="color:var(--ink-400);font-size:12px;">—</span>
                         <?php endif; ?>
                     </td>
                     <td><span class="badge" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span></td>

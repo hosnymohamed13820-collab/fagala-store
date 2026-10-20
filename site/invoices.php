@@ -1969,7 +1969,7 @@ require_once __DIR__ . '/includes/header.php';
 })();
 </script>
 
-<link rel="stylesheet" href="assets/invoices.css?v=1">
+<link rel="stylesheet" href="assets/invoices.css?v=2">
 
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>

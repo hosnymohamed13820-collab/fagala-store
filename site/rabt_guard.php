@@ -53,12 +53,12 @@ require_once __DIR__ . '/includes/header.php';
     .rg-badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:12px; font-weight:600; }
     .rg-badge-new { background:var(--neg-soft); color:var(--neg); }
     .rg-badge-claimed { background:var(--warn-soft); color:var(--warn); }
-    .rg-badge-analyzed { background:var(--accent-soft); color:var(--accent); }
+    .rg-badge-analyzed { background:var(--accent-soft); color:var(--accent-text); }
     .rg-badge-closed { background:var(--line-soft); color:var(--ink-500); }
     .rg-badge-done { background:var(--pos-soft); color:var(--pos); }
     .rg-badge-failed { background:var(--neg-soft); color:var(--neg); }
     .rg-badge-pending { background:var(--warn-soft); color:var(--warn); }
-    .rg-badge-picked { background:var(--accent-soft); color:var(--accent); }
+    .rg-badge-picked { background:var(--accent-soft); color:var(--accent-text); }
     .rg-badge-expired { background:var(--line-soft); color:var(--ink-400); }
     .rg-table { width:100%; border-collapse:collapse; font-size:13px; }
     .rg-table th, .rg-table td { padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); }
@@ -128,7 +128,7 @@ require_once __DIR__ . '/includes/header.php';
 
                         <?php if (!empty($inc['analysis'])): ?>
                             <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--line);">
-                                <b style="font-size:13px; color:var(--accent);"><i class="ti ti-eye"></i> تحليل كلود:</b>
+                                <b style="font-size:13px; color:var(--accent-text);"><i class="ti ti-eye"></i> تحليل كلود:</b>
                                 <pre style="white-space:pre-wrap; background:var(--line-soft); padding:10px 14px; border-radius:8px; font-family:inherit; font-size:13px; margin:6px 0 0 0; color:var(--ink-900);"><?= htmlspecialchars((string) $inc['analysis']) ?></pre>
                             </div>
                         <?php endif; ?>
@@ -148,7 +148,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ٢) أوامر إعادة التشغيل -->
     <div class="rg-card">
         <div class="rg-sec-title">
-            <i class="ti ti-refresh" style="color:var(--accent);"></i>
+            <i class="ti ti-refresh" style="color:var(--accent-text);"></i>
             <span>أوامر إعادة التشغيل (آخر ٥٠ أمر)</span>
         </div>
         <?php if (empty($commands)): ?>

@@ -564,7 +564,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .stmt-scroll > table { min-width: max-content; }
 
     /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
-    .trs-dash { color:var(--ink-300); }
+    .trs-dash { color:var(--ink-400); }
     .form-row input.trs-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px; }
     .trs-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px; }
     .trs-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
@@ -1496,7 +1496,7 @@ $today = date('Y-m-d');
                                    + 'color:var(--accent-text);background:var(--bg);';
             } else {
                 span.textContent = '—';
-                span.style.cssText = 'color:var(--ink-300);';
+                span.style.cssText = 'color:var(--ink-400);';
             }
         }
 

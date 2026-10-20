@@ -1422,7 +1422,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td onclick="event.stopPropagation();">
                                     <?php if ($sh['status'] === 'done'): ?>
                                         <a href="stocktake_export.php?sheet=<?= (int)$sh['id'] ?>" class="btn btn-sm" style="text-decoration:none;font-size:12px;padding:4px 10px;">تقرير</a>
-                                    <?php else: ?><span style="color:var(--ink-300);">—</span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-400);">—</span><?php endif; ?>
                                 </td>
                                 <?php if ($owner): ?>
                                 <td onclick="event.stopPropagation();">
@@ -1433,7 +1433,7 @@ require_once __DIR__ . '/includes/header.php';
                                             <input type="hidden" name="sheet_id" value="<?= (int)$sh['id'] ?>">
                                             <button type="submit" style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12px;">حذف</button>
                                         </form>
-                                    <?php else: ?><span style="color:var(--ink-300);" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
+                                    <?php else: ?><span style="color:var(--ink-400);" title="مايتمسحش لأنه منتهي"><i class="ti ti-lock"></i></span><?php endif; ?>
                                 </td>
                                 <?php endif; ?>
                             </tr>
@@ -1734,7 +1734,7 @@ require_once __DIR__ . '/includes/header.php';
                 let html = '<div style="background:var(--bg);border-radius:9px;padding:10px 14px;margin-bottom:10px;">'
                     + '<span style="color:var(--ink-500);font-size:13px;">الصنف:</span> '
                     + '<span style="font-weight:600;color:var(--ink-900);">' + escapeHtml(d.name || '—') + '</span>'
-                    + '<span style="color:var(--ink-300);font-size:12px;"> — ' + d.codes.length + ' كود مربوط</span></div>';
+                    + '<span style="color:var(--ink-400);font-size:12px;"> — ' + d.codes.length + ' كود مربوط</span></div>';
                 html += '<div style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;">'
                     + '<table style="width:100%;border-collapse:collapse;">'
                     + '<thead style="position:sticky;top:0;background:var(--line-soft);z-index:1;"><tr>'

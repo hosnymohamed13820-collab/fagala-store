@@ -200,7 +200,7 @@ require_once __DIR__ . '/includes/header.php';
 
                                         // إذا الصنف لم يوزع للفرع أصلاً
                                         if ($distQ <= 0) {
-                                            echo '<td style="color:var(--ink-300);">—</td>';
+                                            echo '<td style="color:var(--ink-400);">—</td>';
                                             continue;
                                         }
 
@@ -229,7 +229,7 @@ require_once __DIR__ . '/includes/header.php';
                                     // خلية الإجمالي للصنف
                                     echo '<td style="font-weight:bold;background:var(--line-soft);text-align:center;">';
                                     if (!$anyDistributed) {
-                                        echo '<span style="color:var(--ink-300);">—</span>';
+                                        echo '<span style="color:var(--ink-400);">—</span>';
                                     } elseif (!$anyDone) {
                                         echo '<span class="pill-yet">لسه</span>';
                                     } else {

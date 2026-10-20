@@ -121,7 +121,7 @@ require_once __DIR__ . '/nav_icons.php';
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=55').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=56').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -133,7 +133,7 @@ require_once __DIR__ . '/nav_icons.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=21">
+    <link rel="stylesheet" href="assets/fagala.css?v=22">
 </head>
 <body>
 <script>
@@ -288,7 +288,7 @@ require_once __DIR__ . '/nav_icons.php';
                     align-items: center;
                     gap: 4px;
                     background: var(--accent-soft);
-                    color: var(--accent);
+                    color: var(--accent-text);
                     border: 1px solid var(--accent);
                     border-radius: var(--r-sm, 6px);
                     padding: 3px 8px;
@@ -300,7 +300,7 @@ require_once __DIR__ . '/nav_icons.php';
                 }
                 .notif-push-btn:hover {
                     background: var(--line);
-                    color: var(--accent);
+                    color: var(--accent-text);
                 }
                 .notif-push-btn:disabled {
                     opacity: 0.6;
@@ -455,14 +455,14 @@ try {
         border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;
         white-space:nowrap; }
     .push-nag-btn:hover { background:var(--accent-hover); color:#fff; }
-    .push-nag-x { background:none; border:none; color:var(--accent); cursor:pointer;
+    .push-nag-x { background:none; border:none; color:var(--accent-text); cursor:pointer;
         font-size:18px; line-height:1; padding:4px; font-family:inherit; }
     .push-nag-x:hover { color:var(--accent-hover); }
 </style>
 <div id="pushNag" style="display:none;margin-bottom:16px;">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;
         background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:12px;
-        color:var(--accent);font-size:14px;font-weight:600;">
+        color:var(--accent-text);font-size:14px;font-weight:600;">
         <i class="ti ti-bell" style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
         <span style="flex:1;" id="pushNagText">فعّل إشعارات الموبايل عشان أول ما حاجة تخصّك تنزل توصلك على طول — من غير ما تفضل تفتح الموقع تشوف.</span>
         <button type="button" class="push-nag-btn" id="pushNagBtn">فعّل دلوقتي</button>

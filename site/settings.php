@@ -906,7 +906,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                                 style="border-bottom:1px solid var(--line-soft);<?= $isOff ? 'background:var(--warn-soft);' : '' ?>">
                                 <td style="padding:9px 12px;font-weight:600;">
                                     <?= e($gi['invoice_no'] ?: '#' . $gi['id']) ?>
-                                    <span class="guard-badge" style="display:<?= $isOff ? 'inline-block' : 'none' ?>;margin-right:6px;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--warn);color:#fff;">الحارس مفكوك</span>
+                                    <span class="guard-badge" style="display:<?= $isOff ? 'inline-block' : 'none' ?>;margin-right:6px;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--warn-fill);color:#fff;">الحارس مفكوك</span>
                                 </td>
                                 <td style="padding:9px 12px;"><?= e($gi['supplier_name']) ?></td>
                                 <td style="padding:9px 12px;color:var(--ink-500);"><?= e($gi['dist_date']) ?></td>

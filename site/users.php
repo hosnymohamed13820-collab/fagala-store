@@ -758,7 +758,7 @@ require_once __DIR__ . '/includes/header.php';
                                 </form>
                             <?php endif; ?>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:13px;">—</span>
+                            <span style="color:var(--ink-400);font-size:13px;">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -891,7 +891,7 @@ require_once __DIR__ . '/includes/header.php';
                                 </button>
                             </form>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:13px;">—</span>
+                            <span style="color:var(--ink-400);font-size:13px;">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>

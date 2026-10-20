@@ -181,7 +181,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:8px;">
-            <i class="ti ti-device-mobile" style="color:var(--accent);"></i> رسايل إنستاباي
+            <i class="ti ti-device-mobile" style="color:var(--accent-text);"></i> رسايل إنستاباي
         </h2>
         <a href="sms_inbox.php" class="btn btn-ghost"><i class="ti ti-refresh"></i> تحديث</a>
     </div>

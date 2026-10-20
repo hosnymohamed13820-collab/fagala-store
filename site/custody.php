@@ -504,7 +504,7 @@ require_once __DIR__ . '/includes/header.php';
                                 } elseif ($lt === 'supplier') {
                                     echo '<span class="fchip fchip-mute">مورد: ' . e($ex['supp_name'] ?: 'مورد') . '</span>';
                                 } else {
-                                    echo !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>';
+                                    echo !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-400);">—</span>';
                                 }
                             ?></td>
                             <td><?= e($ex['description']) ?></td>
@@ -719,7 +719,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
                         <td><?= e($ex['expense_date']) ?></td>
-                        <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-300);">—</span>' ?></td>
+                        <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-400);">—</span>' ?></td>
                         <td><?= e($ex['description']) ?></td>
                         <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                         <?php if ($canEditCustody): ?>

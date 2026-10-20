@@ -575,7 +575,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="card prob-card" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
         <div>
             <div style="font-size:14px;font-weight:700;color:var(--ink-900);margin-bottom:3px;display:flex;align-items:center;gap:6px;">
-                <i class="ti ti-file-invoice" style="color:var(--accent);"></i> فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل
+                <i class="ti ti-file-invoice" style="color:var(--accent-text);"></i> فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل
             </div>
             <div style="font-size:12.5px;color:var(--ink-500);">
                 اختر أي فاتورة مشتريات للإدارة للتحقق من كمياتها، أصنافها، أو تسجيل عجز/زيادة وملاحظات
@@ -591,7 +591,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="modal" style="max-width:700px;display:flex;flex-direction:column;max-height:85vh;">
             <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:14px;">
                 <div style="font-size:16px;font-weight:700;color:var(--ink-900);display:flex;align-items:center;gap:8px;">
-                    <i class="ti ti-file-invoice" style="color:var(--accent);"></i> اختيار فاتورة مشتريات
+                    <i class="ti ti-file-invoice" style="color:var(--accent-text);"></i> اختيار فاتورة مشتريات
                 </div>
                 <button type="button" class="btn-ghost btn-sm" onclick="closeInvoicePickerModal()" style="border:none;font-size:16px;cursor:pointer;padding:4px 8px;" title="إغلاق">
                     <i class="ti ti-x"></i>
@@ -985,7 +985,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <div><?= e((string)$it['recorder']) ?></div>
                                     <div style="font-size:10.5px;color:var(--ink-400);"><?= e((string)date('m-d H:i', strtotime((string)$it['time']))) ?></div>
                                 <?php else: ?>
-                                    <span style="color:var(--ink-300);">—</span>
+                                    <span style="color:var(--ink-400);">—</span>
                                 <?php endif; ?>
                             </td>
                             <td style="text-align:center;">

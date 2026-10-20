@@ -167,7 +167,7 @@ require_once __DIR__ . '/includes/header.php';
     .mk-badge { padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; }
     .mk-strong { background:var(--pos-fill); }
     .mk-maybe  { background:var(--warn-fill); }
-    .mk-weak   { background:var(--ink-200); }
+    .mk-weak   { background:var(--fill-strong); color:var(--fill-strong-fg); }
     .mk-linked { background:var(--line-soft); border:1.5px solid var(--pos); }
     .mk-ign    { opacity:.55; }
     .btn-sm { padding:6px 13px; font-size:12px; border-radius:8px; border:none; cursor:pointer;

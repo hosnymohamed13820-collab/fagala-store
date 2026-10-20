@@ -40,7 +40,7 @@
         cursor:pointer; transition:all .15s; }
     .scope-btn:hover { border-color:var(--accent); color:var(--accent-text); }
     .scope-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
-        background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
+        background:var(--line-soft); color:var(--ink-500); font-size:12px; font-weight:700; }
     .scope-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
     .scope-btn.active span { background:rgba(255,255,255,0.25); color:#fff; }
 
@@ -51,7 +51,7 @@
         cursor:pointer; transition:all .15s; }
     .sf-btn:hover { border-color:var(--ink-300); color:var(--ink-800); }
     .sf-btn span { display:inline-block; min-width:20px; padding:1px 6px; border-radius:20px;
-        background:var(--line-soft); color:var(--ink-500); font-size:11.5px; font-weight:700; }
+        background:var(--line-soft); color:var(--ink-500); font-size:12px; font-weight:700; }
     .sf-btn.active { background:var(--fill-strong); border-color:var(--fill-strong); color:var(--fill-strong-fg); }
     .sf-btn.active span { background:var(--fill-strong-veil); color:var(--fill-strong-fg); }
     .no-match { padding:26px; text-align:center; color:var(--ink-400); }
@@ -143,7 +143,7 @@
         padding:9px 12px; margin-bottom:14px; }
     .notes-head { display:flex; justify-content:space-between; align-items:center;
         font-size:12.5px; color:var(--ink-500); margin-bottom:6px; }
-    .notes-state { font-size:11.5px; color:var(--ink-400); }
+    .notes-state { font-size:12px; color:var(--ink-400); }
     .notes-state.saving { color:var(--accent-text); }
     .notes-state.saved  { color:var(--pos); }
     .notes-input { width:100%; border:1px solid var(--line); border-radius:8px; padding:7px 10px;
@@ -152,7 +152,7 @@
     .notes-input:focus { outline:none; border-color:var(--accent-text); }
 
     /* الملاحظات في قائمة الفواتير — النص نفسه بيبان تحت رقم الفاتورة */
-    .inv-note-text { display:block; font-size:11.5px; color:var(--ink-600);
+    .inv-note-text { display:block; font-size:12px; color:var(--ink-600);
         background:var(--surface); border:1px solid var(--warn); border-right:3px solid var(--warn);
         border-radius:6px; padding:3px 8px; margin-top:5px; line-height:1.55;
         font-weight:400; white-space:normal; word-break:break-word; max-width:340px; }
@@ -258,7 +258,7 @@
     .ifl-noexp::after { content:''; position:absolute; inset:0; margin:auto;
         width:17px; height:1.8px; background:var(--neg-fill); transform:rotate(-45deg); border-radius:2px; }
     /* أيقونة الملاحظة: تولتيب بس — مافيش ضغط عليها */
-    .ifl-noteic { color:var(--ink-300); font-size:14px; cursor:help; vertical-align:-1px; }
+    .ifl-noteic { color:var(--ink-400); font-size:14px; cursor:help; vertical-align:-1px; }
     .ifl-noteic.has { color:var(--warn); }
     .ifl-donetick { color:var(--pos); font-size:14px; margin-right:5px; vertical-align:-1px; }
 
@@ -268,14 +268,14 @@
         font-family:inherit; border:1px solid var(--line); border-radius:8px;
         background:var(--surface); color:var(--ink-900); }
     .inote-input:focus { outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
-    .inote-input::placeholder { color:var(--ink-300); }
+    .inote-input::placeholder { color:var(--ink-400); }
     .inote-ind { position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:11px; }
 
     .ifl-skipnote { display:flex; gap:9px; align-items:flex-start; margin-bottom:14px;
         background:var(--neg-soft); border:1px solid var(--neg); border-radius:var(--r);
         padding:10px 13px; font-size:12.5px; color:var(--ink-700); line-height:1.8; }
     .ifl-skipnote i { color:var(--neg); font-size:16px; margin-top:2px; }
-    .ifl-skiplist { font-family:monospace; font-size:11.5px; color:var(--ink-500); }
+    .ifl-skiplist { font-family:monospace; font-size:12px; color:var(--ink-500); }
 
     /* شريط أزرار التمييز */
     .ifl-bar { display:flex; align-items:center; gap:9px; flex-wrap:wrap;
@@ -300,7 +300,7 @@
     .ifl-sec { padding:14px 18px; border-bottom:1px solid var(--line-soft); }
     .ifl-sec:last-child { border-bottom:none; }
     .ifl-sec > label { display:block; font-weight:600; color:var(--ink-700); font-size:13px; margin-bottom:9px; }
-    .ifl-sec .sub { color:var(--ink-500); font-size:11.5px; line-height:1.7; margin-top:7px; }
+    .ifl-sec .sub { color:var(--ink-500); font-size:12px; line-height:1.7; margin-top:7px; }
     .ifl-sw { display:flex; gap:9px; flex-wrap:wrap; }
     .ifl-sw button { width:42px; height:34px; border-radius:9px; cursor:pointer;
         border:2px solid var(--line); background:var(--surface); position:relative; }
@@ -320,7 +320,7 @@
         font-size:13.5px; cursor:pointer; margin-top:14px; }
     .ifl-donebtn.on { background:var(--pos-fill); color:#fff; }
     .ifl-donebtn:disabled { opacity:.6; cursor:default; }
-    .ifl-donehint { color:var(--ink-500); font-size:11.5px; line-height:1.7; margin-top:7px; }
+    .ifl-donehint { color:var(--ink-500); font-size:12px; line-height:1.7; margin-top:7px; }
     .ifl-note-in { width:100%; box-sizing:border-box; padding:9px 11px; font-family:inherit;
         font-size:13px; border:1.5px solid var(--line); border-radius:var(--r-sm); resize:vertical; }
     .ifl-note-in:focus { outline:none; border-color:var(--accent-text); }
@@ -336,7 +336,7 @@
     }
     .disc-pct-inp:focus { outline:none; border-color:var(--accent-text);
         box-shadow:0 0 0 3px rgba(99,102,241,.12); }
-    .disc-pct-inp::placeholder { color:var(--ink-300); }
+    .disc-pct-inp::placeholder { color:var(--ink-400); }
     .lines-table tr.disc-locked { background:rgba(99,102,241,.05); }
     .lines-table tr.disc-locked .disc-pct-inp {
         border-color:var(--accent-text); font-weight:700; color:var(--accent-text); }
@@ -385,7 +385,7 @@
         box-shadow:0 8px 22px rgba(124,111,247,.13); }
     .gc-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
     .gc-title { font-weight:700; color:var(--ink-900); font-size:15px; }
-    .gc-state { font-size:11.5px; padding:3px 10px; border-radius:20px; white-space:nowrap; font-weight:600; }
+    .gc-state { font-size:12px; padding:3px 10px; border-radius:20px; white-space:nowrap; font-weight:600; }
     .gc-meta { display:flex; flex-wrap:wrap; gap:12px; color:var(--ink-500); font-size:12.5px; margin-bottom:12px; }
     .gc-meta i { font-size:14px; }
     .gc-bar { height:6px; background:var(--line-soft); border-radius:4px; overflow:hidden; }
@@ -395,7 +395,7 @@
 
     /* ===== أنواع المجموعات + بوب أب تحديد الأصناف ===== */
     .grp-type { display:inline-flex; align-items:center; gap:5px; padding:3px 10px;
-        border-radius:20px; font-size:11.5px; font-weight:700; vertical-align:middle; }
+        border-radius:20px; font-size:12px; font-weight:700; vertical-align:middle; }
     .grp-type.full  { background:var(--accent-soft); color:var(--accent-text); }
     .grp-type.items { background:var(--warn-soft);   color:var(--warn); }
     .grp-itemsnote { display:flex; gap:9px; align-items:flex-start; margin-top:12px;
@@ -409,7 +409,7 @@
         border-radius:50%; width:18px; height:18px; font-family:inherit; }
     .grp-xbtn:hover { opacity:1; background:var(--neg-fill); color:#fff; }
     /* شيل صنف من صف الجدول */
-    .grp-itemx { border:0; background:none; cursor:pointer; color:var(--ink-300);
+    .grp-itemx { border:0; background:none; cursor:pointer; color:var(--ink-400);
         font-size:16px; line-height:1; padding:2px 5px; border-radius:5px;
         font-family:inherit; }
     .grp-itemx:hover { color:#fff; background:var(--neg-fill); }
@@ -428,7 +428,7 @@
 
     .gi-searchrow { display:flex; gap:8px; }
     .gi-searchrow input { flex:1; padding:11px 14px; font-size:14px; }
-    .gi-hint { color:var(--ink-500); font-size:11.5px; margin-top:7px; }
+    .gi-hint { color:var(--ink-500); font-size:12px; margin-top:7px; }
 
     .gi-row { display:flex; align-items:center; gap:10px; padding:10px 18px;
         border-bottom:1px solid var(--line-soft); font-size:13px; }
@@ -438,7 +438,7 @@
     .gi-main { flex:1; min-width:0; }
     .gi-nm { font-weight:600; color:var(--ink-900); display:block;
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .gi-sub { color:var(--ink-500); font-size:11.5px; margin-top:3px;
+    .gi-sub { color:var(--ink-500); font-size:12px; margin-top:3px;
         display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
     .gi-doc { padding:1.5px 8px; border-radius:20px; font-size:10.5px; font-weight:700;
         color:#fff; background:var(--accent); }
@@ -470,7 +470,7 @@
     .grp-admtog { display:flex; align-items:center; gap:8px; margin-top:9px;
         font-size:12.5px; color:var(--ink-700); cursor:pointer; flex-wrap:wrap; }
     .grp-admtog input { width:16px; height:16px; accent-color:var(--accent-text); cursor:pointer; }
-    .grp-admtip { color:var(--ink-500); font-size:11.5px; }
+    .grp-admtip { color:var(--ink-500); font-size:12px; }
 
     .picker-row.gi-grprow { grid-template-columns:60px 1fr 90px 70px; cursor:pointer; }
     .picker-row.gi-grprow:hover { background:var(--accent-soft); }
@@ -484,7 +484,7 @@
         border-top:1px solid var(--line); max-height:130px; overflow-y:auto; }
     .gi-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface);
         border:1px solid var(--line); border-radius:20px; padding:4px 10px;
-        font-size:11.5px; margin:0 0 5px 5px; }
+        font-size:12px; margin:0 0 5px 5px; }
     .gi-chip button { background:none; border:none; color:var(--neg); cursor:pointer;
         font-size:15px; line-height:1; padding:0; }
 
@@ -513,7 +513,7 @@
 
     .disc-summary { display:flex; flex-wrap:wrap; gap:22px; }
     .disc-summary > div { min-width:120px; }
-    .disc-summary span { display:block; font-size:11.5px; color:var(--ink-500); margin-bottom:3px; }
+    .disc-summary span { display:block; font-size:12px; color:var(--ink-500); margin-bottom:3px; }
     .disc-summary b { font-size:17px; color:var(--ink-900); letter-spacing:-.02em; }
     .disc-foot td { font-weight:700; background:var(--line-soft); border-top:2px solid var(--line); padding:10px; }
     .lines-table .c-sale { white-space:nowrap; position:relative; }
@@ -530,7 +530,7 @@
         color:var(--ink-500); background:var(--line-soft); padding:0 6px !important; }
     .lines-table .th-bal { font-size:11px !important; font-weight:500 !important;
         color:var(--ink-400) !important; padding:11px 6px !important; }
-    .bal-na { color:var(--ink-300); }
+    .bal-na { color:var(--ink-400); }
     .sale-input { width:88px; padding:6px 8px; border:1px solid var(--line); border-radius:7px;
         font-size:13px; font-family:inherit; text-align:center; background:var(--surface);
         transition:border-color .15s, box-shadow .15s; }
@@ -546,7 +546,7 @@
        "115.5%" (٦ حروف) + سهمين الـnumber input. على 13px كان الرقم
        بيتقص من الشمال. */
     .mrk-input { width:82px; padding:6px 3px; border:1px dashed var(--line); border-radius:7px;
-        font-size:11.5px; font-family:inherit; text-align:center; background:var(--surface);
+        font-size:12px; font-family:inherit; text-align:center; background:var(--surface);
         color:var(--ink-900); transition:border-color .15s, box-shadow .15s; }
     .mrk-input:focus { outline:none; border-style:solid; border-color:var(--accent-text);
         box-shadow:0 0 0 3px var(--accent-ring); }

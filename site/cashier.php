@@ -671,7 +671,7 @@ require_once __DIR__ . '/includes/header.php';
     .denom-line input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
         text-align:center; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .denom-line input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
-    .denom-line .mul { font-size:13px; color:var(--ink-300); }
+    .denom-line .mul { font-size:13px; color:var(--ink-400); }
     .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent-text); }
     .cash-total-box { background:var(--bg); border-radius:12px; padding:18px; height:fit-content; }
     .cash-total-box .ctl { font-size:13px; color:var(--ink-500); }
@@ -1059,7 +1059,7 @@ require_once __DIR__ . '/includes/header.php';
                             </button>
                         </form>
                     <?php else: ?>
-                        <span style="color:var(--ink-300);">—</span>
+                        <span style="color:var(--ink-400);">—</span>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -1133,7 +1133,7 @@ require_once __DIR__ . '/includes/header.php';
                             </button>
                         </form>
                     <?php else: ?>
-                        <span style="color:var(--ink-300);">—</span>
+                        <span style="color:var(--ink-400);">—</span>
                     <?php endif; ?>
                 </td>
                 <?php endif; ?>

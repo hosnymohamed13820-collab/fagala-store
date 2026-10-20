@@ -230,7 +230,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* التنسيق المشطوب والباهت للمتشحّط */
     .keep-row.is-checked .keep-item-name { text-decoration:line-through; color:var(--ink-400); font-weight:400; }
-    .keep-row.is-checked .keep-item-code { text-decoration:line-through; color:var(--ink-300); }
+    .keep-row.is-checked .keep-item-code { text-decoration:line-through; color:var(--ink-400); }
     .keep-row.is-checked .keep-qty { text-decoration:line-through; color:var(--ink-400); font-weight:400; }
     .keep-row.is-checked .keep-drag-handle { visibility:hidden; }
 
@@ -963,7 +963,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($openGroups)): ?>
         <div class="card">
             <div class="pg-empty" style="padding:36px 20px;line-height:1.9;">
-                <i class="ti ti-checklist" style="font-size:36px;display:block;margin-bottom:8px;color:var(--ink-300);"></i>
+                <i class="ti ti-checklist" style="font-size:36px;display:block;margin-bottom:8px;color:var(--ink-400);"></i>
                 مفيش مجموعات شراء مفتوحة حالياً.<br>
                 <span style="font-size:13px;color:var(--ink-500);">
                     اضغط «مجموعة جديدة» عشان تجمّع حجوزات وطلبات الفروع في مجموعة واحدة للمشتريات.
