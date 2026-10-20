@@ -21,6 +21,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_permission('invoices:problems');
 require_once __DIR__ . '/receiving_lib.php';
+require_once __DIR__ . '/invoice_problems_lib.php';
 
 $pdo = db();
 $user = current_user();
@@ -39,82 +40,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = (string) ($_POST['action'] ?? '');
 
         if ($action === 'save_problem_field') {
-            $did   = (int) ($_POST['distribution_id'] ?? 0);
-            $code  = trim((string) ($_POST['item_code'] ?? ''));
-            $name  = trim((string) ($_POST['item_name'] ?? ''));
-            $field = (string) ($_POST['field'] ?? '');
-            $val   = trim((string) ($_POST['value'] ?? ''));
-
-            if ($did <= 0 || $code === '') {
-                throw new RuntimeException('بيانات الصنف أو الفاتورة غير مكتملة.');
-            }
-
-            if (!in_array($field, ['short_qty', 'over_qty', 'note'], true)) {
-                throw new RuntimeException('حقل غير صالح.');
-            }
-
-            // فحص السجل الحالي
-            $stCur = $pdo->prepare('SELECT id, source, short_qty, over_qty, note FROM invoice_problems WHERE distribution_id = ? AND item_code = ? LIMIT 1');
-            $stCur->execute([$did, $code]);
-            $cur = $stCur->fetch();
-
-            if ($cur) {
-                // تحديث السجل القائم وإلغاء حالة الحذف لو كانت موجودة
-                if ($field === 'short_qty') {
-                    $num = max(0, (float) $val);
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET short_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name), dismissed_at = NULL WHERE id = ?');
-                    $upd->execute([$num, $name, $cur['id']]);
-                } elseif ($field === 'over_qty') {
-                    $num = max(0, (float) $val);
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET over_qty = ?, item_name = COALESCE(NULLIF(?, ""), item_name), dismissed_at = NULL WHERE id = ?');
-                    $upd->execute([$num, $name, $cur['id']]);
-                } else { // note
-                    $upd = $pdo->prepare('UPDATE invoice_problems SET note = ?, item_name = COALESCE(NULLIF(?, ""), item_name), created_by = COALESCE(created_by, ?), dismissed_at = NULL WHERE id = ?');
-                    $upd->execute([$val !== '' ? $val : null, $name, $uid, $cur['id']]);
-                }
-                echo json_encode(['ok' => true, 'source' => $cur['source']], JSON_UNESCAPED_UNICODE);
-            } else {
-                // إدراج سجل يدوي جديد
-                $short = ($field === 'short_qty') ? max(0, (float) $val) : 0.0;
-                $over  = ($field === 'over_qty') ? max(0, (float) $val) : 0.0;
-                $note  = ($field === 'note' && $val !== '') ? $val : null;
-
-                $ins = $pdo->prepare(
-                    "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, short_qty, over_qty, note, created_by)
-                     VALUES (?, ?, ?, 'manual', ?, ?, ?, ?)"
-                );
-                $ins->execute([$did, $code, $name ?: null, $short, $over, $note, $uid]);
-                echo json_encode(['ok' => true, 'source' => 'manual'], JSON_UNESCAPED_UNICODE);
-            }
+            $res = ip_save_problem_field(
+                $pdo,
+                $uid,
+                (int) ($_POST['distribution_id'] ?? 0),
+                trim((string) ($_POST['item_code'] ?? '')),
+                trim((string) ($_POST['item_name'] ?? '')),
+                (string) ($_POST['field'] ?? ''),
+                trim((string) ($_POST['value'] ?? ''))
+            );
+            echo json_encode($res, JSON_UNESCAPED_UNICODE);
             exit;
         }
 
         if ($action === 'delete_problem') {
-            $did  = (int) ($_POST['distribution_id'] ?? 0);
-            $code = trim((string) ($_POST['item_code'] ?? ''));
-            if ($did > 0 && $code !== '') {
-                $st = $pdo->prepare('SELECT source FROM invoice_problems WHERE distribution_id = ? AND item_code = ? LIMIT 1');
-                $st->execute([$did, $code]);
-                $src = $st->fetchColumn();
-                if ($src === 'auto') {
-                    $del = $pdo->prepare('UPDATE invoice_problems SET dismissed_at = NOW() WHERE distribution_id = ? AND item_code = ?');
-                    $del->execute([$did, $code]);
-                } else {
-                    $del = $pdo->prepare('DELETE FROM invoice_problems WHERE distribution_id = ? AND item_code = ?');
-                    $del->execute([$did, $code]);
-                }
-            }
-            echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            $res = ip_delete_problem(
+                $pdo,
+                (int) ($_POST['distribution_id'] ?? 0),
+                trim((string) ($_POST['item_code'] ?? ''))
+            );
+            echo json_encode($res, JSON_UNESCAPED_UNICODE);
             exit;
         }
 
         if ($action === 'delete_invoice_problems') {
-            $did = (int) ($_POST['distribution_id'] ?? 0);
-            if ($did > 0) {
-                $pdo->prepare("UPDATE invoice_problems SET dismissed_at = NOW() WHERE distribution_id = ? AND source = 'auto'")->execute([$did]);
-                $pdo->prepare("DELETE FROM invoice_problems WHERE distribution_id = ? AND source = 'manual'")->execute([$did]);
-            }
-            echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            $res = ip_delete_invoice_problems($pdo, (int) ($_POST['distribution_id'] ?? 0));
+            echo json_encode($res, JSON_UNESCAPED_UNICODE);
             exit;
         }
 
@@ -128,237 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // =========================================================================
 //  دوال الحساب التلقائي المجمّع للمردودات
 // =========================================================================
-
-/**
- * حساب ومزامنة المردودات التلقائية لفاتورة معينة.
- * استعلام واحد مجمّع بدون أي استعلام داخل حلقة.
- *
- * مثال محمد بالحرف: قلم روتو في الفاتورة 12، اللي جه 10، المردود 2.
- * العمود short_qty = الناقص (12 - 10 = 2)، مش 10 ومش 12.
- */
-function sync_invoice_problems_for_dist(PDO $pdo, int $distId): void
-{
-    if ($distId <= 0) return;
-
-    $stDist = $pdo->prepare(
-        "SELECT d.id, d.invoice_no, d.company_branch, d.doc_type, d.dist_date, d.supplier_id
-         FROM invoice_distribution d
-         WHERE d.id = ? LIMIT 1"
-    );
-    $stDist->execute([$distId]);
-    $dist = $stDist->fetch();
-    if (!$dist) return;
-
-    // مشاكل الفواتير مخصصة لفواتير شراء الإدارة فقط (company_branch = 1 و doc_type = 2)
-    if ($dist['company_branch'] !== null && (int) $dist['company_branch'] !== 1) return;
-    if ($dist['doc_type'] !== null && (int) $dist['doc_type'] !== 2) return;
-
-    // جلب فاتورة الشراء الأصلية من مرآة الشركة باستخدام المفتاح المركب
-    $distKey = dist_key_sql('d', 'i.company_branch', 'i.doc_type');
-    $stHq = $pdo->prepare(
-        "SELECT i.sth_id, i.suffix, i.doc_no, i.company_branch, i.doc_type, i.supplier_id, i.invoice_date
-         FROM hq_invoices i
-         CROSS JOIN (SELECT ? AS company_branch, ? AS doc_type) d
-         WHERE i.doc_no = ? AND i.doc_type = 2 AND (i.company_branch = 1 OR i.company_branch IS NULL) AND $distKey
-         LIMIT 1"
-    );
-    $stHq->execute([$dist['company_branch'], $dist['doc_type'], $dist['invoice_no']]);
-    $hqInv = $stHq->fetch();
-    if (!$hqInv) return;
-
-    // جلب كل سطور فاتورة الشراء
-    $stLines = $pdo->prepare(
-        "SELECT hl.item_id, hl.item_code, hl.item_name, hl.quantity, hl.unit_price, hl.cost_price
-         FROM hq_invoice_lines hl
-         WHERE hl.sth_id = ? AND hl.suffix = ?"
-    );
-    $stLines->execute([$hqInv['sth_id'], $hqInv['suffix']]);
-    $rawLines = $stLines->fetchAll();
-    if (empty($rawLines)) return;
-
-    // دمج الأكواد المكررة بالدالة الرسمية
-    $mergedList = merge_invoice_items($rawLines);
-    $mergedItems = [];
-    foreach ($mergedList as $it) {
-        $code = trim((string) ($it['item_code'] ?? ''));
-        if ($code !== '') {
-            $mergedItems[$code] = $it;
-        }
-    }
-    $itemCodes = array_keys($mergedItems);
-    if (empty($itemCodes)) return;
-
-    // استعلام مجمّع لجلب كميات المردود (doc_type = 6) لنفس المورد خلال 90 يوم
-    $placeholders = implode(',', array_fill(0, count($itemCodes), '?'));
-    $retSql = "
-        SELECT lr.item_code, SUM(lr.quantity) AS return_qty
-        FROM hq_invoices ir
-        JOIN hq_invoice_lines lr ON lr.sth_id = ir.sth_id AND lr.suffix = ir.suffix
-        WHERE ir.doc_type = 6
-          AND ir.supplier_id = ?
-          AND ir.invoice_date >= ?
-          AND ir.invoice_date <= DATE_ADD(?, INTERVAL 90 DAY)
-          AND lr.item_code IN ($placeholders)
-        GROUP BY lr.item_code
-        HAVING return_qty > 0
-    ";
-    $retParams = array_merge([$hqInv['supplier_id'], $hqInv['invoice_date'], $hqInv['invoice_date']], $itemCodes);
-    $stRet = $pdo->prepare($retSql);
-    $stRet->execute($retParams);
-    $returns = $stRet->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // جلب المشاكل الحالية المسجلة لهذه الفاتورة
-    $stExist = $pdo->prepare(
-        "SELECT item_code, source, short_qty, over_qty, note, dismissed_at
-         FROM invoice_problems
-         WHERE distribution_id = ?"
-    );
-    $stExist->execute([$distId]);
-    $existing = [];
-    foreach ($stExist->fetchAll() as $ep) {
-        $existing[$ep['item_code']] = $ep;
-    }
-
-    // استعلامات الإدراج والتحديث خارج أي حلقة
-    $insAuto = $pdo->prepare(
-        "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, short_qty, over_qty)
-         VALUES (?, ?, ?, 'auto', ?, 0)
-         ON DUPLICATE KEY UPDATE
-             short_qty = VALUES(short_qty),
-             item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name)"
-    );
-
-    $updManual = $pdo->prepare(
-        "UPDATE invoice_problems
-         SET short_qty = ?, item_name = COALESCE(NULLIF(?, ''), item_name)
-         WHERE distribution_id = ? AND item_code = ?"
-    );
-
-    foreach ($returns as $code => $retQty) {
-        $rQty = (float) $retQty;
-        if ($rQty <= 0) continue;
-
-        // مثال محمد بالحرف: قلم روتو في الفاتورة ١٢، اللي جه ١٠، المردود ٢
-        // العمود short_qty = الناقص (١٢ - ١٠ = ٢)، مش ١٠ ومش ١٢
-        $shortQty = $rQty;
-        $itemName = $mergedItems[$code]['item_name'] ?? '';
-
-        if (isset($existing[$code])) {
-            // لو الصنف شاله المستخدم يدوياً نتخطاه ولا نرجعه
-            if ($existing[$code]['dismissed_at'] !== null) {
-                continue;
-            }
-            // لو الصنف موجود يدوي: نحدّث الكميات فقط ونسيب source و note زي ما هما
-            if ($existing[$code]['source'] === 'manual') {
-                $updManual->execute([$shortQty, $itemName, $distId, $code]);
-            } else {
-                $insAuto->execute([$distId, $code, $itemName, $shortQty]);
-            }
-        } else {
-            $insAuto->execute([$distId, $code, $itemName, $shortQty]);
-        }
-    }
-}
-
-/**
- * مزامنة تلقائية مجمّعة لكل الفواتير الموزعة التي لها مردودات.
- * استعلام واحد مجمّع بدون أي استعلام داخل حلقة.
- */
-function sync_all_invoice_problems_auto(PDO $pdo): void
-{
-    // تنظيف أي سجلات تلقائية قديمة لفروع أخرى أو لمردودات
-    try {
-        $pdo->exec(
-            "DELETE p FROM invoice_problems p
-             JOIN invoice_distribution d ON d.id = p.distribution_id
-             WHERE p.source = 'auto' AND ((d.company_branch IS NOT NULL AND d.company_branch <> 1) OR d.doc_type = 6)"
-        );
-    } catch (Throwable $e) { /* تجاهل */ }
-
-    $sql = "
-        SELECT 
-            d.id AS dist_id,
-            lp.item_code,
-            MAX(lp.item_name) AS item_name,
-            SUM(lr.quantity) AS return_qty
-        FROM invoice_distribution d
-        JOIN hq_invoices inv_p 
-            ON inv_p.doc_no = d.invoice_no 
-           AND inv_p.doc_type = 2
-           AND (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
-           AND (d.doc_type = 2 OR d.doc_type IS NULL)
-           AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)
-        JOIN hq_invoice_lines lp 
-            ON lp.sth_id = inv_p.sth_id AND lp.suffix = inv_p.suffix
-        JOIN hq_invoices inv_r 
-            ON inv_r.doc_type = 6 
-           AND inv_r.supplier_id = inv_p.supplier_id
-           AND (inv_r.company_branch = 1 OR inv_r.company_branch IS NULL OR inv_r.company_branch = inv_p.company_branch)
-           AND inv_r.invoice_date >= inv_p.invoice_date 
-           AND inv_r.invoice_date <= DATE_ADD(inv_p.invoice_date, INTERVAL 90 DAY)
-        JOIN hq_invoice_lines lr 
-            ON lr.sth_id = inv_r.sth_id AND lr.suffix = inv_r.suffix 
-           AND lr.item_code = lp.item_code
-        WHERE (d.company_branch = 1 OR d.company_branch IS NULL)
-          AND (d.doc_type = 2 OR d.doc_type IS NULL)
-        GROUP BY d.id, lp.item_code
-        HAVING return_qty > 0
-    ";
-    $st = $pdo->query($sql);
-    $rows = $st ? $st->fetchAll() : [];
-    if (empty($rows)) return;
-
-    $stManual = $pdo->query("SELECT distribution_id, item_code FROM invoice_problems WHERE source = 'manual'");
-    $manualKeys = [];
-    if ($stManual) {
-        foreach ($stManual->fetchAll() as $m) {
-            $manualKeys[$m['distribution_id'] . ':' . $m['item_code']] = true;
-        }
-    }
-
-    $stDismissed = $pdo->query("SELECT distribution_id, item_code FROM invoice_problems WHERE dismissed_at IS NOT NULL");
-    $dismissedKeys = [];
-    if ($stDismissed) {
-        foreach ($stDismissed->fetchAll() as $d) {
-            $dismissedKeys[$d['distribution_id'] . ':' . $d['item_code']] = true;
-        }
-    }
-
-    $insAuto = $pdo->prepare(
-        "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, short_qty, over_qty)
-         VALUES (?, ?, ?, 'auto', ?, 0)
-         ON DUPLICATE KEY UPDATE
-             short_qty = VALUES(short_qty),
-             item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name)"
-    );
-
-    $updManual = $pdo->prepare(
-        "UPDATE invoice_problems
-         SET short_qty = ?, item_name = COALESCE(NULLIF(?, ''), item_name)
-         WHERE distribution_id = ? AND item_code = ?"
-    );
-
-    foreach ($rows as $r) {
-        $did  = (int) $r['dist_id'];
-        $code = (string) $r['item_code'];
-        $name = (string) $r['item_name'];
-        $sq   = (float) $r['return_qty'];
-        $k    = $did . ':' . $code;
-
-        // لو الصنف اتشال بإيد المستخدم نتخطاه تماماً ولا نرجعه ولا نحدثه
-        if (isset($dismissedKeys[$k])) {
-            continue;
-        }
-
-        // مثال محمد بالحرف: قلم روتو في الفاتورة ١٢، اللي جه ١٠، المردود ٢
-        // العمود short_qty = الناقص (١٢ - ١٠ = ٢)، مش ١٠ ومش ١٢
-        if (isset($manualKeys[$k])) {
-            $updManual->execute([$sq, $name, $did, $code]);
-        } else {
-            $insAuto->execute([$did, $code, $name, $sq]);
-        }
-    }
-}
+// 🔴 اتنقلت كلها لـinvoice_problems_lib.php (بريف ١٥٩) — الصفحة بتناديها
+//    من هنا بنفس الشغل بالظبط، ومفيش نسخة تانية في الصفحة (وإلا: Cannot redeclare).
 
 // تشغيل المزامنة التلقائية المجمعة لجميع الفواتير ذات المردودات
 sync_all_invoice_problems_auto($pdo);
@@ -522,53 +244,10 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php
-    // جلب فواتير الإدارة فقط (company_branch = 1 ومشتريات فقط doc_type = 2) لإتاحة فتح أي فاتورة
-    $stAllInv = $pdo->query(
-        "SELECT d.id, d.invoice_no, d.dist_date,
-                COALESCE(s.name, inv_p.supplier_name, 'غير محدد') AS supplier_name
-         FROM invoice_distribution d
-         LEFT JOIN suppliers s ON s.id = d.supplier_id
-         LEFT JOIN hq_invoices inv_p 
-             ON inv_p.doc_no = d.invoice_no 
-            AND inv_p.doc_type = 2
-            AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
-         WHERE (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
-           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
-           AND (d.doc_type IS NULL OR d.doc_type <> 6)
-         ORDER BY d.id DESC
-         LIMIT 200"
-    );
-    $allInvoices = $stAllInv ? $stAllInv->fetchAll() : [];
-
-    // استعلام فواتير الإدارة التي بها مشاكل حالياً مع اسم المورد وتاريخها ومين دخلها
-    $stProblemsList = $pdo->query(
-        "SELECT 
-            d.id AS dist_id,
-            d.invoice_no,
-            d.dist_date,
-            COALESCE(s.name, inv_p.supplier_name, 'غير محدد') AS supplier_name,
-            u.full_name AS entered_by,
-            COUNT(p.id) AS problems_count,
-            SUM(CASE WHEN p.short_qty > 0 THEN 1 ELSE 0 END) AS short_count,
-            SUM(CASE WHEN p.over_qty > 0 THEN 1 ELSE 0 END) AS over_count,
-            SUM(CASE WHEN p.note IS NOT NULL AND p.note <> '' THEN 1 ELSE 0 END) AS note_count
-         FROM invoice_problems p
-         JOIN invoice_distribution d ON d.id = p.distribution_id
-         LEFT JOIN users u ON u.id = d.created_by
-         LEFT JOIN suppliers s ON s.id = d.supplier_id
-         LEFT JOIN hq_invoices inv_p 
-             ON inv_p.doc_no = d.invoice_no 
-            AND inv_p.doc_type = 2
-            AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
-         WHERE (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
-           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
-           AND (d.doc_type IS NULL OR d.doc_type <> 6)
-           AND p.dismissed_at IS NULL
-           AND (p.short_qty > 0 OR p.over_qty > 0 OR (p.note IS NOT NULL AND p.note <> ''))
-         GROUP BY d.id, d.invoice_no, d.dist_date, supplier_name, u.full_name
-         ORDER BY d.id DESC"
-    );
-    $problemInvoices = $stProblemsList ? $stProblemsList->fetchAll() : [];
+    // الاستعلامات دي اتنقلت لinvoice_problems_lib.php (بريف ١٥٩) — الصفحة
+    // والـAPI بينادوا نفس الدوال، فمفيش نسخة تانية من الـSQL في أي ملف.
+    $allInvoices = ip_all_invoices($pdo);
+    $problemInvoices = ip_problem_invoices($pdo);
     ?>
 
     <!-- شريط اختيار فاتورة لفتحها وإضافة مشاكل لها -->
@@ -769,25 +448,9 @@ require_once __DIR__ . '/includes/header.php';
     <!--  عرض أصناف فاتورة محددة (?d=<distribution_id>)                         -->
     <!-- ===================================================================== -->
     <?php
-    $stDistHeader = $pdo->prepare(
-        "SELECT d.id, d.invoice_no, d.company_branch, d.doc_type, d.dist_date, d.created_by,
-                COALESCE(s.name, inv_p.supplier_name, 'غير محدد') AS supplier_name,
-                u.full_name AS entered_by
-         FROM invoice_distribution d
-         LEFT JOIN users u ON u.id = d.created_by
-         LEFT JOIN suppliers s ON s.id = d.supplier_id
-         LEFT JOIN hq_invoices inv_p 
-             ON inv_p.doc_no = d.invoice_no 
-            AND inv_p.doc_type = 2
-            AND (d.company_branch IS NULL OR inv_p.company_branch IS NULL OR d.company_branch = inv_p.company_branch)
-         WHERE d.id = ?
-           AND (d.company_branch = 1 OR (d.company_branch IS NULL AND (inv_p.company_branch = 1 OR inv_p.company_branch IS NULL)))
-           AND (d.doc_type = 2 OR (d.doc_type IS NULL AND (inv_p.doc_type = 2 OR inv_p.doc_type IS NULL)))
-           AND (d.doc_type IS NULL OR d.doc_type <> 6)
-         LIMIT 1"
-    );
-    $stDistHeader->execute([$selectedDistId]);
-    $distHeader = $stDistHeader->fetch();
+    // الاستعلامات دي اتنقلت لinvoice_problems_lib.php (بريف ١٥٩) — نفس الدوال
+    // اللي الـAPI بيستخدمها، فمفيش نسخة تانية من الـSQL في أي ملف.
+    $distHeader = ip_dist_header($pdo, $selectedDistId);
 
     if (!$distHeader):
     ?>
@@ -797,87 +460,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php
     else:
-        // جلب سطور الفاتورة من مرآة الشركة مع دمج الأكواد المكررة
-        $distKey = dist_key_sql('d', 'i.company_branch', 'i.doc_type');
-        $stHq = $pdo->prepare(
-            "SELECT i.sth_id, i.suffix
-             FROM hq_invoices i
-             CROSS JOIN (SELECT ? AS company_branch, ? AS doc_type) d
-             WHERE i.doc_no = ? AND i.doc_type = 2 AND $distKey
-             LIMIT 1"
-        );
-        $stHq->execute([$distHeader['company_branch'], $distHeader['doc_type'], $distHeader['invoice_no']]);
-        $hqInv = $stHq->fetch();
-
-        $mergedInvoiceItems = [];
-        if ($hqInv) {
-            $stLines = $pdo->prepare(
-                "SELECT hl.item_id, hl.item_code, hl.item_name, hl.quantity, hl.unit_price, hl.cost_price
-                 FROM hq_invoice_lines hl
-                 WHERE hl.sth_id = ? AND hl.suffix = ?"
-            );
-            $stLines->execute([$hqInv['sth_id'], $hqInv['suffix']]);
-            $mergedList = merge_invoice_items($stLines->fetchAll());
-            foreach ($mergedList as $it) {
-                $code = trim((string) ($it['item_code'] ?? ''));
-                if ($code !== '') {
-                    $mergedInvoiceItems[$code] = $it;
-                }
-            }
-        }
-
-        // جلب كل المشاكل المسجلة في جدول invoice_problems لهذه الفاتورة
-        $stProblems = $pdo->prepare(
-            "SELECT p.*, u.full_name AS recorder_name
-             FROM invoice_problems p
-             LEFT JOIN users u ON u.id = p.created_by
-             WHERE p.distribution_id = ? AND p.dismissed_at IS NULL"
-        );
-        $stProblems->execute([$selectedDistId]);
-        $problemsMap = [];
-        foreach ($stProblems->fetchAll() as $pRow) {
-            $problemsMap[$pRow['item_code']] = $pRow;
-        }
-
-        // تجميع كل الأصناف في قائمة موحدة
-        $allItemCodes = array_unique(array_merge(array_keys($mergedInvoiceItems), array_keys($problemsMap)));
-        $itemsList = [];
-        foreach ($allItemCodes as $c) {
-            $m = $mergedInvoiceItems[$c] ?? null;
-            $p = $problemsMap[$c] ?? null;
-
-            $itemName = $p['item_name'] ?? ($m['item_name'] ?? $c);
-            $invQty   = $m ? (float)$m['quantity'] : 0.0;
-            $shortQty = $p ? (float)$p['short_qty'] : 0.0;
-            $overQty  = $p ? (float)$p['over_qty'] : 0.0;
-            $note     = $p['note'] ?? '';
-            $src      = $p['source'] ?? '';
-            $recName  = $p['recorder_name'] ?? '';
-            $recAt    = $p['updated_at'] ?? ($p['created_at'] ?? '');
-
-            $hasProblem = ($shortQty > 0 || $overQty > 0 || $note !== '');
-
-            $itemsList[] = [
-                'code'        => $c,
-                'name'        => $itemName,
-                'inv_qty'     => $invQty,
-                'short_qty'   => $shortQty,
-                'over_qty'    => $overQty,
-                'note'        => $note,
-                'source'      => $src,
-                'recorder'    => $recName,
-                'time'        => $recAt,
-                'has_problem' => $hasProblem,
-            ];
-        }
-
-        // ترتيب: أصناف المشاكل أولاً ثم الباقي
-        usort($itemsList, function ($a, $b) {
-            if ($a['has_problem'] && !$b['has_problem']) return -1;
-            if (!$a['has_problem'] && $b['has_problem']) return 1;
-            return strcmp($a['name'], $b['name']);
-        });
-
+        $itemsList = ip_invoice_items($pdo, $distHeader);
         $problemsOnlyCount = count(array_filter($itemsList, fn($it) => $it['has_problem']));
     ?>
         <div class="card prob-card">
