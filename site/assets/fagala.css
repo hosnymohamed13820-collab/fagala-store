@@ -17,7 +17,7 @@
  *  تحت (قسم «نظام التصميم») هي المرجع من هنا ورايح:
  *
  *   ١. أي CSS جديد ياخد من التوكنات — مفيش رقم بكسل جديد لو فيه توكن قريب.
- *   ٢. الخط:     --fs-xs 11 · --fs-sm 12 · --fs-base 13 · --fs-md 14
+ *   ٢. الخط:     --fs-xs 12 · --fs-sm 12 · --fs-base 13 · --fs-md 14
  *                · --fs-lg 16 · --fs-xl 18 · --fs-2xl 22 · --fs-3xl 28
  *   ٣. الحواف:   --r-xs 6 · --r-sm 8 · --r-md 10 (= --r) · --r-lg 14 · --r-pill 999
  *   ٤. المسافات: --sp-1 4 · --sp-2 8 · --sp-3 12 · --sp-4 16 · --sp-5 20 · --sp-6 24
@@ -42,8 +42,8 @@
             --ink-800: #22334f;
             --ink-700: #3b4e6d;
             --ink-600: #4d6180;
-            --ink-500: #6d7f9a;   /* نص ثانوي */
-            --ink-400: #94a3b8;   /* نص خافت */
+            --ink-500: #5c6c85;   /* نص ثانوي — كان #6d7f9a (٣٫٦٣ على line-soft، فشل AA) */
+            --ink-400: #5e6e86;   /* نص خافت — كان #94a3b8 (٢٫٥٦ على الأبيض، أسوأ توكن) */
             --ink-300: #c3ccd8;
             --ink-200: #e2e7ee;
 
@@ -84,7 +84,7 @@
 
             /* الأزرق ككتابة. `--accent` نفسه بيفضل غامق في الوضعين لأنه
                خلفية الزراير في كل مكان (الأبيض فوقه ٥.١٤). */
-            --accent-text: #1e6fbf;
+            --accent-text: #1a63ab;
 
             /* ===== السطح القوي (الزرار المختار · الزرار الثانوي) =====
                ١٢ موضع في المشروع بيستعملوا `--ink-900`/`--ink-800`
@@ -114,7 +114,7 @@
                متغيّرش قيمتهم. الجداد اتضافوا حواليهم. */
 
             /* الخط */
-            --fs-xs:   11px;
+            --fs-xs:   12px;
             --fs-sm:   12px;
             --fs-base: 13px;
             --fs-md:   14px;   /* الزرار والخانات */
@@ -189,7 +189,7 @@
             --ink-700: #bcc8d8;
             --ink-600: #9aa8bf;
             --ink-500: #8494ac;
-            --ink-400: #6b7b95;
+            --ink-400: #8a99b0;
             --ink-300: #4a5a75;
             --ink-200: #313f57;
 
@@ -356,12 +356,11 @@
             border-radius: 10px;
             overflow: hidden;
             flex: 0 0 auto;
-            box-shadow: 0 6px 18px rgba(60,120,190,.42);
+            box-shadow: var(--shadow-sm);
             display: inline-flex;
             align-items: center;
             justify-content: center;
             font-size: 17px;
-            box-shadow: 0 3px 10px rgba(101,88,230,.35);
         }
         .sidebar-nav { flex: 1; padding: 10px 0; overflow-y: auto; }
         .nav-item {
@@ -1098,7 +1097,6 @@
             margin-top: -2.5px;
             border-radius: 50%;
             background: #d6af6a;
-            box-shadow: 0 0 8px rgba(214,175,106,.75);
         }
         .sidebar-footer {
             padding: 16px 20px;
@@ -1114,7 +1112,10 @@
         }
         .user-info { font-size: 13px; line-height: 1.3; }
         .user-info .name { color: #fff; font-weight: 500; }
-        .user-info .role { color: var(--ink-500); font-size: 12px; }
+        /* 🔴 مكتوب صريح مش `var(--ink-500)`: السايدبار غامق في الوضعين،
+           والـink-500 اغمّق في ١٤٤ عشان النص العادي على الخلفيات الفاتحة،
+           فنسبته على الشريط نزلت لـ٢٫٩٤. الثابت ده ٦٫١٠ / ٧٫٣٨ (بريف ١٤٤). */
+        .user-info .role { color: #94a3b8; font-size: 12px; }
         .btn-logout {
             display: flex; align-items: center; justify-content: center;
             gap: 8px;

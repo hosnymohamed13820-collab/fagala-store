@@ -76,12 +76,12 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --ink-900: #16233d; --ink-800: #22334f; --ink-700: #3b4e6d;
-            --ink-500: #6d7f9a; --ink-400: #94a3b8; --ink-300: #c3ccd8;
+            --ink-500: #5c6c85; --ink-400: #5e6e86; --ink-300: #c3ccd8;
             --accent:       #1e6fbf;
             --accent-hover: #185a9c;
             --accent-soft:  #e8f1fb;
             --accent-ring:  rgba(30,111,191,.20);
-            --accent-text: #1e6fbf;
+            --accent-text: #1a63ab;
             --bg:        #f5f6f8;
             --surface:   #ffffff;
             --line:      #e3e7ed;
@@ -108,7 +108,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             --ink-800: #dbe3ee;
             --ink-700: #bcc8d8;
             --ink-500: #8494ac;
-            --ink-400: #6b7b95;
+            --ink-400: #8a99b0;
             --ink-300: #4a5a75;
 
             --bg:        #0f1826;
@@ -320,7 +320,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=54').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=55').catch(() => {});
             });
         }
 
