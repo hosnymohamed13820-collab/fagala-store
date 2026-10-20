@@ -403,6 +403,362 @@ function receipt_resolve_scanned_code(PDO $pdo, int $receiptId, string $scannedC
 }
 
 /**
+ * حارس النطاق — مين يقدر يعمل عملية على محضر استلام معيّن (بريف ١٥٢).
+ *
+ * النسخة اللي كانت مكتوبة في receiving.php **بالحرف**: نفس الرسالتين ونفس
+ * الترتيب. الصفحة بترجّع الرسالة في JSON والـAPI بيحوّلها لـ403.
+ *
+ * @return string|null رسالة الرفض، أو null لو العملية مسموحة
+ */
+function receiving_scope_error(array $receipt, bool $canManageAll, ?int $userBranchId): ?string
+{
+    // مين مالوش فرع ومش أونر/مسؤول استلامات مايعملش أي حاجة.
+    if (!$canManageAll && $userBranchId === null) {
+        return 'حسابك مش مربوط بفرع — كلّم الأونر.';
+    }
+    // موظف الفرع ممنوع ينفذ أي عملية على فرع آخر
+    if (!$canManageAll && $userBranchId !== null && (int) $receipt['branch_id'] !== $userBranchId) {
+        return 'غير مصرح لك بتنفيذ عمليات على استلام فرع آخر.';
+    }
+    return null;
+}
+
+/**
+ * قايمة الاستلامات + تجميع الكروت (بريف ١٥٢).
+ *
+ * الاستعلامات والاستبعادات دي كانت مكتوبة جوّه receiving.php — اتقلت هنا
+ * **بالحرف** (نفس الجمل، نفس الترتيب، نفس الشروط) عشان الصفحة والـAPI
+ * ياخدوا نفس الداتا من نفس المكان.
+ *
+ * @param bool     $canManageAll  أونر أو مشرف استلامات (يشوف كل الفروع)
+ * @param int|null $userBranchId  فرع الموظف (null = مالوش فرع)
+ * @return array{all_receipts: array, solo_group_name: array, headers_map: array}
+ */
+function receiving_list_data(PDO $pdo, bool $canManageAll, ?int $userBranchId): array
+{
+    // جلب كل سجلات الاستلام المتاحة
+    $where = [];
+    $params = [];
+    if (!$canManageAll) {
+        // مالوش فرع ومش أونر/مسؤول ← مايشوفش أي استلام خالص (فرع 0 مالوش سجلات)
+        $where[] = 'r.branch_id = ?';
+        $params[] = $userBranchId !== null ? $userBranchId : 0;
+    }
+    $whereSql = !empty($where) ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $stList = $pdo->prepare(
+        "SELECT r.id AS receipt_id, r.group_id, r.distribution_id, r.branch_id, r.status, r.created_at,
+                b.name AS branch_name,
+                g.name AS group_name,
+                d.invoice_no
+         FROM receipts r
+         JOIN branches b ON b.id = r.branch_id
+         LEFT JOIN invoice_groups g ON g.id = r.group_id AND r.group_id > 0
+         LEFT JOIN invoice_distribution d ON d.id = r.distribution_id AND r.distribution_id > 0
+         $whereSql
+         ORDER BY r.id DESC"
+    );
+    $stList->execute($params);
+    $allReceipts = $stList->fetchAll();
+
+    $out = [
+        'all_receipts'    => $allReceipts,
+        'solo_group_name' => [],
+        'headers_map'     => [],
+    ];
+    if (empty($allReceipts)) {
+        return $out;
+    }
+
+    // جلب معرفات المجموعات والفواتير المفردة لحساب الكميات الموزعة خارج الحلقات
+    $gIds = [];
+    $singleDistIds = [];
+    foreach ($allReceipts as $rc) {
+        $gid = (int) $rc['group_id'];
+        $did = (int) $rc['distribution_id'];
+        if ($gid > 0) {
+            $gIds[$gid] = true;
+        } elseif ($did > 0) {
+            $singleDistIds[$did] = true;
+        }
+    }
+    $gIds = array_keys($gIds);
+    $singleDistIds = array_keys($singleDistIds);
+
+    // اسم المجموعة للفواتير المفردة (لو كانت أصلاً من مجموعة) — للعرض بس
+    $soloGroupName = [];   // [dist_id => group_name]
+    if ($singleDistIds) {
+        $sPh = implode(',', array_fill(0, count($singleDistIds), '?'));
+        $stSG = $pdo->prepare(
+            "SELECT d.id AS dist_id, MAX(g.name) AS gname
+             FROM invoice_distribution d
+             JOIN invoice_group_items gi ON gi.invoice_no = d.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+             JOIN invoice_groups g ON g.id = gi.group_id
+             WHERE d.id IN ($sPh)
+             GROUP BY d.id"
+        );
+        $stSG->execute($singleDistIds);
+        foreach ($stSG->fetchAll() as $sg) {
+            $soloGroupName[(int) $sg['dist_id']] = (string) $sg['gname'];
+        }
+    }
+
+    // ربط المجموعات بسجلات التوزيع الخاصة بها باستعلام واحد مجمّع
+    $groupDistsMap = []; // [group_id => [dist_id, ...]]
+    $allDistIdsToQuery = $singleDistIds;
+    if (!empty($gIds)) {
+        $gPh = implode(',', array_fill(0, count($gIds), '?'));
+        $stGDist = $pdo->prepare(
+            "SELECT DISTINCT gi.group_id, d.id AS dist_id
+             FROM invoice_group_items gi
+             JOIN invoice_distribution d ON d.invoice_no = gi.invoice_no AND " . dist_key_sql('d', 'gi.company_branch', 'gi.doc_type') . "
+             WHERE gi.group_id IN ($gPh)"
+        );
+        $stGDist->execute($gIds);
+        foreach ($stGDist->fetchAll() as $gRow) {
+            $gid = (int) $gRow['group_id'];
+            $did = (int) $gRow['dist_id'];
+            if ($did > 0) {
+                $groupDistsMap[$gid][] = $did;
+                $allDistIdsToQuery[] = $did;
+            }
+        }
+    }
+
+    $allDistIdsToQuery = array_values(array_unique($allDistIdsToQuery));
+
+    // جلب إجمالي الكميات الموزعة لكل فرع باستعلام واحد مجمّع خارج أي حلقة
+    $distBranchQty = [];
+    if (!empty($allDistIdsToQuery)) {
+        $dPh = implode(',', array_fill(0, count($allDistIdsToQuery), '?'));
+        $stBranchQty = $pdo->prepare(
+            "SELECT dl.distribution_id, dl.branch_id, SUM(dl.amount) AS total_qty
+             FROM invoice_distribution_lines dl
+             WHERE dl.distribution_id IN ($dPh) AND dl.amount > 0 AND dl.branch_id <> 6
+             GROUP BY dl.distribution_id, dl.branch_id"
+        );
+        $stBranchQty->execute($allDistIdsToQuery);
+        foreach ($stBranchQty->fetchAll() as $qRow) {
+            $did = (int) $qRow['distribution_id'];
+            $bid = (int) $qRow['branch_id'];
+            $qty = (float) $qRow['total_qty'];
+            $distBranchQty[$did][$bid] = ($distBranchQty[$did][$bid] ?? 0.0) + $qty;
+        }
+    }
+
+    // تجميع السجلات حسب الهيدر مع إخفاء أي فرع ليس له كمية موزعة (> 0)
+    $headersMap = [];
+    foreach ($allReceipts as $rc) {
+        $gid = (int) $rc['group_id'];
+        $did = (int) $rc['distribution_id'];
+        $bid = (int) $rc['branch_id'];
+
+        // حساب الكمية الموزعة لهذا الفرع في هذا السياق
+        $branchDistributedQty = 0.0;
+        if ($gid > 0) {
+            $contextDists = $groupDistsMap[$gid] ?? [];
+            foreach ($contextDists as $cDid) {
+                $branchDistributedQty += ($distBranchQty[$cDid][$bid] ?? 0.0);
+            }
+        } else {
+            $branchDistributedQty = ($distBranchQty[$did][$bid] ?? 0.0);
+        }
+
+        // الشرط ٥: لو الفرع ليس له أي كميات موزعة، لا يظهر نهائياً في الكارت
+        if ($branchDistributedQty <= 0.0001) {
+            continue;
+        }
+
+        $key = $gid > 0 ? ('g_' . $gid) : ('d_' . $did);
+        if (!isset($headersMap[$key])) {
+            $title = $gid > 0
+                ? ($rc['group_name'] ? ('مجموعة فواتير #' . $gid . ' — ' . $rc['group_name']) : ('مجموعة فواتير #' . $gid))
+                : ('فاتورة #' . ($rc['invoice_no'] ?: $did));
+            $headersMap[$key] = [
+                'group_id'        => $gid,
+                'distribution_id' => $did,
+                'title'           => $title,
+                'group_note'      => ($gid === 0 && !empty($soloGroupName[$did])) ? $soloGroupName[$did] : '',
+                'created_at'      => $rc['created_at'],
+                'branches'        => [],
+            ];
+        }
+        $headersMap[$key]['branches'][] = $rc;
+    }
+
+    $out['solo_group_name'] = $soloGroupName;
+    $out['headers_map']     = $headersMap;
+    return $out;
+}
+
+/**
+ * داتا شاشة تفاصيل محضر استلام (بريف ١٥٢).
+ *
+ * نفس اللي receiving.php بتحسبه قبل ما ترسم: الأصناف · الحالة · هل نعرض
+ * الفروقات · اسم اللي رفض المحضر · آخر الأصناف الممسوحة.
+ *
+ * @param array $receipt المحضر زي ما receipt_get() رجّعته
+ * @param bool  $withDiff مكافئ `?diff=1` في الصفحة
+ */
+function receiving_detail_data(PDO $pdo, array $receipt, bool $withDiff = false): array
+{
+    $receiptId = (int) $receipt['id'];
+    $items     = receipt_items_for_branch($pdo, $receiptId);
+    $status    = (string) $receipt['status'];
+    $isGroup   = (int) $receipt['group_id'] > 0;
+    $showDiffView = ($status === 'received' || $status === 'approved' || $withDiff);
+
+    $rejecterName = null;
+    if (!empty($receipt['reject_reason']) && $status === 'receiving') {
+        $rejecterName = 'الإدارة';
+        if (!empty($receipt['rejected_by'])) {
+            $stRej = $pdo->prepare('SELECT full_name FROM users WHERE id = ?');
+            $stRej->execute([(int) $receipt['rejected_by']]);
+            $rejecterName = $stRej->fetchColumn() ?: 'الإدارة';
+        }
+    }
+
+    return [
+        'receipt'       => $receipt,
+        'items'         => $items,
+        'status'        => $status,
+        'is_group'      => $isGroup,
+        'show_diff'     => $showDiffView,
+        'rejecter_name' => $rejecterName,
+        'last_scanned'  => ($status === 'receiving' && !$showDiffView)
+            ? receipt_last_scanned($pdo, $receiptId, 20)
+            : [],
+    ];
+}
+
+/**
+ * بدء الاستلام (كان `action=start` جوّه receiving.php — بريف ١٥٢).
+ */
+function receipt_start(PDO $pdo, array $receipt, int $uid): void
+{
+    if ($receipt['status'] !== 'sent') {
+        throw new RuntimeException('الاستلام قد بدأ بالفعل أو مكتمل.');
+    }
+    $st = $pdo->prepare("UPDATE receipts SET status='receiving', started_at=NOW(), started_by=? WHERE id=? AND status='sent'");
+    $st->execute([$uid, (int) $receipt['id']]);
+}
+
+/**
+ * استعلام فوري عن بيانات الصنف قبل الإضافة (كان `action=lookup` — بريف ١٥٢).
+ */
+function receipt_lookup(PDO $pdo, array $receipt, string $code): array
+{
+    if ($receipt['status'] !== 'receiving') {
+        throw new RuntimeException('لا يمكن البحث إلا في حالة جاري الاستلام.');
+    }
+    $res = receipt_resolve_scanned_code($pdo, (int) $receipt['id'], trim($code));
+    if (empty($res['ok'])) {
+        throw new RuntimeException((string) ($res['error'] ?? 'الصنف ده مش في الفاتورة'));
+    }
+    // لا نرسل كمية الموزع لشاشة المسح للحفاظ على مبدأ الاستلام الأعمى
+    unset($res['distributed_qty'], $res['ok']);
+    return $res;
+}
+
+/**
+ * مسح باركود وزيادة الكمية (كان `action=scan` — بريف ١٥٢).
+ *
+ * 🔴 الزيادة تراكمية: `scanned_qty = scanned_qty + ?` — مش استبدال.
+ *    الاستبدال في receipt_set_qty() بس.
+ */
+function receipt_scan(PDO $pdo, array $receipt, string $code, float $qty, int $uid): array
+{
+    $receiptId = (int) $receipt['id'];
+    if ($receipt['status'] !== 'receiving') {
+        throw new RuntimeException('لا يمكن المسح إلا في حالة جاري الاستلام.');
+    }
+
+    $code = trim($code);
+    if ($qty <= 0) $qty = 1.0;   // نفس اللي الصفحة كانت بتعمله بالحرف
+
+    if ($code === '') {
+        throw new RuntimeException('كود الصنف مطلوب.');
+    }
+
+    // مطابقة الكود والتحقق من الوحدة والباركود البديل
+    $res = receipt_resolve_scanned_code($pdo, $receiptId, $code);
+    if (!$res['ok']) {
+        throw new RuntimeException((string) ($res['error'] ?? 'الصنف ده مش في الفاتورة'));
+    }
+
+    $targetCode = (string) $res['item_code'];
+    $targetName = (string) $res['item_name'];
+
+    $ins = $pdo->prepare(
+        'INSERT INTO receipt_lines (receipt_id, item_code, item_name, scanned_qty, updated_by)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+             scanned_qty = scanned_qty + VALUES(scanned_qty),
+             updated_by  = VALUES(updated_by)'
+    );
+    $ins->execute([$receiptId, $targetCode, $targetName, $qty, $uid]);
+
+    $stScanned = $pdo->prepare('SELECT scanned_qty FROM receipt_lines WHERE receipt_id=? AND item_code=?');
+    $stScanned->execute([$receiptId, $targetCode]);
+    $newQty = (float) $stScanned->fetchColumn();
+
+    return [
+        'item_code'    => $targetCode,
+        'scanned_code' => $code,
+        'item_name'    => $targetName,
+        'scanned_qty'  => $newQty,
+        'added_qty'    => $qty,
+    ];
+}
+
+/**
+ * تعديل الكمية المستلمة لصنف مباشرة (كان `action=update_qty` — بريف ١٥٢).
+ *
+ * 🔴 ده بيحط الكمية (`scanned_qty = ?`) — مش بيزوّد زي receipt_scan().
+ */
+function receipt_set_qty(PDO $pdo, array $receipt, string $code, float $qty, int $uid): array
+{
+    $receiptId = (int) $receipt['id'];
+    if ($receipt['status'] === 'approved') {
+        throw new RuntimeException('لا يمكن التعديل بعد اعتماد الاستلام النهائي.');
+    }
+
+    $code = trim($code);
+    if ($qty < 0) $qty = 0;
+
+    if ($code === '') {
+        throw new RuntimeException('كود الصنف مطلوب.');
+    }
+
+    // جلب أصناف الفاتورة للفرع للتحقق وجلب الاسم الصحيح
+    $items = receipt_items_for_branch($pdo, $receiptId);
+    $foundItem = null;
+    foreach ($items as $it) {
+        if ((string) $it['item_code'] === $code) {
+            $foundItem = $it;
+            break;
+        }
+    }
+    if (!$foundItem) {
+        throw new RuntimeException('الصنف غير موجود في فاتورة هذا الفرع.');
+    }
+
+    $ins = $pdo->prepare(
+        'INSERT INTO receipt_lines (receipt_id, item_code, item_name, scanned_qty, updated_by)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+             scanned_qty = VALUES(scanned_qty),
+             updated_by  = VALUES(updated_by)'
+    );
+    $ins->execute([$receiptId, $code, $foundItem['item_name'], $qty, $uid]);
+
+    return [
+        'item_code'   => $code,
+        'scanned_qty' => $qty,
+    ];
+}
+
+/**
  * داتا صفحة «فروقات الاستلام بين الفروع» (بريف ١٢٦).
  *
  * 🔴 استعلامات receiving_diffs.php اتنقلت هنا **بالحرف** — من غير أي تصليح —
