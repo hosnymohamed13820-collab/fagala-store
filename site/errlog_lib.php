@@ -315,3 +315,41 @@ function errlog_read_grouped(array $files): array
     usort($groups, fn($a, $b) => strcmp($b['last'], $a['last']));
     return $groups;
 }
+
+/**
+ * كل اللي شاشة «سجل الأخطاء» بتعرضه في نداء واحد: المجموعات + الأرقام اللي
+ * فوق الجدول + حجم الملفات. الصفحة والـAPI بينادوا الدالة دي، فمفيش حساب
+ * متعاد في مكانين ورقم الكارت مايختلفش عن الجدول.
+ *
+ * @return array{groups: array, count: int, total: int, php: int, js: int, size: int}
+ */
+function errlog_snapshot(): array
+{
+    $groups = errlog_read_grouped([ERRLOG_OLD, ERRLOG_FILE]);
+
+    // الويب بيرندر بعد الكتابة في نفس العملية — من غير المسح ممكن الحجم يطلع قديم
+    clearstatcache(true, ERRLOG_FILE);
+    clearstatcache(true, ERRLOG_OLD);
+
+    return [
+        'groups' => $groups,
+        'count'  => count($groups),
+        'total'  => (int) array_sum(array_column($groups, 'count')),
+        'php'    => count(array_filter($groups, fn($g) => $g['type'] === 'php')),
+        'js'     => count(array_filter($groups, fn($g) => $g['type'] === 'js')),
+        'size'   => (is_file(ERRLOG_FILE) ? (int) filesize(ERRLOG_FILE) : 0)
+                  + (is_file(ERRLOG_OLD) ? (int) filesize(ERRLOG_OLD) : 0),
+    ];
+}
+
+/**
+ * مسح السجل الحالي والقديم. بيسكت لو الملف مش موجود أو مش قابل للمسح —
+ * زي ما الصفحة كانت بتعمل بالحرف (@unlink)، فمفيش استثناء بيطلع للمستخدم.
+ */
+function errlog_clear(): void
+{
+    @unlink(ERRLOG_FILE);
+    @unlink(ERRLOG_OLD);
+    clearstatcache(true, ERRLOG_FILE);
+    clearstatcache(true, ERRLOG_OLD);
+}

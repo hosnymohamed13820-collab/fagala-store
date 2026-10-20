@@ -160,8 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'clear
     } elseif (!is_owner()) {
         $_SESSION['flash'] = ['المسح للأونر بس.', 'error'];
     } else {
-        @unlink(ERRLOG_FILE);
-        @unlink(ERRLOG_OLD);
+        errlog_clear();
         $_SESSION['flash'] = ['السجل اتمسح.', 'success'];
     }
     header('Location: errors.php');
@@ -172,11 +171,12 @@ if (isset($_SESSION['flash']) && is_array($_SESSION['flash'])) {
     unset($_SESSION['flash']);
 }
 
-$groups = errlog_read_grouped([ERRLOG_OLD, ERRLOG_FILE]);
-$total  = array_sum(array_column($groups, 'count'));
-$cntPhp = count(array_filter($groups, fn($g) => $g['type'] === 'php'));
-$cntJs  = count(array_filter($groups, fn($g) => $g['type'] === 'js'));
-$size   = (is_file(ERRLOG_FILE) ? filesize(ERRLOG_FILE) : 0) + (is_file(ERRLOG_OLD) ? filesize(ERRLOG_OLD) : 0);
+$snap   = errlog_snapshot();
+$groups = $snap['groups'];
+$total  = $snap['total'];
+$cntPhp = $snap['php'];
+$cntJs  = $snap['js'];
+$size   = $snap['size'];
 
 $page_title    = 'سجل الأخطاء';
 $active_module = 'errors';
