@@ -184,6 +184,13 @@ require_once __DIR__ . '/nav_icons.php';
                         <span><?= e($mod['label']) ?></span>
                     </a>
                 <?php endif; ?>
+                <?php if ($key === 'dashboard' && is_owner()): ?>
+                    <a href="activity.php"
+                       class="nav-item <?= $active === 'activity' ? 'active' : '' ?>">
+                        <?= nav_icon('ti-list-details') ?>
+                        <span>حركات النظام</span>
+                    </a>
+                <?php endif; ?>
             <?php endforeach; ?>
         </nav>
         <div class="sidebar-footer">
