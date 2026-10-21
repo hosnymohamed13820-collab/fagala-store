@@ -40,7 +40,7 @@
 | ١٦٦ب | `invoices.php` (ب٢): الملاحظات والعلامات والمشاكل | `brief166b_invoices_notes.md` | ب | ✅ `744d5e3` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٦ج | `invoices.php` (ب٣): إدارة المجموعات | `brief166c_invoices_groups.md` | ب | ✅ `e3e74ef` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٧ | `settings.php`: القراية + `invoice_guard` + `daily_summary_save` | `brief167_settings.md` | أ | ✅ `2d7e0b0` (Gemini نفّذ وراجع) — مش مرفوع |
-| ١٦٨ | `users.php` (أ): القراية بس | `brief168_users_a.md` | أ | |
+| ١٦٨ | `users.php` (أ): القراية بس | `brief168_users_a.md` | أ | ✅ `1259093` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٩ | `definitions.php` (أ): القراية بس، من غير الخزاين | `brief169_definitions_a.md` | ب | ✅ `66de71b` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٧٠ | `attendance.php` (أ): حضوري وسجلّي | `brief170_attendance_a.md` | أ | |
 | ١٧١ | `reports.php` (أ): ٥ تابات من غير فلوس + نقل `build_report` | `brief171_reports_a.md` | ب | ✅ `feafc29` (Gemini نفّذ وراجع) — مش مرفوع |
