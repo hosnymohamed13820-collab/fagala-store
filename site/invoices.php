@@ -1358,6 +1358,7 @@ if (!in_array($invScope, ['admin', 'branches', 'all'], true)) {
 $adminCount = $branchCount = 0;
 $openInvoice = null;
 $items = [];
+$distRecord = null;
 $distId = 0;
 $isReturnDoc = false;
 $isBranchInv = false;
@@ -1366,167 +1367,48 @@ $branchName  = '';
 
 try {
     if ($openInvoiceId !== null) {
-        // فتح فاتورة محددة (بالـ suffix بتاع الشهر والفرع ونوع المستند)
-        $openInvoice = sqlsrv_fetch_invoice_header($openInvoiceId, $openSuffix, $openCb, $openDt);
-        if ($openInvoice) {
-            // ضمان وجود الفرع ونوع المستند في الهيدر
-            if ($openCb !== null && !isset($openInvoice['company_branch'])) {
-                $openInvoice['company_branch'] = $openCb;
-            }
-            if ($openDt !== null && !isset($openInvoice['doc_type'])) {
-                $openInvoice['doc_type'] = $openDt;
-            }
-            $isReturnDoc = $openInvoice && (int)($openInvoice['doc_type'] ?? 0) === 6;
-            // فاتورة فرع (شراء أو مردود) = نفس تعريف قايمة «فواتير الفروع الأخرى» — مابتتوزعش (بريف ٧٩)
-            $isBranchInv = $openInvoice && !grp_is_admin_inv(['company_branch_id' => $openInvoice['company_branch'] ?? 0]);
-            // من غير توزيع: مردود الإدارة (بريف ٧١) + فواتير الفروع (بريف ٧٩)
-            $noDistDoc = $isReturnDoc || $isBranchInv;
-
-            if ($isBranchInv) {
-                $cbId = (int) ($openInvoice['company_branch'] ?? 0);
-                $bq = $pdo->prepare('SELECT name FROM branches WHERE sto_id = ? LIMIT 1');
-                $bq->execute([$cbId]);
-                $branchName = (string) ($bq->fetchColumn() ?: ('فرع #' . $cbId));
-            }
-            // الصنف المكرر في أكتر من سطر بيتجمع في صف واحد — التوزيع
-            // متخزّن بمفتاح الكود مش السطر. (شوف merge_invoice_items)
-            $items = merge_invoice_items(sqlsrv_fetch_invoice_items($openInvoiceId, $openSuffix));
-            // بريف ٨٠: إجمالي الكميات — من نفس $items المدموج اللي بيترسم في الجدول
-            $totalQty = array_sum(array_map(fn($it) => (float) ($it['quantity'] ?? 0), $items));
-            $distRecord = ensure_distribution_record($openInvoice, $uid);
-            $distId = (int) $distRecord['id'];
-            // إجمالي ما اتوزّع لكل فرع (لإظهار أزرار التحميل)
-            $bq = $pdo->prepare(
-                'SELECT branch_id, SUM(amount) AS total FROM invoice_distribution_lines
-                 WHERE distribution_id = ? GROUP BY branch_id HAVING SUM(amount) > 0'
-            );
-            $bq->execute([$distId]);
-            $branchTotals = [];
-            foreach ($bq as $r) $branchTotals[(int)$r['branch_id']] = (float)$r['total'];
-
-            // ⚠️ الرقم اللي على الزرار لازم يطابق اللي هينزل في الملف —
-            //    فبنطرح الأصناف المعلّمة «لا ينزل في التقرير» والأصناف
-            //    اللي اتشالت من فاتورة الشركة (سطر توزيع يتيم).
-            $exclCodes = ifl_skip_map(array_map(fn($i) => (string)($i['item_code'] ?? ''), $items));
-            $liveCodes = [];
-            foreach ($items as $i) $liveCodes[(string)($i['item_code'] ?? '')] = true;
-
-            $dq = $pdo->prepare(
-                'SELECT branch_id, notes AS item_code, SUM(amount) AS qty
-                 FROM invoice_distribution_lines WHERE distribution_id = ?
-                 GROUP BY branch_id, notes HAVING SUM(amount) > 0'
-            );
-            $dq->execute([$distId]);
-            $orphanCodes = [];
-            $distByItem = [];
-            foreach ($dq as $r) {
-                $c = (string) $r['item_code'];
-                $distByItem[$c] = ($distByItem[$c] ?? 0.0) + (float)$r['qty'];
-                $isOrphan = $liveCodes && !isset($liveCodes[$c]);
-                if ($isOrphan) $orphanCodes[$c] = true;
-                if (isset($exclCodes[$c]) || $isOrphan) {
-                    $b = (int) $r['branch_id'];
-                    $branchTotals[$b] = max(0, ($branchTotals[$b] ?? 0) - (float) $r['qty']);
-                    if ($branchTotals[$b] <= 0) unset($branchTotals[$b]);
-                }
-            }
-
-            // حصر الأصناف التي لم تكتمل في التوزيع للفاتورة الحالية
-            $pendingItems = [];
-            foreach ($items as $it) {
-                $code = (string) ($it['item_code'] ?? '');
-                $req  = (float) ($it['quantity'] ?? 0);
-                $done = (float) ($distByItem[$code] ?? 0);
-                if ($done < $req - 0.0001) {
-                    $pendingItems[] = [
-                        'code' => $code,
-                        'name' => (string) ($it['item_name'] ?? $code),
-                        'done' => $done,
-                        'qty'  => $req,
-                    ];
-                }
-            }
-
-            // أسعار البيع: المحفوظ عندنا، والناقص يتجاب من السيستم ويتخزّن
-            $salePrices = resolve_invoice_sale_prices($distId, $items);
-
-            // علامات الأصناف (ملاحظة/لون/تم التوزيع الفعلي) + الممنوع
-            // من ملف الفرع — استعلامين إجمالاً مهما كان عدد الأصناف.
-            $iflDistIds = [$distId];
-            $itemFlags  = ifl_load($iflDistIds);
-            $skipMap    = ifl_skip_map(array_map(fn($i) => (string) ($i['item_code'] ?? ''), $items));
-
-            // أرصدة كل المخازن (قراءة فقط — استعلام واحد لكل الأصناف)
-            $allBalances = sqlsrv_fetch_item_balances_all(
-                array_map(fn($i) => (int)($i['item_id'] ?? 0), $items)
-            );
-            $storeNames = sqlsrv_store_names();
-            // رصيد الإدارة للعرض في العمود
-            $itemBalances = [];
-            foreach ($allBalances as $iid => $byStore) {
-                $itemBalances[$iid] = $byStore[ADMIN_STO_ID] ?? 0;
-            }
-            // أرصدة اشراقة — من MySQL بالباركود (نظامهم مختلف تماماً)
-            $ashraqaBalances = ashraqa_fetch_balances(
-                array_map(fn($i) => (string)($i['item_code'] ?? ''), $items)
-            );
-            $ashraqaSync = ashraqa_last_sync();
-        }
+        $data = inv_load_open_invoice($pdo, $openInvoiceId, $openSuffix, $openCb, $openDt, $uid);
+        $openInvoice     = $data['openInvoice'];
+        $isReturnDoc     = $data['isReturnDoc'];
+        $isBranchInv     = $data['isBranchInv'];
+        $noDistDoc       = $data['noDistDoc'];
+        $branchName      = $data['branchName'];
+        $items           = $data['items'];
+        $totalQty        = $data['totalQty'];
+        $distRecord      = $data['distRecord'];
+        $distId          = $data['distId'];
+        $branchTotals    = $data['branchTotals'];
+        $orphanCodes     = $data['orphanCodes'];
+        $distByItem      = $data['distByItem'];
+        $pendingItems    = $data['pendingItems'];
+        $salePrices      = $data['salePrices'];
+        $itemFlags       = $data['itemFlags'];
+        $skipMap         = $data['skipMap'];
+        $allBalances     = $data['allBalances'];
+        $storeNames      = $data['storeNames'];
+        $itemBalances    = $data['itemBalances'];
+        $ashraqaBalances = $data['ashraqaBalances'];
+        $ashraqaSync     = $data['ashraqaSync'];
     } elseif ($tab === 'group') {
-        // ===== تاب الفواتير المجمّعة =====
-        // ?g=ID → شاشة الشغل على مجموعة معيّنة · بدونه → كروت المجموعات
-        $grpOpenId  = (int) ($_GET['g'] ?? 0);
-        $grpCurrent = $grpOpenId > 0 ? group_get($grpOpenId) : null;
-        $grpData    = null;
-        $grpCards   = [];
-
-        if ($grpCurrent) {
-            $grpData = group_load((int) $grpCurrent['id']);
-            // الأصناف: أسعار البيع + الأرصدة (نفس الفاتورة الواحدة)
-            if ($grpData['items']) {
-                $grpItemIds = array_map(fn($i) => (int) $i['item_id'], $grpData['items']);
-                $allBalances = sqlsrv_fetch_item_balances_all($grpItemIds);
-                $itemBalances = [];
-                foreach ($allBalances as $iid => $byStore) {
-                    $itemBalances[$iid] = $byStore[ADMIN_STO_ID] ?? 0;
-                }
-                $ashraqaBalances = ashraqa_fetch_balances(
-                    array_map(fn($i) => (string) $i['item_code'], $grpData['items'])
-                );
-                $ashraqaSync = ashraqa_last_sync();
-                // أسعار البيع لكل أصناف المجموعة — القراءة من أقدم فاتورة
-                // فيها الصنف، والسعر بيتنشر على باقي فواتير المجموعة.
-                $salePrices = group_resolve_prices($grpData['items']);
-
-                // علامات الأصناف — نفس قاعدة الأسعار: الأقدم هو المرجع.
-                // dist_ids جاية مرتّبة بترتيب فواتير المجموعة (الأقدم أولاً).
-                $iflDistIds = array_values($grpData['dist_ids']);
-                $itemFlags  = ifl_load($iflDistIds);
-                $skipMap    = ifl_skip_map(
-                    array_map(fn($i) => (string) $i['item_code'], $grpData['items'])
-                );
-            }
-        } else {
-            // شاشة الكروت (بوب أب مجموعة جديدة بيتحمل بالـ AJAX وقت الفتح — بريف ٥٧)
-            $grpCards = group_list();
-        }
+        $grpOpenId = (int) ($_GET['g'] ?? 0);
+        $data = inv_load_group($grpOpenId);
+        $grpCurrent      = $data['grpCurrent'];
+        $grpData         = $data['grpData'];
+        $grpCards        = $data['grpCards'];
+        $allBalances     = $data['allBalances'];
+        $itemBalances    = $data['itemBalances'];
+        $ashraqaBalances = $data['ashraqaBalances'];
+        $ashraqaSync     = $data['ashraqaSync'];
+        $salePrices      = $data['salePrices'];
+        $itemFlags       = $data['itemFlags'];
+        $skipMap         = $data['skipMap'];
     } elseif ($tab === 'discount') {
-        // ===== تاب حساب الخصم: بوب أب اختيار + حساب للفاتورة المختارة =====
-        // الفواتير غير المحفوظة الأول (دي اللي بتتعمل عليها الشغل غالبًا)
-        $discUnposted = sqlsrv_fetch_unposted_invoices();
-        $discPosted   = sqlsrv_fetch_invoices(2026);
-        $invoices     = array_merge($discUnposted, $discPosted);
-
         $discInvId  = $_GET['dinv'] ?? null;
         $discSuffix = $_GET['dsuf'] ?? null;
-
-        // "الاجمالي بعد" اليدوي (زي خانة الإكسيل) — لو فاضي، صافي الفاتورة
-        $discNetRaw      = trim((string) ($_GET['dnet'] ?? ''));
+        $discNetRaw = trim((string) ($_GET['dnet'] ?? ''));
         $discNetOverride = ($discNetRaw !== '' && is_numeric($discNetRaw) && (float)$discNetRaw > 0)
             ? (float) $discNetRaw : null;
 
-        // نسب خصم لكل صنف: بتيجي في البارامتر dpct بصيغة "كود:نسبة,كود:نسبة".
-        // الصنف اللي ليه نسبة هنا بيتحسب بيها ويتجاهل خصم الفاتورة الكلي.
         $discItemPct = [];
         $dpctRaw = trim((string) ($_GET['dpct'] ?? ''));
         if ($dpctRaw !== '') {
@@ -1539,83 +1421,22 @@ try {
                 if ($c !== '' && $p > 0 && $p <= 100) $discItemPct[$c] = $p;
             }
         }
-
-        if ($discInvId !== null && $discInvId !== '') {
-            $discHeader = sqlsrv_fetch_invoice_header($discInvId, $discSuffix);
-            if ($discHeader) {
-                // ⚠️ خام بدون دمج عن قصد: الخصم بيتحسب سطر سطر،
-                //    والسطر المكرر ممكن يكون بسعر مختلف.
-                $discItems = sqlsrv_fetch_invoice_items($discInvId, $discSuffix);
-                $discCalc  = calc_invoice_discount($discHeader, $discItems, $discNetOverride, $discItemPct);
-            }
-        }
+        $data = inv_load_discount($discInvId, $discSuffix, $discNetOverride, $discItemPct);
+        $discUnposted    = $data['discUnposted'];
+        $discPosted      = $data['discPosted'];
+        $invoices        = $data['invoices'];
+        $discHeader      = $data['discHeader'];
+        $discItems       = $data['discItems'];
+        $discCalc        = $data['discCalc'];
     } else {
-        // قائمة الفواتير مجمّعة
-        if ($tab === 'unposted') {
-            $invoices = sqlsrv_fetch_unposted_invoices();
-        } else {
-            $invoices = sqlsrv_fetch_invoices(2026);
-        }
-
-        // بريف ٨٠: عدد الأصناف لكل فاتورة — استعلام واحد مجمّع لكل الفواتير.
-        // «الصنف» = صف بعد merge_invoice_items(): نفس الدمج بـtrim(item_code)،
-        // ولو الكود فاضي '#'.item_id — عشان القايمة والشاشة يطلّعوا نفس الرقم.
-        // لو الجدول مش موجود (القايمة جاية من الجسر) ← العمود يطلع «—» والصفحة ماتقعش.
-        $itemCountMap = [];
-        try {
-            $nExpr = "COUNT(DISTINCT CASE WHEN TRIM(COALESCE(item_code,'')) <> '' THEN TRIM(item_code)
-                                          ELSE CONCAT('#', COALESCE(item_id, 0)) END)";
-            if ($tab === 'unposted') {
-                // hq_unposted_lines مفيهاش suffix — المفتاح sth_id|YY_MM زي sqlsrv_fetch_unposted_invoices()
-                foreach (db()->query("SELECT sth_id, {$nExpr} AS n_items FROM hq_unposted_lines GROUP BY sth_id") as $r) {
-                    $itemCountMap[$r['sth_id'] . '|YY_MM'] = (int) $r['n_items'];
-                }
-            } else {
-                foreach (db()->query("SELECT sth_id, suffix, {$nExpr} AS n_items FROM hq_invoice_lines GROUP BY sth_id, suffix") as $r) {
-                    $itemCountMap[$r['sth_id'] . '|' . $r['suffix']] = (int) $r['n_items'];
-                }
-            }
-        } catch (Throwable $ex) {
-            $itemCountMap = [];
-        }
-
-        // تجميع بالفرع: الإدارة فوق، بعدها الفروع
-        $invoiceGroups = group_invoices_by_branch($invoices);
-
-        $adminCount = 0;
-        $branchCount = 0;
-        foreach ($invoiceGroups as $g) {
-            $cnt = count($g['invoices']);
-            if (!empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1) {
-                $adminCount += $cnt;
-            } else {
-                $branchCount += $cnt;
-            }
-        }
-
-        if ($invScope !== 'all') {
-            $filteredGroups = [];
-            foreach ($invoiceGroups as $g) {
-                $isAdm = !empty($g['is_admin']) || (int)($g['branch_id'] ?? 0) === 1;
-                if ($invScope === 'admin' && $isAdm) {
-                    $filteredGroups[] = $g;
-                } elseif ($invScope === 'branches' && !$isAdm) {
-                    $filteredGroups[] = $g;
-                }
-            }
-            $invoiceGroups = $filteredGroups;
-        }
-
-        // حالة كل فاتورة — استعلام واحد على MySQL (مخزّنة مسبقًا).
-        // قبل كده كنا بنجيب أصناف كل فاتورة من SQL Server عشان نحسب،
-        // يعني استعلام لكل فاتورة عبر الجسر — ده اللي كان بيبطّئ الصفحة.
-        $invStatuses = get_invoice_statuses(array_map(
-            fn($i) => (string) ($i['inv_no'] ?? ''), $invoices
-        ));
-        // الفواتير اللي عليها ملاحظات — علامة في القائمة
-        $invNotes = get_invoices_with_notes(array_map(
-            fn($i) => (string) ($i['inv_no'] ?? ''), $invoices
-        ));
+        $data = inv_load_list($tab, $invScope);
+        $invoices      = $data['invoices'];
+        $itemCountMap  = $data['itemCountMap'];
+        $invoiceGroups = $data['invoiceGroups'];
+        $adminCount    = $data['adminCount'];
+        $branchCount   = $data['branchCount'];
+        $invStatuses   = $data['invStatuses'];
+        $invNotes      = $data['invNotes'];
     }
 } catch (Throwable $ex) {
     $sqlsrvError = $ex->getMessage();
