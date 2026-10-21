@@ -34,7 +34,7 @@
 | ١٦٣ | `ashraqa_invoices.php` | `brief163_ashraqa_invoices.md` | ب | ✅ `5b10612` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٤ | `stocktake.php` مرحلة (ب): الجرد والمراجعة | `brief164_stocktake_b.md` | ب | ✅ `1420fc4` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٤ب | `stocktake.php`: عمليات المالك (الجلسات · مسح · تعيين) | `brief164b_stocktake_owner.md` | ب | ✅ `9cd950f` (Gemini نفّذ وراجع) — مش مرفوع |
-| ١٦٥ | `invoices.php` (أ١): البحث والبوب أب (٦ GET) | `brief165_invoices_a.md` | أ | |
+| ١٦٥ | `invoices.php` (أ١): البحث والبوب أب (٦ GET) | `brief165_invoices_a.md` | أ | ✅ `9f1f743` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٥ب | `invoices.php` (أ٢): القايمة والفاتورة والمجموعة والخصم | `brief165b_invoices_view.md` | أ | **بعد ١٦٥** |
 | ١٦٦ | `invoices.php` (ب١): التوزيع والحالة وسحب الحجز (فيه إشعارات) | `brief166_invoices_dist.md` | ب | **بعد ١٦٥ب** |
 | ١٦٦ب | `invoices.php` (ب٢): الملاحظات والعلامات والمشاكل | `brief166b_invoices_notes.md` | ب | **بعد ١٦٦** (ويفضّل بعد ١٥٩) |
