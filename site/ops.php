@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_module_access('ops');
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/ops_lib.php';
 sens_page(); // من غيرها الفوتر مابيحمّلش سكربت القفل فزرار «اظهر الأرقام» مابيشتغلش
 
 $canPerf    = can('ops:perf');
@@ -31,8 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $tokenId = (int) ($_POST['token_id'] ?? 0);
         if ($tokenId > 0) {
             try {
-                $stRevoke = db()->prepare('UPDATE api_tokens SET revoked_at = NOW() WHERE id = ? AND revoked_at IS NULL');
-                $stRevoke->execute([$tokenId]);
+                ops_revoke_token($tokenId);
                 $deviceMsg = 'تم إلغاء التوكن للجهاز بنجاح';
             } catch (\Throwable $e) {
                 $deviceErr = 'حصل خطأ أثناء إلغاء التوكن';
@@ -129,150 +129,29 @@ if ($export === 'audit' && $auditOpen) {
 // =====================================================================
 //  تجهيز بيانات تبويب السرعة
 // =====================================================================
-$logsDir = __DIR__ . '/logs';
 $availableDays = [];
-if ($canPerf && is_dir($logsDir)) {
-    $files = @glob($logsDir . '/perf-*.log.php');
-    if (is_array($files)) {
-        foreach ($files as $f) {
-            if (preg_match('/perf-(\d{4}-\d{2}-\d{2})\.log\.php$/', $f, $m)) {
-                $availableDays[] = $m[1];
-            }
-        }
-    }
-}
-rsort($availableDays);
-
 $selectedDay = trim((string) ($_GET['day'] ?? ''));
-if ($selectedDay === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $selectedDay)) {
-    $selectedDay = in_array($todayCairo, $availableDays, true) ? $todayCairo : ($availableDays[0] ?? $todayCairo);
-}
-
-// قراءة ملف اليوم المختار سطر سطر
-$logFilePath = $logsDir . '/perf-' . $selectedDay . '.log.php';
-
 $totalRequests = 0;
 $totalAllMs = 0.0;
 $over1SecCount = 0;
-
-$pagesMap = [];
-$slowestRequests = [];
-
-if ($canPerf && $tabParam === 'perf' && is_file($logFilePath)) {
-    $fh = @fopen($logFilePath, 'r');
-    if ($fh) {
-        while (($raw = fgets($fh)) !== false) {
-            $line = trim($raw);
-            if ($line === '' || str_starts_with($line, '<?php')) {
-                continue;
-            }
-
-            $parts = explode("\t", $line);
-            if (count($parts) < 6) {
-                continue;
-            }
-
-            $time   = $parts[0];
-            $page   = $parts[1];
-            $method = $parts[2];
-            $ms     = (float) $parts[3];
-            $mb     = (float) $parts[4];
-            $status = (int) $parts[5];
-            $uid    = (isset($parts[6]) && $parts[6] !== '') ? (int) $parts[6] : null;
-
-            $totalRequests++;
-            $totalAllMs += $ms;
-            if ($ms >= 1000) {
-                $over1SecCount++;
-            }
-
-            if (!isset($pagesMap[$page])) {
-                $pagesMap[$page] = [
-                    'page'     => $page,
-                    'count'    => 0,
-                    'total_ms' => 0.0,
-                    'times'    => [],
-                    'total_mb' => 0.0,
-                    'errors'   => 0,
-                ];
-            }
-            $pagesMap[$page]['count']++;
-            $pagesMap[$page]['total_ms'] += $ms;
-            $pagesMap[$page]['times'][] = $ms;
-            $pagesMap[$page]['total_mb'] += $mb;
-            if ($status >= 500) {
-                $pagesMap[$page]['errors']++;
-            }
-
-            $slowestRequests[] = [
-                'time'   => $time,
-                'page'   => $page,
-                'method' => $method,
-                'ms'     => $ms,
-                'mb'     => $mb,
-                'status' => $status,
-                'uid'    => $uid,
-            ];
-        }
-        fclose($fh);
-    }
-}
-
-// حساب مؤشرات كل صفحة
 $pagesStats = [];
-foreach ($pagesMap as $page => $d) {
-    $count = $d['count'];
-    $times = $d['times'];
-    sort($times);
-    $n = count($times);
-
-    // p95 = القيمة عند 95% بعد الترتيب
-    $p95Index = min($n - 1, max(0, (int) ceil(0.95 * $n) - 1));
-    $p95 = $times[$p95Index];
-
-    $avgMs = round($d['total_ms'] / $count, 1);
-    $maxMs = round(max($times), 1);
-    $avgMb = round($d['total_mb'] / $count, 2);
-
-    $pagesStats[] = [
-        'page'    => $page,
-        'count'   => $count,
-        'avg_ms'  => $avgMs,
-        'p95_ms'  => $p95,
-        'max_ms'  => $maxMs,
-        'avg_mb'  => $avgMb,
-        'errors'  => $d['errors'],
-    ];
-}
-
-// الترتيب بالمتوسط تنازلي
-usort($pagesStats, fn($a, $b) => $b['avg_ms'] <=> $a['avg_ms']);
-
-// أبطأ ٢٠ طلب
-usort($slowestRequests, fn($a, $b) => $b['ms'] <=> $a['ms']);
-$slowest20 = array_slice($slowestRequests, 0, 20);
-
-// استعلام أسماء المستخدمين باستعلام واحد فقط
-$uids = [];
-foreach ($slowest20 as $sr) {
-    if ($sr['uid'] !== null && $sr['uid'] > 0) {
-        $uids[] = (int) $sr['uid'];
-    }
-}
-$uids = array_values(array_unique($uids));
+$slowest20 = [];
 $userNames = [];
-if (!empty($uids)) {
-    try {
-        $inPh = implode(',', array_fill(0, count($uids), '?'));
-        $st = db()->prepare("SELECT id, full_name FROM users WHERE id IN ($inPh)");
-        $st->execute($uids);
-        $userNames = $st->fetchAll(\PDO::FETCH_KEY_PAIR);
-    } catch (\Throwable $e) {
-        // صامت
+$overallAvg = 0.0;
+
+if ($canPerf) {
+    $perfData = ops_perf_data($selectedDay !== '' ? $selectedDay : null);
+    $availableDays  = $perfData['available_days'];
+    $selectedDay    = $perfData['selected_day'];
+    if ($tabParam === 'perf') {
+        $totalRequests  = $perfData['total_requests'];
+        $overallAvg     = $perfData['overall_avg'];
+        $over1SecCount  = $perfData['over_1sec_count'];
+        $pagesStats     = $perfData['pages_stats'];
+        $slowest20      = $perfData['slowest_20'];
+        $userNames      = $perfData['user_names'];
     }
 }
-
-$overallAvg = $totalRequests > 0 ? round($totalAllMs / $totalRequests, 1) : 0.0;
 
 function ops_ms_style(float $ms): string {
     if ($ms >= 1000) return 'color:var(--neg);font-weight:700;';
@@ -289,7 +168,6 @@ $auditPagesList = [];
 $auditTotal = 0;
 $auditLimit = 200;
 $auditPageNum = max(1, (int) ($_GET['p'] ?? 1));
-$auditOffset = ($auditPageNum - 1) * $auditLimit;
 
 $fromAudit = trim((string) ($_GET['from'] ?? ''));
 if ($fromAudit === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromAudit)) {
@@ -305,54 +183,11 @@ $pParam = trim((string)($_GET['page'] ?? ''));
 $aParam = trim((string)($_GET['action_search'] ?? ''));
 
 if ($auditOpen && $tabParam === 'audit') {
-    try {
-        if (function_exists('db')) {
-            $pdo = db();
-            // قائمة المستخدمين والصفحات للفلاتر
-            $uSt = $pdo->query("SELECT id, username, full_name FROM users ORDER BY full_name ASC");
-            if ($uSt) {
-                $auditUsersList = $uSt->fetchAll(\PDO::FETCH_ASSOC);
-            }
-            $pSt = $pdo->query("SELECT DISTINCT page FROM audit_requests ORDER BY page ASC");
-            if ($pSt) {
-                $auditPagesList = $pSt->fetchAll(\PDO::FETCH_COLUMN);
-            }
-
-            $where = ["created_at >= ? AND created_at <= ?"];
-            $bindings = [$fromAudit . ' 00:00:00', $toAudit . ' 23:59:59'];
-
-            if ($uParam !== null && $uParam > 0) {
-                $where[] = "user_id = ?";
-                $bindings[] = $uParam;
-            }
-            if ($pParam !== '') {
-                $where[] = "page = ?";
-                $bindings[] = $pParam;
-            }
-            if ($aParam !== '') {
-                $where[] = "action LIKE ?";
-                $bindings[] = '%' . $aParam . '%';
-            }
-
-            $whereSql = implode(' AND ', $where);
-
-            // إجمالي العدد للصفحات
-            $cntSt = $pdo->prepare("SELECT COUNT(*) FROM audit_requests WHERE $whereSql");
-            $cntSt->execute($bindings);
-            $auditTotal = (int) $cntSt->fetchColumn();
-
-            // جلب الصفوف بالصفحة الحالية
-            $sql = "SELECT id, created_at, user_id, username, ip, method, page, action, params, status, ms " .
-                   "FROM audit_requests WHERE $whereSql ORDER BY id DESC LIMIT $auditLimit OFFSET $auditOffset";
-            $dataSt = $pdo->prepare($sql);
-            $dataSt->execute($bindings);
-            $auditRows = $dataSt->fetchAll(\PDO::FETCH_ASSOC);
-        }
-    } catch (\Throwable $e) {
-        // لو الجدول مش موجود أو حصل خطأ ← سكوت تام
-        $auditRows = [];
-        $auditTotal = 0;
-    }
+    $auditData = ops_audit_data($fromAudit, $toAudit, $uParam, $pParam, $aParam, $auditPageNum, $auditLimit);
+    $auditRows      = $auditData['rows'];
+    $auditTotal     = $auditData['total'];
+    $auditUsersList = $auditData['users_list'];
+    $auditPagesList = $auditData['pages_list'];
 }
 
 // =====================================================================
@@ -362,20 +197,10 @@ $dbRows = [];
 $dbReady = true;
 $dbPending = 0;
 if ($canDb && $tabParam === 'db') {
-    $manifest = (array) (require __DIR__ . '/migrations_manifest.php');
-    $applied = [];
-    try {
-        foreach (db()->query('SELECT name, applied_at FROM schema_migrations') as $r) {
-            $applied[(string) $r['name']] = (string) $r['applied_at'];
-        }
-    } catch (\Throwable $e) {
-        $dbReady = false;
-    }
-    foreach ($manifest as $name) {
-        $at = $applied[$name] ?? null;
-        if ($at === null) $dbPending++;
-        $dbRows[] = ['name' => (string) $name, 'applied_at' => $at];
-    }
+    $dbData = ops_db_data();
+    $dbReady   = $dbData['ready'];
+    $dbPending = $dbData['pending_count'];
+    $dbRows    = $dbData['rows'];
 }
 
 // =====================================================================
@@ -383,23 +208,8 @@ if ($canDb && $tabParam === 'db') {
 // =====================================================================
 $deviceRows = [];
 if ($canDevices && $tabParam === 'devices') {
-    try {
-        if (function_exists('db')) {
-            $pdo = db();
-            $dSql = "SELECT t.id, t.user_id, t.device_name, t.pw_version AS token_pw_ver,
-                            t.created_at, t.last_used_at, t.last_ip, t.revoked_at,
-                            u.username, u.full_name, u.pw_version AS user_pw_ver, u.is_active
-                     FROM api_tokens t
-                     LEFT JOIN users u ON u.id = t.user_id
-                     ORDER BY t.id DESC";
-            $dSt = $pdo->query($dSql);
-            if ($dSt) {
-                $deviceRows = $dSt->fetchAll(\PDO::FETCH_ASSOC);
-            }
-        }
-    } catch (\Throwable $e) {
-        $deviceRows = [];
-    }
+    $devData = ops_devices_data();
+    $deviceRows = $devData['rows'];
 }
 
 $pageTitle = 'المراقبة';
