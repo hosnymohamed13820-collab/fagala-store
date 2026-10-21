@@ -1297,3 +1297,55 @@ function stk_update_review_qty(int $sheetId, int $lineId, float $qty): float
         ->execute([$reviewBase, $lineId, $sheetId]);
     return $reviewBase;
 }
+
+/**
+ * إنهاء جلسة جرد نشطة. للأونر فقط.
+ */
+function stk_end_session(int $sessionId, int $userId): void
+{
+    db()->prepare('UPDATE stocktake_sessions SET status="closed", closed_by=?, closed_at=NOW() WHERE id=?')
+        ->execute([$userId, $sessionId]);
+}
+
+/**
+ * إعادة فتح آخر جلسة جرد مقفولة. للأونر فقط.
+ * يرفض لو فيه جلسة نشطة بالفعل أو مفيش جلسة مقفولة.
+ */
+function stk_reopen_session(): int
+{
+    $pdo = db();
+    $last = $pdo->query("SELECT id FROM stocktake_sessions WHERE status='closed' ORDER BY id DESC LIMIT 1")->fetchColumn();
+    if (!$last) {
+        throw new RuntimeException('مفيش جرد مقفول نقدر نرجّعه.');
+    }
+    $act = (int)$pdo->query("SELECT COUNT(*) FROM stocktake_sessions WHERE status='active'")->fetchColumn();
+    if ($act > 0) {
+        throw new RuntimeException('فيه جلسة جرد نشطة بالفعل. اقفلها الأول.');
+    }
+    $pdo->prepare("UPDATE stocktake_sessions SET status='active', closed_by=NULL, closed_at=NULL WHERE id=?")->execute([(int)$last]);
+    return (int)$last;
+}
+
+/**
+ * إعادة تعيين القائم بالجرد أو المراجع لمحضر. للأونر فقط.
+ * الحقول المسموحة: counted_by أو reviewed_by فقط.
+ */
+function stk_reassign_sheet(int $sheetId, string $field, ?int $userId): void
+{
+    if (!in_array($field, ['counted_by', 'reviewed_by'], true)) {
+        throw new InvalidArgumentException('حقل غير صالح.');
+    }
+    db()->prepare("UPDATE stocktake_sheets SET {$field}=? WHERE id=?")->execute([$userId, $sheetId]);
+}
+
+/**
+ * تغيير مكان محضر الجرد. للأونر فقط.
+ */
+function stk_change_sheet_place(int $sheetId, string $place): void
+{
+    $place = trim($place);
+    if ($place === '') {
+        throw new InvalidArgumentException('اكتب المكان.');
+    }
+    db()->prepare('UPDATE stocktake_sheets SET place_note=? WHERE id=?')->execute([$place, $sheetId]);
+}

@@ -103,25 +103,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash = "تم رفع رصيد $n صنف.";
             }
             elseif ($action === 'end_session' && $owner && $session) {
-                $pdo->prepare('UPDATE stocktake_sessions SET status="closed", closed_by=?, closed_at=NOW() WHERE id=?')
-                    ->execute([$uid, (int)$session['id']]);
+                stk_end_session((int)$session['id'], $uid);
                 $flash = 'تم إنهاء الجرد. الأزرار مقفولة الآن.';
                 $session = null;
             }
             elseif ($action === 'reopen_session' && $owner) {
                 // إعادة فتح آخر جلسة مقفولة (لو حد أنهى بالغلط) — البيانات كلها محفوظة
-                $last = $pdo->query("SELECT id FROM stocktake_sessions WHERE status='closed' ORDER BY id DESC LIMIT 1")->fetchColumn();
-                if ($last) {
-                    // اتأكد إن مفيش جلسة active تانية
-                    $act = $pdo->query("SELECT COUNT(*) FROM stocktake_sessions WHERE status='active'")->fetchColumn();
-                    if ($act > 0) throw new RuntimeException('فيه جلسة جرد نشطة بالفعل. اقفلها الأول.');
-                    $pdo->prepare("UPDATE stocktake_sessions SET status='active', closed_by=NULL, closed_at=NULL WHERE id=?")->execute([(int)$last]);
-                    $flash = 'تم إعادة فتح آخر جرد. كل المحاضر والبيانات رجعت زي ما هي.';
-                    header('Location: stocktake.php?msg=' . urlencode($flash));
-                    exit;
-                } else {
-                    throw new RuntimeException('مفيش جرد مقفول نقدر نرجّعه.');
-                }
+                stk_reopen_session();
+                $flash = 'تم إعادة فتح آخر جرد. كل المحاضر والبيانات رجعت زي ما هي.';
+                header('Location: stocktake.php?msg=' . urlencode($flash));
+                exit;
             }
             elseif ($action === 'delete_sheet') {
                 $sheetId = (int) ($_POST['sheet_id'] ?? 0);
@@ -135,10 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sheetId = (int) ($_POST['sheet_id'] ?? 0);
                 $field   = $_POST['field'] ?? '';   // counted_by أو reviewed_by
                 $newUser = (int) ($_POST['user_id'] ?? 0) ?: null;
-                if (!in_array($field, ['counted_by','reviewed_by'], true)) {
-                    throw new RuntimeException('حقل غير صالح.');
-                }
-                $pdo->prepare("UPDATE stocktake_sheets SET {$field}=? WHERE id=?")->execute([$newUser, $sheetId]);
+                stk_reassign_sheet($sheetId, $field, $newUser);
                 $flash = ($field==='counted_by'?'تم تغيير القائم بالجرد.':'تم تغيير المراجع.');
                 header('Location: stocktake.php?sheet=' . $sheetId . ($field==='reviewed_by'?'&mode=review':'') . '&msg=' . urlencode($flash));
                 exit;
@@ -150,8 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($place === '__custom__') {
                     $place = trim($_POST['place_custom'] ?? '');
                 }
-                if ($place === '') throw new RuntimeException('اكتب المكان.');
-                $pdo->prepare('UPDATE stocktake_sheets SET place_note=? WHERE id=?')->execute([$place, $sheetId]);
+                stk_change_sheet_place($sheetId, $place);
                 $flash = 'تم تغيير مكان المحضر إلى: ' . $place;
                 header('Location: stocktake.php?sheet=' . $sheetId . '&msg=' . urlencode($flash));
                 exit;

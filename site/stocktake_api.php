@@ -137,6 +137,13 @@ $writes = [
     'set_final',
     'set_final_bulk',
     'finalize',
+    // بريف ١٦٤ب: عمليات المالك
+    'end_session',
+    'reopen_session',
+    'delete_sheet',
+    'reassign',
+    'change_place',
+    'reopen_review',
 ];
 
 if (!in_array($part, $writes, true)) {
@@ -316,6 +323,111 @@ switch ($part) {
         api_ok([
             'sheet_id' => $sheetId,
             'status'   => 'done',
+        ]);
+
+    case 'end_session':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        $session = stk_active_session();
+        if (!$session) {
+            api_fail('لا توجد جلسة جرد نشطة', 422, 'no_active_session');
+        }
+        stk_end_session((int)$session['id'], $uid);
+        api_ok([
+            'session_id' => (int)$session['id'],
+            'status'     => 'closed',
+        ]);
+
+    case 'reopen_session':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        try {
+            $reopenedId = stk_reopen_session();
+        } catch (RuntimeException $e) {
+            api_fail($e->getMessage(), 422, 'cannot_reopen');
+        }
+        api_ok([
+            'session_id' => $reopenedId,
+            'status'     => 'active',
+        ]);
+
+    case 'delete_sheet':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        if ($sheetId <= 0) {
+            api_fail('معرّف المحضر مطلوب', 422, 'invalid_sheet');
+        }
+        try {
+            stk_delete_sheet($sheetId);
+        } catch (RuntimeException $e) {
+            api_fail($e->getMessage(), 422, 'cannot_delete');
+        }
+        api_ok([
+            'sheet_id' => $sheetId,
+            'deleted'  => true,
+        ]);
+
+    case 'reassign':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $field   = trim((string) ($in['field'] ?? ($_POST['field'] ?? '')));
+        $newUser = (int) ($in['user_id'] ?? ($_POST['user_id'] ?? 0)) ?: null;
+        if (!in_array($field, ['counted_by', 'reviewed_by'], true)) {
+            api_fail('حقل غير صالح', 422, 'invalid_field');
+        }
+        if ($sheetId <= 0) {
+            api_fail('معرّف المحضر مطلوب', 422, 'invalid_sheet');
+        }
+        stk_reassign_sheet($sheetId, $field, $newUser);
+        api_ok([
+            'sheet_id' => $sheetId,
+            'field'    => $field,
+            'user_id'  => $newUser,
+        ]);
+
+    case 'change_place':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $place   = trim((string) ($in['place_note'] ?? ($_POST['place_note'] ?? '')));
+        if ($place === '__custom__') {
+            $place = trim((string) ($in['place_custom'] ?? ($_POST['place_custom'] ?? '')));
+        }
+        if ($place === '') {
+            api_fail('اكتب المكان', 422, 'empty_place');
+        }
+        if ($sheetId <= 0) {
+            api_fail('معرّف المحضر مطلوب', 422, 'invalid_sheet');
+        }
+        stk_change_sheet_place($sheetId, $place);
+        api_ok([
+            'sheet_id' => $sheetId,
+            'place'    => $place,
+        ]);
+
+    case 'reopen_review':
+        if (!$owner) {
+            api_fail('غير مصرّح — للمالك فقط', 403, 'forbidden');
+        }
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        if ($sheetId <= 0) {
+            api_fail('معرّف المحضر مطلوب', 422, 'invalid_sheet');
+        }
+        try {
+            stk_reopen_review($sheetId);
+        } catch (RuntimeException $e) {
+            api_fail($e->getMessage(), 422, 'cannot_reopen');
+        }
+        api_ok([
+            'sheet_id' => $sheetId,
+            'reopened' => true,
         ]);
 }
 
