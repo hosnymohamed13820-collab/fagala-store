@@ -152,13 +152,13 @@ foreach ($allPhpFiles as $f) {
 echo "  - تم رصد $xssCount طباعة بدون هروب.\n\n";
 
 // -------------------------------------------------------------
-// ٤. معالجات POST بدون فحص CSRF وبدون فحص صلاحيات
+// ٤. معالجات POST بدون فحص CSRF أو بدون فحص صلاحيات
 // -------------------------------------------------------------
-echo "[4/11] فحص معالجات POST بدون فحص CSRF وصلاحيات...\n";
+echo "[4/11] فحص معالجات POST بدون فحص CSRF أو صلاحيات...\n";
 $csrfCount = 0;
 foreach ($allPhpFiles as $f) {
     $base = basename($f);
-    if (str_ends_with($base, '_lib.php') || str_ends_with($base, '_api.php')) {
+    if (str_ends_with($base, '_lib.php') || $base === 'config.php') {
         continue;
     }
     $code = file_get_contents($f);
@@ -170,15 +170,20 @@ foreach ($allPhpFiles as $f) {
 
         $offset = $m[0][1];
         $preCode = substr($code, 0, $offset);
-        $postBlock = substr($code, $offset, 3000);
+        $postBlock = substr($code, $offset, 3500);
 
-        $hasCsrf = preg_match('/\b(csrf|check_csrf|validate_csrf|csrf_verify)\b/i', $postBlock);
-        $hasPerm = preg_match('/\b(require_permission|require_module_access|can|is_owner|br_inv_require)\b/i', $preCode) ||
-                   preg_match('/\b(require_permission|require_module_access|can|is_owner|br_inv_require)\b/i', $postBlock);
+        $hasCsrf = preg_match('/\b(csrf|check_csrf|validate_csrf|csrf_verify|api_csrf)\b/i', $postBlock) ||
+                   preg_match('/\b(csrf|check_csrf|validate_csrf|csrf_verify|api_csrf)\b/i', $preCode);
 
-        if (!$hasCsrf && !$hasPerm) {
+        $hasPerm = preg_match('/\b(require_permission|require_module_access|can|is_owner|br_inv_require|api_begin)\b/i', $preCode) ||
+                   preg_match('/\b(require_permission|require_module_access|can|is_owner|br_inv_require|api_begin)\b/i', $postBlock);
+
+        if (!$hasCsrf || !$hasPerm) {
             $csrfCount++;
             $line = substr_count($preCode, "\n") + 1;
+            $missing = [];
+            if (!$hasCsrf) $missing[] = 'CSRF';
+            if (!$hasPerm) $missing[] = 'صلاحيات';
             $findings[] = [
                 'severity' => 'red',
                 'kind'     => 'post_no_csrf_no_perm',
@@ -186,12 +191,12 @@ foreach ($allPhpFiles as $f) {
                 'line'     => $line,
                 'user'     => 'static',
                 'url'      => $base,
-                'detail'   => "معالج POST بدون فحص CSRF وبدون فحص صلاحيات مسبق",
+                'detail'   => "معالج POST يفتقر لـ: " . implode(' و', $missing),
             ];
         }
     }
 }
-echo "  - تم رصد $csrfCount معالج POST يفتقر لفحص CSRF والصلاحيات.\n\n";
+echo "  - تم رصد $csrfCount معالج POST يفتقر لفحص CSRF أو الصلاحيات.\n\n";
 
 // -------------------------------------------------------------
 // ٥. دالة في _lib.php فيها SELECT * أو e.* / t.* تُستدعى من _api.php
@@ -217,10 +222,10 @@ foreach ($libFiles as $lf) {
         $fnOffset = $fnMatches[0][$idx][1];
         $fnLine = substr_count(substr($code, 0, $fnOffset), "\n") + 1;
 
-        // مقتطف جسم الدالة (تقريبي)
-        $fnBody = substr($code, $fnOffset, 4000);
+        // مقتطف جسم الدالة
+        $fnBody = substr($code, $fnOffset, 12000);
 
-        if (preg_match('/\bSELECT\s+(\*|[a-zA-Z0-9_]+\.\*)\b/i', $fnBody)) {
+        if (preg_match('/\bSELECT\s+(?:\*|[a-zA-Z0-9_]+\.\*)(?=[\s,])/i', $fnBody)) {
             // هل تُستدعى من أي API؟
             if (preg_match('/\b' . preg_quote($fnName, '/') . '\s*\(/', $apiCodeMerged)) {
                 $wildcardCount++;
@@ -298,10 +303,10 @@ foreach ($cssAndPhp as $f) {
 echo "  - تم رصد $btnCount إعادة تعريف لـ .btn.\n\n";
 
 // -------------------------------------------------------------
-// ٨. استخدام var(--x) غير معرّف في fagala.css
+// ٨. استخدام var(--x) غير معرّف في fagala.css أو في ستايل الصفحة
 // -------------------------------------------------------------
 echo "[8/11] فحص استخدام متغيرات CSS غير معرّفة (var(--x))...\n";
-$fagalaCssPath = "$siteDir/fagala.css";
+$fagalaCssPath = "$siteDir/assets/fagala.css";
 $definedVars = [];
 if (file_exists($fagalaCssPath)) {
     preg_match_all('/(--[a-zA-Z0-9_-]+)\s*:/', file_get_contents($fagalaCssPath), $vm);
@@ -312,12 +317,22 @@ $undefVarCount = 0;
 foreach ($allPhpFiles as $f) {
     $rel = 'site/' . basename($f);
     $code = file_get_contents($f);
+
+    $pageVars = $definedVars;
+    preg_match_all('/<style\b[^>]*>(.*?)<\/style>/is', $code, $styleBlocks);
+    foreach ($styleBlocks[1] as $sb) {
+        preg_match_all('/(--[a-zA-Z0-9_-]+)\s*:/', $sb, $pvm);
+        foreach ($pvm[1] as $pv) {
+            $pageVars[$pv] = true;
+        }
+    }
+
     preg_match_all('/var\s*\(\s*(--[a-zA-Z0-9_-]+)\s*\)/i', $code, $m, PREG_OFFSET_CAPTURE);
 
     for ($i = 0; $i < count($m[1]); $i++) {
         $varName = $m[1][$i][0];
         $varOffset = $m[1][$i][1];
-        if (!isset($definedVars[$varName])) {
+        if (!isset($pageVars[$varName])) {
             $undefVarCount++;
             $line = substr_count(substr($code, 0, $varOffset), "\n") + 1;
             $findings[] = [
@@ -327,7 +342,7 @@ foreach ($allPhpFiles as $f) {
                 'line'     => $line,
                 'user'     => 'static',
                 'url'      => basename($f),
-                'detail'   => "استخدام متغير CSS غير معرّف في fagala.css: $varName",
+                'detail'   => "استخدام متغير CSS غير معرّف في fagala.css أو في الصفحة: $varName",
             ];
         }
     }

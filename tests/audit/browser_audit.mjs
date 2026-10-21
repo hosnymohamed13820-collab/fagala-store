@@ -10,6 +10,12 @@ import { join } from 'node:path';
 const outDir = process.argv[2] || 'D:/fagala_wt_ds2/tests/audit/out/latest';
 const rendersDir = join(outDir, 'renders');
 
+const PHP_BIN = process.env.PHP_BIN || 'D:/laragon/bin/php/php-8.3.33-Win32-vs16-x64/php.exe';
+const HTTP_PORT = 8799;
+
+console.log(`بدء تشغيل خادم PHP المحلي للأصول على منفذ ${HTTP_PORT}...`);
+const phpServer = spawn(PHP_BIN, ['-S', `127.0.0.1:${HTTP_PORT}`, '-t', rendersDir], { stdio: 'ignore' });
+
 const EDGE = [
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     'C:/Program Files/Microsoft/Edge/Application/msedge.exe'
@@ -241,9 +247,43 @@ for (const uType of userTypes) {
         eventListeners.push({ method: 'Network.responseReceived', fn: responseHandler });
 
         const loadFired = onEvent('Page.loadEventFired');
-        await send('Page.navigate', { url: 'file:///' + filePath.replace(/\\/g, '/') });
+        await send('Page.navigate', { url: `http://127.0.0.1:${HTTP_PORT}/${uType}/${file}` });
         await Promise.race([loadFired, sleep(2000)]);
         await sleep(150);
+
+        // إزالة مستمعي الأحداث للصفحة الحالية
+        eventListeners.splice(eventListeners.findIndex(l => l.fn === logHandler), 1);
+        eventListeners.splice(eventListeners.findIndex(l => l.fn === exceptionHandler), 1);
+        eventListeners.splice(eventListeners.findIndex(l => l.fn === responseHandler), 1);
+
+        // التحقق أولاً من تحميل أصول التصميم والخطوط قبل القياس
+        let assetCheck = { hasCss: true, hasTabler: true };
+        try {
+            const rawAsset = await send('Runtime.evaluate', {
+                expression: `(() => {
+                    const cs = getComputedStyle(document.body);
+                    const ink900 = cs.getPropertyValue('--ink-900').trim();
+                    const hasCss = ink900.length > 0 || /system-ui|Segoe/i.test(cs.fontFamily);
+                    const hasTabler = document.fonts ? document.fonts.check('16px tabler-icons') : true;
+                    return JSON.stringify({ hasCss, hasTabler });
+                })()`,
+                returnByValue: true
+            });
+            assetCheck = JSON.parse(rawAsset.result?.result?.value || '{}');
+        } catch {}
+
+        if (!assetCheck.hasCss || !assetCheck.hasTabler) {
+            findings.push({
+                severity: 'yellow',
+                kind: 'asset_load_failed',
+                file: `site/${pageName}.php`,
+                line: 1,
+                user: uType,
+                url: pageName,
+                detail: `لم يتم تحميل أصول التصميم كاملة (hasCss: ${assetCheck.hasCss}, hasTabler: ${assetCheck.hasTabler})`
+            });
+            continue; // لا تحسب مؤشرات التصميم
+        }
 
         // تشغيل فحص الصفحة
         let evalResult;
@@ -254,17 +294,17 @@ for (const uType of userTypes) {
             evalResult = {};
         }
 
-        // إزالة مستمعي الأحداث للصفحة الحالية
-        eventListeners.splice(eventListeners.findIndex(l => l.fn === logHandler), 1);
-        eventListeners.splice(eventListeners.findIndex(l => l.fn === exceptionHandler), 1);
-        eventListeners.splice(eventListeners.findIndex(l => l.fn === responseHandler), 1);
-
-        // تسجيل أخطاء الكونسول
+        // تسجيل أخطاء الكونسول (مع استبعاد طلبات fetch للأف بي آي المحلية)
         for (const ce of consoleErrors) {
+            const isApiFetch = /_api\.php|Failed to fetch|NetworkError|net::ERR_|404.*_api/i.test(ce);
+            if (isApiFetch) {
+                // استبعادها من أخطاء الكونسول لأن الرندر ستاتيك
+                continue;
+            }
             findings.push({
                 severity: 'orange',
                 kind: 'browser_console_error',
-                file: `site/${pageName}`,
+                file: `site/${pageName}.php`,
                 line: 1,
                 user: uType,
                 url: pageName,
@@ -348,10 +388,11 @@ for (const uType of userTypes) {
     }
 }
 
-// إنهاء Edge
+// إنهاء Edge وخادم PHP المحلي
 try {
     ws.close();
     edge.kill();
+    phpServer.kill();
     rmSync(prof, { recursive: true, force: true });
 } catch {}
 

@@ -84,12 +84,29 @@ foreach (array_slice($heavyList, 0, 20) as $i => $h) {
 }
 $md .= "\n---\n\n";
 
-$md .= "## ٤. أخطر ٣٠ ملاحظة (Top 30 Critical Findings)\n\n";
+$md .= "## ٤. أخطر ٣٠ ملاحظة مؤكدة (Top 30 Confirmed Critical Findings)\n\n";
 $md .= "| # | الخطورة | النوع | الملف والسطر | الرابط / المستخدم | التفاصيل |\n";
 $md .= "|---|:---:|---|---|---|---|\n";
-foreach (array_slice($allFindings, 0, 30) as $i => $f) {
+
+$confirmedFindings = array_filter($allFindings, fn($f) => ($f['kind'] ?? '') !== 'api_candidate_leak');
+$candidateFindings = array_filter($allFindings, fn($f) => ($f['kind'] ?? '') === 'api_candidate_leak');
+
+foreach (array_slice(array_values($confirmedFindings), 0, 30) as $i => $f) {
     $idx = $i + 1;
     $sevBadge = match($f['severity'] ?? 'yellow') { 'red' => '🔴 Red', 'orange' => '🟠 Orange', default => '🟡 Yellow' };
+    $fileLine = "`{$f['file']}:{$f['line']}`";
+    $urlUser = "`{$f['url']}` ({$f['user']})";
+    $detail = htmlspecialchars((string)($f['detail'] ?? ''));
+    $md .= "| $idx | $sevBadge | `{$f['kind']}` | $fileLine | $urlUser | $detail |\n";
+}
+$md .= "\n---\n\n";
+
+$md .= "## ٥. الملاحظات المرشحة للتسريب في الـ APIs (Candidate Findings)\n\n";
+$md .= "| # | الخطورة | النوع | الملف والسطر | الرابط / المستخدم | التفاصيل |\n";
+$md .= "|---|:---:|---|---|---|---|\n";
+foreach (array_slice(array_values($candidateFindings), 0, 30) as $i => $f) {
+    $idx = $i + 1;
+    $sevBadge = match($f['severity'] ?? 'orange') { 'red' => '🔴 Red', 'orange' => '🟠 Orange', default => '🟡 Yellow' };
     $fileLine = "`{$f['file']}:{$f['line']}`";
     $urlUser = "`{$f['url']}` ({$f['user']})";
     $detail = htmlspecialchars((string)($f['detail'] ?? ''));

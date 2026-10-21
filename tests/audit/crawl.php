@@ -40,13 +40,8 @@ echo "=========================================================\n\n";
 require_once "$root/config.php";
 $pdo = db();
 
-// 1. إدارة الإشعارات قبل الزحف
-echo "[1/6] فحص وإعداد طابور الإشعارات...\n";
-$pqPending = (int) $pdo->query("SELECT COUNT(*) FROM push_queue WHERE status='pending'")->fetchColumn();
-if ($pqPending > 0) {
-    echo "  - وجد $pqPending إشعار معلق في push_queue، يتم تعليمهم failed كحزام أمان...\n";
-    $pdo->exec("UPDATE push_queue SET status='failed' WHERE status='pending'");
-}
+// 1. فحص طابور الإشعارات بدون أي تعديل (الأداة للقراءة فقط)
+echo "[1/6] فحص طابور الإشعارات (قراءة فقط بدون تعديل)...\n";
 $pqBefore = (int) $pdo->query("SELECT COUNT(*) FROM push_queue")->fetchColumn();
 $notifBefore = (int) $pdo->query("SELECT COUNT(*) FROM notifications")->fetchColumn();
 echo "  - عدد push_queue قبل الزحف: $pqBefore\n";
@@ -74,13 +69,67 @@ foreach ($users as $k => $u) {
 }
 echo "\n";
 
-// 3. حصر وتصنيف صفحات الموقع
+// 3. حصر وتصنيف صفحات الموقع واستكشاف الصفحات غير المحمية
 echo "[3/6] حصر وتصنيف صفحات الموقع واستكشاف الصفحات غير المحمية...\n";
-$siteFiles = glob("$root/*.php");
+$repoSiteDir = realpath(__DIR__ . '/../../site');
+$siteFiles = glob("$repoSiteDir/*.php");
 $pages = [];
 $apiFiles = [];
 $unprotectedPages = [];
 $findings = [];
+
+function isPageProtected(string $fileRelPath, string $siteDir, int $depth = 0): bool {
+    static $cache = [];
+    if (isset($cache[$fileRelPath])) return $cache[$fileRelPath];
+
+    $base = basename($fileRelPath);
+    if ($base === 'login.php' || $base === 'index.php') {
+        return $cache[$fileRelPath] = true;
+    }
+
+    $fullPath = "$siteDir/$base";
+    if (!is_file($fullPath)) {
+        return $cache[$fileRelPath] = false;
+    }
+
+    $content = file_get_contents($fullPath);
+
+    // 1. ملفات داتا: return [ ... ];
+    $trimmed = trim(preg_replace('/\/\*.*?\*\/|\/\/.*?(\n|$)/s', '', $content));
+    if (preg_match('/^<\?php\s+return\s*\[/i', $trimmed)) {
+        return $cache[$fileRelPath] = true;
+    }
+
+    // 2. ملفات دوال بحتة (مثل finance.php)
+    if ($base === 'finance.php' || str_ends_with($base, '_lib.php')) {
+        return $cache[$fileRelPath] = true;
+    }
+
+    // 3. حراس الصلاحيات والجلسة الصريحة
+    if (preg_match('/\b(require_login|require_permission|require_module_access|br_inv_require|api_begin)\b/', $content)) {
+        return $cache[$fileRelPath] = true;
+    }
+
+    // 4. حراس التوكن (synctok_ok أو hash_equals مع توكن HTTP_X)
+    if (preg_match('/\b(synctok_ok)\b/', $content) || (preg_match('/\bhash_equals\b/', $content) && preg_match('/HTTP_X_[A-Z0-9_]*TOKEN/i', $content))) {
+        return $cache[$fileRelPath] = true;
+    }
+
+    // 5. تتبع require / require_once بعمق يصل إلى 2
+    if ($depth < 2) {
+        preg_match_all('/\b(?:require|require_once|include|include_once)\s*(?:__DIR__\s*\.\s*)?[\'"]([^\'"]+\.php)[\'"]/', $content, $incMatches);
+        foreach ($incMatches[1] as $inc) {
+            $incBase = basename($inc);
+            if ($incBase !== $base && is_file("$siteDir/$incBase")) {
+                if (isPageProtected($incBase, $siteDir, $depth + 1)) {
+                    return $cache[$fileRelPath] = true;
+                }
+            }
+        }
+    }
+
+    return $cache[$fileRelPath] = false;
+}
 
 foreach ($siteFiles as $sf) {
     $base = basename($sf);
@@ -88,7 +137,7 @@ foreach ($siteFiles as $sf) {
         $apiFiles[] = $base;
         continue;
     }
-    if (str_ends_with($base, '_lib.php') || $base === 'config.php' || $base === 'logout.php') {
+    if (str_ends_with($base, '_lib.php') || $base === 'config.php' || $base === 'logout.php' || $base === 'finance.php') {
         continue;
     }
     $code = file_get_contents($sf);
@@ -96,8 +145,8 @@ foreach ($siteFiles as $sf) {
         continue;
     }
 
-    // فحص حراسة الحماية
-    $isProtected = preg_match('/\b(require_login|require_permission|require_module_access|br_inv_require)\b/', $code);
+    // فحص حراسة الحماية مع تتبع require حتى عمق 2
+    $isProtected = isPageProtected($base, $repoSiteDir, 0);
     if (!$isProtected) {
         $unprotectedPages[] = $base;
         $findings[] = [
@@ -204,10 +253,14 @@ foreach ($activeUsers as $userKey => $userCfg) {
         $meta = $res['meta'];
         $body = $res['body'];
 
-        // حفظ أول رندر لكل صفحة للمستخدمين المطلوبين للمتصفح (owner_unlocked و cashier)
-        if ($currQs === '' && in_array($userKey, ['owner_unlocked', 'cashier'], true)) {
+        // حفظ أول رندر لكل صفحة للمستخدمين (لمقارنات الـ API وفحص المتصفح)
+        if ($currQs === '') {
             $saveFile = "$userRendersDir/{$currPage}.html";
-            file_put_contents($saveFile, $body);
+            $savedHtml = $body;
+            if (stripos($savedHtml, '<head>') !== false) {
+                $savedHtml = str_ireplace('<head>', "<head>\n<base href=\"/\">", $savedHtml);
+            }
+            file_put_contents($saveFile, $savedHtml);
         }
 
         // فحص الأداء والاستعلامات
@@ -361,12 +414,18 @@ $sensitiveKeys = [
 ];
 
 $apiStats = [
-    'tested_parts' => 0,
-    'leaks_found'  => 0,
+    'tested_parts'    => 0,
+    'status_200'      => 0,
+    'status_400'      => 0,
+    'status_403'      => 0,
+    'status_423'      => 0,
+    'status_other'    => 0,
+    'leaks_confirmed' => 0,
+    'leaks_candidate' => 0,
 ];
 
 foreach ($apiFiles as $apiFile) {
-    $apiCode = file_get_contents("$root/$apiFile");
+    $apiCode = file_get_contents("$repoSiteDir/$apiFile");
 
     // استخراج أجزاء الـ API (parts/types)
     $parts = [];
@@ -391,9 +450,14 @@ foreach ($apiFiles as $apiFile) {
     echo "    - فحص $apiFile...\n";
     $recordedLeakKeys = [];
 
+    // قراءة كود الصفحة المقابلة
+    $corrPage = str_replace('_api.php', '.php', $apiFile);
+    $corrPageFile = "$repoSiteDir/$corrPage";
+    $corrPageCode = is_file($corrPageFile) ? file_get_contents($corrPageFile) : '';
+
     // فحص GET لكل جزء مع كل يوزر
     foreach ($activeUsers as $userKey => $userCfg) {
-        $isOwner = !empty($userCfg['unlocked']) && $userCfg['role'] === 'owner';
+        $isOwnerUnlocked = !empty($userCfg['unlocked']) && $userCfg['role'] === 'owner';
 
         foreach ($parts as $pVal) {
             $apiStats['tested_parts']++;
@@ -402,64 +466,108 @@ foreach ($apiFiles as $apiFile) {
             $meta = $res['meta'];
             $body = $res['body'];
 
+            $stCode = (int) ($meta['status_code'] ?? 200);
+            if ($stCode === 200) $apiStats['status_200']++;
+            elseif ($stCode === 400) $apiStats['status_400']++;
+            elseif ($stCode === 403) $apiStats['status_403']++;
+            elseif ($stCode === 423) $apiStats['status_423']++;
+            else $apiStats['status_other']++;
+
             $json = json_decode($body, true);
             if (!is_array($json)) {
                 continue;
             }
 
-            // فحص المفاتيح الحساسة لو المستخدم مش مالك أو الأرقام مقفولة
-            if (!$isOwner) {
-                $collectedKeys = [];
-                $extractKeys = function($arr) use (&$extractKeys, &$collectedKeys) {
+            // فحص المفاتيح الحساسة لو المستخدم مش مالك مفتوح
+            if (!$isOwnerUnlocked) {
+                $extractedFields = []; // [$k => $firstNonNullValue]
+                $extractFields = function($arr) use (&$extractFields, &$extractedFields) {
                     foreach ($arr as $k => $v) {
                         if (is_string($k)) {
-                            $collectedKeys[$k] = true;
+                            // استثناء أسماء الموديولات في users_api?part=meta وأي مفتاح قيمته array of strings
+                            if (is_array($v) && !empty($v) && array_is_list($v) && is_string($v[0])) {
+                                continue;
+                            }
+                            if (!isset($extractedFields[$k]) && $v !== null && $v !== '') {
+                                if (is_numeric($v) || (is_string($v) && mb_strlen(trim($v)) >= 3)) {
+                                    $extractedFields[$k] = $v;
+                                }
+                            }
                         }
                         if (is_array($v)) {
-                            $extractKeys($v);
+                            $extractFields($v);
                         }
                     }
                 };
-                $extractKeys($json);
-                $uniqueKeys = array_keys($collectedKeys);
+                $extractFields($json);
 
-                $corrPage = str_replace('_api.php', '.php', $apiFile);
                 $htmlPageFile = "$rendersDir/$userKey/{$corrPage}.html";
                 $pageHtml = file_exists($htmlPageFile) ? file_get_contents($htmlPageFile) : '';
 
-                foreach ($uniqueKeys as $kName) {
-                    $kLower = strtolower($kName);
-                    foreach ($sensitiveKeys as $sk) {
-                        if (str_contains($kLower, $sk)) {
-                            $leakKey = "$apiFile|$qs|$userKey|$kName";
-                            if (isset($recordedLeakKeys[$leakKey])) {
+                if ($userKey === 'owner_locked') {
+                    // قاعدة المالك المقفول: تسريب فقط لو الصفحة المقابلة فيها sens_page أو sens_mask والمفتاح معروض جوه sens_mask
+                    if (str_contains($corrPageCode, 'sens_page') || str_contains($corrPageCode, 'sens_mask')) {
+                        foreach ($extractedFields as $kName => $kVal) {
+                            $kLower = strtolower($kName);
+                            foreach ($sensitiveKeys as $sk) {
+                                if (str_contains($kLower, $sk)) {
+                                    if (preg_match('/sens_mask\s*\([^;]*?' . preg_quote($kName, '/') . '[^;]*?\)/s', $corrPageCode) ||
+                                        preg_match('/sens_mask\s*\([^;]*?[\'"]' . preg_quote($kName, '/') . '[\'"][^;]*?\)/s', $corrPageCode)) {
+
+                                        $leakKey = "$apiFile|$qs|$userKey|$kName";
+                                        if (!isset($recordedLeakKeys[$leakKey])) {
+                                            $recordedLeakKeys[$leakKey] = true;
+                                            $apiStats['leaks_confirmed']++;
+                                            $findings[] = [
+                                                'severity' => 'red',
+                                                'kind'     => 'api_sensitive_leak',
+                                                'file'     => "site/$apiFile",
+                                                'line'     => 1,
+                                                'user'     => $userKey,
+                                                'url'      => "$apiFile?$qs",
+                                                'detail'   => "مفتاح حساس مؤكد ($kName) يرجع في API للأونر المقفول، بينما الصفحة المقابلة تحجبه بـ sens_mask",
+                                            ];
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // قاعدة غير المالك: المقارنة بقيمة الحقل. لو القيمة غير موجودة في HTML الصفحة لنفس اليوزر = مرشح
+                    foreach ($extractedFields as $kName => $kVal) {
+                        $kLower = strtolower($kName);
+                        foreach ($sensitiveKeys as $sk) {
+                            if (str_contains($kLower, $sk)) {
+                                $valStr = (string) $kVal;
+                                $valFormatted = is_numeric($kVal) ? number_format((float)$kVal, 2) : $valStr;
+
+                                $inPage = false;
+                                if ($pageHtml !== '') {
+                                    if (str_contains($pageHtml, $valStr) || str_contains($pageHtml, $valFormatted)) {
+                                        $inPage = true;
+                                    }
+                                }
+
+                                if (!$inPage) {
+                                    $leakKey = "$apiFile|$qs|$userKey|$kName";
+                                    if (!isset($recordedLeakKeys[$leakKey])) {
+                                        $recordedLeakKeys[$leakKey] = true;
+                                        $apiStats['leaks_candidate']++;
+                                        $findings[] = [
+                                            'severity' => 'orange',
+                                            'kind'     => 'api_candidate_leak',
+                                            'file'     => "site/$apiFile",
+                                            'line'     => 1,
+                                            'user'     => $userKey,
+                                            'url'      => "$apiFile?$qs",
+                                            'detail'   => "مرشح تسريب: حقل ($kName) يرجع في الـ API بقيمة ($valStr) غير معروضة في الصفحة المقابلة لهذا المستخدم",
+                                        ];
+                                    }
+                                }
                                 break;
                             }
-
-                            // التحقق مما إذا كانت الصفحة المقابلة تخفي هذا الحقل
-                            $pageHidesField = false;
-                            if ($pageHtml !== '') {
-                                if (str_contains($pageHtml, 'sens-blur') || !str_contains($pageHtml, $kName)) {
-                                    $pageHidesField = true;
-                                }
-                            } else {
-                                $pageHidesField = true;
-                            }
-
-                            if ($pageHidesField) {
-                                $recordedLeakKeys[$leakKey] = true;
-                                $apiStats['leaks_found']++;
-                                $findings[] = [
-                                    'severity' => 'red',
-                                    'kind'     => 'api_sensitive_leak',
-                                    'file'     => "site/$apiFile",
-                                    'line'     => 1,
-                                    'user'     => $userKey,
-                                    'url'      => "$apiFile?$qs",
-                                    'detail'   => "مفتاح حساس ($kName) يرجع في API لغير المالك أو مع قفل الأرقام، بينما الصفحة تخفيه أو تحجبه",
-                                ];
-                            }
-                            break;
                         }
                     }
                 }
@@ -485,8 +593,16 @@ foreach ($apiFiles as $apiFile) {
         ];
     }
 }
-echo "  - تم فحص {$apiStats['tested_parts']} جزء/تاب في واجهات الـ APIs.\n";
-echo "  - التسريبات الحساسة المكتشفة: {$apiStats['leaks_found']}\n\n";
+echo "  - إجمالي محاولات طلب واجهات الـ APIs: {$apiStats['tested_parts']}\n";
+echo "    • كود 200 (نجاح): {$apiStats['status_200']}\n";
+echo "    • كود 400 (طلب غير سليم): {$apiStats['status_400']}\n";
+echo "    • كود 403 (ممنوع/غير مصرح): {$apiStats['status_403']}\n";
+echo "    • كود 423 (أرقام مقفولة): {$apiStats['status_423']}\n";
+echo "    • أكواد أخرى: {$apiStats['status_other']}\n";
+echo "  - التسريبات الحساسة المؤكدة (Red): {$apiStats['leaks_confirmed']}\n";
+echo "  - المرشحة للتسريب (Orange Candidates): {$apiStats['leaks_candidate']}\n\n";
+
+file_put_contents("$outDir/api_stats.json", json_encode($apiStats, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
 // 6. التحقق النهائي من الإشعارات
 echo "[6/6] التحقق من الإشعارات بعد انتهاء الزحف...\n";
@@ -518,6 +634,20 @@ if ($notifAfter > $notifBefore) {
         'url'      => 'crawl_session',
         'detail'   => "حدثت زيادة في جدول الإشعارات notifications بمقدار $diff أثناء الزحف بالقراءة!",
     ];
+}
+
+// نسخ مجلد الأصول assets إلى مجلد الرندرات لتخديمها عبر الخادم المحلي
+$assetsSrc = "$root/assets";
+$assetsDst = "$rendersDir/assets";
+if (is_dir($assetsSrc)) {
+    if (!is_dir($assetsDst)) {
+        mkdir($assetsDst, 0777, true);
+    }
+    foreach (scandir($assetsSrc) as $af) {
+        if ($af !== '.' && $af !== '..' && is_file("$assetsSrc/$af")) {
+            copy("$assetsSrc/$af", "$assetsDst/$af");
+        }
+    }
 }
 
 // حفظ النتائج
