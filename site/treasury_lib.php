@@ -12,6 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/reports_lib.php';
 
 /**
  * ضبط فترة كشف الحساب.
@@ -104,7 +105,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
         // كشف مجمّع لكل الخزائن (مع اسم الخزينة في كل حركة)
         $st = $pdo->prepare(
             "SELECT je.*, t.name AS treasury_name, u.full_name AS by_name,
-                    COALESCE(ja.name, ec.name) AS entry_code_name,
+                    COALESCE(je.account_id, tm.entry_code_id) AS display_account_id,
                     CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
                     CASE
                         WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
@@ -166,7 +167,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
             if ($selectedTreasury) {
                 $st = $pdo->prepare(
                     "SELECT je.*, u.full_name AS by_name,
-                            COALESCE(ja.name, ec.name) AS entry_code_name,
+                            COALESCE(je.account_id, tm.entry_code_id) AS display_account_id,
                             CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
                             CASE
                                 WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
@@ -219,6 +220,14 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
             }
         }
     }
+
+    $accountLabels = rep_account_labels(array_column($statement, 'display_account_id'));
+    foreach ($statement as &$row) {
+        $labels = $accountLabels[(int) $row['display_account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+        $row['parent_account_name'] = $labels['root_name'];
+        $row['entry_code_name'] = $labels['leaf_name'];
+    }
+    unset($row);
 
     return [
         'selected_param'       => $selectedParam,

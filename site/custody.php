@@ -413,22 +413,21 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="empty">لا توجد مصروفات بعد.</div>
                 <?php else: ?>
                 <table>
-                    <thead><tr><th>التاريخ</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                    <thead><tr><th>التاريخ</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php foreach ($empExpenses as $ex): ?>
                         <tr>
                             <td><?= e($ex['expense_date']) ?></td>
-                            <td><?php
-                                $lt = $ex['line_type'] ?? 'expense';
-                                if ($lt === 'advance') {
-                                    echo '<span class="fchip fchip-warn">سلفة: ' . e($ex['adv_emp_name'] ?: 'موظف') . '</span>';
-                                } elseif ($lt === 'supplier') {
-                                    echo '<span class="fchip fchip-mute">مورد: ' . e($ex['supp_name'] ?: 'مورد') . '</span>';
-                                } else {
-                                    echo !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-400);">—</span>';
-                                }
-                            ?></td>
-                            <td><?= e($ex['description']) ?></td>
+                            <td><?= e($ex['account_root_name'] ?? '—') ?></td>
+                            <td><?= e($ex['account_leaf_name'] ?? '—') ?></td>
+                            <td>
+                                <?php if (($ex['line_type'] ?? '') === 'advance'): ?>
+                                    <span class="fchip fchip-warn">سلفة: <?= e($ex['adv_emp_name'] ?: 'موظف') ?></span>
+                                <?php elseif (($ex['line_type'] ?? '') === 'supplier'): ?>
+                                    <span class="fchip fchip-mute">مورد: <?= e($ex['supp_name'] ?: 'مورد') ?></span>
+                                <?php endif; ?>
+                                <?= e($ex['description']) ?>
+                            </td>
                             <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                             <?php if ($canEditThisEmpCustody): ?>
                             <td>
@@ -635,12 +634,13 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
             <table>
-                <thead><tr><th>التاريخ</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                <thead><tr><th>التاريخ</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
                         <td><?= e($ex['expense_date']) ?></td>
-                        <td><?= !empty($ex['entry_code_name']) ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--accent-text);background:var(--bg);">'.e($ex['entry_code_name']).'</span>' : '<span style="color:var(--ink-400);">—</span>' ?></td>
+                        <td><?= e($ex['account_root_name'] ?? '—') ?></td>
+                        <td><?= e($ex['account_leaf_name'] ?? '—') ?></td>
                         <td><?= e($ex['description']) ?></td>
                         <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                         <?php if ($canEditCustody): ?>

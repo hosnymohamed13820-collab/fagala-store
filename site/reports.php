@@ -662,6 +662,17 @@ require_once __DIR__ . '/includes/header.php';
     <?php endforeach; ?>
 </div>
 
+<?php
+$repEntryGroups = [];
+if (in_array($type, ['treasury', 'expenses'], true)) {
+    $repEntryCodes = entry_codes_tree();
+    $repLabels = rep_account_labels(array_column($repEntryCodes, 'id'));
+    foreach ($repEntryCodes as $ec) {
+        $root = $repLabels[(int) $ec['id']]['root_name'] ?? (string) $ec['name'];
+        $repEntryGroups[$root][] = $ec;
+    }
+}
+?>
 <?php if ($type !== 'stocktake' && $type !== 'noprice'): ?>
 <form method="get" class="filter-bar">
     <input type="hidden" name="type" value="<?= e($type) ?>">
@@ -674,12 +685,16 @@ require_once __DIR__ . '/includes/header.php';
     <input type="date" name="from" value="<?= e($from) ?>">
     <label>إلى</label>
     <input type="date" name="to" value="<?= e($to) ?>">
-    <?php if ($type === 'treasury'): $repEntryCodes = entry_codes_list(); $selEntry = $_GET['entry_code'] ?? ''; ?>
+    <?php if ($type === 'treasury'): $selEntry = $_GET['entry_code'] ?? ''; ?>
         <label>القيد</label>
         <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
             <option value="">كل القيود</option>
-            <?php foreach ($repEntryCodes as $ec): ?>
-                <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['name']) ?></option>
+            <?php foreach ($repEntryGroups as $root => $codes): ?>
+                <optgroup label="<?= e($root) ?>">
+                    <?php foreach ($codes as $ec): ?>
+                        <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
+                    <?php endforeach; ?>
+                </optgroup>
             <?php endforeach; ?>
         </select>
         <?php $repCostBranches = cost_branches_list(); $selCostBranch = $_GET['cost_branch'] ?? ''; ?>
@@ -696,7 +711,6 @@ require_once __DIR__ . '/includes/header.php';
         $selCostBranch   = $_GET['cost_branch'] ?? '';
         $repTreasuries   = $pdo->query("SELECT id, name FROM treasuries WHERE is_active = 1 ORDER BY name")->fetchAll();
         $selTreasury     = $_GET['treasury'] ?? '';
-        $repEntryCodes   = entry_codes_list();
         $selEntry        = $_GET['entry_code'] ?? '';
         $repUsers        = $pdo->query("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name")->fetchAll();
         $selUser         = $_GET['user'] ?? '';
@@ -718,8 +732,12 @@ require_once __DIR__ . '/includes/header.php';
         <label>القيد</label>
         <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
             <option value="">كل القيود</option>
-            <?php foreach ($repEntryCodes as $ec): ?>
-                <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['name']) ?></option>
+            <?php foreach ($repEntryGroups as $root => $codes): ?>
+                <optgroup label="<?= e($root) ?>">
+                    <?php foreach ($codes as $ec): ?>
+                        <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
+                    <?php endforeach; ?>
+                </optgroup>
             <?php endforeach; ?>
         </select>
         <label>بواسطة</label>

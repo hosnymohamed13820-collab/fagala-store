@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/reports_lib.php';
 
 /**
  * جلب قائمة الفروع النشطة التي لها إدارة مالية
@@ -109,6 +110,13 @@ function custody_get_branch_custody_data(PDO $pdo, int $branchId, array $allBran
         );
         $e->execute([$cid]);
         $expenses = $e->fetchAll();
+        $accountLabels = rep_account_labels(array_column($expenses, 'entry_code_id'));
+        foreach ($expenses as &$expense) {
+            $labels = $accountLabels[(int) $expense['entry_code_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+            $expense['account_root_name'] = $labels['root_name'];
+            $expense['account_leaf_name'] = $labels['leaf_name'];
+        }
+        unset($expense);
 
         $o = $pdo->prepare('SELECT * FROM disbursement_orders WHERE branch_id=? AND order_date >= ? ORDER BY id DESC');
         $o->execute([$branchId, $custody['period_start']]);
@@ -175,6 +183,13 @@ function custody_get_employee_custody_data(PDO $pdo, int $selectedEmpId, array $
             );
             $stExp->execute([(int)$empCustody['id']]);
             $empExpenses = $stExp->fetchAll();
+            $accountLabels = rep_account_labels(array_column($empExpenses, 'entry_code_id'));
+            foreach ($empExpenses as &$expense) {
+                $labels = $accountLabels[(int) $expense['entry_code_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+                $expense['account_root_name'] = $labels['root_name'];
+                $expense['account_leaf_name'] = $labels['leaf_name'];
+            }
+            unset($expense);
 
             $stOrd = $pdo->prepare(
                 "SELECT * FROM disbursement_orders

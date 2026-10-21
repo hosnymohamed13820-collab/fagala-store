@@ -53,6 +53,48 @@ function rep_account_family_ids(int $rootId): array
 }
 
 /**
+ * أسماء رأس القيد والقيد لكل حساب مطلوب. بنقرأ الشجرة كلها مرة واحدة،
+ * وبنمشي للأب الأعلى في الذاكرة حتى لو الحساب أعمق من مستويين.
+ *
+ * @param int[] $accountIds
+ * @return array<int, array{root_name: ?string, leaf_name: ?string}>
+ */
+function rep_account_labels(array $accountIds): array
+{
+    static $accounts = null;
+    static $resolved = [];
+    if ($accounts === null) {
+        $accounts = [];
+        foreach (db()->query('SELECT id, parent_id, name FROM accounts') as $account) {
+            $accounts[(int) $account['id']] = $account;
+        }
+    }
+
+    $result = [];
+    foreach ($accountIds as $rawId) {
+        $id = (int) $rawId;
+        if (!isset($resolved[$id])) {
+            $resolved[$id] = ['root_name' => null, 'leaf_name' => null];
+            if (isset($accounts[$id])) {
+                $rootId = $id;
+                $seen = [$id => true];
+                while (($parentId = (int) ($accounts[$rootId]['parent_id'] ?? 0)) > 0
+                    && isset($accounts[$parentId]) && !isset($seen[$parentId])) {
+                    $rootId = $parentId;
+                    $seen[$rootId] = true;
+                }
+                $resolved[$id] = [
+                    'root_name' => (string) $accounts[$rootId]['name'],
+                    'leaf_name' => $rootId === $id ? null : (string) $accounts[$id]['name'],
+                ];
+            }
+        }
+        $result[$id] = $resolved[$id];
+    }
+    return $result;
+}
+
+/**
  * بيانات كل تقرير: بترجّع ['title','headers'=>[],'rows'=>[[]],'totals'=>[]]
  */
 function build_report(PDO $pdo, string $type, string $from, string $to): array
@@ -116,7 +158,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $sqlT =
                 "SELECT je.entry_date, t.name AS treasury, je.description, je.debit, je.credit, je.running_balance,
                         u.full_name AS by_name,
-                        COALESCE(ja.name, ec.name) AS entry_code_name,
+                        COALESCE(je.account_id, tm.entry_code_id) AS account_id,
                         je.notes,
                         cb.name AS cost_branch_name,
                         tfrom.name AS transfer_from_name,
@@ -159,10 +201,14 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $sqlT .= " ORDER BY je.id DESC";
             $st = $pdo->prepare($sqlT);
             $st->execute($paramsT);
+            $data = $st->fetchAll(PDO::FETCH_ASSOC);
+            $accountLabels = rep_account_labels(array_column($data, 'account_id'));
             $rows=[]; $rowPaths=[]; $tDr=0; $tCr=0;
-            foreach ($st as $r) {
+            foreach ($data as $r) {
                 $tDr+=(float)$r['debit']; $tCr+=(float)$r['credit'];
-                $rows[]=[$r['entry_date'], $r['treasury'], $r['description'], $r['entry_code_name'] ?? '—',
+                $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+                $rows[]=[$r['entry_date'], $r['treasury'], $r['description'],
+                    $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
                     $r['cost_branch_name'] ?? '—',
                     number_format((float)$r['debit'],2), number_format((float)$r['credit'],2),
                     number_format((float)$r['running_balance'],2), $r['by_name'] ?? '—',
@@ -172,16 +218,16 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // notes_col = رقم عمود الملاحظات. الجدول بيقصّه بـ ellipsis
             // ويحط النص الكامل في tooltip، والتصدير بياخده كامل من $rows.
             return ['title'=>'تقرير الخزينة',
-                'headers'=>['التاريخ','الخزينة','البيان','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>9,
+                'headers'=>['التاريخ','الخزينة','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>10,
                 // الصافي = مدين − دائن (مش العكس). القيمة السالبة معناها
                 // دخل أكتر من اللي خرج.
                 'sum_cards'=>[
-                    ['label'=>'إجمالي مدين', 'col'=>5],
-                    ['label'=>'إجمالي دائن', 'col'=>6],
-                    ['label'=>'الصافي',      'cols'=>[5], 'minus'=>[6], 'signed'=>true],
+                    ['label'=>'إجمالي مدين', 'col'=>6],
+                    ['label'=>'إجمالي دائن', 'col'=>7],
+                    ['label'=>'الصافي',      'cols'=>[6], 'minus'=>[7], 'signed'=>true],
                 ],
-                'totals'=>['','','','','إجمالي:','مدين '.number_format($tDr,2),'دائن '.number_format($tCr,2),'','','']];
+                'totals'=>['','','','','','إجمالي:','مدين '.number_format($tDr,2),'دائن '.number_format($tCr,2),'','','']];
 
         case 'custody':
             // فلتر الفرع: أزرار فوق التقرير. الفترة فلتر مستقل تماماً —
@@ -206,8 +252,8 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
                 if (!$trId) {
                     return ['title'=>'كشف عهدة: '.$branchName,
-                        'headers'=>['التاريخ','البيان','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                        'rows'=>[], 'totals'=>[], 'notes_col'=>7,
+                        'headers'=>['التاريخ','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                        'rows'=>[], 'totals'=>[], 'notes_col'=>8,
                         'note'=>'الفرع ده مالوش خزينة عهدة.'];
                 }
 
@@ -215,7 +261,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     "SELECT je.entry_date, je.description, je.debit, je.credit,
                             je.running_balance, je.notes,
                             u.full_name AS by_name,
-                            COALESCE(ja.name, ec.name) AS entry_code_name,
+                            COALESCE(je.account_id, tm.entry_code_id) AS account_id,
                             tfrom.name AS transfer_from_name,
                             tto.name AS transfer_to_name
                        FROM journal_entries je
@@ -233,13 +279,16 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                       ORDER BY je.entry_date, je.id"
                 );
                 $st->execute([(int)$trId, $from, $to]);
+                $data = $st->fetchAll(PDO::FETCH_ASSOC);
+                $accountLabels = rep_account_labels(array_column($data, 'account_id'));
 
                 $rows = []; $rowPaths = []; $tDr = 0; $tCr = 0;
-                foreach ($st as $r) {
+                foreach ($data as $r) {
                     $tDr += (float)$r['debit'];
                     $tCr += (float)$r['credit'];
+                    $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
                     $rows[] = [$r['entry_date'], $r['description'],
-                        $r['entry_code_name'] ?? '—',
+                        $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
                         (float)$r['debit']  > 0 ? number_format((float)$r['debit'],2)  : '—',
                         (float)$r['credit'] > 0 ? number_format((float)$r['credit'],2) : '—',
                         number_format((float)$r['running_balance'],2),
@@ -251,13 +300,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // الكروت بتتحسب من نفس الصفوف الظاهرة، فبتتغيّر مع
                 // التاريخ والفرع وأي فلتر على الجدول.
                 return ['title'=>'كشف عهدة: '.$branchName,
-                    'headers'=>['التاريخ','البيان','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>7,
+                    'headers'=>['التاريخ','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>8,
                     'sum_cards'=>[
-                        ['label'=>'إجمالي المصروف', 'col'=>3],
-                        ['label'=>'إجمالي المستلم', 'col'=>4],
+                        ['label'=>'إجمالي المصروف', 'col'=>4],
+                        ['label'=>'إجمالي المستلم', 'col'=>5],
                     ],
-                    'totals'=>['','','إجمالي:','مدين '.number_format($tDr,2),
+                    'totals'=>['','','','إجمالي:','مدين '.number_format($tDr,2),
                                'دائن '.number_format($tCr,2),'','','']];
             }
 
@@ -295,7 +344,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $revSelect = $hasRevCols ? ', tm.reversed_at' : ', NULL AS reversed_at';
             $sqlExp =
                 "SELECT tm.movement_date, t.name AS treasury, tm.amount,
-                        COALESCE(a.name, '— بدون قيد —') AS entry_name,
+                        tm.entry_code_id AS account_id,
                         cb.name AS cost_branch, u.full_name AS by_name,
                         tm.description, tm.notes{$revSelect}
                    FROM treasury_movements tm
@@ -329,9 +378,11 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $sqlExp .= " ORDER BY tm.movement_date DESC, tm.id DESC";
             $st = $pdo->prepare($sqlExp);
             $st->execute($paramsExp);
+            $data = $st->fetchAll(PDO::FETCH_ASSOC);
+            $accountLabels = rep_account_labels(array_column($data, 'account_id'));
 
             $rows = []; $reversedRows = []; $tExp = 0.0;
-            foreach ($st as $i => $r) {
+            foreach ($data as $i => $r) {
                 $isRev = !empty($r['reversed_at']);
                 if (!$isRev) {
                     $tExp += (float) $r['amount'];
@@ -342,21 +393,22 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 if ($isRev) {
                     $desc .= ' (اتعكس)';
                 }
-                $rows[] = [$r['movement_date'], $r['entry_name'],
+                $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+                $rows[] = [$r['movement_date'], $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
                     $desc, $r['treasury'],
                     $r['cost_branch'] ?? '—',
                     number_format((float)$r['amount'], 2),
                     $r['by_name'] ?? '—', (string)($r['notes'] ?? '')];
             }
             return ['title'=>'تقرير المصاريف',
-                'headers'=>['التاريخ','القيد','البيان','الخزينة','الفرع','المبلغ','بواسطة','الملاحظات'],
-                'rows'=>$rows, 'notes_col'=>7,
+                'headers'=>['التاريخ','رأس القيد','القيد','البيان','الخزينة','الفرع','المبلغ','بواسطة','الملاحظات'],
+                'rows'=>$rows, 'notes_col'=>8,
                 'reversed_rows'=>$reversedRows,
                 'sum_cards'=>[
-                    ['label'=>'إجمالي المصاريف', 'col'=>5],
-                    ['label'=>'عدد الحركات',     'col'=>5, 'count'=>true],
+                    ['label'=>'إجمالي المصاريف', 'col'=>6],
+                    ['label'=>'عدد الحركات',     'col'=>6, 'count'=>true],
                 ],
-                'totals'=>['','','','','إجمالي:', number_format($tExp,2),'','']];
+                'totals'=>['','','','','','إجمالي:', number_format($tExp,2),'','']];
 
         case 'jtotals':
             // إجماليات القيود — مجمّعة على مستوى الحساب (القيد) + الفرع.
@@ -388,30 +440,34 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                   ORDER BY (SUM(je.debit) + SUM(je.credit)) DESC"
             );
             $st->execute([$from, $to]);
+            $data = $st->fetchAll(PDO::FETCH_ASSOC);
+            $accountLabels = rep_account_labels(array_column($data, 'acc_id'));
 
             $rows = []; $rowIds = []; $tDr = 0; $tCr = 0; $tCnt = 0;
-            foreach ($st as $r) {
+            foreach ($data as $r) {
                 $dr = (float)$r['dr']; $cr = (float)$r['cr'];
                 $tDr += $dr; $tCr += $cr; $tCnt += (int)$r['cnt'];
                 // عمود «إجمالي الحركة» (مدين+دائن) اتشال — ماكانش بيقول
                 // حاجة مفيدة، ومجموع المدين والدائن مع بعض رقم بلا معنى
                 // محاسبي. الصافي = مدين − دائن (اتصلّح، كان العكس).
-                $rows[]   = [$r['entry_name'], $r['branch_name'] ?? '—', (int)$r['cnt'],
+                $labels = $accountLabels[(int) $r['acc_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
+                $rows[]   = [$labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
+                    $r['branch_name'] ?? '—', (int)$r['cnt'],
                     number_format($dr,2), number_format($cr,2),
                     number_format($dr - $cr, 2)];
                 // الـid الحقيقي للحساب والفرع للأكورديون
                 $rowIds[] = ['acc' => (int)$r['acc_id'], 'branch' => (int)$r['branch_id']];
             }
             return ['title'=>'إجماليات القيود',
-                'headers'=>['القيد','الفرع','عدد القيود','مدين','دائن','الصافي'],
+                'headers'=>['رأس القيد','القيد','الفرع','عدد القيود','مدين','دائن','الصافي'],
                 'rows'=>$rows, 'row_ids'=>$rowIds, 'accordion'=>'je_details',
                 'sum_cards'=>[
-                    ['label'=>'إجمالي مدين', 'col'=>3],
-                    ['label'=>'إجمالي دائن', 'col'=>4],
-                    ['label'=>'الصافي',      'col'=>5, 'signed'=>true],
-                    ['label'=>'عدد القيود',  'col'=>2, 'int'=>true],
+                    ['label'=>'إجمالي مدين', 'col'=>4],
+                    ['label'=>'إجمالي دائن', 'col'=>5],
+                    ['label'=>'الصافي',      'col'=>6, 'signed'=>true],
+                    ['label'=>'عدد القيود',  'col'=>3, 'int'=>true],
                 ],
-                'totals'=>['إجمالي:', '', $tCnt, number_format($tDr,2), number_format($tCr,2),
+                'totals'=>['إجمالي:', '', '', $tCnt, number_format($tDr,2), number_format($tCr,2),
                            number_format($tDr-$tCr,2)]];
 
         case 'deficits':
