@@ -13,7 +13,6 @@
  *   - cashier_get_shift_edit_badges(): بادجات آخر تعديل للورديات المعروضة
  *   - cashier_get_seq_issues(): مشاكل تسلسل الفواتير المعينة للمستخدم
  *   - cashier_calc_today_totals(): حساب إجماليات الكاش والفيزا والإنستاباي والفرق
- *   - cashier_get_shift_detail(): جلب بيانات وتفاصيل وردية محددة للقراءة والمعاينة
  */
 declare(strict_types=1);
 
@@ -260,46 +259,6 @@ function cashier_calc_today_totals(array $todayShifts): array {
         'collected_total'  => $sumColl,
         'visa_insta_total' => $sumVI,
         'difference'       => $sumDiff,
-    ];
-}
-
-/**
- * جلب تفاصيل وردية للقراءة والمعاينة (شاشة التعديل والمراجعة).
- */
-function cashier_get_shift_detail(PDO $pdo, int $shiftId): ?array {
-    $st = $pdo->prepare(
-        "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-         FROM shifts s
-         JOIN users u ON u.id = s.user_id
-         JOIN branches b ON b.id = s.branch_id
-         WHERE s.id = ? LIMIT 1"
-    );
-    $st->execute([$shiftId]);
-    $shift = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$shift) {
-        return null;
-    }
-
-    // جلب سطور الدفع
-    $lines = [];
-    try {
-        $lineSt = $pdo->prepare("SELECT * FROM shift_lines WHERE shift_id = ? ORDER BY id ASC");
-        $lineSt->execute([$shiftId]);
-        $lines = $lineSt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable) {}
-
-    // جلب فئات الكاش
-    $denoms = [];
-    try {
-        $dSt = $pdo->prepare("SELECT * FROM shift_denominations WHERE shift_id = ?");
-        $dSt->execute([$shiftId]);
-        $denoms = $dSt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable) {}
-
-    return [
-        'shift' => $shift,
-        'lines' => $lines,
-        'denominations' => $denoms,
     ];
 }
 

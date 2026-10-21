@@ -8,7 +8,6 @@
  *   ?part=archive[&branch=...]                 ← تقفيلات الأرشيف المعلقة
  *   ?part=rejected                             ← التقفيلات المرفوضة القابلة للتعديل
  *   ?part=seq_issues                           ← مشاكل تسلسل الفواتير المعينة للمستخدم
- *   ?part=shift_detail&shift_id=ID             ← تفاصيل وردية للقراءة والمعاينة (شاشة التعديل)
  *   ?part=branches                             ← الفروع المتاحة والمسموح برؤيتها
  *   ?part=all[&branch=...]                     ← الشجرة الكاملة
  */
@@ -34,7 +33,7 @@ $u    = current_user();
 $uid  = (int) $u['id'];
 $part = (string) ($_GET['part'] ?? 'today');
 
-$allowedParts = ['today', 'archive', 'rejected', 'seq_issues', 'shift_detail', 'branches', 'all'];
+$allowedParts = ['today', 'archive', 'rejected', 'seq_issues', 'branches', 'all'];
 if (!in_array($part, $allowedParts, true)) {
     api_fail('الجزء المطلوب غير معروف', 400, 'bad_request');
 }
@@ -112,22 +111,6 @@ try {
                 'seq_issues' => $mySeqIssues,
                 'count'      => count($mySeqIssues),
             ]);
-
-        case 'shift_detail':
-            $shiftId = (int) ($_GET['shift_id'] ?? $_GET['edit_shift'] ?? 0);
-            if ($shiftId <= 0) {
-                api_fail('معرف الوردية مطلوب', 400, 'bad_request');
-            }
-            $detail = cashier_get_shift_detail($pdo, $shiftId);
-            if ($detail === null) {
-                api_fail('الوردية غير موجودة', 404, 'not_found');
-            }
-            // حماية النطاق: التحقق من أن الفرع مسموح به
-            $shiftBranchId = (int) ($detail['shift']['branch_id'] ?? 0);
-            if (!in_array($shiftBranchId, $allowedBranches, true) && (int)($detail['shift']['user_id'] ?? 0) !== $uid) {
-                api_fail('ليس لديك صلاحية لعرض هذه الوردية', 403, 'forbidden');
-            }
-            api_ok($detail);
 
         case 'all':
             $todayShifts   = cashier_get_today_shifts($pdo, $allowedBranches, $filterBranch, $isOwner, $bizDateStr);

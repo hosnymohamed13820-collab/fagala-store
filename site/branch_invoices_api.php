@@ -73,7 +73,7 @@ switch ($part) {
         $statusMap = br_inv_status_map($branchId);
         $invoices = br_inv_list_data($branchId, $distData, $statusMap);
         api_ok(br_inv_strip_supplier([
-            'invoices' => $invoices,
+            'invoices' => br_inv_public_invoice_rows($invoices),
             'count'    => count($invoices),
         ]));
 
@@ -89,6 +89,7 @@ switch ($part) {
         if ($detail === null) {
             api_fail('الفاتورة غير موجودة أو ليس لديك صلاحية لعرضها', 403, 'forbidden');
         }
+        $detail['header'] = br_inv_public_invoice_rows([$detail['header']])[0];
         api_ok(br_inv_strip_supplier($detail));
 
     case 'item_search':

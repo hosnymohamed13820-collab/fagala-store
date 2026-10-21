@@ -736,6 +736,17 @@ function br_inv_invoice_detail(int $branchId, string $openId, ?string $openSuf, 
     ];
 }
 
+/** Only fields used by the branch and Ashraqa invoice pages leave the API. */
+function br_inv_public_invoice_rows(array $invoices): array
+{
+    $fields = array_fill_keys([
+        'dist_id', 'inv_id', 'suffix', 'inv_no', 'invoice_date',
+        'ash_items_count', 'ash_total',
+    ], true);
+
+    return array_map(static fn(array $invoice): array => array_intersect_key($invoice, $fields), $invoices);
+}
+
 /**
  * إزالة أي مفتاح يبدأ بـ 'supplier' من المصفوفة بشكل متكرر
  * لمنع تسريب بيانات الموردين في واجهات برمجة الفروع وإشراقة (بريف ١٦٢ مكرر).

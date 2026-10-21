@@ -49,7 +49,14 @@ $part = (string) ($_GET['part'] ?? '');
 switch ($part) {
     case 'search':
         api_method('GET');
-        api_ok(['rows' => book_orders_search((string) ($_GET['term'] ?? ''))]);
+        $rows = book_orders_search((string) ($_GET['term'] ?? ''));
+        if (!is_owner()) {
+            foreach ($rows as &$row) {
+                unset($row['cost']);
+            }
+            unset($row);
+        }
+        api_ok(['rows' => $rows]);
 
     default:
         api_fail('جزء غير معروف', 400, 'bad_request');
