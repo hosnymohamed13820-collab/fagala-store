@@ -13,135 +13,38 @@
 require_once __DIR__ . '/auth.php';
 require_permission('dashboard');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/dashboard_lib.php';
 
 $pdo = db();
 
 // ===== الفترة (افتراضي: اليوم) =====
-$from = $_GET['from'] ?? date('Y-m-d');
-$to   = $_GET['to']   ?? date('Y-m-d');
-if (!strtotime($from)) $from = date('Y-m-d');
-if (!strtotime($to))   $to   = date('Y-m-d');
-$isToday = ($from === date('Y-m-d') && $to === date('Y-m-d'));
+$periodInfo = dashboard_parse_period($_GET['from'] ?? null, $_GET['to'] ?? null);
+$from       = $periodInfo['from'];
+$to         = $periodInfo['to'];
+$isToday    = $periodInfo['is_today'];
 
 // ===== أرصدة الخزائن =====
-$treasuries = $pdo->query(
-    "SELECT t.*, b.name AS branch_name
-     FROM treasuries t LEFT JOIN branches b ON b.id = t.branch_id
-     WHERE t.is_active = 1
-     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody','employee_custody'), t.name"
-)->fetchAll();
+$treData           = dashboard_get_treasuries($pdo);
+$treasuries        = $treData['treasuries'];
+$centralTreasuries = $treData['central'];
+$mainTotal         = $treData['main_total'];
+$realCash          = $treData['real_cash'];
 
-$centralTreasuries = array_filter($treasuries, fn($t) => !in_array($t['type'], ['branch_custody', 'employee_custody'], true));
-// الخزينة الرئيسية = إجمالي الخزائن الفرعية (نظرة كلية، مش خزينة فعلية)
-$mainTotal = 0.0;
-// «خزينة الكاش الفعلي» = الخزينة الرئيسية + خزينة الكاش، وبس.
-// بتتحسب من نفس الصفوف اللي اتجابت فوق — من غير أي استعلام زيادة.
-$realCash  = 0.0;
-foreach ($centralTreasuries as $t) {
-    $mainTotal += (float) $t['balance'];
-    if (in_array($t['type'], ['main', 'cash'], true)) {
-        $realCash += (float) $t['balance'];
-    }
-}
-
-// ===== عهد الفروع (للبارات) =====
-$custodies = $pdo->query(
-    "SELECT bc.*, b.name AS branch_name, t.balance AS treasury_balance
-     FROM branch_custody bc
-     JOIN branches b ON b.id = bc.branch_id
-     JOIN treasuries t ON t.id = bc.custody_treasury_id
-     WHERE bc.status = 'open' AND bc.employee_id IS NULL"
-)->fetchAll();
-
-$allBranchesWithCustody = $pdo->query(
-    "SELECT b.id, b.name, t.id AS treasury_id, t.balance
-     FROM branches b
-     JOIN treasuries t ON t.branch_id = b.id AND t.type='branch_custody'
-     WHERE b.is_active = 1 AND b.has_finance = 1
-     ORDER BY b.name"
-)->fetchAll();
-
-$openByBranch = [];
-foreach ($custodies as $c) $openByBranch[(int)$c['branch_id']] = $c;
-
-$custodyBars = [];
-foreach ($allBranchesWithCustody as $br) {
-    $bid = (int) $br['id'];
-    $open = $openByBranch[$bid] ?? null;
-    if ($open) {
-        $opening = (float) $open['opening_balance'];
-        $balance = (float) $open['treasury_balance'];
-    } else {
-        $opening = 0.0; $balance = 0.0;
-    }
-    $pct = $opening > 0 ? max(0, min(100, ($balance / $opening) * 100)) : 0;
-    if ($opening <= 0)  $color = 'empty';
-    elseif ($pct <= 20) $color = 'red';
-    elseif ($pct < 50)  $color = 'orange';
-    else                $color = 'green';
-    $custodyBars[] = [
-        'name' => $br['name'], 'opening' => $opening, 'balance' => $balance,
-        'pct' => $pct, 'color' => $color,
-    ];
-}
-
-// ===== عهد الموظفين (المفتوحة فقط — تختفي فور الإقفال والاعتماد) =====
-$empCustodies = $pdo->query(
-    "SELECT bc.*, e.full_name AS employee_name, t.balance AS treasury_balance
-     FROM branch_custody bc
-     JOIN employees e ON e.id = bc.employee_id
-     JOIN treasuries t ON t.id = bc.custody_treasury_id
-     WHERE bc.status = 'open' AND bc.employee_id IS NOT NULL
-     ORDER BY e.full_name"
-)->fetchAll();
-
-$empCustodyBars = [];
-foreach ($empCustodies as $ec) {
-    $opening = (float) $ec['opening_balance'];
-    $balance = (float) $ec['treasury_balance'];
-    $pct = $opening > 0 ? max(0, min(100, ($balance / $opening) * 100)) : 0;
-    if ($opening <= 0)  $color = 'empty';
-    elseif ($pct <= 20) $color = 'red';
-    elseif ($pct < 50)  $color = 'orange';
-    else                $color = 'green';
-    $empCustodyBars[] = [
-        'name' => $ec['employee_name'], 'opening' => $opening, 'balance' => $balance,
-        'pct' => $pct, 'color' => $color,
-    ];
-}
+// ===== عهد الفروع وعهد الموظفين =====
+$custodyData    = dashboard_get_custodies($pdo);
+$custodyBars    = $custodyData['custody_bars'];
+$empCustodyBars = $custodyData['emp_custody_bars'];
 
 // ===== ملخص الفترة =====
-$salesStmt = $pdo->prepare(
-    "SELECT COALESCE(SUM(cash_total+visa_total+instapay_total),0)
-     FROM shifts WHERE status='approved' AND business_date BETWEEN ? AND ?"
-);
-$salesStmt->execute([$from, $to]);
-$totalSales = (float) $salesStmt->fetchColumn();
-
-$diffStmt = $pdo->prepare(
-    "SELECT COUNT(*) FROM shifts WHERE ABS(difference) > 0.001 AND business_date BETWEEN ? AND ?"
-);
-$diffStmt->execute([$from, $to]);
-$shiftsWithDiff = (int) $diffStmt->fetchColumn();
-
-$pendingReview = (int) $pdo->query(
-    "SELECT COUNT(*) FROM shifts WHERE status IN ('submitted','resubmitted')"
-)->fetchColumn();
-
-$upcomingPayments = (int) $pdo->query(
-    "SELECT COUNT(*) FROM supplier_payment_schedules
-     WHERE status='pending' AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)"
-)->fetchColumn();
+$sumData          = dashboard_get_summary($pdo, $from, $to);
+$totalSales       = $sumData['total_sales'];
+$shiftsWithDiff   = $sumData['shifts_with_diff'];
+$pendingReview    = $sumData['pending_review'];
+$upcomingPayments = $sumData['upcoming_payments'];
 
 // ===== حالة تقفيلات الفترة =====
-$periodShifts = $pdo->prepare(
-    "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-     FROM shifts s JOIN users u ON u.id=s.user_id JOIN branches b ON b.id=s.branch_id
-     WHERE s.business_date BETWEEN ? AND ?
-     ORDER BY s.id DESC LIMIT 10"
-);
-$periodShifts->execute([$from, $to]);
-$periodShifts = $periodShifts->fetchAll();
+$shiftsData   = dashboard_get_shifts($pdo, $from, $to);
+$periodShifts = $shiftsData['shifts'];
 
 $typeIcons = [
     'cash'=>'ti-cash','visa'=>'ti-credit-card','instapay'=>'ti-device-mobile',

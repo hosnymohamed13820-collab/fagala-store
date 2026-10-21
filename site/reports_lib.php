@@ -5,6 +5,9 @@
  */
 declare(strict_types=1);
 
+require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sensitive_lib.php';
+
 /**
  * جلب معرّف الحساب المختار وجميع الحسابات المتفرعة منه (النسل) من شجرة الحسابات.
  * تضمن إن اختيار رأس قيد يطابق حركات كل أبنائه وتفرعاته.

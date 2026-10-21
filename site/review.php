@@ -12,17 +12,14 @@ require_permission('review');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/push_lib.php';
 require_once __DIR__ . '/sms_permits_lib.php';
+require_once __DIR__ . '/review_lib.php';
 
 $pdo  = db();
 $uid  = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
 
 // فحص الورديات المرجوعة اللي عدّت مهلتها (٤٨ ساعة) آلياً
-try {
-    shift_returns_expire($pdo);
-} catch (Throwable $e) {
-    error_log("shift_returns_expire in review: " . $e->getMessage());
-}
+review_expire_shift_returns($pdo);
 
 $denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
 
@@ -273,252 +270,58 @@ if (isset($_SESSION['flash'])) {
 }
 
 // الورديات المنتظرة للمراجعة
-$pending = $pdo->query(
-    "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-     FROM shifts s
-     JOIN users u ON u.id = s.user_id
-     JOIN branches b ON b.id = s.branch_id
-     WHERE s.status IN ('submitted','resubmitted')
-     ORDER BY s.id DESC"
-)->fetchAll();
+$pending = review_get_pending_shifts($pdo);
 
-// ===== تفاصيل الورديات المنتظرة — للمقارنة التفصيلية في البوب أب =====
-// 🔴 استعلامين مجمّعين بس. أي prepare جوّه foreach هنا = غلط (RULES §٠/١).
-$empCash  = [];   // [shift_id][denomination] => count
-$empLines = [];   // [shift_id][method][] => ['no'=>..,'ref'=>..,'amt'=>..]
-if ($pending) {
-    $ids = array_column($pending, 'id');
-    $in  = implode(',', array_fill(0, count($ids), '?'));
-
-    $q = $pdo->prepare(
-        "SELECT shift_id, denomination, `count`
-           FROM shift_cash
-          WHERE shift_id IN ($in)"
-    );
-    $q->execute($ids);
-    foreach ($q as $r) {
-        $empCash[(int)$r['shift_id']][(string)(float)$r['denomination']] = (int)$r['count'];
-    }
-
-    $q = $pdo->prepare(
-        "SELECT shift_id, method, line_no, reference, amount
-           FROM shift_payment_lines
-          WHERE shift_id IN ($in)
-          ORDER BY shift_id, method, line_no"
-    );
-    $q->execute($ids);
-    foreach ($q as $r) {
-        $empLines[(int)$r['shift_id']][$r['method']][] = [
-            'no'  => (int)$r['line_no'],
-            'ref' => (string)($r['reference'] ?? ''),
-            'amt' => (float)$r['amount'],
-        ];
-    }
-}
+// تفاصيل الورديات المنتظرة للمقارنة
+$shiftDetails = review_get_pending_shift_details($pdo, $pending);
+$empCash  = $shiftDetails['empCash'];
+$empLines = $shiftDetails['empLines'];
 
 // السجل (آخر 50 وردية تمت مراجعتها)
-$history = $pdo->query(
-    "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-     FROM shifts s
-     JOIN users u ON u.id = s.user_id
-     JOIN branches b ON b.id = s.branch_id
-     WHERE s.status IN ('approved','rejected')
-     ORDER BY s.id DESC LIMIT 50"
-)->fetchAll();
+$history = review_get_history_shifts($pdo, 50);
 
-// جلب بادج «آخر تعديل» للورديات المعروضة باستعلام مجمّع واحد
+// جلب بادج «آخر تعديل» للورديات المعروضة
 $allReviewShiftIds = [];
 foreach ($pending as $ps) $allReviewShiftIds[] = (int)$ps['id'];
 foreach ($history as $hs) $allReviewShiftIds[] = (int)$hs['id'];
-$allReviewShiftIds = array_values(array_unique(array_filter($allReviewShiftIds)));
+$shiftEditBadges = review_get_shift_edit_badges($pdo, $allReviewShiftIds);
 
-$shiftEditBadges = [];
-if (!empty($allReviewShiftIds)) {
-    try {
-        $phBadge = implode(',', array_fill(0, count($allReviewShiftIds), '?'));
-        $stBadge = $pdo->prepare("
-            SELECT sel.shift_id, sel.created_at, u.full_name AS editor_name
-            FROM shift_edit_log sel
-            JOIN (
-                SELECT shift_id, MAX(id) AS max_id
-                FROM shift_edit_log
-                WHERE shift_id IN ($phBadge)
-                GROUP BY shift_id
-            ) latest ON latest.max_id = sel.id
-            JOIN users u ON u.id = sel.user_id
-        ");
-        $stBadge->execute($allReviewShiftIds);
-        foreach ($stBadge as $br) {
-            $shiftEditBadges[(int)$br['shift_id']] = [
-                'name' => $br['editor_name'],
-                'time' => date('H:i', strtotime($br['created_at'])),
-            ];
-        }
-    } catch (Throwable $ex) {
-        // لو جدول shift_edit_log مش موجود ← مفيش بادج ومفيش خطأ
-    }
-}
+// عهد الفروع والموظفين المقدّمة للمراجعة
+$pendingCustody = review_get_pending_custody($pdo);
+$custodyHistory = review_get_history_custody($pdo, 50);
 
-// ===== عهد الفروع والموظفين المقدّمة للمراجعة =====
-// استعلام واحد جايب اسم الفرع واسم الموظف واسم اللي قدّم — مفيش prepare جوّه أي حلقة.
-$pendingCustody = $pdo->query(
-    "SELECT bc.*, b.name AS branch_name, u.full_name AS submitted_by_name,
-            e.full_name AS employee_name
-       FROM branch_custody bc
-       LEFT JOIN branches b ON b.id = bc.branch_id
-       LEFT JOIN users u ON u.id = bc.submitted_by
-       LEFT JOIN employees e ON e.id = bc.employee_id
-      WHERE bc.status = 'pending_review'
-      ORDER BY bc.id DESC"
-)->fetchAll();
+// أذونات إنستا باي المقدّمة للمراجعة
+$permitsData = review_get_permits($pdo, 50);
+$pendingPermits  = $permitsData['pending'];
+$reviewedPermits = $permitsData['reviewed'];
 
-// 🔴 `reviewed_at IS NOT NULL` مش زيادة — هي أهم شرط في الاستعلام ده.
-//    العهد اللي اتقفلت **قبل** الترقية حالتها `closed` و`reviewed_at` فيها
-//    NULL. من غير الشرط ده هتظهر في السجل كأن حد راجعها، وهي أصلاً اتقفلت
-//    بالنظام القديم اللي كان بيقفل ويعمل القيد بضغطة واحدة.
-$custodyHistory = $pdo->query(
-    "SELECT bc.*, b.name AS branch_name, u.full_name AS reviewer_name,
-            e.full_name AS employee_name
-       FROM branch_custody bc
-       LEFT JOIN branches b ON b.id = bc.branch_id
-       LEFT JOIN users u ON u.id = bc.reviewed_by
-       LEFT JOIN employees e ON e.id = bc.employee_id
-      WHERE bc.status IN ('closed','rejected') AND bc.reviewed_at IS NOT NULL
-      ORDER BY bc.reviewed_at DESC LIMIT 50"
-)->fetchAll();
+// قواميس الأسماء للعرض والتحليل
+$dictionaries = review_get_name_dictionaries($pdo);
+$allTreasuries = $dictionaries['treasuries'];
+$allAccounts   = $dictionaries['accounts'];
+$allSuppliers  = $dictionaries['suppliers'];
+$allEmployees  = $dictionaries['employees'];
+$allBranches   = $dictionaries['branches'];
 
-// ===== أذونات إنستا باي المقدّمة للمراجعة =====
-// try: لو local/upgrade_sms_permits.sql لسه ماتشغّلش على السيرفر، الصفحة ماتقعش — التاب يبقى فاضي بس.
-$pendingPermits = [];
-$reviewedPermits = [];
-try {
-    $pendingPermits = $pdo->query(
-        "SELECT p.*, s.sender, s.body, s.received_at AS sms_received_at,
-                u_cr.full_name AS creator_name
-           FROM sms_permits p
-           JOIN sms_inbox s ON s.id = p.sms_id
-           LEFT JOIN users u_cr ON u_cr.id = p.created_by
-          WHERE p.status IN ('pending', 'approving')
-          ORDER BY p.id DESC"
-    )->fetchAll(PDO::FETCH_ASSOC);
+// الفروع المتاحة للاختيار
+$reviewBranches = review_get_branches($pdo);
 
-    $reviewedPermits = $pdo->query(
-        "SELECT p.*, s.sender, s.body, s.received_at AS sms_received_at,
-                u_cr.full_name AS creator_name,
-                u_rv.full_name AS reviewer_name
-           FROM sms_permits p
-           JOIN sms_inbox s ON s.id = p.sms_id
-           LEFT JOIN users u_cr ON u_cr.id = p.created_by
-           LEFT JOIN users u_rv ON u_rv.id = p.reviewed_by
-          WHERE p.status IN ('approved', 'rejected')
-          ORDER BY p.reviewed_at DESC, p.id DESC
-          LIMIT 50"
-    )->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    error_log('sms_permits: ' . $e->getMessage());
-}
-
-// قواميس الأسماء للعرض والتحليل (استعلام واحد لكل جدول بدون prepare جوه حلقة)
-$allTreasuries = $pdo->query("SELECT id, name FROM treasuries")->fetchAll(PDO::FETCH_KEY_PAIR);
-$allAccounts   = $pdo->query("SELECT id, name FROM accounts")->fetchAll(PDO::FETCH_KEY_PAIR);
-$allSuppliers  = $pdo->query("SELECT id, name FROM suppliers")->fetchAll(PDO::FETCH_KEY_PAIR);
-$allEmployees  = $pdo->query("SELECT id, full_name FROM employees")->fetchAll(PDO::FETCH_KEY_PAIR);
-$allBranches   = $pdo->query("SELECT id, name FROM branches")->fetchAll(PDO::FETCH_KEY_PAIR);
-
-// الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
-try {
-    $reviewBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
-} catch (Throwable $e) {
-    // استرجاع آمن قبل تطبيق ملف الترقية upgrade_has_sales.sql
-    $reviewBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
-}
-
-// حساب أعداد المعلق لكل فرع من المصفوفات المتحملة أصلاً (مفيش استعلام زيادة)
-$reviewBranchCounts = [];
-foreach ($pending as $s) {
-    $bid = (int)$s['branch_id'];
-    $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
-}
-foreach ($pendingCustody as $c) {
-    $bid = (int)$c['branch_id'];
-    $reviewBranchCounts[$bid] = ($reviewBranchCounts[$bid] ?? 0) + 1;
-}
-$pendingInstapayCount = 0;
-foreach ($pendingPermits as $p) {
-    if ($p['status'] === 'pending') {
-        $pendingInstapayCount++;
-    }
-    $pl = json_decode((string)$p['payload'], true) ?: [];
-    $bId = (int)($pl['cost_branch_id'] ?? $pl['branch_id'] ?? 0);
-    if ($bId > 0) {
-        $reviewBranchCounts[$bId] = ($reviewBranchCounts[$bId] ?? 0) + 1;
-    }
-}
-$totalPendingReviewCount = count($pending) + count($pendingCustody) + $pendingInstapayCount;
+// حساب أعداد المعلق لكل فرع
+$countsData = review_calc_branch_counts($pending, $pendingCustody, $pendingPermits);
+$reviewBranchCounts      = $countsData['branch_counts'];
+$totalPendingReviewCount = $countsData['total_pending'];
+$pendingInstapayCount    = $countsData['pending_instapay_count'];
 
 // استعلام مشاكل تسلسل الورديات لو مسموح
-$seqIssues = [];
-$openSeqCount = 0;
-$seqUsersByBranch = [];
-$seqIssuesTableExists = false;
-if (can_edit_shift_date_branch()) {
-    try {
-        $seqIssues = $pdo->query(
-            "SELECT ssi.*, b.name AS branch_name, u_as.full_name AS assigned_name, u_res.full_name AS resolved_name
-             FROM shift_sequence_issues ssi
-             JOIN branches b ON b.id = ssi.branch_id
-             LEFT JOIN users u_as ON u_as.id = ssi.assigned_user_id
-             LEFT JOIN users u_res ON u_res.id = ssi.resolved_by
-             ORDER BY ssi.id DESC LIMIT 100"
-        )->fetchAll(PDO::FETCH_ASSOC);
-        $seqIssuesTableExists = true;
-        foreach ($seqIssues as $iss) {
-            if ($iss['status'] === 'open') {
-                $openSeqCount++;
-            }
-        }
-        $branchUsersRaw = $pdo->query(
-            "SELECT u.id, u.full_name, u.branch_id AS u_branch, e.branch_id AS e_branch
-             FROM users u
-             LEFT JOIN employees e ON e.user_id = u.id AND e.is_active = 1
-             WHERE u.is_active = 1
-             ORDER BY u.full_name ASC"
-        )->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($branchUsersRaw as $uRow) {
-            $uId = (int)$uRow['id'];
-            $uName = $uRow['full_name'];
-            $uB = (int)($uRow['u_branch'] ?? 0);
-            $eB = (int)($uRow['e_branch'] ?? 0);
-            if ($uB > 0) {
-                $seqUsersByBranch[$uB][$uId] = ['id' => $uId, 'name' => $uName];
-            }
-            if ($eB > 0) {
-                $seqUsersByBranch[$eB][$uId] = ['id' => $uId, 'name' => $uName];
-            }
-        }
-        foreach ($seqUsersByBranch as $bid => $uList) {
-            $seqUsersByBranch[$bid] = array_values($uList);
-        }
-    } catch (Throwable $e) {
-        $seqIssues = [];
-        $openSeqCount = 0;
-        $seqIssuesTableExists = false;
-    }
-}
+$seqData = review_get_seq_issues($pdo, can_edit_shift_date_branch());
+$seqIssues            = $seqData['issues'];
+$openSeqCount         = $seqData['open_count'];
+$seqUsersByBranch     = $seqData['users_by_branch'];
+$seqIssuesTableExists = $seqData['table_exists'];
 
 $page_title    = 'مراجعة المحاسب';
 $active_module = 'review';
 require_once __DIR__ . '/includes/header.php';
-
-// دالة مساعدة: أرقام الكاشير لوردية
-function shift_cashier_amounts(array $s): array {
-    return [
-        'cash'     => (float)($s['cash_total'] ?? 0),
-        'visa'     => (float)($s['visa_total'] ?? 0),
-        'instapay' => (float)($s['instapay_total'] ?? 0),
-        'system'   => (float)($s['system_total'] ?? 0),
-    ];
-}
 ?>
 
 <style>

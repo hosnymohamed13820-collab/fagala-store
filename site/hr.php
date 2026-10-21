@@ -11,25 +11,13 @@ require_once __DIR__ . '/auth.php';
 require_module_access('hr');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/hr_lib.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
 
-// قراءة التابات المسموحة للمستخدم بناءً على أجزاء مديول الموارد البشرية
-$hrParts = module_parts()['hr'] ?? [];
-// أجزاء صلاحيات مش تابات — دي مفاتيح لصفحات منفصلة بتتفتح بزرار من جوّه التاب.
-// فاضية دلوقتي بعد ما اتشالت صفحة رفع شيت الحضور. سيبها موجودة:
-// أي مفتاح جديد مش تاب لازم ينزل هنا وإلا هيطلع تاب فاضي بيرندر الحضور بالغلط.
-const HR_NON_TAB_PARTS = [];
-
-$allowedTabs = [];
-foreach ($hrParts as $tabKey => $tabLabel) {
-    if (in_array($tabKey, HR_NON_TAB_PARTS, true)) continue;
-    if (can('hr:' . $tabKey)) {
-        $allowedTabs[$tabKey] = $tabLabel;
-    }
-}
+$allowedTabs = hr_get_allowed_tabs(current_user());
 
 // لو المستخدم مالوش أي تاب مسموح (حزام أمان إضافي)
 if (empty($allowedTabs)) {
@@ -41,19 +29,11 @@ if (empty($allowedTabs)) {
 }
 
 // تحديد التاب النشط: لو طلب تاب مسموح يفتحه، لو مالوش صلاحيته يتحوّل لأول تاب مسموح
-$requestedTab = (string)($_GET['tab'] ?? '');
-if (isset($allowedTabs[$requestedTab])) {
-    $tab = $requestedTab;
-} else {
-    $tab = (string) array_key_first($allowedTabs);
-}
+$tab = hr_resolve_active_tab($allowedTabs, $_GET['tab'] ?? null);
 
 // القوائم المنسدلة للمودالات العامة في آخر الصفحة — يتم تحميلها دائماً
-$payTreasuries = $pdo->query(
-    "SELECT id, name FROM treasuries WHERE branch_id IS NULL AND is_active=1
-     ORDER BY FIELD(type,'cash','main','visa','instapay','card')"
-)->fetchAll();
-$employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+$payTreasuries = hr_get_pay_treasuries($pdo);
+$employees = hr_get_simple_employees($pdo);
 
 /**
  * تطبيق تعديلات المكافآت على الموظفين من شاشة الرواتب.
@@ -789,170 +769,25 @@ if (isset($_SESSION['flash'])) {
 // بيانات التبويبات المشروطة بالتاب النشط
 $empList = [];
 if ($tab === 'employees' || $tab === 'salaries') {
-    $empList = $pdo->query(
-        "SELECT e.*, b.name AS branch_name,
-                COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
-         FROM employees e
-         LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
-    )->fetchAll();
+    $empList = hr_get_employees_list($pdo);
 }
 
 $advances = [];
 $owedToEmps = [];
 if ($tab === 'advances') {
-    $advances = $pdo->query(
-        "SELECT a.*, e.full_name FROM employee_advances a JOIN employees e ON e.id=a.employee_id ORDER BY a.id DESC LIMIT 100"
-    )->fetchAll();
-
-    // الموظفين اللي **الشركة مدينة لهم** — عكس السلفة بالظبط.
-    // ده مش بيتقري من `employee_advances` خالص، ده رصيد دائن في
-    // `employee_ledger` (زي أ/حسني اللي قبض جمعية وحطها في الشغل).
-    // كان بيبان في تاب الرواتب بس، فالأونر يفتح السلف ويلاقي ٨ صفوف
-    // ومايعرفش إن فيه حد ليه فلوس عند الشركة.
-    // 🔴 قسم منفصل بقصد — لو اندمج في جداول السلف كان هيتقري غلط
-    //    على إنه سلفة، والسلفة عكسه تماماً.
-    $advEmps = $pdo->query('SELECT id, full_name FROM employees WHERE is_active = 1')->fetchAll();
-    $advBals = emp_ledger_balances(array_column($advEmps, 'id'), $pdo);   // استعلام واحد مجمّع
-    foreach ($advEmps as $ae) {
-        $bal = (float) ($advBals[(int) $ae['id']] ?? 0);
-        if ($bal < -0.005) {                       // سالب = دائن = الشركة مدينة له
-            $owedToEmps[] = ['id' => (int) $ae['id'], 'full_name' => $ae['full_name'], 'owed' => abs($bal)];
-        }
-    }
-    usort($owedToEmps, fn($a, $b) => $b['owed'] <=> $a['owed']);
+    $advData = hr_get_advances_data($pdo, 100);
+    $advances = $advData['advances'];
+    $owedToEmps = $advData['owed_to_emps'];
 }
 
 $bonuses = [];
 if ($tab === 'bonuses') {
-    $bonuses = $pdo->query(
-        "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
-    )->fetchAll();
+    $bonuses = hr_get_bonuses($pdo, 100);
 }
 
 $penalties = [];
 if ($tab === 'penalties') {
-    // قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
-    $tolerance = custody_tolerance();
-
-    // فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
-    // ABS(s.difference) - ? > 0.0001
-    // ⚠️ الشرط ده مطابق رياضياً لـ shift_variance_status() — والاتنين بياخدوا العتبة من custody_tolerance().
-    // أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
-    $penStmt = $pdo->prepare(
-        "SELECT p.penalty_date AS deduction_date,
-                e.full_name,
-                'penalty' AS source_type,
-                b.name AS branch_name,
-                p.amount,
-                0.0 AS difference,
-                p.reason,
-                p.status,
-                NULL AS shift_name,
-                NULL AS shift_id,
-                p.id AS sort_id
-           FROM employee_penalties p
-           JOIN employees e ON e.id = p.employee_id
-           LEFT JOIN branches b ON b.id = e.branch_id
-
-          UNION ALL
-
-         SELECT DATE(cd.created_at) AS deduction_date,
-                e.full_name,
-                'custody_deficit' AS source_type,
-                b.name AS branch_name,
-                cd.amount,
-                0.0 AS difference,
-                COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
-                cd.status,
-                NULL AS shift_name,
-                NULL AS shift_id,
-                cd.id AS sort_id
-           FROM custody_deficits cd
-           LEFT JOIN employees e ON e.id = cd.employee_id
-           LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
-
-          UNION ALL
-
-         SELECT s.business_date AS deduction_date,
-                COALESCE(e.full_name, u.full_name, '—') AS full_name,
-                'shift' AS source_type,
-                b.name AS branch_name,
-                ABS(s.difference) AS amount,
-                s.difference AS difference,
-                NULL AS reason,
-                s.status,
-                s.shift_name,
-                s.id AS shift_id,
-                s.id AS sort_id
-           FROM shifts s
-           LEFT JOIN branches b ON b.id = s.branch_id
-           LEFT JOIN users u ON u.id = s.user_id
-           LEFT JOIN employees e ON e.user_id = u.id
-          WHERE s.difference <> 0
-            AND ABS(s.difference) - ? > 0.0001
-
-          ORDER BY deduction_date DESC, sort_id DESC
-          LIMIT 100"
-    );
-    $penStmt->execute([$tolerance]);
-    $penaltiesRaw = $penStmt->fetchAll();
-
-    foreach ($penaltiesRaw as $r) {
-        if ($r['source_type'] === 'penalty') {
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => 'جزاء',
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => (float) $r['amount'],
-                'tolerance'      => '—',
-                'exceeded'       => '—',
-                'reason'         => $r['reason'] ?? '—',
-                'status'         => (string) $r['status'],
-            ];
-        } elseif ($r['source_type'] === 'custody_deficit') {
-            // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
-            // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
-            $amount = (float) $r['amount'];
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => 'عجز عهدة',
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => $amount,
-                'tolerance'      => '—',
-                'exceeded'       => number_format($amount, 2),
-                'reason'         => $r['reason'] ?? 'عجز تسوية عهدة',
-                'status'         => (string) $r['status'],
-            ];
-        } elseif ($r['source_type'] === 'shift') {
-            // فحص فرق الوردية بالعتبة الموحدة
-            $diff = (float) $r['difference'];
-            $vs = shift_variance_status($diff, $tolerance);
-
-            // اللي داخل العتبة مايظهرش في تاب الجزاءات خالص
-            if (!$vs['over_limit']) {
-                continue;
-            }
-
-            $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
-            $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
-            $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
-            $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
-
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => $dedType,
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => $vs['amount'],
-                'tolerance'      => number_format($vs['tolerance'], 2),
-                'exceeded'       => number_format($vs['exceeded'], 2),
-                'reason'         => $reason,
-                'status'         => (string) $r['status'],
-            ];
-        }
-    }
+    $penalties = hr_get_penalties($pdo, 100);
 }
 $salaries = [];
 $confirmRevSalary = null;
@@ -1031,356 +866,29 @@ $requests = [];
 $pendingReqCount = 0;
 $reqStatus = 'pending';
 if ($tab === 'requests') {
-    // الافتراضي «المعلّق» — ده اللي المستخدم جاي عشانه، وهو اللي الشارة بتعدّه.
     $reqStatus = $_GET['rstatus'] ?? 'pending';
-    if (!in_array($reqStatus, ['pending', 'approved', 'rejected', 'all'], true)) {
-        $reqStatus = 'pending';
-    }
-
-    $reqSql = "SELECT r.*, e.full_name FROM attendance_requests r
-               JOIN employees e ON e.id=r.employee_id";
-    $reqArgs = [];
-    if ($reqStatus !== 'all') { $reqSql .= " WHERE r.status = ?"; $reqArgs[] = $reqStatus; }
-    $reqSql .= " ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100";
-    $st = $pdo->prepare($reqSql); $st->execute($reqArgs); $requests = $st->fetchAll();
-
-    $pendingReqCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM attendance_requests WHERE status='pending'"
-    )->fetchColumn();
+    $requests = hr_get_attendance_requests($pdo, $reqStatus, 100);
+    $pendingReqCount = hr_get_pending_requests_count($pdo);
 } elseif (isset($allowedTabs['requests'])) {
-    // لو المستخدم معاه صلاحية طلبات التصحيح وهو في تاب تاني، نحسب العدّاد للشريط
-    $pendingReqCount = (int) $pdo->query("SELECT COUNT(*) FROM attendance_requests WHERE status='pending'")->fetchColumn();
+    $pendingReqCount = hr_get_pending_requests_count($pdo);
 }
 
 // بيانات الحضور للشهر المختار (تبويب الحضور)
 $attMonth = $_GET['month'] ?? date('Y-m');
 $attRows = [];
 if ($tab === 'attendance') {
-    $st = $pdo->prepare(
-        "SELECT a.*, e.full_name, e.expected_in, e.expected_out
-         FROM attendance a JOIN employees e ON e.id=a.employee_id
-         WHERE DATE_FORMAT(a.att_date,'%Y-%m') = ?
-         ORDER BY a.att_date DESC, e.full_name"
-    );
-    $st->execute([$attMonth]);
-    $attRows = $st->fetchAll();
+    $attRows = hr_get_attendance_rows($pdo, $attMonth);
 }
 
 // بيانات الرواتب وحساب المستحقات للفترة (تبويب الرواتب)
-// الفترة الافتراضية: من ٢٦ الشهر السابق إلى ٢٥ الشهر الحالي.
-//
-// 🔴 وفيها مهلة ٥ أيام: أول ٥ أيام في الشهر بنفضل على الفترة اللي **خلصت**
-// مش اللي لسه بادية. السبب إن الصرف بيتعمل في الأيام دي بالظبط — لو قلبنا
-// على الفترة الجديدة يوم ١، الأونر يفتح الشاشة يلاقي ساعات ٥ أيام بس
-// وأرقام مرتبات ناقصة قدامه ويفتكرها بق.
-//
-//   ٣١ أغسطس ← ٢٦ يوليو … ٢٥ أغسطس
-//   ١ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (لسه في المهلة)
-//   ٥ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (آخر يوم في المهلة)
-//   ٦ سبتمبر  ← ٢٦ أغسطس … ٢٥ سبتمبر  (قلبت)
-//
-// ⚠️ صفحة تسجيل الحضور بتقلب يوم ١ من غير مهلة — ده مقصود، الموظف عايز
-//    يشوف فترته الجارية. شوف التعليق في attendance.php.
-const PAYROLL_GRACE_DAYS = 5;
-$salAnchor = (int) date('j') <= PAYROLL_GRACE_DAYS
-    ? strtotime('first day of last month')
-    : strtotime('first day of this month');
-$defaultSalTo   = date('Y-m-25', $salAnchor);
-$defaultSalFrom = date('Y-m-26', strtotime('-1 month', $salAnchor));
-$salFrom = $_GET['from'] ?? $defaultSalFrom;
-$salTo   = $_GET['to']   ?? $defaultSalTo;
-if (!strtotime($salFrom)) $salFrom = $defaultSalFrom;
-if (!strtotime($salTo))   $salTo   = $defaultSalTo;
-$salMonth = $_GET['month'] ?? date('Y-m', strtotime($salTo));
-if (!preg_match('/^\d{4}-\d{2}$/', $salMonth)) $salMonth = date('Y-m');
+$payrollDates = hr_get_payroll_dates($_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['month'] ?? null);
+$salFrom  = $payrollDates['from'];
+$salTo    = $payrollDates['to'];
+$salMonth = $payrollDates['month'];
 
 $payrollData = [];
 if ($tab === 'salaries') {
-    // 1) ساعات العمل المجمّعة لكل موظف في الفترة المحددة (استعلام واحد)
-    $stAtt = $pdo->prepare(
-        "SELECT employee_id, COALESCE(SUM(work_hours), 0) AS total_hours
-         FROM attendance
-         WHERE att_date BETWEEN ? AND ?
-         GROUP BY employee_id"
-    );
-    $stAtt->execute([$salFrom, $salTo]);
-    $empHours = $stAtt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 2) المكافآت المعلّقة مجمّعة لكل موظف مع العدد والـ id الفردي (استعلام واحد)
-    $bonPendingStmt = $pdo->query(
-        "SELECT employee_id,
-                COUNT(*) AS cnt,
-                MIN(id) AS single_id,
-                COALESCE(SUM(amount), 0) AS total_amount
-         FROM employee_bonuses
-         WHERE status = 'pending'
-         GROUP BY employee_id"
-    );
-    $bonPendingMap = [];
-    foreach ($bonPendingStmt->fetchAll(PDO::FETCH_ASSOC) as $bRow) {
-        $bonPendingMap[(int)$bRow['employee_id']] = [
-            'cnt'          => (int)$bRow['cnt'],
-            'single_id'    => $bRow['single_id'] !== null ? (int)$bRow['single_id'] : null,
-            'total_amount' => (float)$bRow['total_amount'],
-        ];
-    }
-
-    // 3) السلف المعلّقة مجمّعة لكل موظف مع تفاصيل الأقساط الشهرية وسقف رصيد السجل الموجب (استعلام واحد مجمّع)
-    // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-    $advStmt = $pdo->query(
-        "SELECT employee_id, id, amount, remaining, monthly_deduction, adv_type
-           FROM employee_advances
-          WHERE status = 'pending'
-          ORDER BY employee_id ASC, id ASC"
-    );
-    $advRowsByEmp = [];
-    foreach ($advStmt->fetchAll(PDO::FETCH_ASSOC) as $advR) {
-        $advRowsByEmp[(int)$advR['employee_id']][] = $advR;
-    }
-
-    $allEmpIds = !empty($empList) ? array_column($empList, 'id') : [];
-    $ledgerBalancesMap = emp_ledger_balances($allEmpIds, $pdo);
-
-    // 4) الجزاءات المعلّقة مجمّعة لكل موظف (استعلام واحد)
-    $penMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
-         FROM employee_penalties WHERE status='pending'
-         GROUP BY employee_id"
-    )->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 5) عجز العهدة المعلّق مجمّع لكل موظف (استعلام واحد)
-    $defMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
-         FROM custody_deficits WHERE status='pending'
-         GROUP BY employee_id"
-    )->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 6) عجز الكاشير المتجاوز للعتبة في الفترة المحددة لكل موظف (استعلام واحد مجمّع)
-    $tolerance = custody_tolerance();
-    $cashierDefStmt = $pdo->prepare(
-        "SELECT e.id AS employee_id,
-                COALESCE(SUM(ABS(s.difference)), 0) AS exceeded_total,
-                COUNT(*) AS shift_cnt
-           FROM shifts s
-           JOIN users     u ON u.id = s.user_id
-           JOIN employees e ON e.user_id = u.id
-           LEFT JOIN salary_shift_deficits d ON d.shift_id = s.id
-          WHERE s.business_date BETWEEN ? AND ?
-            AND s.difference < 0
-            AND ABS(s.difference) - ? > 0.0001
-            AND d.id IS NULL
-          GROUP BY e.id"
-    );
-    $cashierDefStmt->execute([$salFrom, $salTo, $tolerance]);
-    $cashierDeficitMap = [];
-    foreach ($cashierDefStmt->fetchAll(PDO::FETCH_ASSOC) as $cRow) {
-        $cashierDeficitMap[(int)$cRow['employee_id']] = [
-            'exceeded_total' => (float)$cRow['exceeded_total'],
-            'shift_cnt'      => (int)$cRow['shift_cnt'],
-        ];
-    }
-
-    // 7) المرتبات المصروفة للشهر المختار (استعلام واحد لمعرفة حالة الصرف)
-    $stPaid = $pdo->prepare("SELECT employee_id, id FROM salaries WHERE salary_month = ? AND reversed_at IS NULL");
-    $stPaid->execute([$salMonth]);
-    $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 8) تعديلات الرواتب المحفوظة (المسوّدة) للشهر المختار (استعلام واحد مجمّع)
-    $stAdj = $pdo->prepare(
-        "SELECT employee_id, leave_days, due_days, monthly_take, standing_take, cashier_take
-           FROM payroll_adjustments
-          WHERE month = ?"
-    );
-    $stAdj->execute([$salMonth]);
-    $adjustmentsMap = [];
-    foreach ($stAdj->fetchAll(PDO::FETCH_ASSOC) as $adjRow) {
-        $adjustmentsMap[(int)$adjRow['employee_id']] = $adjRow;
-    }
-
-    // الحسابات في PHP بدون أي استعلام داخل الحلقة
-    foreach ($empList as $e) {
-        $empId           = (int) $e['id'];
-        $salaryMode      = $e['salary_mode'] ?? 'hours';
-        $isFixed         = ($salaryMode === 'fixed');
-        $base            = (float) $e['base_salary'];
-        $expectedHours   = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
-        $empLedgerBal    = $ledgerBalancesMap[$empId] ?? 0.0;
-        $isPaid          = isset($paidMonthMap[$empId]);
-        $adj             = (!$isPaid && isset($adjustmentsMap[$empId])) ? $adjustmentsMap[$empId] : null;
-
-        if ($isFixed) {
-            $hours          = 0.0;
-            $noExpected     = false;
-            $workDays       = 0.0;
-            $leaveDaysCalc  = 0;
-            $leaveDays      = 0;
-            $dueDaysRawCalc = 0.0;
-            $dueDaysCalc    = 0.0;
-            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross          = $base;
-        } else {
-            $hours          = (float) ($empHours[$empId] ?? 0);
-            $salDays        = salary_days_from_hours($hours, $expectedHours);
-            $noExpected     = !empty($salDays['no_expected']);
-            $workDays       = $salDays['work_days'];
-            $leaveDaysCalc  = $salDays['leave_days'];
-            $leaveDays      = $leaveDaysCalc;
-            $dueDaysRawCalc = $salDays['due_days'];
-            $dueDaysCalc    = $dueDaysRawCalc;
-
-            if ($adj !== null && !$noExpected) {
-                if ($adj['leave_days'] !== null && is_numeric($adj['leave_days']) && (int)$adj['leave_days'] >= 0) {
-                    $leaveDays = (int)$adj['leave_days'];
-                    $dueDaysCalc = round($workDays + $leaveDays, 2);
-                }
-                if ($adj['due_days'] !== null && is_numeric($adj['due_days'])) {
-                    $dueOverride = (float)$adj['due_days'];
-                    if (abs($dueOverride - $dueDaysCalc) > 0.005) {
-                        $dueDaysCalc = round($dueOverride, 2);
-                    }
-                }
-            }
-
-            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross          = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
-        }
-
-        $bonInfo         = $bonPendingMap[$empId] ?? ['cnt' => 0, 'single_id' => null, 'total_amount' => 0.0];
-        $bon             = (float) $bonInfo['total_amount'];
-        $bonCnt          = (int) $bonInfo['cnt'];
-
-        // حساب السلف بالترتيب (id تصاعدي) وسقف رصيد السجل والوعاء
-        // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-        $pot             = ($noExpected && !$isFixed) ? 0.0 : ($gross + $bon);
-
-        $empAdvRows          = $advRowsByEmp[$empId] ?? [];
-        $maxLedgerCap        = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
-        $remCap              = $maxLedgerCap;
-        $monthlyAdvOwed      = 0.0;
-        $monthlyAdvTakeCalc  = 0.0;
-        $standingAdvOwed     = 0.0;
-        $standingAdvTakeCalc = 0.0;
-
-        foreach ($empAdvRows as $advR) {
-            $advOutstanding = $advR['remaining'] !== null ? (float) $advR['remaining'] : (float) $advR['amount'];
-            $advMonthlyDed  = (float) $advR['monthly_deduction'];
-            $advTake        = ($advMonthlyDed > 0) ? min($advMonthlyDed, $advOutstanding) : $advOutstanding;
-            $advTake        = min($advTake, $remCap);
-            $remCap        -= $advTake;
-
-            if (($advR['adv_type'] ?? 'monthly') === 'standing') {
-                $standingAdvTakeCalc += $advTake;
-                $standingAdvOwed     += $advOutstanding;
-            } else {
-                $monthlyAdvTakeCalc  += $advTake;
-                $monthlyAdvOwed      += $advOutstanding;
-            }
-        }
-
-        $monthlyAdvTake = $monthlyAdvTakeCalc;
-        if ($adj !== null && $adj['monthly_take'] !== null && is_numeric($adj['monthly_take'])) {
-            $monthlyAdvTake = max(0.0, (float)$adj['monthly_take']);
-        }
-
-        $standingAdvTake = $standingAdvTakeCalc;
-        if ($adj !== null && $adj['standing_take'] !== null && is_numeric($adj['standing_take'])) {
-            $standingAdvTake = max(0.0, (float)$adj['standing_take']);
-        }
-
-        $totalAdvances   = $monthlyAdvTake + $standingAdvTake;
-        $totalAdvances   = min($totalAdvances, $maxLedgerCap);
-        $advApplied      = min($totalAdvances, $pot);
-        $advApplied      = max(0.0, round($advApplied, 2));
-        $pot            -= $advApplied;
-
-        $penFull         = (float) ($penMap[$empId] ?? 0);
-        $penApplied      = min($penFull, $pot);
-        $penApplied      = max(0.0, round($penApplied, 2));
-        $pot            -= $penApplied;
-
-        $defFull         = (float) ($defMap[$empId] ?? 0);
-        $defApplied      = min($defFull, $pot);
-        $defApplied      = max(0.0, round($defApplied, 2));
-        $pot            -= $defApplied;
-
-        $cDefInfo        = $cashierDeficitMap[$empId] ?? ['exceeded_total' => 0.0, 'shift_cnt' => 0];
-        $cashierDefCalc  = (float) $cDefInfo['exceeded_total'];
-        $cashierShiftCnt = (int) $cDefInfo['shift_cnt'];
-
-        $cashierTake = $cashierDefCalc;
-        if ($adj !== null && $adj['cashier_take'] !== null && is_numeric($adj['cashier_take'])) {
-            $cashierTake = min(max(0.0, (float)$adj['cashier_take']), $cashierDefCalc);
-        }
-
-        $cashierApplied  = min($cashierTake, $pot);
-        $cashierApplied  = max(0.0, round($cashierApplied, 2));
-        $pot            -= $cashierApplied;
-
-        $totalDeductions = round($advApplied + $penApplied + $defApplied + $cashierApplied, 2);
-        $net             = ($noExpected && !$isFixed) ? 0.0 : max(0.0, round($pot, 2));
-
-        // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
-        //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
-        //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
-        $cashierCarry = cashier_deficit_carry_enabled()
-            ? max(0.0, $cashierDefCalc - $cashierApplied)
-            : 0.0;
-
-        $carryToAdvance  = round(($penFull - $penApplied)
-                               + ($defFull - $defApplied)
-                               + $cashierCarry, 2);
-        $carryToAdvance  = max(0.0, $carryToAdvance);
-
-        // حساب صافي العرض (بريف ٩٠): يعرض بالسالب لو المطلوب خصمه > الوعاء
-        $potInitial         = ($noExpected && !$isFixed) ? 0.0 : ($gross + $bon);
-        $cashierReq         = cashier_deficit_carry_enabled() ? $cashierTake : $cashierApplied;
-        $requiredDeductions = $totalAdvances + $penFull + $defFull + $cashierReq;
-        $displayNet         = ($noExpected && !$isFixed) ? 0.0 : round($potInitial - $requiredDeductions, 2);
-
-        $payrollData[] = [
-            'id'                        => $empId,
-            'full_name'                 => $e['full_name'],
-            'salary_mode'               => $salaryMode,
-            'is_fixed'                  => $isFixed,
-            'branch_name'               => $e['branch_name'] ?? '',
-            'base_salary'               => $base,
-            'expected_monthly_hours'    => $expectedHours,
-            'no_expected'               => $noExpected,
-            'day_hours'                 => $salDays['day_hours'] ?? 0.0,
-            'work_hours'                => $hours,
-            'work_days'                 => $workDays,
-            'leave_days'                => $leaveDays,
-            'leave_days_calc'           => $leaveDaysCalc,
-            'due_days_calc'             => $dueDaysCalc,
-            'due_days_raw_calc'         => $dueDaysRawCalc,
-            'day_rate'                  => $dayRate,
-            'gross_salary'              => $gross,
-            'bonuses'                   => $bon,
-            'bonus_cnt'                 => $bonCnt,
-            'total_bonuses'             => $bon,
-            'advances'                  => $advApplied,
-            'ledger_balance'            => $empLedgerBal,
-            'monthly_adv_owed'          => $monthlyAdvOwed,
-            'monthly_adv_take'          => $monthlyAdvTake,
-            'monthly_adv_take_calc'     => $monthlyAdvTakeCalc,
-            'standing_adv_owed'         => $standingAdvOwed,
-            'standing_adv_take'         => $standingAdvTake,
-            'standing_adv_take_calc'    => $standingAdvTakeCalc,
-            'cashier_deficit'           => $cashierApplied,
-            'cashier_deficit_calc'      => $cashierDefCalc,
-            'cashier_deficit_take_calc' => $cashierDefCalc,
-            'cashier_shift_cnt'         => $cashierShiftCnt,
-            'penalties'                 => $penApplied,
-            'penalties_full'            => $penFull,
-            'deficits'                  => $defApplied,
-            'deficits_full'             => $defFull,
-            'carry_to_advance'          => $carryToAdvance,
-            'total_deductions'          => $totalDeductions,
-            'net_salary'                => $net,
-            'display_net'               => $displayNet,
-            'is_paid'                   => $isPaid,
-        ];
-    }
+    $payrollData = hr_calc_payroll_data($pdo, $empList, $salFrom, $salTo, $salMonth);
 }
 
 // تصدير إكسيل لجدول الرواتب بآخر حالة (بريف ٩٠)
@@ -1855,6 +1363,7 @@ $statusBadge = function($st) {
     </div>
 
 <?php elseif ($tab === 'penalties'): ?>
+    <?php $tolerance = custody_tolerance(); ?>
     <div class="toolbar">
         <span class="hrs-muted14"><?= count($penalties) ?> استقطاع/جزاء</span>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>

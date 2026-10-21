@@ -11,6 +11,7 @@
 require_once __DIR__ . '/auth.php';
 require_permission('cashier');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/cashier_lib.php';
 
 $pdo  = db();
 $u    = current_user();
@@ -24,12 +25,7 @@ $payMethods    = ['visa' => 'فيزا', 'instapay' => 'إنستا باي'];
 $rowsPerMethod = 10;
 
 // الفروع المتاحة للاختيار (أي فرع نشط وله مبيعات — للتغطية)
-try {
-    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 AND has_sales=1 ORDER BY name')->fetchAll();
-} catch (Throwable $e) {
-    // استرجاع آمن قبل تطبيق ملف الترقية upgrade_has_sales.sql
-    $allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
-}
+$allBranches = cashier_get_all_branches($pdo);
 $defaultBranch = !empty($u['branch_id']) ? (int) $u['branch_id']
                  : ($allBranches ? (int) $allBranches[0]['id'] : 0);
 
@@ -305,54 +301,19 @@ if (isset($_SESSION['flash'])) {
 }
 
 // ===== اليوم المحاسبي (9ص لـ 9ص) =====
-// لو الساعة قبل 9 صباحاً، اليوم المحاسبي = امبارح
-$now = new DateTime();
-$bizDateToday = (clone $now);
-if ((int)$now->format('H') < 9) {
-    $bizDateToday->modify('-1 day');
-}
-$bizDateStr = $bizDateToday->format('Y-m-d');
+$bizDateStr = cashier_get_business_date();
 
 // ---------------------------------------------------------------------------
 //  نطاق الرؤية
-//
-//  القواعد:
-//    - الأونر: يشوف كل الفروع، ويقدر يفلتر بأي فرع.
-//    - الموظف المربوط بفرع: يشوف فرعه دايمًا.
-//    - الموظف غير المربوط بفرع: مايشوفش حاجة — لحد ما يعمل تقفيل
-//      على فرع في يوم العمل الحالي، وساعتها يشوف الفرع ده.
-//      ومع بداية يوم عمل جديد، الرؤية بتختفي تاني لحد ما يقفل.
-//
-//  السبب: قبل كده كان `$seeAll = is_owner() || $myBranch === null`
-//  يعني اللي مش مربوط بفرع كان بيشوف كل الفروع — عكس المطلوب تمامًا.
 // ---------------------------------------------------------------------------
 $myBranch = !empty($u['branch_id']) ? (int)$u['branch_id'] : null;
 $isOwner  = is_owner();
 
-// ★ الفروع اللي قفل عليها في يوم العمل الحالي بس.
-//   مش كل تاريخه — عشان الرؤية تنتهي مع نهاية اليوم، وميفضلش شايف
-//   بيانات فرع غطّى فيه مرة من شهر.
-$mine = $pdo->prepare(
-    'SELECT DISTINCT branch_id FROM shifts WHERE user_id = ? AND business_date = ?'
-);
-$mine->execute([$uid, $bizDateStr]);
-$workedBranches = array_map('intval', $mine->fetchAll(PDO::FETCH_COLUMN));
-
-// الفروع المسموح له يشوفها
-if ($isOwner) {
-    $allowedBranches = array_map(fn($b) => (int)$b["id"], $allBranches);
-} else {
-    $allowedBranches = $workedBranches;
-    if ($myBranch !== null && !in_array($myBranch, $allowedBranches, true)) {
-        $allowedBranches[] = $myBranch;
-    }
-}
+$allowedBranches = cashier_get_allowed_branches($pdo, $u, $allBranches, $bizDateStr);
 
 // فلتر الفرع المختار (من الزراير) — للأونر بس.
 // غير الأونر: أي محاولة فلترة من الـ URL بتتجاهل.
 $filterBranch = ($isOwner && isset($_GET['branch'])) ? (int)$_GET['branch'] : 0;
-
-// حماية: مايقدرش يفلتر بفرع مش مسموح له
 if ($filterBranch > 0 && !in_array($filterBranch, $allowedBranches, true)) {
     $filterBranch = 0;
 }
@@ -363,61 +324,12 @@ $branchTabs = array_values(array_filter(
     fn($b) => in_array((int)$b['id'], $allowedBranches, true)
 ));
 
-// ---------------------------------------------------------------------------
-//  بناء شرط الفرع للاستعلامات
-// ---------------------------------------------------------------------------
-$where  = ['s.business_date = ?'];
-$params = [$bizDateStr];
-
-if (empty($allowedBranches)) {
-    // مش مربوط بفرع ومعملش تقفيل قبل كده → مايشوفش حاجة
-    $where[]  = '1 = 0';
-} elseif ($filterBranch > 0) {
-    $where[]  = 's.branch_id = ?';
-    $params[] = $filterBranch;
-} elseif (!$isOwner) {
-    $ph       = implode(',', array_fill(0, count($allowedBranches), '?'));
-    $where[]  = "s.branch_id IN ({$ph})";
-    $params   = array_merge($params, $allowedBranches);
-}
-
 // تقفيلات اليوم
-$todayShifts = $pdo->prepare(
-    "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-     FROM shifts s
-     JOIN users u ON u.id = s.user_id
-     JOIN branches b ON b.id = s.branch_id
-     WHERE " . implode(' AND ', $where) . "
-     ORDER BY s.id DESC"
-);
-$todayShifts->execute($params);
-$todayShifts = $todayShifts->fetchAll();
+$todayShifts = cashier_get_today_shifts($pdo, $allowedBranches, $filterBranch, $isOwner, $bizDateStr);
 
 // تقفيلاتي المرفوضة (القديمة، القابلة للتعديل) — دي بتفضل ظاهرة لصاحبها
 $hoursReturn = (int) setting('shift_return_hours', 48);
-try {
-    $myRejectedSt = $pdo->prepare(
-        "SELECT s.*, b.name AS branch_name,
-                CASE WHEN s.reviewed_at >= ? THEN TIMESTAMPDIFF(HOUR, NOW(), s.reviewed_at + INTERVAL ? HOUR) END AS hours_left,
-                (s.return_expired_at IS NOT NULL OR (s.reviewed_at >= ? AND s.reviewed_at + INTERVAL ? HOUR < NOW())) AS is_return_expired
-         FROM shifts s JOIN branches b ON b.id = s.branch_id
-         WHERE s.user_id = ? AND s.status = 'rejected'
-         ORDER BY s.id DESC"
-    );
-    // المرجوعة قبل shift_return_since مالهاش مهلة (hours_left = NULL) — شوف shift_return_since()
-    $retSince = shift_return_since();
-    $myRejectedSt->execute([$retSince, $hoursReturn, $retSince, $hoursReturn, $uid]);
-    $myRejected = $myRejectedSt->fetchAll();
-} catch (Throwable $e) {
-    $myRejectedSt = $pdo->prepare(
-        "SELECT s.*, b.name AS branch_name
-         FROM shifts s JOIN branches b ON b.id = s.branch_id
-         WHERE s.user_id = ? AND s.status = 'rejected'
-         ORDER BY s.id DESC"
-    );
-    $myRejectedSt->execute([$uid]);
-    $myRejected = $myRejectedSt->fetchAll();
-}
+$myRejected  = cashier_get_my_rejected($pdo, $uid);
 
 // فتح الوردية من اللينك (edit_shift)
 $autoOpenShiftId = 0;
@@ -447,93 +359,29 @@ if (isset($_GET['edit_shift'])) {
 }
 
 // قراءة مشاكل التسلسل المطلوب رد المستخدم عليها
-$mySeqIssues = [];
-try {
-    $stSeq = $pdo->prepare(
-        "SELECT ssi.*, b.name AS branch_name
-         FROM shift_sequence_issues ssi
-         JOIN branches b ON b.id = ssi.branch_id
-         WHERE ssi.status = 'sent' AND ssi.assigned_user_id = ?
-         ORDER BY ssi.id DESC"
-    );
-    $stSeq->execute([$uid]);
-    $mySeqIssues = $stSeq->fetchAll(PDO::FETCH_ASSOC);
-} catch (Throwable $e) {
-    // الجدول لسه مانزلش
-}
+$mySeqIssues = cashier_get_seq_issues($pdo, $uid);
 
 // ---------------------------------------------------------------------------
 //  الأرشيف
-//  المرفوض بقى يختفي زي المعتمد (كان بيفضل ظاهر ويزحم الجدول).
-//  اللي بيظهر: المسوّدات واللي تحت المراجعة بس.
 // ---------------------------------------------------------------------------
-$aWhere  = ['s.business_date < ?', "s.status NOT IN ('approved','rejected')"];
-$aParams = [$bizDateStr];
-
-if (empty($allowedBranches)) {
-    $aWhere[]  = '1 = 0';
-} elseif ($filterBranch > 0) {
-    $aWhere[]  = 's.branch_id = ?';
-    $aParams[] = $filterBranch;
-} elseif (!$isOwner) {
-    $ph        = implode(',', array_fill(0, count($allowedBranches), '?'));
-    $aWhere[]  = "s.branch_id IN ({$ph})";
-    $aParams   = array_merge($aParams, $allowedBranches);
-}
-
-$archiveShifts = $pdo->prepare(
-    "SELECT s.*, u.full_name AS cashier_name, b.name AS branch_name
-     FROM shifts s
-     JOIN users u ON u.id = s.user_id
-     JOIN branches b ON b.id = s.branch_id
-     WHERE " . implode(' AND ', $aWhere) . "
-     ORDER BY s.business_date DESC, s.id DESC LIMIT 100"
-);
-$archiveShifts->execute($aParams);
-$archiveShifts = $archiveShifts->fetchAll();
+$archiveShifts = cashier_get_archive_shifts($pdo, $allowedBranches, $filterBranch, $isOwner, $bizDateStr);
 
 // جلب بادج «آخر تعديل» لكل الورديات المعروضة باستعلام مجمّع واحد
 $allCashierShiftIds = [];
 foreach ($todayShifts as $ts) $allCashierShiftIds[] = (int)$ts['id'];
 foreach ($archiveShifts as $as) $allCashierShiftIds[] = (int)$as['id'];
 foreach ($myRejected as $mr) $allCashierShiftIds[] = (int)$mr['id'];
-$allCashierShiftIds = array_values(array_unique(array_filter($allCashierShiftIds)));
-
-$shiftEditBadges = [];
-if (!empty($allCashierShiftIds)) {
-    try {
-        $phBadge = implode(',', array_fill(0, count($allCashierShiftIds), '?'));
-        $stBadge = $pdo->prepare("
-            SELECT sel.shift_id, sel.created_at, u.full_name AS editor_name
-            FROM shift_edit_log sel
-            JOIN (
-                SELECT shift_id, MAX(id) AS max_id
-                FROM shift_edit_log
-                WHERE shift_id IN ($phBadge)
-                GROUP BY shift_id
-            ) latest ON latest.max_id = sel.id
-            JOIN users u ON u.id = sel.user_id
-        ");
-        $stBadge->execute($allCashierShiftIds);
-        foreach ($stBadge as $br) {
-            $shiftEditBadges[(int)$br['shift_id']] = [
-                'name' => $br['editor_name'],
-                'time' => date('H:i', strtotime($br['created_at'])),
-            ];
-        }
-    } catch (Throwable $ex) {
-        // لو جدول shift_edit_log مش موجود ← مفيش بادج ومفيش خطأ
-    }
-}
+$shiftEditBadges = cashier_get_shift_edit_badges($pdo, $allCashierShiftIds);
 
 // إجماليات اليوم (لبطاقات الملخص فوق + صف الإجماليات في الجدول)
-$sumCash   = array_sum(array_column($todayShifts, 'cash_total'));
-$sumVisa   = array_sum(array_column($todayShifts, 'visa_total'));
-$sumInsta  = array_sum(array_column($todayShifts, 'instapay_total'));
-$sumSys    = array_sum(array_column($todayShifts, 'system_total'));
-$sumColl   = $sumCash + $sumVisa + $sumInsta;
-$sumVI     = $sumVisa + $sumInsta;   // الفيزا + الإنستا (من غير الكاش)
-$sumDiff   = $sumColl - $sumSys;
+$todayTotals = cashier_calc_today_totals($todayShifts);
+$sumCash   = $todayTotals['cash_total'];
+$sumVisa   = $todayTotals['visa_total'];
+$sumInsta  = $todayTotals['instapay_total'];
+$sumSys    = $todayTotals['system_total'];
+$sumColl   = $todayTotals['collected_total'];
+$sumVI     = $todayTotals['visa_insta_total'];
+$sumDiff   = $todayTotals['difference'];
 
 $statusLabels = [
     'submitted'   => ['مستلمة', 'var(--ink-700)', 'var(--line-soft)'],

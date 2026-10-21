@@ -12,6 +12,7 @@ require_permission('branch_recon');
 require_once __DIR__ . '/recon_lib.php';
 require_once __DIR__ . '/item_flags_lib.php';
 require_once __DIR__ . '/recon_alerts_lib.php';
+require_once __DIR__ . '/branch_recon_lib.php';
 
 const RECON_ALERTS_START = '2026-10-01'; // كل الأزواج اتقفلت ٣٠/٩ ما عدا الإدارة↔بونجور
 
@@ -67,26 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// قراءة فترة البداية الافتراضية
-$stStart = '2026-06-27';
-try {
-    $stSet = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'supplier_statement_start' LIMIT 1");
-    $stSet->execute();
-    $v = $stSet->fetchColumn();
-    if ($v && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v)) {
-        $stStart = (string)$v;
-    }
-} catch (Throwable) {}
-
+// قراءة فترة البداية والمدى الزمني
+$stStart   = branch_recon_get_start_date($pdo);
 $activeTab = trim((string)($_GET['tab'] ?? ''));
-if ($activeTab === 'alerts') {
-    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : RECON_ALERTS_START;
-} elseif ($activeTab === 'ashraqa') {
-    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : '2026-07-01';
-} else {
-    $from = (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'])) ? $_GET['from'] : $stStart;
-}
-$to   = (isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'])) ? $_GET['to'] : date('Y-m-d');
+$fromParam = isset($_GET['from']) ? (string)$_GET['from'] : null;
+$toParam   = isset($_GET['to']) ? (string)$_GET['to'] : null;
+$dateRange = branch_recon_get_date_range($activeTab, $fromParam, $toParam, $stStart);
+$from      = $dateRange['from'];
+$to        = $dateRange['to'];
 
 $allParties = recon_all_parties();
 $aKey = trim((string)($_GET['a'] ?? ''));
@@ -106,25 +95,18 @@ if ($aKey !== '' && $bKey !== '' && $aKey !== $bKey && isset($allParties[$aKey],
 // الشاشة التفصيلية: كشف مقارنة الزوج (party moves)
 // -------------------------------------------------------------
 if ($isDetailView) {
-    $detailData = recon_get_party_moves($pdo, $from, $to, $aKey, $bKey);
-    $partyMovesOur = $detailData['movesA'];
-    $partyMovesHis = $detailData['movesB'];
+    $detailData = branch_recon_get_detail_data($pdo, $from, $to, $aKey, $bKey, $allParties);
+    $partyMovesOur  = $detailData['movesA'];
+    $partyMovesHis  = $detailData['movesB'];
     $partyTotOurBuy = $detailData['totA_buy'];
     $partyTotOurRet = $detailData['totA_ret'];
     $partyTotHisBuy = $detailData['totB_buy'];
     $partyTotHisRet = $detailData['totB_ret'];
-
-    $partyNetOur = $partyTotOurBuy - $partyTotOurRet;
-    $partyNetHis = $partyTotHisRet - $partyTotHisBuy;
-    $partyDiff   = $partyNetOur - $partyNetHis;
-    $partyIsMatch = abs($partyDiff) < 0.01;
-
-    // جلب علامات التلوين
-    $allSthIds = array_values(array_unique(array_filter(array_merge(
-        array_column($partyMovesOur, 'sth_id'),
-        array_column($partyMovesHis, 'sth_id')
-    ))));
-    $reconMarks = recon_get_marks($pdo, $allSthIds);
+    $partyNetOur    = $detailData['netA'];
+    $partyNetHis    = $detailData['netB'];
+    $partyDiff      = $detailData['diff'];
+    $partyIsMatch   = $detailData['is_match'];
+    $reconMarks     = $detailData['recon_marks'];
 
     // تصدير إكسيل لكشف المقارنة
     if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
@@ -180,72 +162,19 @@ if ($isDetailView) {
         // ---------------------------------------------------------
         // تاب التنبيهات: اكتشاف الأخطاء والتكرار والمطابقة
         // ---------------------------------------------------------
-        $pFilter = trim((string)($_GET['p'] ?? ''));
+        $pFilter  = trim((string)($_GET['p'] ?? ''));
         $showDone = !empty($_GET['show_done']);
-        $labels = [];
-        foreach ($allParties as $pk => $p) {
-            $labels[$pk] = $p['label'];
-        }
-
-        $tAlerts0 = microtime(true);
-        $alertDocs = recon_alerts_load($pdo, $from, $to, $allParties);
-        $allDetectedAlerts = recon_alerts_detect($alertDocs, $from, $to, date('Y-m-d'), $labels);
-        $alertsPerfTime = microtime(true) - $tAlerts0;
-
-        if ($pFilter !== '' && isset($allParties[$pFilter])) {
-            $allDetectedAlerts = array_values(array_filter($allDetectedAlerts, function ($al) use ($pFilter) {
-                return in_array($pFilter, $al['pair'] ?? [], true);
-            }));
-        }
-
-        // استعلام واحد لعلامات التلوين
-        $alertSthIds = [];
-        foreach ($allDetectedAlerts as $al) {
-            foreach ($al['docs'] as $dKey) {
-                $parts = explode('_', $dKey);
-                if (isset($parts[0]) && is_numeric($parts[0])) {
-                    $alertSthIds[] = (int)$parts[0];
-                }
-            }
-        }
-        $reconMarks = recon_get_marks($pdo, $alertSthIds);
-
-        $alerts = [];
-        $doneAlerts = [];
-        foreach ($allDetectedAlerts as $al) {
-            $isGreen = false;
-            foreach ($al['docs'] as $dKey) {
-                if (($reconMarks[$dKey] ?? '') === 'green') {
-                    $isGreen = true;
-                    break;
-                }
-            }
-            if ($isGreen) {
-                $doneAlerts[] = $al;
-                if ($showDone) {
-                    $alerts[] = $al;
-                }
-            } else {
-                $alerts[] = $al;
-            }
-        }
-        $doneCount = count($doneAlerts);
-
-        $redCount = 0; $redAmt = 0.0;
-        $yellowCount = 0; $yellowAmt = 0.0;
-        $grayCount = 0; $grayAmt = 0.0;
-        foreach ($alerts as $al) {
-            if ($al['level'] === 'red') {
-                $redCount++;
-                $redAmt += (float)$al['amount'];
-            } elseif ($al['level'] === 'yellow') {
-                $yellowCount++;
-                $yellowAmt += (float)$al['amount'];
-            } elseif ($al['level'] === 'gray') {
-                $grayCount++;
-                $grayAmt += (float)$al['amount'];
-            }
-        }
+        $alertsData = branch_recon_get_alerts_data($pdo, $from, $to, $allParties, $pFilter, $showDone);
+        $alerts         = $alertsData['alerts'];
+        $doneCount      = $alertsData['done_count'];
+        $redCount       = $alertsData['red_count'];
+        $redAmt         = $alertsData['red_amt'];
+        $yellowCount    = $alertsData['yellow_count'];
+        $yellowAmt      = $alertsData['yellow_amt'];
+        $grayCount      = $alertsData['gray_count'];
+        $grayAmt        = $alertsData['gray_amt'];
+        $alertsPerfTime = $alertsData['perf_time'];
+        $reconMarks     = $alertsData['recon_marks'];
     } elseif ($activeTab === 'ashraqa') {
         // ---------------------------------------------------------
         // تاب مشتريات إشراقة: قائمة الفواتير وتفاصيل السطور
@@ -259,138 +188,35 @@ if ($isDetailView) {
 
         if ($docParam !== '') {
             $ashraqaDetailMode = true;
-            if (!preg_match('/^(\d+)-(\d+)-(\d+)-(\d+)$/', $docParam, $dm)) {
+            $ashDetail = branch_recon_get_ashraqa_detail($pdo, $docParam);
+            if (!$ashDetail) {
                 $ashDocNotFound = true;
             } else {
-                $sstt   = (int)$dm[1];
-                $brch   = (int)$dm[2];
-                $fy     = (int)$dm[3];
-                $addDoc = (int)$dm[4];
-
-                // استعلام ١ لتفاصيل فاتورة إشراقة (الرأس)
-                $stDoc = $pdo->prepare("SELECT sstt_id, brch_id, fy_no, add_doc, doc_date, supplier_id, supplier_name,
-                                               net_amount, total_amount, cancelled, notes, supplier_inv_no
-                                        FROM ashraqa_purchases
-                                        WHERE sstt_id = ? AND brch_id = ? AND fy_no = ? AND add_doc = ?
-                                        LIMIT 1");
-                $stDoc->execute([$sstt, $brch, $fy, $addDoc]);
-                $ashDoc = $stDoc->fetch(PDO::FETCH_ASSOC);
-
-                if (!$ashDoc) {
-                    $ashDocNotFound = true;
-                } else {
-                    // استعلام ٢ لتفاصيل فاتورة إشراقة (السطور)
-                    $stLines = $pdo->prepare("SELECT line_no, item_id, code, barcodes, item_name, unit_q, quantity, unit_price, line_total
-                                              FROM ashraqa_purchase_lines
-                                              WHERE sstt_id = ? AND brch_id = ? AND fy_no = ? AND add_doc = ?
-                                              ORDER BY line_no ASC");
-                    $stLines->execute([$sstt, $brch, $fy, $addDoc]);
-                    $ashLines = $stLines->fetchAll(PDO::FETCH_ASSOC);
-
-                    // استعلام ٣ لـ hq_codes بكل باركودات الفاتورة
-                    $allBarcodes = [];
-                    foreach ($ashLines as $ln) {
-                        if (!empty($ln['barcodes'])) {
-                            $bcs = explode('|', $ln['barcodes']);
-                            foreach ($bcs as $b) {
-                                $b = trim($b);
-                                if ($b !== '') {
-                                    $allBarcodes[] = $b;
-                                }
-                            }
-                        }
-                    }
-                    $allBarcodes = array_values(array_unique($allBarcodes));
-                    if (!empty($allBarcodes)) {
-                        $inBc = implode(',', array_fill(0, count($allBarcodes), '?'));
-                        $stCodes = $pdo->prepare("SELECT code, name FROM hq_codes WHERE code IN ($inBc)");
-                        $stCodes->execute($allBarcodes);
-                        while ($r = $stCodes->fetch(PDO::FETCH_ASSOC)) {
-                            $ashCodesMap[trim($r['code'])] = $r['name'];
-                        }
-                    }
-                }
+                $ashDoc      = $ashDetail['doc'];
+                $ashLines    = $ashDetail['lines'];
+                $ashCodesMap = $ashDetail['codes_map'];
             }
         } else {
-            // استعلام موردين إشراقة للفلتر
-            $stSupps = $pdo->query("SELECT DISTINCT supplier_id, supplier_name
-                                    FROM ashraqa_purchases
-                                    WHERE supplier_id IS NOT NULL
-                                    ORDER BY supplier_name ASC");
-            $ashSuppliers = $stSupps->fetchAll(PDO::FETCH_ASSOC);
-
-            $ashSstt = isset($_GET['sstt']) ? (int)$_GET['sstt'] : 0;
-            $ashSupplier = isset($_GET['supplier']) ? (int)$_GET['supplier'] : 0;
-            $ashSearch = trim((string)($_GET['q'] ?? ''));
+            $ashSstt          = isset($_GET['sstt']) ? (int)$_GET['sstt'] : 0;
+            $ashSupplier      = isset($_GET['supplier']) ? (int)$_GET['supplier'] : 0;
+            $ashSearch        = trim((string)($_GET['q'] ?? ''));
             $ashShowCancelled = !empty($_GET['show_cancelled']);
-
-            $ashWhere = ["p.doc_date >= ? AND p.doc_date <= ?"];
-            $ashParams = [$from, $to];
-
-            if ($ashSstt === 113 || $ashSstt === 115) {
-                $ashWhere[] = "p.sstt_id = ?";
-                $ashParams[] = $ashSstt;
-            }
-            if ($ashSupplier > 0) {
-                $ashWhere[] = "p.supplier_id = ?";
-                $ashParams[] = $ashSupplier;
-            }
-            if ($ashSearch !== '') {
-                $ashWhere[] = "(p.notes LIKE ? OR CAST(p.add_doc AS CHAR) LIKE ?)";
-                $ashParams[] = '%' . $ashSearch . '%';
-                $ashParams[] = '%' . $ashSearch . '%';
-            }
-            if (!$ashShowCancelled) {
-                $ashWhere[] = "p.cancelled = 0";
-            }
-
-            $whereStr = implode(' AND ', $ashWhere);
-
-            // استعلام واحد لقايمة إشراقة بـ LEFT JOIN مجمعة
-            $sqlAshList = "SELECT p.sstt_id, p.brch_id, p.fy_no, p.add_doc,
-                                  p.doc_date, p.supplier_id, p.supplier_name,
-                                  p.net_amount, p.cancelled, p.notes,
-                                  COUNT(l.line_no) AS items_count,
-                                  COALESCE(SUM(l.quantity * l.unit_q), 0) AS total_pieces
-                           FROM ashraqa_purchases p
-                           LEFT JOIN ashraqa_purchase_lines l
-                             ON l.sstt_id = p.sstt_id AND l.brch_id = p.brch_id AND l.fy_no = p.fy_no AND l.add_doc = p.add_doc
-                           WHERE $whereStr
-                           GROUP BY p.sstt_id, p.brch_id, p.fy_no, p.add_doc
-                           ORDER BY p.doc_date DESC, p.add_doc DESC";
-            $stAshList = $pdo->prepare($sqlAshList);
-            $stAshList->execute($ashParams);
-            $ashInvoices = $stAshList->fetchAll(PDO::FETCH_ASSOC);
-
-            $totAshBuy = 0.0;
-            $totAshRet = 0.0;
-            foreach ($ashInvoices as $ai) {
-                if ((int)$ai['cancelled'] === 0) {
-                    if ((int)$ai['sstt_id'] === 113) {
-                        $totAshBuy += (float)$ai['net_amount'];
-                    } elseif ((int)$ai['sstt_id'] === 115) {
-                        $totAshRet += (float)$ai['net_amount'];
-                    }
-                }
-            }
+            $ashListData      = branch_recon_get_ashraqa_list($pdo, $from, $to, $ashSstt, $ashSupplier, $ashSearch, $ashShowCancelled);
+            $ashSuppliers     = $ashListData['suppliers'];
+            $ashInvoices      = $ashListData['invoices'];
+            $totAshBuy        = $ashListData['tot_buy'];
+            $totAshRet        = $ashListData['tot_ret'];
         }
     } else {
         // -------------------------------------------------------------
         // الشاشة العامة: جدول الأزواج العشرة (الفروق)
         // -------------------------------------------------------------
-        $matrix = recon_get_matrix($pdo, $from, $to);
-        $pairs  = recon_get_all_pairs($matrix);
-
-        $totPairsCount = count($pairs);
-        $matchCount = 0;
-        $mismatchCount = 0;
-        foreach ($pairs as $p) {
-            if ($p['is_match']) {
-                $matchCount++;
-            } else {
-                $mismatchCount++;
-            }
-        }
+        $pairsData     = branch_recon_get_pairs_data($pdo, $from, $to);
+        $matrix        = $pairsData['matrix'];
+        $pairs         = $pairsData['pairs'];
+        $totPairsCount = $pairsData['total_pairs'];
+        $matchCount    = $pairsData['match_count'];
+        $mismatchCount = $pairsData['mismatch_count'];
 
         // تصدير إكسيل لجدول الأزواج
         if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {

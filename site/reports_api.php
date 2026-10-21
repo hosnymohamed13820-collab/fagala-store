@@ -1,18 +1,15 @@
 <?php
 /**
- * reports_api.php — واجهة برمجة موديول التقارير (بريف ١٧١ — مرحلة أ: غير المالية)
- * نظام الفجالة ستور المالي
+ * reports_api.php — واجهة برمجة موديول التقارير (بريف ١٧١ + بريف ١٨١: تابات الفلوس)
+ * نظام الفجالة ستور المالي — موجة ٣
  *
  *   ?part=report&type=<type>[&from=YYYY-MM-DD&to=YYYY-MM-DD] (GET)
  *
- * التابات المتاحة في المرحلة (أ):
- *   - attendance: تقرير الحضور
- *   - attendance_totals: تقرير إجمالي الحضور
- *   - receiving: استلام الفواتير
- *   - stocktake: أرشيف الجرد
- *   - customers: داتا العملاء
+ * التابات المتاحة:
+ *   - المرحلة (أ): attendance, attendance_totals, receiving, stocktake, customers
+ *   - الموجة ٣ (تابات الفلوس): sales, treasury, expenses, jtotals, custody, deficits, suppliers, salaries, advances, daily
  *
- * بقية التابات (المالية) محجوزة للموجة ٣، وتُرجع 403 «التقرير ده لسه مش متاح من الـAPI».
+ * الأرقام الحساسة: salaries و advances تُرجع HTTP 423 locked إذا كانت الأرقام مقفولة.
  */
 declare(strict_types=1);
 
@@ -23,6 +20,7 @@ api_begin();
 require_module_access('reports');
 
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/reports_lib.php';
 
 $part = (string) ($_GET['part'] ?? ($_POST['part'] ?? ''));
@@ -41,19 +39,46 @@ if (!array_key_exists($type, $repParts)) {
 }
 
 $allowedTypes = [
+    // المرحلة (أ) — غير مالية
     'attendance',
     'attendance_totals',
     'receiving',
     'stocktake',
     'customers',
+    // الموجة ٣ — تابات الفلوس (بريف ١٨١)
+    'sales',
+    'treasury',
+    'expenses',
+    'jtotals',
+    'custody',
+    'deficits',
+    'suppliers',
+    'salaries',
+    'advances',
+    'daily',
 ];
 
 if (!in_array($type, $allowedTypes, true)) {
     api_fail('التقرير ده لسه مش متاح من الـAPI', 403, 'forbidden');
 }
 
-// فحص صلاحية التاب المحدد: reports:<type>
-api_require('reports:' . $type);
+// 🔴 الأرقام الحساسة: salaries و advances يرجع 423 locked لو مقفولة
+if (in_array($type, ['salaries', 'advances'], true)) {
+    sens_page();
+    if (!sens_unlocked()) {
+        api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
+    }
+}
+
+// فحص صلاحية التاب المحدد
+if ($type === 'daily') {
+    $dsUsers = array_map('intval', explode(',', (string) setting('daily_summary_users', '')));
+    if (!can('reports:daily') && !in_array((int) current_user()['id'], $dsUsers, true)) {
+        api_fail('ليس لديك صلاحية للوصول إلى هذا التقرير', 403, 'forbidden');
+    }
+} else {
+    api_require('reports:' . $type);
+}
 
 // التواريخ الافتراضية مطابقة لصفحة reports.php
 $from = (string) ($_GET['from'] ?? date('Y-m-01'));
@@ -71,6 +96,15 @@ switch ($type) {
     case 'attendance':
     case 'attendance_totals':
     case 'receiving':
+    case 'sales':
+    case 'treasury':
+    case 'expenses':
+    case 'jtotals':
+    case 'custody':
+    case 'deficits':
+    case 'suppliers':
+    case 'salaries':
+    case 'advances':
         api_ok(build_report($pdo, $type, $from, $to));
 
     case 'customers':
@@ -87,4 +121,21 @@ switch ($type) {
             $sheets = array_filter(array_map('intval', explode(',', (string) $_GET['sheet_ids'])));
         }
         api_ok(rep_stocktake_data($session, $sheets));
+
+    case 'daily':
+        require_once __DIR__ . '/daily_summary_lib.php';
+        $date = trim((string) ($_GET['date'] ?? ($_GET['to'] ?? date('Y-m-d'))));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || strtotime($date) === false) {
+            $date = date('Y-m-d');
+        }
+        $summary = ds_build($date);
+        $month   = ds_month($date);
+        api_ok([
+            'title'     => 'الملخص اليومي',
+            'date'      => $date,
+            'summary'   => $summary,
+            'month'     => $month,
+            'prev_date' => date('Y-m-d', strtotime($date . ' -1 day')),
+            'next_date' => date('Y-m-d', strtotime($date . ' +1 day')),
+        ]);
 }

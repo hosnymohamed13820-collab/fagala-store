@@ -243,3 +243,142 @@ function sms_fetch(PDO $pdo, string $from, string $to, string $kind = 'all'): ar
 
     return $res;
 }
+
+/**
+ * إحصائيات صندوق الرسائل (إجمالي، وصول آخر رسالة، سحب، مباشر)
+ *
+ * @return array{total_count: int, last_received: string, backfill_count: int, live_count: int}
+ */
+function sms_get_stats(PDO $pdo): array
+{
+    $statsSt = $pdo->query(
+        "SELECT
+            COUNT(*) AS total_count,
+            MAX(received_at) AS last_received,
+            SUM(CASE WHEN source = 'backfill' THEN 1 ELSE 0 END) AS backfill_count,
+            SUM(CASE WHEN source = 'live' THEN 1 ELSE 0 END) AS live_count
+         FROM sms_inbox"
+    );
+    $stats = $statsSt->fetch(PDO::FETCH_ASSOC) ?: [];
+    return [
+        'total_count'    => (int) ($stats['total_count'] ?? 0),
+        'last_received'  => $stats['last_received'] ? (string) $stats['last_received'] : 'لا يوجد بعد',
+        'backfill_count' => (int) ($stats['backfill_count'] ?? 0),
+        'live_count'     => (int) ($stats['live_count'] ?? 0),
+    ];
+}
+
+/**
+ * جلب كلمات الفلتر من الإعدادات
+ *
+ * @return array{include_keywords: string, exclude_keywords: string}
+ */
+function sms_get_keywords(PDO $pdo): array
+{
+    $setSt = $pdo->query(
+        "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('sms_include_keywords', 'sms_exclude_keywords')"
+    );
+    $settingsMap = [];
+    while ($row = $setSt->fetch(PDO::FETCH_ASSOC)) {
+        $settingsMap[(string) $row['setting_key']] = (string) $row['setting_value'];
+    }
+    return [
+        'include_keywords' => $settingsMap['sms_include_keywords'] ?? '',
+        'exclude_keywords' => $settingsMap['sms_exclude_keywords'] ?? '',
+    ];
+}
+
+/**
+ * تدقيق وضبط معاملات التاريخ والنوع
+ *
+ * @return array{from: string, to: string, kind: string}
+ */
+function sms_parse_period(?string $from, ?string $to, ?string $kind): array
+{
+    $from = trim((string) ($from ?? ''));
+    $to   = trim((string) ($to ?? ''));
+    $kind = trim((string) ($kind ?? 'all'));
+
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) {
+        $from = date('Y-m-d', strtotime('-30 days'));
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+        $to = date('Y-m-d');
+    }
+
+    $validKinds = ['all', 'in', 'out', 'card', 'unknown'];
+    if (!in_array($kind, $validKinds, true)) {
+        $kind = 'all';
+    }
+
+    return [
+        'from' => $from,
+        'to'   => $to,
+        'kind' => $kind,
+    ];
+}
+
+/**
+ * حساب إجماليات الرسائل في الفترة
+ *
+ * @param array $allMessages
+ * @return array{
+ *     in_count: int,
+ *     in_amount: float,
+ *     out_count: int,
+ *     out_amount: float,
+ *     unknown_count: int,
+ *     foreign_count: int,
+ *     net_amount: float
+ * }
+ */
+function sms_calc_totals(array $allMessages): array
+{
+    $totInCount   = 0;
+    $totInAmount  = 0.0;
+    $totOutCount  = 0;
+    $totOutAmount = 0.0;
+    $unknownCount = 0;
+    $foreignCount = 0;
+
+    foreach ($allMessages as $m) {
+        $k = $m['kind'];
+        if (!empty($m['foreign'])) {
+            $foreignCount++;
+            continue;
+        }
+        if ($k === 'in') {
+            $totInCount++;
+            $totInAmount += (float) $m['amount'];
+        } elseif ($k === 'out' || $k === 'card') {
+            $totOutCount++;
+            $totOutAmount += (float) $m['amount'];
+        } else {
+            $unknownCount++;
+        }
+    }
+    $netAmount = $totInAmount - $totOutAmount;
+
+    return [
+        'in_count'      => $totInCount,
+        'in_amount'     => $totInAmount,
+        'out_count'     => $totOutCount,
+        'out_amount'    => $totOutAmount,
+        'unknown_count' => $unknownCount,
+        'foreign_count' => $foreignCount,
+        'net_amount'    => $netAmount,
+    ];
+}
+
+/**
+ * بيانات ربط تطبيق الموبايل (التوكن للأونر فقط)
+ *
+ * @return array{hook_url: string, hook_token: string}
+ */
+function sms_get_webhook_info(bool $isOwner): array
+{
+    return [
+        'hook_url'   => 'https://hosnimanagement.com/sms_hook.php',
+        'hook_token' => $isOwner ? (string) (SYNC_AGENT_TOKENS['sms_phone'] ?? '') : '',
+    ];
+}

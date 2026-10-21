@@ -68,73 +68,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// (١) جلب إحصائيات الرسايل
-$statsSt = $pdo->query(
-    "SELECT
-        COUNT(*) AS total_count,
-        MAX(received_at) AS last_received,
-        SUM(CASE WHEN source = 'backfill' THEN 1 ELSE 0 END) AS backfill_count,
-        SUM(CASE WHEN source = 'live' THEN 1 ELSE 0 END) AS live_count
-     FROM sms_inbox"
-);
-$stats = $statsSt->fetch(PDO::FETCH_ASSOC) ?: [];
-$totalCount    = (int) ($stats['total_count'] ?? 0);
-$lastReceived  = $stats['last_received'] ? (string) $stats['last_received'] : 'لا يوجد بعد';
-$backfillCount = (int) ($stats['backfill_count'] ?? 0);
-$liveCount     = (int) ($stats['live_count'] ?? 0);
-
-// (٢) جلب إعدادات كلمات الفلتر
-$setSt = $pdo->query(
-    "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('sms_include_keywords', 'sms_exclude_keywords')"
-);
-$settingsMap = [];
-while ($row = $setSt->fetch(PDO::FETCH_ASSOC)) {
-    $settingsMap[(string) $row['setting_key']] = (string) $row['setting_value'];
-}
-$includeKw = $settingsMap['sms_include_keywords'] ?? '';
-$excludeKw = $settingsMap['sms_exclude_keywords'] ?? '';
-
 require_once __DIR__ . '/sms_lib.php';
 
-// (٣) معالجة الفلتر وجلب الرسايل المحللة
-$from = trim((string) ($_GET['from'] ?? ''));
-$to   = trim((string) ($_GET['to'] ?? ''));
-$kind = trim((string) ($_GET['kind'] ?? 'all'));
+// (١) جلب إحصائيات الرسايل
+$stats = sms_get_stats($pdo);
+$totalCount    = $stats['total_count'];
+$lastReceived  = $stats['last_received'];
+$backfillCount = $stats['backfill_count'];
+$liveCount     = $stats['live_count'];
 
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) {
-    $from = date('Y-m-d', strtotime('-30 days'));
-}
-if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
-    $to = date('Y-m-d');
-}
+// (٢) جلب إعدادات كلمات الفلتر
+$keywords = sms_get_keywords($pdo);
+$includeKw = $keywords['include_keywords'];
+$excludeKw = $keywords['exclude_keywords'];
+
+// (٣) معالجة الفلتر وجلب الرسايل المحللة
+$period = sms_parse_period($_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['kind'] ?? null);
+$from   = $period['from'];
+$to     = $period['to'];
+$kind   = $period['kind'];
 
 $allMessages = sms_fetch($pdo, $from, $to, $kind);
 
 // إجماليات الكروت على كامل النتائج في الفترة
-$totInCount   = 0;
-$totInAmount  = 0.0;
-$totOutCount  = 0;
-$totOutAmount = 0.0;
-$unknownCount = 0;
-
-$foreignCount = 0;
-foreach ($allMessages as $m) {
-    $k = $m['kind'];
-    if (!empty($m['foreign'])) {
-        $foreignCount++;   // حساب تاني مش بتاع الشغل — برّه الإجماليات
-        continue;
-    }
-    if ($k === 'in') {
-        $totInCount++;
-        $totInAmount += (float) $m['amount'];
-    } elseif ($k === 'out' || $k === 'card') {
-        $totOutCount++;
-        $totOutAmount += (float) $m['amount'];
-    } else {
-        $unknownCount++;
-    }
-}
-$netAmount = $totInAmount - $totOutAmount;
+$totals = sms_calc_totals($allMessages);
+$totInCount   = $totals['in_count'];
+$totInAmount  = $totals['in_amount'];
+$totOutCount  = $totals['out_count'];
+$totOutAmount = $totals['out_amount'];
+$unknownCount = $totals['unknown_count'];
+$foreignCount = $totals['foreign_count'];
+$netAmount    = $totals['net_amount'];
 
 // تحديد المعروض في الجدول (أول ٥٠٠ صف فقط)
 $totalCountFiltered = count($allMessages);
@@ -142,10 +106,10 @@ $messages = array_slice($allMessages, 0, 500);
 $hasMore = $totalCountFiltered > 500;
 $moreCount = $totalCountFiltered - 500;
 
-
 // (٤) بيانات الربط
-$hookUrl   = 'https://hosnimanagement.com/sms_hook.php';
-$hookToken = is_owner() ? (string) (SYNC_AGENT_TOKENS['sms_phone'] ?? '') : '';
+$webhookInfo = sms_get_webhook_info(is_owner());
+$hookUrl     = $webhookInfo['hook_url'];
+$hookToken   = $webhookInfo['hook_token'];
 
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sms_permits_lib.php';

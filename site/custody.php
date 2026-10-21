@@ -10,6 +10,7 @@
 require_once __DIR__ . '/auth.php';
 require_module_access('custody');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/custody_lib.php';
 
 $pdo  = db();
 $u    = current_user();
@@ -42,39 +43,19 @@ if ($activeTab === 'employee' && !$canEmployeeCustody) {
 }
 
 // تحديد الفرع المعروض لعهدة الفرع:
-$allBranches = $pdo->query('SELECT id, name FROM branches WHERE is_active=1 AND has_finance=1 ORDER BY name')->fetchAll();
-$branchId = null;
-if (!empty($u['branch_id'])) {
-    $branchId = (int) $u['branch_id'];
-} elseif (isset($_GET['branch'])) {
-    $branchId = (int) $_GET['branch'];
-} elseif ($allBranches) {
-    $branchId = (int) $allBranches[0]['id'];
-}
+$allBranches = custody_get_branches($pdo);
+$branchId = custody_resolve_branch_id($u, isset($_GET['branch']) ? (int)$_GET['branch'] : null, $allBranches);
 
 // الموظف المختار لعهدة الموظف
-$allEmployees = $pdo->query('SELECT id, full_name, job_title, branch_id FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
-$allSuppliers = $pdo->query('SELECT id, name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
+$allEmployees = custody_get_employees($pdo);
+$allSuppliers = custody_get_suppliers($pdo);
 
 // جلب موظف المستخدم الحالي (إن وُجد)
-$uEmpStmt = $pdo->prepare("SELECT id, full_name FROM employees WHERE user_id = ? AND is_active = 1 LIMIT 1");
-$uEmpStmt->execute([$uid]);
-$curUserEmp = $uEmpStmt->fetch();
+$curUserEmp = custody_get_user_employee($pdo, $uid);
 $currentUserEmpId = (int) ($curUserEmp['id'] ?? 0);
 
 // الموظف العادي لا يرى إلا عهدته هو فقط — الأونر فقط يقدر يختار أي موظف
-if (!is_owner()) {
-    $selectedEmpId = $currentUserEmpId;
-} else {
-    $selectedEmpId = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
-    if ($selectedEmpId <= 0) {
-        if ($currentUserEmpId > 0) {
-            $selectedEmpId = $currentUserEmpId;
-        } elseif (!empty($allEmployees)) {
-            $selectedEmpId = (int) $allEmployees[0]['id'];
-        }
-    }
-}
+$selectedEmpId = custody_resolve_selected_emp_id($u, isset($_GET['emp']) ? (int)$_GET['emp'] : null, $currentUserEmpId, $allEmployees);
 
 // ===== معالجة العمليات =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -224,34 +205,12 @@ if (isset($_SESSION['flash'])) {
 }
 
 // ===== جلب بيانات الفرع والعهدة =====
-$branchName = '';
-$custody = null; $expenses = []; $orders = [];
-if ($branchId) {
-    foreach ($allBranches as $b) if ((int)$b['id'] === $branchId) $branchName = $b['name'];
-    $custody = current_custody_for_branch($branchId);
-    if ($custody) {
-        $cid = (int) $custody['id'];
-        $e = $pdo->prepare(
-            'SELECT cl.*, ec.name AS entry_code_name
-             FROM custody_lines cl
-             LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
-             WHERE cl.custody_id=? ORDER BY cl.id DESC'
-        );
-        $e->execute([$cid]);
-        $expenses = $e->fetchAll();
-        $o = $pdo->prepare('SELECT * FROM disbursement_orders WHERE branch_id=? AND order_date >= ? ORDER BY id DESC');
-        $o->execute([$branchId, $custody['period_start']]);
-        $orders = $o->fetchAll();
-    }
-}
-
-// موظفو الفرع (لاختيار المسؤول عن العجز)
-$branchEmployees = [];
-if ($branchId) {
-    $em = $pdo->prepare('SELECT id, full_name FROM employees WHERE branch_id=? AND is_active=1 ORDER BY full_name');
-    $em->execute([$branchId]);
-    $branchEmployees = $em->fetchAll();
-}
+$branchCustodyData = $branchId ? custody_get_branch_custody_data($pdo, $branchId, $allBranches) : null;
+$branchName      = $branchCustodyData['branch_name'] ?? '';
+$custody         = $branchCustodyData['custody'] ?? null;
+$expenses        = $branchCustodyData['expenses'] ?? [];
+$orders          = $branchCustodyData['orders'] ?? [];
+$branchEmployees = $branchCustodyData['branch_employees'] ?? [];
 
 $denominations = [200, 100, 50, 20, 10, 5, 1];
 $tolerance = custody_tolerance();
@@ -355,50 +314,12 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php if ($activeTab === 'employee'): ?>
     <?php
-    $selectedEmpName = '';
-    $empCustody = null;
-    $empExpenses = [];
-    $empOrders = [];
-    $empTrBal = 0.0;
-
-    if ($selectedEmpId > 0) {
-        foreach ($allEmployees as $eRow) {
-            if ((int)$eRow['id'] === $selectedEmpId) {
-                $selectedEmpName = $eRow['full_name'];
-                break;
-            }
-        }
-        $empCustody = current_custody_for_employee($selectedEmpId);
-        if ($empCustody) {
-            $stExp = $pdo->prepare(
-                "SELECT cl.*, ec.name AS entry_code_name,
-                        emp.full_name AS adv_emp_name,
-                        supp.name AS supp_name
-                 FROM custody_lines cl
-                 LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
-                 LEFT JOIN employees emp ON emp.id = cl.employee_id
-                 LEFT JOIN suppliers supp ON supp.id = cl.supplier_id
-                 WHERE cl.custody_id = ?
-                 ORDER BY cl.id DESC"
-            );
-            $stExp->execute([(int)$empCustody['id']]);
-            $empExpenses = $stExp->fetchAll();
-
-            $stOrd = $pdo->prepare(
-                "SELECT * FROM disbursement_orders
-                 WHERE employee_id = ? AND order_date >= ?
-                 ORDER BY id DESC"
-            );
-            $stOrd->execute([(int)$selectedEmpId, $empCustody['period_start']]);
-            $empOrders = $stOrd->fetchAll();
-
-            if (!empty($empCustody['custody_treasury_id'])) {
-                $stTr = $pdo->prepare("SELECT balance FROM treasuries WHERE id=?");
-                $stTr->execute([(int)$empCustody['custody_treasury_id']]);
-                $empTrBal = (float)$stTr->fetchColumn();
-            }
-        }
-    }
+    $empCustodyData  = custody_get_employee_custody_data($pdo, $selectedEmpId, $allEmployees);
+    $selectedEmpName = $empCustodyData['employee_name'];
+    $empCustody      = $empCustodyData['custody'];
+    $empExpenses     = $empCustodyData['expenses'];
+    $empOrders       = $empCustodyData['orders'];
+    $empTrBal        = $empCustodyData['treasury_balance'];
     ?>
     <?php if (is_owner()): ?>
     <div class="top-row">
