@@ -12,6 +12,7 @@
 require_once __DIR__ . '/auth.php';
 require_permission('attendance');
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/attendance_lib.php';
 
 $pdo = db();
 $u   = current_user();
@@ -134,67 +135,18 @@ $today = date('Y-m-d');
 $todayAtt = null;
 $myPeriodAtt = [];
 
-// فترة سجل الحضور للموظف (افتراضياً الشهر الحالي)
-$attFrom = $_GET['from'] ?? null;
-$attTo   = $_GET['to']   ?? null;
-if ($attFrom !== null && $attTo !== null) {
-    if (!strtotime($attFrom)) $attFrom = date('Y-m-01');
-    if (!strtotime($attTo))   $attTo   = date('Y-m-t');
-} elseif (isset($_GET['month']) && preg_match('/^\d{4}-\d{2}$/', (string)$_GET['month'])) {
-    $attFrom = $_GET['month'] . '-01';
-    $attTo   = date('Y-m-t', strtotime($attFrom));
-} else {
-    // نفس فترة المرتب: من ٢٦ الشهر اللي فات لـ٢٥ الشهر ده — عشان اللي
-    // الموظف بيشوفه هنا يبقى هو اللي مرتبه هيتحسب عليه، مش شهر تقويمي.
-    //
-    // 🔴 بتقلب على الفترة الجديدة **يوم ١** من غير أي مهلة — عكس شاشة
-    // الرواتب اللي ليها مهلة ٥ أيام. ده مقصود: الموظف عايز يتابع فترته
-    // الجارية، والأونر عايز يخلّص صرف الفترة اللي فاتت.
-    $attFrom = date('Y-m-26', strtotime('first day of last month'));
-    $attTo   = date('Y-m-25');
-}
+// فترة سجل الحضور للموظف (افتراضياً نفس فترة المرتب من ٢٦ الشهر الماضي لـ ٢٥ الشهر الحالي)
+$periodDates = attendance_calc_period($_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['month'] ?? null);
+$attFrom     = $periodDates['from'];
+$attTo       = $periodDates['to'];
 
-// ---------------------------------------------------------------------------
-//  الورديات اللي بتعدّي منتصف الليل
-//
-//  المشكلة: الساعة 00:00 الصفحة كانت بتقلب ليوم جديد، فالموظف اللي لسه
-//  شغال (مسجّل دخول امبارح ومسجلش خروج) مايلاقيش زرار الانصراف.
-//
-//  الحل: قبل بداية اليوم المحاسبي (business_day_start من الإعدادات)،
-//  لو فيه دخول امبارح من غير خروج، نفضل نعرض يوم امبارح لحد ما يسجل خروج.
-//  والتغيير بيتم من صفحة الإعدادات.
-// ---------------------------------------------------------------------------
-$GRACE_HOURS = business_day_start_hour();
-$attDate     = $today;   // اليوم اللي الصفحة شغالة عليه فعليًا
-$isCarryOver = false;    // هل احنا بنكمل وردية امبارح؟
+$activeInfo  = attendance_get_active_date($pdo, $employee ? (int) $employee['id'] : 0);
+$attDate     = $activeInfo['att_date'];
+$isCarryOver = $activeInfo['is_carry_over'];
 
 if ($employee) {
-    $hourNow = (int)date('G');   // 0..23
-
-    if ($hourNow < $GRACE_HOURS) {
-        $yesterday = date('Y-m-d', strtotime('-1 day'));
-
-        // فيه دخول امبارح ومفيش خروج؟
-        $q = $pdo->prepare(
-            'SELECT * FROM attendance
-             WHERE employee_id = ? AND att_date = ?
-               AND check_in IS NOT NULL AND check_out IS NULL'
-        );
-        $q->execute([(int)$employee['id'], $yesterday]);
-
-        if ($q->fetch()) {
-            $attDate     = $yesterday;
-            $isCarryOver = true;
-        }
-    }
-
-    $a = $pdo->prepare('SELECT * FROM attendance WHERE employee_id=? AND att_date=?');
-    $a->execute([(int)$employee['id'], $attDate]);
-    $todayAtt = $a->fetch();
-    // سجل الفترة
-    $m = $pdo->prepare("SELECT * FROM attendance WHERE employee_id=? AND att_date BETWEEN ? AND ? ORDER BY att_date DESC");
-    $m->execute([(int)$employee['id'], $attFrom, $attTo]);
-    $myPeriodAtt = $m->fetchAll();
+    $todayAtt    = attendance_get_today($pdo, (int) $employee['id'], $attDate);
+    $myPeriodAtt = attendance_get_period($pdo, (int) $employee['id'], $attFrom, $attTo);
 }
 
 $page_title    = 'تسجيل الحضور';
