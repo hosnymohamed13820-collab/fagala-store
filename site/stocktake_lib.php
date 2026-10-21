@@ -1223,3 +1223,77 @@ function stk_places_list(): array
         return [];
     }
 }
+
+/**
+ * جلب سطر المحضر الخام من جدول stocktake_sheets بدون JOIN (للتحقق من الصلاحيات).
+ */
+function stk_load_sheet_row(int $sheetId): ?array
+{
+    $st = db()->prepare('SELECT * FROM stocktake_sheets WHERE id=?');
+    $st->execute([$sheetId]);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * إنشاء محضر جرد جديد مع حماية ضد تكرار نفس المكان في نفس الجلسة.
+ *
+ * @return array{sheet_id:int, duplicate:bool}
+ */
+function stk_create_sheet(int $sessionId, ?int $branchId, string $place, int $userId): array
+{
+    $pdo = db();
+    $place = trim($place);
+    if ($place !== '') {
+        $normPlace = preg_replace('/\s+/u', ' ', $place);
+        $dupPlace = $pdo->prepare(
+            "SELECT id FROM stocktake_sheets
+             WHERE session_id=? AND REPLACE(REPLACE(place_note,'  ',' '),'  ',' ')=? AND status IN ('open','reviewing')
+             ORDER BY id DESC LIMIT 1"
+        );
+        $dupPlace->execute([$sessionId, $normPlace]);
+        $dupId = (int) $dupPlace->fetchColumn();
+        if ($dupId > 0) {
+            return ['sheet_id' => $dupId, 'duplicate' => true];
+        }
+    }
+
+    $maxNo = (int) $pdo->query('SELECT COALESCE(MAX(sheet_no),0) FROM stocktake_sheets WHERE session_id=' . $sessionId)->fetchColumn();
+    $st = $pdo->prepare(
+        'INSERT INTO stocktake_sheets (session_id, sheet_no, branch_id, place_note, counted_by, status)
+         VALUES (?, ?, ?, ?, ?, "open")'
+    );
+    $st->execute([$sessionId, $maxNo + 1, $branchId ?: null, $place !== '' ? $place : null, $userId]);
+    $newId = (int) $pdo->lastInsertId();
+    return ['sheet_id' => $newId, 'duplicate' => false];
+}
+
+/**
+ * تعديل كمية المراجع لصنف في محضر الجرد مع حراسة ضد كود السكانر والكميات الفلكية.
+ */
+function stk_update_review_qty(int $sheetId, int $lineId, float $qty): float
+{
+    $pdo = db();
+    $ln = $pdo->prepare('SELECT unit, entered_code, base_qty FROM stocktake_lines WHERE id=? AND sheet_id=?');
+    $ln->execute([$lineId, $sheetId]);
+    $row = $ln->fetch();
+    if (!$row) {
+        throw new RuntimeException('السطر غير موجود.');
+    }
+    $unit = (float)($row['unit'] ?? 1);
+    if ($unit <= 0) $unit = 1;
+
+    // حماية ضد الكود المضروب في خانة الكمية
+    $enteredCode = (string) ($row['entered_code'] ?? '');
+    if ($enteredCode !== '' && abs($qty - (float)$enteredCode) < 0.0001 && $qty > 100) {
+        throw new InvalidArgumentException('يبدو أن السكانر أدخل الكود في خانة الكمية. اكتب الكمية بيدك.');
+    }
+    // كمية غير منطقية (فلكية أو سالبة)
+    if ($qty > 100000 || $qty < 0) {
+        throw new InvalidArgumentException('الكمية كبيرة بشكل غير منطقي (' . $qty . ').');
+    }
+
+    $reviewBase = $qty * $unit;
+    $pdo->prepare('UPDATE stocktake_lines SET review_qty=? WHERE id=? AND sheet_id=?')
+        ->execute([$reviewBase, $lineId, $sheetId]);
+    return $reviewBase;
+}

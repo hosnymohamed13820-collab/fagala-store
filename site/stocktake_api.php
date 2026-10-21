@@ -32,7 +32,7 @@ require_once __DIR__ . '/stocktake_lib.php';
 $u     = current_user();
 $uid   = (int) ($u['id'] ?? 0);
 $owner = is_owner();
-$part  = (string) ($_GET['part'] ?? '');
+$part  = (string) ($_GET['part'] ?? ($_POST['part'] ?? ''));
 
 // ===== القراءة — GET بس =====
 switch ($part) {
@@ -126,10 +126,196 @@ switch ($part) {
         api_ok(['rows' => stk_search_in_sheets($sessionId, $term)]);
 }
 
-// ===== مرحلة (أ): لا توجد أي عمليات كتابة مسموحة =====
-$writes = [];
+// ===== عمليات الكتابة — POST بس، بـCSRF ومحمي من التكرار =====
+$writes = [
+    'add_sheet',
+    'add_line',
+    'delete_line',
+    'start_review',
+    'set_review',
+    'set_review_qty',
+    'set_final',
+    'set_final_bulk',
+    'finalize',
+];
 
 if (!in_array($part, $writes, true)) {
-    api_fail('جزء غير معروف', 400, 'bad_request');
+    api_fail('جزء غير معروف (part)', 400, 'bad_request');
+}
+
+api_method('POST');
+api_csrf();
+api_idempotent();
+
+$in = api_input();
+
+switch ($part) {
+    case 'add_sheet':
+        $session = stk_active_session();
+        if (!$session) {
+            api_fail('لا توجد جلسة جرد نشطة', 422, 'no_active_session');
+        }
+        $branchId = (int) ($in['branch_id'] ?? ($_POST['branch_id'] ?? 0));
+        $place    = trim((string) ($in['place_note'] ?? ($_POST['place_note'] ?? '')));
+        if ($owner && !empty($in['place_custom'] ?? $_POST['place_custom'] ?? '')) {
+            $place = trim((string) ($in['place_custom'] ?? $_POST['place_custom']));
+        }
+        $res = stk_create_sheet((int)$session['id'], $branchId ?: null, $place, $uid);
+        api_ok([
+            'sheet_id'  => $res['sheet_id'],
+            'duplicate' => $res['duplicate'],
+        ]);
+
+    case 'add_line':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $code    = trim((string) ($in['code'] ?? ($_POST['code'] ?? '')));
+        $qty     = (float) ($in['qty'] ?? ($_POST['qty'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_edit($sheet, $u)) {
+            api_fail('غير مسموح: المحضر ده مقترن بصاحبه فقط', 403, 'forbidden');
+        }
+        try {
+            $session = stk_active_session();
+            $res = stk_add_line($sheetId, $code, $qty, $session ? (int)$session['id'] : null);
+        } catch (RuntimeException $codeEx) {
+            if (mb_strpos($codeEx->getMessage(), 'غير موجود') !== false) {
+                api_fail('الصنف غير موجود', 422, 'not_found', ['code' => $code]);
+            }
+            api_fail($codeEx->getMessage(), 422, 'invalid');
+        } catch (InvalidArgumentException $qtyEx) {
+            api_fail($qtyEx->getMessage(), 422, 'bad_qty', ['qty' => $qty]);
+        }
+        $ll = stk_sheet_lines($sheetId);
+        api_ok([
+            'ok'     => true,
+            'merged' => $res['merged'],
+            'name'   => $res['name'],
+            'lines'  => $ll,
+        ]);
+
+    case 'delete_line':
+        $lineId     = (int) ($in['line_id'] ?? ($_POST['line_id'] ?? 0));
+        $sheetId    = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $fromReview = !empty($in['from_review'] ?? $_POST['from_review'] ?? 0);
+        $sheet      = stk_load_sheet_row($sheetId);
+        $allowed    = $fromReview ? stk_can_review($sheet, $u) : stk_can_edit($sheet, $u);
+        if (!$sheet || !$allowed) {
+            api_fail('غير مسموح بحذف الصنف', 403, 'forbidden');
+        }
+        stk_delete_line($lineId, $sheetId);
+        api_ok([
+            'line_id'  => $lineId,
+            'sheet_id' => $sheetId,
+        ]);
+
+    case 'start_review':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet) {
+            api_fail('المحضر غير موجود', 404, 'not_found');
+        }
+        if (!$owner && (int)$u['id'] === (int)$sheet['counted_by']) {
+            api_fail('مينفعش تراجع محضرك بنفسك — لازم يوزر تاني يراجعه.', 422, 'self_review');
+        }
+        stk_start_review($sheetId, $uid);
+        api_ok([
+            'sheet_id' => $sheetId,
+            'status'   => 'reviewing',
+        ]);
+
+    case 'set_review':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $code    = trim((string) ($in['code'] ?? ($_POST['code'] ?? '')));
+        $qty     = (float) ($in['review_qty'] ?? ($_POST['review_qty'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_review($sheet, $u)) {
+            api_fail('غير مسموح: المراجعة لصاحب المحضر والمراجع فقط', 403, 'forbidden');
+        }
+        try {
+            $res = stk_add_review($sheetId, $code, $qty);
+        } catch (RuntimeException $codeEx) {
+            if (mb_strpos($codeEx->getMessage(), 'غير موجود') !== false) {
+                api_fail('الصنف غير موجود', 422, 'not_found', ['code' => $code]);
+            }
+            api_fail($codeEx->getMessage(), 422, 'invalid');
+        } catch (InvalidArgumentException $qtyEx) {
+            api_fail($qtyEx->getMessage(), 422, 'bad_qty', ['qty' => $qty]);
+        }
+        api_ok([
+            'new_item' => $res['new_item'],
+            'name'     => $res['name'],
+        ]);
+
+    case 'set_review_qty':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $lineId  = (int) ($in['line_id'] ?? ($_POST['line_id'] ?? 0));
+        $qty     = (float) ($in['review_qty'] ?? ($_POST['review_qty'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_review($sheet, $u)) {
+            api_fail('غير مسموح', 403, 'forbidden');
+        }
+        try {
+            $reviewBase = stk_update_review_qty($sheetId, $lineId, $qty);
+        } catch (InvalidArgumentException $qtyEx) {
+            api_fail($qtyEx->getMessage(), 422, 'bad_qty');
+        } catch (Throwable $ex) {
+            api_fail($ex->getMessage(), 422, 'invalid');
+        }
+        api_ok([
+            'line_id'    => $lineId,
+            'sheet_id'   => $sheetId,
+            'review_qty' => $reviewBase,
+        ]);
+
+    case 'set_final':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $lineId  = (int) ($in['line_id'] ?? ($_POST['line_id'] ?? 0));
+        $qty     = (float) ($in['final_qty'] ?? ($_POST['final_qty'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_review($sheet, $u)) {
+            api_fail('غير مسموح: التعديل لصاحب المحضر والمراجع فقط', 403, 'forbidden');
+        }
+        stk_set_final_qty($lineId, $qty, $uid);
+        api_ok([
+            'line_id'   => $lineId,
+            'sheet_id'  => $sheetId,
+            'final_qty' => $qty,
+        ]);
+
+    case 'set_final_bulk':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_review($sheet, $u)) {
+            api_fail('غير مسموح', 403, 'forbidden');
+        }
+        $rawFinals = $in['final'] ?? ($_POST['final'] ?? []);
+        if (is_string($rawFinals)) {
+            $rawFinals = json_decode($rawFinals, true) ?: [];
+        }
+        if (!is_array($rawFinals)) {
+            api_fail('بيانات غير صالحة', 400, 'bad_request');
+        }
+        foreach ($rawFinals as $lid => $q) {
+            stk_set_final_qty((int)$lid, (float)$q, $uid);
+        }
+        if ($owner) {
+            stk_finalize_sheet($sheetId, $uid);
+        }
+        api_ok([
+            'sheet_id'  => $sheetId,
+            'finalized' => $owner,
+        ]);
+
+    case 'finalize':
+        $sheetId = (int) ($in['sheet_id'] ?? ($_POST['sheet_id'] ?? 0));
+        $sheet   = stk_load_sheet_row($sheetId);
+        if (!$sheet || !stk_can_review($sheet, $u)) {
+            api_fail('غير مسموح: الإنهاء لصاحب المحضر والمراجع فقط', 403, 'forbidden');
+        }
+        stk_finalize_sheet($sheetId, $uid);
+        api_ok([
+            'sheet_id' => $sheetId,
+            'status'   => 'done',
+        ]);
 }
 

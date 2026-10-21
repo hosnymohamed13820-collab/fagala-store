@@ -81,10 +81,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $action = $_POST['action'] ?? '';
         // helper: جلب المحضر للتحقق من الصلاحية
-        $loadSheet = function(int $sid) use ($pdo) {
-            $s = $pdo->prepare('SELECT * FROM stocktake_sheets WHERE id=?');
-            $s->execute([$sid]);
-            return $s->fetch() ?: null;
+        $loadSheet = function(int $sid) {
+            return stk_load_sheet_row($sid);
         };
         try {
             if ($action === 'start_session' && $owner) {
@@ -166,34 +164,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $place = trim($_POST['place_custom']);
                 }
 
-                // حماية من التكرار: نمنع بس تكرار *نفس المكان* لو محضره لسه مفتوح/مراجعة.
-                // (كده الموظف يقدر يعمل محاضر لأماكن مختلفة عادي — رف تاني، قسم تاني —
-                //  لكن لو ضرب نفس المكان تاني بالغلط أو النت أعاد الإرسال، نوديه للمحضر الموجود.)
-                if ($place !== '') {
-                    // نطابق بعد توحيد المسافات عشان الاختلافات البسيطة ماتعملش محاضر مكررة
-                    $normPlace = preg_replace('/\s+/u', ' ', $place);
-                    $dupPlace = $pdo->prepare(
-                        "SELECT id FROM stocktake_sheets
-                         WHERE session_id=? AND REPLACE(REPLACE(place_note,'  ',' '),'  ',' ')=? AND status IN ('open','reviewing')
-                         ORDER BY id DESC LIMIT 1"
-                    );
-                    $dupPlace->execute([(int)$session['id'], $normPlace]);
-                    $dupId = (int) $dupPlace->fetchColumn();
-                    if ($dupId > 0) {
-                        $_SESSION['flash'] = 'فيه محضر بنفس المكان "' . $place . '" مفتوح بالفعل — كمّل فيه بدل ما تعمل جديد.';
-                        header('Location: stocktake.php?sheet=' . $dupId);
-                        exit;
-                    }
+                $resSheet = stk_create_sheet((int)$session['id'], $branchId ?: null, $place, $uid);
+                if ($resSheet['duplicate']) {
+                    $_SESSION['flash'] = 'فيه محضر بنفس المكان "' . $place . '" مفتوح بالفعل — كمّل فيه بدل ما تعمل جديد.';
+                    header('Location: stocktake.php?sheet=' . $resSheet['sheet_id']);
+                    exit;
                 }
-
-                // رقم المحضر التسلسلي داخل الجلسة
-                $maxNo = (int) $pdo->query('SELECT COALESCE(MAX(sheet_no),0) FROM stocktake_sheets WHERE session_id='.(int)$session['id'])->fetchColumn();
-                $pdo->prepare(
-                    'INSERT INTO stocktake_sheets (session_id, sheet_no, branch_id, place_note, counted_by, status)
-                     VALUES (?, ?, ?, ?, ?, "open")'
-                )->execute([(int)$session['id'], $maxNo+1, $branchId ?: null, $place ?: null, $uid]);
-                $newId = (int) $pdo->lastInsertId();
-                header('Location: stocktake.php?sheet=' . $newId);
+                header('Location: stocktake.php?sheet=' . $resSheet['sheet_id']);
                 exit;
             }
             elseif ($action === 'add_line') {
@@ -311,29 +288,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>false,'err'=>'غير مسموح']); exit; }
                     throw new RuntimeException('غير مسموح.');
                 }
-                // نحوّل الكمية لوحدة أساسية حسب وحدة السطر
-                $ln = $pdo->prepare('SELECT unit, entered_code, base_qty FROM stocktake_lines WHERE id=? AND sheet_id=?');
-                $ln->execute([$lineId, $sheetId]);
-                $row = $ln->fetch();
-                $unit = $row ? (float)($row['unit'] ?? 1) : 1;
-                if ($unit <= 0) $unit = 1;
-
-                // ===== حماية ضد الكود المضروب في خانة الكمية =====
-                // لو الكمية = كود الصنف نفسه (السكانر ضرب الكود بالغلط) → ارفض
-                $enteredCode = $row['entered_code'] ?? '';
-                if ($enteredCode !== '' && abs($qty - (float)$enteredCode) < 0.0001 && $qty > 100) {
-                    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>false,'badqty'=>'يبدو أن السكانر أدخل الكود في خانة الكمية. اكتب الكمية بيدك.']); exit; }
-                    throw new RuntimeException('يبدو أن السكانر أدخل الكود في خانة الكمية.');
+                try {
+                    stk_update_review_qty($sheetId, $lineId, $qty);
+                } catch (InvalidArgumentException $qtyEx) {
+                    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>false,'badqty'=>$qtyEx->getMessage()]); exit; }
+                    throw new RuntimeException($qtyEx->getMessage());
                 }
-                // كمية غير منطقية (فلكية)
-                if ($qty > 100000) {
-                    if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>false,'badqty'=>'الكمية كبيرة بشكل غير منطقي ('.$qty.').']); exit; }
-                    throw new RuntimeException('الكمية كبيرة بشكل غير منطقي.');
-                }
-
-                $reviewBase = $qty * $unit;
-                $pdo->prepare('UPDATE stocktake_lines SET review_qty=? WHERE id=? AND sheet_id=?')
-                    ->execute([$reviewBase, $lineId, $sheetId]);
                 if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>true]); exit; }
                 header('Location: stocktake.php?sheet=' . $sheetId . '&mode=review');
                 exit;
