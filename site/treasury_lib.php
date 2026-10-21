@@ -114,6 +114,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                     END AS supplier_name,
                     eu.full_name AS edited_by_name,
                     cb.name AS cost_branch_name,
+                    sh.shift_name,
                     tfrom.name AS transfer_from_name,
                     tto.name AS transfer_to_name{$tmRevSelect}
              FROM journal_entries je
@@ -176,6 +177,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                             END AS supplier_name,
                             eu.full_name AS edited_by_name,
                             cb.name AS cost_branch_name,
+                            sh.shift_name,
                             tfrom.name AS transfer_from_name,
                             tto.name AS transfer_to_name{$tmRevSelect}
                      FROM journal_entries je

@@ -860,7 +860,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php else: ?>
     <table>
         <thead><tr>
-            <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
+            <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th>السيستم</th>
             <th>كاش</th><th>فيزا</th><th>إنستا</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th><th>إجراءات</th>
         </tr></thead>
@@ -874,14 +874,14 @@ require_once __DIR__ . '/includes/header.php';
         ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td><?= e($s['cashier_name']) ?></td>
-                <td><?= e($s['branch_name']) ?></td>
                 <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
                         <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
+                <td><?= e($s['cashier_name']) ?></td>
+                <td><?= e($s['branch_name']) ?></td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
@@ -934,7 +934,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="section-title">الأرشيف (تقفيلات سابقة)</div>
     <table>
         <thead><tr>
-            <th>التاريخ</th><th>الكاشير</th><th>الفرع</th><th>رقم الوردية</th><th>السيستم</th>
+            <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th>السيستم</th>
             <th>كاش</th><th>فيزا</th><th>إنستا</th>
             <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th>
             <?php if (is_owner()): ?><th data-xt-skip>الإجراءات</th><?php endif; ?>
@@ -949,14 +949,14 @@ require_once __DIR__ . '/includes/header.php';
             ?>
             <tr>
                 <td><?= e($s['business_date']) ?></td>
-                <td><?= e($s['cashier_name']) ?></td>
-                <td><?= e($s['branch_name']) ?></td>
                 <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>
                     <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
                         <div class="csh-edit-badge">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                     <?php endif; ?>
                 </td>
+                <td><?= e($s['cashier_name']) ?></td>
+                <td><?= e($s['branch_name']) ?></td>
                 <td><?= number_format($sys,2) ?></td>
                 <td><?= number_format($cash,2) ?></td>
                 <td><?= number_format($visa,2) ?></td>
@@ -1109,7 +1109,7 @@ require_once __DIR__ . '/includes/header.php';
                 const sBtn = document.getElementById('shiftSubmitBtn');
                 const oNotice = document.getElementById('ownerEditNotice');
                 const oCName = document.getElementById('ownerEditCashierName');
-                const sName = data.shift_name ? data.shift_name : id;
+                const sName = data.shift_name ? data.shift_name : '—';
 
                 if (action === 'owner_edit_shift') {
                     if (mTitle) mTitle.textContent = 'تعديل وردية ' + sName;

@@ -1378,7 +1378,7 @@ $statusBadge = function($st) {
         <?php else: ?>
         <div class="hrs-scroll-x">
         <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
+            <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
             <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
                 <?php
@@ -1394,6 +1394,7 @@ $statusBadge = function($st) {
                 ?>
                 <tr>
                     <td><?= e($p['deduction_date']) ?></td>
+                    <td><?= e($p['shift_name']) ?></td>
                     <td class="hrs-fw5"><?= e($p['full_name']) ?></td>
                     <td><span class="badge" style="background:<?= $typeBg ?>;color:<?= $typeColor ?>;"><?= e($p['deduction_type']) ?></span></td>
                     <td><?= e($p['branch_name'] ?? '—') ?></td>

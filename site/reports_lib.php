@@ -104,7 +104,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // فلتر اختياري بالفرع (أزرار الفروع فوق الجدول)
             $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
             $sqlSales =
-                "SELECT s.business_date, b.name AS branch, u.full_name AS cashier,
+                "SELECT s.business_date, s.shift_name, b.name AS branch, u.full_name AS cashier,
                         s.cash_total, s.visa_total, s.instapay_total, s.system_total,
                         (s.cash_total+s.visa_total+s.instapay_total) AS paid_sum,
                         s.difference, s.status
@@ -127,28 +127,28 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // الكارت مش هيطابق عموده. خلّينا الاتنين سيستم.
                 $tCollected += (float)$r['system_total']; $tDiff += (float)$r['difference'];
                 $visaInsta = (float)$r['visa_total'] + (float)$r['instapay_total'];
-                $rows[] = [$r['business_date'], $r['branch'], $r['cashier'],
+                $rows[] = [$r['business_date'], $r['shift_name'] ?: '—', $r['branch'], $r['cashier'],
                     number_format((float)$r['cash_total'],2), number_format((float)$r['visa_total'],2),
                     number_format((float)$r['instapay_total'],2),
                     number_format($visaInsta,2),
                     number_format((float)$r['system_total'],2), number_format((float)$r['difference'],2),
                     $stMap[$r['status']] ?? $r['status']];
             }
-            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','الفرع','الكاشير','كاش','فيزا','إنستا','فيزا + إنستا','المحصّل','الفرق','الحالة'],
+            return ['title'=>'تقرير المبيعات','headers'=>['التاريخ','رقم الوردية','الفرع','الكاشير','كاش','فيزا','إنستا','فيزا + إنستا','المحصّل','الفرق','الحالة'],
                 'rows'=>$rows,
                 // الترتيب مقصود: المحصل · الكاش · الفيزا · الإنستا ·
                 // الفيزا+الإنستا · الفرق — نفس ترتيب شاشة تقفيل الكاشير.
                 // كارت الفيزا+الإنستا كان بيجمع عمودين (cols)؛ بقى عمود
                 // حقيقي في الجدول فبيشاور عليه بـcol زي باقي الكروت.
                 'sum_cards'=>[
-                    ['label'=>'المحصل',        'col'=>7],
-                    ['label'=>'الكاش',         'col'=>3],
-                    ['label'=>'الفيزا',        'col'=>4],
-                    ['label'=>'الإنستا',       'col'=>5],
-                    ['label'=>'الفيزا + الإنستا','col'=>6],
-                    ['label'=>'الفرق',         'col'=>8, 'signed'=>true],
+                    ['label'=>'المحصل',        'col'=>8],
+                    ['label'=>'الكاش',         'col'=>4],
+                    ['label'=>'الفيزا',        'col'=>5],
+                    ['label'=>'الإنستا',       'col'=>6],
+                    ['label'=>'الفيزا + الإنستا','col'=>7],
+                    ['label'=>'الفرق',         'col'=>9, 'signed'=>true],
                 ],
-                'totals'=>['','','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
+                'totals'=>['','','','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
 
         case 'treasury':
             // فلتر اختياري بالقيد
@@ -156,7 +156,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // فلتر اختياري بفرع التكلفة
             $branchFilter = isset($_GET['cost_branch']) && $_GET['cost_branch'] !== '' ? (int)$_GET['cost_branch'] : null;
             $sqlT =
-                "SELECT je.entry_date, t.name AS treasury, je.description, je.debit, je.credit, je.running_balance,
+                "SELECT je.entry_date, sh.shift_name, t.name AS treasury, je.description, je.debit, je.credit, je.running_balance,
                         u.full_name AS by_name,
                         COALESCE(je.account_id, tm.entry_code_id) AS account_id,
                         je.notes,
@@ -207,7 +207,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             foreach ($data as $r) {
                 $tDr+=(float)$r['debit']; $tCr+=(float)$r['credit'];
                 $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
-                $rows[]=[$r['entry_date'], $r['treasury'], $r['description'],
+                $rows[]=[$r['entry_date'], $r['shift_name'] ?: '—', $r['treasury'], $r['description'],
                     $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
                     $r['cost_branch_name'] ?? '—',
                     number_format((float)$r['debit'],2), number_format((float)$r['credit'],2),
@@ -218,16 +218,16 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             // notes_col = رقم عمود الملاحظات. الجدول بيقصّه بـ ellipsis
             // ويحط النص الكامل في tooltip، والتصدير بياخده كامل من $rows.
             return ['title'=>'تقرير الخزينة',
-                'headers'=>['التاريخ','الخزينة','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>10,
+                'headers'=>['التاريخ','رقم الوردية','الخزينة','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>11,
                 // الصافي = مدين − دائن (مش العكس). القيمة السالبة معناها
                 // دخل أكتر من اللي خرج.
                 'sum_cards'=>[
-                    ['label'=>'إجمالي مدين', 'col'=>6],
-                    ['label'=>'إجمالي دائن', 'col'=>7],
-                    ['label'=>'الصافي',      'cols'=>[6], 'minus'=>[7], 'signed'=>true],
+                    ['label'=>'إجمالي مدين', 'col'=>7],
+                    ['label'=>'إجمالي دائن', 'col'=>8],
+                    ['label'=>'الصافي',      'cols'=>[7], 'minus'=>[8], 'signed'=>true],
                 ],
-                'totals'=>['','','','','','إجمالي:','مدين '.number_format($tDr,2),'دائن '.number_format($tCr,2),'','','']];
+                'totals'=>['','','','','','','إجمالي:','مدين '.number_format($tDr,2),'دائن '.number_format($tCr,2),'','','']];
 
         case 'custody':
             // فلتر الفرع: أزرار فوق التقرير. الفترة فلتر مستقل تماماً —
@@ -252,19 +252,20 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
                 if (!$trId) {
                     return ['title'=>'كشف عهدة: '.$branchName,
-                        'headers'=>['التاريخ','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                        'rows'=>[], 'totals'=>[], 'notes_col'=>8,
+                        'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                        'rows'=>[], 'totals'=>[], 'notes_col'=>9,
                         'note'=>'الفرع ده مالوش خزينة عهدة.'];
                 }
 
                 $st = $pdo->prepare(
-                    "SELECT je.entry_date, je.description, je.debit, je.credit,
+                    "SELECT je.entry_date, sh.shift_name, je.description, je.debit, je.credit,
                             je.running_balance, je.notes,
                             u.full_name AS by_name,
                             COALESCE(je.account_id, tm.entry_code_id) AS account_id,
                             tfrom.name AS transfer_from_name,
                             tto.name AS transfer_to_name
                        FROM journal_entries je
+                       LEFT JOIN shifts sh ON sh.id = je.ref_id AND je.ref_type = 'shift'
                        LEFT JOIN users u ON u.id = je.created_by
                        LEFT JOIN treasury_movements tm
                               ON tm.id = je.ref_id
@@ -287,7 +288,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     $tDr += (float)$r['debit'];
                     $tCr += (float)$r['credit'];
                     $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
-                    $rows[] = [$r['entry_date'], $r['description'],
+                    $rows[] = [$r['entry_date'], $r['shift_name'] ?: '—', $r['description'],
                         $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
                         (float)$r['debit']  > 0 ? number_format((float)$r['debit'],2)  : '—',
                         (float)$r['credit'] > 0 ? number_format((float)$r['credit'],2) : '—',
@@ -300,13 +301,13 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // الكروت بتتحسب من نفس الصفوف الظاهرة، فبتتغيّر مع
                 // التاريخ والفرع وأي فلتر على الجدول.
                 return ['title'=>'كشف عهدة: '.$branchName,
-                    'headers'=>['التاريخ','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>8,
+                    'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>9,
                     'sum_cards'=>[
-                        ['label'=>'إجمالي المصروف', 'col'=>4],
-                        ['label'=>'إجمالي المستلم', 'col'=>5],
+                        ['label'=>'إجمالي المصروف', 'col'=>5],
+                        ['label'=>'إجمالي المستلم', 'col'=>6],
                     ],
-                    'totals'=>['','','','إجمالي:','مدين '.number_format($tDr,2),
+                    'totals'=>['','','','','إجمالي:','مدين '.number_format($tDr,2),
                                'دائن '.number_format($tCr,2),'','','']];
             }
 
@@ -567,7 +568,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     }
 
                     $movementType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
-                    $shiftNo      = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? (string) $r['shift_name'] : '#' . $r['shift_id'];
+                    $shiftNo      = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? (string) $r['shift_name'] : '—';
                     $shortageVal  = $vs['kind'] === 'shortage' ? number_format($vs['amount'], 2) : '—';
                     $overVal      = $vs['kind'] === 'over' ? number_format($vs['amount'], 2) : '—';
                     $tolVal       = number_format($vs['tolerance'], 2);
@@ -584,10 +585,10 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
                 $rows[] = [
                     (string) $r['deficit_date'],
+                    $shiftNo,
                     $r['branch_name'] ?? '—',
                     $r['person_name'] ?? '—',
                     $movementType,
-                    $shiftNo,
                     $shortageVal,
                     $overVal,
                     $tolVal,
@@ -599,7 +600,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
             return [
                 'title'     => 'تقرير العجوزات',
-                'headers'   => ['التاريخ', 'الفرع', 'الموظف', 'نوع الحركة', 'رقم الوردية', 'العجز', 'الزيادة', 'العتبة', 'اللي بيتخصم', 'الحالة', 'حالة التحصيل'],
+                'headers'   => ['التاريخ', 'رقم الوردية', 'الفرع', 'الموظف', 'نوع الحركة', 'العجز', 'الزيادة', 'العتبة', 'اللي بيتخصم', 'الحالة', 'حالة التحصيل'],
                 'rows'      => $rows,
                 'sum_cards' => [
                     ['label' => 'إجمالي العجز',    'col' => 5],

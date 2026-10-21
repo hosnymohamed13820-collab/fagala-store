@@ -67,7 +67,7 @@ if ($accId > 0) $args[] = $accId;
 if ($branchArg !== null) $args[] = $branchArg;
 
 $st = $pdo->prepare(
-    "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
+    "SELECT je.id, je.entry_date, sh.shift_name, je.description, je.debit, je.credit,
             je.running_balance, je.notes, je.ref_type,
             t.name AS treasury, u.full_name AS by_name,
             cb.name AS branch_name,
@@ -113,8 +113,8 @@ $kinds = [
 
 $x = new SimpleXlsx('حركات ' . mb_substr($accountName, 0, 20));
 
-// A=تاريخ نص · B=بيان نص · C=نوع نص · D=خزينة نص · E=فرع نص · F=مدين رقم · G=دائن رقم · H=رصيد رقم · I=بواسطة نص · J=ملاحظات نص
-$x->setColumnTypes(['s', 's', 's', 's', 's', 'n', 'n', 'n', 's', 's']);
+// A=تاريخ نص · B=رقم وردية نص · C=بيان نص · D=نوع نص · E=خزينة نص · F=فرع نص · G=مدين رقم · H=دائن رقم · I=رصيد رقم · J=بواسطة نص · K=ملاحظات نص
+$x->setColumnTypes(['s', 's', 's', 's', 's', 's', 'n', 'n', 'n', 's', 's']);
 
 $x->addRow(['تقرير حركات الحساب للفترة'], true);
 $x->addRow(['الحساب', $accountName]);
@@ -123,7 +123,7 @@ $x->addRow(['الفترة', 'من ' . $dFrom . ' إلى ' . $dTo]);
 $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
 $x->addBlank();
 
-$x->addRow(['التاريخ', 'البيان', 'النوع', 'الخزينة', 'الفرع', 'مدين', 'دائن', 'الرصيد', 'بواسطة', 'الملاحظات'], true);
+$x->addRow(['التاريخ', 'رقم الوردية', 'البيان', 'النوع', 'الخزينة', 'الفرع', 'مدين', 'دائن', 'الرصيد', 'بواسطة', 'الملاحظات'], true);
 
 $totDebit = 0.0;
 $totCredit = 0.0;
@@ -143,6 +143,7 @@ foreach ($st as $r) {
 
     $x->addRow([
         (string) $r['entry_date'],
+        (string) ($r['shift_name'] ?: '—'),
         $desc,
         $kinds[$r['ref_type']] ?? ($r['ref_type'] ?: '—'),
         (string) $r['treasury'],
@@ -155,7 +156,7 @@ foreach ($st as $r) {
     ]);
 }
 
-$x->addRow(['', 'الإجمالي', '', '', '', round($totDebit, 2), round($totCredit, 2), '', '', ''], true);
+$x->addRow(['', '', 'الإجمالي', '', '', '', round($totDebit, 2), round($totCredit, 2), '', '', ''], true);
 
 $safeAcc = preg_replace('/[^\p{Arabic}\w\-]+/u', '_', $accountName);
 $filename = 'ACC_MOVEMENTS_' . ($safeAcc ?: 'account') . '_' . $dFrom . '_' . $dTo . '.xlsx';

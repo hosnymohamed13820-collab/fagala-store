@@ -115,7 +115,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
         if ($branchArg !== null) $args[] = $branchArg;
 
         $st = $pdo->prepare(
-            "SELECT je.id, je.entry_date, je.description, je.debit, je.credit,
+            "SELECT je.id, je.entry_date, sh.shift_name, je.description, je.debit, je.credit,
                     je.running_balance, je.notes, je.ref_type,
                     t.name AS treasury, u.full_name AS by_name,
                     cb.name AS branch_name,
@@ -150,6 +150,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
             $out[] = [
                 'id'       => (int) $r['id'],
                 'date'     => $r['entry_date'],
+                'shift'    => (string) ($r['shift_name'] ?: '—'),
                 'desc'     => (string) $r['description'],
                 'path'     => je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null),
                 'kind'     => $kinds[$r['ref_type']] ?? '—',
@@ -306,6 +307,8 @@ if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supp
     }
     require_once __DIR__ . '/xlsx_lib.php';
     $x = new SimpleXlsx(mb_substr((string)($report['title'] ?? 'تقرير'), 0, 30));
+    $hasShiftColumn = ($report['headers'][1] ?? '') === 'رقم الوردية';
+    if ($hasShiftColumn) $x->setColumnTypes(['n', 's']);
 
     /**
      * الأرقام في `rows` مترندرة للعرض — «2,100.00». هنا بنرجّعها رقم
@@ -323,14 +326,17 @@ if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supp
 
     $x->addRow($report['headers'], true);
 
-    $descCol = ($type === 'treasury') ? 2 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 1 : -1);
+    $descCol = ($type === 'treasury') ? 3 : (($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '') ? 2 : -1);
     foreach ($report['rows'] as $ri => $row) {
         if ($descCol >= 0 && !empty($report['row_paths'][$ri])) {
             $row[$descCol] = (string)$row[$descCol] !== ''
                 ? ($row[$descCol] . ' — ' . $report['row_paths'][$ri])
                 : $report['row_paths'][$ri];
         }
-        $x->addRow(array_map($xlCell, $row));
+        foreach ($row as $ci => $cell) {
+            $row[$ci] = $hasShiftColumn && $ci === 1 ? (string) $cell : $xlCell($cell);
+        }
+        $x->addRow($row);
     }
     if (!empty($report['totals'])) $x->addRow(array_map($xlCell, $report['totals']), true);
 
@@ -2210,7 +2216,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
                     '</div>' +
                     '<div style="overflow-x:auto;"><table><thead><tr>' +
-                    '<th>التاريخ</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
+                    '<th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                     '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                     '</tr></thead><tbody>';
             var esc = function (x) {
@@ -2223,7 +2229,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             };
             d.rows.forEach(function (r) {
                 var descHtml = esc(r.desc) + (r.path ? '<div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">' + esc(r.path) + '</div>' : '');
-                h += '<tr><td>' + esc(r.date) + '</td><td>' + descHtml + '</td>' +
+                h += '<tr><td>' + esc(r.date) + '</td><td>' + esc(r.shift) + '</td><td>' + descHtml + '</td>' +
                      '<td>' + esc(r.kind) + '</td><td>' + esc(r.treasury) + '</td>' +
                      '<td>' + esc(r.branch || '—') + '</td>' +
                      '<td>' + f(r.debit) + '</td><td>' + f(r.credit) + '</td>' +
@@ -2273,7 +2279,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                 <span class="badge" style="background:var(--line-soft);color:var(--ink-600);padding:3px 8px;border-radius:6px;font-size:12px;"><?= e((string)$cell) ?></span>
                             <?php endif; ?>
                         </td>
-                    <?php elseif (!empty($report['row_paths'][$ri]) && (($type === 'treasury' && $ci === 2) || ($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '' && $ci === 1))): ?>
+                    <?php elseif (!empty($report['row_paths'][$ri]) && (($type === 'treasury' && $ci === 3) || ($type === 'custody' && isset($_GET['branch']) && $_GET['branch'] !== '' && $ci === 2))): ?>
                         <td>
                             <?= e((string)$cell) ?>
                             <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">

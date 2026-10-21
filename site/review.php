@@ -230,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $rejShift = $stmtShift->fetch(PDO::FETCH_ASSOC);
                     if ($rejShift && !empty($rejShift['user_id'])) {
                         $hours = (int) setting('shift_return_hours', 48);
-                        $sName = ($rejShift['shift_name'] !== null && $rejShift['shift_name'] !== '') ? $rejShift['shift_name'] : (string)$shiftId;
+                        $sName = ($rejShift['shift_name'] !== null && $rejShift['shift_name'] !== '') ? $rejShift['shift_name'] : '—';
                         notify(
                             $pdo,
                             [(int)$rejShift['user_id']],
@@ -504,7 +504,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
-                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
+                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> <span class="sc-sub"><?= e($s['business_date']) ?> · رقم الوردية: <?= !empty($s['shift_name']) ? e($s['shift_name']) : '—' ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
                         <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
                             <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                         <?php endif; ?>
@@ -840,7 +840,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
-                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> — وردية<?= !empty($s['shift_name']) ? ' #' . e($s['shift_name']) : '' ?> <span class="sc-sub"><?= e($s['business_date']) ?> · <?= e($s['cashier_name']) ?></span></div>
+                        <div class="sc-title"><b><?= e($s['branch_name']) ?></b> <span class="sc-sub"><?= e($s['business_date']) ?> · رقم الوردية: <?= !empty($s['shift_name']) ? e($s['shift_name']) : '—' ?> · <?= e($s['cashier_name']) ?></span></div>
                         <?php if (!empty($shiftEditBadges[(int)$s['id']])): ?>
                             <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                         <?php endif; ?>

@@ -233,6 +233,7 @@ function hr_get_penalties(PDO $pdo, int $limit = 100): array
         if ($r['source_type'] === 'penalty') {
             $penalties[] = [
                 'deduction_date' => (string) $r['deduction_date'],
+                'shift_name'     => '—',
                 'full_name'      => (string) $r['full_name'],
                 'deduction_type' => 'جزاء',
                 'branch_name'    => $r['branch_name'] ?? '—',
@@ -246,6 +247,7 @@ function hr_get_penalties(PDO $pdo, int $limit = 100): array
             $amount = (float) $r['amount'];
             $penalties[] = [
                 'deduction_date' => (string) $r['deduction_date'],
+                'shift_name'     => '—',
                 'full_name'      => (string) $r['full_name'],
                 'deduction_type' => 'عجز عهدة',
                 'branch_name'    => $r['branch_name'] ?? '—',
@@ -262,12 +264,13 @@ function hr_get_penalties(PDO $pdo, int $limit = 100): array
                 continue;
             }
             $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
-            $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
+            $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية —';
             $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
             $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
 
             $penalties[] = [
                 'deduction_date' => (string) $r['deduction_date'],
+                'shift_name'     => $r['shift_name'] ?: '—',
                 'full_name'      => (string) $r['full_name'],
                 'deduction_type' => $dedType,
                 'branch_name'    => $r['branch_name'] ?? '—',

@@ -524,12 +524,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="stmt-scroll">
         <table>
             <thead><tr>
-                <th>التاريخ</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
+                        <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
                         <td class="trs-fw5"><?= e($row['treasury_name']) ?></td>
                         <td class="je-c-desc">
                             <?= e($row['description']) ?>
@@ -604,13 +605,14 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <table>
             <thead>
                 <tr>
-                    <th>التاريخ</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
+                        <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
                         <td class="je-c-desc">
                             <?= e($row['description']) ?>
                             <?php $tPath = je_transfer_path($row['transfer_from_name'] ?? null, $row['transfer_to_name'] ?? null); ?>
