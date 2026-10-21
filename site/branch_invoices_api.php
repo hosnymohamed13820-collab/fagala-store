@@ -65,17 +65,17 @@ switch ($part) {
                 $pages[] = $b;
             }
         }
-        api_ok(['pages' => array_values($pages)]);
+        api_ok(br_inv_strip_supplier(['pages' => array_values($pages)]));
 
     case 'list':
         api_method('GET');
         $distData = br_inv_distribution_data($branchId);
         $statusMap = br_inv_status_map($branchId);
         $invoices = br_inv_list_data($branchId, $distData, $statusMap);
-        api_ok([
+        api_ok(br_inv_strip_supplier([
             'invoices' => $invoices,
             'count'    => count($invoices),
-        ]);
+        ]));
 
     case 'invoice':
         api_method('GET');
@@ -89,7 +89,7 @@ switch ($part) {
         if ($detail === null) {
             api_fail('الفاتورة غير موجودة أو ليس لديك صلاحية لعرضها', 403, 'forbidden');
         }
-        api_ok($detail);
+        api_ok(br_inv_strip_supplier($detail));
 
     case 'item_search':
         api_method('GET');
@@ -98,7 +98,7 @@ switch ($part) {
             api_fail('المزامنة لسه ما وصلتش — استنى شوية وجرّب تاني.', 503, 'not_ready');
         }
         $term = (string) ($_GET['term'] ?? '');
-        api_ok(['rows' => ilk_search($term, 15)]);
+        api_ok(br_inv_strip_supplier(['rows' => ilk_search($term, 15)]));
 
     case 'item_history':
         api_method('GET');
@@ -111,7 +111,7 @@ switch ($part) {
         $res = ilk_item_history($searchCode, $itemId);
         $distData = br_inv_distribution_data($branchId);
         $filtered = br_inv_filter_item_history($res, $branchId, $distData, $searchCode);
-        api_ok($filtered);
+        api_ok(br_inv_strip_supplier($filtered));
 }
 
 // ===== الكتابة — POST بس، بـCSRF ومحمي من التكرار =====
@@ -144,10 +144,10 @@ try {
                 api_fail('حالة غير معروفة', 400, 'bad_request');
             }
             br_inv_set_status($branchId, $distId, $status, $uid);
-            api_ok([
+            api_ok(br_inv_strip_supplier([
                 'distribution_id' => $distId,
                 'status'          => $status,
-            ]);
+            ]));
 
         case 'save_price':
             $itemCode = trim((string) ($in['item_code'] ?? ($_POST['item_code'] ?? '')));
@@ -159,11 +159,11 @@ try {
                 api_fail('السعر لازم يكون موجب', 400, 'bad_request');
             }
             br_inv_save_price($branchId, $distId, $itemCode, $price, $uid);
-            api_ok([
+            api_ok(br_inv_strip_supplier([
                 'distribution_id' => $distId,
                 'item_code'       => $itemCode,
                 'price'           => $price,
-            ]);
+            ]));
 
         case 'save_prices_bulk':
             $rawPrices = $in['prices'] ?? ($_POST['prices'] ?? null);
@@ -172,10 +172,10 @@ try {
                 api_fail('بيانات الأسعار غير صالحة', 400, 'bad_request');
             }
             $count = br_inv_save_prices_bulk($branchId, $distId, $pricesMap, $uid);
-            api_ok([
+            api_ok(br_inv_strip_supplier([
                 'distribution_id' => $distId,
                 'count'           => $count,
-            ]);
+            ]));
     }
 } catch (InvalidArgumentException $e) {
     api_fail($e->getMessage(), 422, 'invalid');

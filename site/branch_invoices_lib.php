@@ -735,3 +735,23 @@ function br_inv_invoice_detail(int $branchId, string $openId, ?string $openSuf, 
         'total_cost'         => $totalCost,
     ];
 }
+
+/**
+ * إزالة أي مفتاح يبدأ بـ 'supplier' من المصفوفة بشكل متكرر
+ * لمنع تسريب بيانات الموردين في واجهات برمجة الفروع وإشراقة (بريف ١٦٢ مكرر).
+ */
+function br_inv_strip_supplier(mixed $data): mixed
+{
+    if (!is_array($data)) {
+        return $data;
+    }
+    $clean = [];
+    foreach ($data as $k => $v) {
+        if (is_string($k) && str_starts_with(strtolower($k), 'supplier')) {
+            continue;
+        }
+        $clean[$k] = is_array($v) ? br_inv_strip_supplier($v) : $v;
+    }
+    return $clean;
+}
+
