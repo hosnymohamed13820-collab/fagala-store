@@ -7,48 +7,17 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('settings');
+require_once __DIR__ . '/settings_lib.php';
 
 $pdo       = db();
 $flash     = '';
 $flashType = 'success';
 
 // الإعدادات القابلة للتعديل من الواجهة (مفتاح => [التسمية, النوع])
-$editable = [
-    'store_name'                => ['اسم المحل', 'text'],
-    'print_header'              => ['عنوان الطباعة (أعلى التقارير)', 'text'],
-    'print_footer'              => ['تذييل الطباعة', 'text'],
-    'custody_deficit_tolerance' => ['عتبة التسامح لعجز العهدة (بالجنيه)', 'number'],
-    'cashier_deficit_carry'     => ['رحّل باقي عجز الكاشير لسلفة مستديمة تلقائياً', 'bool'],
-    'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
-    'currency'                  => ['العملة', 'text'],
-    'shortage_supervisor_id'    => ['مسؤول متابعة طلبات النواقص (بيوصله إشعار مع الأونر)', 'user'],
-    'purchase_supervisor_id'    => ['مسؤول المشتريات (بيوصله طلب المشتريات مع الأونر)', 'user'],
-    'purchase_supervisor_2_id'  => ['مسؤول المشتريات التاني (بيوصله نفس الطلب)', 'user'],
-    'agent_watcher_id'          => ['مسؤول متابعة وكلاء المزامنة (بيوصله تنبيه مع الأونر)', 'user'],
-    'agent_warn_min'            => ['تنبيه أصفر لو وكيل سكت (بالدقايق)', 'number'],
-    'agent_alert_min'           => ['تنبيه أحمر لو وكيل سكت (بالدقايق)', 'number'],
-    'agent_repl_alert_min'      => ['إشعار لو ربط سيستم الفروع واقف (بالدقايق — أقل حاجة ١٥)', 'number'],
-    'agent_watch_from'          => ['مراقبة الوكلاء تبدأ الساعة', 'time'],
-    'agent_watch_to'            => ['مراقبة الوكلاء تنتهي الساعة', 'time'],
-    'sales_revenue_account_id'  => ['حساب «إيراد مبيعات» اللي الورديات بتترحّل عليه (رقم الحساب)', 'number'],
-    'transfer_account_id'       => ['حساب «تحويل» اللي حركات تحويل الخزائن بتترحّل عليه (رقم الحساب)', 'number'],
-    'attendance_edit_user_id'   => ['موظف مسموحله يعدّل ساعات طلبات التصحيح (مع الأونر)', 'user'],
-    'shift_edit_accountant_id'  => ['المحاسب المسموحله يغيّر تاريخ وفرع الوردية المستنية (مع الأونر)', 'user'],
-    // فاضي = فحص تسلسل أرقام الورديات مقفول. الورديات اللي قبل التاريخ ده مابتتفحصش.
-    'shift_seq_start_date'      => ['فحص تسلسل أرقام الورديات يبدأ من يوم (فاضي = مقفول)', 'date'],
-    // إشعارات الموبايل: المفتاح العام بيتحقن في الصفحة عشان المتصفح يشترك بيه.
-    // 🔴 المفتاح **الخاص** مكانه config.php على السيرفر بس — عمره ما يدخل الجدول ولا الريبو.
-    //    لو المفتاح العام فاضي، زرار «فعّل إشعارات الموبايل» مايظهرش خالص.
-    'vapid_public_key'          => ['المفتاح العام لإشعارات الموبايل (VAPID)', 'text'],
-    'vapid_subject'             => ['بريد التواصل لإشعارات الموبايل (mailto:...)', 'text'],
-];
+$editable = settings_schema();
 
 // قائمة المستخدمين لحقول نوع user
-$settingsUsers = $pdo->query(
-    'SELECT u.id, u.full_name, b.name AS branch_name
-     FROM users u LEFT JOIN branches b ON b.id = u.branch_id
-     WHERE u.is_active = 1 ORDER BY u.full_name'
-)->fetchAll();
+$settingsUsers = settings_users($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'invoice_guard') {
@@ -72,20 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         try {
             $userId = (int) current_user()['id'];
-            $st = $pdo->prepare(
-                'UPDATE invoice_distribution
-                 SET hq_guard_off = ?, hq_guard_off_by = ?, hq_guard_off_at = NOW()
-                 WHERE id = ?'
-            );
-            $st->execute([$off, $userId, $distId]);
-            echo json_encode(['success' => true, 'off' => $off, 'dist_id' => $distId]);
+            $res = settings_set_invoice_guard($pdo, $distId, $off, $userId);
+            echo json_encode(['success' => true] + $res);
             exit;
-        } catch (PDOException $e) {
-            if ($e->getCode() === '42S22' || str_contains($e->getMessage(), 'Unknown column') || str_contains($e->getMessage(), 'hq_guard_off')) {
-                echo json_encode(['success' => false, 'error' => 'شغّل local/invoice_guard_off.sql الأول']);
-                exit;
-            }
-            echo json_encode(['success' => false, 'error' => 'خطأ في قاعدة البيانات: ' . $e->getMessage()]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
             exit;
         }
     }
@@ -104,30 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         try {
-            $on   = !empty($_POST['on']) && $_POST['on'] === '1' ? '1' : '0';
-            // 18–23 = الساعة دي من نفس اليوم · 24 = 12 بالليل بالظبط (ملخص اليوم اللي خلص)
-            $hour = (int) ($_POST['hour'] ?? 24);
-            if ($hour !== 24) {
-                $hour = max(18, min(23, $hour));
-            }
-            // المستلمين: أرقام بس، ويوزرز موجودين فعلاً (استعلام واحد)
-            $ids = array_values(array_unique(array_filter(
-                array_map('intval', explode(',', (string) ($_POST['users'] ?? ''))),
-                static fn($x) => $x > 0
-            )));
-            if ($ids) {
-                $in = implode(',', array_fill(0, count($ids), '?'));
-                $st = $pdo->prepare("SELECT id FROM users WHERE id IN ($in) ORDER BY id");
-                $st->execute($ids);
-                $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-            }
-            $upd = $pdo->prepare(
-                'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
-                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+            settings_save_daily_summary(
+                $pdo,
+                (string) ($_POST['on'] ?? '0'),
+                (int) ($_POST['hour'] ?? 24),
+                (string) ($_POST['users'] ?? '')
             );
-            $upd->execute(['daily_summary_on', $on]);
-            $upd->execute(['daily_summary_hour', (string) $hour]);
-            $upd->execute(['daily_summary_users', implode(',', $ids)]);
             echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
         } catch (Throwable $e) {
             http_response_code(500);
@@ -420,11 +362,7 @@ require_once __DIR__ . '/includes/header.php';
 $dsOn    = (string) setting('daily_summary_on', '0') === '1';
 $dsHour  = (int) setting('daily_summary_hour', '23');
 $dsSel   = array_map('intval', explode(',', (string) setting('daily_summary_users', '')));
-$dsUsers = $pdo->query(
-    'SELECT u.id, u.full_name, r.name_ar AS role_name
-     FROM users u LEFT JOIN roles r ON r.id = u.role_id
-     WHERE u.is_active = 1 ORDER BY r.is_owner DESC, u.full_name'
-)->fetchAll();
+$dsUsers = settings_ds_users($pdo);
 ?>
 <div class="card ds-locked" style="margin-bottom:18px;" id="dailySummaryCard">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
@@ -835,23 +773,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
 
 <?php if (is_owner()): ?>
     <?php
-        $guardInvoices = [];
-        try {
-            $hasHqGuardCol = false;
-            $chkCol = $pdo->query("SHOW COLUMNS FROM invoice_distribution LIKE 'hq_guard_off'")->fetch();
-            $hasHqGuardCol = !empty($chkCol);
-
-            $gSql = "SELECT d.id, d.invoice_no, d.dist_date, d.status, "
-                  . ($hasHqGuardCol ? "d.hq_guard_off" : "0 AS hq_guard_off")
-                  . ", COALESCE(s.name, '—') AS supplier_name
-                     FROM invoice_distribution d
-                     LEFT JOIN suppliers s ON s.id = d.supplier_id
-                     ORDER BY " . ($hasHqGuardCol ? "d.hq_guard_off DESC, " : "") . "d.id DESC
-                     LIMIT 300";
-            $guardInvoices = $pdo->query($gSql)->fetchAll();
-        } catch (Throwable) {
-            $guardInvoices = [];
-        }
+        $guardInvoices = settings_guard_invoices($pdo);
     ?>
     <div class="card" style="margin-top:20px;">
         <h3 style="margin-bottom:6px;">فك حارس رصيد الإدارة عن فاتورة</h3>
