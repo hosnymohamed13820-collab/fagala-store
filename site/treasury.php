@@ -674,29 +674,6 @@ $today = date('Y-m-d');
         <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)" data-busy="جاري الحفظ...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="receipt">
-            <div class="form-row"><label for="rcTreasury">الخزينة</label><select name="treasury_id" id="rcTreasury" required><?= $receiptOpts ?></select></div>
-            <div class="form-row" id="receiptAccountRow">
-                <label>القيد</label>
-                <?= acctree_field('entry_code_id') ?>
-            </div>
-            <div class="form-row cost-branch-row" id="receiptCostBranchRow">
-                <label for="rcCostBranch">اسم الفرع</label>
-                <select name="cost_branch_id" id="rcCostBranch">
-                    <option value="">— بدون تحديد —</option>
-                    <?php foreach ($costBranches as $cb): ?>
-                        <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-row"><label for="rcAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="rcAmount" required
-                   autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-            <div class="form-row"><label for="rcDate">التاريخ</label><input type="date" name="date" id="rcDate" value="<?= $today ?>" required></div>
-            <div class="form-row"><label for="rcDesc">البيان</label><input type="text" name="description" id="rcDesc" placeholder="سبب الاستلام" aria-label="البيان"></div>
-            <div class="form-row" id="receiptNotesRow">
-                <label for="rcNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                <textarea name="notes" id="rcNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
-            </div>
-
             <!-- نوع الاستلام: عادي / مورد / رد سلفة / استلام عهدة -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label for="receiptType">نوع الاستلام</label>
@@ -747,6 +724,30 @@ $today = date('Y-m-d');
                 </div>
             </div>
 
+
+            <div class="form-row"><label for="rcTreasury">الخزينة</label><select name="treasury_id" id="rcTreasury" required><?= $receiptOpts ?></select></div>
+            <div class="form-row" id="receiptAccountRow">
+                <label>القيد</label>
+                <?= acctree_field('entry_code_id') ?>
+            </div>
+            <div class="form-row cost-branch-row" id="receiptCostBranchRow">
+                <label for="rcCostBranch">اسم الفرع</label>
+                <select name="cost_branch_id" id="rcCostBranch">
+                    <option value="">— بدون تحديد —</option>
+                    <?php foreach ($costBranches as $cb): ?>
+                        <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-row"><label for="rcAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="rcAmount" required
+                   autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
+            <div class="form-row"><label for="rcDate">التاريخ</label><input type="date" name="date" id="rcDate" value="<?= $today ?>" required></div>
+            <div class="form-row"><label for="rcDesc">البيان</label><input type="text" name="description" id="rcDesc" placeholder="سبب الاستلام" aria-label="البيان"></div>
+            <div class="form-row" id="receiptNotesRow">
+                <label for="rcNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                <textarea name="notes" id="rcNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+            </div>
+
             <div class="modal-actions">
                 <button type="submit" class="btn">تسجيل الاستلام</button>
                 <button type="button" class="btn btn-cancel" onclick="closeModal('receiptModal')">إلغاء</button>
@@ -782,39 +783,6 @@ $today = date('Y-m-d');
             }
             ?>
             <div id="disbFormBody">
-                <div class="form-row">
-                    <label for="dsTreasury">الخزينة</label>
-                    <select name="treasury_id" id="dsTreasury" required>
-                        <?php foreach ($disbTreasuries as $t): ?>
-                            <option value="<?= (int)$t['id'] ?>"
-                                    <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
-                                <?= e($t['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-row" id="disburseAccountRow">
-                    <label>القيد</label>
-                    <?= acctree_field('entry_code_id') ?>
-                </div>
-                <div class="form-row cost-branch-row" id="disburseCostBranchRow">
-                    <label for="dsCostBranch">اسم الفرع</label>
-                    <select name="cost_branch_id" id="dsCostBranch">
-                        <option value="">— بدون تحديد —</option>
-                        <?php foreach ($costBranches as $cb): ?>
-                            <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-row"><label for="dsAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="dsAmount" required
-                       autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-                <div class="form-row"><label for="dsDate">التاريخ</label><input type="date" name="date" id="dsDate" value="<?= $today ?>" required></div>
-                <div class="form-row"><label for="dsDesc">البيان</label><input type="text" name="description" id="dsDesc" placeholder="سبب الصرف" aria-label="البيان"></div>
-                <div class="form-row" id="disburseNotesRow">
-                    <label for="dsNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                    <textarea name="notes" id="dsNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
-                </div>
-
                 <!-- نوع الصرف: عادي / مورد / سلفة موظف / عهدة فرع -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                     <label for="disburseType">نوع الصرف</label>
@@ -872,6 +840,40 @@ $today = date('Y-m-d');
                             الخزينة هتنقص وعهدة الفرع هتزيد بنفس المبلغ.
                         </p>
                     </div>
+                </div>
+
+
+                <div class="form-row">
+                    <label for="dsTreasury">الخزينة</label>
+                    <select name="treasury_id" id="dsTreasury" required>
+                        <?php foreach ($disbTreasuries as $t): ?>
+                            <option value="<?= (int)$t['id'] ?>"
+                                    <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
+                                <?= e($t['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-row" id="disburseAccountRow">
+                    <label>القيد</label>
+                    <?= acctree_field('entry_code_id') ?>
+                </div>
+                <div class="form-row cost-branch-row" id="disburseCostBranchRow">
+                    <label for="dsCostBranch">اسم الفرع</label>
+                    <select name="cost_branch_id" id="dsCostBranch">
+                        <option value="">— بدون تحديد —</option>
+                        <?php foreach ($costBranches as $cb): ?>
+                            <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-row"><label for="dsAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="dsAmount" required
+                       autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
+                <div class="form-row"><label for="dsDate">التاريخ</label><input type="date" name="date" id="dsDate" value="<?= $today ?>" required></div>
+                <div class="form-row"><label for="dsDesc">البيان</label><input type="text" name="description" id="dsDesc" placeholder="سبب الصرف" aria-label="البيان"></div>
+                <div class="form-row" id="disburseNotesRow">
+                    <label for="dsNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
+                    <textarea name="notes" id="dsNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
                 </div>
 
                 <div class="modal-actions">
@@ -963,11 +965,14 @@ $today = date('Y-m-d');
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=4"></script>
+<script src="assets/acctree.js?v=186"></script>
 <script>
     function openModal(id){
         if (id === 'disburseModal') resetDisburseModal();
         document.getElementById(id).classList.add('open');
+        const type = id === 'receiptModal' ? document.getElementById('receiptType')
+                   : id === 'disburseModal' ? document.getElementById('disburseType') : null;
+        if (type) type.focus();
     }
     function closeModal(id){
         if (id === 'disburseModal') resetDisburseModal();

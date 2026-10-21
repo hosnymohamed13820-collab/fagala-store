@@ -827,27 +827,6 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
             <input type="hidden" name="custody_id" value="<?= $expCustodyId ?>">
 
             <div id="cstFormBody">
-                <div class="form-row" id="cstEntryCodeRow">
-                    <label>القيد</label>
-                    <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
-                </div>
-
-                <div class="form-row">
-                    <label for="cstAmount">المبلغ</label>
-                    <input type="text" inputmode="decimal" data-money name="amount" id="cstAmount" required
-                           autocomplete="off" placeholder="0" aria-label="المبلغ">
-                </div>
-
-                <div class="form-row">
-                    <label for="cstDate">التاريخ</label>
-                    <input type="date" name="date" id="cstDate" value="<?= date('Y-m-d') ?>" required>
-                </div>
-
-                <div class="form-row">
-                    <label for="cstDesc">البيان</label>
-                    <input type="text" name="description" id="cstDesc" required aria-label="البيان" placeholder="سبب الصرف">
-                </div>
-
                 <?php if ($expIsEmp): ?>
                 <!-- نوع الصرف: مصروف / سلفة لموظف / دفعة لمورد (في عهدة الموظف بس) -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
@@ -894,6 +873,28 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
                 <?php else: ?>
                 <input type="hidden" name="line_type" id="cstLineType" value="expense">
                 <?php endif; ?>
+                <div class="form-row" id="cstEntryCodeRow">
+                    <label>القيد</label>
+                    <?= acctree_field('entry_code_id', null, '— بدون —', 'custody') ?>
+                </div>
+
+                <div class="form-row">
+                    <label for="cstAmount">المبلغ</label>
+                    <input type="text" inputmode="decimal" data-money name="amount" id="cstAmount" required
+                           autocomplete="off" placeholder="0" aria-label="المبلغ">
+                </div>
+
+                <div class="form-row">
+                    <label for="cstDate">التاريخ</label>
+                    <input type="date" name="date" id="cstDate" value="<?= date('Y-m-d') ?>" required>
+                </div>
+
+                <div class="form-row">
+                    <label for="cstDesc">البيان</label>
+                    <input type="text" name="description" id="cstDesc" required aria-label="البيان" placeholder="سبب الصرف">
+                </div>
+
+
 
                 <div class="modal-actions">
                     <button type="submit" class="btn">تسجيل الصرف</button>
@@ -919,9 +920,16 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 <?php endif; ?>
 
 <?= acctree_data(true) ?>
-<script src="assets/acctree.js?v=4"></script>
+<script src="assets/acctree.js?v=186"></script>
 <script>
-    function openModal(id){ const el = document.getElementById(id); if (el) el.classList.add('open'); }
+    function openModal(id){
+        const el = document.getElementById(id);
+        if (el) el.classList.add('open');
+        if (id === 'expenseModal') {
+            const type = document.querySelector('#expenseModal select#cstLineType');
+            if (type) type.focus();
+        }
+    }
     function closeModal(id){
         const el = document.getElementById(id);
         if (el) el.classList.remove('open');

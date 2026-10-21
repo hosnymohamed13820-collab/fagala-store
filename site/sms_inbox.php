@@ -576,20 +576,6 @@ function filterSmsTable() {
                 </select>
             </div>
 
-            <div class="form-row">
-                <label for="spTreasury">الخزينة</label>
-                <select name="treasury_id" id="spTreasury" required>
-                    <?php foreach ($allTreasuries as $t): ?>
-                        <option value="<?= (int)$t['id'] ?>"
-                                data-type="<?= e($t['type']) ?>"
-                                data-receipt="<?= (int)($t['show_in_receipts'] ?? 1) ?>"
-                                <?= (int)$t['id'] === $instapayTreasuryId ? 'selected' : '' ?>>
-                            <?= e($t['name']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-
             <!-- نوع العملية -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label for="spOpType">تصنيف العملية</label>
@@ -646,6 +632,20 @@ function filterSmsTable() {
                 </div>
             </div>
 
+            <div class="form-row">
+                <label for="spTreasury">الخزينة</label>
+                <select name="treasury_id" id="spTreasury" required>
+                    <?php foreach ($allTreasuries as $t): ?>
+                        <option value="<?= (int)$t['id'] ?>"
+                                data-type="<?= e($t['type']) ?>"
+                                data-receipt="<?= (int)($t['show_in_receipts'] ?? 1) ?>"
+                                <?= (int)$t['id'] === $instapayTreasuryId ? 'selected' : '' ?>>
+                            <?= e($t['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
             <div class="form-row" id="spAccountRow">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id', null, '— بدون قيد —', 'all', 'spEntryCode') ?>
@@ -691,7 +691,7 @@ function filterSmsTable() {
 </div>
 
 <?= acctree_data() ?>
-<script src="assets/acctree.js?v=4"></script>
+<script src="assets/acctree.js?v=186"></script>
 
 <script>
 var defaultInstapayTreasuryId = <?= (int) $instapayTreasuryId ?>;
@@ -744,6 +744,7 @@ function openPermitModal(msg) {
     }
 
     document.getElementById('spModal').classList.add('open');
+    document.getElementById('spActionSelect').focus();
 }
 
 function closePermitModal() {
