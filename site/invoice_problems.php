@@ -63,6 +63,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        if ($action === 'recalc_all') {
+            if (!is_owner()) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'error' => 'هذا الإجراء متاح للمالك فقط.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            sync_all_invoice_problems_auto($pdo);
+            $lastRecalc = ip_last_recalc_time($pdo);
+            if (isset($_POST['format']) && $_POST['format'] === 'json' || (!empty($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'))) {
+                echo json_encode(['ok' => true, 'message' => 'تمت إعادة الحساب بنجاح.', 'last_recalc' => $lastRecalc], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            header('Location: invoice_problems.php' . (isset($_GET['d']) ? '?d=' . (int)$_GET['d'] : ''));
+            exit;
+        }
+
         if ($action === 'delete_invoice_problems') {
             $res = ip_delete_invoice_problems($pdo, (int) ($_POST['distribution_id'] ?? 0));
             echo json_encode($res, JSON_UNESCAPED_UNICODE);
@@ -82,13 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // 🔴 اتنقلت كلها لـinvoice_problems_lib.php (بريف ١٥٩) — الصفحة بتناديها
 //    من هنا بنفس الشغل بالظبط، ومفيش نسخة تانية في الصفحة (وإلا: Cannot redeclare).
 
-// تشغيل المزامنة التلقائية المجمعة لجميع الفواتير ذات المردودات
-sync_all_invoice_problems_auto($pdo);
-
 $selectedDistId = isset($_GET['d']) ? (int) $_GET['d'] : 0;
-if ($selectedDistId > 0) {
-    sync_invoice_problems_for_dist($pdo, $selectedDistId);
-}
+$lastRecalcTime = ip_last_recalc_time($pdo);
 
 $page_title    = 'مشاكل الفواتير';
 $active_module = 'invoices';
@@ -237,8 +248,22 @@ require_once __DIR__ . '/includes/header.php';
         <div>
             <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-alert-triangle"></i> مشاكل الفواتير</h2>
             <span style="font-size:12.5px;color:var(--ink-400);">الأصناف التي بها فروقات في الاستلام (عجز/زيادة) أو ملاحظات</span>
+            <?php if (!empty($lastRecalcTime)): ?>
+                <div style="font-size:11.5px;color:var(--ink-400);margin-top:2px;">
+                    <i class="ti ti-clock"></i> آخر إعادة حساب: <?= e($lastRecalcTime) ?>
+                </div>
+            <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
+            <?php if (is_owner()): ?>
+                <form method="POST" action="invoice_problems.php" style="margin:0;" onsubmit="return confirm('إعادة حساب ومزامنة مشاكل جميع فواتير الشراء؟');">
+                    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="recalc_all">
+                    <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--accent-text);border:1px solid var(--line);">
+                        <i class="ti ti-refresh"></i> إعادة حساب الكل
+                    </button>
+                </form>
+            <?php endif; ?>
             <a href="invoices.php" class="btn btn-ghost btn-sm">← الرجوع للاستلامات</a>
         </div>
     </div>

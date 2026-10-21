@@ -249,6 +249,55 @@ function sync_all_invoice_problems_auto(PDO $pdo): void
             $insAuto->execute([$did, $code, $name, $sq]);
         }
     }
+
+    try {
+        $stSet = $pdo->prepare(
+            "INSERT INTO settings (setting_key, setting_value, description)
+             VALUES ('invoice_problems_last_recalc', NOW(), 'آخر إعادة حساب لمشاكل الفواتير')
+             ON DUPLICATE KEY UPDATE setting_value = NOW()"
+        );
+        $stSet->execute();
+    } catch (Throwable $e) { /* تجاهل */ }
+}
+
+/**
+ * جلب وقت آخر إعادة حساب لمشاكل الفواتير (من settings أو أقصى updated_at).
+ */
+function ip_last_recalc_time(PDO $pdo): ?string
+{
+    try {
+        $st = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'invoice_problems_last_recalc' LIMIT 1");
+        $val = $st ? $st->fetchColumn() : false;
+        if ($val) return (string) $val;
+    } catch (Throwable $e) {}
+    try {
+        $st = $pdo->query("SELECT MAX(updated_at) FROM invoice_problems");
+        $val = $st ? $st->fetchColumn() : false;
+        if ($val) return (string) $val;
+    } catch (Throwable $e) {}
+    return null;
+}
+
+/**
+ * إعادة حساب دورية لمشاكل الفواتير إذا مر وقت كافٍ (للوركر أو cron).
+ */
+function ip_maybe_recalc_auto(PDO $pdo, int $intervalMinutes = 10): bool
+{
+    try {
+        $st = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'invoice_problems_last_recalc' LIMIT 1");
+        $st->execute();
+        $last = $st->fetchColumn();
+        if ($last) {
+            $lastTs = strtotime((string) $last);
+            if ($lastTs && (time() - $lastTs) < ($intervalMinutes * 60)) {
+                return false;
+            }
+        }
+        sync_all_invoice_problems_auto($pdo);
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
 }
 
 // =========================================================================

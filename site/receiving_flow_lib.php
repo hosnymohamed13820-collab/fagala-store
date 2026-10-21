@@ -793,6 +793,15 @@ function receipt_review(PDO $pdo, array $receipt, int $uid, int $supervisorId): 
             'receiving.php?r=' . $receiptId
         );
     }
+
+    try {
+        require_once __DIR__ . '/invoice_problems_lib.php';
+        if (!empty($receipt['distribution_id'])) {
+            sync_invoice_problems_for_dist($pdo, (int) $receipt['distribution_id']);
+        }
+    } catch (Throwable $e) {
+        error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+    }
 }
 
 /**
@@ -852,6 +861,15 @@ function receipt_approve(PDO $pdo, array $receipt, int $uid): void
     }
     $st = $pdo->prepare("UPDATE receipts SET status='approved', approved_at=NOW(), approved_by=? WHERE id=? AND status='received'");
     $st->execute([$uid, (int) $receipt['id']]);
+
+    try {
+        require_once __DIR__ . '/invoice_problems_lib.php';
+        if (!empty($receipt['distribution_id'])) {
+            sync_invoice_problems_for_dist($pdo, (int) $receipt['distribution_id']);
+        }
+    } catch (Throwable $e) {
+        error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+    }
 }
 
 /**

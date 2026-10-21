@@ -563,6 +563,13 @@ function inv_autosave(
         refresh_invoice_status($distId, $invId, $suffix, false);
     }
 
+    try {
+        require_once __DIR__ . '/invoice_problems_lib.php';
+        sync_invoice_problems_for_dist($pdo, $distId);
+    } catch (Throwable $e) {
+        error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+    }
+
     return ['remaining' => $res['remaining'], 'branch_total' => $branchTotal];
 }
 
@@ -617,6 +624,20 @@ function inv_group_autosave(
     }
     $branchTotal = (float) ($groupTotals[(string) $branchId] ?? 0);
     group_refresh_statuses($gid);
+
+    try {
+        require_once __DIR__ . '/invoice_problems_lib.php';
+        if (!empty($g['dist_ids'])) {
+            foreach ($g['dist_ids'] as $did) {
+                $did = (int) $did;
+                if ($did > 0) {
+                    sync_invoice_problems_for_dist($pdo, $did);
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+    }
 
     return [
         'remaining'      => $res['remaining'],

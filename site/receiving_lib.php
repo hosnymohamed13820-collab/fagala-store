@@ -595,6 +595,13 @@ function ensure_distribution_record(array $invHeader, ?int $userId = null): arra
     ]);
     $id = (int) $pdo->lastInsertId();
 
+    try {
+        require_once __DIR__ . '/invoice_problems_lib.php';
+        sync_invoice_problems_for_dist($pdo, $id);
+    } catch (Throwable $e) {
+        error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+    }
+
     $st = $pdo->prepare('SELECT * FROM invoice_distribution WHERE id = ?');
     $st->execute([$id]);
     return $st->fetch();
@@ -2632,6 +2639,14 @@ function reservation_pull_apply(
         recalc_invoice_status($distributionId, $recalcItems, false);
 
         $pdo->commit();
+
+        try {
+            require_once __DIR__ . '/invoice_problems_lib.php';
+            sync_invoice_problems_for_dist($pdo, $distributionId);
+        } catch (Throwable $e) {
+            error_log('sync_invoice_problems_for_dist failed: ' . $e->getMessage());
+        }
+
         return ['ok' => true, 'allocated_count' => count($cleanAlloc)];
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();

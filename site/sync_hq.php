@@ -87,6 +87,7 @@ $suppInserted  = 0;
 $suppLinked    = 0;
 $suppUnchanged = 0;
 $suppConflicts = [];
+$affectedDocNos = [];
 
 try {
     $pdo->beginTransaction();
@@ -152,18 +153,24 @@ try {
             if (!is_array($r)) { $skipped++; continue; }
             $sid = (int) ($r['sth_id'] ?? 0);
             if ($sid <= 0) { $skipped++; continue; }
+            $docType = (int) ($r['doc_type'] ?? 0);
+            $cb      = ($r['company_branch'] ?? null) !== null ? (int) $r['company_branch'] : null;
+            $dNo     = trim((string) ($r['doc_no'] ?? ''));
+            if ($docType === 2 && ($cb === 1 || $cb === null) && $dNo !== '') {
+                $affectedDocNos[] = $dNo;
+            }
             $ins->execute([
                 $sid,
                 (string) ($r['suffix'] ?? ''),
-                (string) ($r['doc_no'] ?? ''),
-                (int) ($r['doc_type'] ?? 0),
+                $dNo,
+                $docType,
                 ($r['supplier_id'] ?? null) !== null ? (int) $r['supplier_id'] : null,
                 (string) ($r['supplier_code'] ?? ''),
                 mb_substr((string) ($r['supplier_name'] ?? ''), 0, 255),
                 (float) ($r['net_amount'] ?? 0),
                 (float) ($r['total_amount'] ?? 0),
                 ($r['invoice_date'] ?? null) ?: null,
-                ($r['company_branch'] ?? null) !== null ? (int) $r['company_branch'] : null,
+                $cb,
                 ($r['last_modify'] ?? null) ?: null,
             ]);
             $stored++;
@@ -574,6 +581,24 @@ try {
         ->execute([$kind, $stored, 'ok', $skipped > 0 ? "تم تجاهل {$skipped} صف" : null]);
 
     $pdo->commit();
+
+    if (!empty($affectedDocNos)) {
+        try {
+            $uniqueDocs = array_values(array_unique($affectedDocNos));
+            $ph = implode(',', array_fill(0, count($uniqueDocs), '?'));
+            $stD = $pdo->prepare("SELECT id FROM invoice_distribution WHERE invoice_no IN ($ph) AND (company_branch = 1 OR company_branch IS NULL) AND (doc_type = 2 OR doc_type IS NULL)");
+            $stD->execute($uniqueDocs);
+            $dids = $stD->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($dids)) {
+                require_once __DIR__ . '/invoice_problems_lib.php';
+                foreach ($dids as $did) {
+                    sync_invoice_problems_for_dist($pdo, (int) $did);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('sync_hq invoice_problems sync failed: ' . $e->getMessage());
+        }
+    }
 
     // ===== تنضيف دوري =====
     // الوكلاء بيكتبوا في hq_sync_log كل نص ساعة، والإشعارات بتتراكم —

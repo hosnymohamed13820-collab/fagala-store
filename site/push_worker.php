@@ -51,6 +51,9 @@ try {
     // الملخص اليومي للإدارة (بريف ١١١) — مرة في اليوم، وقبل سحب الطابور عشان يشتغل والطابور فاضي
     try { require_once __DIR__ . '/daily_summary_lib.php'; ds_maybe_send($pdo); } catch (Throwable $ex) { /* صامت */ }
 
+    // مزامنة مشاكل الفواتير دورياً كل ١٠ دقائق (بريف ١٩٩)
+    try { require_once __DIR__ . '/invoice_problems_lib.php'; ip_maybe_recalc_auto($pdo, 10); } catch (Throwable $ex) { /* صامت */ }
+
     // ١) سحب ٥٠ صف من الطابور بترتيب المعرّف
     $st = $pdo->prepare(
         "SELECT id, user_id, title, body, link, tries

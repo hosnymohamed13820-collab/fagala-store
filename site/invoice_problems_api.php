@@ -32,7 +32,7 @@ $uid = (int) (current_user()['id'] ?? 0);
 $part = (string) ($_GET['part'] ?? '');
 
 $reads  = ['list', 'invoice'];
-$writes = ['save_field', 'delete_problem', 'delete_invoice'];
+$writes = ['save_field', 'delete_problem', 'delete_invoice', 'recalc_all'];
 
 if (!in_array($part, $reads, true) && !in_array($part, $writes, true)) {
     api_fail('جزء غير معروف', 400, 'bad_request');
@@ -41,11 +41,6 @@ if (!in_array($part, $reads, true) && !in_array($part, $writes, true)) {
 // ===== القراءة — GET بس =====
 if (in_array($part, $reads, true)) {
     api_method('GET');
-
-    // 🔴 الـGET بتاع الصفحة بيكتب: المزامنة التلقائية بتتنده في كل فتح للصفحة،
-    //    والصفحة بتنده كمان لو فيه ?d=. الـAPI لازم يعمل نفس الحاجة بالظبط،
-    //    من غيرها القايمة هتطلع ناقصة المردودات الجديدة.
-    sync_all_invoice_problems_auto($pdo);
 
     if ($part === 'list') {
         api_ok(['rows' => ip_problem_invoices($pdo)]);
@@ -56,8 +51,6 @@ if (in_array($part, $reads, true)) {
     if ($distId <= 0) {
         api_fail('لازم تحدد رقم الفاتورة (d).', 400, 'bad_request');
     }
-
-    sync_invoice_problems_for_dist($pdo, $distId);
 
     $distHeader = ip_dist_header($pdo, $distId);
     if (!$distHeader) {
@@ -104,6 +97,13 @@ try {
         case 'delete_invoice':
             ip_delete_invoice_problems($pdo, (int) ($in['distribution_id'] ?? 0));
             api_ok(null);
+
+        case 'recalc_all':
+            if (!is_owner()) {
+                api_fail('هذا الإجراء متاح للمالك فقط.', 403, 'forbidden');
+            }
+            sync_all_invoice_problems_auto($pdo);
+            api_ok(['last_recalc' => ip_last_recalc_time($pdo)]);
     }
 } catch (RuntimeException $e) {
     api_fail($e->getMessage(), 422, 'invalid');
