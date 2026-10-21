@@ -20,89 +20,13 @@ if (!is_owner()) {
 }
 
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/users_lib.php';
 
 $pdo         = db();
 $modules     = all_modules();
 $moduleParts = module_parts();
 $flash       = '';
 $flashType   = 'success';
-
-/**
- * تنقية الصلاحيات والتحقق منها وتطبيق قاعدة «كامل ولا أجزاء» في السيرفر.
- *
- * القواعد:
- * 1. المفاتيح المقبولة:
- *    - مديول بسيط موجود في all_modules().
- *    - مفتاح مركب module:part حيث module في all_modules() و part في module_parts()[$module].
- *    أي مفتاح تاني يُرفض ويتجاهل بصمت.
- * 2. قاعدة «كامل ولا أجزاء»:
- *    - لو تحدد المديول كامل ← يتخزن المديول بس (مثل 'hr') وما يتخزنش أي 'hr:*'.
- *    - لو تحدد أجزاء بس ← يتخزن 'hr:part' لكل جزء محدد وما يتخزنش 'hr'.
- *    - لو مفيش حاجة تحددت للمديول ← ما يتخزنش أي مفتاح ليه.
- *
- * @param array $rawPerms
- * @return array<string>
- */
-function sanitize_user_permissions(array $rawPerms): array
-{
-    $allMods   = all_modules();
-    $modParts  = module_parts();
-
-    $selectedFull  = []; // المديولات الكاملة
-    $selectedParts = []; // الأجزاء المحددة: [mod => [partKey => true]]
-    $simpleMods    = []; // مديولات عادية مالهاش أجزاء
-
-    foreach ($rawPerms as $rawKey) {
-        if (!is_string($rawKey)) continue;
-        $rawKey = trim($rawKey);
-        if ($rawKey === '') continue;
-
-        if (str_contains($rawKey, ':')) {
-            $pieces = explode(':', $rawKey, 2);
-            if (count($pieces) === 2) {
-                [$mod, $part] = $pieces;
-                // شرط صارم: المديول موجود في all_modules والجزء معرّف في module_parts
-                if (isset($allMods[$mod]) && isset($modParts[$mod][$part])) {
-                    $selectedParts[$mod][$part] = true;
-                }
-            }
-        } else {
-            if (isset($allMods[$rawKey])) {
-                if (isset($modParts[$rawKey])) {
-                    // مديول ليه أجزاء بس اتحدد كـ «كامل»
-                    $selectedFull[$rawKey] = true;
-                } else {
-                    // مديول عادي مالوش أجزاء
-                    $simpleMods[$rawKey] = true;
-                }
-            }
-        }
-    }
-
-    $cleanPerms = [];
-
-    // 1. المديولات العادية التي ليس لها أجزاء
-    foreach (array_keys($simpleMods) as $mk) {
-        $cleanPerms[] = $mk;
-    }
-
-    // 2. المديولات التي لها أجزاء: تطبيق قاعدة «كامل ولا أجزاء»
-    foreach ($modParts as $modKey => $parts) {
-        if (!empty($selectedFull[$modKey])) {
-            // تحدد كامل ← نخزن المديول فقط ونلغي أي أجزاء تابعة
-            $cleanPerms[] = $modKey;
-        } elseif (!empty($selectedParts[$modKey])) {
-            // تحدد أجزاء فقط ← نخزن كل جزء صالح
-            foreach (array_keys($parts) as $partKey) {
-                if (!empty($selectedParts[$modKey][$partKey])) {
-                    $cleanPerms[] = $modKey . ':' . $partKey;
-                }
-            }
-        }
-    }
-
-    return $cleanPerms;
-}
 
 /**
  * تجهيز شرائح الصلاحيات لجدول المستخدمين.
@@ -232,19 +156,9 @@ function perm_picker_html(string $idPrefix): string
 $rolePermsReady = true;
 $rolePerms      = [];   // [role_id => [module_key, ...]]
 try {
-    foreach ($pdo->query('SELECT role_id, module_key FROM role_permissions ORDER BY id') as $row) {
-        $rolePerms[(int) $row['role_id']][] = $row['module_key'];
-    }
+    $rolePerms = users_get_role_perms_map($pdo);
 } catch (Throwable $e) {
     $rolePermsReady = false;
-}
-
-/**
- * الصلاحيات اللي تتخزن للموظف = المتعلّم عليه ناقص اللي جاي من دوره.
- */
-function user_extra_permissions(array $rawPerms, int $roleId, array $rolePerms): array
-{
-    return array_values(array_diff(sanitize_user_permissions($rawPerms), $rolePerms[$roleId] ?? []));
 }
 
 // ===== معالجة العمليات =====
@@ -575,32 +489,14 @@ if (isset($_SESSION['flash'])) {
 }
 
 // ===== جلب البيانات للعرض =====
-$users = $pdo->query(
-    'SELECT u.id, u.username, u.full_name, u.is_active, u.last_login, u.role_id, u.branch_id,
-            r.name_ar AS role_name, r.is_owner, b.name AS branch_name,
-            e.id AS emp_id, e.base_salary, e.job_title, e.phone, e.expected_in, e.expected_out, e.allow_anywhere
-     FROM users u
-     JOIN roles r ON r.id = u.role_id
-     LEFT JOIN branches b ON b.id = u.branch_id
-     LEFT JOIN employees e ON e.user_id = u.id AND e.is_active = 1
-     ORDER BY u.id'
-)->fetchAll();
+$users = users_get_list($pdo);
 
 // صلاحيات كل مستخدم (للعرض)
-$permsByUser = [];
-foreach ($pdo->query('SELECT user_id, module_key FROM user_permissions') as $row) {
-    $permsByUser[$row['user_id']][] = $row['module_key'];
-}
+$permsByUser = users_get_perms_map($pdo);
 
-$roles    = $pdo->query(
-    'SELECT r.id, r.name_ar, r.is_owner,
-            COUNT(u.id) AS users_all, COALESCE(SUM(u.is_active), 0) AS users_active
-     FROM roles r LEFT JOIN users u ON u.role_id = r.id
-     GROUP BY r.id, r.name_ar, r.is_owner
-     ORDER BY r.id'
-)->fetchAll();
+$roles    = users_get_roles($pdo);
 $view     = (($_GET['view'] ?? '') === 'roles') ? 'roles' : 'users';
-$branches = $pdo->query('SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name')->fetchAll();
+$branches = users_get_branches($pdo);
 
 $page_title    = 'إدارة المستخدمين';
 $active_module = 'settings';
