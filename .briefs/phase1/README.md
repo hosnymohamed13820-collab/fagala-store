@@ -43,7 +43,7 @@
 | ١٦٨ | `users.php` (أ): القراية بس | `brief168_users_a.md` | أ | |
 | ١٦٩ | `definitions.php` (أ): القراية بس، من غير الخزاين | `brief169_definitions_a.md` | ب | ✅ `66de71b` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٧٠ | `attendance.php` (أ): حضوري وسجلّي | `brief170_attendance_a.md` | أ | |
-| ١٧١ | `reports.php` (أ): ٥ تابات من غير فلوس + نقل `build_report` | `brief171_reports_a.md` | ب | |
+| ١٧١ | `reports.php` (أ): ٥ تابات من غير فلوس + نقل `build_report` | `brief171_reports_a.md` | ب | ✅ `feafc29` (Gemini نفّذ وراجع) — مش مرفوع |
 
 > 🔴 **نفس الملف = واحد ورا التاني.** `invoices.php` (١٦٥ ← ١٦٦ج) و`stocktake.php` (١٦٤ ← ١٦٤ب) ماينفعش اتنين منهم يشتغلوا في نفس الوقت في نسختين، حتى لو المسارين فاضيين: الكوميت التاني هيخبط في الأول.
 
