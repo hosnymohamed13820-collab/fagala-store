@@ -38,7 +38,7 @@
 | ١٦٥ب | `invoices.php` (أ٢): القايمة والفاتورة والمجموعة والخصم | `brief165b_invoices_view.md` | أ | ✅ `e6f99b6` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٦ | `invoices.php` (ب١): التوزيع والحالة وسحب الحجز (فيه إشعارات) | `brief166_invoices_dist.md` | ب | ✅ `0180519` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٦ب | `invoices.php` (ب٢): الملاحظات والعلامات والمشاكل | `brief166b_invoices_notes.md` | ب | ✅ `744d5e3` (Gemini نفّذ وراجع) — مش مرفوع |
-| ١٦٦ج | `invoices.php` (ب٣): إدارة المجموعات | `brief166c_invoices_groups.md` | ب | **بعد ١٦٦ب** |
+| ١٦٦ج | `invoices.php` (ب٣): إدارة المجموعات | `brief166c_invoices_groups.md` | ب | ✅ `e3e74ef` (Gemini نفّذ وراجع) — مش مرفوع |
 | ١٦٧ | `settings.php`: القراية + `invoice_guard` + `daily_summary_save` | `brief167_settings.md` | أ | |
 | ١٦٨ | `users.php` (أ): القراية بس | `brief168_users_a.md` | أ | |
 | ١٦٩ | `definitions.php` (أ): القراية بس، من غير الخزاين | `brief169_definitions_a.md` | ب | ✅ `66de71b` (Gemini نفّذ وراجع) — مش مرفوع |
