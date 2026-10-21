@@ -401,70 +401,25 @@ if (isset($_SESSION['flash'])) {
 }
 
 // ===== جلب البيانات =====
-$branches   = $pdo->query('SELECT * FROM branches ORDER BY name')->fetchAll();
+require_once __DIR__ . '/definitions_lib.php';
+$branches   = def_branches_list();
+$storeList  = def_store_list();
+$employees  = def_employees_list(false);
 
-// مخازن نظام الشركة (لربط الفرع بمخزنه). لو الجسر واقف بترجع فاضية والحقل يفضل اختياري.
-$storeList = [];
-try {
-    require_once __DIR__ . '/receiving_lib.php';
-    $storeList = sqlsrv_store_names();
-} catch (Throwable $ex) {
-    error_log('definitions: تعذّر جلب المخازن — ' . $ex->getMessage());
-}
-$employees  = $pdo->query(
-    'SELECT e.*, b.name AS branch_name FROM employees e
-     LEFT JOIN branches b ON b.id = e.branch_id ORDER BY e.full_name'
-)->fetchAll();
-$categories = $pdo->query(
-    'SELECT id, parent_id, name, type, is_custody, dynamic_src, src_table, src_id, is_active, sort_order
-     FROM accounts ORDER BY sort_order, name'
-)->fetchAll();
-// شجرة مسطّحة للعرض (أب وبعده أبناؤه بمسافة بادئة)
-$accByParent = [];
-foreach ($categories as $c) { $accByParent[(int)($c['parent_id'] ?? 0)][] = $c; }
-$accFlat = [];
-// الحسابات المتولّدة تلقائياً (موظفين/موردين) مش بتتعرض صف بصف —
-// بتتعد تحت الأب بس، عشان الجدول ما يبقاش 80+ سطر.
-$accAutoCount = [];
-$accWalk = function(int $pid, int $depth) use (&$accWalk, &$accFlat, &$accAutoCount, $accByParent) {
-    foreach ($accByParent[$pid] ?? [] as $c) {
-        if (!empty($c['src_table'])) {
-            $accAutoCount[$pid] = ($accAutoCount[$pid] ?? 0) + 1;
-            continue;
-        }
-        $c['depth'] = $depth; $accFlat[] = $c;
-        $accWalk((int)$c['id'], $depth + 1);
-    }
-};
-$accWalk(0, 0);
-// الآباء المتاحين للاختيار عند الإضافة
-$treasuries = $pdo->query(
-    "SELECT t.*, b.name AS branch_name FROM treasuries t
-     LEFT JOIN branches b ON b.id = t.branch_id
-     ORDER BY FIELD(t.type,'cash','main','visa','instapay','card','branch_custody','employee_custody'), t.name"
-)->fetchAll();
+$catData      = def_categories_tree();
+$categories   = $catData['categories'];
+$accFlat      = $catData['acc_flat'];
+$accAutoCount = $catData['acc_auto_count'];
+
+$treasuries = def_treasuries_list();
 $activeBranches = array_filter($branches, fn($b) => $b['is_active']);
-// المستخدمون المتاحون للربط بموظف (لتسجيل الحضور)
-$linkUsers = $pdo->query('SELECT id, full_name, username FROM users WHERE is_active=1 ORDER BY full_name')->fetchAll();
+$linkUsers = def_link_users_list();
 
 // بيانات الموردين لتاب «الموردين» (بريف ١٢٥)
 $defSuppliers = [];
 $defSuppFilter = trim((string)($_GET['filter'] ?? 'all'));
 if ($tab === 'suppliers') {
-    // كود True: erp_supplier_code، ولو فاضي من hq_invoices.supplier_code بالـ erp_supplier_id
-    // استعلام مجمّع واحد بدون استعلام جوه حلقة
-    $suppSql = "SELECT
-                    s.id,
-                    s.name,
-                    s.payment_type,
-                    COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS display_code
-                FROM suppliers s
-                LEFT JOIN hq_invoices h ON h.supplier_id = s.erp_supplier_id
-                GROUP BY s.id, s.name, s.payment_type, s.erp_supplier_code
-                ORDER BY CAST(COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS UNSIGNED) ASC,
-                         COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') ASC,
-                         s.name ASC";
-    $defSuppliers = $pdo->query($suppSql)->fetchAll();
+    $defSuppliers = def_suppliers_list('all');
 }
 
 $page_title    = 'التعريفات';
