@@ -5,4 +5,5 @@ return [
     '20261012_000_custody_line_types',
     '20261012_001_rabt_reminded',
     '20261019_000_supplier_payment_type',
+    '20261022_000_advance_account',
 ];
