@@ -580,7 +580,7 @@ require_once __DIR__ . '/includes/header.php';
         //    الحالة متخزّنة في متغيّر بره عشان ماتضيعش لما الواحد يتحدّث.
         let ashF = 'all';
         let ashPage = 1;
-        let ASH_PER_PAGE = 50;
+        const ASH_PER_PAGE = 50;
 
         function ashFilter(btn) {
             document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
