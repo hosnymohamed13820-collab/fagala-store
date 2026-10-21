@@ -779,10 +779,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
         $distId = (int) ($_POST['distribution_id'] ?? 0);
-        if ($distId <= 0) throw new RuntimeException('فاتورة غير صحيحة.');
-
-        save_invoice_notes($distId, $_POST['notes'] ?? '', $uid);
-        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        $res    = inv_save_notes($distId, (string) ($_POST['notes'] ?? ''), $uid);
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -819,17 +817,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
 //                     (نفس group_code_dist_ids بتاعة الأسعار)
 //  عشان الملاحظة اللي تتكتب في المجموعة تنزل على الفواتير والعكس.
 // =====================================================================
-
-/** سجلات التوزيع بتاعت السياق الحالي (فاتورة أو مجموعة). */
-function ifl_ctx_ids(int $distId, int $groupId, string $itemCode = ''): array
-{
-    if ($groupId > 0) {
-        // '__any__' كود مش موجود → الدالة بترجّع كل سجلات المجموعة
-        // (نفس الحيلة المستخدمة في group_save_prices_bulk)
-        return group_code_dist_ids($groupId, $itemCode !== '' ? $itemCode : '__any__');
-    }
-    return $distId > 0 ? [$distId] : [];
-}
 
 /**
  * تفكيك الأصناف المختارة الجاية من بوب أب «تحديد أصناف».
@@ -872,27 +859,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
         $code = trim((string) ($_POST['item_code'] ?? ''));
         $gid  = (int) ($_POST['group_id'] ?? 0);
         $did  = (int) ($_POST['distribution_id'] ?? 0);
-        if ($code === '') throw new RuntimeException('كود الصنف ناقص.');
-
-        // (أ) الفلاج العالمي: ينزل / ما ينزلش في ملف الفرع
-        if (array_key_exists('skip_export', $_POST)) {
-            ifl_set_skip($code, ((int) $_POST['skip_export']) === 1, $uid);
-        }
-
-        // (ب) الفلاجات المرتبطة بالفاتورة
-        $fields = [];
-        if (array_key_exists('highlight', $_POST))   $fields['highlight']   = (string) $_POST['highlight'];
-        if (array_key_exists('done_actual', $_POST)) $fields['done_actual'] = (int) $_POST['done_actual'];
-        if (array_key_exists('user_notes', $_POST))  $fields['user_notes']  = (string) $_POST['user_notes'];
-
-        $n = 0;
-        if ($fields) {
-            $ids = ifl_ctx_ids($did, $gid, $code);
-            if (!$ids) throw new RuntimeException('مالقيتش سجل التوزيع بتاع الصنف ده.');
-            $n = ifl_save($ids, $code, $fields, $uid);
-        }
-
-        echo json_encode(['ok' => true, 'invoices' => $n], JSON_UNESCAPED_UNICODE);
+        $res  = inv_item_flags_save($did, $gid, $code, $_POST, $uid);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -907,11 +875,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
         $what = (string) ($_POST['what'] ?? 'highlight');
-        $ids  = ifl_ctx_ids((int) ($_POST['distribution_id'] ?? 0), (int) ($_POST['group_id'] ?? 0));
-        if (!$ids) throw new RuntimeException('مفيش فاتورة أو مجموعة مفتوحة.');
-
-        $n = $what === 'done' ? ifl_clear_done($ids) : ifl_clear_highlights($ids);
-        echo json_encode(['ok' => true, 'count' => $n], JSON_UNESCAPED_UNICODE);
+        $did  = (int) ($_POST['distribution_id'] ?? 0);
+        $gid  = (int) ($_POST['group_id'] ?? 0);
+        $res  = inv_item_flags_clear($did, $gid, $what);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -925,35 +892,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_t
         if (!csrf_verify($_POST['csrf'] ?? '')) {
             throw new RuntimeException('انتهت صلاحية الجلسة، اعمل تحديث للصفحة.');
         }
-        $code = trim((string) ($_POST['item_code'] ?? ''));
-        $did  = (int) ($_POST['distribution_id'] ?? 0);
-        $gid  = (int) ($_POST['group_id'] ?? 0);
-        $note = trim((string) ($_POST['note'] ?? ''));
-        if ($code === '') throw new RuntimeException('كود الصنف ناقص.');
-        if ($did <= 0 && $gid > 0) {
-            $ids = ifl_ctx_ids($did, $gid, $code);
-            $did = $ids[0] ?? 0;
-        }
-        if ($did <= 0) throw new RuntimeException('معرّف التوزيع غير موجود.');
-
+        $code     = trim((string) ($_POST['item_code'] ?? ''));
+        $did      = (int) ($_POST['distribution_id'] ?? 0);
+        $gid      = (int) ($_POST['group_id'] ?? 0);
+        $note     = trim((string) ($_POST['note'] ?? ''));
         $itemName = trim((string) ($_POST['item_name'] ?? ''));
-        if ($itemName === '') {
-            $stName = $pdo->prepare('SELECT name FROM hq_codes c JOIN hq_items i ON i.item_id = c.item_id WHERE c.code = ? LIMIT 1');
-            $stName->execute([$code]);
-            $itemName = (string) $stName->fetchColumn();
-        }
-
-        $ins = $pdo->prepare(
-            "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, note, created_by)
-             VALUES (?, ?, ?, 'manual', ?, ?)
-             ON DUPLICATE KEY UPDATE
-                 note = VALUES(note),
-                 item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name),
-                 updated_at = NOW()"
-        );
-        $ins->execute([$did, $code, $itemName ?: null, $note, $uid]);
-
-        echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+        $res = inv_add_to_problems($pdo, $did, $code, $note, $uid, $gid, $itemName);
+        echo json_encode($res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }

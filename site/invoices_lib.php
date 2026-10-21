@@ -8,6 +8,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/item_lookup_lib.php';
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';
+require_once __DIR__ . '/item_flags_lib.php';
 
 /**
  * بحث الأصناف جوه الفواتير لبوب أب «تحديد أصناف» في المجموعات.
@@ -675,3 +676,126 @@ function inv_reservation_apply(
     $res = reservation_pull_apply($distId, $invoiceNo, $itemQty, $alloc, $uid, $codeByItemId);
     return ['allocated_count' => $res['allocated_count']];
 }
+
+/**
+ * سجلات التوزيع بتاعت السياق الحالي (فاتورة أو مجموعة).
+ */
+function ifl_ctx_ids(int $distId, int $groupId, string $itemCode = ''): array
+{
+    if ($groupId > 0) {
+        // '__any__' كود مش موجود → الدالة بترجّع كل سجلات المجموعة
+        // (نفس الحيلة المستخدمة في group_save_prices_bulk)
+        return group_code_dist_ids($groupId, $itemCode !== '' ? $itemCode : '__any__');
+    }
+    return $distId > 0 ? [$distId] : [];
+}
+
+/**
+ * حفظ ملاحظات المستخدم على الفاتورة.
+ */
+function inv_save_notes(int $distId, string $notes, int $uid): array
+{
+    if ($distId <= 0) {
+        throw new RuntimeException('فاتورة غير صحيحة.');
+    }
+    save_invoice_notes($distId, $notes, $uid);
+    return ['ok' => true];
+}
+
+/**
+ * حفظ علامات الصنف: تخطي التصدير، لون التمييز، التوزيع الفعلي، الملاحظة.
+ */
+function inv_item_flags_save(
+    int $did,
+    int $gid,
+    string $code,
+    array $params,
+    int $uid
+): array {
+    $code = trim($code);
+    if ($code === '') {
+        throw new RuntimeException('كود الصنف ناقص.');
+    }
+
+    // (أ) الفلاج العالمي: ينزل / ما ينزلش في ملف الفرع
+    if (array_key_exists('skip_export', $params)) {
+        ifl_set_skip($code, ((int) $params['skip_export']) === 1, $uid);
+    }
+
+    // (ب) الفلاجات المرتبطة بالفاتورة
+    $fields = [];
+    if (array_key_exists('highlight', $params))   $fields['highlight']   = (string) $params['highlight'];
+    if (array_key_exists('done_actual', $params)) $fields['done_actual'] = (int) $params['done_actual'];
+    if (array_key_exists('user_notes', $params))  $fields['user_notes']  = (string) $params['user_notes'];
+
+    $n = 0;
+    if ($fields) {
+        $ids = ifl_ctx_ids($did, $gid, $code);
+        if (!$ids) {
+            throw new RuntimeException('مالقيتش سجل التوزيع بتاع الصنف ده.');
+        }
+        $n = ifl_save($ids, $code, $fields, $uid);
+    }
+
+    return ['invoices' => $n];
+}
+
+/**
+ * مسح التمييز أو مسح علامات التوزيع الفعلي لفاتورة أو مجموعة.
+ */
+function inv_item_flags_clear(int $did, int $gid, string $what = 'highlight'): array
+{
+    $ids = ifl_ctx_ids($did, $gid);
+    if (!$ids) {
+        throw new RuntimeException('مفيش فاتورة أو مجموعة مفتوحة.');
+    }
+
+    $n = ($what === 'done') ? ifl_clear_done($ids) : ifl_clear_highlights($ids);
+    return ['count' => $n];
+}
+
+/**
+ * إضافة صنف لمشاكل الفواتير يدوياً.
+ */
+function inv_add_to_problems(
+    PDO $pdo,
+    int $did,
+    string $code,
+    string $note,
+    int $uid,
+    int $gid = 0,
+    string $itemName = ''
+): array {
+    $code = trim($code);
+    $note = trim($note);
+    if ($code === '') {
+        throw new RuntimeException('كود الصنف ناقص.');
+    }
+    if ($did <= 0 && $gid > 0) {
+        $ids = ifl_ctx_ids($did, $gid, $code);
+        $did = $ids[0] ?? 0;
+    }
+    if ($did <= 0) {
+        throw new RuntimeException('معرّف التوزيع غير موجود.');
+    }
+
+    $itemName = trim($itemName);
+    if ($itemName === '') {
+        $stName = $pdo->prepare('SELECT name FROM hq_codes c JOIN hq_items i ON i.item_id = c.item_id WHERE c.code = ? LIMIT 1');
+        $stName->execute([$code]);
+        $itemName = (string) $stName->fetchColumn();
+    }
+
+    $ins = $pdo->prepare(
+        "INSERT INTO invoice_problems (distribution_id, item_code, item_name, source, note, created_by)
+         VALUES (?, ?, ?, 'manual', ?, ?)
+         ON DUPLICATE KEY UPDATE
+             note = VALUES(note),
+             item_name = COALESCE(NULLIF(VALUES(item_name), ''), item_name),
+             updated_at = NOW()"
+    );
+    $ins->execute([$did, $code, $itemName ?: null, $note, $uid]);
+
+    return ['ok' => true];
+}
+

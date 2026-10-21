@@ -1,6 +1,6 @@
 <?php
 /**
- * invoices_api.php — واجهة برمجة موديول الفواتير (بريف ١٦٥: مرحلة أ١ + أ٢)
+ * invoices_api.php — واجهة برمجة موديول الفواتير (بريف ١٦٥ وما بعده: مرحلة أ١ + أ٢ + ب١ + ب٢)
  * نظام الفجالة ستور المالي
  *
  * مرحلة (أ١): البحث والبوب أب
@@ -17,7 +17,19 @@
  *   ?part=group[&g=…]                              ← {grpCurrent: {…}, grpData: {…}, grpCards: […], …} (GET)
  *   ?part=discount[&dinv=…&dsuf=…&dnet=…&dpct=…]   ← {discHeader: {…}, discItems: […], discCalc: {…}, …} (GET)
  *
- * جميع عمليات المرحلة (أ) هي قراءة GET فقط. عمليات POST تُرفض بـ 405 Method Not Allowed.
+ * مرحلة (ب١): الحفظ التلقائي وحالة الفاتورة وسحب الحجز (كتابة POST)
+ *   ?part=autosave                                 ← {ok: true, saved: …, …} (POST)
+ *   ?part=group_autosave                           ← {ok: true, updated: …} (POST)
+ *   ?part=set_status                               ← {ok: true, …} (POST)
+ *   ?part=reservation_preview                      ← {items: […], total_candidates: N} (POST)
+ *   ?part=reservation_apply                        ← {allocated_count: N} (POST)
+ *
+ * مرحلة (ب٢): الملاحظات والعلامات والمشاكل (كتابة POST)
+ *   ?part=save_notes                               ← {ok: true} (POST)
+ *   ?part=group_save_notes                         ← {ok: true} (POST)
+ *   ?part=item_flags_save                          ← {ok: true, invoices: N} (POST)
+ *   ?part=item_flags_clear                         ← {ok: true, count: N} (POST)
+ *   ?part=add_to_problems                          ← {ok: true} (POST)
  */
 declare(strict_types=1);
 
@@ -54,6 +66,12 @@ $allowedParts = [
     'set_status',
     'reservation_preview',
     'reservation_apply',
+    // مرحلة ب٢ (كتابة)
+    'save_notes',
+    'group_save_notes',
+    'item_flags_save',
+    'item_flags_clear',
+    'add_to_problems',
 ];
 
 if (!in_array($part, $allowedParts, true)) {
@@ -66,6 +84,11 @@ $postParts = [
     'set_status',
     'reservation_preview',
     'reservation_apply',
+    'save_notes',
+    'group_save_notes',
+    'item_flags_save',
+    'item_flags_clear',
+    'add_to_problems',
 ];
 
 if (in_array($part, $postParts, true)) {
@@ -211,6 +234,42 @@ try {
             $alloc     = is_array($allocRaw) ? $allocRaw : json_decode((string) $allocRaw, true);
             if (!is_array($alloc)) $alloc = [];
             $res = inv_reservation_apply(db(), $distId, $invoiceNo, $invId, $suffix, $alloc, $uid);
+            api_ok($res);
+
+        // ===== مرحلة ب٢ (الملاحظات والعلامات والمشاكل) =====
+        case 'save_notes':
+            $distId = (int) ($in['distribution_id'] ?? 0);
+            $notes  = (string) ($in['notes'] ?? '');
+            $res    = inv_save_notes($distId, $notes, $uid);
+            api_ok($res);
+
+        case 'group_save_notes':
+            $gid   = (int) ($in['group_id'] ?? 0);
+            $notes = (string) ($in['notes'] ?? '');
+            group_save_notes($gid, $notes);
+            api_ok(['ok' => true]);
+
+        case 'item_flags_save':
+            $did  = (int) ($in['distribution_id'] ?? 0);
+            $gid  = (int) ($in['group_id'] ?? 0);
+            $code = (string) ($in['item_code'] ?? '');
+            $res  = inv_item_flags_save($did, $gid, $code, $in, $uid);
+            api_ok($res);
+
+        case 'item_flags_clear':
+            $did  = (int) ($in['distribution_id'] ?? 0);
+            $gid  = (int) ($in['group_id'] ?? 0);
+            $what = (string) ($in['what'] ?? 'highlight');
+            $res  = inv_item_flags_clear($did, $gid, $what);
+            api_ok($res);
+
+        case 'add_to_problems':
+            $did      = (int) ($in['distribution_id'] ?? 0);
+            $gid      = (int) ($in['group_id'] ?? 0);
+            $code     = (string) ($in['item_code'] ?? '');
+            $note     = (string) ($in['note'] ?? '');
+            $itemName = (string) ($in['item_name'] ?? '');
+            $res      = inv_add_to_problems(db(), $did, $code, $note, $uid, $gid, $itemName);
             api_ok($res);
     }
 } catch (Throwable $e) {
