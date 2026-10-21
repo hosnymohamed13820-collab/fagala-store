@@ -44,6 +44,28 @@ if (!in_array($part, $validParts, true)) {
 
 $pdo = db();
 $response = ['ok' => true];
+$empListFull = null; // النسخة الكاملة من الموظفين — للحسابات الداخلية فقط، مش بترجع في الرد
+
+/**
+ * إخفاء مفاتيح الأرقام الحساسة من صفوف الموظفين لما الأرقام مقفولة
+ * (base_salary / expected_monthly_hours / salary_mode)
+ */
+function hr_api_mask_employee_salary(array $employees): array
+{
+    if (sens_unlocked()) {
+        return $employees;
+    }
+    $hiddenKeys = ['base_salary', 'expected_monthly_hours', 'salary_mode'];
+    foreach ($employees as $i => $emp) {
+        if (!is_array($emp)) {
+            continue;
+        }
+        foreach ($hiddenKeys as $k) {
+            unset($employees[$i][$k]);
+        }
+    }
+    return $employees;
+}
 
 // 180a: الموظفين
 if ($part === 'employees') {
@@ -53,7 +75,7 @@ if ($part === 'employees') {
         exit;
     }
     $response['data'] = [
-        'employees' => hr_get_employees_list($pdo),
+        'employees' => hr_api_mask_employee_salary(hr_get_employees_list($pdo)),
     ];
 }
 
@@ -191,7 +213,8 @@ elseif ($part === 'all') {
         'pending_requests' => hr_get_pending_requests_count($pdo),
     ];
     if (can('hr:employees')) {
-        $data['employees'] = hr_get_employees_list($pdo);
+        $empListFull = hr_get_employees_list($pdo);
+        $data['employees'] = hr_api_mask_employee_salary($empListFull);
     }
     if (can('hr:attendance')) {
         $attMonth = date('Y-m');
@@ -219,7 +242,7 @@ elseif ($part === 'all') {
     if (can('hr:salaries')) {
         if (sens_unlocked()) {
             $dates = hr_get_payroll_dates(null, null, null);
-            $empList = $data['employees'] ?? hr_get_employees_list($pdo);
+            $empList = $empListFull ?? hr_get_employees_list($pdo);
             $data['salaries'] = [
                 'dates'   => $dates,
                 'payroll' => hr_calc_payroll_data($pdo, $empList, $dates['from'], $dates['to'], $dates['month']),
