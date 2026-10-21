@@ -472,3 +472,206 @@ function inv_load_list(string $tab = 'posted', string $invScope = 'admin'): arra
         'invNotes'      => $invNotes,
     ];
 }
+
+/**
+ * هل سجل التوزيع تابع لمردود شراء (doc_type = 6).
+ */
+function dist_is_return(PDO $pdo, int $distId): bool
+{
+    $stDt = $pdo->prepare('SELECT doc_type FROM invoice_distribution WHERE id = ?');
+    $stDt->execute([$distId]);
+    return (int) $stDt->fetchColumn() === 6;
+}
+
+/**
+ * تغيير حالة الفاتورة يدوياً أو تلقائياً أو معاينة النواقص (dry).
+ */
+function inv_set_status(
+    PDO $pdo,
+    int $distId,
+    string $status,
+    int $uid,
+    bool $dry = false,
+    $invId = null,
+    ?string $suffix = null
+): array {
+    if ($distId <= 0) throw new RuntimeException('فاتورة غير صحيحة.');
+    if (dist_is_return($pdo, $distId)) {
+        throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+    }
+
+    if ($dry) {
+        $dryItems = [];
+        try {
+            $dryItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+        } catch (Throwable $ex) { $dryItems = []; }
+        return ['pending' => invoice_pending_items($distId, $dryItems)];
+    }
+
+    if ($status === 'auto') {
+        clear_invoice_status_manual($distId);
+        if ($invId !== null && $invId !== '') {
+            refresh_invoice_status($distId, $invId, $suffix, false);
+        }
+        $cur = $pdo->prepare('SELECT status FROM invoice_distribution WHERE id = ?');
+        $cur->execute([$distId]);
+        $newStatus = (string) $cur->fetchColumn();
+        if ($newStatus === 'done') {
+            require_once __DIR__ . '/receiving_flow_lib.php';
+            receiving_open($pdo, 0, $distId, $uid);
+        }
+        return ['status' => $newStatus, 'manual' => false];
+    }
+
+    if (!set_invoice_status_manual($distId, $status, $uid)) {
+        throw new RuntimeException('حالة غير صحيحة.');
+    }
+    if ($status === 'done') {
+        require_once __DIR__ . '/receiving_flow_lib.php';
+        receiving_open($pdo, 0, $distId, $uid);
+    }
+    return ['status' => $status, 'manual' => true];
+}
+
+/**
+ * حفظ كمية صنف لفرع في فاتورة توزيع محددة (autosave).
+ */
+function inv_autosave(
+    PDO $pdo,
+    int $distId,
+    string $itemCode,
+    float $itemQty,
+    int $branchId,
+    float $qty,
+    int $uid,
+    $invId = null,
+    ?string $suffix = null
+): array {
+    if ($distId <= 0 || $itemCode === '' || $branchId <= 0) {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+    if (dist_is_return($pdo, $distId)) {
+        throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+    }
+    $res = set_branch_distribution($distId, $itemCode, $itemQty, $branchId, $qty, $uid);
+    $bt = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines WHERE distribution_id=? AND branch_id=?');
+    $bt->execute([$distId, $branchId]);
+    $branchTotal = (float) $bt->fetchColumn();
+
+    if ($invId !== null && $invId !== '') {
+        refresh_invoice_status($distId, $invId, $suffix, false);
+    }
+
+    return ['remaining' => $res['remaining'], 'branch_total' => $branchTotal];
+}
+
+/**
+ * حفظ توزيع صنف من الشاشة المجمّعة (شلال على فواتير المجموعة).
+ */
+function inv_group_autosave(
+    PDO $pdo,
+    int $gid,
+    string $itemCode,
+    int $branchId,
+    float $qty,
+    int $uid
+): array {
+    if ($gid <= 0 || $itemCode === '' || $branchId <= 0) {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+
+    $g = group_load($gid);
+    $sources = [];
+    foreach ($g['items'] as $it) {
+        if ((string) $it['item_code'] === $itemCode) { $sources = $it['sources']; break; }
+    }
+    if (!$sources) throw new RuntimeException('الصنف مش موجود في المجموعة.');
+
+    $res = group_set_distribution($sources, $itemCode, $branchId, $qty, $uid);
+
+    $groupTotals   = [];
+    $invoiceTotals = [];
+    $distTotalsMap = [];
+    if (!empty($g['dist_ids'])) {
+        $dids = array_values(array_unique(array_map('intval', $g['dist_ids'])));
+        $ph   = implode(',', array_fill(0, count($dids), '?'));
+        $q    = $pdo->prepare(
+            "SELECT distribution_id, branch_id, SUM(amount) AS t
+             FROM invoice_distribution_lines
+             WHERE distribution_id IN ($ph)
+             GROUP BY distribution_id, branch_id
+             HAVING SUM(amount) > 0"
+        );
+        $q->execute($dids);
+        while ($r = $q->fetch()) {
+            $distTotalsMap[(int) $r['distribution_id']][(int) $r['branch_id']] = (float) $r['t'];
+        }
+    }
+    foreach ($g['dist_ids'] as $sth => $did) {
+        $rows = $distTotalsMap[(int) $did] ?? [];
+        foreach ($rows as $bid => $t) {
+            $invoiceTotals[(string) $sth][(string) $bid] = $t;
+            $groupTotals[(string) $bid] = ($groupTotals[(string) $bid] ?? 0) + $t;
+        }
+    }
+    $branchTotal = (float) ($groupTotals[(string) $branchId] ?? 0);
+    group_refresh_statuses($gid);
+
+    return [
+        'remaining'      => $res['remaining'],
+        'branch_total'   => $branchTotal,
+        'split'          => $res['split'],
+        'group_totals'   => (object) $groupTotals,
+        'invoice_totals' => (object) $invoiceTotals,
+    ];
+}
+
+/**
+ * معاينة سحب الحجز لفاتورة توزيع محددة.
+ */
+function inv_reservation_preview(int $distId, $invId, ?string $suffix = null): array
+{
+    if ($distId <= 0 || $invId === null || $invId === '') {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+    $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+    $items = merge_invoice_items($rawItems);
+    $preview = reservation_pull_preview($distId, $items);
+    return [
+        'items'            => $preview['items'],
+        'total_candidates' => $preview['total_candidates'],
+    ];
+}
+
+/**
+ * تطبيق سحب الحجز وتوزيعه على الفروع وتحديث الحجوزات.
+ */
+function inv_reservation_apply(
+    PDO $pdo,
+    int $distId,
+    string $invoiceNo,
+    $invId,
+    ?string $suffix,
+    array $alloc,
+    int $uid
+): array {
+    if ($distId <= 0 || $invId === null || $invId === '') {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+    if (dist_is_return($pdo, $distId)) {
+        throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
+    }
+
+    $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
+    $items = merge_invoice_items($rawItems);
+    $itemQty      = [];
+    $codeByItemId = [];
+    foreach ($items as $it) {
+        $itemQty[(string) $it['item_code']] = (float) ($it['quantity'] ?? 0);
+        $iid = (int) ($it['item_id'] ?? 0);
+        if ($iid > 0) $codeByItemId[$iid] = (string) $it['item_code'];
+    }
+
+    $res = reservation_pull_apply($distId, $invoiceNo, $itemQty, $alloc, $uid, $codeByItemId);
+    return ['allocated_count' => $res['allocated_count']];
+}

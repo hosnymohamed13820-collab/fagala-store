@@ -48,13 +48,36 @@ $allowedParts = [
     'invoice',
     'group',
     'discount',
+    // مرحلة ب١ (كتابة)
+    'autosave',
+    'group_autosave',
+    'set_status',
+    'reservation_preview',
+    'reservation_apply',
 ];
 
 if (!in_array($part, $allowedParts, true)) {
     api_fail('جزء غير معروف (part)', 400, 'bad_request');
 }
 
-api_method('GET');
+$postParts = [
+    'autosave',
+    'group_autosave',
+    'set_status',
+    'reservation_preview',
+    'reservation_apply',
+];
+
+if (in_array($part, $postParts, true)) {
+    api_method('POST');
+    api_csrf();
+    api_idempotent();
+    $in  = api_input();
+    $u   = current_user();
+    $uid = (int) ($u['id'] ?? 0);
+} else {
+    api_method('GET');
+}
 
 try {
     switch ($part) {
@@ -142,6 +165,53 @@ try {
                 }
             }
             api_ok(inv_load_discount($discInvId, $discSuffix, $discNetOverride, $discItemPct));
+
+        // ===== مرحلة ب١ (كتابة) =====
+        case 'autosave':
+            $distId   = (int) ($in['distribution_id'] ?? 0);
+            $itemCode = trim((string) ($in['item_code'] ?? ''));
+            $itemQty  = (float) ($in['item_qty'] ?? 0);
+            $branchId = (int) ($in['branch_id'] ?? 0);
+            $qty      = (float) ($in['qty'] ?? 0);
+            $invId    = $in['invoice_id'] ?? null;
+            $suffix   = isset($in['suffix']) ? (string) $in['suffix'] : null;
+            $res = inv_autosave(db(), $distId, $itemCode, $itemQty, $branchId, $qty, $uid, $invId, $suffix);
+            api_ok($res);
+
+        case 'group_autosave':
+            $gid      = (int) ($in['group_id'] ?? 0);
+            $itemCode = trim((string) ($in['item_code'] ?? ''));
+            $branchId = (int) ($in['branch_id'] ?? 0);
+            $qty      = (float) ($in['qty'] ?? 0);
+            $res = inv_group_autosave(db(), $gid, $itemCode, $branchId, $qty, $uid);
+            api_ok($res);
+
+        case 'set_status':
+            $distId = (int) ($in['distribution_id'] ?? 0);
+            $status = trim((string) ($in['status'] ?? ''));
+            $dry    = !empty($in['dry']);
+            $invId  = $in['invoice_id'] ?? null;
+            $suffix = isset($in['suffix']) ? (string) $in['suffix'] : null;
+            $res = inv_set_status(db(), $distId, $status, $uid, $dry, $invId, $suffix);
+            api_ok($res);
+
+        case 'reservation_preview':
+            $distId = (int) ($in['distribution_id'] ?? 0);
+            $invId  = $in['invoice_id'] ?? null;
+            $suffix = isset($in['suffix']) ? (string) $in['suffix'] : null;
+            $res = inv_reservation_preview($distId, $invId, $suffix);
+            api_ok($res);
+
+        case 'reservation_apply':
+            $distId    = (int) ($in['distribution_id'] ?? 0);
+            $invoiceNo = trim((string) ($in['invoice_no'] ?? ''));
+            $invId     = $in['invoice_id'] ?? null;
+            $suffix    = isset($in['suffix']) ? (string) $in['suffix'] : null;
+            $allocRaw  = $in['alloc'] ?? [];
+            $alloc     = is_array($allocRaw) ? $allocRaw : json_decode((string) $allocRaw, true);
+            if (!is_array($alloc)) $alloc = [];
+            $res = inv_reservation_apply(db(), $distId, $invoiceNo, $invId, $suffix, $alloc, $uid);
+            api_ok($res);
     }
 } catch (Throwable $e) {
     api_fail($e->getMessage(), 422, 'error');

@@ -789,13 +789,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     exit;
 }
 
-function dist_is_return(PDO $pdo, int $distId): bool
-{
-    $stDt = $pdo->prepare('SELECT doc_type FROM invoice_distribution WHERE id = ?');
-    $stDt->execute([$distId]);
-    return (int) $stDt->fetchColumn() === 6;
-}
-
 // ===== تغيير حالة الفاتورة يدوي (AJAX) =====
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
     header('Content-Type: application/json; charset=utf-8');
@@ -805,54 +798,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
         }
         $distId = (int) ($_POST['distribution_id'] ?? 0);
         $status = trim($_POST['status'] ?? '');
-        if ($distId <= 0) throw new RuntimeException('فاتورة غير صحيحة.');
-        if (dist_is_return($pdo, $distId)) {
-            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
-        }
-
-        // 🔴 تشغيل تجريبي: بنرجّع الأصناف الناقصة **دلوقتي** من غير ما
-        //    نكتب أي حاجة. لازم يفضل قبل أي UPDATE.
-        //    بيتنده وقت الضغط مش وقت تحميل الصفحة، عشان جدول التوزيع
-        //    بيتحفظ لوحده من غير ريفرش — فأي قايمة محسوبة وقت التحميل
-        //    بتبقى قديمة وتحذّر من أصناف اتوزّعت خلاص (أو تسكت عن
-        //    أصناف اتصفّرت بعد كده).
-        if (!empty($_POST['dry'])) {
-            $dryItems = [];
-            try {
-                $dryItems = sqlsrv_fetch_invoice_items($_POST['invoice_id'] ?? null, $_POST['suffix'] ?? null);
-            } catch (Throwable $ex) { $dryItems = []; }
-            echo json_encode(
-                ['ok' => true, 'pending' => invoice_pending_items($distId, $dryItems)],
-                JSON_UNESCAPED_UNICODE
-            );
-            exit;
-        }
-
-        if ($status === 'auto') {
-            // رجوع للحساب التلقائي
-            clear_invoice_status_manual($distId);
-            $invId = $_POST['invoice_id'] ?? null;
-            if ($invId !== null && $invId !== '') {
-                refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null, false /* تغيير الحالة اليدوي. السطر ٨٩٢ بينده receiving_open بنفسه */);
-            }
-            $cur = $pdo->prepare('SELECT status FROM invoice_distribution WHERE id = ?');
-            $cur->execute([$distId]);
-            $newStatus = (string) $cur->fetchColumn();
-            if ($newStatus === 'done') {
-                require_once __DIR__ . '/receiving_flow_lib.php';
-                receiving_open($pdo, 0, $distId, $uid);
-            }
-            echo json_encode(['ok' => true, 'status' => $newStatus, 'manual' => false], JSON_UNESCAPED_UNICODE);
-        } else {
-            if (!set_invoice_status_manual($distId, $status, $uid)) {
-                throw new RuntimeException('حالة غير صحيحة.');
-            }
-            if ($status === 'done') {
-                require_once __DIR__ . '/receiving_flow_lib.php';
-                receiving_open($pdo, 0, $distId, $uid);
-            }
-            echo json_encode(['ok' => true, 'status' => $status, 'manual' => true], JSON_UNESCAPED_UNICODE);
-        }
+        $dry    = !empty($_POST['dry']);
+        $invId  = $_POST['invoice_id'] ?? null;
+        $suffix = $_POST['suffix'] ?? null;
+        $res    = inv_set_status($pdo, $distId, $status, $uid, $dry, $invId, $suffix);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -1185,62 +1135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         $itemCode = trim($_POST['item_code'] ?? '');
         $branchId = (int) ($_POST['branch_id'] ?? 0);
         $qty      = (float) ($_POST['qty'] ?? 0);
-        if ($gid <= 0 || $itemCode === '' || $branchId <= 0) {
-            throw new RuntimeException('بيانات ناقصة.');
-        }
-
-        // مصادر الصنف من المجموعة (السيرفر هو المرجع، مش الواجهة)
-        $g = group_load($gid);
-        $sources = [];
-        foreach ($g['items'] as $it) {
-            if ((string) $it['item_code'] === $itemCode) { $sources = $it['sources']; break; }
-        }
-        if (!$sources) throw new RuntimeException('الصنف مش موجود في المجموعة.');
-
-        $res = group_set_distribution($sources, $itemCode, $branchId, $qty, $uid);
-
-        // إجمالي الفرع في المجموعة كلها + تفصيل لكل فاتورة
-        // (بنرجّعهم كاملين عشان الواجهة تعيد بناء أزرار التحميل لحظيًا —
-        //  من غير كده الفاتورة اللي اتوزّعلها دلوقتي بتفضل مكتوب عليها
-        //  "لسه ماتوزّعش منها حاجة" لحد ما المستخدم يعمل ريفريش.)
-        $groupTotals   = [];
-        $invoiceTotals = [];
-        $distTotalsMap = [];
-        if (!empty($g['dist_ids'])) {
-            $dids = array_values(array_unique(array_map('intval', $g['dist_ids'])));
-            $ph   = implode(',', array_fill(0, count($dids), '?'));
-            $q    = $pdo->prepare(
-                "SELECT distribution_id, branch_id, SUM(amount) AS t
-                 FROM invoice_distribution_lines
-                 WHERE distribution_id IN ($ph)
-                 GROUP BY distribution_id, branch_id
-                 HAVING SUM(amount) > 0"
-            );
-            $q->execute($dids);
-            while ($r = $q->fetch()) {
-                $distTotalsMap[(int) $r['distribution_id']][(int) $r['branch_id']] = (float) $r['t'];
-            }
-        }
-        foreach ($g['dist_ids'] as $sth => $did) {
-            $rows = $distTotalsMap[(int) $did] ?? [];
-            foreach ($rows as $bid => $t) {
-                $invoiceTotals[(string) $sth][(string) $bid] = $t;
-                $groupTotals[(string) $bid] = ($groupTotals[(string) $bid] ?? 0) + $t;
-            }
-        }
-        $branchTotal = (float) ($groupTotals[(string) $branchId] ?? 0);
-
-        // حالة كل فاتورة تتحدّث (نفس منطق الفاتورة الواحدة)
-        group_refresh_statuses($gid);
-
-        echo json_encode([
-            'ok'             => true,
-            'remaining'      => $res['remaining'],
-            'branch_total'   => $branchTotal,
-            'split'          => $res['split'],
-            'group_totals'   => (object) $groupTotals,
-            'invoice_totals' => (object) $invoiceTotals,
-        ], JSON_UNESCAPED_UNICODE);
+        $res      = inv_group_autosave($pdo, $gid, $itemCode, $branchId, $qty, $uid);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -1258,25 +1154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'autos
         $itemQty  = (float) ($_POST['item_qty'] ?? 0);
         $branchId = (int) ($_POST['branch_id'] ?? 0);
         $qty      = (float) ($_POST['qty'] ?? 0);
-        if ($distId <= 0 || $itemCode === '' || $branchId <= 0) {
-            throw new RuntimeException('بيانات ناقصة.');
-        }
-        if (dist_is_return($pdo, $distId)) {
-            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
-        }
-        $res = set_branch_distribution($distId, $itemCode, $itemQty, $branchId, $qty, $uid);
-        // إجمالي كميات الفرع الكلي في التوزيعة (لتحديث زرار التحميل)
-        $bt = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM invoice_distribution_lines WHERE distribution_id=? AND branch_id=?');
-        $bt->execute([$distId, $branchId]);
-        $branchTotal = (float) $bt->fetchColumn();
-
-        // تحديث حالة الفاتورة (مخزّنة عشان القائمة تفتح بسرعة)
-        $invId = $_POST['invoice_id'] ?? null;
-        if ($invId !== null && $invId !== '') {
-            refresh_invoice_status($distId, $invId, $_POST['suffix'] ?? null, false /* autosave = حفظ كمية، مش إرسال */);
-        }
-
-        echo json_encode(['ok' => true, 'remaining' => $res['remaining'], 'branch_total' => $branchTotal], JSON_UNESCAPED_UNICODE);
+        $invId    = $_POST['invoice_id'] ?? null;
+        $suffix   = $_POST['suffix'] ?? null;
+        $res      = inv_autosave($pdo, $distId, $itemCode, $itemQty, $branchId, $qty, $uid, $invId, $suffix);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -1292,13 +1173,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reser
         $distId = (int) ($_POST['distribution_id'] ?? 0);
         $invId  = $_POST['invoice_id'] ?? null;
         $suffix = $_POST['suffix'] ?? null;
-        if ($distId <= 0 || $invId === null || $invId === '') {
-            throw new RuntimeException('بيانات ناقصة.');
-        }
-        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
-        $items = merge_invoice_items($rawItems);
-        $preview = reservation_pull_preview($distId, $items);
-        echo json_encode(['ok' => true, 'items' => $preview['items'], 'total_candidates' => $preview['total_candidates']], JSON_UNESCAPED_UNICODE);
+        $res    = inv_reservation_preview($distId, $invId, $suffix);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
@@ -1318,26 +1194,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reser
         $allocRaw  = $_POST['alloc'] ?? '[]';
         $alloc     = is_array($allocRaw) ? $allocRaw : json_decode($allocRaw, true);
         if (!is_array($alloc)) $alloc = [];
-
-        if ($distId <= 0 || $invId === null || $invId === '') {
-            throw new RuntimeException('بيانات ناقصة.');
-        }
-        if (dist_is_return($pdo, $distId)) {
-            throw new RuntimeException('المردود مابيتوزعش ومالوش حالة — نزّل ملف المردود.');
-        }
-
-        $rawItems = sqlsrv_fetch_invoice_items($invId, $suffix);
-        $items = merge_invoice_items($rawItems);
-        $itemQty      = [];
-        $codeByItemId = [];
-        foreach ($items as $it) {
-            $itemQty[(string) $it['item_code']] = (float) ($it['quantity'] ?? 0);
-            $iid = (int) ($it['item_id'] ?? 0);
-            if ($iid > 0) $codeByItemId[$iid] = (string) $it['item_code'];
-        }
-
-        $res = reservation_pull_apply($distId, $invoiceNo, $itemQty, $alloc, $uid, $codeByItemId);
-        echo json_encode(['ok' => true, 'allocated_count' => $res['allocated_count']], JSON_UNESCAPED_UNICODE);
+        $res       = inv_reservation_apply($pdo, $distId, $invoiceNo, $invId, $suffix, $alloc, $uid);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
     }
