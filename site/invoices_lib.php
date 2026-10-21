@@ -799,3 +799,160 @@ function inv_add_to_problems(
     return ['ok' => true];
 }
 
+/**
+ * تفكيك واختيار الفواتير من المدخلات (مصفوفة أو JSON أو سلاسل مفصولة بـ pipe).
+ */
+function inv_parse_invoice_picks($raw): array
+{
+    if (is_array($raw)) {
+        $arr = $raw;
+    } else {
+        $str = trim((string) $raw);
+        if ($str === '') return [];
+        $arr = json_decode($str, true);
+        if (!is_array($arr)) {
+            throw new RuntimeException('بيانات الفواتير غير صحيحة (JSON غير صالح).');
+        }
+    }
+
+    if (count($arr) > 2000) $arr = array_slice($arr, 0, 2000);
+
+    $out = [];
+    foreach ($arr as $p) {
+        if (is_string($p)) {
+            $parts = explode('|', $p, 2);
+            $sth = (int) $parts[0];
+            $suf = trim((string) ($parts[1] ?? ''));
+        } elseif (is_array($p)) {
+            $sth = (int) ($p['sth_id'] ?? ($p['s'] ?? 0));
+            $suf = trim((string) ($p['suffix'] ?? ($p['f'] ?? '')));
+        } else {
+            continue;
+        }
+        if ($sth <= 0) continue;
+        $out[$sth . '|' . $suf] = ['sth_id' => $sth, 'suffix' => $suf];
+    }
+    return array_values($out);
+}
+
+/**
+ * تفكيك الأصناف المختارة لبوب أب «تحديد أصناف» ومجموعات الأصناف.
+ */
+function inv_parse_item_picks($raw): array
+{
+    if (is_array($raw)) {
+        $arr = $raw;
+    } else {
+        $str = trim((string) $raw);
+        if ($str === '') return [];
+        $arr = json_decode($str, true);
+        if (!is_array($arr)) {
+            throw new RuntimeException('بيانات الأصناف غير صحيحة (JSON غير صالح).');
+        }
+    }
+
+    if (count($arr) > 2000) $arr = array_slice($arr, 0, 2000);
+
+    $out = [];
+    foreach ($arr as $p) {
+        if (!is_array($p)) continue;
+        $sth  = (int) ($p['s'] ?? ($p['sth_id'] ?? 0));
+        $code = trim((string) ($p['c'] ?? ($p['item_code'] ?? '')));
+        if ($sth <= 0 || $code === '') continue;
+        $suf  = trim((string) ($p['f'] ?? ($p['suffix'] ?? '')));
+        $out[$sth . '|' . $suf . '|' . $code] = [
+            'sth_id' => $sth, 'suffix' => $suf, 'item_code' => $code,
+        ];
+    }
+    return array_values($out);
+}
+
+/**
+ * إنشاء مجموعة فواتير كاملة جديدة.
+ */
+function inv_group_create($rawInvoices, int $uid, string $name = ''): array
+{
+    $picks = inv_parse_invoice_picks($rawInvoices);
+    $gid   = group_create($picks, $uid, trim($name), 'full');
+    return ['group_id' => $gid];
+}
+
+/**
+ * إنشاء مجموعة أصناف محددة جديدة.
+ */
+function inv_group_create_items($rawItems, int $uid, string $name = ''): array
+{
+    $picks = inv_parse_item_picks($rawItems);
+    $gid   = group_create_items($picks, $uid, trim($name));
+    return ['group_id' => $gid];
+}
+
+/**
+ * إضافة فواتير كاملة لمجموعة موجودة.
+ */
+function inv_group_add_invoices(int $gid, $rawInvoices, int $uid): array
+{
+    if ($gid <= 0) {
+        throw new RuntimeException('مجموعة غير صحيحة.');
+    }
+    $picks = inv_parse_invoice_picks($rawInvoices);
+    if (!$picks) {
+        throw new RuntimeException('ماخترتش أي فاتورة.');
+    }
+    $n = group_add_invoices($gid, $picks, $uid);
+    return ['added' => $n];
+}
+
+/**
+ * إضافة أصناف محددة لمجموعة أصناف موجودة.
+ */
+function inv_group_add_items(int $gid, $rawItems, int $uid): array
+{
+    if ($gid <= 0) {
+        throw new RuntimeException('مجموعة غير صحيحة.');
+    }
+    $picks = inv_parse_item_picks($rawItems);
+    if (!$picks) {
+        throw new RuntimeException('ماخترتش أي صنف.');
+    }
+    return group_add_items($gid, $picks, $uid);
+}
+
+/**
+ * مسح مجموعة بالكامل.
+ */
+function inv_group_delete(int $gid): array
+{
+    if ($gid <= 0) {
+        throw new RuntimeException('مجموعة غير صحيحة.');
+    }
+    group_delete($gid);
+    return ['deleted' => true];
+}
+
+/**
+ * شيل فاتورة واحدة من مجموعة.
+ */
+function inv_group_remove_invoice(int $gid, int $sthId, string $suffix = ''): array
+{
+    if ($gid <= 0 || $sthId <= 0) {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+    $ok = group_remove_invoice($gid, $sthId, $suffix);
+    return ['removed' => $ok];
+}
+
+/**
+ * شيل صنف واحد من مجموعة أصناف.
+ */
+function inv_group_remove_item(int $gid, string $itemCode): array
+{
+    $itemCode = trim($itemCode);
+    if ($gid <= 0 || $itemCode === '') {
+        throw new RuntimeException('بيانات ناقصة.');
+    }
+    $n = group_remove_item($gid, $itemCode);
+    return ['removed_count' => $n];
+}
+
+

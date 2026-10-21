@@ -30,6 +30,15 @@
  *   ?part=item_flags_save                          ← {ok: true, invoices: N} (POST)
  *   ?part=item_flags_clear                         ← {ok: true, count: N} (POST)
  *   ?part=add_to_problems                          ← {ok: true} (POST)
+ *
+ * مرحلة (ب٣): إدارة المجموعات (كتابة POST)
+ *   ?part=group_create                             ← {group_id: N} (POST)
+ *   ?part=group_create_items                       ← {group_id: N} (POST)
+ *   ?part=group_add_invoices                       ← {added: N} (POST)
+ *   ?part=group_add_items                          ← {added: N, dup: N, bad: N} (POST)
+ *   ?part=group_delete                             ← {deleted: true} (POST)
+ *   ?part=group_remove_invoice                     ← {removed: bool} (POST)
+ *   ?part=group_remove_item                        ← {removed_count: N} (POST)
  */
 declare(strict_types=1);
 
@@ -72,6 +81,14 @@ $allowedParts = [
     'item_flags_save',
     'item_flags_clear',
     'add_to_problems',
+    // مرحلة ب٣ (كتابة)
+    'group_create',
+    'group_create_items',
+    'group_add_invoices',
+    'group_add_items',
+    'group_delete',
+    'group_remove_invoice',
+    'group_remove_item',
 ];
 
 if (!in_array($part, $allowedParts, true)) {
@@ -89,6 +106,13 @@ $postParts = [
     'item_flags_save',
     'item_flags_clear',
     'add_to_problems',
+    'group_create',
+    'group_create_items',
+    'group_add_invoices',
+    'group_add_items',
+    'group_delete',
+    'group_remove_invoice',
+    'group_remove_item',
 ];
 
 if (in_array($part, $postParts, true)) {
@@ -270,6 +294,49 @@ try {
             $note     = (string) ($in['note'] ?? '');
             $itemName = (string) ($in['item_name'] ?? '');
             $res      = inv_add_to_problems(db(), $did, $code, $note, $uid, $gid, $itemName);
+            api_ok($res);
+
+        // ===== مرحلة ب٣ (إدارة المجموعات) =====
+        case 'group_create':
+            $name     = (string) ($in['name'] ?? ($in['group_name'] ?? ''));
+            $invoices = $in['invoices'] ?? ($in['pick'] ?? []);
+            $res      = inv_group_create($invoices, $uid, $name);
+            api_ok($res);
+
+        case 'group_create_items':
+            $name  = (string) ($in['name'] ?? ($in['group_name'] ?? ''));
+            $items = $in['items'] ?? ($in['ipicks'] ?? []);
+            $res   = inv_group_create_items($items, $uid, $name);
+            api_ok($res);
+
+        case 'group_add_invoices':
+            $gid      = (int) ($in['group_id'] ?? 0);
+            $invoices = $in['invoices'] ?? ($in['pick'] ?? []);
+            $res      = inv_group_add_invoices($gid, $invoices, $uid);
+            api_ok($res);
+
+        case 'group_add_items':
+            $gid   = (int) ($in['group_id'] ?? 0);
+            $items = $in['items'] ?? ($in['ipicks'] ?? []);
+            $res   = inv_group_add_items($gid, $items, $uid);
+            api_ok($res);
+
+        case 'group_delete':
+            $gid = (int) ($in['group_id'] ?? 0);
+            $res = inv_group_delete($gid);
+            api_ok($res);
+
+        case 'group_remove_invoice':
+            $gid    = (int) ($in['group_id'] ?? 0);
+            $sthId  = (int) ($in['sth_id'] ?? 0);
+            $suffix = (string) ($in['suffix'] ?? '');
+            $res    = inv_group_remove_invoice($gid, $sthId, $suffix);
+            api_ok($res);
+
+        case 'group_remove_item':
+            $gid  = (int) ($in['group_id'] ?? 0);
+            $code = (string) ($in['item_code'] ?? '');
+            $res  = inv_group_remove_item($gid, $code);
             api_ok($res);
     }
 } catch (Throwable $e) {

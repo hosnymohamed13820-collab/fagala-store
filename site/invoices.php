@@ -827,22 +827,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
  */
 function grp_parse_item_picks($raw): array
 {
-    $arr = json_decode((string) $raw, true);
-    if (!is_array($arr)) return [];
-    if (count($arr) > 2000) $arr = array_slice($arr, 0, 2000);
-
-    $out = [];
-    foreach ($arr as $p) {
-        if (!is_array($p)) continue;
-        $sth  = (int) ($p['s'] ?? 0);
-        $code = trim((string) ($p['c'] ?? ''));
-        if ($sth <= 0 || $code === '') continue;
-        $suf  = trim((string) ($p['f'] ?? ''));
-        $out[$sth . '|' . $suf . '|' . $code] = [
-            'sth_id' => $sth, 'suffix' => $suf, 'item_code' => $code,
-        ];
-    }
-    return array_values($out);
+    return inv_parse_item_picks($raw);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'item_flags_save') {
@@ -913,13 +898,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         $_SESSION['flash_type'] = 'error';
     } else {
         try {
-            $picks = [];
-            foreach (($_POST['pick'] ?? []) as $raw) {
-                // الصيغة: sth_id|suffix
-                $parts = explode('|', (string) $raw, 2);
-                $picks[] = ['sth_id' => (int) $parts[0], 'suffix' => (string) ($parts[1] ?? '')];
-            }
-            $gid = group_create($picks, $uid, trim((string) ($_POST['group_name'] ?? '')), 'full');
+            $res = inv_group_create($_POST['pick'] ?? [], $uid, (string) ($_POST['group_name'] ?? ''));
+            $gid = $res['group_id'];
             $_SESSION['flash'] = 'تم فتح مجموعة بـ ' . count(group_invoices($gid)) . ' فاتورة.';
             $_SESSION['flash_type'] = 'success';
             // ندخل على المجموعة الجديدة على طول
@@ -941,11 +921,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         $_SESSION['flash_type'] = 'error';
     } else {
         try {
-            $gid = group_create_items(
-                grp_parse_item_picks($_POST['ipicks'] ?? ''),
+            $res = inv_group_create_items(
+                $_POST['ipicks'] ?? '',
                 $uid,
-                trim((string) ($_POST['group_name'] ?? ''))
+                (string) ($_POST['group_name'] ?? '')
             );
+            $gid = $res['group_id'];
             $_SESSION['flash'] = 'تم فتح مجموعة أصناف.';
             $_SESSION['flash_type'] = 'success';
             header('Location: invoices.php?tab=group&g=' . $gid);
@@ -967,14 +948,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         $_SESSION['flash_type'] = 'error';
     } else {
         try {
-            $picks = [];
-            foreach (($_POST['pick'] ?? []) as $raw) {
-                $parts = explode('|', (string) $raw, 2);
-                $picks[] = ['sth_id' => (int) $parts[0], 'suffix' => (string) ($parts[1] ?? '')];
-            }
-            if (!$picks) throw new RuntimeException('ماخترتش أي فاتورة.');
-
-            $n = group_add_invoices($gid, $picks, $uid);
+            $res = inv_group_add_invoices($gid, $_POST['pick'] ?? [], $uid);
+            $n = $res['added'];
             if ($n > 0) {
                 $_SESSION['flash'] = 'اتضاف ' . $n . ' فاتورة للمجموعة.'
                     . (group_is_items($gid) ? ' كل أصناف الفاتورة دخلت المجموعة.' : '');
@@ -1000,10 +975,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
         $_SESSION['flash_type'] = 'error';
     } else {
         try {
-            $picks = grp_parse_item_picks($_POST['ipicks'] ?? '');
-            if (!$picks) throw new RuntimeException('ماخترتش أي صنف.');
-
-            $r = group_add_items($gid, $picks, $uid);
+            $r = inv_group_add_items($gid, $_POST['ipicks'] ?? '', $uid);
             $msg = 'اتضاف ' . $r['added'] . ' صنف للمجموعة.';
             if ($r['dup'] > 0) $msg .= ' (' . $r['dup'] . ' كانوا موجودين قبل كده.)';
             if ($r['bad'] > 0) $msg .= ' (' . $r['bad'] . ' مقدرناش نلاقي فاتورتهم.)';
@@ -1020,7 +992,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group_delete') {
     if (csrf_verify($_POST['csrf'] ?? '')) {
-        group_delete((int) ($_POST['group_id'] ?? 0));
+        inv_group_delete((int) ($_POST['group_id'] ?? 0));
         $_SESSION['flash'] = 'تم مسح المجموعة. التوزيع اللي اتعمل محفوظ في الفواتير زي ما هو.';
         $_SESSION['flash_type'] = 'success';
     }
@@ -1032,11 +1004,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group_remove_invoice') {
     if (csrf_verify($_POST['csrf'] ?? '')) {
         try {
-            $ok = group_remove_invoice(
+            $res = inv_group_remove_invoice(
                 (int) ($_POST['group_id'] ?? 0),
                 (int) ($_POST['sth_id'] ?? 0),
                 (string) ($_POST['suffix'] ?? '')
             );
+            $ok = $res['removed'];
             $_SESSION['flash'] = $ok
                 ? 'اتشالت الفاتورة من المجموعة. توزيعها محفوظ زي ما هو وشغّالة من تاب الفواتير.'
                 : 'الفاتورة دي مش في المجموعة أصلاً.';
@@ -1055,7 +1028,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'group
     if (csrf_verify($_POST['csrf'] ?? '')) {
         try {
             $code = trim((string) ($_POST['item_code'] ?? ''));
-            $n = group_remove_item((int) ($_POST['group_id'] ?? 0), $code);
+            $res = inv_group_remove_item((int) ($_POST['group_id'] ?? 0), $code);
+            $n = $res['removed_count'];
             $_SESSION['flash'] = $n > 0
                 ? 'اتشال الصنف من المجموعة. توزيعه محفوظ لو رجّعته تاني.'
                 : 'الصنف ده مش في المجموعة أصلاً.';
