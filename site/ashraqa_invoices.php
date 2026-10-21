@@ -10,6 +10,7 @@
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/branch_invoices_lib.php';
+require_once __DIR__ . '/ashraqa_invoices_lib.php';
 // موديول «فواتير الفروع» بنطاقه (أو الأونر) — «الاستلامات» مالهاش دعوة
 br_inv_require(5);
 require_once __DIR__ . '/receiving_lib.php';
@@ -21,142 +22,13 @@ $user          = current_user();
 $uid           = $user['id'] ?? null;
 $pdo           = db();
 
-// فرع إشراقة الثابت
-const ASHRAQA_BRANCH_ID = 5;
-
-// نوع المستند في نظام الشركة: 2 = فاتورة شراء · 6 = مردود شراء.
-// 🔴 عاشور بيراجع المشتريات بس — المردودات مابتظهرش ليه خالص
-//    (قرار محمد ١٣ سبتمبر ٢٠٢٦). الفلتر مطبّق في تلات أماكن:
-//    القايمة · حارس فتح الفاتورة · بحث الصنف — عشان مايبقاش فيه
-//    باب جانبي يوصّل لمردود.
-const ASH_DOC_RETURN = 6;
-
-// ١) أرقام الفواتير اللي فيها توزيع لإشراقة — استعلام واحد مجمّع
-//
-// 🔴 الشرط `SUM(amount) > 0` مش `amount > 0`:
-//    `distribute_item()` بتضيف سطور تراكمية، فالصنف ممكن يبقى ليه أكتر
-//    من سطر. الفلترة على السطر الواحد كانت بتطلّع فواتير مجموعها صفر.
-//
-// 🔴 والـJOIN على `hq_invoice_lines` مش زيادة:
-//    الفاتورة ممكن يكون ليها سطر توزيع لإشراقة بكود صنف **مابقاش موجود
-//    في الفاتورة** (اتعدّلت في نظام الشركة بعد التوزيع). ساعتها القايمة
-//    كانت بتوريها وهي بتفتح **فاضية خالص** — وده اللي محمد شافه.
-//    شاشة الفاتورة بتفلتر الأصناف على اللي موجود فعلاً، فالقايمة لازم
-//    تسأل **نفس السؤال** وإلا الاتنين بيختلفوا.
-//
-// ⚠️ والمرآة ممكن تكون فاضية (الجسر لسه ماجابش السطور). ساعتها
-//    `hi.sth_id IS NULL` والشرط بيعدّي الفاتورة بدل ما يخفيها —
-//    إخفاء فاتورة ليها توزيع حقيقي أوحش بكتير من عرض واحدة زيادة.
-try {
-    $rows = $pdo->prepare(
-        'SELECT d.invoice_no, d.company_branch, d.doc_type, d.id AS dist_id, l.item_code, l.qty
-           FROM invoice_distribution d
-           JOIN (
-                  SELECT distribution_id, notes AS item_code, SUM(amount) AS qty
-                    FROM invoice_distribution_lines
-                   WHERE branch_id = ?
-                   GROUP BY distribution_id, notes
-                  HAVING SUM(amount) > 0
-                ) l ON l.distribution_id = d.id
-          WHERE (d.company_branch = 1 OR d.company_branch IS NULL)
-            AND (d.doc_type = 2 OR d.doc_type IS NULL)'
-    );
-    $rows->execute([ASHRAQA_BRANCH_ID]);
-} catch (Throwable $ex) {
-    // لو الأعمدة لسه مش موجودة في الجدول (قبل تشغيل ملف الترقية)
-    $rows = $pdo->prepare(
-        'SELECT d.invoice_no, NULL AS company_branch, NULL AS doc_type, d.id AS dist_id, l.item_code, l.qty
-           FROM invoice_distribution d
-           JOIN (
-                  SELECT distribution_id, notes AS item_code, SUM(amount) AS qty
-                    FROM invoice_distribution_lines
-                   WHERE branch_id = ?
-                   GROUP BY distribution_id, notes
-                  HAVING SUM(amount) > 0
-                ) l ON l.distribution_id = d.id'
-    );
-    $rows->execute([ASHRAQA_BRANCH_ID]);
-}
-
-$ashraqaDocNos = [];       // [key => dist_id]
-$ashraqaCodesByDoc = [];   // [key => [code => true]]
-$ashraqaQtysByDist = [];   // [dist_id => [code => qty]]
-$ashraqaCodesByDist = [];  // [dist_id => [code => true]]
-foreach ($rows as $r) {
-    $did  = (int) $r['dist_id'];
-    $code = trim((string) $r['item_code']);
-    $qty  = (float) ($r['qty'] ?? 0);
-
-    $ashraqaQtysByDist[$did][$code] = $qty;
-    $ashraqaCodesByDist[$did][$code] = true;
-
-    $no = trim((string) $r['invoice_no']);
-    $cb = ($r['company_branch'] !== null && $r['company_branch'] !== '') ? (string)$r['company_branch'] : '*';
-    $dt = ($r['doc_type'] !== null && $r['doc_type'] !== '') ? (string)$r['doc_type'] : '*';
-
-    $key = $no . '|' . $cb . '|' . $dt;
-    $ashraqaDocNos[$key] = $did;
-    $ashraqaCodesByDoc[$key][$code] = true;
-
-    // دائماً نسجّل برقم الفاتورة المجرد وبالمفتاح العام كاحتياطي وتوافق للبحث
-    $ashraqaDocNos[$no] = $did;
-    $ashraqaCodesByDoc[$no][$code] = true;
-    $ashraqaDocNos[$no . '|*|*'] = $did;
-    $ashraqaCodesByDoc[$no . '|*|*'][$code] = true;
-}
-
-/**
- * دالة استخراج معرف سجل التوزيع لفاتورة معينة
- * بتجرّب المفتاح الكامل doc_no|company_branch|doc_type ثم doc_no|*|* ثم doc_no
- */
-function ash_dist_for(array $inv, array $ashraqaDocNos): ?int
-{
-    $no = trim((string)($inv['inv_no'] ?? ($inv['doc_no'] ?? '')));
-    if ($no === '') return null;
-    $cb = $inv['company_branch_id'] ?? ($inv['company_branch'] ?? null);
-    $dt = $inv['doc_type'] ?? null;
-    if ($cb !== null && $cb !== '' && $dt !== null && $dt !== '') {
-        $k = $no . '|' . (int)$cb . '|' . (int)$dt;
-        if (isset($ashraqaDocNos[$k])) return $ashraqaDocNos[$k];
-    }
-    if (isset($ashraqaDocNos[$no . '|*|*'])) return $ashraqaDocNos[$no . '|*|*'];
-    if (isset($ashraqaDocNos[$no])) return $ashraqaDocNos[$no];
-    return null;
-}
-
-/**
- * دالة استخراج أكواد التوزيع لفاتورة معينة
- */
-function ash_codes_for(array $inv, array $ashraqaCodesByDoc): array
-{
-    $no = trim((string)($inv['inv_no'] ?? ($inv['doc_no'] ?? '')));
-    if ($no === '') return [];
-    $cb = $inv['company_branch_id'] ?? ($inv['company_branch'] ?? null);
-    $dt = $inv['doc_type'] ?? null;
-    if ($cb !== null && $cb !== '' && $dt !== null && $dt !== '') {
-        $k = $no . '|' . (int)$cb . '|' . (int)$dt;
-        if (isset($ashraqaCodesByDoc[$k])) return $ashraqaCodesByDoc[$k];
-    }
-    if (isset($ashraqaCodesByDoc[$no . '|*|*'])) return $ashraqaCodesByDoc[$no . '|*|*'];
-    if (isset($ashraqaCodesByDoc[$no])) return $ashraqaCodesByDoc[$no];
-    return [];
-}
-
-// ===== حالة مراجعة إشراقة — استعلام واحد لكل الفواتير =====
-// 🔴 جدول منفصل تماماً عن invoice_distribution.status.
-//    العمود المشترك ده (new/split/done) بتاع المشتريات ومعناه «الفاتورة
-//    اتوزّعت ولا لأ». «تم الإدخال» هنا معناها عاشور خلّص إدخالها عندهم —
-//    معنى تاني خالص، والخلط بينهم بيخلّي فاتورة موزّعة تبان جديدة للمشتريات.
-// 🔴 غياب الصف = 'new'. مفيش backfill ولا لمس لأي فاتورة قديمة.
-$ashraqaStatus = [];   // [dist_id => 'new'|'entered']
-try {
-    foreach ($pdo->query('SELECT distribution_id, status FROM ashraqa_invoice_status') as $r) {
-        $ashraqaStatus[(int) $r['distribution_id']] = (string) $r['status'];
-    }
-} catch (Throwable $ex) {
-    // الجدول لسه ما اتعملش — كل الفواتير تبان «جديدة» والصفحة تفضل شغّالة
-    error_log('ashraqa_invoice_status: ' . $ex->getMessage());
-}
+// بيانات التوزيع وحالات الفواتير لفرع إشراقة من المكتبة
+$distData          = ash_inv_distribution_data();
+$ashraqaDocNos     = $distData['doc_nos'];
+$ashraqaCodesByDoc = $distData['codes_by_doc'];
+$ashraqaQtysByDist  = $distData['qtys_by_dist'];
+$ashraqaCodesByDist = $distData['codes_by_dist'];
+$ashraqaStatus     = ash_inv_status_map();
 
 // ===== بحث الصنف (AJAX) — «الصنف ده نزل في أنهي فاتورة؟» =====
 // نفس نمط invoices.php:30، بس **مفلتر على إشراقة**.
@@ -176,58 +48,8 @@ if ($ilkAjax !== '') {
         } elseif ($ilkAjax === 'history') {
             $searchCode = trim((string) ($_GET['code'] ?? ''));
             $res = ilk_item_history($searchCode, (int) ($_GET['item_id'] ?? 0));
-
-            // 🔴🔴 الفلترة دي **في السيرفر قبل json_encode** — مش إخفاء في
-            //     الجافاسكربت. ilk_item_history بترجّع كل الفواتير ومعاها
-            //     توزيع كل الفروع واسم المورد، وعاشور مالوش شوف ده.
-            $rows = [];
-            foreach ($res['rows'] ?? [] as $row) {
-                $docNo  = (string) ($row['doc_no'] ?? $row['inv_no'] ?? '');
-                $distId = ash_dist_for($row, $ashraqaDocNos) ?? ($ashraqaDocNos[$docNo] ?? null);
-                if ($distId === null) continue;   // فاتورة مالهاش توزيع لإشراقة
-                if (!empty($row['is_return'])) continue;        // مردود — مايظهرش لعاشور
-
-                // ⚠️ `dist` قايمة [['branch_id','name','qty'], …] مش خريطة
-                //    بمفتاح رقم الفرع — لازم ندوّر فيها، مش $dist[5].
-                $ashQty = 0.0;
-                foreach (($row['dist'] ?? []) as $b) {
-                    if ((int) ($b['branch_id'] ?? 0) === ASHRAQA_BRANCH_ID) {
-                        $ashQty = (float) ($b['qty'] ?? 0);
-                        break;
-                    }
-                }
-                // احتياطي: لو ilk_distribution_map ما جابتهاش، نقراها من مصفوفة التوزيع المباشرة
-                if ($ashQty <= 0 && $distId > 0) {
-                    $rowCode = (string) ($row['item_code'] ?? '');
-                    $ashQty = (float) (
-                        $ashraqaQtysByDist[$distId][$rowCode]
-                        ?? ($ashraqaQtysByDist[$distId][$searchCode]
-                        ?? ($ashraqaQtysByDist[$distId]['#' . (int)($row['item_id'] ?? 0)] ?? 0))
-                    );
-                }
-                if ($ashQty <= 0) continue;
-
-                // الحقول دي بس هي اللي بتوصل المتصفح — مفيش مورد ولا فرع تاني
-                // ولا in_store ولا dist_total (دول بيوروا توزيع الباقي بالطرح).
-                $rows[] = [
-                    'doc_no'    => $docNo,
-                    'sth_id'    => (int) ($row['sth_id'] ?? 0),
-                    'suffix'    => (string) ($row['suffix'] ?? ''),
-                    'date'      => (string) ($row['date'] ?? ''),
-                    'qty'       => (float) ($row['qty'] ?? 0),
-                    'ash_qty'   => $ashQty,
-                ];
-            }
-
-            $item = $res['item'] ?? null;
-            echo json_encode([
-                'ok'    => true,
-                'item'  => $item ? [
-                    'code' => (string) ($item['code'] ?? ''),
-                    'name' => (string) ($item['name'] ?? ''),
-                ] : null,
-                'rows'  => $rows,
-            ], JSON_UNESCAPED_UNICODE);
+            $filtered = ash_inv_filter_item_history($res, $distData, $searchCode);
+            echo json_encode($filtered, JSON_UNESCAPED_UNICODE);
 
         } else {
             throw new RuntimeException('عملية غير معروفة.');
@@ -258,12 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_s
             throw new RuntimeException('مالكش صلاحية تغيّر حالة الفاتورة دي.');
         }
 
-        $up = $pdo->prepare(
-            'INSERT INTO ashraqa_invoice_status (distribution_id, status, updated_by)
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE status = VALUES(status), updated_by = VALUES(updated_by)'
-        );
-        $up->execute([$d, $st, $uid]);
+        ash_inv_set_status($d, $st, $uid);
 
         echo json_encode(['ok' => true, 'status' => $st], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
@@ -310,14 +127,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     exit;
 }
 
-// دقة تقريب نسبة التسعير لأقرب نصف جنيه
-const ASH_MRK_ROUND_STEP = 0.5;
-
-function ash_mrk_round(float $v): float
-{
-    return round($v / ASH_MRK_ROUND_STEP) * ASH_MRK_ROUND_STEP;
-}
-
 // معالج حفظ الأسعار بالجملة لفرع إشراقة (AJAX)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_prices_bulk') {
     header('Content-Type: application/json; charset=utf-8');
@@ -342,23 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             throw new RuntimeException('مالكش صلاحية تسعّر الفاتورة دي.');
         }
 
-        $n = 0;
-        $pdo->beginTransaction();
-        try {
-            foreach ($map as $code => $price) {
-                $code = trim((string) $code);
-                $price = (float) $price;
-                if ($code === '' || $price < 0) continue;
-                ashraqa_save_price($d, $code, ash_mrk_round($price), $uid);
-                $n++;
-            }
-            $pdo->commit();
-        } catch (Throwable $ex) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $ex;
-        }
+        $n = ash_inv_save_prices_bulk($d, $map, $uid);
 
         echo json_encode(['ok' => true, 'count' => $n], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
@@ -370,43 +163,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     exit;
 }
 
-function ash_mrk_cost(array $item): float
-{
-    $c = (float) ($item['unit_price'] ?? 0);
-    if ($c <= 0) $c = (float) ($item['cost_price'] ?? 0);
-    return $c > 0 ? $c : 0.0;
-}
-
-function ash_mrk_pct(float $cost, float $sale): ?float
-{
-    if ($cost <= 0 || $sale <= 0) return null;
-    return ($sale / $cost - 1) * 100;
-}
-
-function ash_mrk_fmt(?float $p): string
-{
-    if ($p === null) return '';
-    $s = number_format($p, 1, '.', '');
-    $s = rtrim(rtrim($s, '0'), '.');
-    return ($s === '' || $s === '-') ? '0' : $s;
-}
-
-function ash_mrk_cell(string $code, float $cost, ?float $sale): string
-{
-    $has = $cost > 0;
-    $pct = ($has && $sale !== null && $sale > 0) ? ash_mrk_pct($cost, $sale) : null;
-    $ph  = $pct === null ? '—' : ash_mrk_fmt($pct) . '%';
-    $cs  = $has ? rtrim(rtrim(number_format($cost, 5, '.', ''), '0'), '.') : '0';
-
-    return '<td class="c-mrk">'
-        . '<input type="number" step="0.5" class="mrk-input' . ($has ? '' : ' no-cost') . '"'
-        . ' aria-label="نسبة التسعير" data-code="' . htmlspecialchars($code, ENT_QUOTES, 'UTF-8') . '" data-cost="' . htmlspecialchars($cs, ENT_QUOTES, 'UTF-8') . '"'
-        . ' placeholder="' . htmlspecialchars($ph, ENT_QUOTES, 'UTF-8') . '"' . ($has ? '' : ' disabled')
-        . ' title="' . ($has ? 'اكتب نسبة واضغط Enter — سعر البيع هيتحسب لوحده' : 'مفيش تكلفة للصنف ده') . '"'
-        . ' onblur="applyAshMrk(this)" onkeydown="ashMrkKey(event,this)">'
-        . '</td>';
-}
-
 // فحص الفاتورة المفتوحة
 $openId  = $_GET['invoice'] ?? null;
 $openSuf = $_GET['suffix'] ?? null;
@@ -414,15 +170,8 @@ $openInvoice = null;
 $distId = null;
 
 if ($openId !== null && $openId !== '') {
-    $header = sqlsrv_fetch_invoice_header($openId, $openSuf);
-    $docNo = $header ? (string)($header['inv_no'] ?? '') : '';
-    $isRet = $header && (int)($header['doc_type'] ?? 0) === ASH_DOC_RETURN;
-    $cb = $header ? ($header['company_branch_id'] ?? ($header['company_branch'] ?? null)) : null;
-    $distId = $header ? ash_dist_for($header, $ashraqaDocNos) : null;
-    // حارس إجباري: الفاتورة فيها توزيع لإشراقة؟ ومش مردود؟ ومن الإدارة المركزية (branch 1)؟
-    // 🔴 شرط المردود هنا مش بس في القايمة — من غيره حد يكتب رقم مردود
-    //    في اللينك ويفتحه عادي.
-    if (!$header || $isRet || ($cb !== null && (int)$cb !== 1) || $distId === null) {
+    $detail = ash_inv_invoice_detail((string)$openId, $openSuf !== null ? (string)$openSuf : null, $distData);
+    if ($detail === null) {
         http_response_code(403);
         require_once __DIR__ . '/includes/header.php';
         ?>
@@ -439,282 +188,21 @@ if ($openId !== null && $openId !== '') {
         require_once __DIR__ . '/includes/footer.php';
         exit;
     }
-    $openInvoice = $header;
+    $openInvoice = $detail['header'];
+    $distId = $detail['dist_id'];
+    $ashraqaItems = $detail['items'];
+    $ashraqaQtys = $detail['qtys'];
+    $balances = $detail['balances'];
+    $salePrices = $detail['sale_prices'];
+    $totalAshraqaCost = $detail['total_cost'];
+    $lastSync = $detail['last_sync'];
+    $orphanedDistItems = $detail['orphans'];
 }
 
 // في حالة الشاشة الأولى (قائمة الفواتير)
 $invoices = [];
 if ($openInvoice === null) {
-    $all = sqlsrv_fetch_invoices();
-    $cand = [];
-    foreach ($all as $inv) {
-        // فواتير الإدارة المركزية فقط (company_branch = 1 أو غير محدد)
-        $cb = $inv['company_branch_id'] ?? ($inv['company_branch'] ?? null);
-        if ($cb !== null && (int)$cb !== 1) continue;
-
-        $dId = ash_dist_for($inv, $ashraqaDocNos);
-        if ($dId === null) continue;
-        // المردودات مابتظهرش لعاشور — مشتريات بس
-        if ((int) ($inv['doc_type'] ?? 0) === ASH_DOC_RETURN) continue;
-        $inv['dist_id'] = $dId;
-        $cand[] = $inv;
-    }
-
-    // ===== استبعاد الفواتير اللي مش هتفتح على أي صنف =====
-    // 🔴 الربط لازم يبقى على (sth_id + suffix) مش على doc_no:
-    //    `doc_no` **مش فريد** بين الشهور، والربط بيه كان بيوصّل لفاتورة
-    //    شهر تاني فسطورها مافيهاش أكوادنا — فكانت فواتير سليمة تختفي.
-    //    ودي بالظبط نفس الأعمدة اللي `sqlsrv_fetch_invoice_items()`
-    //    بتقرا منها، فالقايمة والشاشة بيشوفوا نفس الحاجة.
-    $sthIds = array_values(array_unique(array_map(
-        fn($i) => (int) $i['inv_id'], $cand
-    )));
-    $lineCodes = [];   // ["sth|suffix" => [code => true]]
-    $lineCosts = [];   // ["sth|suffix" => [code => cost]]
-    if ($sthIds) {
-        $ph = implode(',', array_fill(0, count($sthIds), '?'));
-        $q  = $pdo->prepare(
-            "SELECT sth_id, suffix, item_code, item_id, unit_price, cost_price
-               FROM hq_invoice_lines WHERE sth_id IN ($ph)"
-        );
-        $q->execute($sthIds);
-        foreach ($q as $r) {
-            $k = (int) $r['sth_id'] . '|' . (string) $r['suffix'];
-            $c = trim((string) ($r['item_code'] ?? ''));
-            // ⚠️ merge_invoice_items() بتحط '#'.item_id للصنف اللي مالوش
-            //    باركود — لازم نقبل الشكلين وإلا الصنف ده مايتلاقاش أبداً.
-            if ($c === '') $c = '#' . (int) ($r['item_id'] ?? 0);
-            $lineCodes[$k][$c] = true;
-
-            $cost = (float)($r['unit_price'] ?? 0);
-            if ($cost <= 0) $cost = (float)($r['cost_price'] ?? 0);
-            if (!isset($lineCosts[$k][$c]) || $cost > $lineCosts[$k][$c]) {
-                $lineCosts[$k][$c] = $cost;
-            }
-            if (!empty($r['item_id'])) {
-                $hKey = '#' . (int)$r['item_id'];
-                if (!isset($lineCosts[$k][$hKey]) || $cost > $lineCosts[$k][$hKey]) {
-                    $lineCosts[$k][$hKey] = $cost;
-                }
-            }
-        }
-    }
-
-    foreach ($cand as $inv) {
-        $k   = (int) $inv['inv_id'] . '|' . (string) ($inv['suffix'] ?? '');
-        $dId = (int) $inv['dist_id'];
-        // ⚠️ المرآة مالهاش سطور للفاتورة دي (الجسر لسه ماجابهاش) →
-        //    نوريها. إخفاء فاتورة ليها توزيع حقيقي أوحش من عرض واحدة زيادة.
-        if (isset($lineCodes[$k])) {
-            $codes = ash_codes_for($inv, $ashraqaCodesByDoc);
-            if (!array_intersect_key($codes, $lineCodes[$k])) {
-                continue;
-            }
-        }
-
-        // حساب إجمالي التكلفة وعدد أصناف إشراقة
-        $invTotal = 0.0;
-        foreach (($ashraqaQtysByDist[$dId] ?? []) as $c => $q) {
-            $cost = $lineCosts[$k][$c] ?? 0.0;
-            $invTotal += ($q * $cost);
-        }
-        $inv['ash_total'] = $invTotal;
-        $inv['ash_items_count'] = count($ashraqaCodesByDist[$dId] ?? []);
-
-        $invoices[] = $inv;
-    }
-} else {
-    // جلب أصناف الفاتورة ودمج المتكرر
-    $rawItems = sqlsrv_fetch_invoice_items($openId, $openSuf);
-    $items = merge_invoice_items($rawItems);
-
-    // كميات إشراقة باستعلام واحد مجمّع
-    $stQty = $pdo->prepare(
-        'SELECT notes AS item_code, SUM(amount) AS qty
-           FROM invoice_distribution_lines
-          WHERE distribution_id = ? AND branch_id = ?
-          GROUP BY notes'
-    );
-    $stQty->execute([$distId, ASHRAQA_BRANCH_ID]);
-    $ashraqaQtys = [];
-    foreach ($stQty as $qr) {
-        $ashraqaQtys[(string)$qr['item_code']] = (float)$qr['qty'];
-    }
-
-    // جلب item_id لكل أكواد التوزيع باستعلام واحد مجمّع (للاحتياطي)
-    $distCodes = array_keys($ashraqaQtys);
-    $distCodeToItemId = [];
-    $distCodesByItemId = [];
-    $nonHashDistCodes = [];
-    foreach ($distCodes as $dc) {
-        if (str_starts_with($dc, '#')) {
-            $iid = (int) substr($dc, 1);
-            if ($iid > 0) {
-                $distCodeToItemId[$dc] = $iid;
-                $distCodesByItemId[$iid][] = $dc;
-            }
-        } else {
-            $nonHashDistCodes[] = $dc;
-        }
-    }
-    if ($nonHashDistCodes) {
-        $phC = implode(',', array_fill(0, count($nonHashDistCodes), '?'));
-        try {
-            $stC = $pdo->prepare("SELECT code, item_id FROM hq_codes WHERE code IN ($phC)");
-            $stC->execute($nonHashDistCodes);
-            foreach ($stC as $cr) {
-                $iid = (int) $cr['item_id'];
-                $cVal = (string) $cr['code'];
-                $distCodeToItemId[$cVal] = $iid;
-                $distCodesByItemId[$iid][] = $cVal;
-            }
-        } catch (Throwable $ex) { /* تجاهل */ }
-    }
-
-    // فلترة الأصناف: بالكود أولاً ثم باحتياطي item_id
-    $claimedDistCodes = [];
-    $ashraqaItems = [];
-    $ashraqaCodes = [];
-    foreach ($items as $it) {
-        $c = (string)($it['item_code'] ?? '');
-        $q = 0.0;
-        if ($c !== '' && isset($ashraqaQtys[$c]) && !isset($claimedDistCodes[$c])) {
-            $q = (float) $ashraqaQtys[$c];
-            $claimedDistCodes[$c] = true;
-        } elseif (!empty($it['item_id'])) {
-            $iid = (int) $it['item_id'];
-            $candCodes = $distCodesByItemId[$iid] ?? [];
-            foreach ($candCodes as $dc) {
-                if (!isset($claimedDistCodes[$dc]) && isset($ashraqaQtys[$dc]) && (str_starts_with($c, '#') || str_starts_with($dc, '#'))) {
-                    $q += (float) $ashraqaQtys[$dc];
-                    $claimedDistCodes[$dc] = true;
-                }
-            }
-        }
-        if ($q <= 0) continue;
-        $ashraqaQtys[$c] = $q;
-        $ashraqaItems[] = $it;
-        $ashraqaCodes[] = $c;
-    }
-
-    // سطور التوزيع التي فضلت من غير صنف في الفاتورة (أصناف يتيمة)
-    $orphanedDistItems = [];
-    $unclaimedCodes = [];
-    foreach ($ashraqaQtys as $dc => $dQty) {
-        if (!isset($claimedDistCodes[$dc]) && $dQty > 0) {
-            $unclaimedCodes[] = $dc;
-        }
-    }
-    if ($unclaimedCodes) {
-        $orpNames = [];
-        $regularUnclaimed = [];
-        $hashIds = [];
-        foreach ($unclaimedCodes as $uc) {
-            if (str_starts_with($uc, '#')) {
-                $iid = (int) substr($uc, 1);
-                if ($iid > 0) $hashIds[$iid] = $uc;
-            } else {
-                $regularUnclaimed[] = $uc;
-            }
-        }
-        // أسامي أصناف «#item_id» في استعلام واحد (hq_items مفتاحها item_id مش id)
-        if ($hashIds) {
-            $phH = implode(',', array_fill(0, count($hashIds), '?'));
-            try {
-                $stI = $pdo->prepare(
-                    "SELECT item_id, MAX(name) AS name FROM hq_items
-                     WHERE item_id IN ($phH) GROUP BY item_id"
-                );
-                $stI->execute(array_keys($hashIds));
-                foreach ($stI as $ir) {
-                    $orpNames[$hashIds[(int) $ir['item_id']]] = (string) $ir['name'];
-                }
-            } catch (Throwable $ex) {}
-        }
-        if ($regularUnclaimed) {
-            $phU = implode(',', array_fill(0, count($regularUnclaimed), '?'));
-            try {
-                $stU = $pdo->prepare(
-                    "SELECT c.code, COALESCE(i.name, c.code) AS name
-                     FROM hq_codes c
-                     LEFT JOIN hq_items i ON i.item_id = c.item_id
-                     WHERE c.code IN ($phU)"
-                );
-                $stU->execute($regularUnclaimed);
-                foreach ($stU as $ur) {
-                    $orpNames[(string)$ur['code']] = (string)$ur['name'];
-                }
-            } catch (Throwable $ex) {}
-        }
-        foreach ($unclaimedCodes as $uc) {
-            $orphanedDistItems[] = [
-                'code' => $uc,
-                'name' => $orpNames[$uc] ?? '—',
-                'qty'  => (float) $ashraqaQtys[$uc],
-            ];
-        }
-    }
-
-    // ===== رصيد إشراقة — بكل باركودات الصنف مش بكود الفاتورة بس =====
-    // 🔴 `ashraqa_balances` مفتاحه **الباركود الحقيقي** الجاي من نظامهم
-    //    (Redux). وكود الصنف في الفاتورة ساعات بيبقى كود داخلي قصير
-    //    (37 · 256) مش باركود — فالبحث بيه بيرجّع فاضي، والعمود كله
-    //    كان بيطلع شُرَط.
-    //    `hq_codes` بتربط كل باركودات الصنف بنفس `item_id`، فبنجيبهم
-    //    كلهم وندوّر بيهم.
-    //
-    // 🔴 وبناخد الباركودات اللي `unit_factor = 1` بس:
-    //    رصيدهم متخزّن بالوحدة الأساسية، والباركود اللي معامله 12
-    //    (علبة مثلاً) رصيده برقم تاني خالص — عرضه كأنه رصيد الوحدة
-    //    بيدّي رقم غلط، وده عمود بيتبني عليه قرار شراء.
-    $itemIds = [];
-    foreach ($ashraqaItems as $it) {
-        $iid = (int) ($it['item_id'] ?? 0);
-        if ($iid > 0) $itemIds[$iid] = true;
-    }
-
-    $codesByItemId = [];   // [item_id => [barcode, …]]
-    if ($itemIds) {
-        $ids = array_keys($itemIds);
-        $ph  = implode(',', array_fill(0, count($ids), '?'));
-        $qc  = $pdo->prepare(
-            "SELECT code, item_id FROM hq_codes
-              WHERE item_id IN ($ph) AND unit_factor = 1"
-        );
-        $qc->execute($ids);
-        foreach ($qc as $r) {
-            $codesByItemId[(int) $r['item_id']][] = (string) $r['code'];
-        }
-    }
-
-    // كل الباركودات المحتملة مرة واحدة — استعلام واحد
-    $lookup = $ashraqaCodes;
-    foreach ($codesByItemId as $list) {
-        foreach ($list as $bc) $lookup[] = $bc;
-    }
-    $rawBalances = ashraqa_fetch_balances($lookup);
-
-    // لكل صنف: كود الفاتورة الأول، وبعدين باركوداته
-    $balances = [];
-    foreach ($ashraqaItems as $it) {
-        $c = (string) ($it['item_code'] ?? '');
-        if (isset($rawBalances[$c])) { $balances[$c] = $rawBalances[$c]; continue; }
-        foreach ($codesByItemId[(int) ($it['item_id'] ?? 0)] ?? [] as $bc) {
-            if (isset($rawBalances[$bc])) { $balances[$c] = $rawBalances[$bc]; break; }
-        }
-    }
-
-    $salePrices = ashraqa_get_prices($distId);
-    $lastSync   = ashraqa_last_sync();
-
-    // إجمالي تكلفة أصناف إشراقة في هذه الفاتورة
-    $totalAshraqaCost = 0.0;
-    foreach ($ashraqaItems as $it) {
-        $c = (string)($it['item_code'] ?? '');
-        $q = (float)($ashraqaQtys[$c] ?? 0);
-        $cost = ash_mrk_cost($it);
-        $totalAshraqaCost += ($q * $cost);
-    }
+    $invoices = ash_inv_list_data($distData, $ashraqaStatus);
 }
 
 require_once __DIR__ . '/includes/header.php';
@@ -1092,7 +580,7 @@ require_once __DIR__ . '/includes/header.php';
         //    الحالة متخزّنة في متغيّر بره عشان ماتضيعش لما الواحد يتحدّث.
         let ashF = 'all';
         let ashPage = 1;
-        const ASH_PER_PAGE = 50;
+        let ASH_PER_PAGE = 50;
 
         function ashFilter(btn) {
             document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
