@@ -139,6 +139,7 @@ function all_modules(): array
         'errors'        => ['label' => 'سجل الأخطاء',       'icon' => 'ti-alert-triangle',   'url' => 'errors.php'],
         'ops'           => ['label' => 'المراقبة',         'icon' => 'ti-chart-bar',        'url' => 'ops.php'],
         'sms_inbox'     => ['label' => 'رسايل إنستاباي',   'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
+        'machines'      => ['label' => 'عداد المكن',       'icon' => 'ti-printer',          'url' => 'machines.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
 }
