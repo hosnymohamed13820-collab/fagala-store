@@ -16,6 +16,7 @@ require_permission('invoices');
 require_once __DIR__ . '/receiving_lib.php';
 require_once __DIR__ . '/group_lib.php';       // الفواتير المجمّعة
 require_once __DIR__ . '/item_flags_lib.php';  // ملاحظات وألوان الأصناف
+require_once __DIR__ . '/invoices_lib.php';
 
 // =====================================================================
 //  AJAX — تتبّع الصنف عبر الفواتير (السيرش بار اللي في الهيدر)
@@ -53,29 +54,10 @@ if ($ilkAjax !== '') {
 // =====================================================================
 if (($_GET['gpick'] ?? '') === 'search') {
     header('Content-Type: application/json; charset=utf-8');
-    require_once __DIR__ . '/item_lookup_lib.php';
     try {
-        // لو الملف القديم لسه على السيرفر، الدالة مش هتكون موجودة —
-        // نقول ده صريح بدل ما الصفحة ترمي Fatal والواجهة تقول «مفيش نتايج».
-        if (!function_exists('ilk_pick_search')) {
-            throw new RuntimeException('ارفع item_lookup_lib.php الجديد — النسخة اللي على السيرفر قديمة.');
-        }
-        if (!ilk_ready()) throw new RuntimeException('المرآة لسه فاضية — شغّل وكيل المزامنة.');
-
         $term = trim((string) ($_GET['term'] ?? ''));
-        $rows = ilk_pick_search($term);
-
-        // الأصناف اللي جوه المجموعة بالفعل — عشان نمنع التكرار في الواجهة
         $gid  = (int) ($_GET['g'] ?? 0);
-        $have = [];
-        if ($gid > 0) {
-            foreach (group_selected_map($gid) as $k => $codes) {
-                foreach (array_keys($codes) as $c) $have[$k . '|' . $c] = true;
-            }
-        }
-        foreach ($rows as &$r) $r['in_group'] = isset($have[$r['key']]);
-        unset($r);
-
+        $rows = inv_pick_search($term, $gid);
         echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
@@ -93,48 +75,9 @@ if (($_GET['gpick'] ?? '') === 'items') {
     try {
         $sth = (int) ($_GET['sth'] ?? 0);
         $suf = trim((string) ($_GET['suffix'] ?? ''));
-        if ($sth <= 0) throw new RuntimeException('رقم الفاتورة ناقص.');
-
-        $h = sqlsrv_fetch_invoice_header($sth, $suf !== '' ? $suf : null);
-        if (!$h) throw new RuntimeException('الفاتورة مش موجودة في المرآة — يمكن اتلغت أو السينك متأخر.');
-
-        $realSuf = (string) ($h['suffix'] ?? $suf);
-        $isRet   = ((int) ($h['doc_type'] ?? 0) === 6);
-        $isUnp   = ($realSuf === 'YY_MM');
-
-        // نفس الدمج المستخدم في شاشة الفاتورة: الكود المكرر سطر واحد
-        $lines = merge_invoice_items(sqlsrv_fetch_invoice_items($sth, $realSuf ?: null));
-
-        // الموجود في المجموعة بالفعل
-        $gid  = (int) ($_GET['g'] ?? 0);
-        $have = $gid > 0 ? (group_selected_map($gid)[$sth . '|' . $realSuf] ?? []) : [];
-
-        $rows = [];
-        foreach ($lines as $ln) {
-            $code = trim((string) ($ln['item_code'] ?? ''));
-            if ($code === '') continue;
-            $rows[] = [
-                'key'        => $sth . '|' . $realSuf . '|' . $code,
-                'sth_id'     => $sth,
-                'suffix'     => $realSuf,
-                'invoice_no' => (string) ($h['inv_no'] ?? ''),
-                'type_label' => $isRet ? 'مردود' : 'فاتورة شراء',
-                'is_return'  => $isRet,
-                'unposted'   => $isUnp,
-                'supplier'   => (string) ($h['supplier_name'] ?? ''),
-                'date'       => (string) ($h['invoice_date'] ?? ''),
-                'item_code'  => $code,
-                'item_name'  => (string) ($ln['item_name'] ?? ''),
-                'qty'        => (float) ($ln['quantity'] ?? 0),
-                'in_group'   => !empty($have[$code]),
-            ];
-        }
-
-        echo json_encode([
-            'ok'    => true,
-            'title' => trim(($h['inv_no'] ?? '') . ' — ' . ($h['supplier_name'] ?? '')),
-            'rows'  => $rows,
-        ], JSON_UNESCAPED_UNICODE);
+        $gid = (int) ($_GET['g'] ?? 0);
+        $res = inv_pick_items($sth, $suf, $gid);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -149,25 +92,8 @@ if (($_GET['gpick'] ?? '') === 'ginv') {
     header('Content-Type: application/json; charset=utf-8');
     try {
         $g2 = (int) ($_GET['g2'] ?? 0);
-        $og = $g2 > 0 ? group_get($g2) : null;
-        if (!$og) throw new RuntimeException('المجموعة مش موجودة.');
-
-        $rows = [];
-        foreach (group_invoices($g2) as $iv) {
-            $rows[] = [
-                'sth_id'     => (int) $iv['sth_id'],
-                'suffix'     => (string) $iv['suffix'],
-                'invoice_no' => (string) ($iv['invoice_no'] ?? ''),
-                'supplier'   => (string) ($iv['supplier_name'] ?? ''),
-                'date'       => substr((string) ($iv['invoice_date'] ?? ''), 0, 10),
-                'unposted'   => ((string) $iv['suffix'] === 'YY_MM'),
-            ];
-        }
-        echo json_encode([
-            'ok'    => true,
-            'title' => trim(($og['name'] ?: ('مجموعة #' . $g2)) . ' — ' . count($rows) . ' فاتورة'),
-            'rows'  => $rows,
-        ], JSON_UNESCAPED_UNICODE);
+        $res = inv_pick_group_invoices($g2);
+        echo json_encode(['ok' => true] + $res, JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
@@ -644,22 +570,15 @@ function grp_picker(array $unposted = [], array $posted = [], int $groupId = 0, 
 if (($_GET['ajax'] ?? '') === 'grp_rows') {
     header('Content-Type: application/json; charset=utf-8');
     try {
-        $unposted = sqlsrv_fetch_unposted_invoices();
-        $posted   = sqlsrv_fetch_invoices(2026);
-
-        $branchCount = 0;
-        foreach (array_merge($unposted, $posted) as $iv) {
-            if (!grp_is_admin_inv($iv)) $branchCount++;
-        }
-
-        $html = grp_picker_rows($unposted, $posted);
-        $invListHtml = grp_picker_inv_rows($unposted, $posted);
+        $data = inv_group_picker_data();
+        $html = grp_picker_rows($data['unposted'], $data['posted']);
+        $invListHtml = grp_picker_inv_rows($data['unposted'], $data['posted']);
 
         echo json_encode([
             'ok'            => true,
             'html'          => $html,
             'inv_list_html' => $invListHtml,
-            'branch_count'  => $branchCount,
+            'branch_count'  => $data['branch_count'],
         ], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $ex) {
         http_response_code(400);
