@@ -2294,6 +2294,8 @@ function emp_ledger_balances(array $employeeIds, ?PDO $pdo = null): array
     return $res;
 }
 
+const ADVANCE_ACCOUNT_ID = 10;
+
 /**
  * صرف سلفة لموظف عبر إذن صرف.
  * - الفلوس تطلع من الخزينة (مدين).
@@ -2324,10 +2326,23 @@ function disburse_advance(
             throw new RuntimeException('الموظف غير موجود أو غير نشط.');
         }
 
+        $advanceAccountId = null;
+        try {
+            $accountCheck = $pdo->prepare('SELECT id FROM accounts WHERE id = ? AND is_active = 1');
+            $accountCheck->execute([ADVANCE_ACCOUNT_ID]);
+            if ($accountCheck->fetchColumn() !== false) {
+                $advanceAccountId = ADVANCE_ACCOUNT_ID;
+            } else {
+                error_log('حساب سلف موظفين غير موجود أو غير نشط؛ السلفة هتتسجل من غير قيد حساب.');
+            }
+        } catch (Throwable $ex) {
+            error_log('تعذر فحص حساب سلف موظفين؛ السلفة هتتسجل من غير قيد حساب: ' . $ex->getMessage());
+        }
+
         // صرف من الخزينة
         post_journal($treasuryId, $amount, 0,
             'سلفة للموظف: ' . $empName, $date,
-            'advance', null, $userId, $pdo);
+            'advance', null, $userId, $pdo, $advanceAccountId, null);
 
         // تسجيل السلفة على الموظف
         $pdo->prepare(
