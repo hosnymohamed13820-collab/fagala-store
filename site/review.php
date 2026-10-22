@@ -25,6 +25,53 @@ review_expire_shift_returns($pdo);
 
 $denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
 
+// تعديل حقلي الإذن قبل الاعتماد فقط. قفل الصف يجعل الفحص والتعديل عملية ذرية مع مسار الاعتماد.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_permit') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!csrf_verify($_POST['csrf'] ?? '')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'انتهت صلاحية الجلسة، حدّث الصفحة.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    try {
+        $permitId = (int) ($_POST['permit_id'] ?? 0);
+        if ($permitId <= 0) throw new RuntimeException('الإذن غير صحيح.');
+        $date = fin_valid_date((string) ($_POST['date'] ?? ''));
+        $branchId = (int) ($_POST['cost_branch_id'] ?? 0);
+        if ($branchId <= 0) throw new RuntimeException('اختار الفرع.');
+        $pdo->beginTransaction();
+        $st = $pdo->prepare('SELECT status, movement_id, payload, review_note FROM sms_permits WHERE id = ? FOR UPDATE');
+        $st->execute([$permitId]);
+        $permit = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$permit || $permit['status'] !== 'pending' || $permit['movement_id'] !== null) {
+            throw new RuntimeException('الإذن ده اتراجع أو بدأ اعتماده؛ مينفعش تعدّله.');
+        }
+        $branchSt = $pdo->prepare('SELECT id FROM branches WHERE id = ?');
+        $branchSt->execute([$branchId]);
+        if (!$branchSt->fetchColumn()) throw new RuntimeException('الفرع غير موجود.');
+        $payload = json_decode((string) $permit['payload'], true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($payload)) throw new RuntimeException('بيانات الإذن غير صحيحة.');
+        $changed = ($payload['date'] ?? null) !== $date || ($payload['cost_branch_id'] ?? null) !== $branchId;
+        if ($changed) {
+            $payload['date'] = $date;
+            $payload['cost_branch_id'] = $branchId;
+            $audit = 'تعديل التاريخ/الفرع بواسطة المستخدم #' . $uid . ' في ' . date('Y-m-d H:i:s');
+            $oldNote = trim((string) ($permit['review_note'] ?? ''));
+            $newNote = $oldNote === '' ? $audit : $oldNote . "\n" . $audit;
+            if (mb_strlen($newNote) > 500) throw new RuntimeException('سجل تعديلات الإذن امتلأ؛ راجع الإدارة.');
+            $pdo->prepare("UPDATE sms_permits SET payload = ?, review_note = ? WHERE id = ? AND status = 'pending' AND movement_id IS NULL")
+                ->execute([json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR), $newNote, $permitId]);
+        }
+        $pdo->commit();
+        echo json_encode(['ok' => true, 'date' => $date, 'cost_branch_id' => $branchId], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_verify($_POST['csrf'] ?? '')) {
         $flash = 'انتهت صلاحية الجلسة، حاول مرة أخرى.';
@@ -730,9 +777,36 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <?php if (!$isApproving): ?>
+                    <form class="rv-permit-edit" data-saved-date="<?= e((string)($pl['date'] ?? '')) ?>"
+                          data-saved-branch="<?= e((string)($pl['cost_branch_id'] ?? '')) ?>" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:12px;"
+                          onsubmit="return false;">
+                        <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                        <input type="hidden" name="action" value="edit_permit">
+                        <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
+                        <label style="font-size:12px;color:var(--ink-600);">تاريخ الحركة
+                            <input type="date" name="date" value="<?= e((string)($pl['date'] ?? '')) ?>" required
+                                   min="<?= date('Y-m-d', strtotime('-400 days')) ?>" max="<?= date('Y-m-d') ?>"
+                                   onblur="savePermitEdit(this.form)" style="display:block;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink-900);">
+                        </label>
+                        <label style="font-size:12px;color:var(--ink-600);">الفرع
+                            <select name="cost_branch_id" required onchange="savePermitEdit(this.form)" style="display:block;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink-900);">
+                                <option value="">اختر الفرع</option>
+                                <?php foreach ($allBranches as $branchId => $branchName): ?>
+                                    <option value="<?= (int)$branchId ?>" <?= (int)($pl['cost_branch_id'] ?? 0) === (int)$branchId ? 'selected' : '' ?>><?= e($branchName) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+                        <span class="rv-permit-save-status" role="status" style="font-size:12px;color:var(--ink-500);"></span>
+                    </form>
+                    <?php if (!empty($p['review_note'])): ?>
+                        <div style="font-size:11px;color:var(--ink-500);white-space:pre-line;margin-top:5px;"><?= e($p['review_note']) ?></div>
+                    <?php endif; ?>
+                <?php endif; ?>
+
+                <?php if (!$isApproving): ?>
                     <div style="display:flex;gap:10px;margin-top:14px;align-items:flex-start;flex-wrap:wrap;">
                         <!-- فورم الاعتماد -->
-                        <form method="post" onsubmit="return confirm('تأكيد اعتماد الإذن بمبلغ <?= number_format((float)$p['amount'], 2) ?> ج.م وترحيل حركة الخزينة؟');">
+                        <form method="post" onsubmit="return permitEditReady(this.closest('.rv-pending-permit')) && confirm('تأكيد اعتماد الإذن بمبلغ <?= number_format((float)$p['amount'], 2) ?> ج.م وترحيل حركة الخزينة؟');">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="return_tab" value="instapay">
                             <input type="hidden" name="kind" value="sms_permit">
@@ -1730,6 +1804,41 @@ require_once __DIR__ . '/includes/header.php';
         if (el) {
             el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
         }
+    }
+
+    function permitEditReady(card) {
+        var form = card.querySelector('.rv-permit-edit');
+        if (form && (form.dataset.saving === '1' || form.elements.date.value !== form.dataset.savedDate ||
+            form.elements.cost_branch_id.value !== form.dataset.savedBranch)) {
+            alert('استنى حفظ تعديل التاريخ والفرع الأول.');
+            return false;
+        }
+        return true;
+    }
+
+    function savePermitEdit(form) {
+        var date = form.elements.date.value;
+        var branch = form.elements.cost_branch_id.value;
+        if (!date || !branch || (date === form.dataset.savedDate && branch === form.dataset.savedBranch)) return;
+        var status = form.querySelector('.rv-permit-save-status');
+        var fd = new FormData(form);
+        form.dataset.saving = '1';
+        status.textContent = 'جاري الحفظ…';
+        var save = (form._saving || Promise.resolve()).catch(function() {}).then(function() {
+            return fetch('review.php', {method:'POST', body:fd}).then(function(response) { return response.json(); }).then(function(data) {
+                if (!data.ok) throw new Error(data.error || 'تعذّر الحفظ.');
+                form.dataset.savedDate = date;
+                form.dataset.savedBranch = branch;
+                form.closest('.rv-pending-permit').dataset.branch = branch;
+                status.style.color = 'var(--pos)';
+                status.textContent = 'اتحفظ';
+            }).catch(function(error) {
+                status.style.color = 'var(--neg)';
+                status.textContent = error.message || 'تعذّر الحفظ.';
+            });
+        });
+        form._saving = save;
+        save.finally(function() { if (form._saving === save) form.dataset.saving = '0'; });
     }
 
     function validatePermitReject(form) {

@@ -158,11 +158,14 @@ function sms_permit_reject(int $permitId, int $uid, string $note): void
     }
 
     $pdo = db();
+    // احتفظ بسجل تعديل التاريخ/الفرع الذي كُتب أثناء pending عند تسجيل سبب الرفض.
     $stmt = $pdo->prepare(
-        "UPDATE sms_permits SET status='rejected', reviewed_by=?, reviewed_at=NOW(), review_note=?
+        "UPDATE sms_permits SET status='rejected', reviewed_by=?, reviewed_at=NOW(),
+                review_note=CASE WHEN review_note IS NULL OR review_note='' THEN ?
+                                 ELSE CONCAT(review_note, CHAR(10), ?) END
          WHERE id=? AND status='pending'"
     );
-    $stmt->execute([$uid, $note, $permitId]);
+    $stmt->execute([$uid, $note, $note, $permitId]);
 
     if ($stmt->rowCount() !== 1) {
         throw new RuntimeException('الإذن ده اتراجع خلاص.');
