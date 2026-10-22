@@ -24,6 +24,9 @@ function hr_get_allowed_tabs(array $user): array
         if (in_array($tabKey, HR_NON_TAB_PARTS, true)) continue;
         if (can('hr:' . $tabKey)) {
             $allowedTabs[$tabKey] = $tabLabel;
+            if ($tabKey === 'penalties') {
+                $allowedTabs['deficits'] = 'عجز وزيادة الكاشير';
+            }
         }
     }
     return $allowedTabs;
@@ -164,9 +167,22 @@ function hr_get_bonuses(PDO $pdo, int $limit = 100): array
 }
 
 /**
- * جلب سجل الجزاءات المجمع (جزاءات + عجز عهدة + عجز وردية متجاوز للعتبة)
+ * نفس السجل القديم بحده وترتيبه، ثم فصل العرض فقط حتى يظل مجموع التابين مطابقاً له.
  */
 function hr_get_penalties(PDO $pdo, int $limit = 100): array
+{
+    return array_values(array_filter(hr_get_deductions($pdo, $limit),
+        static fn(array $row): bool => $row['deduction_type'] === 'جزاء'));
+}
+
+function hr_get_deficits(PDO $pdo, int $limit = 100): array
+{
+    return array_values(array_filter(hr_get_deductions($pdo, $limit),
+        static fn(array $row): bool => $row['deduction_type'] !== 'جزاء'));
+}
+
+/** السجل المجمع الأصلي: جزاءات يدوية، عجز عهدة، وفروق الورديات فوق العتبة. */
+function hr_get_deductions(PDO $pdo, int $limit = 100): array
 {
     $tolerance = custody_tolerance();
     $penStmt = $pdo->prepare(

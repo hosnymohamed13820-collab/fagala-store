@@ -35,7 +35,7 @@ if (empty($allowedTabs)) {
 $defaultTab = hr_resolve_active_tab($allowedTabs, null);
 $part = $_GET['part'] ?? ($_GET['tab'] ?? 'meta');
 
-$validParts = ['employees', 'attendance', 'requests', 'bonuses', 'penalties', 'advances', 'salaries', 'meta', 'all'];
+$validParts = ['employees', 'attendance', 'requests', 'bonuses', 'penalties', 'deficits', 'advances', 'salaries', 'meta', 'all'];
 if (!in_array($part, $validParts, true)) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'Invalid part'], JSON_UNESCAPED_UNICODE);
@@ -130,6 +130,17 @@ elseif ($part === 'penalties') {
     }
     $response['data'] = [
         'penalties' => hr_get_penalties($pdo, 100),
+    ];
+}
+
+elseif ($part === 'deficits') {
+    if (!can('hr:penalties')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Forbidden for deficits'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $response['data'] = [
+        'deficits' => hr_get_deficits($pdo, 100),
     ];
 }
 
@@ -231,6 +242,7 @@ elseif ($part === 'all') {
     }
     if (can('hr:penalties')) {
         $data['penalties'] = hr_get_penalties($pdo, 100);
+        $data['deficits'] = hr_get_deficits($pdo, 100);
     }
     if (can('hr:advances')) {
         if (sens_unlocked()) {

@@ -240,6 +240,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($empId<=0 || $amount<=0) throw new RuntimeException('بيانات غير مكتملة.');
                 $pdo->prepare('INSERT INTO employee_penalties (employee_id, amount, penalty_date, reason, status) VALUES (?,?,?,?,"pending")')
                     ->execute([$empId,$amount,$date,$reason ?: null]);
+                $userStmt = $pdo->prepare('SELECT user_id FROM employees WHERE id = ?');
+                $userStmt->execute([$empId]);
+                $employeeUserId = (int) $userStmt->fetchColumn();
+                if ($employeeUserId > 0) {
+                    require_once __DIR__ . '/push_lib.php';
+                    $body = 'اتسجّل عليك جزاء بمبلغ ' . number_format($amount, 2) . ' ج بتاريخ ' . $date
+                        . ' — السبب: ' . ($reason !== '' ? $reason : 'غير مذكور');
+                    notify($pdo, [$employeeUserId], 'penalty', 'جزاء جديد', $body, 'my_salary.php');
+                }
                 $flash = 'تم تسجيل الجزاء.'; $tab='penalties';
             }
             elseif ($action === 'update_advance_deduction') {
@@ -788,6 +797,10 @@ if ($tab === 'bonuses') {
 $penalties = [];
 if ($tab === 'penalties') {
     $penalties = hr_get_penalties($pdo, 100);
+}
+$deficits = [];
+if ($tab === 'deficits') {
+    $deficits = hr_get_deficits($pdo, 100);
 }
 $salaries = [];
 $confirmRevSalary = null;
@@ -1362,25 +1375,29 @@ $statusBadge = function($st) {
         <?php endif; ?>
     </div>
 
-<?php elseif ($tab === 'penalties'): ?>
-    <?php $tolerance = custody_tolerance(); ?>
+<?php elseif ($tab === 'penalties' || $tab === 'deficits'): ?>
+    <?php $tolerance = custody_tolerance(); $deductionRows = $tab === 'penalties' ? $penalties : $deficits; ?>
     <div class="toolbar">
-        <span class="hrs-muted14"><?= count($penalties) ?> استقطاع/جزاء</span>
+        <span class="hrs-muted14"><?= count($deductionRows) ?> <?= $tab === 'penalties' ? 'جزاء' : 'عجز/زيادة' ?></span>
+        <?php if ($tab === 'penalties'): ?>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
+        <?php endif; ?>
     </div>
+    <?php if ($tab === 'deficits'): ?>
     <div style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
         العتبة الحالية <strong><?= number_format($tolerance, 2) ?> ج</strong> — أي عجز أو زيادة أقل من كده مش بيظهر هنا.
         <a href="settings.php" style="color:var(--accent-text);">غيّرها من الإعدادات</a>
     </div>
+    <?php endif; ?>
     <div class="card">
-        <?php if (empty($penalties)): ?>
-            <div class="empty">لا توجد استقطاعات أو جزاءات.</div>
+        <?php if (empty($deductionRows)): ?>
+            <div class="empty"><?= $tab === 'penalties' ? 'لا توجد جزاءات.' : 'لا يوجد عجز أو زيادة.' ?></div>
         <?php else: ?>
         <div class="hrs-scroll-x">
         <table>
             <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
-            <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
+            <?php foreach ($deductionRows as $p): $b=$statusBadge($p['status']); ?>
                 <?php
                 $typeColor = 'var(--ink-800)';
                 $typeBg    = 'var(--line-soft)';
