@@ -17,6 +17,8 @@ require_once __DIR__ . '/review_lib.php';
 $pdo  = db();
 $uid  = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
+$reviewTabs = ['pending'=>'pane_pending', 'custody'=>'pane_custody', 'instapay'=>'pane_instapay',
+    'history'=>'pane_history', 'seq'=>'pane_seq'];
 
 // فحص الورديات المرجوعة اللي عدّت مهلتها (٤٨ ساعة) آلياً
 review_expire_shift_returns($pdo);
@@ -258,7 +260,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // PRG: بعد أي POST نعمل تحويل لصفحة GET عشان الـ Refresh ما يعيدش الإرسال (منع التكرار)
     $_SESSION['flash'] = $flash;
     $_SESSION['flash_type'] = $flashType;
-    header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
+    $returnTab = (string) ($_POST['return_tab'] ?? $_GET['tab'] ?? 'pending');
+    if (($_POST['kind'] ?? '') === 'sms_permit') $returnTab = 'instapay';
+    elseif (($_POST['kind'] ?? '') === 'custody') $returnTab = 'custody';
+    elseif (in_array($_POST['action'] ?? '', ['seq_ignore', 'seq_send'], true)) $returnTab = 'seq';
+    if (!isset($reviewTabs[$returnTab])) $returnTab = 'pending';
+    $query = [];
+    parse_str((string) (parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY) ?: ''), $query);
+    $query['tab'] = $returnTab;
+    header('Location: review.php?' . http_build_query($query) . '#' . $reviewTabs[$returnTab]);
     exit;
 }
 
@@ -573,6 +583,7 @@ require_once __DIR__ . '/includes/header.php';
                 <form method="post" style="margin-top:14px;"
                       onsubmit="return cstConfirm(this);">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="return_tab" value="custody">
                     <input type="hidden" name="kind" value="custody">
                     <input type="hidden" name="custody_id" value="<?= (int)$c['id'] ?>">
                     <input type="hidden" name="decision" value="">
@@ -723,6 +734,7 @@ require_once __DIR__ . '/includes/header.php';
                         <!-- فورم الاعتماد -->
                         <form method="post" onsubmit="return confirm('تأكيد اعتماد الإذن بمبلغ <?= number_format((float)$p['amount'], 2) ?> ج.م وترحيل حركة الخزينة؟');">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="return_tab" value="instapay">
                             <input type="hidden" name="kind" value="sms_permit">
                             <input type="hidden" name="action" value="approve_sms_permit">
                             <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
@@ -742,6 +754,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div id="reject_box_<?= (int)$p['id'] ?>" style="display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--line);">
                         <form method="post" onsubmit="return validatePermitReject(this);">
                             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+                            <input type="hidden" name="return_tab" value="instapay">
                             <input type="hidden" name="kind" value="sms_permit">
                             <input type="hidden" name="action" value="reject_sms_permit">
                             <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
@@ -937,6 +950,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="rv-mbody">
         <form method="post" id="rvForm">
+            <input type="hidden" name="return_tab" value="pending">
             <input type="hidden" name="kind" value="shift">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="shift_id" id="rv_shift_id" value="">
@@ -1082,6 +1096,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="rv-mbody">
         <form method="post" id="seqIgnoreForm">
+            <input type="hidden" name="return_tab" value="seq">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="seq_ignore">
             <input type="hidden" name="issue_id" id="ignore_issue_id" value="">
@@ -1109,6 +1124,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="rv-mbody">
         <form method="post" id="seqSendForm">
+            <input type="hidden" name="return_tab" value="seq">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="seq_send">
             <input type="hidden" name="issue_id" id="send_issue_id" value="">
@@ -1239,6 +1255,15 @@ require_once __DIR__ . '/includes/header.php';
         btn.classList.add('active');
         document.querySelectorAll('.rv-pane').forEach(p=>p.classList.remove('active'));
         document.getElementById(pane).classList.add('active');
+        var tab = {pane_pending:'pending', pane_custody:'custody', pane_instapay:'instapay',
+                   pane_history:'history', pane_seq:'seq'}[pane];
+        if (tab) {
+            var url = new URL(window.location.href);
+            if (tab === 'pending') url.searchParams.delete('tab');
+            else url.searchParams.set('tab', tab);
+            url.hash = pane;
+            history.replaceState(null, '', url);
+        }
     }
     function rvPtab(btn, pane) {
         document.querySelectorAll('.rv-ptab').forEach(t=>t.classList.remove('active'));
@@ -1739,6 +1764,16 @@ require_once __DIR__ . '/includes/header.php';
             if (iBtn) {
                 rvTab(iBtn, 'pane_instapay');
             }
+        } else if (urlParams.get('tab') === 'custody') {
+            rvTab(document.querySelectorAll('.rv-tab')[1], 'pane_custody');
+        } else if (urlParams.get('tab') === 'history') {
+            rvTab(document.querySelectorAll('.rv-tab')[3], 'pane_history');
+        }
+        var anchorPane = document.getElementById(window.location.hash.slice(1));
+        if (anchorPane && anchorPane.classList.contains('rv-pane') && anchorPane.classList.contains('active')) {
+            requestAnimationFrame(function() {
+                anchorPane.scrollIntoView();
+            });
         }
     });
 </script>
