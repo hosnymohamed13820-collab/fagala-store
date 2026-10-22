@@ -339,6 +339,7 @@ if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supp
         $x->addRow($row);
     }
     if (!empty($report['totals'])) $x->addRow(array_map($xlCell, $report['totals']), true);
+    if (!empty($report['balance_warning'])) $x->addRow([$report['balance_warning']]);
 
     $x->download($type . '_' . $from . '_' . $to . '.xlsx');
     exit;
@@ -695,6 +696,14 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     <label>إلى</label>
     <input type="date" name="to" value="<?= e($to) ?>">
     <?php if ($type === 'treasury'): $selEntry = $_GET['entry_code'] ?? ''; ?>
+        <?php $repTreasuries = $pdo->query('SELECT id, name FROM treasuries WHERE is_active = 1 ORDER BY name')->fetchAll(); $selTreasury = (int)($_GET['treasury'] ?? 0); ?>
+        <label>الخزينة</label>
+        <select name="treasury" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الخزائن</option>
+            <?php foreach ($repTreasuries as $tr): ?>
+                <option value="<?= (int)$tr['id'] ?>" <?= $selTreasury === (int)$tr['id'] ? 'selected' : '' ?>><?= e($tr['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
         <label>القيد</label>
         <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
             <option value="">كل القيود</option>
@@ -821,7 +830,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -2172,6 +2181,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
+    <?php if (!empty($report['balance_warning'])): ?>
+        <div style="background:var(--warn-soft);color:var(--ink-900);padding:10px 14px;border-radius:8px;margin:12px 0;">
+            <?= e($report['balance_warning']) ?>
+        </div>
+    <?php endif; ?>
     <?php if (empty($report['rows'])): ?>
         <div class="empty">لا توجد بيانات في هذه الفترة.</div>
     <?php else: ?>
@@ -2282,7 +2296,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $trClassAttr ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= $type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق' ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
@@ -2320,6 +2334,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     </tr>
                 <?php endif; ?>
             <?php endforeach; ?>
+            <?php if ($type === 'treasury' && !empty($_GET['treasury']) && !empty($report['totals'])): ?>
+                <tr class="totals" data-xt-ignore style="background:var(--line-soft);font-weight:700;">
+                    <?php foreach ($report['totals'] as $cell): ?><td><?= e((string)$cell) ?></td><?php endforeach; ?>
+                </tr>
+            <?php endif; ?>
         </tbody>
     </table>
     <?php endif; ?>

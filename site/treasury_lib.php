@@ -86,7 +86,7 @@ function treasury_get_treasuries(PDO $pdo): array {
  *     }
  * }
  */
-function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom, string $stTo, array $treasuries, int $stMaxRows = 5000, bool $showCancelled = false): array {
+function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom, string $stTo, array $treasuries, int $stMaxRows = 5000, bool $showCancelled = false, bool $hasFrom = false): array {
     $selectedTreasuryId = (ctype_digit((string)$selectedParam) && (int)$selectedParam > 0)
         ? (int)$selectedParam
         : null;
@@ -98,6 +98,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
     $totalCredit      = 0.0;
     $totalNet         = 0.0;
     $totalCount       = 0;
+    $priorBalance     = null;
     $cancelledFilter = $showCancelled ? '' : " AND je.ref_type <> 'custody_expense_del'
         AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
             SELECT 1 FROM journal_entries rev
@@ -171,6 +172,9 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                 }
             }
             if ($selectedTreasury) {
+                if ($hasFrom) {
+                    $priorBalance = treasury_prior_balance($pdo, $selectedId, $stFrom, $showCancelled);
+                }
                 $st = $pdo->prepare(
                     "SELECT je.*, u.full_name AS by_name,
                             COALESCE(je.account_id, tm.entry_code_id) AS display_account_id,
@@ -204,11 +208,11 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                      LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
                      LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                      WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ? {$cancelledFilter}
-                     ORDER BY je.id DESC
+                     ORDER BY je.entry_date DESC, je.id DESC
                      LIMIT {$stMaxRows}"
                 );
                 $st->execute([$selectedId, $stFrom, $stTo]);
-                $statement = $st->fetchAll(PDO::FETCH_ASSOC);
+                $statement = array_reverse($st->fetchAll(PDO::FETCH_ASSOC));
 
                 // حساب الكروت باستعلام تجميعي منفصل (SUM) على نفس الفترة من غير LIMIT
                 $sumSt = $pdo->prepare(
@@ -242,6 +246,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
         'selected_treasury'    => $selectedTreasury,
         'is_all_statement'     => $isAllStatement,
         'statement'            => $statement,
+        'prior_balance'        => $priorBalance,
         'totals'               => [
             'total_debit'  => $totalDebit,
             'total_credit' => $totalCredit,

@@ -221,7 +221,8 @@ $stMaxRows  = 5000;
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = (string) ($_GET['treasury'] ?? '');
 $showCancelled = ($_GET['show_cancelled'] ?? '') === '1';
-$statementData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treasuries, $stMaxRows, $showCancelled);
+$hasFrom = isset($_GET['from']) && $_GET['from'] !== '';
+$statementData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treasuries, $stMaxRows, $showCancelled, $hasFrom);
 
 $selectedTreasuryId = $statementData['selected_treasury_id'];
 $statement          = $statementData['statement'];
@@ -231,6 +232,34 @@ $totalDebit         = $statementData['totals']['total_debit'];
 $totalCredit        = $statementData['totals']['total_credit'];
 $totalNet           = $statementData['totals']['total_net'];
 $totalCount         = $statementData['totals']['total_count'];
+$priorBalance       = $statementData['prior_balance'];
+$lastBalance        = $statement ? (float) $statement[count($statement) - 1]['running_balance'] : ($priorBalance ?? 0.0);
+$balanceGap         = $priorBalance !== null && $totalCount <= $stMaxRows
+    ? round($priorBalance + $totalCredit - $totalDebit - $lastBalance, 2) : 0.0;
+$datedEdits = array_values(array_filter($statement, static fn($row) =>
+    ($row['ref_type'] ?? '') === 'date_fix_rev' || !empty($row['edited_at'])));
+
+if ($selectedTreasury && ($_GET['export'] ?? '') === 'xlsx') {
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx('كشف خزينة ' . mb_substr((string) $selectedTreasury['name'], 0, 20));
+    $x->addRow(['التاريخ', 'رقم الوردية', 'البيان', 'رأس القيد', 'القيد', 'اسم المورد', 'الفرع', 'مدين', 'دائن', 'الرصيد', 'بواسطة', 'الوقت', 'الملاحظات'], true);
+    if ($priorBalance !== null) {
+        $x->addRow([$stFrom, '', 'رصيد سابق', '', '', '', '', 0, 0, round($priorBalance, 2), '', '', '']);
+    }
+    foreach ($statement as $row) {
+        $x->addRow([$row['entry_date'], (string) ($row['shift_name'] ?? ''), $row['description'],
+            $row['parent_account_name'] ?? '', $row['entry_code_name'] ?? '', $row['supplier_name'] ?? '',
+            $row['cost_branch_name'] ?? '', round((float) $row['debit'], 2), round((float) $row['credit'], 2),
+            round((float) $row['running_balance'], 2), $row['by_name'] ?? '', $row['created_at'], $row['notes'] ?? '']);
+    }
+    $x->addRow(['', '', 'الإجماليات', '', '', '', '', round($totalDebit, 2), round($totalCredit, 2), round($lastBalance, 2), '', '', ''], true);
+    if ($balanceGap != 0.0) {
+        $x->addRow(['فرق تاريخي في الرصيد', round($balanceGap, 2), 'قيود بتاريخ متعدّل',
+            $datedEdits ? implode('، ', array_map(static fn($row) => '#' . $row['id'], $datedEdits)) : 'مفيش قيد ظاهر متعلّم بتعديل تاريخ؛ محتاج مراجعة']);
+    }
+    $x->download('TREASURY_' . (int) $selectedTreasury['id'] . '_' . $stFrom . '_' . $stTo . '.xlsx');
+    exit;
+}
 
 $page_title    = 'الخزينة وكشف الحساب';
 $active_module = 'treasury';
@@ -575,6 +604,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <input type="date" name="to" id="stOneTo" value="<?= e($stTo) ?>">
             <label><input type="checkbox" name="show_cancelled" value="1" <?= $showCancelled ? 'checked' : '' ?>> إظهار الملغي</label>
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
+            <a href="?treasury=<?= (int)$selectedTreasury['id'] ?><?= $hasFrom ? '&from=' . e($stFrom) : '' ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>&export=xlsx" class="btn btn-ghost">تصدير إكسيل</a>
         </form>
 
         <div class="sum-cards st-cards">
@@ -602,7 +632,14 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             </div>
         <?php endif; ?>
 
-        <?php if (empty($statement)): ?>
+        <?php if ($balanceGap != 0.0): ?>
+            <div style="background:var(--warn-soft);color:var(--ink-900);padding:10px 14px;border-radius:8px;margin-bottom:12px;">
+                فرق تاريخي في الرصيد: <?= ltr_out(money_fmt_table($balanceGap)) ?>.
+                قيود بتاريخ متعدّل في الفترة:
+                <?= $datedEdits ? e(implode('، ', array_map(static fn($row) => '#' . $row['id'], $datedEdits))) : 'مفيش قيد ظاهر متعلّم بتعديل تاريخ؛ محتاج مراجعة' ?>.
+            </div>
+        <?php endif; ?>
+        <?php if (empty($statement) && $priorBalance === null): ?>
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
         <table>
@@ -612,6 +649,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 </tr>
             </thead>
             <tbody>
+                <?php if ($priorBalance !== null): ?>
+                    <tr data-xt-ignore style="background:var(--line-soft);font-weight:600;">
+                        <td><?= e($stFrom) ?></td><td>—</td><td>رصيد سابق</td>
+                        <td colspan="4">—</td><td>0.00</td><td>0.00</td>
+                        <td class="trs-fw5"><?= ltr_out(money_fmt_table($priorBalance)) ?></td><td colspan="3">—</td>
+                    </tr>
+                <?php endif; ?>
                 <?php foreach ($statement as $row): ?>
                     <tr id="je-<?= (int)$row['id'] ?>">
                         <td><?= e($row['entry_date']) ?></td>
@@ -637,6 +681,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
+                <tr data-xt-ignore style="background:var(--line-soft);font-weight:700;">
+                    <td colspan="7">الإجماليات</td>
+                    <td><?= ltr_out(money_fmt_table($totalDebit)) ?></td>
+                    <td><?= ltr_out(money_fmt_table($totalCredit)) ?></td>
+                    <td class="trs-fw5"><?= ltr_out(money_fmt_table($lastBalance)) ?></td>
+                    <td colspan="3">—</td>
+                </tr>
             </tbody>
         </table>
         <?php endif; ?>

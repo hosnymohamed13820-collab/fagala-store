@@ -8,6 +8,21 @@ declare(strict_types=1);
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
 
+/** آخر رصيد محفوظ قبل الفترة لنفس الخزنة؛ لا نعيد حساب أرصدة القيود. */
+function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $showCancelled = false): float {
+    $cancelledFilter = $showCancelled ? '' : " AND je.ref_type <> 'custody_expense_del'
+        AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
+            SELECT 1 FROM journal_entries rev
+            WHERE rev.ref_type = 'custody_expense_del' AND rev.ref_id = je.ref_id
+        ))";
+    $st = $pdo->prepare("SELECT je.running_balance FROM journal_entries je
+        WHERE je.treasury_id = ? AND je.entry_date < ? {$cancelledFilter}
+        ORDER BY je.entry_date DESC, je.id DESC LIMIT 1");
+    $st->execute([$treasuryId, $from]);
+    $balance = $st->fetchColumn();
+    return $balance === false ? 0.0 : (float) $balance;
+}
+
 /**
  * جلب معرّف الحساب المختار وجميع الحسابات المتفرعة منه (النسل) من شجرة الحسابات.
  * تضمن إن اختيار رأس قيد يطابق حركات كل أبنائه وتفرعاته.
@@ -152,12 +167,15 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
         case 'treasury':
             $showCancelled = ($_GET['show_cancelled'] ?? '') === '1';
+            $treasuryFilter = isset($_GET['treasury']) && ctype_digit((string) $_GET['treasury']) && (int) $_GET['treasury'] > 0
+                ? (int) $_GET['treasury'] : null;
             // فلتر اختياري بالقيد
             $entryFilter = isset($_GET['entry_code']) && $_GET['entry_code'] !== '' ? (int)$_GET['entry_code'] : null;
             // فلتر اختياري بفرع التكلفة
             $branchFilter = isset($_GET['cost_branch']) && $_GET['cost_branch'] !== '' ? (int)$_GET['cost_branch'] : null;
+            $singleFullTreasury = $treasuryFilter !== null && $entryFilter === null && $branchFilter === null;
             $sqlT =
-                "SELECT je.entry_date, sh.shift_name, t.name AS treasury, je.description, je.debit, je.credit, je.running_balance,
+                "SELECT je.id, je.entry_date, je.ref_type, je.edited_at, sh.shift_name, t.name AS treasury, je.description, je.debit, je.credit, je.running_balance,
                         u.full_name AS by_name,
                         COALESCE(je.account_id, tm.entry_code_id) AS account_id,
                         je.notes,
@@ -181,6 +199,10 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                  LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                  WHERE je.entry_date BETWEEN ? AND ?";
             $paramsT = [$from, $to];
+            if ($treasuryFilter !== null) {
+                $sqlT .= ' AND je.treasury_id = ?';
+                $paramsT[] = $treasuryFilter;
+            }
             if (!$showCancelled) {
                 $sqlT .= " AND je.ref_type <> 'custody_expense_del'
                     AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
@@ -206,7 +228,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $sqlT .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id) = ?";
                 $paramsT[] = $branchFilter;
             }
-            $sqlT .= " ORDER BY je.id DESC";
+            $sqlT .= $treasuryFilter !== null
+                ? ' ORDER BY je.entry_date ASC, je.id ASC'
+                : ' ORDER BY je.id DESC';
             $st = $pdo->prepare($sqlT);
             $st->execute($paramsT);
             $data = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -223,11 +247,36 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     (string)($r['notes'] ?? '')];
                 $rowPaths[]=je_transfer_path($r['transfer_from_name'] ?? null, $r['transfer_to_name'] ?? null);
             }
+            $priorBalance = null;
+            $balanceWarning = '';
+            if ($treasuryFilter !== null && !$singleFullTreasury) {
+                $balanceWarning = 'الرصيد السابق والختامي بيظهروا لما تختار خزينة واحدة من غير فلتر قيد أو فرع؛ الرصيد المحفوظ يخص كل حركات الخزينة.';
+            }
+            if ($singleFullTreasury) {
+                if (isset($_GET['from']) && $_GET['from'] !== '') {
+                    $priorBalance = treasury_prior_balance($pdo, $treasuryFilter, $from, $showCancelled);
+                    array_unshift($rows, [$from, '—', $data[0]['treasury'] ?? '—', 'رصيد سابق', '—', '—', '—', '0.00', '0.00', number_format($priorBalance, 2), '—', '']);
+                    array_unshift($rowPaths, '');
+                    if ($data) {
+                        $lastBalance = (float) $data[count($data) - 1]['running_balance'];
+                        $gap = round($priorBalance + $tCr - $tDr - $lastBalance, 2);
+                        if ($gap != 0.0) {
+                            $edits = array_values(array_filter($data, static fn($r) =>
+                                $r['ref_type'] === 'date_fix_rev' || !empty($r['edited_at'])));
+                            $ids = array_map(static fn($r) => '#' . $r['id'], $edits);
+                            $balanceWarning = 'فرق تاريخي في الرصيد: ' . number_format($gap, 2)
+                                . '. قيود بتاريخ متعدّل: ' . ($ids ? implode('، ', $ids) : 'مفيش قيد ظاهر متعلّم بتعديل تاريخ؛ محتاج مراجعة');
+                        }
+                    }
+                }
+            }
+            $closingBalance = $data ? (float) $data[count($data) - 1]['running_balance'] : $priorBalance;
             // notes_col = رقم عمود الملاحظات. الجدول بيقصّه بـ ellipsis
             // ويحط النص الكامل في tooltip، والتصدير بياخده كامل من $rows.
             return ['title'=>'تقرير الخزينة',
                 'headers'=>['التاريخ','رقم الوردية','الخزينة','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>11,
+                'rows'=>$rows,'row_paths'=>$rowPaths,'notes_col'=>11,'balance_warning'=>$balanceWarning,
+                'single_full_treasury'=>$singleFullTreasury,
                 // الصافي = مدين − دائن (مش العكس). القيمة السالبة معناها
                 // دخل أكتر من اللي خرج.
                 'sum_cards'=>[
@@ -235,7 +284,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     ['label'=>'إجمالي دائن', 'col'=>8],
                     ['label'=>'الصافي',      'cols'=>[7], 'minus'=>[8], 'signed'=>true],
                 ],
-                'totals'=>['','','','','','','إجمالي:','مدين '.number_format($tDr,2),'دائن '.number_format($tCr,2),'','','']];
+                'totals'=>['','','','','','','الإجماليات',number_format($tDr,2),number_format($tCr,2),$singleFullTreasury && $closingBalance !== null ? number_format($closingBalance,2) : '','','']];
 
         case 'custody':
             // فلتر الفرع: أزرار فوق التقرير. الفترة فلتر مستقل تماماً —

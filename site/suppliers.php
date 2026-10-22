@@ -132,8 +132,8 @@ if ($tab === 'statement') {
                 $x->addRow(['تاريخ التصدير', date('Y-m-d H:i')]);
                 $x->addBlank();
                 $x->addRow(['التاريخ', 'البيان', 'الخزينة', 'له', 'عليه', 'الرصيد'], true);
-                if ($from > $stStart) {
-                    $x->addRow([$from, 'رصيد ما قبل الفترة', '—', '', '', round($priorBalance, 2)]);
+                if (isset($_GET['from']) && $_GET['from'] !== '' && $from > $stStart) {
+                    $x->addRow([$from, 'رصيد سابق', '—', 0, 0, round($priorBalance, 2)]);
                 }
                 foreach ($allMoves as $m) {
                     $x->addRow([
@@ -145,6 +145,7 @@ if ($tab === 'statement') {
                         round($m['balance'], 2),
                     ]);
                 }
+                $x->addRow(['', 'الإجماليات', '', round($periodPurchases + $periodReceived, 2), round($periodReturns + $periodPaid, 2), round($finalBalance, 2)], true);
                 $x->addBlank();
                 $x->addRow(['المشتريات', round($periodPurchases, 2)]);
                 $x->addRow(['المردودات', round($periodReturns, 2)]);
@@ -466,12 +467,12 @@ require_once __DIR__ . '/includes/header.php';
                     </tr>
                 </thead>
                 <tbody>
-                <?php if ($from > $stStart): ?>
+                <?php if (isset($_GET['from']) && $_GET['from'] !== '' && $from > $stStart): ?>
                     <tr style="background:var(--line-soft);font-weight:600;">
                         <td><?= e($from) ?></td>
-                        <td colspan="2">رصيد ما قبل الفترة</td>
-                        <td>—</td>
-                        <td>—</td>
+                        <td colspan="2">رصيد سابق</td>
+                        <td>0.00</td>
+                        <td>0.00</td>
                         <td style="color:<?= $priorBalance > 0 ? 'var(--neg)' : ($priorBalance < 0 ? 'var(--pos)' : 'var(--ink-400)') ?>;">
                             <?= number_format($priorBalance, 2) ?>
                         </td>
@@ -503,6 +504,12 @@ require_once __DIR__ . '/includes/header.php';
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
+                    <tr style="background:var(--line-soft);font-weight:700;">
+                        <td colspan="3">الإجماليات</td>
+                        <td><?= number_format($periodPurchases + $periodReceived, 2) ?></td>
+                        <td><?= number_format($periodReturns + $periodPaid, 2) ?></td>
+                        <td><?= number_format($finalBalance, 2) ?></td>
+                    </tr>
                 </tbody>
             </table>
         </div>
