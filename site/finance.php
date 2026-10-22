@@ -1308,7 +1308,8 @@ function add_custody_expense(
     ?int $entryCodeId = null,
     string $lineType = 'expense',
     ?int $advEmployeeId = null,
-    ?int $supplierId = null
+    ?int $supplierId = null,
+    ?int $branchId = null
 ): int {
     if ($amount <= 0) {
         throw new InvalidArgumentException('مبلغ المصروف لازم يكون أكبر من صفر.');
@@ -1321,7 +1322,7 @@ function add_custody_expense(
     if ($own) $pdo->beginTransaction();
     try {
         // تأكد إن العهدة مفتوحة أو مرفوضة واقرأ خزينتها
-        $st = $pdo->prepare("SELECT status, custody_treasury_id, employee_id FROM branch_custody WHERE id=? FOR UPDATE");
+        $st = $pdo->prepare("SELECT status, custody_treasury_id, employee_id, branch_id FROM branch_custody WHERE id=? FOR UPDATE");
         $st->execute([$custodyId]);
         $row = $st->fetch();
         if (!$row || !in_array($row['status'], ['open', 'rejected'], true)) {
@@ -1329,6 +1330,7 @@ function add_custody_expense(
         }
         $custodyTreasuryId = (int) $row['custody_treasury_id'];
         $isEmpCustody = !empty($row['employee_id']);
+        $branchId = $branchId ?? (int) $row['branch_id'];
 
         if ($lineType === 'advance') {
             if (!$isEmpCustody) {
@@ -1377,9 +1379,9 @@ function add_custody_expense(
         }
 
         $pdo->prepare(
-            'INSERT INTO custody_lines (custody_id, line_type, expense_date, description, amount, entry_code_id, employee_id, supplier_id, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        )->execute([$custodyId, $lineType, $date, $description, $amount, $entryCodeId, $advEmployeeId, $supplierId, $userId]);
+            'INSERT INTO custody_lines (custody_id, line_type, expense_date, description, amount, entry_code_id, employee_id, supplier_id, branch_id, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$custodyId, $lineType, $date, $description, $amount, $entryCodeId, $advEmployeeId, $supplierId, $branchId, $userId]);
         $lineId = (int) $pdo->lastInsertId();
 
         // حدّث الإجماليات المحاسبية (حساب صريح: آخر المدة = أول المدة − المصروفات)

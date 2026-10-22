@@ -51,13 +51,13 @@ $branchName = 'كل الفروع';
 if (isset($_GET['branch']) && $_GET['branch'] !== '') {
     $bVal = (int) $_GET['branch'];
     if ($bVal > 0) {
-        $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = ?';
+        $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id, 0) = ?';
         $branchArg  = $bVal;
         $bStmt = $pdo->prepare('SELECT name FROM branches WHERE id = ?');
         $bStmt->execute([$bVal]);
         $branchName = (string) ($bStmt->fetchColumn() ?: ('فرع #' . $bVal));
     } else {
-        $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = 0';
+        $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id, 0) = 0';
         $branchName = 'بدون فرع';
     }
 }
@@ -86,7 +86,7 @@ $st = $pdo->prepare(
        LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
        LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
        LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-       LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+       LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
        LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
        LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
        LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id

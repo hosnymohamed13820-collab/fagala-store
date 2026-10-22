@@ -103,10 +103,10 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
         if (isset($_GET['branch']) && $_GET['branch'] !== '') {
             $bVal = (int) $_GET['branch'];
             if ($bVal > 0) {
-                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = ?';
+                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id, 0) = ?';
                 $branchArg  = $bVal;
             } else {
-                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) = 0';
+                $branchCond = ' AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id, 0) = 0';
             }
         }
 
@@ -134,7 +134,7 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
                LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
                LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-               LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+               LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
                LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
                LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
                LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
@@ -687,6 +687,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                  الفترة، وإلا التقرير كان هيرجع لكل الفروع كل مرة. */ ?>
         <input type="hidden" name="branch" value="<?= (int)$_GET['branch'] ?>">
     <?php endif; ?>
+    <?php if ($type === 'custody' && ($_GET['view'] ?? '') === 'periods'): ?>
+        <input type="hidden" name="view" value="periods">
+    <?php endif; ?>
     <label>من</label>
     <input type="date" name="from" value="<?= e($from) ?>">
     <label>إلى</label>
@@ -709,6 +712,17 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <option value="">كل الفروع</option>
             <?php foreach ($repCostBranches as $cb): ?>
                 <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    <?php endif; ?>
+    <?php if ($type === 'custody' && !isset($_GET['branch']) && ($_GET['view'] ?? '') !== 'periods'):
+        $repCustodyBranches = cost_branches_list(); $selCustodyCostBranch = $_GET['cost_branch'] ?? '';
+    ?>
+        <label>فرع المصروف</label>
+        <select name="cost_branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($repCustodyBranches as $cb): ?>
+                <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCustodyCostBranch === (string)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
@@ -803,8 +817,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'treasury' || ($type === 'custody' && isset($_GET['branch']))): ?>
+        <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
+    <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -842,9 +859,12 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     )->fetchAll();
     $selBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
     $qs = 'type=custody&from=' . urlencode($from) . '&to=' . urlencode($to);
+    $custodyView = (string) ($_GET['view'] ?? '');
+    $qs .= ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '';
 ?>
 <div class="br-tabs">
-    <a href="?<?= $qs ?>" class="br-tab <?= $selBranch===null?'active':'' ?>">كل الفروع (فترات العهدة)</a>
+    <a href="?<?= $qs ?>" class="br-tab <?= $selBranch===null && $custodyView !== 'periods'?'active':'' ?>">مصروفات العهد حسب الفرع</a>
+    <a href="?<?= $qs ?>&view=periods" class="br-tab <?= $selBranch===null && $custodyView === 'periods'?'active':'' ?>">فترات العهدة</a>
     <?php foreach ($repBranches as $rb): ?>
         <a href="?<?= $qs ?>&branch=<?= (int)$rb['id'] ?>"
            class="br-tab <?= $selBranch===(int)$rb['id']?'active':'' ?>"><?= e($rb['name']) ?></a>

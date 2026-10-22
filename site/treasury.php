@@ -220,7 +220,8 @@ $stMaxRows  = 5000;
 
 // ===== كشف الحساب لخزينة محددة أو كل الخزائن =====
 $selectedParam = (string) ($_GET['treasury'] ?? '');
-$statementData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treasuries, $stMaxRows);
+$showCancelled = ($_GET['show_cancelled'] ?? '') === '1';
+$statementData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treasuries, $stMaxRows, $showCancelled);
 
 $selectedTreasuryId = $statementData['selected_treasury_id'];
 $statement          = $statementData['statement'];
@@ -449,7 +450,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <button class="btn btn-white" onclick="openModal('disburseModal')"><i class="ti ti-arrow-up-right"></i> صرف</button>
         <button class="btn btn-white" onclick="openModal('transferModal')"><i class="ti ti-transfer"></i> تحويل</button>
         <?php endif; ?>
-        <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
+        <a href="?treasury=all&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>" class="btn btn-white" style="text-decoration:none;"><i class="ti ti-list"></i> كشف حساب مجمّع</a>
     </div>
 </div>
 
@@ -460,7 +461,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 
 <div class="treasuries-grid">
     <?php foreach ($treasuries as $t): ?>
-        <a href="?treasury=<?= (int)$t['id'] ?>&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?>"
+        <a href="?treasury=<?= (int)$t['id'] ?>&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>"
            class="treasury-card <?= (!$isAllStatement && $selectedTreasury && (int)$selectedTreasury['id'] === (int)$t['id']) ? 'selected' : '' ?>">
             <div class="tc-top">
                 <div class="tc-icon"><i class="ti <?= e($typeIcons[$t['type']] ?? 'ti-cash') ?>"></i></div>
@@ -490,6 +491,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <input type="date" name="from" id="stAllFrom" value="<?= e($stFrom) ?>">
             <label for="stAllTo">إلى</label>
             <input type="date" name="to" id="stAllTo" value="<?= e($stTo) ?>">
+            <label><input type="checkbox" name="show_cancelled" value="1" <?= $showCancelled ? 'checked' : '' ?>> إظهار الملغي</label>
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
@@ -571,6 +573,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <input type="date" name="from" id="stOneFrom" value="<?= e($stFrom) ?>">
             <label for="stOneTo">إلى</label>
             <input type="date" name="to" id="stOneTo" value="<?= e($stTo) ?>">
+            <label><input type="checkbox" name="show_cancelled" value="1" <?= $showCancelled ? 'checked' : '' ?>> إظهار الملغي</label>
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 

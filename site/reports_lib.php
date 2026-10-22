@@ -151,6 +151,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'totals'=>['','','','','','','','','إجمالي محصّل: '.number_format($tCollected,2),'فرق: '.number_format($tDiff,2),'']];
 
         case 'treasury':
+            $showCancelled = ($_GET['show_cancelled'] ?? '') === '1';
             // فلتر اختياري بالقيد
             $entryFilter = isset($_GET['entry_code']) && $_GET['entry_code'] !== '' ? (int)$_GET['entry_code'] : null;
             // فلتر اختياري بفرع التكلفة
@@ -174,12 +175,19 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                  LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
                  LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                  LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-                 LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+                 LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
                  LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
                  LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
                  LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                  WHERE je.entry_date BETWEEN ? AND ?";
             $paramsT = [$from, $to];
+            if (!$showCancelled) {
+                $sqlT .= " AND je.ref_type <> 'custody_expense_del'
+                    AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
+                        SELECT 1 FROM journal_entries rev
+                        WHERE rev.ref_type = 'custody_expense_del' AND rev.ref_id = je.ref_id
+                    ))";
+            }
             if ($entryFilter !== null) {
                 // COALESCE مش tm.entry_code_id لوحده: القيد ممكن يكون
                 // متسجّل على القيد نفسه (je.account_id) — زي القيود اللي
@@ -195,7 +203,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 }
             }
             if ($branchFilter !== null) {
-                $sqlT .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id) = ?";
+                $sqlT .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id) = ?";
                 $paramsT[] = $branchFilter;
             }
             $sqlT .= " ORDER BY je.id DESC";
@@ -236,6 +244,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $cbId = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
 
             if ($cbId !== null) {
+                $showCancelled = ($_GET['show_cancelled'] ?? '') === '1';
                 // ===== كشف حساب خزينة عهدة الفرع =====
                 // نفس شكل كشف الحساب اللي في موديول الخزينة بالظبط.
                 // بيقرا من journal_entries على خزينة العهدة بتاعة الفرع.
@@ -252,8 +261,8 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
 
                 if (!$trId) {
                     return ['title'=>'كشف عهدة: '.$branchName,
-                        'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                        'rows'=>[], 'totals'=>[], 'notes_col'=>9,
+                        'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                        'rows'=>[], 'totals'=>[], 'notes_col'=>10,
                         'note'=>'الفرع ده مالوش خزينة عهدة.'];
                 }
 
@@ -277,6 +286,11 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                        LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
                       WHERE je.treasury_id = ?
                         AND je.entry_date BETWEEN ? AND ?
+                        " . ($showCancelled ? '' : "AND je.ref_type <> 'custody_expense_del'
+                            AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
+                                SELECT 1 FROM journal_entries rev
+                                WHERE rev.ref_type = 'custody_expense_del' AND rev.ref_id = je.ref_id
+                            ))") . "
                       ORDER BY je.entry_date, je.id"
                 );
                 $st->execute([(int)$trId, $from, $to]);
@@ -290,6 +304,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                     $labels = $accountLabels[(int) $r['account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
                     $rows[] = [$r['entry_date'], $r['shift_name'] ?: '—', $r['description'],
                         $labels['root_name'] ?? '—', $labels['leaf_name'] ?? '—',
+                        $branchName ?: '—',
                         (float)$r['debit']  > 0 ? number_format((float)$r['debit'],2)  : '—',
                         (float)$r['credit'] > 0 ? number_format((float)$r['credit'],2) : '—',
                         number_format((float)$r['running_balance'],2),
@@ -301,17 +316,60 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 // الكروت بتتحسب من نفس الصفوف الظاهرة، فبتتغيّر مع
                 // التاريخ والفرع وأي فلتر على الجدول.
                 return ['title'=>'كشف عهدة: '.$branchName,
-                    'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
-                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>9,
+                    'headers'=>['التاريخ','رقم الوردية','البيان','رأس القيد','القيد','الفرع','مدين','دائن','الرصيد','بواسطة','الملاحظات'],
+                    'rows'=>$rows, 'row_paths'=>$rowPaths, 'notes_col'=>10,
                     'sum_cards'=>[
-                        ['label'=>'إجمالي المصروف', 'col'=>5],
-                        ['label'=>'إجمالي المستلم', 'col'=>6],
+                        ['label'=>'إجمالي المصروف', 'col'=>6],
+                        ['label'=>'إجمالي المستلم', 'col'=>7],
                     ],
-                    'totals'=>['','','','','إجمالي:','مدين '.number_format($tDr,2),
+                    'totals'=>['','','','','','إجمالي:','مدين '.number_format($tDr,2),
                                'دائن '.number_format($tCr,2),'','','']];
             }
 
-            // ===== الافتراضي: فترات العهدة لكل الفروع (زي ما كان) =====
+            // مصروفات وسلف عهد الموظفين والفروع مجمّعة حسب الفرع المنسوب للسطر.
+            // فترات العهدة القديمة لسه متاحة باختيار view=periods.
+            if (($_GET['view'] ?? '') !== 'periods') {
+                $costBranchId = isset($_GET['cost_branch']) && $_GET['cost_branch'] !== '' ? (int) $_GET['cost_branch'] : null;
+                $sql = "SELECT COALESCE(cl.branch_id, bc.branch_id) AS branch_id,
+                               COALESCE(b.name, '—') AS branch_name,
+                               COUNT(*) AS line_count,
+                               SUM(CASE WHEN cl.line_type = 'expense' THEN cl.amount ELSE 0 END) AS expenses,
+                               SUM(CASE WHEN cl.line_type = 'advance' THEN cl.amount ELSE 0 END) AS advances,
+                               SUM(CASE WHEN cl.line_type = 'supplier' THEN cl.amount ELSE 0 END) AS suppliers,
+                               SUM(cl.amount) AS total_amount
+                        FROM custody_lines cl
+                        JOIN branch_custody bc ON bc.id = cl.custody_id
+                        LEFT JOIN branches b ON b.id = COALESCE(cl.branch_id, bc.branch_id)
+                        WHERE cl.expense_date BETWEEN ? AND ?";
+                $params = [$from, $to];
+                if ($costBranchId !== null) {
+                    $sql .= ' AND COALESCE(cl.branch_id, bc.branch_id) = ?';
+                    $params[] = $costBranchId;
+                }
+                $sql .= ' GROUP BY COALESCE(cl.branch_id, bc.branch_id), b.name ORDER BY b.name';
+                $st = $pdo->prepare($sql);
+                $st->execute($params);
+                $rows = [];
+                $counts = 0; $expenses = 0.0; $advances = 0.0; $suppliers = 0.0; $total = 0.0;
+                foreach ($st as $r) {
+                    $counts += (int) $r['line_count'];
+                    $expenses += (float) $r['expenses'];
+                    $advances += (float) $r['advances'];
+                    $suppliers += (float) $r['suppliers'];
+                    $total += (float) $r['total_amount'];
+                    $rows[] = [$r['branch_name'], (int) $r['line_count'],
+                        number_format((float) $r['expenses'], 2), number_format((float) $r['advances'], 2),
+                        number_format((float) $r['suppliers'], 2), number_format((float) $r['total_amount'], 2)];
+                }
+                return ['title'=>'مصروفات العهد حسب الفرع',
+                    'headers'=>['الفرع','عدد السطور','مصروفات','سلف','دفعات موردين','الإجمالي'],
+                    'rows'=>$rows,
+                    'sum_cards'=>[['label'=>'إجمالي مصروفات العهد','col'=>5]],
+                    'totals'=>['الإجمالي', $counts, number_format($expenses, 2), number_format($advances, 2),
+                        number_format($suppliers, 2), number_format($total, 2)]];
+            }
+
+            // فترات العهدة لكل الفروع (الشكل القديم).
             $st = $pdo->prepare(
                 "SELECT bc.period_start, bc.period_end, b.name AS branch, bc.opening_balance,
                         bc.total_expenses, bc.closing_balance, bc.counted_cash, bc.difference, bc.status
@@ -418,7 +476,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $st = $pdo->prepare(
                 "SELECT COALESCE(ja.id, ec.id, 0) AS acc_id,
                         COALESCE(ja.name, ec.name, '— بدون قيد —') AS entry_name,
-                        COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id, 0) AS branch_id,
+                        COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id, 0) AS branch_id,
                         cb.name AS branch_name,
                         COUNT(*)          AS cnt,
                         SUM(je.debit)     AS dr,
@@ -435,7 +493,7 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                    LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
                    LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                    LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-                   LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+                   LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
                   WHERE je.entry_date BETWEEN ? AND ?
                   GROUP BY acc_id, entry_name, branch_id, branch_name
                   ORDER BY (SUM(je.debit) + SUM(je.credit)) DESC"

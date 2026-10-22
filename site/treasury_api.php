@@ -67,7 +67,7 @@ try {
 
         case 'statement':
             $treData = treasury_get_treasuries($pdo);
-            $stmtData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treData['treasuries'], $stMaxRows);
+            $stmtData = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treData['treasuries'], $stMaxRows, ($_GET['show_cancelled'] ?? '') === '1');
             api_ok([
                 'period'    => $periodInfo,
                 'statement' => $stmtData,
@@ -75,7 +75,7 @@ try {
 
         case 'all':
             $treData   = treasury_get_treasuries($pdo);
-            $stmtData  = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treData['treasuries'], $stMaxRows);
+            $stmtData  = treasury_get_statement($pdo, $selectedParam, $stFrom, $stTo, $treData['treasuries'], $stMaxRows, ($_GET['show_cancelled'] ?? '') === '1');
             $auxLists  = treasury_get_auxiliary_lists($pdo);
 
             api_ok([

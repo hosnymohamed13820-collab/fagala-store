@@ -86,7 +86,7 @@ function treasury_get_treasuries(PDO $pdo): array {
  *     }
  * }
  */
-function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom, string $stTo, array $treasuries, int $stMaxRows = 5000): array {
+function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom, string $stTo, array $treasuries, int $stMaxRows = 5000, bool $showCancelled = false): array {
     $selectedTreasuryId = (ctype_digit((string)$selectedParam) && (int)$selectedParam > 0)
         ? (int)$selectedParam
         : null;
@@ -98,6 +98,11 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
     $totalCredit      = 0.0;
     $totalNet         = 0.0;
     $totalCount       = 0;
+    $cancelledFilter = $showCancelled ? '' : " AND je.ref_type <> 'custody_expense_del'
+        AND NOT (je.ref_type = 'custody_expense' AND EXISTS (
+            SELECT 1 FROM journal_entries rev
+            WHERE rev.ref_type = 'custody_expense_del' AND rev.ref_id = je.ref_id
+        ))";
 
     $tmRevSelect = treasury_movements_has_reverse_cols($pdo) ? ', tm.reversed_at' : ', NULL AS reversed_at';
 
@@ -132,11 +137,11 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
              LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
              LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
              LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-             LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+             LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
              LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
              LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
              LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
-             WHERE je.entry_date BETWEEN ? AND ?
+             WHERE je.entry_date BETWEEN ? AND ? {$cancelledFilter}
              ORDER BY je.id DESC LIMIT {$stMaxRows}"
         );
         $st->execute([$stFrom, $stTo]);
@@ -148,7 +153,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                     COALESCE(SUM(je.credit), 0) AS total_credit,
                     COUNT(*) AS cnt
              FROM journal_entries je
-             WHERE je.entry_date BETWEEN ? AND ?"
+             WHERE je.entry_date BETWEEN ? AND ? {$cancelledFilter}"
         );
         $sumSt->execute([$stFrom, $stTo]);
         $sumRow = $sumSt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -194,11 +199,11 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                      LEFT JOIN custody_lines cl ON cl.id = je.ref_id AND je.ref_type = 'custody_expense'
                      LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
                      LEFT JOIN disbursement_orders dor ON dor.id = je.ref_id AND je.ref_type = 'disbursement_order'
-                     LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, bc2.branch_id, dor.branch_id)
+                     LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
                      LEFT JOIN treasury_transfers tt ON tt.id = je.ref_id AND je.ref_type = 'transfer'
                      LEFT JOIN treasuries tfrom ON tfrom.id = tt.from_treasury_id
                      LEFT JOIN treasuries tto   ON tto.id   = tt.to_treasury_id
-                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?
+                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ? {$cancelledFilter}
                      ORDER BY je.id DESC
                      LIMIT {$stMaxRows}"
                 );
@@ -211,7 +216,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                             COALESCE(SUM(je.credit), 0) AS total_credit,
                             COUNT(*) AS cnt
                      FROM journal_entries je
-                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ?"
+                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ? {$cancelledFilter}"
                 );
                 $sumSt->execute([$selectedId, $stFrom, $stTo]);
                 $sumRow = $sumSt->fetch(PDO::FETCH_ASSOC) ?: [];

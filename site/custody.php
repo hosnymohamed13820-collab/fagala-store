@@ -113,7 +113,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('غير مصرح لك بتسجيل مصروف على عهدة الفرع.');
                 }
 
-                add_custody_expense($custodyId, $date, $desc, $amount, $uid, $entryCodeId, $lineType, $advEmployeeId, $supplierId);
+                $expenseBranchId = null;
+                if (!empty($cRow['employee_id'])) {
+                    $expenseBranchId = (int) ($_POST['branch_id'] ?? 0);
+                    $stBranch = $pdo->prepare('SELECT id FROM branches WHERE id = ? AND is_active = 1 AND has_finance = 1');
+                    $stBranch->execute([$expenseBranchId]);
+                    if (!$stBranch->fetchColumn()) throw new RuntimeException('اختار فرع صحيح للمصروف.');
+                }
+
+                add_custody_expense($custodyId, $date, $desc, $amount, $uid, $entryCodeId, $lineType, $advEmployeeId, $supplierId, $expenseBranchId);
                 $flash = 'تم تسجيل العملية.';
                 if (!empty($cRow['employee_id'])) {
                     $prgTarget = 'custody.php?tab=employee&emp=' . (int)$cRow['employee_id'];
@@ -413,11 +421,12 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="empty">لا توجد مصروفات بعد.</div>
                 <?php else: ?>
                 <table>
-                    <thead><tr><th>التاريخ</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                    <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php foreach ($empExpenses as $ex): ?>
                         <tr>
                             <td><?= e($ex['expense_date']) ?></td>
+                            <td><?= e($ex['branch_name'] ?? '—') ?></td>
                             <td><?= e($ex['account_root_name'] ?? '—') ?></td>
                             <td><?= e($ex['account_leaf_name'] ?? '—') ?></td>
                             <td>
@@ -634,11 +643,12 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
             <table>
-                <thead><tr><th>التاريخ</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
                         <td><?= e($ex['expense_date']) ?></td>
+                        <td><?= e($ex['branch_name'] ?? '—') ?></td>
                         <td><?= e($ex['account_root_name'] ?? '—') ?></td>
                         <td><?= e($ex['account_leaf_name'] ?? '—') ?></td>
                         <td><?= e($ex['description']) ?></td>
@@ -872,6 +882,16 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
                 </div>
                 <?php else: ?>
                 <input type="hidden" name="line_type" id="cstLineType" value="expense">
+                <?php endif; ?>
+                <?php if ($expIsEmp): ?>
+                <div class="form-row">
+                    <label for="cstBranch">الفرع اللي اتصرف له</label>
+                    <select name="branch_id" id="cstBranch" required>
+                        <?php foreach ($allBranches as $b): ?>
+                            <option value="<?= (int)$b['id'] ?>" <?= (int)$empCustody['branch_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <?php endif; ?>
                 <div class="form-row" id="cstEntryCodeRow">
                     <label>القيد</label>

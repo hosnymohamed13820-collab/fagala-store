@@ -103,9 +103,10 @@ function custody_get_branch_custody_data(PDO $pdo, int $branchId, array $allBran
     if ($custody) {
         $cid = (int) $custody['id'];
         $e = $pdo->prepare(
-            'SELECT cl.*, ec.name AS entry_code_name
+            'SELECT cl.*, ec.name AS entry_code_name, br.name AS branch_name
              FROM custody_lines cl
              LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
+             LEFT JOIN branches br ON br.id = cl.branch_id
              WHERE cl.custody_id=? ORDER BY cl.id DESC'
         );
         $e->execute([$cid]);
@@ -171,11 +172,12 @@ function custody_get_employee_custody_data(PDO $pdo, int $selectedEmpId, array $
         $empCustody = current_custody_for_employee($selectedEmpId);
         if ($empCustody) {
             $stExp = $pdo->prepare(
-                "SELECT cl.*, ec.name AS entry_code_name,
+                "SELECT cl.*, ec.name AS entry_code_name, br.name AS branch_name,
                         emp.full_name AS adv_emp_name,
                         supp.name AS supp_name
                  FROM custody_lines cl
                  LEFT JOIN accounts ec ON ec.id = cl.entry_code_id
+                 LEFT JOIN branches br ON br.id = cl.branch_id
                  LEFT JOIN employees emp ON emp.id = cl.employee_id
                  LEFT JOIN suppliers supp ON supp.id = cl.supplier_id
                  WHERE cl.custody_id = ?
