@@ -205,10 +205,12 @@ function sms_fetch(PDO $pdo, string $from, string $to, string $kind = 'all'): ar
     }
 
     $st = $pdo->prepare(
-        "SELECT id, sender, body, sms_at, source, device, received_at
-         FROM sms_inbox
-         WHERE sms_at >= ? AND sms_at < DATE_ADD(?, INTERVAL 1 DAY)
-         ORDER BY sms_at DESC"
+        "SELECT s.id, s.sender, s.body, s.sms_at, s.source, s.device, s.received_at,
+                COALESCE(m.note, '') AS note, COALESCE(m.color, '') AS color
+         FROM sms_inbox s
+         LEFT JOIN sms_marks m ON m.sms_id = s.id
+         WHERE s.sms_at >= ? AND s.sms_at < DATE_ADD(?, INTERVAL 1 DAY)
+         ORDER BY s.sms_at DESC"
     );
     $st->execute([$from, $to]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];

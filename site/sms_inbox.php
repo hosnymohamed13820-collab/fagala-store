@@ -24,6 +24,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = $_POST['action'] ?? '';
+    if ($action === 'save_mark') {
+        $smsId = (int) ($_POST['sms_id'] ?? 0);
+        $note = trim((string) ($_POST['note'] ?? ''));
+        $color = trim((string) ($_POST['color'] ?? ''));
+        if ($smsId <= 0 || !in_array($color, ['', 'red', 'green', 'yellow', 'orange'], true)) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'بيانات الرسالة أو اللون غير صحيحة.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if ($note === '' && $color === '') {
+            $pdo->prepare('DELETE FROM sms_marks WHERE sms_id = ?')->execute([$smsId]);
+        } else {
+            $pdo->prepare('INSERT INTO sms_marks (sms_id, note, color, updated_by) VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE note = VALUES(note), color = VALUES(color),
+                updated_by = VALUES(updated_by), updated_at = CURRENT_TIMESTAMP')
+                ->execute([$smsId, $note === '' ? null : $note, $color === '' ? null : $color, (int) current_user()['id']]);
+        }
+        echo json_encode(['ok' => true, 'note' => $note, 'color' => $color], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if ($action === 'create_permit') {
         require_once __DIR__ . '/sms_permits_lib.php';
         $smsId = (int) ($_POST['sms_id'] ?? 0);
@@ -298,6 +318,13 @@ require_once __DIR__ . '/includes/header.php';
                         <option value="unknown" <?= $kind === 'unknown' ? 'selected' : '' ?>>مش معروف</option>
                     </select>
                 </div>
+                <div>
+                    <label for="smsColorFilter" style="display:block;font-size:11px;color:var(--ink-500);margin-bottom:4px;">اللون</label>
+                    <select id="smsColorFilter" onchange="filterSmsTable()" style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                        <option value="all">كل الألوان</option><option value="yellow">أصفر</option><option value="green">أخضر</option>
+                        <option value="red">أحمر</option><option value="orange">برتقالي</option><option value="none">بلا لون</option>
+                    </select>
+                </div>
                 <button type="submit" class="btn btn-sm"><i class="ti ti-search"></i> تصفية</button>
                 <a href="sms_export.php?from=<?= urlencode($from) ?>&to=<?= urlencode($to) ?>&kind=<?= urlencode($kind) ?>" class="btn btn-sm">
                     <i class="ti ti-download"></i> نزّل إكسيل
@@ -330,6 +357,8 @@ require_once __DIR__ . '/includes/header.php';
                             <th style="padding:10px 8px;width:130px;text-align:center;">القيد</th>
                             <th style="padding:10px 8px;width:110px;">الراسل</th>
                             <th style="padding:10px 8px;">نص الرسالة</th>
+                            <th style="padding:10px 8px;min-width:175px;">ملاحظة</th>
+                            <th style="padding:10px 8px;min-width:140px;">لون</th>
                             <th style="padding:10px 8px;width:70px;text-align:center;">المصدر</th>
                         </tr>
                     </thead>
@@ -339,7 +368,8 @@ require_once __DIR__ . '/includes/header.php';
                                 $sClass = $m['source'] === 'live' ? 'background:var(--pos-soft);color:var(--pos);' : 'background:var(--ink-100);color:var(--ink-700);';
                                 $sLabel = $m['source'] === 'live' ? 'جديدة' : 'قديمة';
                             ?>
-                            <tr class="sms-row" style="border-bottom:1px solid var(--line);<?= !empty($m['foreign']) ? 'background:var(--neg-soft);' : '' ?>"
+                            <tr class="sms-row <?= !empty($m['foreign']) ? 'sms-foreign' : '' ?> <?= $m['color'] !== '' ? 'sms-mark-' . e($m['color']) : '' ?>" style="border-bottom:1px solid var(--line);"
+                                data-sms-id="<?= (int) $m['id'] ?>" data-color="<?= e($m['color']) ?>"
                                 data-search="<?= e(mb_strtolower($m['sender'] . ' ' . $m['body'] . ' ' . ($m['party'] ?? '') . ' ' . ($m['ref'] ?? '') . ' ' . ($m['device'] ?? ''))) ?>">
                                 <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:right;font-size:12px;">
                                     <?php if ($m['txn_at']): ?>
@@ -416,6 +446,20 @@ require_once __DIR__ . '/includes/header.php';
                                 </td>
                                 <td style="padding:10px 8px;line-height:1.4;word-break:break-word;font-size:12px;max-width:320px;" title="<?= e($m['body']) ?>">
                                     <?= e(mb_strimwidth((string) $m['body'], 0, 75, '…')) ?>
+                                </td>
+                                <td style="padding:10px 8px;">
+                                    <input class="sms-note" type="text" value="<?= e($m['note']) ?>" data-saved="<?= e($m['note']) ?>"
+                                           aria-label="ملاحظة الرسالة <?= (int) $m['id'] ?>" onblur="saveSmsMark(this.closest('tr'))" placeholder="اكتب ملاحظة…">
+                                    <span class="sms-save-ind" aria-live="polite"></span>
+                                </td>
+                                <td style="padding:10px 8px;white-space:nowrap;">
+                                    <div class="sms-color-dots" role="group" aria-label="لون الرسالة <?= (int) $m['id'] ?>">
+                                        <?php foreach (['yellow'=>'أصفر','green'=>'أخضر','red'=>'أحمر','orange'=>'برتقالي'] as $markColor => $markLabel): ?>
+                                            <button type="button" class="sms-color-dot sms-dot-<?= $markColor ?> <?= $m['color'] === $markColor ? 'active' : '' ?>"
+                                                    title="<?= $markLabel ?>" aria-label="<?= $markLabel ?>" onclick="saveSmsMark(this.closest('tr'), '<?= $markColor ?>')"></button>
+                                        <?php endforeach; ?>
+                                        <button type="button" class="sms-color-clear" title="امسح اللون" aria-label="امسح اللون" onclick="saveSmsMark(this.closest('tr'), '')"><i class="ti ti-eraser"></i></button>
+                                    </div>
                                 </td>
                                 <td style="padding:10px 8px;text-align:center;white-space:nowrap;">
                                     <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;<?= $sClass ?>">
@@ -522,18 +566,69 @@ function saveKeywords(textarea) {
 
 function filterSmsTable() {
     var q = (document.getElementById('smsSearch').value || '').trim().toLowerCase();
+    var color = document.getElementById('smsColorFilter').value;
     var rows = document.querySelectorAll('#smsTable tbody tr.sms-row');
     var shown = 0;
     for (var i = 0; i < rows.length; i++) {
         var s = rows[i].dataset.search || '';
-        var match = !q || s.indexOf(q) !== -1;
+        var note = rows[i].querySelector('.sms-note').value.toLowerCase();
+        var matchesColor = color === 'all' || (color === 'none' ? !rows[i].dataset.color : rows[i].dataset.color === color);
+        var match = matchesColor && (!q || s.indexOf(q) !== -1 || note.indexOf(q) !== -1);
         rows[i].style.display = match ? '' : 'none';
         if (match) shown++;
     }
     var noRes = document.getElementById('smsNoResults');
     if (noRes) noRes.style.display = (rows.length > 0 && shown === 0) ? '' : 'none';
 }
+
+function saveSmsMark(row, chosenColor) {
+    var input = row.querySelector('.sms-note');
+    var note = input.value.trim();
+    var color = chosenColor === undefined ? (row.dataset.color || '') : chosenColor;
+    if (note === (input.dataset.saved || '') && color === (row.dataset.color || '')) return;
+    var ind = row.querySelector('.sms-save-ind');
+    ind.textContent = 'جاري الحفظ…';
+    var fd = new FormData();
+    fd.append('action', 'save_mark');
+    fd.append('sms_id', row.dataset.smsId);
+    fd.append('note', note);
+    fd.append('color', color);
+    fd.append('csrf', CSRF);
+    row._markSaving = (row._markSaving || Promise.resolve()).catch(function() {}).then(function() {
+        return fetch('sms_inbox.php', {method:'POST', body:fd}).then(function(r) { return r.json(); }).then(function(d) {
+            if (!d.ok) throw new Error(d.error || 'تعذّر الحفظ');
+            input.dataset.saved = note;
+            row.classList.remove('sms-mark-yellow', 'sms-mark-green', 'sms-mark-red', 'sms-mark-orange');
+            if (color) row.classList.add('sms-mark-' + color);
+            row.dataset.color = color;
+            row.querySelectorAll('.sms-color-dot').forEach(function(dot) {
+                dot.classList.toggle('active', dot.classList.contains('sms-dot-' + color));
+            });
+            ind.textContent = 'تم الحفظ';
+            filterSmsTable();
+        }).catch(function(err) {
+            ind.textContent = err.message || 'تعذّر الحفظ';
+            ind.style.color = 'var(--neg)';
+        });
+    });
+}
 </script>
+
+<style>
+#smsTable .sms-note { width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink-900);font:inherit; }
+#smsTable .sms-save-ind { display:block;font-size:11px;color:var(--ink-500); }
+#smsTable tbody tr.sms-foreign:not([class*="sms-mark-"]) { background:var(--neg-soft); }
+#smsTable tbody tr.sms-mark-red { background:var(--neg-soft);box-shadow:inset -4px 0 0 var(--neg); }
+#smsTable tbody tr.sms-mark-green { background:var(--pos-soft);box-shadow:inset -4px 0 0 var(--pos); }
+#smsTable tbody tr.sms-mark-yellow { background:var(--warn-soft);box-shadow:inset -4px 0 0 var(--warn); }
+#smsTable tbody tr.sms-mark-orange { background:var(--warn-soft);box-shadow:inset -4px 0 0 var(--warn-fill); }
+.sms-color-dots { display:flex;align-items:center;gap:5px; }
+.sms-color-dot { width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0; }
+.sms-color-dot.active { border-color:var(--ink-900);box-shadow:0 0 0 2px var(--surface); }
+.sms-dot-yellow { background:var(--warn); }.sms-dot-green { background:var(--pos); }
+.sms-dot-red { background:var(--neg); }.sms-dot-orange { background:var(--warn-fill); }
+.sms-color-clear { border:1px solid var(--line);background:var(--line-soft);color:var(--ink-700);border-radius:var(--r);cursor:pointer; }
+</style>
 
 <style>
 /* Modal أذونات إنستاباي */
