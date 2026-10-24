@@ -3866,6 +3866,110 @@ function update_shift_date_branch(int $shiftId, string $date, int $branchId, int
     }
 }
 
+/** تعديل وردية اتراجعت؛ تغيير التاريخ بيتسجّل بقيد عكسي وجديد من غير لمس الرصيد القديم. */
+function update_approved_shift_date_branch(int $shiftId, string $date, int $branchId, int $userId): bool
+{
+    if (!can_edit_shift_date_branch()) {
+        throw new RuntimeException('غير مصرح لك بتعديل تاريخ أو فرع الوردية.');
+    }
+    $date = trim($date);
+    $dObj = DateTime::createFromFormat('Y-m-d', $date);
+    if (!$dObj || $dObj->format('Y-m-d') !== $date || $date > date('Y-m-d')) {
+        throw new RuntimeException('تاريخ غير صالح أو لسه ماجاش.');
+    }
+    if ($branchId <= 0) throw new RuntimeException('اختر الفرع.');
+
+    $pdo = db();
+    $branchActive = false;
+    try {
+        $bst = $pdo->prepare('SELECT 1 FROM branches WHERE id = ? AND is_active = 1 AND has_finance = 1 AND has_sales = 1 LIMIT 1');
+        $bst->execute([$branchId]);
+        $branchActive = (bool)$bst->fetchColumn();
+    } catch (Throwable $ex) {
+        $bst = $pdo->prepare('SELECT 1 FROM branches WHERE id = ? AND is_active = 1 AND has_finance = 1 LIMIT 1');
+        $bst->execute([$branchId]);
+        $branchActive = (bool)$bst->fetchColumn();
+    }
+    if (!$branchActive) throw new RuntimeException('الفرع غير متاح أو غير نشط.');
+    $auditColumn = $pdo->query("SHOW COLUMNS FROM shift_edit_log LIKE 'action'")->fetch(PDO::FETCH_ASSOC);
+    if (!$auditColumn || !str_contains((string)$auditColumn['Type'], 'date_branch_approved')) {
+        throw new RuntimeException('تحديث سجل تعديل الوردية لسه ما اتطبّقش؛ شغّل ملف الترقية الأول.');
+    }
+
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
+    try {
+        $st = $pdo->prepare('SELECT * FROM shifts WHERE id = ? FOR UPDATE');
+        $st->execute([$shiftId]);
+        $shift = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$shift) throw new RuntimeException('الوردية مش موجودة.');
+        if (!in_array($shift['status'], ['approved','rejected'], true)) {
+            throw new RuntimeException('التعديل ده للوردية المعتمدة أو المرفوضة بس.');
+        }
+        $oldDate = (string)$shift['business_date'];
+        $branchChanged = (int)$shift['branch_id'] !== $branchId;
+        $dateChanged = $oldDate !== $date;
+        if (!$branchChanged && !$dateChanged) {
+            if ($own) $pdo->commit();
+            return false;
+        }
+
+        $paid = $pdo->prepare("SELECT 1 FROM salary_shift_deficits d
+            JOIN salaries sal ON sal.id = d.salary_id
+            WHERE d.shift_id = ? AND sal.status = 'paid' AND sal.reversed_at IS NULL LIMIT 1");
+        $paid->execute([$shiftId]);
+        if ($paid->fetchColumn()) {
+            throw new RuntimeException('الوردية دي عجزها اتخصم في مرتب مصروف؛ مينفعش تغيّر تاريخها أو فرعها.');
+        }
+
+        if ($branchChanged) {
+            $up = $pdo->prepare('UPDATE shifts SET branch_id = ? WHERE id = ?');
+            $up->execute([$branchId, $shiftId]);
+        }
+        if ($dateChanged) {
+            if ($shift['status'] === 'approved') {
+                $je = $pdo->prepare("SELECT id, treasury_id, debit, credit, description, account_id
+                    FROM journal_entries WHERE ref_type = 'shift' AND ref_id = ? AND edited_at IS NULL
+                    ORDER BY id FOR UPDATE");
+                $je->execute([$shiftId]);
+                $entries = $je->fetchAll(PDO::FETCH_ASSOC);
+                $markIds = [];
+                foreach ($entries as $entry) {
+                    $treasuryId = (int)$entry['treasury_id'];
+                    $accountId = $entry['account_id'] === null ? null : (int)$entry['account_id'];
+                    $reverseId = post_journal($treasuryId, (float)$entry['credit'], (float)$entry['debit'],
+                        'عكس تعديل تاريخ وردية #' . $shiftId, $oldDate,
+                        'shift', $shiftId, $userId, $pdo, $accountId);
+                    post_journal($treasuryId, (float)$entry['debit'], (float)$entry['credit'],
+                        (string)$entry['description'], $date,
+                        'shift', $shiftId, $userId, $pdo, $accountId);
+                    $markIds[] = (int)$entry['id'];
+                    // قيد العكس تاريخي؛ مايتعكسش تاني لو التاريخ اتعدل مرة تانية.
+                    $markIds[] = $reverseId;
+                }
+                if ($markIds) {
+                    $marks = implode(',', array_fill(0, count($markIds), '?'));
+                    $mark = $pdo->prepare("UPDATE journal_entries SET edited_at = NOW(), edited_by = ? WHERE id IN ($marks)");
+                    $mark->execute([$userId, ...$markIds]);
+                }
+            }
+            $up = $pdo->prepare('UPDATE shifts SET business_date = ? WHERE id = ?');
+            $up->execute([$date, $shiftId]);
+        }
+
+        $after = $shift;
+        $after['branch_id'] = $branchId;
+        $after['business_date'] = $date;
+        shift_edit_log($pdo, $shiftId, $userId, 'date_branch_approved', $shift, $after);
+        if ($own) $pdo->commit();
+        try { shift_sequence_check($pdo, $shiftId); } catch (Throwable $seqEx) { /* فحص التسلسل ما يوقّعش التعديل. */ }
+        return true;
+    } catch (Throwable $ex) {
+        if ($own && $pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
 /**
  * مسح وردية — بشروط أمان صارمة.
  * الموظف يقدر يمسح بس الوردية اللي هو عملها ولسه pending (ماتراجعتش).

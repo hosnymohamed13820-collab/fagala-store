@@ -181,6 +181,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $bBranch = (int) ($_POST['branch_id'] ?? 0);
                 update_shift_date_branch($shiftId, $bDate, $bBranch, $uid);
                 $flash = 'اتغيّر تاريخ/فرع الوردية.';
+            } elseif (($_POST['action'] ?? '') === 'shift_date_branch_approved') {
+                if (!can_edit_shift_date_branch()) {
+                    throw new RuntimeException('غير مصرح لك بتعديل تاريخ أو فرع الوردية.');
+                }
+                $shiftId = (int) ($_POST['shift_id'] ?? 0);
+                $bDate = trim((string)($_POST['business_date'] ?? ''));
+                $bBranch = (int)($_POST['branch_id'] ?? 0);
+                $changed = update_approved_shift_date_branch($shiftId, $bDate, $bBranch, $uid);
+                $flash = $changed ? 'اتغيّر تاريخ/فرع الوردية.' : 'التاريخ والفرع زي ما هم.';
             } elseif (($_POST['action'] ?? '') === 'seq_ignore') {
                 if (!can_edit_shift_date_branch()) {
                     throw new RuntimeException('غير مصرح لك بتنفيذ هذه العملية.');
@@ -932,7 +941,12 @@ require_once __DIR__ . '/includes/header.php';
                             <div style="font-size:12px;color:var(--ink-500);margin-top:2px;">اتعدّل بواسطة <?= e($shiftEditBadges[(int)$s['id']]['name']) ?> · <?= e($shiftEditBadges[(int)$s['id']]['time']) ?></div>
                         <?php endif; ?>
                     </div>
-                    <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span>
+                    <?php if (can_edit_shift_date_branch()): ?><div style="display:flex;gap:6px;align-items:center;">
+                            <button type="button" class="btn-shift-db" onclick="openShiftDateBranch(<?= (int)$s['id'] ?>, '<?= e($s['business_date']) ?>', <?= (int)$s['branch_id'] ?>, true, <?= $isDone?'true':'false' ?>)" title="تغيير التاريخ والفرع">
+                                <i class="ti ti-calendar"></i> تغيير التاريخ/الفرع
+                            </button>
+                        <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span>
+                    </div><?php else: ?><span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;"><?= $isDone?'معتمدة':'مرفوضة' ?></span><?php endif; echo "\n"; ?>
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">السيستم</div><div class="v"><?= ltr_out(number_format($amt['system'],2)) ?></div></div>
@@ -1134,8 +1148,8 @@ require_once __DIR__ . '/includes/header.php';
     <div class="rv-mbody">
         <form method="post" id="shiftDateBranchForm">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <input type="hidden" name="action" value="shift_date_branch">
-            <input type="hidden" name="shift_id" id="sdb_shift_id" value="">
+            <input type="hidden" name="action" value="shift_date_branch"><?php if (can_edit_shift_date_branch()): ?><input type="hidden" name="return_tab" value="pending"><?php endif; echo "\n"; ?>
+            <input type="hidden" name="shift_id" id="sdb_shift_id" value=""><?php if (can_edit_shift_date_branch()): ?><p id="sdb_approved_warning" style="display:none;color:var(--warn);">الوردية دي اترحّلت. تغيير التاريخ هيعمل قيد عكسي بالتاريخ القديم وقيد جديد بالتاريخ الجديد.</p><?php endif; echo "\n"; ?>
 
             <div style="margin-bottom:14px;">
                 <label for="sdb_date" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">تاريخ الوردية</label>
@@ -1287,10 +1301,14 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
 
-    function openShiftDateBranch(id, date, branchId) {
+    function openShiftDateBranch(id, date, branchId<?php if (can_edit_shift_date_branch()): ?>, reviewed, approved<?php endif; ?>) {
         document.getElementById('sdb_shift_id').value = id;
         document.getElementById('sdb_date').value = date;
         document.getElementById('sdb_branch').value = branchId;
+<?php if (can_edit_shift_date_branch()): ?>        var form = document.getElementById('shiftDateBranchForm');
+        form.querySelector('[name=action]').value = reviewed ? 'shift_date_branch_approved' : 'shift_date_branch';
+        form.querySelector('[name=return_tab]').value = reviewed ? 'history' : 'pending';
+        document.getElementById('sdb_approved_warning').style.display = approved ? 'block' : 'none';<?php endif; ?>
         document.getElementById('shiftDateBranchModal').classList.add('open');
         document.body.style.overflow = 'hidden';
     }

@@ -10,4 +10,5 @@ return [
     '20261022_002_sms_marks',
     '20261024_001_machine_counters',
     '20261025_001_advance_journal_ref',
+    '20261025_002_shift_edit_approved_action',
 ];
