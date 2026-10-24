@@ -813,6 +813,62 @@ if ($view === 'sales') {
                 $salesTotals[$key] += (float) $r[$key];
             }
         }
+
+        // جلب فواتير الصفحة الحالية وأصنافها (بريف ٢٠٨ج)
+        $salesLimit = 200;
+        $totalSalesCount = (int) $salesTotals['sale_cnt'] + (int) $salesTotals['ret_cnt'];
+        $salesTotalPages = max(1, (int) ceil($totalSalesCount / $salesLimit));
+        $salesPage = max(1, (int) ($_GET['page'] ?? 1));
+        if ($salesPage > $salesTotalPages && $totalSalesCount > 0) {
+            $salesPage = $salesTotalPages;
+        }
+        $salesOffset = ($salesPage - 1) * $salesLimit;
+
+        $salesInvoices = [];
+        $salesLinesByInvoice = [];
+        if ($totalSalesCount > 0) {
+            $invWhere = "invoice_date BETWEEN ? AND ? AND doc_type IN (4, 7, 17)";
+            $invParams = [$dateStart, $dateEnd];
+            if ($selectedAgent !== null) {
+                $invWhere .= " AND agent_key = ?";
+                $invParams[] = $selectedAgent;
+            } else {
+                $invWhere .= " AND agent_key IN ($agentMarks)";
+                $invParams = array_merge($invParams, $agents);
+            }
+            $stInvoices = $pdo->prepare("SELECT agent_key, sth_id, suffix, doc_no, doc_type, invoice_date, total_amount, net_amount
+                FROM br_invoices
+                WHERE $invWhere
+                ORDER BY invoice_date DESC, sth_id DESC
+                LIMIT $salesLimit OFFSET $salesOffset");
+            $stInvoices->execute($invParams);
+            $salesInvoices = $stInvoices->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($salesInvoices)) {
+                $tupleMarks = [];
+                $lineParams = [];
+                foreach ($salesInvoices as $inv) {
+                    $tupleMarks[] = '(?, ?, ?)';
+                    $lineParams[] = (string) $inv['agent_key'];
+                    $lineParams[] = (int) $inv['sth_id'];
+                    $lineParams[] = (string) $inv['suffix'];
+                }
+                $tupleSql = implode(',', $tupleMarks);
+                $stLines = $pdo->prepare("SELECT agent_key, sth_id, suffix, item_code, item_name, quantity, unit_price
+                    FROM br_invoice_lines
+                    WHERE (agent_key, sth_id, suffix) IN ($tupleSql)
+                    ORDER BY agent_key, sth_id, suffix, line_no ASC");
+                $stLines->execute($lineParams);
+                while ($lr = $stLines->fetch(PDO::FETCH_ASSOC)) {
+                    $invKey = $lr['agent_key'] . '|' . $lr['sth_id'] . '|' . $lr['suffix'];
+                    $salesLinesByInvoice[$invKey][] = $lr;
+                }
+            }
+        }
+        $salesAgentNames = [];
+        foreach ($salesBranches as $b) {
+            $salesAgentNames[(string) $b['agent']] = (string) $b['name'];
+        }
     }
 }
 
@@ -1305,55 +1361,132 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </div>
             <div class="timeline-card">
-                <div class="timeline-header"><h3 class="timeline-title">المبيعات اليومية</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
+                <div class="timeline-header"><h3 class="timeline-title">فواتير المبيعات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
                 <div class="activity-table-wrap">
                     <table class="ftable">
-                        <thead><tr><th>اليوم</th>
+                        <thead><tr><th>التاريخ والوقت</th>
                             <?php if ($branchFilter === null): ?>
-                                <?php foreach ($salesBranches as $b): ?><th class="num"><?= e($b['name']) ?></th><?php endforeach; ?>
-                                <th class="num">الإجمالي</th>
-                            <?php else: ?>
-                                <th class="num">فواتير البيع</th><th class="num">البيع</th><th class="num">عدد المرتجعات</th><th class="num">المرتجعات</th><th class="num">الصافي</th>
+                                <th>الفرع</th>
                             <?php endif; ?>
+                            <th>رقم الفاتورة</th>
+                            <th>النوع</th>
+                            <th class="num">عدد الأصناف</th>
+                            <th class="num">الإجمالي</th>
+                            <th class="num">الصافي</th>
                         </tr></thead>
                         <tbody>
-                            <?php foreach ($salesDays as $day => $byAgent): ?>
-                                <tr><td><a class="activity-link" href="daily_summary.php?date=<?= e(urlencode($day)) ?>"><?= e($day) ?></a></td>
+                            <?php foreach ($salesInvoices as $inv): ?>
+                                <?php
+                                $invKey = $inv['agent_key'] . '|' . $inv['sth_id'] . '|' . $inv['suffix'];
+                                $lines = $salesLinesByInvoice[$invKey] ?? [];
+                                $itemCount = count($lines);
+                                $isSale = (int) $inv['doc_type'] === 4;
+                                $typeChip = $isSale ? 'fchip-pos' : 'fchip-warn';
+                                $typeLabel = $isSale ? 'بيع' : 'مرتجع';
+                                ?>
+                                <tr>
+                                    <td><?= e(date('Y-m-d H:i', strtotime((string) $inv['invoice_date']))) ?></td>
                                     <?php if ($branchFilter === null): ?>
-                                        <?php $dayNet = 0.0; foreach ($salesBranches as $b): ?>
-                                            <?php $r = $byAgent[(string) $b['agent']] ?? null; $branchNet = $r ? (float) $r['sale_sum'] - (float) $r['ret_sum'] : 0.0; $dayNet += $branchNet; ?>
-                                            <td class="num"><?= sens_mask(number_format($branchNet, 2)) ?></td>
-                                        <?php endforeach; ?>
-                                        <td class="num"><?= sens_mask(number_format($dayNet, 2)) ?></td>
-                                    <?php else: ?>
-                                        <?php $r = reset($byAgent); ?>
-                                        <td class="num"><?= number_format((int) $r['sale_cnt']) ?></td>
-                                        <td class="num"><?= sens_mask(number_format((float) $r['sale_sum'], 2)) ?></td>
-                                        <td class="num"><?= number_format((int) $r['ret_cnt']) ?></td>
-                                        <td class="num"><?= sens_mask(number_format((float) $r['ret_sum'], 2)) ?></td>
-                                        <td class="num"><?= sens_mask(number_format((float) $r['sale_sum'] - (float) $r['ret_sum'], 2)) ?></td>
+                                        <td><?= e($salesAgentNames[(string) $inv['agent_key']] ?? $inv['agent_key']) ?></td>
                                     <?php endif; ?>
+                                    <td>
+                                        <span style="font-weight:600;"><?= e((string) $inv['doc_no']) ?></span>
+                                        <button type="button" class="btn-icon" onclick="var d=this.closest('tr').nextElementSibling; d.hidden=!d.hidden; this.querySelector('i').classList.toggle('ti-chevron-up');" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:13px;color:var(--ink-500);vertical-align:middle;" title="عرض أصناف الفاتورة" aria-label="عرض الأصناف">
+                                            <i class="ti ti-chevron-down"></i>
+                                        </button>
+                                    </td>
+                                    <td><span class="fchip <?= $typeChip ?>"><?= $typeLabel ?></span></td>
+                                    <td class="num"><?= number_format($itemCount) ?></td>
+                                    <td class="num"><?= sens_mask(number_format((float) $inv['total_amount'], 2)) ?></td>
+                                    <td class="num"><?= sens_mask(number_format((float) $inv['net_amount'], 2)) ?></td>
+                                </tr>
+                                <tr data-xt-ignore data-xt-nosort hidden>
+                                    <td colspan="<?= $branchFilter === null ? 7 : 6 ?>" style="padding:10px 16px;background:var(--surface-soft, rgba(0,0,0,0.02));">
+                                        <?php if (empty($lines)): ?>
+                                            <span style="color:var(--ink-500);font-size:13px;">مفيش أصناف مسجلة للفاتورة دي.</span>
+                                        <?php else: ?>
+                                            <table class="ftable" style="font-size:12px;margin:4px 0;background:var(--surface);">
+                                                <thead>
+                                                    <tr>
+                                                        <th>الكود</th>
+                                                        <th>اسم الصنف</th>
+                                                        <th class="num">الكمية</th>
+                                                        <th class="num">السعر</th>
+                                                        <th class="num">الإجمالي</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($lines as $line): ?>
+                                                        <?php $lineTotal = (float) $line['quantity'] * (float) $line['unit_price']; ?>
+                                                        <tr>
+                                                            <td><?= e((string) $line['item_code']) ?></td>
+                                                            <td><?= e((string) $line['item_name']) ?></td>
+                                                            <td class="num"><?= number_format((float) $line['quantity'], 2) ?></td>
+                                                            <td class="num"><?= sens_mask(number_format((float) $line['unit_price'], 2)) ?></td>
+                                                            <td class="num"><?= sens_mask(number_format($lineTotal, 2)) ?></td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
-                            <?php if (!$salesDays): ?><tr><td colspan="<?= $branchFilter === null ? count($salesBranches) + 2 : 6 ?>">مفيش مبيعات في الفترة دي.</td></tr><?php endif; ?>
-                        </tbody>
-                        <tfoot><tr><td>الإجمالي</td>
-                            <?php if ($branchFilter === null): ?>
-                                <?php foreach ($salesBranches as $b): ?>
-                                    <?php $branchTotal = 0.0; foreach ($salesDays as $byAgent) { $r = $byAgent[(string) $b['agent']] ?? null; if ($r) { $branchTotal += (float) $r['sale_sum'] - (float) $r['ret_sum']; } } ?>
-                                    <td class="num"><?= sens_mask(number_format($branchTotal, 2)) ?></td>
-                                <?php endforeach; ?>
-                                <td class="num"><?= sens_mask(number_format($salesNet, 2)) ?></td>
-                            <?php else: ?>
-                                <td class="num"><?= number_format($salesTotals['sale_cnt']) ?></td>
-                                <td class="num"><?= sens_mask(number_format($salesTotals['sale_sum'], 2)) ?></td>
-                                <td class="num"><?= number_format($salesTotals['ret_cnt']) ?></td>
-                                <td class="num"><?= sens_mask(number_format($salesTotals['ret_sum'], 2)) ?></td>
-                                <td class="num"><?= sens_mask(number_format($salesNet, 2)) ?></td>
+                            <?php if (empty($salesInvoices)): ?>
+                                <tr><td colspan="<?= $branchFilter === null ? 7 : 6 ?>" style="text-align:center;padding:24px;color:var(--ink-500);">مفيش مبيعات في الفترة دي.</td></tr>
                             <?php endif; ?>
+                        </tbody>
+                        <tfoot><tr>
+                            <td>إجمالي الفترة كلها</td>
+                            <?php if ($branchFilter === null): ?>
+                                <td></td>
+                            <?php endif; ?>
+                            <td></td>
+                            <td><span class="fchip fchip-pos">بيع <?= number_format($salesTotals['sale_cnt']) ?></span> <span class="fchip fchip-warn">مرتجع <?= number_format($salesTotals['ret_cnt']) ?></span></td>
+                            <td class="num"></td>
+                            <td class="num"><?= sens_mask(number_format($salesTotals['sale_sum'], 2)) ?></td>
+                            <td class="num"><?= sens_mask(number_format($salesNet, 2)) ?></td>
                         </tr></tfoot>
                     </table>
                 </div>
+                <?php if ($totalSalesCount > 0): ?>
+                    <?php
+                    $startX = $salesOffset + 1;
+                    $endY = min($salesOffset + $salesLimit, $totalSalesCount);
+                    $pageBaseParams = array_merge($periodParams, ['view' => 'sales']);
+                    if ($branchFilter !== null) {
+                        $pageBaseParams['branch'] = $branchFilter;
+                    } else {
+                        $pageBaseParams['branch'] = 'all';
+                    }
+                    ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px;padding:4px 2px;font-size:13px;color:var(--ink-500);">
+                        <div>
+                            فاتورة <?= number_format($startX) ?>–<?= number_format($endY) ?> من <?= number_format($totalSalesCount) ?>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <?php if ($salesPage > 1): ?>
+                                <a class="btn-page" href="<?= e(act_url(array_merge($pageBaseParams, ['page' => $salesPage - 1]))) ?>" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-900);text-decoration:none;">
+                                    الأحدث
+                                </a>
+                            <?php else: ?>
+                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300, #ccc);cursor:not-allowed;">
+                                    الأحدث
+                                </span>
+                            <?php endif; ?>
+
+                            <?php if ($salesPage < $salesTotalPages): ?>
+                                <a class="btn-page" href="<?= e(act_url(array_merge($pageBaseParams, ['page' => $salesPage + 1]))) ?>" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-900);text-decoration:none;">
+                                    الأقدم
+                                </a>
+                            <?php else: ?>
+                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300, #ccc);cursor:not-allowed;">
+                                    الأقدم
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
     <?php else: ?>
