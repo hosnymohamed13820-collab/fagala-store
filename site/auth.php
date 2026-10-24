@@ -172,6 +172,7 @@ function module_parts(): array
         ],
         'reports' => [
             'sales'      => 'المبيعات',
+            'insta_recon' => 'مطابقة إنستاباي',
             'treasury'   => 'الخزينة',
             'expenses'   => 'المصاريف',
             'jtotals'    => 'إجماليات القيود',

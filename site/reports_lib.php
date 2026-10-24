@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/sms_lib.php';
+require_once __DIR__ . '/cashier_lib.php';
 
 /** آخر رصيد محفوظ قبل الفترة لنفس الخزنة؛ لا نعيد حساب أرصدة القيود. */
 function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $showCancelled = false): float {
@@ -21,6 +23,115 @@ function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $s
     $st->execute([$treasuryId, $from]);
     $balance = $st->fetchColumn();
     return $balance === false ? 0.0 : (float) $balance;
+}
+
+/** مطابقة سطور إنستاباي برسائل الوارد على يوم العمل والمبلغ بالقرش. */
+function rep_insta_recon(PDO $pdo, string $from, string $to): array {
+    $st = $pdo->prepare("SELECT s.id AS shift_id, s.business_date, s.shift_name, s.status AS shift_status, s.instapay_total,
+            b.id AS branch_id, b.name AS branch_name, u.full_name AS cashier_name,
+            l.id AS line_id, l.line_no, l.reference, l.amount
+        FROM shifts s
+        JOIN branches b ON b.id = s.branch_id
+        LEFT JOIN users u ON u.id = s.user_id
+        LEFT JOIN shift_payment_lines l ON l.shift_id = s.id AND l.method = 'instapay'
+        WHERE s.business_date BETWEEN ? AND ?
+          AND (s.instapay_total <> 0 OR l.id IS NOT NULL)
+        ORDER BY s.business_date DESC, b.name, s.id, l.line_no");
+    $st->execute([$from, $to]);
+    $shiftRows = $st->fetchAll(PDO::FETCH_ASSOC);
+
+    $st = $pdo->prepare("SELECT id, sms_at, sender, body FROM sms_inbox
+        WHERE sms_at >= CONCAT(?, ' 09:00:00')
+          AND sms_at < DATE_ADD(CONCAT(?, ' 09:00:00'), INTERVAL 1 DAY)
+        ORDER BY sms_at, id");
+    $st->execute([$from, $to]);
+    $smsRows = $st->fetchAll(PDO::FETCH_ASSOC);
+    $messages = [];
+    $smsByKey = [];
+    foreach ($smsRows as $sms) {
+        if (sms_is_foreign((string) $sms['body'])) continue;
+        $parsed = sms_parse((string) $sms['body'], (string) $sms['sms_at']);
+        if ($parsed['kind'] !== 'in' || $parsed['amount'] === null) continue;
+        $sms['amount_cents'] = (int) round((float) $parsed['amount'] * 100);
+        $sms['business_date'] = cashier_get_business_date(new DateTime((string) $sms['sms_at']));
+        $sms['key'] = $sms['business_date'] . '|' . $sms['amount_cents'];
+        $smsByKey[$sms['key']][] = count($messages);
+        $messages[] = $sms;
+    }
+
+    $groups = [];
+    $lines = [];
+    $linesByKey = [];
+    $seenShifts = [];
+    foreach ($shiftRows as $r) {
+        $groupKey = $r['business_date'] . '|' . $r['branch_id'];
+        if (!isset($groups[$groupKey])) {
+            $groups[$groupKey] = ['date'=>$r['business_date'], 'branch'=>$r['branch_name'],
+                'shift_cents'=>0, 'line_cents'=>0, 'matched_cents'=>0,
+                'shift_count'=>0, 'matched_count'=>0, 'ambiguous_count'=>0, 'missing_count'=>0,
+                'lines'=>[]];
+        }
+        $shiftId = (int) $r['shift_id'];
+        if (!isset($seenShifts[$shiftId])) {
+            $seenShifts[$shiftId] = true;
+            $groups[$groupKey]['shift_cents'] += (int) round((float) $r['instapay_total'] * 100);
+            $groups[$groupKey]['shift_count']++;
+        }
+        if ($r['line_id'] === null) continue;
+        $cents = (int) round((float) $r['amount'] * 100);
+        $key = $r['business_date'] . '|' . $cents;
+        $linesByKey[$key][] = count($lines);
+        $lines[] = ['id'=>(int)$r['line_id'], 'shift_id'=>$shiftId,
+            'shift_name'=>$r['shift_name'] ?: '—', 'shift_status'=>$r['shift_status'],
+            'cashier'=>$r['cashier_name'] ?: '—',
+            'reference'=>$r['reference'] ?: '—', 'date'=>$r['business_date'],
+            'branch'=>$r['branch_name'], 'group'=>$groupKey, 'key'=>$key,
+            'amount_cents'=>$cents, 'status'=>'', 'sms'=>null, 'candidates'=>[]];
+        $groups[$groupKey]['line_cents'] += $cents;
+    }
+
+    $usedSms = [];
+    foreach ($lines as &$line) {
+        $candidateIndexes = $smsByKey[$line['key']] ?? [];
+        if (count($candidateIndexes) === 1 && count($linesByKey[$line['key']]) === 1) {
+            $idx = $candidateIndexes[0];
+            $line['status'] = 'مطابق';
+            $line['sms'] = $messages[$idx];
+            $usedSms[$idx] = true;
+            $groups[$line['group']]['matched_cents'] += $line['amount_cents'];
+            $groups[$line['group']]['matched_count']++;
+        } elseif ($candidateIndexes) {
+            $line['status'] = 'متكرر — محتاج مراجعة';
+            $line['candidates'] = array_map(static fn($idx) => (int)$messages[$idx]['id'], $candidateIndexes);
+            $groups[$line['group']]['ambiguous_count']++;
+        } else {
+            $line['status'] = 'مفيش رسالة';
+            $groups[$line['group']]['missing_count']++;
+        }
+        $groups[$line['group']]['lines'][] = $line;
+    }
+    unset($line);
+
+    $unmatched = [];
+    foreach ($messages as $idx => $sms) {
+        if (!isset($usedSms[$idx])) $unmatched[] = $sms;
+    }
+    $rows = []; $details = [];
+    $diffOnly = ($_GET['diff_only'] ?? '') === '1';
+    foreach ($groups as $g) {
+        $difference = $g['shift_cents'] - $g['matched_cents'];
+        $status = $g['ambiguous_count'] ? 'مبلغ متكرر' : ($g['missing_count'] ? 'رسالة ناقصة'
+            : ($g['line_cents'] !== $g['shift_cents'] ? 'إجمالي الوردية مختلف' : 'مطابق'));
+        if ($diffOnly && $status === 'مطابق') continue;
+        $rows[] = [$g['date'], $g['branch'], number_format($g['shift_cents'] / 100, 2),
+            number_format($g['matched_cents'] / 100, 2), number_format($difference / 100, 2),
+            $g['matched_count'], count($g['lines']), $g['shift_count'], $status];
+        $details[] = $g['lines'];
+    }
+    return ['title'=>'مطابقة إنستاباي بالورديات',
+        'headers'=>['اليوم','الفرع','إنستا الورديات','رسائل مؤكدة','غير مؤكد','عدد الرسائل','عدد العمليات','عدد الورديات','الحالة'],
+        'rows'=>$rows, 'details'=>$details, 'unmatched_sms'=>$unmatched,
+        'note'=>'المطابقة مؤكدة بس لما يكون فيه سطر وردية واحد ورسالة واردة واحدة بنفس المبلغ ويوم العمل (٩ صباحًا لليوم التالي). التكرار بيتعرض للمراجعة من غير نسبته لفرع.'];
 }
 
 /**
@@ -115,6 +226,8 @@ function rep_account_labels(array $accountIds): array
 function build_report(PDO $pdo, string $type, string $from, string $to): array
 {
     switch ($type) {
+        case 'insta_recon':
+            return rep_insta_recon($pdo, $from, $to);
         case 'sales':
             // فلتر اختياري بالفرع (أزرار الفروع فوق الجدول)
             $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;

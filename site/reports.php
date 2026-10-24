@@ -19,6 +19,7 @@ $pdo = db();
 $repParts = module_parts()['reports'] ?? [];
 $allowedTypes = [];
 foreach ($repParts as $k => $label) {
+    if ($k === 'insta_recon' && !is_owner()) continue;
     if (can('reports:' . $k)) {
         $allowedTypes[$k] = $label;
     }
@@ -35,10 +36,18 @@ if (empty($allowedTypes)) {
 
 // تحديد نوع التقرير النشط: لو طلب نوع مسموح يفتحه، لو مالوش صلاحيته (أو مبعتش) يتحوّل لأول نوع مسموح له
 $requestedType = (string)($_GET['type'] ?? '');
+if ($requestedType === 'insta_recon' && !is_owner()) {
+    http_response_code(403);
+    exit('غير مصرح');
+}
 if (isset($allowedTypes[$requestedType])) {
     $type = $requestedType;
 } else {
     $type = (string) array_key_first($allowedTypes);
+}
+if ($type === 'insta_recon' && !is_owner()) {
+    http_response_code(403);
+    exit('غير مصرح');
 }
 // الملخص اليومي صفحة لوحدها (daily_summary.php) — التبويب لينك ليها
 if ($type === 'daily') {
@@ -340,13 +349,33 @@ if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supp
     }
     if (!empty($report['totals'])) $x->addRow(array_map($xlCell, $report['totals']), true);
     if (!empty($report['balance_warning'])) $x->addRow([$report['balance_warning']]);
+    if ($type === 'insta_recon') {
+        $x->addBlank();
+        $x->addRow(['اليوم', 'الفرع', 'الوردية', 'حالة الوردية', 'الكاشير', 'المبلغ', 'مرجع الكاشير', 'المطابقة', 'وقت الرسالة', 'رقم الرسالة', 'الراسل'], true);
+        foreach ($report['details'] as $dayLines) {
+            foreach ($dayLines as $line) {
+                $sms = $line['sms'];
+                $x->addRow([$line['date'], $line['branch'], $line['shift_name'], $line['shift_status'], $line['cashier'],
+                    $line['amount_cents'] / 100, $line['reference'], $line['status'],
+                    $sms['sms_at'] ?? '', $sms['id'] ?? implode('، ', $line['candidates']), $sms['sender'] ?? '']);
+            }
+        }
+        if ($report['unmatched_sms']) {
+            $x->addBlank();
+            $x->addRow(['رسايل واردة من غير مطابقة مؤكدة'], true);
+            $x->addRow(['يوم العمل', 'وقت الرسالة', 'رقم الرسالة', 'المبلغ', 'الراسل'], true);
+            foreach ($report['unmatched_sms'] as $sms) {
+                $x->addRow([$sms['business_date'], $sms['sms_at'], $sms['id'], $sms['amount_cents'] / 100, $sms['sender']]);
+            }
+        }
+    }
 
     $x->download($type . '_' . $from . '_' . $to . '.xlsx');
     exit;
 }
 
 $reportTypes = [
-    'sales'=>'المبيعات','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
+    'sales'=>'المبيعات','insta_recon'=>'مطابقة إنستاباي','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
@@ -695,6 +724,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     <input type="date" name="from" value="<?= e($from) ?>">
     <label>إلى</label>
     <input type="date" name="to" value="<?= e($to) ?>">
+    <?php if ($type === 'insta_recon'): ?>
+        <label><input type="checkbox" name="diff_only" value="1" <?= ($_GET['diff_only'] ?? '') === '1' ? 'checked' : '' ?>> المحتاج مراجعة بس</label>
+    <?php endif; ?>
     <?php if ($type === 'treasury'): $selEntry = $_GET['entry_code'] ?? ''; ?>
         <?php $repTreasuries = $pdo->query('SELECT id, name FROM treasuries WHERE is_active = 1 ORDER BY name')->fetchAll(); $selTreasury = (int)($_GET['treasury'] ?? 0); ?>
         <label>الخزينة</label>
@@ -830,7 +862,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -1559,6 +1591,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 <div class="card">
     <div class="rep-title"><?= e($report['title']) ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?></div>
+    <?php if ($type === 'insta_recon'): ?>
+        <div style="margin:10px 0;color:var(--ink-600);font-size:13px;">
+            <?= count($report['unmatched_sms']) ?> رسالة واردة من غير مطابقة مؤكدة خلال الفترة؛ ممكن تكون متكررة أو مالهاش عملية في الوردية.
+        </div>
+    <?php endif; ?>
     <?php if (!empty($report['note'])): ?>
         <div class="empty"><?= e($report['note']) ?></div>
     <?php endif; ?>
@@ -2279,7 +2316,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     }
     </script>
 
-    <table data-xt-min="1">
+    <table data-xt-min="1"<?= $type === 'insta_recon' ? ' data-xt-nosort class="ftable"' : '' ?>>
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>
@@ -2296,9 +2333,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $trClassAttr ?><?= $type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق' ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= $type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق' ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
+                    <?php elseif ($type === 'insta_recon' && $ci === 8): ?>
+                        <td><span class="fchip <?= $cell === 'مطابق' ? 'fchip-pos' : 'fchip-warn' ?>"><?= e((string)$cell) ?></span></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
                         <td><span class="acc-caret">&#9656;</span> <?= e((string)$cell) ?></td>
                     <?php elseif ($type === 'deficits' && $ci === 5 && $cell !== '—'): ?>
@@ -2324,6 +2363,22 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                         <td><?= e((string)$cell) ?></td>
                     <?php endif; ?>
                 <?php endforeach; ?></tr>
+                <?php if ($type === 'insta_recon'): ?>
+                    <tr data-xt-ignore data-xt-nosort hidden>
+                        <td colspan="<?= count($report['headers']) ?>">
+                            <table class="ftable"><thead><tr><th>الوردية</th><th>حالتها</th><th>الكاشير</th><th>المبلغ</th><th>مرجع الكاشير</th><th>المطابقة</th><th>وقت الرسالة</th><th>رقم الرسالة</th><th>الراسل</th></tr></thead><tbody>
+                            <?php foreach ($report['details'][$ri] as $line): $sms = $line['sms']; ?>
+                                <tr><td><?= e($line['shift_name']) ?></td><td><?= e($line['shift_status']) ?></td><td><?= e($line['cashier']) ?></td>
+                                    <td class="num"><?= number_format($line['amount_cents'] / 100, 2) ?></td><td><?= e($line['reference']) ?></td>
+                                    <td><span class="fchip <?= $line['status'] === 'مطابق' ? 'fchip-pos' : 'fchip-warn' ?>"><?= e($line['status']) ?></span></td>
+                                    <td><?= e($sms['sms_at'] ?? '—') ?></td>
+                                    <td><?= $sms ? (int)$sms['id'] : e(implode('، ', $line['candidates'])) ?></td>
+                                    <td><?= e($sms['sender'] ?? '—') ?></td></tr>
+                            <?php endforeach; ?>
+                            </tbody></table>
+                        </td>
+                    </tr>
+                <?php endif; ?>
                 <?php if ($isAcc): ?>
                     <?php /* صف التفاصيل — بيتملى أول مرة تفتحه وبيتخزّن بعدها */ ?>
                     <?php /* data-xt-nosort: صف التفاصيل مربوط بالصف اللي
@@ -2342,8 +2397,23 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         </tbody>
     </table>
     <?php endif; ?>
+    <?php if ($type === 'insta_recon' && $report['unmatched_sms']): ?>
+        <details style="margin-top:14px;"><summary>رسايل واردة من غير مطابقة مؤكدة (<?= count($report['unmatched_sms']) ?>)</summary>
+            <table class="ftable"><thead><tr><th>يوم العمل</th><th>وقت الرسالة</th><th>رقمها</th><th>المبلغ</th><th>الراسل</th></tr></thead><tbody>
+            <?php foreach ($report['unmatched_sms'] as $sms): ?>
+                <tr><td><?= e($sms['business_date']) ?></td><td><?= e($sms['sms_at']) ?></td>
+                    <td><?= (int)$sms['id'] ?></td><td class="num"><?= number_format($sms['amount_cents'] / 100, 2) ?></td>
+                    <td><?= e($sms['sender']) ?></td></tr>
+            <?php endforeach; ?>
+            </tbody></table>
+        </details>
+    <?php endif; ?>
     <?php endif; ?>
 </div>
+<?php endif; ?>
+
+<?php if ($type === 'insta_recon'): ?>
+<script src="assets/insta_recon.js?v=1" defer></script>
 <?php endif; ?>
 
 <script>
