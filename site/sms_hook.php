@@ -162,10 +162,21 @@ try {
             // حساب الـ Hash لمنع التكرار
             $msgHash = hash('sha256', $sender . '|' . $smsAtMs . '|' . $body);
 
+            // استخراج الرقم المرجعي إن وجد لمنع التكرار بنفس المرجع
+            $cleanBody = strtr($body, [
+                '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+                '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+            ]);
+            $refNo = null;
+            if (preg_match('/مرجعي\s*([0-9]+)/u', $cleanBody, $mRef)) {
+                $refNo = $mRef[1];
+            }
+
             $accepted[] = [
                 'msg_hash'   => $msgHash,
                 'sender'     => $sender,
                 'body'       => $body,
+                'ref_no'     => $refNo,
                 'sms_at'     => $smsAt,
                 'android_id' => $andId,
                 'source'     => $source,
@@ -177,14 +188,15 @@ try {
         $duplicates = 0;
 
         if (!empty($accepted)) {
-            $rowPlaceholders = implode(',', array_fill(0, count($accepted), '(?, ?, ?, ?, ?, ?, ?)'));
-            $sql = "INSERT IGNORE INTO sms_inbox (`msg_hash`, `sender`, `body`, `sms_at`, `android_id`, `source`, `device`) VALUES $rowPlaceholders";
+            $rowPlaceholders = implode(',', array_fill(0, count($accepted), '(?, ?, ?, ?, ?, ?, ?, ?)'));
+            $sql = "INSERT IGNORE INTO sms_inbox (`msg_hash`, `sender`, `body`, `ref_no`, `sms_at`, `android_id`, `source`, `device`) VALUES $rowPlaceholders";
 
             $params = [];
             foreach ($accepted as $row) {
                 $params[] = $row['msg_hash'];
                 $params[] = $row['sender'];
                 $params[] = $row['body'];
+                $params[] = $row['ref_no'];
                 $params[] = $row['sms_at'];
                 $params[] = $row['android_id'];
                 $params[] = $row['source'];

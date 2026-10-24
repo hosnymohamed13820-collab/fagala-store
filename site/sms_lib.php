@@ -210,6 +210,7 @@ function sms_fetch(PDO $pdo, string $from, string $to, string $kind = 'all'): ar
          FROM sms_inbox s
          LEFT JOIN sms_marks m ON m.sms_id = s.id
          WHERE s.sms_at >= ? AND s.sms_at < DATE_ADD(?, INTERVAL 1 DAY)
+           AND s.dup_of IS NULL
          ORDER BY s.sms_at DESC"
     );
     $st->execute([$from, $to]);
@@ -259,7 +260,8 @@ function sms_get_stats(PDO $pdo): array
             MAX(received_at) AS last_received,
             SUM(CASE WHEN source = 'backfill' THEN 1 ELSE 0 END) AS backfill_count,
             SUM(CASE WHEN source = 'live' THEN 1 ELSE 0 END) AS live_count
-         FROM sms_inbox"
+         FROM sms_inbox
+         WHERE dup_of IS NULL"
     );
     $stats = $statsSt->fetch(PDO::FETCH_ASSOC) ?: [];
     return [

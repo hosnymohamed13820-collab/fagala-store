@@ -2397,6 +2397,56 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         </tbody>
     </table>
     <?php endif; ?>
+    <?php if ($type === 'insta_recon'): ?>
+        <div style="margin-top:24px;">
+            <h3 style="margin:0 0 10px;font-size:16px;font-weight:700;">كل العمليات</h3>
+            <table class="ftable" data-xt-off>
+                <thead>
+                    <tr>
+                        <th>اليوم</th>
+                        <th>الفرع</th>
+                        <th>الوردية</th>
+                        <th>الكاشير</th>
+                        <th class="num">المبلغ</th>
+                        <th>مرجع الكاشير</th>
+                        <th>الحالة</th>
+                        <th>رقم الرسالة</th>
+                        <th>وقت الرسالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php
+                $hasAnyLine = false;
+                foreach ($report['details'] as $lines):
+                    foreach ($lines as $line):
+                        $hasAnyLine = true;
+                        $sms = $line['sms'];
+                        $smsIdText = $sms ? (string)$sms['id'] : ($line['candidates'] ? implode('، ', $line['candidates']) : '—');
+                        $smsTimeText = $sms['sms_at'] ?? '—';
+                        $chipClass = $line['status'] === 'مطابق' ? 'fchip-pos' : 'fchip-warn';
+                ?>
+                    <tr>
+                        <td><?= e($line['date']) ?></td>
+                        <td><?= e($line['branch']) ?></td>
+                        <td><?= e($line['shift_name']) ?></td>
+                        <td><?= e($line['cashier']) ?></td>
+                        <td class="num"><?= number_format($line['amount_cents'] / 100, 2) ?></td>
+                        <td><?= e($line['reference']) ?></td>
+                        <td><span class="fchip <?= $chipClass ?>"><?= e($line['status']) ?></span></td>
+                        <td><?= e($smsIdText) ?></td>
+                        <td><?= e($smsTimeText) ?></td>
+                    </tr>
+                <?php
+                    endforeach;
+                endforeach;
+                if (!$hasAnyLine):
+                ?>
+                    <tr><td colspan="9" style="text-align:center;color:var(--ink-400);padding:14px;">لا توجد عمليات إنستاباي في الورديات لهذه الفترة.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
     <?php if ($type === 'insta_recon' && $report['unmatched_sms']): ?>
         <details style="margin-top:14px;"><summary>رسايل واردة من غير مطابقة مؤكدة (<?= count($report['unmatched_sms']) ?>)</summary>
             <table class="ftable"><thead><tr><th>يوم العمل</th><th>وقت الرسالة</th><th>رقمها</th><th>المبلغ</th><th>الراسل</th></tr></thead><tbody>

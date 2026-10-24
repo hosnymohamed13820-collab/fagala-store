@@ -53,7 +53,7 @@ $stSmsNoPermit = $pdo->query("
     SELECT COUNT(*)
     FROM sms_inbox s
     LEFT JOIN sms_permits p ON p.sms_id = s.id
-    WHERE p.id IS NULL
+    WHERE p.id IS NULL AND s.dup_of IS NULL
 ");
 $smsNoPermitCount = (int) ($stSmsNoPermit ? $stSmsNoPermit->fetchColumn() : 0);
 
@@ -341,7 +341,7 @@ if ($typeFilter === 'all' || $typeFilter === 'sms') {
             p.id AS permit_id, p.action AS permit_action, p.amount AS permit_amount, p.status AS permit_status
         FROM sms_inbox s
         LEFT JOIN sms_permits p ON p.sms_id = s.id
-        WHERE s.sms_at BETWEEN ? AND ?
+        WHERE s.sms_at BETWEEN ? AND ? AND s.dup_of IS NULL
         ORDER BY s.sms_at DESC LIMIT 200
     ";
     $st = $pdo->prepare($sql);

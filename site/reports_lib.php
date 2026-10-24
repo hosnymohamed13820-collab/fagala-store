@@ -43,6 +43,7 @@ function rep_insta_recon(PDO $pdo, string $from, string $to): array {
     $st = $pdo->prepare("SELECT id, sms_at, sender, body FROM sms_inbox
         WHERE sms_at >= CONCAT(?, ' 09:00:00')
           AND sms_at < DATE_ADD(CONCAT(?, ' 09:00:00'), INTERVAL 1 DAY)
+          AND dup_of IS NULL
         ORDER BY sms_at, id");
     $st->execute([$from, $to]);
     $smsRows = $st->fetchAll(PDO::FETCH_ASSOC);
