@@ -8,4 +8,5 @@ return [
     '20261022_000_advance_account',
     '20261022_001_custody_line_branch',
     '20261022_002_sms_marks',
+    '20261024_001_machine_counters',
 ];

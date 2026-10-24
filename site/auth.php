@@ -117,6 +117,7 @@ function all_modules(): array
         'price_inquiry' => ['label' => 'استعلام الأسعار',   'icon' => 'ti-scan',          'url' => 'price_inquiry.php'],
         'remote_scan'   => ['label' => 'سكانر الكمبيوتر',   'icon' => 'ti-device-mobile', 'url' => 'remote_scan.php'],
         'cashier'       => ['label' => 'تقفيل الكاشير',     'icon' => 'ti-lock-dollar',    'url' => 'cashier.php'],
+        'machines'      => ['label' => 'عداد المكن',        'icon' => 'ti-printer',        'url' => 'machines.php'],
         'custody'       => ['label' => 'العهد',             'icon' => 'ti-cash',           'url' => 'custody.php'],
         'review'        => ['label' => 'مراجعة المحاسب',    'icon' => 'ti-user-check',        'url' => 'review.php'],
         'treasury'      => ['label' => 'الخزينة وكشف الحساب','icon' => 'ti-building-bank',    'url' => 'treasury.php'],
@@ -157,6 +158,12 @@ function all_modules(): array
 function module_parts(): array
 {
     return [
+        'machines' => [
+            'readings' => 'قراءات المكن',
+            'daily'    => 'المطابقة اليومية',
+            'monthly'  => 'المطابقة الشهرية',
+            'manage'   => 'إدارة المكن',
+        ],
         'custody' => [
             'employee' => 'عهدة الموظف',
             'branch'   => 'عهدة الفرع',
