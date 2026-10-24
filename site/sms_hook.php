@@ -169,7 +169,8 @@ try {
             ]);
             $refNo = null;
             if (preg_match('/مرجعي\s*([0-9]+)/u', $cleanBody, $mRef)) {
-                $refNo = $mRef[1];
+                // المرجع الأطول من خانة القاعدة يدخل برسالته العادية من غير مرجع مقصوص.
+                $refNo = strlen($mRef[1]) <= 20 ? $mRef[1] : null;
             }
 
             $accepted[] = [

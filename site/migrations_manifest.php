@@ -13,5 +13,6 @@ return [
     '20261025_002_sms_ref_no',
     '20261025_003_hq_codes_created_at',
     '20261025_004_shift_edit_approved_action',
+    '20261025_005_sms_ref_sender',
     '20261025_006_branch_calls',
 ];
