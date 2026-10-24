@@ -24,4 +24,4 @@ PREPARE shift_approved_action_stmt FROM @shift_approved_action_ddl;
 EXECUTE shift_approved_action_stmt;
 DEALLOCATE PREPARE shift_approved_action_stmt;
 
-INSERT IGNORE INTO schema_migrations (name) VALUES ('20261025_002_shift_edit_approved_action');
+INSERT IGNORE INTO schema_migrations (name) VALUES ('20261025_004_shift_edit_approved_action');
