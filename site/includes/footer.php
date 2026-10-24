@@ -166,7 +166,7 @@
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
      لاستثناء جدول: <table data-xt-off> -->
-<script src="assets/xtable.js?v=10"></script>
+<script src="assets/xtable.js?v=11"></script>
 <script src="assets/anicons.js?v=1"></script>
 </body>
 </html>

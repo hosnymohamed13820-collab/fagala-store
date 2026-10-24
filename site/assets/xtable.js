@@ -441,10 +441,10 @@
         }
 
         function toggleKeys(keys, on) {
-            var p = getPicked();
-            if (!p) {
-                p = {};
-                for (var j = 0; j < order.length; j++) p[order[j]] = true;
+            var old = getPicked();
+            var p = {};
+            for (var j = 0; j < order.length; j++) {
+                if (!old || old[order[j]]) p[order[j]] = true;
             }
             for (var j = 0; j < keys.length; j++) {
                 if (on) p[keys[j]] = true;
@@ -679,9 +679,10 @@
         closePanel();
         openWidth = window.innerWidth;
 
-        // القيم الفريدة — بتتحسب عند الفتح بس (lazy)
-        var map = {}, order = [];
+        // القيم الفريدة من الصفوف اللي عدّت البحث وباقي الأعمدة، عند الفتح بس.
+        var map = {}, order = [], otherIdxs = Object.keys(st.picks);
         for (var i = 0; i < st.rows.length; i++) {
+            if (!passesExcept(st, st.rows[i], idx, otherIdxs)) continue;
             var raw = st.rows[i].tr.cells[idx] ? txt(st.rows[i].tr.cells[idx]).replace(/\s+/g, ' ').trim() : '';
             var key = st.rows[i].cells[idx];
             if (!(key in map)) { map[key] = { label: raw || '(فاضي)', n: 0, key: key }; order.push(key); }
@@ -733,10 +734,12 @@
                 row.querySelector('.xt-p-lbl').textContent = m.label;
                 (function (key, rowEl) {
                     rowEl.querySelector('input').addEventListener('change', function () {
-                        if (!picked) {                 // كان الكل مختار
-                            picked = {};
-                            for (var j = 0; j < order.length; j++) picked[order[j]] = true;
+                        // بعد تعديل الاختيار، نخزن قيم القايمة الظاهرة بس.
+                        var visiblePicked = {};
+                        for (var j = 0; j < order.length; j++) {
+                            if (!picked || picked[order[j]]) visiblePicked[order[j]] = true;
                         }
+                        picked = visiblePicked;
                         if (this.checked) picked[key] = true; else delete picked[key];
                         commit();
                     });
@@ -770,15 +773,26 @@
 
         function syncAll() {
             var total = order.length;
-            var on = picked ? Object.keys(picked).length : total;
+            var on = total;
+            if (picked) {
+                on = 0;
+                for (var i = 0; i < order.length; i++) {
+                    if (picked[order[i]]) on++;
+                }
+            }
             allBox.checked = (on === total);
             allBox.indeterminate = (on > 0 && on < total);
         }
 
         function commit() {
             if (picked) {
-                var cnt = Object.keys(picked).length;
-                if (cnt === order.length) picked = null;
+                var allVisible = Object.keys(picked).length === order.length;
+                if (allVisible) {
+                    for (var i = 0; i < order.length; i++) {
+                        if (!picked[order[i]]) { allVisible = false; break; }
+                    }
+                }
+                if (allVisible) picked = null;
             }
             if (picked) st.picks[idx] = picked; else delete st.picks[idx];
             st.hrow.cells[idx].classList.toggle('xt-active', !!picked);
@@ -827,25 +841,29 @@
     /* ================================================================
        6) التطبيق
        ================================================================ */
+    function passesExcept(st, row, skipIdx, idxs) {
+        if (st.q) {
+            var found = false;
+            for (var c = 0; c < st.cols; c++) {
+                if (row.cells[c].indexOf(st.q) !== -1) { found = true; break; }
+            }
+            if (!found) return false;
+        }
+        idxs = idxs || Object.keys(st.picks);
+        for (var k = 0; k < idxs.length; k++) {
+            var ci = idxs[k];
+            if (+ci === skipIdx) continue;
+            if (!st.picks[ci][row.cells[ci]]) return false;
+        }
+        return true;
+    }
+
     function apply(st) {
         var idxs = Object.keys(st.picks);
         var shown = 0;
 
         for (var i = 0; i < st.rows.length; i++) {
-            var row = st.rows[i], ok = true;
-
-            if (st.q) {
-                ok = false;
-                for (var c = 0; c < st.cols; c++) {
-                    if (row.cells[c].indexOf(st.q) !== -1) { ok = true; break; }
-                }
-            }
-            if (ok) {
-                for (var k = 0; k < idxs.length; k++) {
-                    var ci = idxs[k];
-                    if (!st.picks[ci][row.cells[ci]]) { ok = false; break; }
-                }
-            }
+            var row = st.rows[i], ok = passesExcept(st, row, -1, idxs);
             row.on = ok;
             row.tr.classList.toggle('xt-out', !ok);
             if (ok) shown++;
