@@ -3,7 +3,7 @@
  * activity.php — صفحة «كل حركة على السيستم» للمدير
  * نظام الفجالة ستور المالي (بريف ١٩٥ · اتقفلت في بريف ٢٠٦)
  *
- * كل نوع حركة = استعلام واحد بـLIMIT 200، والدمج في PHP.
+ * كل نوع في الخط الزمني = استعلام واحد بـLIMIT 200، والدمج في PHP.
  * الصفحة قراية بس — مفيش أي INSERT/UPDATE/DELETE من هنا.
  */
 declare(strict_types=1);
@@ -141,13 +141,28 @@ foreach ($stSmsNoPermit->fetchAll(PDO::FETCH_ASSOC) as $sr) {
 // =========================================================================
 
 $period = (string) ($_GET['period'] ?? 'today');
+$view = (string) ($_GET['view'] ?? 'timeline');
 $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== 'all' && $_GET['branch'] !== '' ? (int) $_GET['branch'] : null;
 $typeFilter = (string) ($_GET['type'] ?? 'all');
 $customFrom = (string) ($_GET['from'] ?? '');
 $customTo = (string) ($_GET['to'] ?? '');
 
-$validTypes = ['all', 'purchases', 'returns', 'shifts', 'custody', 'receiving', 'treasury',
-               'shortage', 'attendance', 'stocktake', 'sms', 'sales', 'newitems',
+if (!isset($_GET['view'])) {
+    if ($typeFilter === 'purchases' || $typeFilter === 'returns') {
+        $view = 'purchases';
+    } elseif ($typeFilter === 'sales') {
+        $view = 'sales';
+    }
+}
+if (!in_array($view, ['timeline', 'sales', 'purchases'], true)) {
+    $view = 'timeline';
+}
+if (!isset($_GET['view']) && $view === 'purchases' && $branchFilter !== null) {
+    // اللينك القديم كان بيبعت branches.id؛ تاب المشتريات بيستخدم company_branch.
+    $branchFilter = act_company_branch_of($branchFilter, $branchById);
+}
+$validTypes = ['all', 'shifts', 'custody', 'receiving', 'treasury',
+               'shortage', 'attendance', 'stocktake', 'sms', 'newitems',
                'permits', 'transfers', 'salaries', 'advances'];
 if (!in_array($typeFilter, $validTypes, true)) {
     $typeFilter = 'all';
@@ -170,6 +185,10 @@ switch ($period) {
         $dateStart = date('Y-m-d 00:00:00', strtotime('-29 days'));
         $dateEnd = $today . ' 23:59:59';
         break;
+    case 'month':
+        $dateStart = date('Y-m-01 00:00:00');
+        $dateEnd = $today . ' 23:59:59';
+        break;
     case 'custom':
         $dateStart = ($customFrom ?: $today) . ' 00:00:00';
         $dateEnd = ($customTo ?: $today) . ' 23:59:59';
@@ -182,18 +201,17 @@ switch ($period) {
         break;
 }
 
-// رقم فرع الشركة المطلوب (للمشتريات) — 0 يعني «الفرع ده مالوش مشتريات»
-$companyBranchFilter = $branchFilter !== null ? act_company_branch_of($branchFilter, $branchById) : null;
-
-// وكيل فرع المبيعات المطلوب
-$salesAgentFilter = null;
-if ($branchFilter !== null) {
-    foreach (br_inv_map() as $bInv) {
-        if ((int) $bInv['id'] === $branchFilter) {
-            $salesAgentFilter = (string) $bInv['agent'];
-            break;
-        }
-    }
+// لينكات التابات والفروع بتحافظ على نفس الفترة.
+$periodParams = ['period' => $period];
+if ($customFrom !== '') {
+    $periodParams['from'] = $customFrom;
+}
+if ($customTo !== '') {
+    $periodParams['to'] = $customTo;
+}
+function act_url(array $params): string
+{
+    return 'activity.php?' . http_build_query($params);
 }
 
 // =========================================================================
@@ -202,93 +220,7 @@ if ($branchFilter !== null) {
 
 $feed = [];
 
-// أ) مشتريات الإدارة والفروع (doc_type = 2)
-if ($typeFilter === 'all' || $typeFilter === 'purchases') {
-    if ($companyBranchFilter === 0) {
-        // فرع مالوش مخزن في نظام الشركة — مفيش مشتريات تخصه
-    } else {
-        $sql = "
-            SELECT
-                i.sth_id, i.suffix, i.doc_no, i.supplier_name, i.total_amount, i.net_amount,
-                i.company_branch,
-                b.name AS branch_name,
-                COALESCE(i.invoice_date, i.synced_at) AS event_time
-            FROM hq_invoices i
-            LEFT JOIN branches b ON b.sto_id = i.company_branch AND b.in_receiving = 1
-            WHERE i.doc_type = 2
-              AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
-        ";
-        $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
-        if ($companyBranchFilter !== null) {
-            $sql .= " AND i.company_branch = ?";
-            $params[] = $companyBranchFilter;
-        }
-        $sql .= " ORDER BY event_time DESC LIMIT 200";
-        $st = $pdo->prepare($sql);
-        $st->execute($params);
-        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-            $cb = (int) $r['company_branch'];
-            $feed[] = [
-                'time'        => (string) $r['event_time'],
-                'type'        => 'purchases',
-                'type_label'  => 'فاتورة شراء',
-                'badge_class' => 'fchip-mute',
-                'icon'        => 'ti-file-invoice',
-                'branch'      => $r['branch_name'] ?: act_company_branch_name($cb, $branchBySto),
-                // 🔴 كل جزء نصي جاي من القاعدة بيتعمله e() هنا — مش في الطباعة،
-                //    عشان sens_mask() بترجّع HTML ومحتاج يطلع HTML.
-                'desc'        => 'فاتورة شراء #' . e((string) $r['doc_no']) . ' من المورد ' . e($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
-                'actor'       => 'الإدارة',
-                'link'        => 'invoices.php?invoice=' . (int) $r['sth_id']
-                               . '&suffix=' . urlencode((string) $r['suffix'])
-                               . '&cb=' . $cb . '&dt=2',
-            ];
-        }
-    }
-}
-
-// ب) مردودات المشتريات (doc_type = 6)
-if ($typeFilter === 'all' || $typeFilter === 'returns') {
-    if ($companyBranchFilter === 0) {
-        // نفس السبب فوق
-    } else {
-        $sql = "
-            SELECT
-                i.sth_id, i.suffix, i.doc_no, i.supplier_name, i.total_amount, i.net_amount,
-                i.company_branch,
-                b.name AS branch_name,
-                COALESCE(i.invoice_date, i.synced_at) AS event_time
-            FROM hq_invoices i
-            LEFT JOIN branches b ON b.sto_id = i.company_branch AND b.in_receiving = 1
-            WHERE i.doc_type = 6
-              AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
-        ";
-        $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
-        if ($companyBranchFilter !== null) {
-            $sql .= " AND i.company_branch = ?";
-            $params[] = $companyBranchFilter;
-        }
-        $sql .= " ORDER BY event_time DESC LIMIT 200";
-        $st = $pdo->prepare($sql);
-        $st->execute($params);
-        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-            $cb = (int) $r['company_branch'];
-            $feed[] = [
-                'time'        => (string) $r['event_time'],
-                'type'        => 'returns',
-                'type_label'  => 'مردود شراء',
-                'badge_class' => 'fchip-warn',
-                'icon'        => 'ti-arrow-back-up',
-                'branch'      => $r['branch_name'] ?: act_company_branch_name($cb, $branchBySto),
-                'desc'        => 'مردود شراء #' . e((string) $r['doc_no']) . ' للمورد ' . e($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
-                'actor'       => 'الإدارة',
-                'link'        => 'invoices.php?invoice=' . (int) $r['sth_id']
-                               . '&suffix=' . urlencode((string) $r['suffix'])
-                               . '&cb=' . $cb . '&dt=6',
-            ];
-        }
-    }
-}
+if ($view === 'timeline') {
 
 // ج) الورديات (shifts) + حدث «مراجعة وردية» منفصل
 if ($typeFilter === 'all' || $typeFilter === 'shifts') {
@@ -635,81 +567,6 @@ if ($typeFilter === 'all' || $typeFilter === 'stocktake') {
     }
 }
 
-// ك) مبيعات الفروع ومرتجعاتها (br_invoices)
-// 🔴 مش سطر لكل فاتورة (~١٠٠ في اليوم للفرع): سطر لكل فرع لكل يوم.
-//    doc_type: 4 = فاتورة بيع · 7 و17 = مردود (نفس إعداد
-//    analysis_sales_return_types الافتراضي في analysis_lib.php).
-//    أي نوع تاني مش معروف عندنا → مابنعرضوش.
-if ($typeFilter === 'all' || $typeFilter === 'sales') {
-    if (!($branchFilter !== null && $salesAgentFilter === null)) {
-        $sql = "
-            SELECT
-                agent_key,
-                DATE(invoice_date) AS d,
-                SUM(CASE WHEN doc_type = 4 THEN 1 ELSE 0 END) AS sale_cnt,
-                SUM(CASE WHEN doc_type = 4 THEN net_amount ELSE 0 END) AS sale_sum,
-                SUM(CASE WHEN doc_type IN (7,17) THEN 1 ELSE 0 END) AS ret_cnt,
-                SUM(CASE WHEN doc_type IN (7,17) THEN net_amount ELSE 0 END) AS ret_sum
-            FROM br_invoices
-            WHERE invoice_date BETWEEN ? AND ?
-        ";
-        $params = [$dateStart, $dateEnd];
-        if ($salesAgentFilter !== null) {
-            $sql .= " AND agent_key = ?";
-            $params[] = $salesAgentFilter;
-        }
-        $sql .= " GROUP BY agent_key, DATE(invoice_date)
-                  ORDER BY d DESC, agent_key
-                  LIMIT 200";
-        $st = $pdo->prepare($sql);
-        $st->execute($params);
-
-        $agentInfo = [];
-        foreach (br_inv_map() as $bInv) {
-            $agentInfo[(string) $bInv['agent']] = $bInv;
-        }
-
-        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-            $ak    = (string) $r['agent_key'];
-            $d     = (string) $r['d'];
-            $bInv  = $agentInfo[$ak] ?? null;
-            $brTxt = $bInv ? (string) $bInv['name'] : ('وكيل ' . $ak);
-            $dayLbl = date('m/d', strtotime($d));
-
-            if ((int) $r['sale_cnt'] > 0) {
-                $feed[] = [
-                    'time'        => $d . ' 00:00:00',
-                    'time_label'  => $dayLbl,
-                    'type'        => 'sales',
-                    'type_label'  => 'مبيعات فرع',
-                    'badge_class' => 'fchip-pos',
-                    'icon'        => 'ti-credit-card',
-                    'branch'      => $brTxt,
-                    'desc'        => 'مبيعات: ' . (int) $r['sale_cnt'] . ' فاتورة · الإجمالي '
-                                   . sens_mask(number_format((float) $r['sale_sum'], 2)) . ' ج',
-                    'actor'       => 'وكيل الفرع',
-                    'link'        => 'daily_summary.php?date=' . urlencode($d),
-                ];
-            }
-            if ((int) $r['ret_cnt'] > 0) {
-                $feed[] = [
-                    'time'        => $d . ' 00:00:00',
-                    'time_label'  => $dayLbl,
-                    'type'        => 'sales',
-                    'type_label'  => 'مرتجع فرع',
-                    'badge_class' => 'fchip-warn',
-                    'icon'        => 'ti-arrow-back-up',
-                    'branch'      => $brTxt,
-                    'desc'        => 'مرتجعات: ' . (int) $r['ret_cnt'] . ' فاتورة · الإجمالي '
-                                   . sens_mask(number_format((float) $r['ret_sum'], 2)) . ' ج',
-                    'actor'       => 'وكيل الفرع',
-                    'link'        => 'daily_summary.php?date=' . urlencode($d),
-                ];
-            }
-        }
-    }
-}
-
 // ل) الأصناف الجديدة (hq_codes.created_at — بريف ٢٠٦)
 // 🔴 العمود ده جديد: الصفوف القديمة created_at = NULL (شوف ملف الترقية)،
 //    فمابنحسبهاش «صنف جديد» غلط.
@@ -897,6 +754,110 @@ if ($typeFilter === 'all' || $typeFilter === 'advances') {
     }
 }
 
+}
+
+// المبيعات: عدد التاب من كل الفروع، والتفاصيل اليومية من استعلام مجمّع واحد.
+$salesBranches = br_inv_map();
+$salesCounts = [];
+$salesDays = [];
+$salesTotals = ['sale_cnt' => 0, 'sale_sum' => 0.0, 'ret_cnt' => 0, 'ret_sum' => 0.0];
+$salesTooLong = false;
+if ($view === 'sales') {
+    $agents = array_values(array_map(static fn($b) => (string) $b['agent'], $salesBranches));
+    $agentMarks = implode(',', array_fill(0, count($agents), '?'));
+    $selectedAgent = null;
+    foreach ($salesBranches as $b) {
+        if ($branchFilter === (int) $b['id']) {
+            $selectedAgent = (string) $b['agent'];
+            break;
+        }
+    }
+    if ($branchFilter !== null && $selectedAgent === null) {
+        $branchFilter = null;
+    }
+    $startDay = DateTimeImmutable::createFromFormat('!Y-m-d', substr($dateStart, 0, 10));
+    $endDay = DateTimeImmutable::createFromFormat('!Y-m-d', substr($dateEnd, 0, 10));
+    $salesTooLong = $period === 'custom' && $startDay !== false && $endDay !== false
+        && $startDay->diff($endDay)->days > 365;
+    if (!$salesTooLong) {
+        $st = $pdo->prepare("SELECT agent_key, SUM(CASE WHEN doc_type = 4 THEN 1 ELSE 0 END) AS sale_cnt
+            FROM br_invoices
+            WHERE invoice_date BETWEEN ? AND ? AND doc_type IN (4,7,17) AND agent_key IN ($agentMarks)
+            GROUP BY agent_key");
+        $st->execute(array_merge([$dateStart, $dateEnd], $agents));
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $salesCounts[(string) $r['agent_key']] = (int) $r['sale_cnt'];
+        }
+
+        $st = $pdo->prepare("SELECT agent_key, DATE(invoice_date) AS d,
+                SUM(CASE WHEN doc_type = 4 THEN 1 ELSE 0 END) AS sale_cnt,
+                SUM(CASE WHEN doc_type = 4 THEN net_amount ELSE 0 END) AS sale_sum,
+                SUM(CASE WHEN doc_type IN (7,17) THEN 1 ELSE 0 END) AS ret_cnt,
+                SUM(CASE WHEN doc_type IN (7,17) THEN net_amount ELSE 0 END) AS ret_sum
+            FROM br_invoices
+            WHERE invoice_date BETWEEN ? AND ? AND doc_type IN (4,7,17) AND agent_key IN ($agentMarks)
+            GROUP BY agent_key, DATE(invoice_date)
+            ORDER BY d DESC, agent_key");
+        $st->execute(array_merge([$dateStart, $dateEnd], $agents));
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $agent = (string) $r['agent_key'];
+            if ($selectedAgent !== null && $agent !== $selectedAgent) {
+                continue;
+            }
+            $day = (string) $r['d'];
+            $salesDays[$day][$agent] = $r;
+            foreach (['sale_cnt', 'ret_cnt'] as $key) {
+                $salesTotals[$key] += (int) $r[$key];
+            }
+            foreach (['sale_sum', 'ret_sum'] as $key) {
+                $salesTotals[$key] += (float) $r[$key];
+            }
+        }
+    }
+}
+
+// المشتريات: إجماليات التابات والكروت من كل الفواتير، ثم أول ٥٠٠ صف للعرض.
+$purchaseBranches = [1, 2, 3, 5, 6];
+$purchaseCounts = [];
+$purchaseTotals = ['sale_cnt' => 0, 'sale_sum' => 0.0, 'ret_cnt' => 0, 'ret_sum' => 0.0];
+$purchaseRows = [];
+if ($view === 'purchases') {
+    if ($branchFilter !== null && $branchFilter !== 0 && !in_array($branchFilter, $purchaseBranches, true)) {
+        $branchFilter = null;
+    }
+    $st = $pdo->prepare("SELECT company_branch, doc_type, COUNT(*) AS cnt, SUM(net_amount) AS net_sum
+        FROM hq_invoices
+        WHERE doc_type IN (2,6) AND company_branch IN (1,2,3,5,6)
+          AND (invoice_date BETWEEN ? AND ? OR (invoice_date IS NULL AND synced_at BETWEEN ? AND ?))
+        GROUP BY company_branch, doc_type");
+    $st->execute([$dateStart, $dateEnd, $dateStart, $dateEnd]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $cb = (int) $r['company_branch'];
+        $count = (int) $r['cnt'];
+        $purchaseCounts[$cb][(int) $r['doc_type']] = $count;
+        if ($branchFilter !== null && $branchFilter !== $cb) {
+            continue;
+        }
+        $prefix = (int) $r['doc_type'] === 2 ? 'sale' : 'ret';
+        $purchaseTotals[$prefix . '_cnt'] += $count;
+        $purchaseTotals[$prefix . '_sum'] += (float) $r['net_sum'];
+    }
+    $purchaseParams = [$dateStart, $dateEnd, $dateStart, $dateEnd];
+    $purchaseSql = "SELECT sth_id, suffix, doc_no, supplier_name, doc_type, company_branch,
+            total_amount, net_amount, COALESCE(invoice_date, synced_at) AS event_time
+        FROM hq_invoices
+        WHERE doc_type IN (2,6) AND company_branch IN (1,2,3,5,6)
+          AND (invoice_date BETWEEN ? AND ? OR (invoice_date IS NULL AND synced_at BETWEEN ? AND ?))";
+    if ($branchFilter !== null) {
+        $purchaseSql .= ' AND company_branch = ?';
+        $purchaseParams[] = $branchFilter;
+    }
+    $purchaseSql .= ' ORDER BY event_time DESC, sth_id DESC, suffix DESC LIMIT 500';
+    $st = $pdo->prepare($purchaseSql);
+    $st->execute($purchaseParams);
+    $purchaseRows = $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
 // ترتيب الخط الزمني تنازلياً حسب الوقت (الأحدث فوق)
 usort($feed, function ($a, $b) {
     return strcmp($b['time'], $a['time']);
@@ -915,6 +876,29 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
+/* تابات الصفحة والفروع بنفس شكل صفحة المراجعة */
+.branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+.branch-tabs .btab {
+    padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
+    text-decoration:none; font-size:14px; border:1.5px solid var(--line);
+    transition:.15s; font-family:inherit; cursor:pointer;
+}
+.branch-tabs .btab:hover  { border-color:var(--accent); }
+.branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
+.rv-tabs { display:flex; gap:18px; border-bottom:2px solid var(--line); margin-bottom:20px; }
+.rv-tab { padding:10px 4px; cursor:pointer; color:var(--ink-500); font-weight:600; font-size:15px;
+    border-bottom:3px solid transparent; margin-bottom:-2px; background:none; border-top:none; border-left:none; border-right:none; font-family:inherit; }
+.rv-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
+.rv-pane { display:none; } .rv-pane.active { display:block; }
+.rv-tabs a { text-decoration:none; }
+.activity-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+.activity-stat { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px; min-width:0; }
+.activity-stat-label { display:block; color:var(--ink-500); font-size:12px; margin-bottom:6px; }
+.activity-stat-value { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
+.activity-table-wrap { overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; }
+.activity-table-wrap .ftable { width:100%; min-width:650px; margin:0; }
+.activity-table-wrap th.num, .activity-table-wrap td.num { text-align:left; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.activity-table-wrap tfoot { font-weight:700; }
 /* كروت محتاج تصرف */
 .action-grid {
     display: grid;
@@ -1081,6 +1065,14 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="content-container">
 
+    <nav class="rv-tabs" aria-label="أقسام حركات النظام">
+        <?php foreach (['timeline' => 'الخط الزمني', 'sales' => 'المبيعات', 'purchases' => 'المشتريات'] as $tabKey => $tabLabel): ?>
+            <a class="rv-tab <?= $view === $tabKey ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => $tabKey]))) ?>"><?= e($tabLabel) ?></a>
+        <?php endforeach; ?>
+    </nav>
+
+    <?php if ($view === 'timeline'): ?>
+
     <!-- كروت «محتاج تصرّف» -->
     <div class="action-grid">
         <!-- ورديات مستنية مراجعة -->
@@ -1146,8 +1138,11 @@ require_once __DIR__ . '/includes/header.php';
         </a>
     </div>
 
+    <?php endif; ?>
+
     <!-- شريط الفلاتر -->
     <form method="GET" action="activity.php" class="filter-bar">
+        <input type="hidden" name="view" value="<?= e($view) ?>">
         <div style="display:flex;align-items:center;gap:6px;">
             <label for="periodSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-calendar"></i> الفترة:</label>
             <select name="period" id="periodSelect" onchange="toggleCustomDates(this.value)">
@@ -1155,6 +1150,7 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="yesterday" <?= $period === 'yesterday' ? 'selected' : '' ?>>أمس</option>
                 <option value="7d" <?= $period === '7d' ? 'selected' : '' ?>>آخر ٧ أيام</option>
                 <option value="30d" <?= $period === '30d' ? 'selected' : '' ?>>آخر ٣٠ يوم</option>
+                <option value="month" <?= $period === 'month' ? 'selected' : '' ?>>الشهر ده</option>
                 <option value="custom" <?= $period === 'custom' ? 'selected' : '' ?>>فترة مخصصة...</option>
             </select>
         </div>
@@ -1165,6 +1161,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="date" name="to" value="<?= e($customTo) ?>" title="إلى تاريخ">
         </div>
 
+        <?php if ($view === 'timeline'): ?>
         <div style="display:flex;align-items:center;gap:6px;">
             <label for="branchSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-building-store"></i> الفرع:</label>
             <select name="branch" id="branchSelect">
@@ -1181,9 +1178,6 @@ require_once __DIR__ . '/includes/header.php';
             <label for="typeSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-filter"></i> النوع:</label>
             <select name="type" id="typeSelect">
                 <option value="all" <?= $typeFilter === 'all' ? 'selected' : '' ?>>كل الحركات</option>
-                <option value="purchases" <?= $typeFilter === 'purchases' ? 'selected' : '' ?>>مشتريات</option>
-                <option value="returns" <?= $typeFilter === 'returns' ? 'selected' : '' ?>>مردودات</option>
-                <option value="sales" <?= $typeFilter === 'sales' ? 'selected' : '' ?>>مبيعات الفروع</option>
                 <option value="newitems" <?= $typeFilter === 'newitems' ? 'selected' : '' ?>>أصناف جديدة</option>
                 <option value="shifts" <?= $typeFilter === 'shifts' ? 'selected' : '' ?>>ورديات</option>
                 <option value="custody" <?= $typeFilter === 'custody' ? 'selected' : '' ?>>عهد</option>
@@ -1199,12 +1193,14 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="advances" <?= $typeFilter === 'advances' ? 'selected' : '' ?>>سلف</option>
             </select>
         </div>
+        <?php endif; ?>
 
         <button type="submit" class="btn btn-primary btn-sm" style="margin-right:auto;">
             <i class="ti ti-filter"></i> تصفية
         </button>
     </form>
 
+    <?php if ($view === 'timeline'): ?>
     <!-- الخط الزمني -->
     <div class="timeline-card">
         <div class="timeline-header">
@@ -1284,6 +1280,127 @@ require_once __DIR__ . '/includes/header.php';
             </table>
         </div>
     </div>
+    <?php elseif ($view === 'sales'): ?>
+        <nav class="branch-tabs" aria-label="فروع المبيعات">
+            <a class="btab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => 'all']))) ?>">الكل</a>
+            <?php foreach ($salesBranches as $b): ?>
+                <a class="btab <?= $branchFilter === (int) $b['id'] ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => (int) $b['id']]))) ?>">
+                    <?= e($b['name']) ?> (<?= number_format($salesCounts[(string) $b['agent']] ?? 0) ?>)
+                </a>
+            <?php endforeach; ?>
+        </nav>
+        <?php if ($salesTooLong): ?>
+            <div class="timeline-card">اختار فترة أقل من سنة.</div>
+        <?php else: ?>
+            <?php $salesNet = $salesTotals['sale_sum'] - $salesTotals['ret_sum']; ?>
+            <div class="activity-stats">
+                <?php foreach ([
+                    ['فواتير البيع', number_format($salesTotals['sale_cnt'])],
+                    ['إجمالي البيع', sens_mask(number_format($salesTotals['sale_sum'], 2))],
+                    ['عدد المرتجعات', number_format($salesTotals['ret_cnt'])],
+                    ['إجمالي المرتجعات', sens_mask(number_format($salesTotals['ret_sum'], 2))],
+                    ['الصافي', sens_mask(number_format($salesNet, 2))],
+                ] as [$label, $value]): ?>
+                    <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
+                <?php endforeach; ?>
+            </div>
+            <div class="timeline-card">
+                <div class="timeline-header"><h3 class="timeline-title">المبيعات اليومية</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
+                <div class="activity-table-wrap">
+                    <table class="ftable">
+                        <thead><tr><th>اليوم</th>
+                            <?php if ($branchFilter === null): ?>
+                                <?php foreach ($salesBranches as $b): ?><th class="num"><?= e($b['name']) ?></th><?php endforeach; ?>
+                                <th class="num">الإجمالي</th>
+                            <?php else: ?>
+                                <th class="num">فواتير البيع</th><th class="num">البيع</th><th class="num">عدد المرتجعات</th><th class="num">المرتجعات</th><th class="num">الصافي</th>
+                            <?php endif; ?>
+                        </tr></thead>
+                        <tbody>
+                            <?php foreach ($salesDays as $day => $byAgent): ?>
+                                <tr><td><a class="activity-link" href="daily_summary.php?date=<?= e(urlencode($day)) ?>"><?= e($day) ?></a></td>
+                                    <?php if ($branchFilter === null): ?>
+                                        <?php $dayNet = 0.0; foreach ($salesBranches as $b): ?>
+                                            <?php $r = $byAgent[(string) $b['agent']] ?? null; $branchNet = $r ? (float) $r['sale_sum'] - (float) $r['ret_sum'] : 0.0; $dayNet += $branchNet; ?>
+                                            <td class="num"><?= sens_mask(number_format($branchNet, 2)) ?></td>
+                                        <?php endforeach; ?>
+                                        <td class="num"><?= sens_mask(number_format($dayNet, 2)) ?></td>
+                                    <?php else: ?>
+                                        <?php $r = reset($byAgent); ?>
+                                        <td class="num"><?= number_format((int) $r['sale_cnt']) ?></td>
+                                        <td class="num"><?= sens_mask(number_format((float) $r['sale_sum'], 2)) ?></td>
+                                        <td class="num"><?= number_format((int) $r['ret_cnt']) ?></td>
+                                        <td class="num"><?= sens_mask(number_format((float) $r['ret_sum'], 2)) ?></td>
+                                        <td class="num"><?= sens_mask(number_format((float) $r['sale_sum'] - (float) $r['ret_sum'], 2)) ?></td>
+                                    <?php endif; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (!$salesDays): ?><tr><td colspan="<?= $branchFilter === null ? count($salesBranches) + 2 : 6 ?>">مفيش مبيعات في الفترة دي.</td></tr><?php endif; ?>
+                        </tbody>
+                        <tfoot><tr><td>الإجمالي</td>
+                            <?php if ($branchFilter === null): ?>
+                                <?php foreach ($salesBranches as $b): ?>
+                                    <?php $branchTotal = 0.0; foreach ($salesDays as $byAgent) { $r = $byAgent[(string) $b['agent']] ?? null; if ($r) { $branchTotal += (float) $r['sale_sum'] - (float) $r['ret_sum']; } } ?>
+                                    <td class="num"><?= sens_mask(number_format($branchTotal, 2)) ?></td>
+                                <?php endforeach; ?>
+                                <td class="num"><?= sens_mask(number_format($salesNet, 2)) ?></td>
+                            <?php else: ?>
+                                <td class="num"><?= number_format($salesTotals['sale_cnt']) ?></td>
+                                <td class="num"><?= sens_mask(number_format($salesTotals['sale_sum'], 2)) ?></td>
+                                <td class="num"><?= number_format($salesTotals['ret_cnt']) ?></td>
+                                <td class="num"><?= sens_mask(number_format($salesTotals['ret_sum'], 2)) ?></td>
+                                <td class="num"><?= sens_mask(number_format($salesNet, 2)) ?></td>
+                            <?php endif; ?>
+                        </tr></tfoot>
+                    </table>
+                </div>
+            </div>
+        <?php endif; ?>
+    <?php else: ?>
+        <nav class="branch-tabs" aria-label="فروع المشتريات">
+            <a class="btab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => 'all']))) ?>">الكل</a>
+            <?php foreach ($purchaseBranches as $cb): ?>
+                <a class="btab <?= $branchFilter === $cb ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => $cb]))) ?>">
+                    <?= e(act_company_branch_name($cb, $branchBySto)) ?> (<?= number_format($purchaseCounts[$cb][2] ?? 0) ?>)
+                </a>
+            <?php endforeach; ?>
+        </nav>
+        <?php $purchaseNet = $purchaseTotals['sale_sum'] - $purchaseTotals['ret_sum']; $purchaseCount = $purchaseTotals['sale_cnt'] + $purchaseTotals['ret_cnt']; ?>
+        <div class="activity-stats">
+            <?php foreach ([
+                ['فواتير الشراء', number_format($purchaseTotals['sale_cnt'])],
+                ['إجمالي الشراء', sens_mask(number_format($purchaseTotals['sale_sum'], 2))],
+                ['عدد المردودات', number_format($purchaseTotals['ret_cnt'])],
+                ['إجمالي المردودات', sens_mask(number_format($purchaseTotals['ret_sum'], 2))],
+                ['الصافي', sens_mask(number_format($purchaseNet, 2))],
+            ] as [$label, $value]): ?>
+                <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
+            <?php endforeach; ?>
+        </div>
+        <div class="timeline-card">
+            <div class="timeline-header"><h3 class="timeline-title">فواتير المشتريات والمردودات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
+            <div class="activity-table-wrap">
+                <table class="ftable">
+                    <thead><tr><th>التاريخ</th><th>النوع</th><th>رقم الفاتورة</th><th>المورد</th><?php if ($branchFilter === null): ?><th>الفرع</th><?php endif; ?><th class="num">الإجمالي</th><th class="num">الصافي</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($purchaseRows as $r): ?>
+                            <?php $cb = (int) $r['company_branch']; $dt = (int) $r['doc_type']; ?>
+                            <tr><td><?= e((string) $r['event_time']) ?></td>
+                                <td><span class="fchip <?= $dt === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= $dt === 2 ? 'شراء' : 'مردود' ?></span></td>
+                                <td><a class="activity-link" href="<?= e('invoices.php?invoice=' . (int) $r['sth_id'] . '&suffix=' . urlencode((string) $r['suffix']) . '&cb=' . $cb . '&dt=' . $dt) ?>"><?= e((string) $r['doc_no']) ?></a></td>
+                                <td><?= e((string) ($r['supplier_name'] ?: 'غير محدد')) ?></td>
+                                <?php if ($branchFilter === null): ?><td><?= e(act_company_branch_name($cb, $branchBySto)) ?></td><?php endif; ?>
+                                <td class="num"><?= sens_mask(number_format((float) $r['total_amount'], 2)) ?></td>
+                                <td class="num"><?= sens_mask(number_format((float) $r['net_amount'], 2)) ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (!$purchaseRows): ?><tr><td colspan="<?= $branchFilter === null ? 7 : 6 ?>">مفيش فواتير في الفترة دي.</td></tr><?php endif; ?>
+                    </tbody>
+                    <tfoot><tr><td colspan="<?= $branchFilter === null ? 5 : 4 ?>">الإجمالي: شراء <?= number_format($purchaseTotals['sale_cnt']) ?> (<?= sens_mask(number_format($purchaseTotals['sale_sum'], 2)) ?>) · مردود <?= number_format($purchaseTotals['ret_cnt']) ?> (<?= sens_mask(number_format($purchaseTotals['ret_sum'], 2)) ?>)</td><td class="num">—</td><td class="num"><?= sens_mask(number_format($purchaseNet, 2)) ?></td></tr></tfoot>
+                </table>
+            </div>
+            <?php if ($purchaseCount > 500): ?><p class="timeline-meta">ظاهر أول ٥٠٠ من <?= number_format($purchaseCount) ?> — ضيّق الفترة</p><?php endif; ?>
+        </div>
+    <?php endif; ?>
 
 </div>
 
