@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">مكالمات الفرع</string>
+    <string name="server_url_label">رابط الموقع</string>
+    <string name="token_label">توكن الفرع</string>
+    <string name="btn_test">جرّب</string>
+    <string name="btn_permission">صلاحية سجل المكالمات</string>
+    <string name="permission_hint">لو أندرويد ١٣ أو أحدث ورفض: الإعدادات ← التطبيقات ← مكالمات الفرع ← ⋮ ← السماح بالإعدادات المقيدة</string>
+    <string name="btn_battery">استثني من توفير البطارية</string>
+    <string name="btn_sync_now">ابعت دلوقتي</string>
+    <string name="status_connected">متوصّل: %1$s</string>
+    <string name="status_token_error">التوكن غلط</string>
+    <string name="last_sync_label">آخر مزامنة ناجحة: %1$s</string>
+    <string name="last_response_label">آخر رد: %1$s</string>
+    <string name="last_error_label">آخر غلطة: %1$s</string>
+</resources>
+

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/ink_900"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="20dp" />
+
+        <!-- رابط الموقع -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/server_url_label"
+            android:textColor="@color/ink_500"
+            android:textSize="13sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/surface"
+            android:padding="12dp"
+            android:inputType="textUri"
+            android:hint="https://hosnimanagement.com/calls_hook.php"
+            android:textColor="@color/ink_900"
+            android:textSize="14sp"
+            android:layout_marginBottom="14dp" />
+
+        <!-- توكن الفرع -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/token_label"
+            android:textColor="@color/ink_500"
+            android:textSize="13sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText
+            android:id="@+id/editToken"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/surface"
+            android:padding="12dp"
+            android:inputType="textPassword"
+            android:hint="توكن الفرع من الإدارة"
+            android:textColor="@color/ink_900"
+            android:textSize="14sp"
+            android:layout_marginBottom="14dp" />
+
+        <!-- زرار جرّب -->
+        <Button
+            android:id="@+id/btnTest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_test"
+            android:textColor="@color/surface"
+            android:backgroundTint="@color/accent"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/txtTestResult"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/ink_500"
+            android:textSize="13sp"
+            android:layout_marginBottom="20dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E2E8F0"
+            android:layout_marginBottom="20dp" />
+
+        <!-- الصلاحيات -->
+        <Button
+            android:id="@+id/btnPermission"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_permission"
+            android:textColor="@color/surface"
+            android:backgroundTint="@color/primary"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/permission_hint"
+            android:textColor="@color/ink_500"
+            android:textSize="12sp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- البطارية -->
+        <Button
+            android:id="@+id/btnBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_battery"
+            android:textColor="@color/ink_900"
+            android:backgroundTint="@color/surface"
+            android:layout_marginBottom="24dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#E2E8F0"
+            android:layout_marginBottom="20dp" />
+
+        <!-- حالة المزامنة -->
+        <TextView
+            android:id="@+id/txtLastSync"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="آخر مزامنة ناجحة: —"
+            android:textColor="@color/ink_900"
+            android:textSize="13sp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:id="@+id/txtLastResponse"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="آخر رد: —"
+            android:textColor="@color/ink_500"
+            android:textSize="13sp"
+            android:layout_marginBottom="6dp" />
+
+        <TextView
+            android:id="@+id/txtLastError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="آخر غلطة: —"
+            android:textColor="@color/neg"
+            android:textSize="13sp"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp" />
+
+        <!-- زرار ابعت دلوقتي -->
+        <Button
+            android:id="@+id/btnSyncNow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_sync_now"
+            android:textColor="@color/surface"
+            android:backgroundTint="@color/pos"
+            android:layout_marginTop="8dp" />
+
+    </LinearLayout>
+</ScrollView>
+
