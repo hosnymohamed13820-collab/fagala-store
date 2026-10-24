@@ -2333,7 +2333,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $trClassAttr ?><?= $type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق' ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($type === 'insta_recon' && $ci === 8): ?>

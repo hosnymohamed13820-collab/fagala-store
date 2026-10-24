@@ -113,11 +113,6 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
             "SELECT je.*, t.name AS treasury_name, u.full_name AS by_name,
                     COALESCE(je.account_id, tm.entry_code_id) AS display_account_id,
                     CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
-                    CASE
-                        WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
-                        WHEN ec.id IS NOT NULL THEN (CASE WHEN ec.src_table = 'suppliers' THEN ec.name ELSE NULL END)
-                        ELSE NULL
-                    END AS supplier_name,
                     eu.full_name AS edited_by_name,
                     cb.name AS cost_branch_name,
                     sh.shift_name,
@@ -179,11 +174,6 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                     "SELECT je.*, u.full_name AS by_name,
                             COALESCE(je.account_id, tm.entry_code_id) AS display_account_id,
                             CASE WHEN ja.id IS NOT NULL THEN ja_p.name ELSE ec_p.name END AS parent_account_name,
-                            CASE
-                                WHEN ja.id IS NOT NULL THEN (CASE WHEN ja.src_table = 'suppliers' THEN ja.name ELSE NULL END)
-                                WHEN ec.id IS NOT NULL THEN (CASE WHEN ec.src_table = 'suppliers' THEN ec.name ELSE NULL END)
-                                ELSE NULL
-                            END AS supplier_name,
                             eu.full_name AS edited_by_name,
                             cb.name AS cost_branch_name,
                             sh.shift_name,
@@ -233,10 +223,14 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
     }
 
     $accountLabels = rep_account_labels(array_column($statement, 'display_account_id'));
-    foreach ($statement as &$row) {
+    $rowNames = rep_row_names($pdo, $statement);
+    foreach ($statement as $i => &$row) {
         $labels = $accountLabels[(int) $row['display_account_id']] ?? ['root_name'=>null, 'leaf_name'=>null];
-        $row['parent_account_name'] = $labels['root_name'];
-        $row['entry_code_name'] = $labels['leaf_name'];
+        $row['parent_account_name'] = in_array($row['ref_type'], ['advance','advance_recovery'], true)
+            ? 'سلف موظفين' : $labels['root_name'];
+        $row['person_name'] = $rowNames[$i] ?? '—';
+        $row['entry_code_name'] = in_array($row['ref_type'], ['advance','advance_recovery'], true)
+            && $row['person_name'] !== '—' ? $row['person_name'] : $labels['leaf_name'];
     }
     unset($row);
 

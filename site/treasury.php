@@ -242,13 +242,13 @@ $datedEdits = array_values(array_filter($statement, static fn($row) =>
 if ($selectedTreasury && ($_GET['export'] ?? '') === 'xlsx') {
     require_once __DIR__ . '/xlsx_lib.php';
     $x = new SimpleXlsx('كشف خزينة ' . mb_substr((string) $selectedTreasury['name'], 0, 20));
-    $x->addRow(['التاريخ', 'رقم الوردية', 'البيان', 'رأس القيد', 'القيد', 'اسم المورد', 'الفرع', 'مدين', 'دائن', 'الرصيد', 'بواسطة', 'الوقت', 'الملاحظات'], true);
+    $x->addRow(['التاريخ', 'رقم الوردية', 'البيان', 'رأس القيد', 'القيد', 'الاسم', 'الفرع', 'مدين', 'دائن', 'الرصيد', 'بواسطة', 'الوقت', 'الملاحظات'], true);
     if ($priorBalance !== null) {
         $x->addRow([$stFrom, '', 'رصيد سابق', '', '', '', '', 0, 0, round($priorBalance, 2), '', '', '']);
     }
     foreach ($statement as $row) {
         $x->addRow([$row['entry_date'], (string) ($row['shift_name'] ?? ''), $row['description'],
-            $row['parent_account_name'] ?? '', $row['entry_code_name'] ?? '', $row['supplier_name'] ?? '',
+            $row['parent_account_name'] ?? '', $row['entry_code_name'] ?? '', $row['person_name'] ?? '',
             $row['cost_branch_name'] ?? '', round((float) $row['debit'], 2), round((float) $row['credit'], 2),
             round((float) $row['running_balance'], 2), $row['by_name'] ?? '', $row['created_at'], $row['notes'] ?? '']);
     }
@@ -555,7 +555,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="stmt-scroll">
         <table>
             <thead><tr>
-                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
@@ -574,7 +574,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
-                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= $row['person_name'] !== '—' ? e($row['person_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
@@ -645,7 +645,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <table>
             <thead>
                 <tr>
-                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>اسم المورد</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
                 </tr>
             </thead>
             <tbody>
@@ -671,7 +671,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         </td>
                         <td><?= !empty($row['parent_account_name']) ? e($row['parent_account_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
-                        <td><?= !empty($row['supplier_name']) ? e($row['supplier_name']) : '<span class="trs-dash">—</span>' ?></td>
+                        <td><?= $row['person_name'] !== '—' ? e($row['person_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
                         <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
