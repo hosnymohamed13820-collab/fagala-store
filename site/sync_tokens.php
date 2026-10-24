@@ -31,6 +31,19 @@ const SYNC_AGENT_TOKENS = [
     'ashraqa' => 'ashraqa_9xK2mQ7vR4tN8pL5wZ3hB6yF1cD0jS',
     'sms_phone' => 'sms_638d41ecfeb47c0e949323da3f7e292ca2107baf',
     'guard_watch' => 'a221dee4938c9e9bbd000042bebb15ac6b3d2266', // برنامج كلود على جهاز محمد — guard_feed.php / guard_note.php بس
+    'calls_zahraa' => '3904fbcd6970fc3e55f31eeef5c3416ef1a5d5af3393d119',
+    'calls_bonjour' => '9368e70be38cde4790eac52ae419c02deac1bed8ecceaa61',
+    'calls_degla' => '077000e5d184fe827bc1c1730de46f1dbdfe30709ee27137',
+    'calls_abc' => 'cf42695e28a744dc13539d2994f8d0b388166956ddbb141b',
+    'calls_ashraqa' => '13b0a46ff67ee8f1d232e1383102937f850621760e056610',
+];
+
+const CALLS_TOKEN_BRANCH = [
+    'calls_bonjour' => 1,
+    'calls_abc'     => 2,
+    'calls_zahraa'  => 3,
+    'calls_degla'   => 4,
+    'calls_ashraqa' => 5,
 ];
 
 // الوكلاء المسموح لهم يبعتوا على sync_branch.php
