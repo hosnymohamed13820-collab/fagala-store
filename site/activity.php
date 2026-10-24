@@ -1,7 +1,10 @@
 <?php
 /**
  * activity.php — صفحة «كل حركة على السيستم» للمدير
- * نظام الفجالة ستور المالي (بريف ١٩٥)
+ * نظام الفجالة ستور المالي (بريف ١٩٥ · اتقفلت في بريف ٢٠٦)
+ *
+ * كل نوع حركة = استعلام واحد بـLIMIT 200، والدمج في PHP.
+ * الصفحة قراية بس — مفيش أي INSERT/UPDATE/DELETE من هنا.
  */
 declare(strict_types=1);
 
@@ -15,12 +18,70 @@ if (!is_owner()) {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/sms_lib.php';              // sms_parse() · sms_is_foreign()
+require_once __DIR__ . '/branch_invoices_lib.php';  // br_inv_map() — خريطة وكيل كل فرع
 sens_page();
 
 $pdo = db();
 
 // =========================================================================
-//  ١. كروت «محتاج تصرّف»
+//  خرائط الفروع
+//  🔴 company_branch = رقم الفرع في نظام الشركة = branches.sto_id
+//     (الإدارة company_branch = 1 ومش مربوطة بـsto_id في كل النسخ)
+// =========================================================================
+
+$branchesList = $pdo->query(
+    'SELECT id, name, sto_id, in_receiving FROM branches ORDER BY id'
+)->fetchAll(PDO::FETCH_ASSOC);
+
+$branchById  = [];   // branches.id  => صف الفرع
+$branchBySto = [];   // sto_id       => صف الفرع
+foreach ($branchesList as $b) {
+    $branchById[(int) $b['id']] = $b;
+    $sid = (int) ($b['sto_id'] ?? 0);
+    if ($sid > 1) {
+        $branchBySto[$sid] = $b;
+    }
+}
+
+/** اسم الفرع من رقم فرع الشركة (company_branch). */
+function act_company_branch_name($companyBranch, array $branchBySto): string
+{
+    $cb = (int) $companyBranch;
+    if ($cb === 1) {
+        return 'الإدارة';
+    }
+    return (string) ($branchBySto[$cb]['name'] ?? ('فرع الشركة ' . $cb));
+}
+
+/**
+ * رقم فرع الشركة اللي يخص فرع عندنا (للفلتر).
+ * الإدارة (in_receiving = 0) = 1 · فرع بيع = sto_id · فرع مالوش مخزن (زي إشراقة) = 0.
+ */
+function act_company_branch_of(int $branchId, array $branchById): int
+{
+    $b = $branchById[$branchId] ?? null;
+    if ($b === null) {
+        return $branchId;
+    }
+    $sid = (int) ($b['sto_id'] ?? 0);
+    if ($sid > 1) {
+        return $sid;
+    }
+    return ((int) ($b['in_receiving'] ?? 0) === 0) ? 1 : 0;
+}
+
+/** اسم الفرع من branches.id — ولو مش معروف «غير محدد». */
+function act_branch_name(?int $branchId, array $branchById): string
+{
+    if ($branchId === null) {
+        return 'غير محدد';
+    }
+    return (string) ($branchById[$branchId]['name'] ?? ('فرع #' . $branchId));
+}
+
+// =========================================================================
+//  ١. كروت «محتاج تصرّف» — كل رقم استعلام مستقل
 // =========================================================================
 
 // ورديات مستنية مراجعة
@@ -48,14 +109,32 @@ foreach ($lateInvoicesRows as $lir) {
     $lateInvoicesBreakdown[] = ($lir['branch_name'] ?: 'فرع ' . $lir['branch_id']) . ': ' . $lir['cnt'];
 }
 
-// رسايل إنستا من غير إذن
-$stSmsNoPermit = $pdo->query("
-    SELECT COUNT(*)
+// رسايل إنستا **الواردة** اللي من غير إذن — آخر ٧ أيام بس.
+// 🔴 كان بيعدّ كل sms_inbox من أول الدنيا (الصادر والأجنبي كمان).
+// النوع بيتحدد من نص الرسالة نفسها (sms_parse) — مش عمود في القاعدة،
+// فنقرا رسايل آخر ٧ أيام اللي مالهاش إذن ونحلّلها في PHP (استعلام واحد).
+// 🔴 فلتر رسايل إنستا المشترك — مكان واحد بس. المكرر بالرقم المرجعي مستخبي (بريف ٢٠٥).
+$smsExtra = 'AND s.dup_of IS NULL';
+
+$smsCardFrom = date('Y-m-d', strtotime('-6 days'));
+$smsCardTo   = date('Y-m-d');
+
+$stSmsNoPermit = $pdo->prepare("
+    SELECT s.id, s.sender, s.body, s.sms_at
     FROM sms_inbox s
     LEFT JOIN sms_permits p ON p.sms_id = s.id
-    WHERE p.id IS NULL AND s.dup_of IS NULL
+    WHERE s.sms_at >= ? AND s.sms_at < DATE_ADD(?, INTERVAL 1 DAY)
+      AND p.id IS NULL {$smsExtra}
 ");
-$smsNoPermitCount = (int) ($stSmsNoPermit ? $stSmsNoPermit->fetchColumn() : 0);
+$stSmsNoPermit->execute([$smsCardFrom, $smsCardTo]);
+$smsNoPermitCount = 0;
+foreach ($stSmsNoPermit->fetchAll(PDO::FETCH_ASSOC) as $sr) {
+    $parsed = sms_parse((string) $sr['body'], (string) $sr['sms_at']);
+    // الواردة بس · ومن غير رسايل البطاقة مسبقة الدفع (مالهاش علاقة بالشغل)
+    if ($parsed['kind'] === 'in' && !sms_is_foreign((string) $sr['body'])) {
+        $smsNoPermitCount++;
+    }
+}
 
 // =========================================================================
 //  ٢. الفلاتر
@@ -66,6 +145,13 @@ $branchFilter = isset($_GET['branch']) && $_GET['branch'] !== 'all' && $_GET['br
 $typeFilter = (string) ($_GET['type'] ?? 'all');
 $customFrom = (string) ($_GET['from'] ?? '');
 $customTo = (string) ($_GET['to'] ?? '');
+
+$validTypes = ['all', 'purchases', 'returns', 'shifts', 'custody', 'receiving', 'treasury',
+               'shortage', 'attendance', 'stocktake', 'sms', 'sales', 'newitems',
+               'permits', 'transfers', 'salaries', 'advances'];
+if (!in_array($typeFilter, $validTypes, true)) {
+    $typeFilter = 'all';
+}
 
 $today = date('Y-m-d');
 $timeStart = microtime(true);
@@ -96,8 +182,19 @@ switch ($period) {
         break;
 }
 
-// قائمة الفروع للفلتر
-$branchesList = $pdo->query("SELECT id, name FROM branches ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+// رقم فرع الشركة المطلوب (للمشتريات) — 0 يعني «الفرع ده مالوش مشتريات»
+$companyBranchFilter = $branchFilter !== null ? act_company_branch_of($branchFilter, $branchById) : null;
+
+// وكيل فرع المبيعات المطلوب
+$salesAgentFilter = null;
+if ($branchFilter !== null) {
+    foreach (br_inv_map() as $bInv) {
+        if ((int) $bInv['id'] === $branchFilter) {
+            $salesAgentFilter = (string) $bInv['agent'];
+            break;
+        }
+    }
+}
 
 // =========================================================================
 //  ٣. استعلامات الخط الزمني (استعلام واحد لكل نوع بـ LIMIT 200)
@@ -107,122 +204,174 @@ $feed = [];
 
 // أ) مشتريات الإدارة والفروع (doc_type = 2)
 if ($typeFilter === 'all' || $typeFilter === 'purchases') {
-    $sql = "
-        SELECT 
-            i.sth_id, i.doc_no, i.doc_type, i.supplier_name, i.total_amount, i.net_amount,
-            i.company_branch AS branch_id, b.name AS branch_name,
-            COALESCE(i.invoice_date, i.synced_at) AS event_time
-        FROM hq_invoices i
-        LEFT JOIN branches b ON b.id = i.company_branch
-        WHERE i.doc_type = 2
-          AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
-    ";
-    $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
-    if ($branchFilter !== null) {
-        $sql .= " AND i.company_branch = ?";
-        $params[] = $branchFilter;
-    }
-    $sql .= " ORDER BY event_time DESC LIMIT 200";
-    $st = $pdo->prepare($sql);
-    $st->execute($params);
-    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $feed[] = [
-            'time'        => (string) $r['event_time'],
-            'type'        => 'purchases',
-            'type_label'  => 'فاتورة شراء',
-            'badge_class' => 'fchip-info',
-            'icon'        => 'ti-file-invoice',
-            'branch'      => $r['branch_name'] ?: 'الإدارة',
-            'desc'        => 'فاتورة شراء #' . $r['doc_no'] . ' من المورد ' . ($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
-            'actor'       => 'الإدارة',
-            'link'        => 'invoices.php?search=' . urlencode((string)$r['doc_no']),
-        ];
+    if ($companyBranchFilter === 0) {
+        // فرع مالوش مخزن في نظام الشركة — مفيش مشتريات تخصه
+    } else {
+        $sql = "
+            SELECT
+                i.sth_id, i.suffix, i.doc_no, i.supplier_name, i.total_amount, i.net_amount,
+                i.company_branch,
+                b.name AS branch_name,
+                COALESCE(i.invoice_date, i.synced_at) AS event_time
+            FROM hq_invoices i
+            LEFT JOIN branches b ON b.sto_id = i.company_branch AND b.in_receiving = 1
+            WHERE i.doc_type = 2
+              AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
+        ";
+        $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
+        if ($companyBranchFilter !== null) {
+            $sql .= " AND i.company_branch = ?";
+            $params[] = $companyBranchFilter;
+        }
+        $sql .= " ORDER BY event_time DESC LIMIT 200";
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $cb = (int) $r['company_branch'];
+            $feed[] = [
+                'time'        => (string) $r['event_time'],
+                'type'        => 'purchases',
+                'type_label'  => 'فاتورة شراء',
+                'badge_class' => 'fchip-mute',
+                'icon'        => 'ti-file-invoice',
+                'branch'      => $r['branch_name'] ?: act_company_branch_name($cb, $branchBySto),
+                // 🔴 كل جزء نصي جاي من القاعدة بيتعمله e() هنا — مش في الطباعة،
+                //    عشان sens_mask() بترجّع HTML ومحتاج يطلع HTML.
+                'desc'        => 'فاتورة شراء #' . e((string) $r['doc_no']) . ' من المورد ' . e($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
+                'actor'       => 'الإدارة',
+                'link'        => 'invoices.php?invoice=' . (int) $r['sth_id']
+                               . '&suffix=' . urlencode((string) $r['suffix'])
+                               . '&cb=' . $cb . '&dt=2',
+            ];
+        }
     }
 }
 
 // ب) مردودات المشتريات (doc_type = 6)
 if ($typeFilter === 'all' || $typeFilter === 'returns') {
-    $sql = "
-        SELECT 
-            i.sth_id, i.doc_no, i.doc_type, i.supplier_name, i.total_amount, i.net_amount,
-            i.company_branch AS branch_id, b.name AS branch_name,
-            COALESCE(i.invoice_date, i.synced_at) AS event_time
-        FROM hq_invoices i
-        LEFT JOIN branches b ON b.id = i.company_branch
-        WHERE i.doc_type = 6
-          AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
-    ";
-    $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
-    if ($branchFilter !== null) {
-        $sql .= " AND i.company_branch = ?";
-        $params[] = $branchFilter;
-    }
-    $sql .= " ORDER BY event_time DESC LIMIT 200";
-    $st = $pdo->prepare($sql);
-    $st->execute($params);
-    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $feed[] = [
-            'time'        => (string) $r['event_time'],
-            'type'        => 'returns',
-            'type_label'  => 'مردود شراء',
-            'badge_class' => 'fchip-warn',
-            'icon'        => 'ti-arrow-back-up',
-            'branch'      => $r['branch_name'] ?: 'الإدارة',
-            'desc'        => 'مردود شراء #' . $r['doc_no'] . ' للمورد ' . ($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
-            'actor'       => 'الإدارة',
-            'link'        => 'invoice_problems.php',
-        ];
+    if ($companyBranchFilter === 0) {
+        // نفس السبب فوق
+    } else {
+        $sql = "
+            SELECT
+                i.sth_id, i.suffix, i.doc_no, i.supplier_name, i.total_amount, i.net_amount,
+                i.company_branch,
+                b.name AS branch_name,
+                COALESCE(i.invoice_date, i.synced_at) AS event_time
+            FROM hq_invoices i
+            LEFT JOIN branches b ON b.sto_id = i.company_branch AND b.in_receiving = 1
+            WHERE i.doc_type = 6
+              AND (i.invoice_date BETWEEN ? AND ? OR (i.invoice_date IS NULL AND i.synced_at BETWEEN ? AND ?))
+        ";
+        $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
+        if ($companyBranchFilter !== null) {
+            $sql .= " AND i.company_branch = ?";
+            $params[] = $companyBranchFilter;
+        }
+        $sql .= " ORDER BY event_time DESC LIMIT 200";
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $cb = (int) $r['company_branch'];
+            $feed[] = [
+                'time'        => (string) $r['event_time'],
+                'type'        => 'returns',
+                'type_label'  => 'مردود شراء',
+                'badge_class' => 'fchip-warn',
+                'icon'        => 'ti-arrow-back-up',
+                'branch'      => $r['branch_name'] ?: act_company_branch_name($cb, $branchBySto),
+                'desc'        => 'مردود شراء #' . e((string) $r['doc_no']) . ' للمورد ' . e($r['supplier_name'] ?: 'غير محدد') . ' بمبلغ ' . sens_mask(number_format((float)$r['total_amount'], 2)) . ' ج',
+                'actor'       => 'الإدارة',
+                'link'        => 'invoices.php?invoice=' . (int) $r['sth_id']
+                               . '&suffix=' . urlencode((string) $r['suffix'])
+                               . '&cb=' . $cb . '&dt=6',
+            ];
+        }
     }
 }
 
-// ج) الورديات (shifts)
+// ج) الورديات (shifts) + حدث «مراجعة وردية» منفصل
 if ($typeFilter === 'all' || $typeFilter === 'shifts') {
     $sql = "
-        SELECT 
+        SELECT
             s.id, s.branch_id, b.name AS branch_name, s.user_id, u.full_name AS user_name,
             s.shift_name, s.cash_total, s.difference, s.status, s.business_date,
-            s.created_at AS event_time
+            s.created_at, s.reviewed_at, s.reviewed_by, ru.full_name AS reviewer_name
         FROM shifts s
         LEFT JOIN branches b ON b.id = s.branch_id
         LEFT JOIN users u ON u.id = s.user_id
-        WHERE s.created_at BETWEEN ? AND ?
+        LEFT JOIN users ru ON ru.id = s.reviewed_by
+        WHERE (s.created_at BETWEEN ? AND ? OR s.reviewed_at BETWEEN ? AND ?)
     ";
-    $params = [$dateStart, $dateEnd];
+    $params = [$dateStart, $dateEnd, $dateStart, $dateEnd];
     if ($branchFilter !== null) {
         $sql .= " AND s.branch_id = ?";
         $params[] = $branchFilter;
     }
-    $sql .= " ORDER BY s.created_at DESC LIMIT 200";
+    $sql .= " ORDER BY GREATEST(COALESCE(s.created_at, '1000-01-01 00:00:00'),
+                               COALESCE(s.reviewed_at, '1000-01-01 00:00:00')) DESC
+              LIMIT 200";
     $st = $pdo->prepare($sql);
     $st->execute($params);
+
+    $statusLabels = [
+        'submitted'   => 'بانتظار المراجعة',
+        'resubmitted' => 'أعيد تقديمها',
+        'approved'    => 'معتمدة',
+        'rejected'    => 'مرفوضة',
+    ];
+
+    $inRange = static function (?string $t) use ($dateStart, $dateEnd): bool {
+        return $t !== null && $t >= $dateStart && $t <= $dateEnd;
+    };
+
     while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $statusLabels = [
-            'submitted'   => 'بانتظار المراجعة',
-            'resubmitted' => 'أعيد تقديمها',
-            'approved'    => 'معتمدة',
-            'rejected'    => 'مرفوضة',
-        ];
-        $stTxt = $statusLabels[$r['status']] ?? $r['status'];
-        $diffTxt = (float)$r['difference'] !== 0.0 ? ' (فرق: ' . sens_mask(number_format((float)$r['difference'], 2)) . ' ج)' : '';
-        $feed[] = [
-            'time'        => (string) $r['event_time'],
-            'type'        => 'shifts',
-            'type_label'  => 'وردية',
-            'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'rejected' ? 'fchip-neg' : 'fchip-info'),
-            'icon'        => 'ti-clock',
-            'branch'      => $r['branch_name'] ?: 'غير محدد',
-            'desc'        => 'تقفيل ' . ($r['shift_name'] ?: 'وردية') . ' — كاش: ' . sens_mask(number_format((float)$r['cash_total'], 2)) . ' ج' . $diffTxt . ' [' . $stTxt . ']',
-            'actor'       => $r['user_name'] ?: 'كاشير',
-            'link'        => 'review.php?shift_id=' . (int)$r['id'],
-        ];
+        $brName  = $r['branch_name'] ?: 'غير محدد';
+        $stTxt   = $statusLabels[$r['status']] ?? e((string) $r['status']);
+        $diffTxt = (float) $r['difference'] !== 0.0 ? ' (فرق: ' . sens_mask(number_format((float) $r['difference'], 2)) . ' ج)' : '';
+        // اسم الوردية جاي من القاعدة → e() هنا مرة واحدة، والوصف بيطبعه خام
+        $shiftNo = 'تقفيل ' . e($r['shift_name'] ?: 'وردية');
+
+        // ١) حدث التقفيل نفسه
+        if ($inRange($r['created_at'] !== null ? (string) $r['created_at'] : null)) {
+            $feed[] = [
+                'time'        => (string) $r['created_at'],
+                'type'        => 'shifts',
+                'type_label'  => 'وردية',
+                'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'rejected' ? 'fchip-neg' : 'fchip-mute'),
+                'icon'        => 'ti-clock',
+                'branch'      => $brName,
+                'desc'        => $shiftNo . ' — كاش: ' . sens_mask(number_format((float) $r['cash_total'], 2)) . ' ج' . $diffTxt . ' [' . $stTxt . ']',
+                'actor'       => $r['user_name'] ?: 'كاشير',
+                'link'        => 'review.php?tab=' . ($r['status'] === 'approved' || $r['status'] === 'rejected' ? 'history' : 'pending'),
+            ];
+        }
+
+        // ٢) حدث المراجعة (اعتماد/رفض) — سطر لوحده
+        if ($inRange($r['reviewed_at'] !== null ? (string) $r['reviewed_at'] : null)
+            && in_array($r['status'], ['approved', 'rejected'], true)) {
+            $feed[] = [
+                'time'        => (string) $r['reviewed_at'],
+                'type'        => 'shifts',
+                'type_label'  => 'مراجعة وردية',
+                'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : 'fchip-neg',
+                'icon'        => 'ti-check',
+                'branch'      => $brName,
+                'desc'        => ($r['status'] === 'approved' ? 'اعتمدت ' : 'اترفضت ') . $shiftNo
+                               . ' — كاش: ' . sens_mask(number_format((float) $r['cash_total'], 2)) . ' ج' . $diffTxt,
+                'actor'       => $r['reviewer_name'] ?: 'المحاسب',
+                'link'        => 'review.php?tab=history',
+            ];
+        }
     }
 }
 
 // د) العهد (branch_custody)
 if ($typeFilter === 'all' || $typeFilter === 'custody') {
     $sql = "
-        SELECT 
-            c.id, c.branch_id, b.name AS branch_name, c.submitted_by AS user_id, u.full_name AS user_name,
+        SELECT
+            c.id, c.branch_id, b.name AS branch_name, c.employee_id,
+            c.submitted_by AS user_id, u.full_name AS user_name,
             c.opening_balance, c.total_expenses, c.closing_balance, c.difference, c.status,
             COALESCE(c.submitted_at, c.created_at) AS event_time
         FROM branch_custody c
@@ -243,12 +392,15 @@ if ($typeFilter === 'all' || $typeFilter === 'custody') {
             'time'        => (string) $r['event_time'],
             'type'        => 'custody',
             'type_label'  => 'عهدة',
-            'badge_class' => $r['status'] === 'closed' ? 'fchip-pos' : ($r['status'] === 'pending_review' ? 'fchip-warn' : 'fchip-info'),
+            'badge_class' => $r['status'] === 'closed' ? 'fchip-pos' : ($r['status'] === 'pending_review' ? 'fchip-warn' : 'fchip-mute'),
             'icon'        => 'ti-cash',
             'branch'      => $r['branch_name'] ?: 'غير محدد',
-            'desc'        => 'حركة عهدة #' . $r['id'] . ' — مصروفات: ' . sens_mask(number_format((float)$r['total_expenses'], 2)) . ' ج (الحالة: ' . $r['status'] . ')',
+            'desc'        => 'حركة عهدة #' . e((string) $r['id']) . ' — مصروفات: ' . sens_mask(number_format((float)$r['total_expenses'], 2)) . ' ج (الحالة: ' . e((string) $r['status']) . ')',
             'actor'       => $r['user_name'] ?: 'مسؤول العهدة',
-            'link'        => 'custody.php',
+            // العهدة إما عهدة فرع (بالفرع) أو عهدة موظف (بالموظف)
+            'link'        => !empty($r['employee_id'])
+                           ? 'custody.php?tab=employee&emp=' . (int) $r['employee_id']
+                           : 'custody.php?tab=branch&branch=' . (int) $r['branch_id'],
         ];
     }
 }
@@ -256,7 +408,7 @@ if ($typeFilter === 'all' || $typeFilter === 'custody') {
 // هـ) استلام الفواتير في الفروع (receipts)
 if ($typeFilter === 'all' || $typeFilter === 'receiving') {
     $sql = "
-        SELECT 
+        SELECT
             r.id, r.group_id, r.distribution_id, r.branch_id, b.name AS branch_name,
             r.status, r.started_by, u_st.full_name AS started_by_name,
             r.received_by, u_rc.full_name AS received_by_name,
@@ -285,50 +437,62 @@ if ($typeFilter === 'all' || $typeFilter === 'receiving') {
             'time'        => (string) $r['event_time'],
             'type'        => 'receiving',
             'type_label'  => 'استلام بضاعة',
-            'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'received' ? 'fchip-info' : 'fchip-warn'),
+            'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'received' ? 'fchip-mute' : 'fchip-warn'),
             'icon'        => 'ti-truck',
             'branch'      => $r['branch_name'] ?: 'غير محدد',
-            'desc'        => 'محضر استلام بضاعة #' . $r['id'] . ($r['invoice_no'] ? ' لفاتورة #' . $r['invoice_no'] : '') . ' [حالة: ' . $r['status'] . ']',
+            'desc'        => 'محضر استلام بضاعة #' . e((string) $r['id']) . ($r['invoice_no'] ? ' لفاتورة #' . e((string) $r['invoice_no']) : '') . ' [حالة: ' . e((string) $r['status']) . ']',
             'actor'       => $actor,
-            'link'        => 'receiving.php?r=' . (int)$r['id'],
+            'link'        => 'receiving.php?r=' . (int) $r['id'],
         ];
     }
 }
 
 // و) الخزينة (journal_entries)
+// 🔴 فرع التكلفة = نفس COALESCE وبنفس الـJOINs بتاعة reports_lib.php (case 'treasury').
+//    نقصان JOIN واحد = الصف يطلع «—» ويفلت من فلتر الفرع.
 if ($typeFilter === 'all' || $typeFilter === 'treasury') {
     $sql = "
-        SELECT 
-            j.id, j.treasury_id, t.name AS treasury_name, t.branch_id, b.name AS branch_name,
+        SELECT
+            j.id, j.treasury_id, t.name AS treasury_name,
             j.description, j.debit, j.credit, j.created_by, u.full_name AS user_name,
-            j.created_at AS event_time, j.entry_date
+            j.created_at AS event_time, j.entry_date,
+            cb.id AS cost_branch_id, cb.name AS cost_branch_name
         FROM journal_entries j
-        LEFT JOIN treasuries t ON t.id = j.treasury_id
-        LEFT JOIN branches b ON b.id = t.branch_id
+        JOIN treasuries t ON t.id = j.treasury_id
         LEFT JOIN users u ON u.id = j.created_by
+        LEFT JOIN treasury_movements tm ON tm.id = j.ref_id AND j.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
+        LEFT JOIN accounts ec ON ec.id = tm.entry_code_id
+        LEFT JOIN accounts ja ON ja.id = j.account_id
+        LEFT JOIN shifts sh ON sh.id = j.ref_id AND j.ref_type = 'shift'
+        LEFT JOIN branch_custody bc ON bc.id = j.ref_id
+             AND j.ref_type IN ('custody_return','custody_settlement','custody_surplus','custody_deficit')
+        LEFT JOIN custody_lines cl ON cl.id = j.ref_id AND j.ref_type = 'custody_expense'
+        LEFT JOIN branch_custody bc2 ON bc2.id = cl.custody_id
+        LEFT JOIN disbursement_orders dor ON dor.id = j.ref_id AND j.ref_type = 'disbursement_order'
+        LEFT JOIN branches cb ON cb.id = COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id)
         WHERE j.created_at BETWEEN ? AND ?
     ";
     $params = [$dateStart, $dateEnd];
     if ($branchFilter !== null) {
-        $sql .= " AND t.branch_id = ?";
+        $sql .= " AND COALESCE(tm.branch_id, sh.branch_id, bc.branch_id, cl.branch_id, bc2.branch_id, dor.branch_id) = ?";
         $params[] = $branchFilter;
     }
     $sql .= " ORDER BY j.created_at DESC LIMIT 200";
     $st = $pdo->prepare($sql);
     $st->execute($params);
     while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $amt = (float)$r['debit'] > 0 ? (float)$r['debit'] : (float)$r['credit'];
-        $kindTxt = (float)$r['debit'] > 0 ? 'قبض' : 'صرف';
+        $amt = (float) $r['debit'] > 0 ? (float) $r['debit'] : (float) $r['credit'];
+        $kindTxt = (float) $r['debit'] > 0 ? 'قبض' : 'صرف';
         $feed[] = [
             'time'        => (string) $r['event_time'],
             'type'        => 'treasury',
             'type_label'  => 'سند خزينة',
-            'badge_class' => 'fchip-info',
+            'badge_class' => 'fchip-mute',
             'icon'        => 'ti-building-bank',
-            'branch'      => $r['branch_name'] ?: ($r['treasury_name'] ?: 'خزينة رئيسية'),
-            'desc'        => 'حركة ' . $kindTxt . ': ' . $r['description'] . ' بمبلغ ' . sens_mask(number_format($amt, 2)) . ' ج',
+            'branch'      => $r['cost_branch_name'] ?: ($r['treasury_name'] ?: 'خزينة رئيسية'),
+            'desc'        => 'حركة ' . $kindTxt . ': ' . e((string) $r['description']) . ' بمبلغ ' . sens_mask(number_format($amt, 2)) . ' ج',
             'actor'       => $r['user_name'] ?: 'محاسب',
-            'link'        => 'treasury.php?t=' . (int)$r['treasury_id'],
+            'link'        => 'treasury.php?treasury=' . (int) $r['treasury_id'],
         ];
     }
 }
@@ -336,12 +500,12 @@ if ($typeFilter === 'all' || $typeFilter === 'treasury') {
 // ز) رسايل إنستا والبنك (sms_inbox)
 if ($typeFilter === 'all' || $typeFilter === 'sms') {
     $sql = "
-        SELECT 
+        SELECT
             s.id, s.sender, s.body, s.sms_at AS event_time,
             p.id AS permit_id, p.action AS permit_action, p.amount AS permit_amount, p.status AS permit_status
         FROM sms_inbox s
         LEFT JOIN sms_permits p ON p.sms_id = s.id
-        WHERE s.sms_at BETWEEN ? AND ? AND s.dup_of IS NULL
+        WHERE s.sms_at BETWEEN ? AND ? {$smsExtra}
         ORDER BY s.sms_at DESC LIMIT 200
     ";
     $st = $pdo->prepare($sql);
@@ -355,9 +519,11 @@ if ($typeFilter === 'all' || $typeFilter === 'sms') {
             'badge_class' => $hasPermit ? 'fchip-pos' : 'fchip-warn',
             'icon'        => 'ti-device-mobile',
             'branch'      => 'إنستاباي',
-            'desc'        => 'رسالة من ' . $r['sender'] . ': ' . mb_substr($r['body'], 0, 70) . '...' . ($hasPermit ? ' (بإذن مسجل)' : ' (بدون إذن)'),
+            'desc'        => 'رسالة من ' . e((string) $r['sender']) . ': ' . e(mb_substr((string) $r['body'], 0, 70)) . '...' . ($hasPermit ? ' (بإذن مسجل)' : ' (بدون إذن)'),
             'actor'       => $r['sender'],
-            'link'        => 'sms_inbox.php',
+            'link'        => 'sms_inbox.php?from=' . urlencode(substr((string) $r['event_time'], 0, 10))
+                           . '&to=' . urlencode(substr((string) $r['event_time'], 0, 10))
+                           . '&kind=in',
         ];
     }
 }
@@ -365,8 +531,8 @@ if ($typeFilter === 'all' || $typeFilter === 'sms') {
 // ح) طلبات النواقص والفروع (shortage_requests)
 if ($typeFilter === 'all' || $typeFilter === 'shortage') {
     $sql = "
-        SELECT 
-            sr.id, sr.from_branch_id, b1.name AS from_branch_name,
+        SELECT
+            sr.id, sr.task_id, sr.from_branch_id, b1.name AS from_branch_name,
             sr.to_branch_id, b2.name AS to_branch_name,
             sr.requested_by, u.full_name AS user_name,
             sr.notes, sr.source, sr.created_at AS event_time
@@ -391,12 +557,12 @@ if ($typeFilter === 'all' || $typeFilter === 'shortage') {
             'time'        => (string) $r['event_time'],
             'type'        => 'shortage',
             'type_label'  => 'طلب نواقص',
-            'badge_class' => 'fchip-info',
+            'badge_class' => 'fchip-mute',
             'icon'        => 'ti-shopping-cart',
             'branch'      => $brTxt,
-            'desc'        => 'طلب نواقص #' . $r['id'] . ($r['notes'] ? ' (' . mb_substr($r['notes'], 0, 50) . ')' : ''),
+            'desc'        => 'طلب نواقص #' . e((string) $r['id']) . ($r['notes'] ? ' (' . e(mb_substr((string) $r['notes'], 0, 50)) . ')' : ''),
             'actor'       => $r['user_name'] ?: 'مسؤول الفرع',
-            'link'        => 'shortage.php',
+            'link'        => !empty($r['task_id']) ? 'tasks.php?task=' . (int) $r['task_id'] : 'shortage.php',
         ];
     }
 }
@@ -404,7 +570,7 @@ if ($typeFilter === 'all' || $typeFilter === 'shortage') {
 // ط) الحضور والانصراف (attendance)
 if ($typeFilter === 'all' || $typeFilter === 'attendance') {
     $sql = "
-        SELECT 
+        SELECT
             a.id, a.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
             a.att_date, a.check_in, a.check_out, a.work_hours, a.status,
             a.created_at AS event_time
@@ -422,18 +588,19 @@ if ($typeFilter === 'all' || $typeFilter === 'attendance') {
     $st = $pdo->prepare($sql);
     $st->execute($params);
     while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $timeTxt = $r['check_in'] ? 'دخول: ' . substr((string)$r['check_in'], 0, 5) : '';
-        if ($r['check_out']) $timeTxt .= ' · خروج: ' . substr((string)$r['check_out'], 0, 5);
+        $timeTxt = $r['check_in'] ? 'دخول: ' . substr((string) $r['check_in'], 0, 5) : '';
+        if ($r['check_out']) $timeTxt .= ' · خروج: ' . substr((string) $r['check_out'], 0, 5);
+        $attDate = (string) $r['att_date'];
         $feed[] = [
             'time'        => (string) $r['event_time'],
             'type'        => 'attendance',
             'type_label'  => 'حضور وانصراف',
-            'badge_class' => 'fchip-info',
+            'badge_class' => 'fchip-mute',
             'icon'        => 'ti-user-check',
             'branch'      => $r['branch_name'] ?: 'غير محدد',
-            'desc'        => 'تسجيل حضور للموظف ' . $r['employee_name'] . ' (' . $timeTxt . ')',
+            'desc'        => 'تسجيل حضور للموظف ' . e((string) $r['employee_name']) . ' (' . e($timeTxt) . ')',
             'actor'       => $r['employee_name'],
-            'link'        => 'attendance.php',
+            'link'        => 'reports.php?type=attendance&from=' . urlencode($attDate) . '&to=' . urlencode($attDate),
         ];
     }
 }
@@ -441,7 +608,7 @@ if ($typeFilter === 'all' || $typeFilter === 'attendance') {
 // ي) جلسات الجرد (stocktake_sessions)
 if ($typeFilter === 'all' || $typeFilter === 'stocktake') {
     $sql = "
-        SELECT 
+        SELECT
             ss.id, ss.status, ss.has_balance, ss.started_by, u_st.full_name AS started_by_name,
             ss.closed_by, u_cl.full_name AS closed_by_name,
             ss.started_at AS event_time, ss.closed_at
@@ -461,9 +628,271 @@ if ($typeFilter === 'all' || $typeFilter === 'stocktake') {
             'badge_class' => $r['status'] === 'closed' ? 'fchip-pos' : 'fchip-warn',
             'icon'        => 'ti-checklist',
             'branch'      => 'المخازن',
-            'desc'        => 'جلسة جرد #' . $r['id'] . ' [الحالة: ' . ($r['status'] === 'closed' ? 'مغلقة' : 'نشطة') . ']',
+            'desc'        => 'جلسة جرد #' . e((string) $r['id']) . ' [الحالة: ' . ($r['status'] === 'closed' ? 'مغلقة' : 'نشطة') . ']',
             'actor'       => $r['closed_by_name'] ?: ($r['started_by_name'] ?: 'مسؤول الجرد'),
-            'link'        => 'stocktake.php',
+            'link'        => 'reports.php?type=stocktake&session=' . (int) $r['id'],
+        ];
+    }
+}
+
+// ك) مبيعات الفروع ومرتجعاتها (br_invoices)
+// 🔴 مش سطر لكل فاتورة (~١٠٠ في اليوم للفرع): سطر لكل فرع لكل يوم.
+//    doc_type: 4 = فاتورة بيع · 7 و17 = مردود (نفس إعداد
+//    analysis_sales_return_types الافتراضي في analysis_lib.php).
+//    أي نوع تاني مش معروف عندنا → مابنعرضوش.
+if ($typeFilter === 'all' || $typeFilter === 'sales') {
+    if (!($branchFilter !== null && $salesAgentFilter === null)) {
+        $sql = "
+            SELECT
+                agent_key,
+                DATE(invoice_date) AS d,
+                SUM(CASE WHEN doc_type = 4 THEN 1 ELSE 0 END) AS sale_cnt,
+                SUM(CASE WHEN doc_type = 4 THEN net_amount ELSE 0 END) AS sale_sum,
+                SUM(CASE WHEN doc_type IN (7,17) THEN 1 ELSE 0 END) AS ret_cnt,
+                SUM(CASE WHEN doc_type IN (7,17) THEN net_amount ELSE 0 END) AS ret_sum
+            FROM br_invoices
+            WHERE invoice_date BETWEEN ? AND ?
+        ";
+        $params = [$dateStart, $dateEnd];
+        if ($salesAgentFilter !== null) {
+            $sql .= " AND agent_key = ?";
+            $params[] = $salesAgentFilter;
+        }
+        $sql .= " GROUP BY agent_key, DATE(invoice_date)
+                  ORDER BY d DESC, agent_key
+                  LIMIT 200";
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+
+        $agentInfo = [];
+        foreach (br_inv_map() as $bInv) {
+            $agentInfo[(string) $bInv['agent']] = $bInv;
+        }
+
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $ak    = (string) $r['agent_key'];
+            $d     = (string) $r['d'];
+            $bInv  = $agentInfo[$ak] ?? null;
+            $brTxt = $bInv ? (string) $bInv['name'] : ('وكيل ' . $ak);
+            $dayLbl = date('m/d', strtotime($d));
+
+            if ((int) $r['sale_cnt'] > 0) {
+                $feed[] = [
+                    'time'        => $d . ' 00:00:00',
+                    'time_label'  => $dayLbl,
+                    'type'        => 'sales',
+                    'type_label'  => 'مبيعات فرع',
+                    'badge_class' => 'fchip-pos',
+                    'icon'        => 'ti-credit-card',
+                    'branch'      => $brTxt,
+                    'desc'        => 'مبيعات: ' . (int) $r['sale_cnt'] . ' فاتورة · الإجمالي '
+                                   . sens_mask(number_format((float) $r['sale_sum'], 2)) . ' ج',
+                    'actor'       => 'وكيل الفرع',
+                    'link'        => 'daily_summary.php?date=' . urlencode($d),
+                ];
+            }
+            if ((int) $r['ret_cnt'] > 0) {
+                $feed[] = [
+                    'time'        => $d . ' 00:00:00',
+                    'time_label'  => $dayLbl,
+                    'type'        => 'sales',
+                    'type_label'  => 'مرتجع فرع',
+                    'badge_class' => 'fchip-warn',
+                    'icon'        => 'ti-arrow-back-up',
+                    'branch'      => $brTxt,
+                    'desc'        => 'مرتجعات: ' . (int) $r['ret_cnt'] . ' فاتورة · الإجمالي '
+                                   . sens_mask(number_format((float) $r['ret_sum'], 2)) . ' ج',
+                    'actor'       => 'وكيل الفرع',
+                    'link'        => 'daily_summary.php?date=' . urlencode($d),
+                ];
+            }
+        }
+    }
+}
+
+// ل) الأصناف الجديدة (hq_codes.created_at — بريف ٢٠٦)
+// 🔴 العمود ده جديد: الصفوف القديمة created_at = NULL (شوف ملف الترقية)،
+//    فمابنحسبهاش «صنف جديد» غلط.
+$newItemsEver = false;
+if ($typeFilter === 'all' || $typeFilter === 'newitems') {
+    $stEver = $pdo->query('SELECT 1 FROM hq_codes WHERE created_at IS NOT NULL LIMIT 1');
+    $newItemsEver = (bool) ($stEver ? $stEver->fetchColumn() : false);
+
+    $st = $pdo->prepare("
+        SELECT item_id, MIN(code) AS code, MIN(name) AS name, MAX(price) AS price,
+               MIN(created_at) AS event_time
+        FROM hq_codes
+        WHERE created_at IS NOT NULL
+          AND created_at BETWEEN ? AND ?
+        GROUP BY item_id
+        ORDER BY event_time DESC
+        LIMIT 200
+    ");
+    $st->execute([$dateStart, $dateEnd]);
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $priceTxt = $r['price'] !== null ? sens_mask(number_format((float) $r['price'], 2)) . ' ج' : 'من غير سعر';
+        $feed[] = [
+            'time'        => (string) $r['event_time'],
+            'type'        => 'newitems',
+            'type_label'  => 'صنف جديد',
+            'badge_class' => 'fchip-pos',
+            'icon'        => 'ti-package',
+            'branch'      => 'الإدارة',
+            'desc'        => 'صنف جديد: ' . e((string) $r['code']) . ' — ' . e((string) $r['name']) . ' — ' . $priceTxt,
+            'actor'       => 'المزامنة',
+            'link'        => 'stock_query.php',
+        ];
+    }
+}
+
+// م) اعتماد ورفض أذونات إنستاباي (sms_permits.reviewed_at)
+if ($typeFilter === 'all' || $typeFilter === 'permits') {
+    $sql = "
+        SELECT
+            p.id, p.sms_id, p.action, p.amount, p.status, p.reviewed_at,
+            p.reviewed_by, ru.full_name AS reviewer_name,
+            s.sender
+        FROM sms_permits p
+        LEFT JOIN users ru ON ru.id = p.reviewed_by
+        LEFT JOIN sms_inbox s ON s.id = p.sms_id
+        WHERE p.reviewed_at BETWEEN ? AND ?
+          AND p.status IN ('approved', 'rejected')
+        ORDER BY p.reviewed_at DESC
+        LIMIT 200
+    ";
+    $st = $pdo->prepare($sql);
+    $st->execute([$dateStart, $dateEnd]);
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $actTxt = $r['action'] === 'receipt' ? 'قبض' : 'صرف';
+        $feed[] = [
+            'time'        => (string) $r['reviewed_at'],
+            'type'        => 'permits',
+            'type_label'  => $r['status'] === 'approved' ? 'اعتماد إذن' : 'رفض إذن',
+            'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : 'fchip-neg',
+            'icon'        => 'ti-circle-check',
+            'branch'      => 'إنستاباي',
+            'desc'        => 'إذن ' . $actTxt . ' بمبلغ ' . sens_mask(number_format((float) $r['amount'], 2)) . ' ج'
+                           . ' — ' . ($r['status'] === 'approved' ? 'اتعتمد' : 'اترفض'),
+            'actor'       => $r['reviewer_name'] ?: 'المحاسب',
+            'link'        => 'review.php?tab=instapay',
+        ];
+    }
+}
+
+// ن) التحويلات بين الخزائن (treasury_transfers)
+if ($typeFilter === 'all' || $typeFilter === 'transfers') {
+    $sql = "
+        SELECT
+            tt.id, tt.from_treasury_id, tf.name AS from_name, tf.branch_id AS from_branch_id,
+            tt.to_treasury_id, tto.name AS to_name, tto.branch_id AS to_branch_id,
+            tt.amount, tt.transfer_date, tt.notes, tt.created_at AS event_time,
+            tt.created_by, u.full_name AS user_name
+        FROM treasury_transfers tt
+        LEFT JOIN treasuries tf ON tf.id = tt.from_treasury_id
+        LEFT JOIN treasuries tto ON tto.id = tt.to_treasury_id
+        LEFT JOIN users u ON u.id = tt.created_by
+        WHERE tt.created_at BETWEEN ? AND ?
+    ";
+    $params = [$dateStart, $dateEnd];
+    if ($branchFilter !== null) {
+        $sql .= " AND (tf.branch_id = ? OR tto.branch_id = ?)";
+        $params[] = $branchFilter;
+        $params[] = $branchFilter;
+    }
+    $sql .= " ORDER BY tt.created_at DESC LIMIT 200";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $brTxt = $r['from_branch_id'] !== null
+            ? act_branch_name((int) $r['from_branch_id'], $branchById)
+            : ($r['to_branch_id'] !== null ? act_branch_name((int) $r['to_branch_id'], $branchById) : 'خزائن مركزية');
+        $feed[] = [
+            'time'        => (string) $r['event_time'],
+            'type'        => 'transfers',
+            'type_label'  => 'تحويل خزائن',
+            'badge_class' => 'fchip-mute',
+            'icon'        => 'ti-transfer',
+            'branch'      => $brTxt,
+            'desc'        => 'تحويل من «' . e($r['from_name'] ?: '—') . '» إلى «' . e($r['to_name'] ?: '—')
+                           . '» بمبلغ ' . sens_mask(number_format((float) $r['amount'], 2)) . ' ج'
+                           . ($r['notes'] ? ' — ' . e(mb_substr((string) $r['notes'], 0, 40)) : ''),
+            'actor'       => $r['user_name'] ?: 'محاسب',
+            'link'        => 'treasury.php?treasury=' . (int) $r['to_treasury_id'],
+        ];
+    }
+}
+
+// س) صرف المرتبات (salaries.paid_at)
+if ($typeFilter === 'all' || $typeFilter === 'salaries') {
+    $sql = "
+        SELECT
+            s.id, s.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
+            s.salary_month, s.net_salary, s.paid_at AS event_time
+        FROM salaries s
+        LEFT JOIN employees e ON e.id = s.employee_id
+        LEFT JOIN branches b ON b.id = e.branch_id
+        WHERE s.paid_at BETWEEN ? AND ?
+          AND s.status = 'paid'
+          AND s.reversed_at IS NULL
+    ";
+    $params = [$dateStart, $dateEnd];
+    if ($branchFilter !== null) {
+        $sql .= " AND e.branch_id = ?";
+        $params[] = $branchFilter;
+    }
+    $sql .= " ORDER BY s.paid_at DESC LIMIT 200";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $feed[] = [
+            'time'        => (string) $r['event_time'],
+            'type'        => 'salaries',
+            'type_label'  => 'صرف مرتب',
+            'badge_class' => 'fchip-mute',
+            'icon'        => 'ti-wallet',
+            'branch'      => $r['branch_name'] ?: 'غير محدد',
+            'desc'        => 'صرف مرتب شهر ' . e((string) $r['salary_month']) . ' للموظف ' . e($r['employee_name'] ?: '#' . $r['employee_id'])
+                           . ' — الصافي ' . sens_mask(number_format((float) $r['net_salary'], 2)) . ' ج',
+            'actor'       => 'المحاسب',
+            'link'        => 'hr.php?tab=salaries&month=' . urlencode((string) $r['salary_month']),
+        ];
+    }
+}
+
+// ع) السلف (employee_advances)
+if ($typeFilter === 'all' || $typeFilter === 'advances') {
+    $sql = "
+        SELECT
+            a.id, a.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
+            a.amount, a.advance_date, a.status, a.notes, a.created_at AS event_time
+        FROM employee_advances a
+        LEFT JOIN employees e ON e.id = a.employee_id
+        LEFT JOIN branches b ON b.id = e.branch_id
+        WHERE a.created_at BETWEEN ? AND ?
+    ";
+    $params = [$dateStart, $dateEnd];
+    if ($branchFilter !== null) {
+        $sql .= " AND e.branch_id = ?";
+        $params[] = $branchFilter;
+    }
+    $sql .= " ORDER BY a.created_at DESC LIMIT 200";
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+        $advStatus = ['pending' => 'مستنية', 'deducted' => 'اتخصمت', 'recovered' => 'اتسددت'];
+        $feed[] = [
+            'time'        => (string) $r['event_time'],
+            'type'        => 'advances',
+            'type_label'  => 'سلفة',
+            'badge_class' => 'fchip-mute',
+            'icon'        => 'ti-cash-banknote',
+            'branch'      => $r['branch_name'] ?: 'غير محدد',
+            'desc'        => 'سلفة للموظف ' . e($r['employee_name'] ?: '#' . $r['employee_id'])
+                           . ' بمبلغ ' . sens_mask(number_format((float) $r['amount'], 2)) . ' ج'
+                           . ' [' . e((string) ($advStatus[$r['status']] ?? $r['status'])) . ']'
+                           . ($r['notes'] ? ' — ' . e(mb_substr((string) $r['notes'], 0, 40)) : ''),
+            'actor'       => 'المحاسب',
+            'link'        => 'hr.php?tab=advances',
         ];
     }
 }
@@ -600,7 +1029,7 @@ require_once __DIR__ . '/includes/header.php';
     -webkit-overflow-scrolling: touch;
 }
 .activity-row:hover {
-    background: var(--surface-hover, rgba(0, 0, 0, 0.02));
+    background: var(--line-soft);
 }
 .activity-link {
     color: var(--accent-text);
@@ -618,6 +1047,35 @@ require_once __DIR__ . '/includes/header.php';
     text-align: center;
     padding: 40px 16px;
     color: var(--ink-400);
+}
+
+/* أعمدة الجدول — العرض من هنا مش من inline style (عشان الموبايل يلغيها) */
+.act-col-time   { width: 115px; }
+.act-col-type   { width: 120px; }
+.act-col-branch { width: 110px; }
+.act-col-actor  { width: 130px; }
+.act-col-link   { width: 75px; text-align: center; }
+
+/* موبايل ٣٩٠ — مفيش سكرول بالعرض */
+@media (max-width: 600px) {
+    .action-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .action-card { padding: 10px 12px; }
+    .action-card-num { font-size: 20px; }
+    .action-card-icon { width: 34px; height: 34px; font-size: 18px; }
+    .filter-bar { padding: 10px; gap: 8px; }
+    .filter-bar > div { width: 100%; }
+    .filter-bar select, .filter-bar input[type="date"] { flex: 1 1 auto; min-width: 0; }
+    .filter-bar .btn { width: 100%; margin-right: 0 !important; }
+    .timeline-card { padding: 10px; }
+    .act-table th, .act-table td { padding: 7px 6px; font-size: 11.5px; }
+    .act-table .act-col-time { width: 62px; }
+    .act-table .act-col-type { width: 82px; }
+    .act-table .act-col-branch { width: 66px; }
+    .act-table .act-col-actor { display: none; }
+    .act-table .act-col-link { width: 38px; }
+    .act-table .fchip { white-space: normal; padding: 2px 6px; }
+    .act-table .fchip i { display: none; }
+    .activity-link { font-size: 11px; }
 }
 </style>
 
@@ -673,14 +1131,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </a>
 
-        <!-- رسايل إنستا من غير إذن -->
-        <a href="sms_inbox.php" class="action-card">
+        <!-- رسايل إنستا الواردة من غير إذن — آخر ٧ أيام -->
+        <a href="sms_inbox.php?from=<?= e($smsCardFrom) ?>&to=<?= e($smsCardTo) ?>&kind=in" class="action-card">
             <div class="action-card-info">
                 <span class="action-card-label">رسايل إنستا بدون إذن</span>
                 <span class="action-card-num" style="color:<?= $smsNoPermitCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
                     <?= $smsNoPermitCount ?>
                 </span>
-                <span class="action-card-sub"><?= $smsNoPermitCount > 0 ? 'تحتاج تسوية أو إذن' : 'كل الرسايل مضبوطة' ?></span>
+                <span class="action-card-sub"><?= $smsNoPermitCount > 0 ? 'واردة آخر ٧ أيام — تحتاج تسوية أو إذن' : 'كل الرسايل الواردة مضبوطة' ?></span>
             </div>
             <div class="action-card-icon" style="background:var(--accent-soft);color:var(--accent-text);">
                 <i class="ti ti-device-mobile"></i>
@@ -725,14 +1183,20 @@ require_once __DIR__ . '/includes/header.php';
                 <option value="all" <?= $typeFilter === 'all' ? 'selected' : '' ?>>كل الحركات</option>
                 <option value="purchases" <?= $typeFilter === 'purchases' ? 'selected' : '' ?>>مشتريات</option>
                 <option value="returns" <?= $typeFilter === 'returns' ? 'selected' : '' ?>>مردودات</option>
+                <option value="sales" <?= $typeFilter === 'sales' ? 'selected' : '' ?>>مبيعات الفروع</option>
+                <option value="newitems" <?= $typeFilter === 'newitems' ? 'selected' : '' ?>>أصناف جديدة</option>
                 <option value="shifts" <?= $typeFilter === 'shifts' ? 'selected' : '' ?>>ورديات</option>
                 <option value="custody" <?= $typeFilter === 'custody' ? 'selected' : '' ?>>عهد</option>
                 <option value="receiving" <?= $typeFilter === 'receiving' ? 'selected' : '' ?>>استلام فواتير</option>
                 <option value="treasury" <?= $typeFilter === 'treasury' ? 'selected' : '' ?>>خزينة</option>
+                <option value="transfers" <?= $typeFilter === 'transfers' ? 'selected' : '' ?>>تحويلات خزائن</option>
                 <option value="shortage" <?= $typeFilter === 'shortage' ? 'selected' : '' ?>>نواقص وطلبات</option>
                 <option value="attendance" <?= $typeFilter === 'attendance' ? 'selected' : '' ?>>حضور وانصراف</option>
                 <option value="stocktake" <?= $typeFilter === 'stocktake' ? 'selected' : '' ?>>جرد</option>
                 <option value="sms" <?= $typeFilter === 'sms' ? 'selected' : '' ?>>رسايل بنك</option>
+                <option value="permits" <?= $typeFilter === 'permits' ? 'selected' : '' ?>>أذون إنستاباي</option>
+                <option value="salaries" <?= $typeFilter === 'salaries' ? 'selected' : '' ?>>صرف مرتبات</option>
+                <option value="advances" <?= $typeFilter === 'advances' ? 'selected' : '' ?>>سلف</option>
             </select>
         </div>
 
@@ -746,7 +1210,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="timeline-header">
             <h3 class="timeline-title">
                 <i class="ti ti-list-details" style="color:var(--accent-text);"></i> سجل الحركات بالوقت
-                <span class="fchip fchip-info" style="font-size:11px;"><?= count($feed) ?> حركة</span>
+                <span class="fchip fchip-mute" style="font-size:11px;"><?= count($feed) ?> حركة</span>
             </h3>
             <span class="timeline-meta">
                 الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?> · تم التحميل في <?= e((string)$timeElapsedMs) ?> مللي ثانية
@@ -754,15 +1218,15 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="timeline-table-wrap">
-            <table class="ftable" style="width:100%;margin:0;">
+            <table class="ftable act-table" style="width:100%;margin:0;">
                 <thead>
                     <tr>
-                        <th style="width:115px;">الوقت</th>
-                        <th style="width:120px;">النوع</th>
-                        <th style="width:110px;">الفرع</th>
+                        <th class="act-col-time">الوقت</th>
+                        <th class="act-col-type">النوع</th>
+                        <th class="act-col-branch">الفرع</th>
                         <th>الوصف</th>
-                        <th style="width:130px;">مين</th>
-                        <th style="width:75px;text-align:center;">إجراء</th>
+                        <th class="act-col-actor">مين</th>
+                        <th class="act-col-link">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -771,31 +1235,40 @@ require_once __DIR__ . '/includes/header.php';
                             <td colspan="6">
                                 <div class="empty-box">
                                     <i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>
-                                    لا توجد حركات مسجلة في هذه الفترة بالفلاتر المحددة.
+                                    <?php if ($typeFilter === 'newitems'): ?>
+                                        <?php if (!$newItemsEver): ?>
+                                            مفيش أصناف اتضافت من وقت ما بدأنا نسجّل.
+                                        <?php else: ?>
+                                            مفيش أصناف جديدة في الفترة المختارة.
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        لا توجد حركات مسجلة في هذه الفترة بالفلاتر المحددة.
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($feed as $item): ?>
                             <tr class="activity-row">
-                                <td style="font-size:12px;color:var(--ink-500);white-space:nowrap;" dir="ltr">
-                                    <?= e(date('m/d H:i', strtotime($item['time']))) ?>
+                                <td class="act-col-time" style="font-size:12px;color:var(--ink-500);white-space:nowrap;" dir="ltr">
+                                    <?= e($item['time_label'] ?? date('m/d H:i', strtotime($item['time']))) ?>
                                 </td>
-                                <td>
+                                <td class="act-col-type">
                                     <span class="fchip <?= e($item['badge_class']) ?>" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;">
                                         <i class="ti <?= e($item['icon']) ?>"></i> <?= e($item['type_label']) ?>
                                     </span>
                                 </td>
-                                <td style="font-weight:600;font-size:12.5px;">
+                                <td class="act-col-branch" style="font-weight:600;font-size:12.5px;">
                                     <?= e($item['branch']) ?>
                                 </td>
                                 <td style="font-size:13px;line-height:1.4;">
-                                    <?= e($item['desc']) ?>
+                                    <?php /* desc جواه HTML من sens_mask — الأجزاء النصية اتعملها e() وقت البناء */ ?>
+                                    <?= $item['desc'] ?>
                                 </td>
-                                <td style="font-size:12px;color:var(--ink-600);">
+                                <td class="act-col-actor" style="font-size:12px;color:var(--ink-600);">
                                     <?= e($item['actor']) ?>
                                 </td>
-                                <td style="text-align:center;">
+                                <td class="act-col-link">
                                     <?php if (!empty($item['link'])): ?>
                                         <a href="<?= e($item['link']) ?>" class="activity-link" title="عرض التفاصيل">
                                             فتح <i class="ti ti-chevron-left"></i>

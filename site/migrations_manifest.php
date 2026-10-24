@@ -11,5 +11,6 @@ return [
     '20261024_001_machine_counters',
     '20261025_001_advance_journal_ref',
     '20261025_002_sms_ref_no',
+    '20261025_003_hq_codes_created_at',
     '20261025_004_shift_edit_approved_action',
 ];
