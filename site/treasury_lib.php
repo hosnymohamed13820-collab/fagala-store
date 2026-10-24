@@ -154,7 +154,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                     COALESCE(SUM(je.credit), 0) AS total_credit,
                     COUNT(*) AS cnt
              FROM journal_entries je
-             WHERE je.entry_date BETWEEN ? AND ? {$cancelledFilter}"
+             WHERE je.entry_date BETWEEN ? AND ? " . $cancelledFilter
         );
         $sumSt->execute([$stFrom, $stTo]);
         $sumRow = $sumSt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -220,7 +220,7 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                             COALESCE(SUM(je.credit), 0) AS total_credit,
                             COUNT(*) AS cnt
                      FROM journal_entries je
-                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ? {$cancelledFilter}"
+                     WHERE je.treasury_id = ? AND je.entry_date BETWEEN ? AND ? " . $cancelledFilter
                 );
                 $sumSt->execute([$selectedId, $stFrom, $stTo]);
                 $sumRow = $sumSt->fetch(PDO::FETCH_ASSOC) ?: [];

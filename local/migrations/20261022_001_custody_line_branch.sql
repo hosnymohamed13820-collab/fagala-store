@@ -19,3 +19,4 @@ UPDATE custody_lines cl
 JOIN branch_custody bc ON bc.id = cl.custody_id
 SET cl.branch_id = bc.branch_id
 WHERE cl.branch_id IS NULL;
+INSERT IGNORE INTO schema_migrations (name) VALUES ('20261022_001_custody_line_branch');

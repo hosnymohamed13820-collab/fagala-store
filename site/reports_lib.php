@@ -18,7 +18,7 @@ function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $s
             WHERE rev.ref_type = 'custody_expense_del' AND rev.ref_id = je.ref_id
         ))";
     $st = $pdo->prepare("SELECT je.running_balance FROM journal_entries je
-        WHERE je.treasury_id = ? AND je.entry_date < ? {$cancelledFilter}
+        WHERE je.treasury_id = ? AND je.entry_date < ? " . $cancelledFilter . "
         ORDER BY je.entry_date DESC, je.id DESC LIMIT 1");
     $st->execute([$treasuryId, $from]);
     $balance = $st->fetchColumn();

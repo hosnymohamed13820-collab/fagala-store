@@ -458,7 +458,7 @@ require_once __DIR__ . '/includes/header.php';
                                             <button type="button" class="sms-color-dot sms-dot-<?= $markColor ?> <?= $m['color'] === $markColor ? 'active' : '' ?>"
                                                     title="<?= $markLabel ?>" aria-label="<?= $markLabel ?>" onclick="saveSmsMark(this.closest('tr'), '<?= $markColor ?>')"></button>
                                         <?php endforeach; ?>
-                                        <button type="button" class="sms-color-clear" title="امسح اللون" aria-label="امسح اللون" onclick="saveSmsMark(this.closest('tr'), '')"><i class="ti ti-eraser"></i></button>
+                                        <button type="button" class="sms-color-clear" title="امسح اللون" aria-label="امسح اللون" onclick="saveSmsMark(this.closest('tr'), '')"><i class="ti ti-x"></i></button>
                                     </div>
                                 </td>
                                 <td style="padding:10px 8px;text-align:center;white-space:nowrap;">
