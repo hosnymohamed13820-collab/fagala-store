@@ -1,3 +1,4 @@
 # tests/check_columns_allow.txt
 # ملف السماح لأخطاء أسماء الأعمدة في SQL
 # الصيغة: file.php  table.column  # السبب
+site/calls_lib.php  branch_calls.where1  # متغيّر PHP بشرط WHERE مبني بـ? (بريف ٢٠٩) — مش عمود
