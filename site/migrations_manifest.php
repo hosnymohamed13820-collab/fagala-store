@@ -9,4 +9,5 @@ return [
     '20261022_001_custody_line_branch',
     '20261022_002_sms_marks',
     '20261024_001_machine_counters',
+    '20261025_001_advance_journal_ref',
 ];

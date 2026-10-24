@@ -2341,17 +2341,17 @@ function disburse_advance(
             error_log('تعذر فحص حساب سلف موظفين؛ السلفة هتتسجل من غير قيد حساب: ' . $ex->getMessage());
         }
 
-        // صرف من الخزينة
-        post_journal($treasuryId, $amount, 0,
-            'سلفة للموظف: ' . $empName, $date,
-            'advance', null, $userId, $pdo, $advanceAccountId, null);
-
-        // تسجيل السلفة على الموظف
+        // نسجّل السلفة الأول عشان قيد الخزينة يشاور على رقمها الصح.
         $pdo->prepare(
             'INSERT INTO employee_advances (employee_id, amount, advance_date, status, notes)
              VALUES (?, ?, ?, "pending", ?)'
         )->execute([$employeeId, $amount, $date, $notes]);
         $advanceId = (int) $pdo->lastInsertId();
+
+        // صرف من الخزينة
+        post_journal($treasuryId, $amount, 0,
+            'سلفة للموظف: ' . $empName, $date,
+            'advance', $advanceId, $userId, $pdo, $advanceAccountId, null);
 
         // تسجيل الحركة في سجل حساب الموظف
         emp_ledger_add(
