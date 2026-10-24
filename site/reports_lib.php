@@ -223,7 +223,7 @@ function rep_account_labels(array $accountIds): array
 
 /** الاسم المرتبط بنفس القيد؛ بنجمع المعرّفات وبنقرأ كل مصدر مرة واحدة. */
 function rep_row_names(PDO $pdo, array $rows): array {
-    $accountIds = []; $advanceIds = []; $recoveryIds = []; $custodyIds = [];
+    $accountIds = []; $advanceIds = []; $recoveryIds = []; $custodyIds = []; $salaryIds = [];
     foreach ($rows as $r) {
         $accountId = (int)($r['display_account_id'] ?? $r['account_id'] ?? 0);
         if ($accountId > 0) $accountIds[$accountId] = true;
@@ -233,9 +233,11 @@ function rep_row_names(PDO $pdo, array $rows): array {
             case 'advance': $advanceIds[$refId] = true; break;
             case 'advance_recovery': $recoveryIds[$refId] = true; break;
             case 'custody_expense': $custodyIds[$refId] = true; break;
+            case 'salary':
+            case 'salary_reverse': $salaryIds[$refId] = true; break;
         }
     }
-    $accounts = []; $advances = []; $recoveries = []; $custody = [];
+    $accounts = []; $advances = []; $recoveries = []; $custody = []; $salaries = [];
     if ($accountIds) {
         $marks = implode(',', array_fill(0, count($accountIds), '?'));
         $st = $pdo->prepare("SELECT id, name, parent_id, src_table FROM accounts WHERE id IN ($marks)");
@@ -263,6 +265,13 @@ function rep_row_names(PDO $pdo, array $rows): array {
         $st->execute(array_keys($custodyIds));
         foreach ($st as $r) $custody[(int)$r['id']] = $r['employee_name'] ?: ($r['supplier_name'] ?: null);
     }
+    if ($salaryIds) {
+        $marks = implode(',', array_fill(0, count($salaryIds), '?'));
+        $st = $pdo->prepare("SELECT s.id, e.full_name FROM salaries s
+            JOIN employees e ON e.id=s.employee_id WHERE s.id IN ($marks)");
+        $st->execute(array_keys($salaryIds));
+        foreach ($st as $r) $salaries[(int)$r['id']] = $r['full_name'];
+    }
     $names = [];
     foreach ($rows as $i => $r) {
         $accountId = (int)($r['display_account_id'] ?? $r['account_id'] ?? 0);
@@ -277,6 +286,7 @@ function rep_row_names(PDO $pdo, array $rows): array {
             'advance' => $advances[$refId] ?? '—',
             'advance_recovery' => $recoveries[$refId] ?? '—',
             'custody_expense' => $custody[$refId] ?? '—',
+            'salary', 'salary_reverse' => $salaries[$refId] ?? '—',
             default => '—',
         };
     }
