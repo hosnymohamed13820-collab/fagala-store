@@ -73,7 +73,9 @@ $SqlPassword = ''
 
 $BalanceUrl = 'https://hosnimanagement.com/sync_branch.php'
 $BeatUrl    = 'https://hosnimanagement.com/sync_beat.php'
-$AgentVer   = '1.5'
+$UpdateUrl  = 'https://hosnimanagement.com/agent_update.php'
+$AgentVer   = '1.6'
+$UpdatePubKey = '__PUBKEY__'
 
 # The replication program has a different name on every machine (Oct 2 2026):
 #   HQ repl_true.exe, Bonjour Repltrue.exe, Degla a_true.exe
@@ -100,12 +102,134 @@ $RunStarted = Get-Date
 $LogFile   = Join-Path $PSScriptRoot "agent_$AgentKey.log"
 $StateFile = Join-Path $PSScriptRoot "agent_$AgentKey.state.json"
 $LockFile  = Join-Path $PSScriptRoot "agent_$AgentKey.lock"
+$UpdateStateFile = Join-Path $PSScriptRoot "agent_$AgentKey.update.json"
 
 function Write-Log {
     param([string]$Message)
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $Message"
     Write-Host $line
     try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 } catch { }
+}
+
+function Get-UpdateState {
+    $state = @{
+        attemptedVersion = ''
+        attemptedAt      = ''
+        updatedFrom      = ''
+        updatedTo        = ''
+    }
+    try {
+        if (Test-Path -LiteralPath $UpdateStateFile) {
+            $saved = Get-Content -Raw -LiteralPath $UpdateStateFile | ConvertFrom-Json
+            foreach ($name in @('attemptedVersion', 'attemptedAt', 'updatedFrom', 'updatedTo')) {
+                if ($saved.PSObject.Properties.Name -contains $name) { $state[$name] = [string]$saved.$name }
+            }
+        }
+    } catch { }
+    return $state
+}
+
+function Save-UpdateState {
+    param([hashtable]$State)
+    $tmp = "$UpdateStateFile.tmp"
+    $json = $State | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmp -Destination $UpdateStateFile -Force
+}
+
+function Write-BadUpdateSignature {
+    Write-Log ([regex]::Unescape('\u062a\u062d\u062f\u064a\u062b\u0020\u0645\u0631\u0641\u0648\u0636\u003a\u0020\u0627\u0644\u062a\u0648\u0642\u064a\u0639\u0020\u063a\u0644\u0637'))
+}
+
+function Invoke-SelfUpdate {
+    param(
+        [Parameter(Mandatory = $true)]$Update,
+        [string]$TargetPath = $PSCommandPath,
+        [byte[]]$ContentBytes = $null,
+        [string]$DownloadUrl = $UpdateUrl
+    )
+
+    $downloadPath = "$TargetPath.download"
+    try {
+        $newVersion = [string]$Update.version
+        if (-not $newVersion -or ([version]$newVersion -le [version]$AgentVer)) { return $false }
+
+        $updateState = Get-UpdateState
+        if ($updateState.attemptedVersion -eq $newVersion -and $updateState.attemptedAt) {
+            try {
+                $elapsed = (Get-Date) - [datetime]::Parse($updateState.attemptedAt)
+                if ($elapsed.TotalMinutes -lt 60) {
+                    Write-Log "[update] v$newVersion already attempted in the last hour"
+                    return $false
+                }
+            } catch { }
+        }
+        $updateState.attemptedVersion = $newVersion
+        $updateState.attemptedAt = (Get-Date).ToString('o')
+        Save-UpdateState $updateState
+
+        if ($null -eq $ContentBytes) {
+            $uri = "${DownloadUrl}?agent=$([Uri]::EscapeDataString($AgentKey))"
+            Invoke-WebRequest -Uri $uri -Method Get -Headers @{ 'X-Sync-Token' = $SyncToken } -TimeoutSec 60 -OutFile $downloadPath -UseBasicParsing
+            $ContentBytes = [IO.File]::ReadAllBytes($downloadPath)
+        }
+
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $sha = ($hasher.ComputeHash($ContentBytes) | ForEach-Object { $_.ToString('x2') }) -join '' }
+        finally { $hasher.Dispose() }
+        if ($sha -ne ([string]$Update.sha256).ToLowerInvariant()) {
+            Write-BadUpdateSignature
+            return $false
+        }
+
+        try { $signature = [Convert]::FromBase64String([string]$Update.sig) }
+        catch {
+            Write-BadUpdateSignature
+            return $false
+        }
+        $signedText = "$AgentKey|$newVersion|$sha"
+        $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
+        try {
+            $rsa.PersistKeyInCsp = $false
+            $rsa.FromXmlString($UpdatePubKey)
+            $valid = $rsa.VerifyData([Text.Encoding]::UTF8.GetBytes($signedText), [Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'), $signature)
+        } catch {
+            $valid = $false
+        } finally {
+            $rsa.Dispose()
+        }
+        if (-not $valid) {
+            Write-BadUpdateSignature
+            return $false
+        }
+
+        try {
+            $strictUtf8 = New-Object Text.UTF8Encoding($false, $true)
+            $scriptText = $strictUtf8.GetString($ContentBytes)
+            [void][ScriptBlock]::Create($scriptText)
+            $fileAgent = [regex]::Match($scriptText, "(?m)^\s*\`$AgentKey\s*=\s*'([^']+)'").Groups[1].Value
+            $fileVersion = [regex]::Match($scriptText, "(?m)^\s*\`$AgentVer\s*=\s*'([^']+)'").Groups[1].Value
+            if ($fileAgent -ne $AgentKey -or $fileVersion -ne $newVersion) { throw 'agent identity mismatch' }
+        } catch {
+            Write-Log '[update] rejected: script parse or identity check failed'
+            return $false
+        }
+
+        [IO.File]::Copy($TargetPath, "$TargetPath.bak", $true)
+        [IO.File]::WriteAllBytes("$TargetPath.new", $ContentBytes)
+        Move-Item -LiteralPath "$TargetPath.new" -Destination $TargetPath -Force
+
+        $updateState.updatedFrom = $AgentVer
+        $updateState.updatedTo = $newVersion
+        Save-UpdateState $updateState
+        Write-Log "[update] installed v$newVersion; it will run next cycle"
+        return $true
+    } catch {
+        Write-Log "[update] failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $downloadPath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Trim the log so it can never eat the disk
@@ -474,6 +598,7 @@ function Send-Beat {
     param([int]$Rows = 0, [string]$ErrorText = '')
     try {
         $rState = Get-ReplRestartState
+        $uState = Get-UpdateState
         $beatCmdResult = $null
         $beatReplAction = $null
 
@@ -505,6 +630,10 @@ function Send-Beat {
         }
         if ($beatCmdResult)  { $bodyObj['cmd_result']  = $beatCmdResult }
         if ($beatReplAction) { $bodyObj['repl_action'] = $beatReplAction }
+        if ($uState.updatedFrom -and $uState.updatedTo) {
+            $bodyObj['updated_from'] = $uState.updatedFrom
+            $bodyObj['updated_to'] = $uState.updatedTo
+        }
 
         $body = $bodyObj | ConvertTo-Json -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
@@ -517,6 +646,11 @@ function Send-Beat {
             $rState.pendingCmdResult = $null
             $rState.pendingReplAction = $null
             Save-ReplRestartState $rState
+        }
+        if ($uState.updatedFrom -and $uState.updatedTo) {
+            $uState.updatedFrom = ''
+            $uState.updatedTo = ''
+            Save-UpdateState $uState
         }
 
         # Check for command from server
@@ -539,6 +673,10 @@ function Send-Beat {
                 }
             }
             Save-ReplRestartState $rState
+        }
+
+        if ($resp -and $resp.update) {
+            [void](Invoke-SelfUpdate -Update $resp.update)
         }
 
         Write-Log "[beat] sent (rows=$Rows)"

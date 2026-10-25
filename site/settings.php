@@ -645,6 +645,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
         <div style="display:flex;flex-direction:column;gap:8px;">
         <?php foreach ($agents as $a):
             $st = $a['status'];
+            $availableUpdate = agent_dist_update((string) $a['agent_key'], (string) ($a['agent_version'] ?? ''));
             $col = $st === AGENT_ALERT ? 'var(--neg,var(--neg))'
                  : ($st === AGENT_WARN ? 'var(--warn,var(--warn))'
                  : ($st === AGENT_OFF  ? 'var(--ink-400,var(--ink-400))' : 'var(--pos,var(--pos))'));
@@ -703,6 +704,9 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                 <?php endif; ?>
                 <?php if (!empty($a['agent_version'])): ?>
                     <span style="font-size:11px;color:var(--ink-400);">v<?= e($a['agent_version']) ?></span>
+                <?php endif; ?>
+                <?php if ($availableUpdate !== null): ?>
+                    <span class="fchip fchip-warn">متاح <?= e($availableUpdate['version']) ?></span>
                 <?php endif; ?>
 
                 <?php if (($a['repl_status'] ?? null) === 'stuck'): ?>

@@ -19,6 +19,7 @@
 require_once __DIR__ . '/errlog_lib.php';
 errlog_install();
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/agent_dist_lib.php';
 
 const AGENT_OK    = 'ok';
 const AGENT_WARN  = 'warn';

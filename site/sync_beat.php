@@ -21,6 +21,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/sync_tokens.php';
+require_once __DIR__ . '/agent_dist_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -96,6 +97,10 @@ try {
     $out = ['ok' => true];
     if ($cmdToReturn !== null) {
         $out['cmd'] = $cmdToReturn;
+    }
+    $update = agent_dist_update($agent, trim((string) ($in['version'] ?? '')));
+    if ($update !== null) {
+        $out['update'] = $update;
     }
     echo json_encode($out, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $ex) {
