@@ -9,6 +9,7 @@ require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/sms_lib.php';
 require_once __DIR__ . '/cashier_lib.php';
+require_once __DIR__ . '/purchase_doc_lib.php';
 
 /** آخر رصيد محفوظ قبل الفترة لنفس الخزنة؛ لا نعيد حساب أرصدة القيود. */
 function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $showCancelled = false): float {
@@ -299,6 +300,42 @@ function rep_row_names(PDO $pdo, array $rows): array {
 function build_report(PDO $pdo, string $type, string $from, string $to): array
 {
     switch ($type) {
+        case 'purchase_docs':
+            $branchId = is_real_owner() ? (int) ($_GET['branch'] ?? 0) : (int) ($_SESSION['user']['branch_id'] ?? 0);
+            $supplierId = (int) ($_GET['supplier_id'] ?? 0);
+            $where = ["d.doc_type IN ('purchase','purchase_return')", "d.status='posted'", 'd.doc_date BETWEEN ? AND ?'];
+            $params = [$from, $to];
+            if ($branchId > 0) { $where[]='d.branch_id=?'; $params[]=$branchId; }
+            if ($supplierId > 0) { $where[]='d.supplier_id=?'; $params[]=$supplierId; }
+            $st = $pdo->prepare('SELECT d.id,d.doc_type,d.doc_no,d.doc_year,d.doc_date,d.ref_text,d.total_amount,d.hq_match,s.name supplier_name,b.name branch_name FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id WHERE '.implode(' AND ',$where).' ORDER BY d.doc_date,d.id');
+            $st->execute($params);
+            $docs = $st->fetchAll(PDO::FETCH_ASSOC);
+            $matches = purchase_match_hq($pdo,array_column($docs,'id'));
+            $rows=[]; $purchases=0.0; $returns=0.0;
+            foreach($docs as $d){
+                $amount=round((float)$d['total_amount'],2);
+                if($d['doc_type']==='purchase')$purchases+=$amount; else $returns+=$amount;
+                $state=$matches[(int)$d['id']]['state']??'missing';
+                $rows[]=[
+                    $d['doc_year'].'/'.$d['doc_no'],$d['doc_date'],$d['doc_type']==='purchase'?'شراء':'مرتجع',
+                    $d['supplier_name'],$d['branch_name'],$d['ref_text']?:'—',number_format($amount,2),
+                    $state==='matched'?'متطابقة':($state==='ambiguous'?'مطابقة مش أكيدة':'مش لاقي'),
+                ];
+            }
+            return ['title'=>'تقرير مستندات الشراء','headers'=>['المستند','التاريخ','النوع','المورد','المخزن','فاتورة المورد','القيمة','في True؟'],'rows'=>$rows,'totals'=>['الصافي','','','','','',number_format($purchases-$returns,2),'']];
+
+        case 'purchase_by_item':
+            $branchId = is_real_owner() ? (int) ($_GET['branch'] ?? 0) : (int) ($_SESSION['user']['branch_id'] ?? 0);
+            $supplierId = (int) ($_GET['supplier_id'] ?? 0);
+            $where = ["d.doc_type='purchase'", "d.status='posted'", 'd.doc_date BETWEEN ? AND ?'];
+            $params = [$from,$to];
+            if($branchId>0){$where[]='d.branch_id=?';$params[]=$branchId;}
+            if($supplierId>0){$where[]='d.supplier_id=?';$params[]=$supplierId;}
+            $st=$pdo->prepare('SELECT l.item_id,MAX(COALESCE(n.name,l.code)) item_name,s.name supplier_name,SUM(l.qty_pieces) qty_pieces,SUM(l.line_total) total_value FROM stock_docs d JOIN stock_doc_lines l ON l.doc_id=d.id JOIN suppliers s ON s.id=d.supplier_id LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE '.implode(' AND ',$where).' GROUP BY l.item_id,s.id,s.name ORDER BY item_name,s.name');
+            $st->execute($params);$rows=[];$qty=0.0;$value=0.0;
+            foreach($st as $r){$q=round((float)$r['qty_pieces'],3);$v=round((float)$r['total_value'],2);$qty+=$q;$value+=$v;$rows[]=[$r['item_id'],$r['item_name'],$r['supplier_name'],number_format($q,3),number_format($q!=0?$v/$q:0,4),number_format($v,2)];}
+            return ['title'=>'تقرير الشراء بالصنف','headers'=>['رقم الصنف','الصنف','المورد','الكمية بالقطعة','متوسط سعر القطعة','القيمة'],'rows'=>$rows,'totals'=>['الإجمالي','','',number_format($qty,3),'',number_format($value,2)]];
+
         case 'insta_recon':
             return rep_insta_recon($pdo, $from, $to);
         case 'sales':

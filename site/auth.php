@@ -144,6 +144,7 @@ function all_modules(): array
         'sms_inbox'     => ['label' => 'رسايل إنستاباي',   'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
         'calls'         => ['label' => 'متابعة المكالمات', 'icon' => 'ti-device-mobile',    'url' => 'calls.php'],
         'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
+        'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
         'item_card'     => ['label' => 'كارت الصنف',       'icon' => 'ti-list-details',     'url' => 'item_card.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
@@ -205,6 +206,8 @@ function module_parts(): array
             'supplier_purchases' => 'مشتريات مورد',
             'transfers'       => 'التحويلات بين المخازن',
             'transfer_shorts' => 'عجوزات التحويلات المستردة',
+            'purchase_docs' => 'مستندات الشراء على الموقع',
+            'purchase_by_item' => 'الشراء بالصنف',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',
@@ -239,6 +242,12 @@ function module_parts(): array
             'receive' => 'عد واستلام',
             'resolve' => 'فك فروق الزيادة',
             'reports' => 'تقارير التحويلات',
+        ],
+        'purchase_docs' => [
+            'create'  => 'إنشاء وتعديل المسودات',
+            'post'    => 'ترحيل فواتير الشراء والمرتجعات',
+            'cancel'  => 'إلغاء مستندات الشراء',
+            'reports' => 'تقارير المشتريات',
         ],
     ];
 }

@@ -372,8 +372,8 @@ function stock_next_no(PDO $pdo, string $type, int $branchId, int $year): int
 }
 
 /**
- * تحويل سطور المستند إلى حركات مخزنية حسب نوعه (opening, adjust).
- * ٢١٥ و٢١٧ يزودان باقي الأنواع في match.
+ * تحويل سطور المستند إلى حركات مخزنية حسب نوعه.
+ * الشراء والمرتجع اتضافوا في بريف ٢١٧؛ التحويلات هتتدمج لوحدها مع ٢١٥.
  */
 function stock_doc_moves(array $doc, array $lines): array
 {
@@ -387,6 +387,11 @@ function stock_doc_moves(array $doc, array $lines): array
         $qtyPieces = (float) $l['qty_pieces'];
         $unitCost = isset($l['unit_cost']) && $l['unit_cost'] !== null && $l['unit_cost'] !== ''
             ? (float) $l['unit_cost'] : null;
+
+        // سطر اتمسح من مسودة شراء بيتصفّر بدل الحذف؛ ماينتجش حركة صفرية وقت الترحيل.
+        if (in_array($type, ['purchase', 'purchase_return'], true) && abs($qtyPieces) < 0.0005) {
+            continue;
+        }
 
         match ($type) {
             'opening' => $moves[] = [
@@ -403,6 +408,23 @@ function stock_doc_moves(array $doc, array $lines): array
                 'is_transit'  => 0,
                 'qty'         => $qtyPieces, // + أو -
                 'unit_cost'   => $unitCost,
+                'doc_line_id' => $lineId,
+            ],
+            'purchase' => $moves[] = [
+                'item_id'     => $itemId,
+                'branch_id'   => $branchId,
+                'is_transit'  => 0,
+                'qty'         => $qtyPieces,
+                'unit_cost'   => $unitCost,
+                'doc_line_id' => $lineId,
+            ],
+            'purchase_return' => $moves[] = [
+                'item_id'     => $itemId,
+                'branch_id'   => $branchId,
+                'is_transit'  => 0,
+                'qty'         => -abs($qtyPieces),
+                // الخروج بيتكلف بمتوسط المخزن الحالي، مش بسعر فاتورة المورد.
+                'unit_cost'   => null,
                 'doc_line_id' => $lineId,
             ],
             default => throw new RuntimeException("نوع مستند غير مدعوم حالياً: $type"),

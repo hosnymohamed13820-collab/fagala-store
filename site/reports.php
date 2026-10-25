@@ -8,7 +8,10 @@
  * - تصدير إكسل (.xlsx) لأي تقرير — الجرد له تصدير CSV خاص بيه.
  */
 require_once __DIR__ . '/auth.php';
-require_module_access('reports');
+$requestedPurchaseReport = in_array((string)($_GET['type'] ?? ''), ['purchase_docs','purchase_by_item'], true)
+    && can('purchase_docs:reports');
+if ($requestedPurchaseReport) require_permission('purchase_docs:reports');
+else require_module_access('reports');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/reports_lib.php';
@@ -23,6 +26,10 @@ foreach ($repParts as $k => $label) {
     if (can('reports:' . $k)) {
         $allowedTypes[$k] = $label;
     }
+}
+if (can('purchase_docs:reports')) {
+    $allowedTypes['purchase_docs'] = 'مستندات الشراء';
+    $allowedTypes['purchase_by_item'] = 'الشراء بالصنف';
 }
 
 // لو المستخدم مالوش أي تقرير مسموح (حزام أمان إضافي)
@@ -383,6 +390,8 @@ $reportTypes = [
     'supplier_purchases'=>'مشتريات مورد',
     'transfers'=>'التحويلات بين المخازن',
     'transfer_shorts'=>'عجوزات التحويلات المستردة',
+    'purchase_docs'=>'مستندات الشراء',
+    'purchase_by_item'=>'الشراء بالصنف',
 ];
 
 // بيانات تقرير «مشتريات مورد»
@@ -955,11 +964,21 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'purchase_docs' || $type === 'purchase_by_item'): ?>
+        <?php
+        $pdBranch = is_real_owner() ? (int)($_GET['branch'] ?? 0) : (int)($_SESSION['user']['branch_id'] ?? 0);
+        $pdSupplier = (int)($_GET['supplier_id'] ?? 0);
+        $pdBranches = $pdo->query('SELECT id,name FROM branches WHERE is_active=1 AND id IN (1,2,3,4,6) ORDER BY name')->fetchAll();
+        $pdSuppliers = $pdo->query('SELECT id,name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
+        ?>
+        <label>المخزن</label><select name="branch" <?= !is_real_owner()?'disabled':'' ?>><option value="">كل المخازن</option><?php foreach($pdBranches as $pb): if(!is_real_owner() && (int)$pb['id']!==$pdBranch)continue; ?><option value="<?= (int)$pb['id'] ?>" <?= $pdBranch===(int)$pb['id']?'selected':'' ?>><?= e($pb['name']) ?></option><?php endforeach ?></select>
+        <label>المورد</label><select name="supplier_id"><option value="">كل الموردين</option><?php foreach($pdSuppliers as $ps): ?><option value="<?= (int)$ps['id'] ?>" <?= $pdSupplier===(int)$ps['id']?'selected':'' ?>><?= e($ps['name']) ?></option><?php endforeach ?></select>
+    <?php endif; ?>
     <?php if ($type === 'treasury' || ($type === 'custody' && isset($_GET['branch']))): ?>
         <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts' || $type==='purchase_docs' || $type==='purchase_by_item') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= ($type==='purchase_docs' || $type==='purchase_by_item') && !empty($_GET['supplier_id']) ? '&supplier_id='.(int)$_GET['supplier_id'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
