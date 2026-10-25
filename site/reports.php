@@ -22,7 +22,7 @@ $pdo = db();
 $repParts = module_parts()['reports'] ?? [];
 $allowedTypes = [];
 foreach ($repParts as $k => $label) {
-    if ($k === 'insta_recon' && !is_owner()) continue;
+    if (in_array($k, ['insta_recon', 'stock_recon', 'stock_movement'], true) && !is_owner()) continue;
     if (can('reports:' . $k)) {
         $allowedTypes[$k] = $label;
     }
@@ -43,7 +43,7 @@ if (empty($allowedTypes)) {
 
 // تحديد نوع التقرير النشط: لو طلب نوع مسموح يفتحه، لو مالوش صلاحيته (أو مبعتش) يتحوّل لأول نوع مسموح له
 $requestedType = (string)($_GET['type'] ?? '');
-if ($requestedType === 'insta_recon' && !is_owner()) {
+if (in_array($requestedType, ['insta_recon', 'stock_recon', 'stock_movement'], true) && !is_owner()) {
     http_response_code(403);
     exit('غير مصرح');
 }
@@ -52,7 +52,7 @@ if (isset($allowedTypes[$requestedType])) {
 } else {
     $type = (string) array_key_first($allowedTypes);
 }
-if ($type === 'insta_recon' && !is_owner()) {
+if (in_array($type, ['insta_recon', 'stock_recon', 'stock_movement'], true) && !is_owner()) {
     http_response_code(403);
     exit('غير مصرح');
 }
