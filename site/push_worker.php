@@ -54,9 +54,6 @@ try {
     // مزامنة مشاكل الفواتير دورياً كل ١٠ دقائق (بريف ١٩٩)
     try { require_once __DIR__ . '/invoice_problems_lib.php'; ip_maybe_recalc_auto($pdo, 10); } catch (Throwable $ex) { /* صامت */ }
 
-    // استيراد حركات المخزن من المرآة تلقائياً كل ١٠ دقائق (بريف ٢١٨)
-    try { require_once __DIR__ . '/stock_import_lib.php'; stock_import_maybe_run($pdo, 0, 10); } catch (Throwable $ex) { /* صامت */ }
-
     // ١) سحب ٥٠ صف من الطابور بترتيب المعرّف
     $st = $pdo->prepare(
         "SELECT id, user_id, title, body, link, tries
@@ -73,16 +70,9 @@ try {
     $failed = 0;
     $dead = 0;
 
-    if ($picked === 0) {
-        echo json_encode([
-            'ok'     => true,
-            'picked' => 0,
-            'sent'   => 0,
-            'failed' => 0,
-            'dead'   => 0
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
+    // ⚠️ مفيش خروج بدري لو الطابور فاضي (بريف ٢١٨ر): استيراد المخزن اتنقل لآخر
+    //    الملف بعد الإشعارات، والطابور غالباً فاضي — لو خرجنا هنا الاستيراد
+    //    مايتشغّلش أبداً. الرد واحد في الحالتين (أصفار)، فبنكمّل عادي.
 
     // ٢) جلب كل أجهزة المستخدمين باستعلام واحد مجمّع
     $userIds = array_values(array_unique(array_column($rows, 'user_id')));
@@ -157,6 +147,10 @@ try {
             $updateTries->execute([$newTries, mb_substr((string) $lastErr, 0, 255), $newStatus, $qid]);
         }
     }
+
+    // استيراد حركات المخزن من المرآة تلقائياً كل ١٠ دقائق (بريف ٢١٨ · اتنقل هنا في ٢١٨ر)
+    // 🔴 بعد ما الطابور خلص: أول استيراد (١٠٠٠ فاتورة ≈ ١٠ ث) كان بيأخّر إرسال الإشعارات.
+    try { require_once __DIR__ . '/stock_import_lib.php'; stock_import_maybe_run($pdo, 0, 10); } catch (Throwable $ex) { /* صامت */ }
 
     echo json_encode([
         'ok'     => true,

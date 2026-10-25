@@ -11,6 +11,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/stock_lib.php';
 require_once __DIR__ . '/item_units_lib.php';
 
+// حد الرن الواحد في التشغيل التلقائي (بريف ٢١٨ر):
+// ٣٠٠ فاتورة اتعملت فعلاً أو ٢٠ ثانية — أيهما أول. الباقي بيكمّل في الرن الجاي.
+// زرار «استورد دلوقتي» مابيستخدمش الحد ده (بيمرّر maxInvoices = null).
+const STOCK_IMPORT_AUTO_MAX_INVOICES = 300;
+const STOCK_IMPORT_AUTO_MAX_SECONDS  = 20;
+
 // الموردين الداخليين لتحويلات True
 const STOCK_INTERNAL_SUPPLIERS = [
     4,       // فرع بونجور
@@ -112,29 +118,80 @@ function stock_suppliers_erp_map(PDO $pdo): array
 }
 
 /**
+ * فحص حد الرن الواحد (بريف ٢١٨ر): ٢٠ ثانية أو العدد المسموح — أيهما أول
+ *
+ * بتتنادي **قبل** الفاتورة الجديدة (مش بعدها) عشان الرن مايعدّيش الحد.
+ * لو رجّعت true يبقى وقفنا والكمّل في الرن الجاي.
+ */
+function stock_import_cap_hit(array &$capState): bool
+{
+    if (!empty($capState['stop'])) {
+        return true;
+    }
+    if ($capState['max'] !== null && $capState['worked'] >= $capState['max']) {
+        $capState['stop'] = true;
+        return true;
+    }
+    if ($capState['deadline'] !== null && microtime(true) >= $capState['deadline']) {
+        $capState['stop'] = true;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * تحديث watermark الرن: أكبر synced_at لفاتورة **اتعملت فعلاً** (بريف ٢١٨ر)
+ */
+function stock_import_wm_touch(array &$capState, array $inv): void
+{
+    $syncAt = (string) ($inv['synced_at'] ?? '');
+    if ($syncAt === '') {
+        return;
+    }
+    if ($capState['watermark'] === null || $syncAt > $capState['watermark']) {
+        $capState['watermark'] = $syncAt;
+    }
+}
+
+/**
  * تنفيذ استيراد حركات True لدفتر المخزن
  *
  * @param PDO $pdo
  * @param int $uid المستخدم المنفذ
  * @param int|null $branchId مخزن محدد أو كل المخازن التي لها رصيد افتتاحي مرحل
+ * @param int|null $maxInvoices حد الرن الواحد (عدد الفواتير اللي بتتعمل فعلاً).
+ *                              null = من غير حد (زرار «استورد دلوقتي»).
+ *                              لو اتحط، بيسري معاه كمان حد زمني STOCK_IMPORT_AUTO_MAX_SECONDS.
  * @return array عدادات التقرير
  */
-function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null): array
+function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null, ?int $maxInvoices = null): array
 {
     stock_require_enabled();
 
     $startTime = microtime(true);
     $queryCount = 0;
 
+    // حالة حد الرن الواحد — الفواتير اللي بتتحسب هي اللي اتعملت فعلاً (مستوردة/محدثة)،
+    // المتخطية (skipped) مش بتاكل من الـ٣٠٠ لأنها خلصت في رن قديم. (بريف ٢١٨ر)
+    $capOn = ($maxInvoices !== null && $maxInvoices > 0);
+    $capState = [
+        'max'       => $capOn ? $maxInvoices : null,
+        'deadline'  => $capOn ? $startTime + STOCK_IMPORT_AUTO_MAX_SECONDS : null,
+        'worked'    => 0,
+        'stop'      => false,
+        'watermark' => null,   // أكبر synced_at لفاتورة اتعملت فعلاً
+    ];
+
     $counters = [
-        'ok'       => true,
-        'imported' => 0,
-        'updated'  => 0,
-        'skipped'  => 0,
-        'failed'   => 0,
-        'errors'   => [],
-        'duration' => 0.0,
-        'queries'  => 0,
+        'ok'        => true,
+        'imported'  => 0,
+        'updated'   => 0,
+        'skipped'   => 0,
+        'failed'    => 0,
+        'errors'    => [],
+        'duration'  => 0.0,
+        'queries'   => 0,
+        'truncated' => false,   // وقفنا على الحد والكمّل في الرن الجاي
     ];
 
     // 1. المخازن التي لديها رصيد افتتاحي مرحل فقط
@@ -183,6 +240,11 @@ function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null): array
 
     // معالجة كل مخزن مؤهل
     foreach ($eligibleBranches as $bId => $opInfo) {
+        // حد الرن الواحد — وقفنا خلاص؟ الباقي في الرن الجاي (بريف ٢١٨ر)
+        if (stock_import_cap_hit($capState)) {
+            break;
+        }
+
         $bMode = stock_branch_mode($bId);
         $postedAt = $opInfo['posted_at'];
         $stoId = (int) ($branchInfoMap[$bId]['sto_id'] ?? 0);
@@ -220,7 +282,8 @@ function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null): array
                     $supplierErpMap,
                     $uid,
                     $counters,
-                    $queryCount
+                    $queryCount,
+                    $capState
                 );
             }
         }
@@ -266,7 +329,8 @@ function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null): array
                     $brInvoices,
                     $uid,
                     $counters,
-                    $queryCount
+                    $queryCount,
+                    $capState
                 );
             }
         }
@@ -277,18 +341,36 @@ function stock_import_run(PDO $pdo, int $uid, ?int $branchId = null): array
     $counters['queries']  = $queryCount;
 
     // حفظ توقيت آخر استيراد ناجح
+    // 🔴 بريف ٢١٨ر: الـwatermark = آخر فاتورة **اتعملت فعلاً** — مش وقت آخر الرن.
+    //    (القديم كان بيحطّ now()، فأي فاتورة بتوصل أثناء الرن أو بعد ما وقفنا على
+    //     الحد كانت بتضيع للأبد لأن الاختيار بيفلتر بـsynced_at).
+    //    ولو وقفنا على الحد مابنقدّمش الـwatermark خالص: الاختيار مرتب بـinvoice_date
+    //    مش synced_at، فالفواتير اللي لسه ماتعملتش ممكن يكون synced_at بتاعها أقدم
+    //    من آخر واحدة اتعملت — تقديمه كان بيضيّعها. الرن الجاي بيكمّل من نفس الشباك
+    //    والـstock_import_log بيمنع تكرار اللي اتعمل.
     $nowStr = date('Y-m-d H:i:s');
-    $stUpd = $pdo->prepare("
-        INSERT INTO settings (setting_key, setting_value)
-        VALUES ('stock_import_last', ?)
-        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
-    ");
-    $queryCount++;
-    $stUpd->execute([$nowStr]);
+    if ($capState['stop']) {
+        $counters['truncated'] = true;
+        $wmValue = null;   // سايبينه زي ما هو — نكمّل في الرن الجاي
+    } else {
+        // مافيش فواتير جديدة في الشباك خالص ← نقفل الشباك على دلوقتي
+        $wmValue = $capState['watermark'] ?? $nowStr;
+    }
+
+    if ($wmValue !== null) {
+        $stUpd = $pdo->prepare("
+            INSERT INTO settings (setting_key, setting_value)
+            VALUES ('stock_import_last', ?)
+            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+        ");
+        $queryCount++;
+        $stUpd->execute([$wmValue]);
+    }
 
     // تسجيل دورة التشغيل في stock_import_runs
     $detailsJson = json_encode([
         'branch_id' => $branchId,
+        'truncated' => $capState['stop'],
         'errors'    => array_slice($counters['errors'], 0, 20),
     ], JSON_UNESCAPED_UNICODE);
 
@@ -322,11 +404,17 @@ function stock_import_process_hq_batches(
     array $supplierErpMap,
     int $uid,
     array &$counters,
-    int &$queryCount
+    int &$queryCount,
+    array &$capState
 ): void {
     $chunks = array_chunk($invoices, 200);
 
     foreach ($chunks as $chunk) {
+        // وقفنا على حد الرن؟ مفيش داعي نسحب دفعة جديدة
+        if (stock_import_cap_hit($capState)) {
+            return;
+        }
+
         $keys = [];
         $pairTuples = [];
         $srcKeys = [];
@@ -379,6 +467,11 @@ function stock_import_process_hq_batches(
 
         // معالجة كل فاتورة في transaction مستقل
         foreach ($chunk as $inv) {
+            // الحد بيتفحص قبل الفاتورة — لو خلص وقفنا (بريف ٢١٨ر)
+            if (stock_import_cap_hit($capState)) {
+                return;
+            }
+
             $sth = (int) $inv['sth_id'];
             $suf = (string) $inv['suffix'];
             $invKey = "$sth:$suf";
@@ -397,7 +490,8 @@ function stock_import_process_hq_batches(
                 $existingLogs[$srcKey] ?? null,
                 $uid,
                 $counters,
-                $queryCount
+                $queryCount,
+                $capState
             );
         }
     }
@@ -412,11 +506,17 @@ function stock_import_process_br_batches(
     array $invoices,
     int $uid,
     array &$counters,
-    int &$queryCount
+    int &$queryCount,
+    array &$capState
 ): void {
     $chunks = array_chunk($invoices, 200);
 
     foreach ($chunks as $chunk) {
+        // وقفنا على حد الرن؟ مفيش داعي نسحب دفعة جديدة
+        if (stock_import_cap_hit($capState)) {
+            return;
+        }
+
         $triples = [];
         $srcKeys = [];
         foreach ($chunk as $inv) {
@@ -469,6 +569,11 @@ function stock_import_process_br_batches(
 
         // معالجة كل فاتورة في transaction مستقل
         foreach ($chunk as $inv) {
+            // الحد بيتفحص قبل الفاتورة — لو خلص وقفنا (بريف ٢١٨ر)
+            if (stock_import_cap_hit($capState)) {
+                return;
+            }
+
             $ak = (string) $inv['agent_key'];
             $sth = (int) $inv['sth_id'];
             $suf = (string) $inv['suffix'];
@@ -488,7 +593,8 @@ function stock_import_process_br_batches(
                 $existingLogs[$srcKey] ?? null,
                 $uid,
                 $counters,
-                $queryCount
+                $queryCount,
+                $capState
             );
         }
     }
@@ -509,7 +615,8 @@ function stock_import_single_invoice(
     ?array $existingLog,
     int $uid,
     array &$counters,
-    int &$queryCount
+    int &$queryCount,
+    array &$capState
 ): void {
     $docType = (int) ($inv['doc_type'] ?? 0);
     $sthId = (int) ($inv['sth_id'] ?? 0);
@@ -522,6 +629,8 @@ function stock_import_single_invoice(
 
     // 2. فحص التطابق مع ما تم استيراده سابقاً
     if ($existingLog !== null && ($existingLog['src_hash'] ?? '') === $newHash) {
+        // فاتورة خلصت قبل كده — بتتحسب في الـwatermark ومش بتاكل من حد الرن
+        stock_import_wm_touch($capState, $inv);
         $counters['skipped']++;
         return;
     }
@@ -632,6 +741,8 @@ function stock_import_single_invoice(
             ]);
 
             $pdo->commit();
+            $capState['worked']++;
+            stock_import_wm_touch($capState, $inv);
             $counters['updated']++;
         } else {
             // فاتورة جديدة لأول مرة
@@ -647,6 +758,8 @@ function stock_import_single_invoice(
             $stIns->execute([$source, $srcKey, $newHash, $newDocId]);
 
             $pdo->commit();
+            $capState['worked']++;
+            stock_import_wm_touch($capState, $inv);
             $counters['imported']++;
         }
     } catch (Throwable $e) {
@@ -689,7 +802,9 @@ function stock_import_maybe_run(PDO $pdo, int $uid = 0, int $intervalMinutes = 1
         }
 
         try {
-            $result = stock_import_run($pdo, $uid);
+            // بريف ٢١٨ر: التشغيل التلقائي بحد (٣٠٠ فاتورة / ٢٠ ثانية) عشان مايأخّرش
+            // وركر الإشعارات. اللي مايخلصش بيكمّل في الرن الجاي.
+            $result = stock_import_run($pdo, $uid, null, STOCK_IMPORT_AUTO_MAX_INVOICES);
             return $result;
         } finally {
             $pdo->query("SELECT RELEASE_LOCK('stock_import')");
