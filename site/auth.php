@@ -142,6 +142,7 @@ function all_modules(): array
         'ops'           => ['label' => 'المراقبة',         'icon' => 'ti-chart-bar',        'url' => 'ops.php'],
         'sms_inbox'     => ['label' => 'رسايل إنستاباي',   'icon' => 'ti-device-mobile',    'url' => 'sms_inbox.php'],
         'calls'         => ['label' => 'متابعة المكالمات', 'icon' => 'ti-device-mobile',    'url' => 'calls.php'],
+        'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
 }
@@ -223,6 +224,10 @@ function module_parts(): array
             'audit'   => 'سجل العمليات',
             'devices' => 'الأجهزة',
             'db'      => 'تعديلات القاعدة',
+        ],
+        'stock_ledger' => [
+            'view'   => 'عرض الدفتر والمستندات',
+            'manage' => 'العمليات والتسويات',
         ],
     ];
 }

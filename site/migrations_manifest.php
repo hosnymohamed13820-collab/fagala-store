@@ -15,4 +15,5 @@ return [
     '20261025_004_shift_edit_approved_action',
     '20261025_006_branch_calls',
     '20261025_007_line_unit_factor',
+    '20261025_009_stock_ledger',
 ];
