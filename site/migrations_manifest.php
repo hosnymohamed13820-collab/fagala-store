@@ -14,4 +14,5 @@ return [
     '20261025_003_hq_codes_created_at',
     '20261025_004_shift_edit_approved_action',
     '20261025_006_branch_calls',
+    '20261025_007_line_unit_factor',
 ];

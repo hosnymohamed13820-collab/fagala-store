@@ -192,12 +192,13 @@ try {
         // بنود فاتورة بتمسح بنود فاتورة تانية بنفس الرقم من شهر مختلف.
         $ins = $pdo->prepare(
             'INSERT INTO hq_invoice_lines
-                (sth_id, suffix, line_no, item_id, item_code, item_name, quantity, unit_price, cost_price)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (sth_id, suffix, line_no, item_id, item_code, item_name, quantity, unit_price, cost_price, unit_factor)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
                 item_id = VALUES(item_id), item_code = VALUES(item_code),
                 item_name = VALUES(item_name), quantity = VALUES(quantity),
-                unit_price = VALUES(unit_price), cost_price = VALUES(cost_price)'
+                unit_price = VALUES(unit_price), cost_price = VALUES(cost_price),
+                unit_factor = COALESCE(VALUES(unit_factor), unit_factor)'
         );
         foreach ($rows as $r) {
             if (!is_array($r)) { $skipped++; continue; }
@@ -206,6 +207,9 @@ try {
             $suf = (string) ($r['suffix'] ?? '');
             // من غير suffix مش هنقدر نضمن الربط الصح — نرفض بدل ما نخرّب
             if ($sid <= 0 || $suf === '') { $skipped++; continue; }
+            $uf = isset($r['unit_factor']) && is_numeric($r['unit_factor']) && (float) $r['unit_factor'] > 0
+                ? (float) $r['unit_factor']
+                : null;
             $ins->execute([
                 $sid, $suf, $ln,
                 ($r['item_id'] ?? null) !== null ? (int) $r['item_id'] : null,
@@ -214,6 +218,7 @@ try {
                 (float) ($r['quantity'] ?? 0),
                 (float) ($r['unit_price'] ?? 0),
                 (float) ($r['cost_price'] ?? 0),
+                $uf,
             ]);
             $stored++;
         }

@@ -146,15 +146,16 @@ try {
             $st = $pdo->prepare(
                 'INSERT INTO br_invoice_lines
                     (agent_key, sth_id, suffix, line_no, item_id, item_code, item_name,
-                     quantity, unit_price, cost_price)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     quantity, unit_price, cost_price, unit_factor)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE
-                    item_id    = VALUES(item_id),
-                    item_code  = VALUES(item_code),
-                    item_name  = VALUES(item_name),
-                    quantity   = VALUES(quantity),
-                    unit_price = VALUES(unit_price),
-                    cost_price = VALUES(cost_price)'
+                    item_id     = VALUES(item_id),
+                    item_code   = VALUES(item_code),
+                    item_name   = VALUES(item_name),
+                    quantity    = VALUES(quantity),
+                    unit_price  = VALUES(unit_price),
+                    cost_price  = VALUES(cost_price),
+                    unit_factor = COALESCE(VALUES(unit_factor), unit_factor)'
             );
             foreach ($rows as $r) {
                 if (!is_array($r)) { $skipped++; continue; }
@@ -162,6 +163,9 @@ try {
                 $ln  = (int) ($r['line_no'] ?? 0);
                 $suf = (string) ($r['suffix'] ?? '');
                 if ($sid <= 0 || $suf === '') { $skipped++; continue; }
+                $uf = isset($r['unit_factor']) && is_numeric($r['unit_factor']) && (float) $r['unit_factor'] > 0
+                    ? (float) $r['unit_factor']
+                    : null;
                 $st->execute([
                     $agent,
                     $sid,
@@ -173,6 +177,7 @@ try {
                     (float) ($r['quantity'] ?? 0),
                     (float) ($r['unit_price'] ?? 0),
                     (float) ($r['cost_price'] ?? 0),
+                    $uf,
                 ]);
                 $stored++;
             }
@@ -330,15 +335,16 @@ try {
 
             $ins = $pdo->prepare(
                 'INSERT INTO hq_invoice_lines
-                    (sth_id, suffix, line_no, item_id, item_code, item_name, quantity, unit_price, cost_price)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (sth_id, suffix, line_no, item_id, item_code, item_name, quantity, unit_price, cost_price, unit_factor)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE
-                    item_id    = VALUES(item_id),
-                    item_code  = VALUES(item_code),
-                    item_name  = VALUES(item_name),
-                    quantity   = VALUES(quantity),
-                    unit_price = VALUES(unit_price),
-                    cost_price = VALUES(cost_price)'
+                    item_id     = VALUES(item_id),
+                    item_code   = VALUES(item_code),
+                    item_name   = VALUES(item_name),
+                    quantity    = VALUES(quantity),
+                    unit_price  = VALUES(unit_price),
+                    cost_price  = VALUES(cost_price),
+                    unit_factor = COALESCE(VALUES(unit_factor), unit_factor)'
             );
 
             foreach ($rows as $r) {
@@ -353,6 +359,9 @@ try {
                     continue;
                 }
 
+                $uf = isset($r['unit_factor']) && is_numeric($r['unit_factor']) && (float) $r['unit_factor'] > 0
+                    ? (float) $r['unit_factor']
+                    : null;
                 $ins->execute([
                     $sid,
                     $suf,
@@ -363,6 +372,7 @@ try {
                     (float) ($r['quantity'] ?? 0),
                     (float) ($r['unit_price'] ?? 0),
                     (float) ($r['cost_price'] ?? 0),
+                    $uf,
                 ]);
                 $stored++;
             }

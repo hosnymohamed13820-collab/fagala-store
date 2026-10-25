@@ -1920,7 +1920,8 @@ SET NOCOUNT ON;
 SELECT l.STH_ID AS sth_id, l.STL_LINE_NO AS line_no, l.ITEM_ID AS item_id,
        LTRIM(RTRIM(ic.IC_CODE)) AS item_code,
        LTRIM(RTRIM(ic.IC_NAME1)) AS item_name,
-       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price
+       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price,
+       l.STL_UNIT_FACTOR AS unit_factor
 FROM STO_TRANS_LINES_$suffix l
 LEFT JOIN ITEM_CODES ic ON ic.IC_ID = l.IC_ID
 WHERE l.STH_ID IN ($idList)
@@ -1937,15 +1938,16 @@ ORDER BY l.STH_ID, l.STL_LINE_NO;
         $lnOut = New-Object System.Collections.ArrayList
         foreach ($r in $lineRows.Rows) {
             $null = $lnOut.Add([ordered]@{
-                sth_id     = [int64]$r['sth_id']
-                suffix     = $suffix
-                line_no    = [int]$r['line_no']
-                item_id    = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
-                item_code  = [string]$r['item_code']
-                item_name  = [string]$r['item_name']
-                quantity   = [double]$r['quantity']
-                unit_price = [double]$r['unit_price']
-                cost_price = [double]$r['cost_price']
+                sth_id      = [int64]$r['sth_id']
+                suffix      = $suffix
+                line_no     = [int]$r['line_no']
+                item_id     = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
+                item_code   = [string]$r['item_code']
+                item_name   = [string]$r['item_name']
+                quantity    = [double]$r['quantity']
+                unit_price  = [double]$r['unit_price']
+                cost_price  = [double]$r['cost_price']
+                unit_factor = [double]$r['unit_factor']
             })
         }
 
@@ -2113,7 +2115,8 @@ ORDER BY h.STH_DOC_DATE DESC;
 SET NOCOUNT ON;
 SELECT l.STH_ID AS sth_id, l.STL_LINE_NO AS line_no, l.ITEM_ID AS item_id,
        LTRIM(RTRIM(ic.IC_CODE)) AS item_code, LTRIM(RTRIM(ic.IC_NAME1)) AS item_name,
-       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price
+       l.STL_QTY AS quantity, l.STL_ITEM_PRICE AS unit_price, l.STL_ITEM_COST AS cost_price,
+       l.STL_UNIT_FACTOR AS unit_factor
 FROM STO_TRANS_LINES_YY_MM l
 LEFT JOIN ITEM_CODES ic ON ic.IC_ID = l.IC_ID
 WHERE l.STH_ID IN ($idList)
@@ -2122,14 +2125,15 @@ ORDER BY l.STH_ID, l.STL_LINE_NO;
             $unpLineTable = Invoke-Sql $unpLineSql
             foreach ($r in $unpLineTable.Rows) {
                 $null = $unpLnOut.Add([ordered]@{
-                    sth_id     = [int64]$r['sth_id']
-                    line_no    = [int]$r['line_no']
-                    item_id    = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
-                    item_code  = [string]$r['item_code']
-                    item_name  = [string]$r['item_name']
-                    quantity   = [double]$r['quantity']
-                    unit_price = [double]$r['unit_price']
-                    cost_price = [double]$r['cost_price']
+                    sth_id      = [int64]$r['sth_id']
+                    line_no     = [int]$r['line_no']
+                    item_id     = if ($r['item_id'] -is [DBNull]) { $null } else { [int]$r['item_id'] }
+                    item_code   = [string]$r['item_code']
+                    item_name   = [string]$r['item_name']
+                    quantity    = [double]$r['quantity']
+                    unit_price  = [double]$r['unit_price']
+                    cost_price  = [double]$r['cost_price']
+                    unit_factor = [double]$r['unit_factor']
                 })
             }
         }
