@@ -12,6 +12,26 @@ require_once __DIR__ . '/stock_lib.php';
 require_once __DIR__ . '/item_units_lib.php';
 
 /**
+ * هل المستخدم الحالي مسموح له يفك فروق الزيادة؟
+ *
+ * بريف ٢١٥ر: المالك الحقيقي أو اللي معاه الجزء 'transfers:resolve' بالتحديد.
+ * ⚠️ مقصود إننا **مش** بنستخدم can('transfers:resolve') — لأن can() بترجّع
+ * true لأي حد معاه موديول 'transfers' كامل (wildcard)، وفك الزيادة بيحرّك
+ * بضاعة بين الفروع فلازم صلاحية صريحة.
+ */
+function transfers_can_resolve(): bool
+{
+    $realOwner = function_exists('is_real_owner')
+        ? is_real_owner()
+        : !empty($_SESSION['user']['is_owner']);
+    if ($realOwner) {
+        return true;
+    }
+
+    return in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true);
+}
+
+/**
  * إنشاء طلب تحويل جديد كمسودة في حالة 'requested' (بدون حركات مخزنية).
  *
  * @param PDO $pdo
@@ -633,8 +653,11 @@ function transfer_resolve_excess(PDO $pdo, int $diffId, int $sourceBranchId, int
         if (!$diff) {
             throw new RuntimeException("حالة الفرق غير موجودة (id=$diffId).");
         }
-        if ($diff['kind'] !== 'excess' || $diff['status'] !== 'open') {
-            throw new RuntimeException('حالة الفرق ليست زيادة مفتوحة.');
+        if ($diff['kind'] !== 'excess') {
+            throw new RuntimeException("الفرق ده مش زيادة — نوعه: {$diff['kind']}. فك الزيادة للزيادات بس.");
+        }
+        if ($diff['status'] !== 'open') {
+            throw new RuntimeException("الزيادة دي اتحلت قبل كده — حالتها الحالية: {$diff['status']}.");
         }
 
         $parentDocId = (int) $diff['doc_id'];
@@ -644,8 +667,28 @@ function transfer_resolve_excess(PDO $pdo, int $diffId, int $sourceBranchId, int
         if (!$parentDoc) {
             throw new RuntimeException("المستند الأصلي غير موجود (id=$parentDocId).");
         }
+        if ($parentDoc['doc_type'] !== 'transfer') {
+            throw new RuntimeException("مستند الفرق مش تحويل — نوعه: {$parentDoc['doc_type']}.");
+        }
+        if ($parentDoc['status'] !== 'diff_open') {
+            throw new RuntimeException("مستند التحويل مش مفتوح على فروق — حالته الحالية: {$parentDoc['status']}.");
+        }
 
         $destBranchId = (int) $parentDoc['counter_branch_id'];
+
+        // المخزن المصدر لازم يكون موجود ونشط ومش هو المستلم نفسه
+        if ($sourceBranchId === $destBranchId) {
+            throw new RuntimeException('المخزن المصدر مايصحّش يكون هو المخزن المستلم نفسه.');
+        }
+        $stSrcBranch = $pdo->prepare('SELECT id, name, is_active FROM branches WHERE id = ?');
+        $stSrcBranch->execute([$sourceBranchId]);
+        $srcBranch = $stSrcBranch->fetch(PDO::FETCH_ASSOC);
+        if (!$srcBranch) {
+            throw new RuntimeException("المخزن المصدر ($sourceBranchId) مش موجود.");
+        }
+        if ((int) $srcBranch['is_active'] !== 1) {
+            throw new RuntimeException("المخزن المصدر ({$srcBranch['name']}) مش نشط.");
+        }
 
         // شرط live للمصدر وللمستلم
         stock_require_live($sourceBranchId, $destBranchId);

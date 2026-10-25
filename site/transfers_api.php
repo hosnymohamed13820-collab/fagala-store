@@ -42,6 +42,12 @@ $uid = (int) ($user['id'] ?? 1);
 $isOwner = is_real_owner() || is_owner();
 $userBranchId = !empty($user['branch_id']) ? (int) $user['branch_id'] : null;
 
+// 🔴 بريف ٢١٥ر: غير المالك من غير فرع = مفيش داتا خالص في أي action.
+// من غير الحارس ده الفلتر بيتبعت null والاستعلام بيرجّع تحويلات كل الفروع.
+if (!$isOwner && !$userBranchId) {
+    api_fail('حسابك مش مربوط بفرع — كلّم المدير يظبط فرعك الأول', 403, 'forbidden');
+}
+
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
 if ($method === 'GET') {
@@ -53,9 +59,6 @@ if ($method === 'GET') {
             $filters = ['tab' => $tab];
 
             if (!$isOwner) {
-                if (!$userBranchId) {
-                    api_fail('المستخدم غير مرتبط بفرع', 403, 'forbidden');
-                }
                 $filters['branch_id'] = $userBranchId;
             } else {
                 $filters['branch_id'] = !empty($_GET['branch_id']) ? (int) $_GET['branch_id'] : null;
@@ -268,8 +271,8 @@ try {
             $diffId         = (int) ($input['diff_id'] ?? 0);
             $sourceBranchId = (int) ($input['source_branch_id'] ?? 0);
 
-            if (!$isOwner && !can('transfers:resolve')) {
-                api_fail('صلاحية فك فروق الزيادة للمدير فقط', 403, 'forbidden');
+            if (!transfers_can_resolve()) {
+                api_fail('فك فروق الزيادة لصاحب صلاحية transfers:resolve بس', 403, 'forbidden');
             }
 
             $adjId = transfer_resolve_excess($pdo, $diffId, $sourceBranchId, $uid);

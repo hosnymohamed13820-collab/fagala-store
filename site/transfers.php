@@ -33,6 +33,18 @@ $uid = (int) ($user['id'] ?? 1);
 $isOwner = is_real_owner() || is_owner();
 $userBranchId = !empty($user['branch_id']) ? (int) $user['branch_id'] : null;
 
+// 🔴 بريف ٢١٥ر: غير المالك من غير فرع — مفيش داتا خالص.
+// من غير الحارس ده الفلتر بيبقى null والاستعلام بيرجّع تحويلات كل الفروع.
+if (!$isOwner && !$userBranchId) {
+    $active_module = 'transfers';
+    require_once __DIR__ . '/includes/header.php';
+    echo '<div class="card"><div class="alert alert-warning" style="margin:20px;text-align:center;">'
+        . 'حسابك مش مربوط بفرع — كلّم المدير يظبط فرعك الأول عشان تشوف تحويلات فرعك.'
+        . '</div></div>';
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 // فحص تفعيل المخزن
 $stockEnabled = stock_enabled();
 
@@ -469,7 +481,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td><?= e($df['item_name'] ?? ('صنف ' . $df['item_id'])) ?></td>
                                 <td class="num" style="color:var(--pos);font-weight:700;"><?= number_format((float)$df['qty'], 3) ?></td>
                                 <td>
-                                    <?php if ($isOwner || can('transfers:resolve')): ?>
+                                    <?php if (transfers_can_resolve()): ?>
                                         <select id="diff_source_<?= (int)$df['id'] ?>" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;">
                                             <option value="">-- اختر المخزن المصدر --</option>
                                             <?php foreach ($supportedBranches as $sb):
@@ -483,7 +495,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align:center;">
-                                    <?php if ($isOwner || can('transfers:resolve')): ?>
+                                    <?php if (transfers_can_resolve()): ?>
                                         <button type="button" class="btn btn-sm btn-primary" onclick="resolveExcess(<?= (int)$df['id'] ?>)">
                                             تأكيد وفك الزيادة
                                         </button>
