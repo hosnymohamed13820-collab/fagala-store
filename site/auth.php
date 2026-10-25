@@ -131,6 +131,7 @@ function all_modules(): array
         'receiving'     => ['label' => 'استلام الفواتير',   'icon' => 'ti-truck',              'url' => 'receiving.php'],
         'branch_invoices' => ['label' => 'فواتير الفروع',   'icon' => 'ti-file-invoice',       'url' => 'branch_invoices.php'],
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
+        'labels'        => ['label' => 'طباعة ليبلز',       'icon' => 'ti-printer',    'url' => 'labels.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
         'analysis'      => ['label' => 'تحليل الموسم',     'icon' => 'ti-calculator'   , 'url' => 'analysis.php'],
         'item_sales'    => ['label' => 'تحليل المبيعات',   'icon' => 'ti-arrow-up-right', 'url' => 'item_sales.php'],
