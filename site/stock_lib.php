@@ -427,6 +427,14 @@ function stock_doc_moves(array $doc, array $lines): array
                 'unit_cost'   => null,
                 'doc_line_id' => $lineId,
             ],
+            'import' => $moves[] = [
+                'item_id'     => $itemId,
+                'branch_id'   => $branchId,
+                'is_transit'  => 0,
+                'qty'         => $qtyPieces, // + وارد أو - منصرف
+                'unit_cost'   => $unitCost,
+                'doc_line_id' => $lineId,
+            ],
             default => throw new RuntimeException("نوع مستند غير مدعوم حالياً: $type"),
         };
     }

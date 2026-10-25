@@ -23,6 +23,7 @@ define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
 require_once __DIR__ . '/stock_lib.php';
+require_once __DIR__ . '/stock_import_lib.php';
 
 api_begin();
 require_login();
@@ -181,6 +182,18 @@ if ($method === 'GET') {
 
             api_ok(['docs' => $docs]);
 
+        case 'recon':
+            $branchId = (int) ($_GET['branch_id'] ?? 0);
+            if ($branchId <= 0) {
+                api_fail('رقم المخزن مطلوب', 400, 'bad_request');
+            }
+            try {
+                $recon = stock_recon($pdo, $branchId);
+                api_ok(['recon' => $recon]);
+            } catch (Throwable $e) {
+                api_fail($e->getMessage(), 400, 'bad_request');
+            }
+
         default:
             api_fail('طلب غير معروف', 400, 'bad_request');
     }
@@ -246,6 +259,12 @@ if ($method === 'POST') {
                 }
 
                 api_ok(['doc_id' => $docId]);
+
+            case 'import_run':
+                stock_require_enabled();
+                $bId = isset($input['branch_id']) && $input['branch_id'] !== '' ? (int)$input['branch_id'] : null;
+                $importRes = stock_import_run($pdo, $uid, $bId);
+                api_ok(['import' => $importRes]);
 
             default:
                 api_fail('عملية غير معروفة', 400, 'bad_request');

@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/stock_lib.php';
+require_once __DIR__ . '/stock_import_lib.php';
 
 require_login();
 require_module_access('stock_ledger');
@@ -29,61 +30,17 @@ sens_page();
 $pdo = db();
 $stockEnabled = stock_enabled();
 
+// تشغيل كسول للاستيراد إذا كان أقدم من ١٠ دقائق
+stock_import_maybe_run($pdo, (int) ($_SESSION['user']['id'] ?? 1), 10);
+
+$tab = $_GET['tab'] ?? 'docs';
+if (!in_array($tab, ['docs', 'recon', 'import'], true)) {
+    $tab = 'docs';
+}
+
 // جلب المخازن المدعومة (١ بونجور · ٢ اي بي سي · ٣ الفجالة · ٤ دجلة · ٦ الإدارة)
 $stBranches = $pdo->query('SELECT id, name, sto_id FROM branches WHERE id IN (1, 2, 3, 4, 6) ORDER BY id ASC');
 $branches = $stBranches->fetchAll(PDO::FETCH_ASSOC);
-
-// فحص الأرصدة الافتتاحية المرحلة لكل مخزن
-$stOpenings = $pdo->query("SELECT branch_id, id, doc_no, doc_date FROM stock_docs WHERE doc_type = 'opening' AND status = 'posted'");
-$postedOpenings = [];
-while ($r = $stOpenings->fetch(PDO::FETCH_ASSOC)) {
-    $postedOpenings[(int) $r['branch_id']] = $r;
-}
-
-// فلاتر البحث في المستندات
-$filterBranch = !empty($_GET['branch_id']) ? (int) $_GET['branch_id'] : 0;
-$filterType   = !empty($_GET['type']) ? (string) $_GET['type'] : '';
-$filterStatus = !empty($_GET['status']) ? (string) $_GET['status'] : '';
-$filterFrom   = !empty($_GET['from']) ? (string) $_GET['from'] : '';
-$filterTo     = !empty($_GET['to']) ? (string) $_GET['to'] : '';
-
-$where = [];
-$params = [];
-if ($filterBranch > 0) {
-    $where[] = 'd.branch_id = ?';
-    $params[] = $filterBranch;
-}
-if ($filterType !== '') {
-    $where[] = 'd.doc_type = ?';
-    $params[] = $filterType;
-}
-if ($filterStatus !== '') {
-    $where[] = 'd.status = ?';
-    $params[] = $filterStatus;
-}
-if ($filterFrom !== '') {
-    $where[] = 'd.doc_date >= ?';
-    $params[] = $filterFrom;
-}
-if ($filterTo !== '') {
-    $where[] = 'd.doc_date <= ?';
-    $params[] = $filterTo;
-}
-
-$whereSql = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-
-$sqlDocs = "
-    SELECT d.*, b.name AS branch_name, u.full_name AS created_by_name
-      FROM stock_docs d
-      LEFT JOIN branches b ON b.id = d.branch_id
-      LEFT JOIN users u ON u.id = d.created_by
-     $whereSql
-     ORDER BY d.doc_date DESC, d.id DESC
-     LIMIT 150
-";
-$stDocs = $pdo->prepare($sqlDocs);
-$stDocs->execute($params);
-$docsList = $stDocs->fetchAll(PDO::FETCH_ASSOC);
 
 $docTypeNames = [
     'opening'         => 'رصيد افتتاحي',
@@ -91,7 +48,138 @@ $docTypeNames = [
     'transfer'        => 'تحويل مخزني',
     'purchase'        => 'فاتورة شراء',
     'purchase_return' => 'مرتجع شراء',
+    'import'          => 'استيراد من True',
 ];
+
+// معالجة تصدير إكسيل للمطابقة
+if ($tab === 'recon' && !empty($_GET['export'])) {
+    $reconBranchId = !empty($_GET['branch_id']) ? (int) $_GET['branch_id'] : 3;
+    $reconData = stock_recon($pdo, $reconBranchId);
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx('مطابقة_' . $reconData['branch_name']);
+    $x->setColumnTypes(['s', 's', 'n', 'n', 'n', 'n', 'n', 's', 's']);
+    $x->addRow(['كود الصنف', 'اسم الصنف', 'رصيد الدفتر', 'رصيد True', 'فرق القطع', 'متوسط التكلفة', 'قيمة الفرق (ج.م)', 'وحدة غير معروفة؟', 'آخر حركة'], true);
+    foreach ($reconData['differences'] as $row) {
+        $x->addRow([
+            (string) $row['code'],
+            (string) $row['name'],
+            $row['ledger_qty'],
+            $row['true_qty'],
+            $row['diff_qty'],
+            $row['avg_cost'],
+            $row['diff_value'],
+            $row['has_unknown_unit'] ? 'نعم' : 'لا',
+            $row['last_move_at'] ?: '—',
+        ]);
+    }
+    $x->download('recon_' . $reconBranchId . '_' . date('Ymd_His') . '.xlsx');
+    exit;
+}
+
+// بيانات تاب المطابقة مع True
+$reconBranchId = 3;
+$reconCards = [];
+$activeRecon = null;
+if ($tab === 'recon') {
+    $reconBranchId = !empty($_GET['branch_id']) ? (int) $_GET['branch_id'] : 3;
+    foreach ($branches as $b) {
+        $bId = (int) $b['id'];
+        try {
+            $rRes = stock_recon($pdo, $bId);
+            $reconCards[$bId] = [
+                'name'            => $b['name'],
+                'mode'            => stock_branch_mode($bId),
+                'matched_count'   => $rRes['matched_count'],
+                'diff_count'      => $rRes['diff_count'],
+                'total_diff_qty'  => $rRes['total_diff_pieces'],
+                'true_updated_at' => $rRes['true_updated_at'],
+            ];
+            if ($bId === $reconBranchId) {
+                $activeRecon = $rRes;
+            }
+        } catch (Throwable $e) {
+            $reconCards[$bId] = [
+                'name'            => $b['name'],
+                'mode'            => stock_branch_mode($bId),
+                'matched_count'   => 0,
+                'diff_count'      => 0,
+                'total_diff_qty'  => 0,
+                'true_updated_at' => '—',
+                'error'           => $e->getMessage(),
+            ];
+        }
+    }
+    if ($activeRecon === null && isset($reconCards[$reconBranchId])) {
+        $activeRecon = stock_recon($pdo, $reconBranchId);
+    }
+}
+
+// بيانات تاب الاستيراد (آخر ٥٠ تشغيل)
+$importRuns = [];
+if ($tab === 'import') {
+    $stRuns = $pdo->query("
+        SELECT r.*, u.full_name AS user_name
+          FROM stock_import_runs r
+          LEFT JOIN users u ON u.id = r.created_by
+         ORDER BY r.run_at DESC
+         LIMIT 50
+    ");
+    $importRuns = $stRuns->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// بيانات تاب المستندات
+$postedOpenings = [];
+$docsList = [];
+$filterBranch = !empty($_GET['branch_id']) ? (int) $_GET['branch_id'] : 0;
+$filterType   = !empty($_GET['type']) ? (string) $_GET['type'] : '';
+$filterStatus = !empty($_GET['status']) ? (string) $_GET['status'] : '';
+$filterFrom   = !empty($_GET['from']) ? (string) $_GET['from'] : '';
+$filterTo     = !empty($_GET['to']) ? (string) $_GET['to'] : '';
+
+if ($tab === 'docs') {
+    $stOpenings = $pdo->query("SELECT branch_id, id, doc_no, doc_date FROM stock_docs WHERE doc_type = 'opening' AND status = 'posted'");
+    while ($r = $stOpenings->fetch(PDO::FETCH_ASSOC)) {
+        $postedOpenings[(int) $r['branch_id']] = $r;
+    }
+
+    $where = [];
+    $params = [];
+    if ($filterBranch > 0) {
+        $where[] = 'd.branch_id = ?';
+        $params[] = $filterBranch;
+    }
+    if ($filterType !== '') {
+        $where[] = 'd.doc_type = ?';
+        $params[] = $filterType;
+    }
+    if ($filterStatus !== '') {
+        $where[] = 'd.status = ?';
+        $params[] = $filterStatus;
+    }
+    if ($filterFrom !== '') {
+        $where[] = 'd.doc_date >= ?';
+        $params[] = $filterFrom;
+    }
+    if ($filterTo !== '') {
+        $where[] = 'd.doc_date <= ?';
+        $params[] = $filterTo;
+    }
+
+    $whereSql = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
+
+    $sqlDocs = "
+        SELECT d.*, b.name AS branch_name, u.full_name AS created_by_name
+          FROM stock_docs d
+          LEFT JOIN branches b ON b.id = d.branch_id
+          LEFT JOIN users u ON u.id = d.created_by
+         $whereSql
+         ORDER BY d.doc_date DESC, d.id DESC
+         LIMIT 150
+    ";
+    $stDocs = $pdo->prepare($sqlDocs);
+    $stDocs->execute($params);
+    $docsList = $stDocs->fetchAll(PDO::FETCH_ASSOC);
+}
 
 $pageTitle = 'دفتر المخزن';
 $active_module = 'stock_ledger';
@@ -120,6 +208,14 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<!-- شريط التبويبات -->
+<div class="inv-tabs" style="display:flex;gap:6px;border-bottom:1px solid var(--line-soft, #ddd);margin-bottom:16px;">
+    <a class="tab-btn <?= $tab === 'docs' ? 'active' : '' ?>" href="stock_ledger.php?tab=docs"><i class="ti ti-file-text"></i> مستندات المخزن</a>
+    <a class="tab-btn <?= $tab === 'recon' ? 'active' : '' ?>" href="stock_ledger.php?tab=recon"><i class="ti ti-arrows-diff"></i> المطابقة مع True</a>
+    <a class="tab-btn <?= $tab === 'import' ? 'active' : '' ?>" href="stock_ledger.php?tab=import"><i class="ti ti-history"></i> الاستيراد</a>
+</div>
+
+<?php if ($tab === 'docs'): ?>
 <!-- كروت الرصيد الافتتاحي من المرآة -->
 <div class="card" style="margin-bottom:16px;">
     <h3 style="margin:0 0 12px 0;"><i class="ti ti-building-warehouse"></i> الرصيد الافتتاحي من المرآة</h3>
@@ -304,6 +400,201 @@ require_once __DIR__ . '/includes/header.php';
         </table>
     </div>
 </div>
+<?php elseif ($tab === 'recon'): ?>
+<!-- كروت المخازن للمطابقة -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:16px;">
+    <?php foreach ($branches as $b): ?>
+        <?php
+            $bId = (int)$b['id'];
+            $c = $reconCards[$bId] ?? [];
+            $isSelected = ($bId === $reconBranchId);
+            $isMirror = ($c['mode'] ?? 'mirror') === 'mirror';
+            $diffCnt = (int)($c['diff_count'] ?? 0);
+            $matchedCnt = (int)($c['matched_count'] ?? 0);
+        ?>
+        <div class="card" style="margin:0;padding:12px;border:2px solid <?= $isSelected ? 'var(--accent, #0070f3)' : 'var(--line-soft, #ddd)' ?>;cursor:pointer;position:relative;"
+             onclick="location.href='stock_ledger.php?tab=recon&branch_id=<?= $bId ?>'">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <b style="font-size:15px;"><?= e($b['name']) ?></b>
+                <span class="fchip <?= $isMirror ? '' : 'fchip-pos' ?>">
+                    <?= $isMirror ? 'مرآة (mirror)' : 'حي (live)' ?>
+                </span>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted, #888);margin-bottom:8px;">
+                رصيد True من: <?= e($c['true_updated_at'] ?? '—') ?>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <?php if ($diffCnt === 0): ?>
+                        <span class="fchip fchip-pos"><i class="ti ti-check"></i> متطابق (<?= $matchedCnt ?>)</span>
+                    <?php else: ?>
+                        <span class="fchip fchip-neg"><i class="ti ti-alert-circle"></i> <?= $diffCnt ?> فرق</span>
+                    <?php endif; ?>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline"
+                        onclick="event.stopPropagation(); triggerImport(<?= $bId ?>)"
+                        <?= !$stockEnabled ? 'disabled title="المخزن مقفول حالياً"' : '' ?>>
+                    <i class="ti ti-refresh"></i> استورد دلوقتي
+                </button>
+            </div>
+        </div>
+    <?php endforeach; ?>
+</div>
+
+<!-- جدول الفروق للمخزن المختار -->
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+            <h3 style="margin:0 0 4px 0;">
+                <i class="ti ti-arrows-diff"></i> فروق المطابقة — مخزن <?= e($activeRecon['branch_name'] ?? '') ?>
+            </h3>
+            <div style="font-size:13px;color:var(--text-muted, #888);">
+                رصيد True من: <b><?= e($activeRecon['true_updated_at'] ?? '—') ?></b> ·
+                الدفتر لحد: <b><?= e($activeRecon['ledger_updated_at'] ?? '—') ?></b>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-primary"
+                    onclick="triggerImport(<?= $reconBranchId ?>)"
+                    <?= !$stockEnabled ? 'disabled' : '' ?>>
+                <i class="ti ti-refresh"></i> استورد دلوقتي للمخزن
+            </button>
+            <a href="stock_ledger.php?tab=recon&branch_id=<?= $reconBranchId ?>&export=1" class="btn btn-sm btn-outline">
+                <i class="ti ti-file-spreadsheet"></i> تصدير إكسيل
+            </a>
+            <a href="reports.php?type=stock_recon&branch=<?= $reconBranchId ?>" class="btn btn-sm btn-ghost" target="_blank">
+                <i class="ti ti-external-link"></i> فتح في التقارير
+            </a>
+        </div>
+    </div>
+
+    <?php if (empty($activeRecon['differences'])): ?>
+        <div class="alert alert-success" style="padding:16px;font-size:14px;">
+            <i class="ti ti-check" style="font-size:18px;"></i>
+            جميع أرصدة الدفتر متطابقة تماماً مع رصيد True لهذا المخزن (<?= (int)($activeRecon['matched_count'] ?? 0) ?> صنف متطابق، صفر فروق).
+        </div>
+    <?php else: ?>
+        <div style="margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap;">
+            <span class="fchip fchip-neg">عدد الأصناف المختلفة: <?= count($activeRecon['differences']) ?></span>
+            <span class="fchip">مجموع فرق القطع: <?= number_format((float)$activeRecon['total_diff_pieces'], 3) ?></span>
+            <span class="fchip">مجموع فرق القيمة: <?= number_format((float)$activeRecon['total_diff_value'], 2) ?> ج.م</span>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th>كود الصنف</th>
+                        <th>اسم الصنف</th>
+                        <th class="num">رصيد الدفتر</th>
+                        <th class="num">رصيد True</th>
+                        <th class="num">فرق القطع</th>
+                        <th class="num">متوسط التكلفة</th>
+                        <th class="num">قيمة الفرق</th>
+                        <th>وحدة مجهولة؟</th>
+                        <th>آخر حركة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($activeRecon['differences'] as $diff): ?>
+                        <tr>
+                            <td><?= e($diff['code']) ?></td>
+                            <td><?= e($diff['name']) ?></td>
+                            <td class="num font-bold"><?= number_format((float)$diff['ledger_qty'], 3) ?></td>
+                            <td class="num font-bold"><?= number_format((float)$diff['true_qty'], 3) ?></td>
+                            <td class="num font-bold" style="color:<?= $diff['diff_qty'] > 0 ? 'var(--pos, green)' : 'var(--neg, red)' ?>;">
+                                <?= $diff['diff_qty'] > 0 ? '+' : '' ?><?= number_format((float)$diff['diff_qty'], 3) ?>
+                            </td>
+                            <td class="num"><?= number_format((float)$diff['avg_cost'], 4) ?></td>
+                            <td class="num"><?= number_format((float)$diff['diff_value'], 2) ?></td>
+                            <td>
+                                <?php if (!empty($diff['has_unknown_unit'])): ?>
+                                    <span class="fchip fchip-warn"><i class="ti ti-alert-triangle"></i> نعم (unit:unknown)</span>
+                                <?php else: ?>
+                                    <span style="color:var(--text-muted, #888);">لا</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= e($diff['last_move_at'] ?: '—') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php elseif ($tab === 'import'): ?>
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div>
+            <h3 style="margin:0 0 4px 0;"><i class="ti ti-history"></i> سجل دورات الاستيراد من True (آخر ٥٠ تشغيل)</h3>
+            <div style="font-size:13px;color:var(--text-muted, #888);">
+                الاستيراد الدوري الآلي (كل ١٠ دقائق عبر الوركر أو عند فتح الشاشة) + الاستيراد اليدوي
+            </div>
+        </div>
+        <div>
+            <button type="button" class="btn btn-primary" onclick="triggerImport(null)" <?= !$stockEnabled ? 'disabled' : '' ?>>
+                <i class="ti ti-refresh"></i> تشغيل استيراد فوري الآن
+            </button>
+        </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="ftable">
+            <thead>
+                <tr>
+                    <th class="num">#</th>
+                    <th>تاريخ ووقت التشغيل</th>
+                    <th class="num">المدة (ث)</th>
+                    <th class="num">جديد (imported)</th>
+                    <th class="num">محدث (updated)</th>
+                    <th class="num">تخطي (skipped)</th>
+                    <th class="num">فشل (failed)</th>
+                    <th>بواسطة</th>
+                    <th>ملاحظات وأخطاء</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($importRuns)): ?>
+                    <tr>
+                        <td colspan="9" style="text-align:center;color:var(--text-muted, #888);padding:24px;">
+                            لا توجد دورات استيراد مسجلة حتى الآن
+                        </td>
+                    </tr>
+                <?php else: ?>
+                    <?php foreach ($importRuns as $ir): ?>
+                        <tr>
+                            <td class="num"><?= (int)$ir['id'] ?></td>
+                            <td><?= e($ir['run_at']) ?></td>
+                            <td class="num"><?= number_format((float)$ir['duration_sec'], 2) ?></td>
+                            <td class="num" style="color:<?= $ir['imported_count'] > 0 ? 'var(--pos, green)' : 'inherit' ?>;">
+                                <?= (int)$ir['imported_count'] ?>
+                            </td>
+                            <td class="num" style="color:<?= $ir['updated_count'] > 0 ? 'var(--accent, blue)' : 'inherit' ?>;">
+                                <?= (int)$ir['updated_count'] ?>
+                            </td>
+                            <td class="num"><?= (int)$ir['skipped_count'] ?></td>
+                            <td class="num" style="color:<?= $ir['failed_count'] > 0 ? 'var(--neg, red)' : 'inherit' ?>;font-weight:<?= $ir['failed_count'] > 0 ? 'bold' : 'normal' ?>;">
+                                <?= (int)$ir['failed_count'] ?>
+                            </td>
+                            <td><?= e($ir['user_name'] ?? ($ir['created_by'] ? ('مستخدم ' . $ir['created_by']) : 'النظام (آلي)')) ?></td>
+                            <td style="font-size:12px;max-width:300px;word-break:break-all;">
+                                <?php
+                                    $det = !empty($ir['details']) ? json_decode((string)$ir['details'], true) : null;
+                                    if (!empty($det['errors'])) {
+                                        echo '<span style="color:var(--neg, red);">' . e(count($det['errors']) . ' خطأ: ' . ($det['errors'][0]['error'] ?? '')) . '</span>';
+                                    } else {
+                                        echo '<span style="color:var(--text-muted, #888);">نجح بدون أخطاء</span>';
+                                    }
+                                ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Modal لعرض المستند وسجله وحركاته -->
 <div id="docModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;padding:20px;">
@@ -358,6 +649,21 @@ async function triggerOpening(branchId, branchName) {
         location.reload();
     } catch (e) {
         alert('فشل إنشاء الرصيد الافتتاحي: ' + e.message);
+    }
+}
+
+async function triggerImport(branchId = null) {
+    const targetLabel = branchId ? 'لهذا المخزن' : 'لكل المخازن';
+    if (!confirm(`هل تريد بدء دورة استيراد حركات True الآن ${targetLabel}؟`)) {
+        return;
+    }
+    try {
+        const res = await apiRequest('import_run', { branch_id: branchId });
+        const imp = res.import || {};
+        alert(`تم الانتهاء من الاستيراد بنجاح:\n- مستورد جديد: ${imp.imported || 0}\n- محدث: ${imp.updated || 0}\n- تم تخطيه: ${imp.skipped || 0}\n- أخطاء: ${imp.failed || 0}\nالمدة: ${imp.duration || 0} ثانية`);
+        location.reload();
+    } catch (e) {
+        alert('فشل استيراد حركات True: ' + e.message);
     }
 }
 

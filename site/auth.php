@@ -208,6 +208,8 @@ function module_parts(): array
             'transfer_shorts' => 'عجوزات التحويلات المستردة',
             'purchase_docs' => 'مستندات الشراء على الموقع',
             'purchase_by_item' => 'الشراء بالصنف',
+            'stock_recon'        => 'مطابقة المخزن مع True',
+            'stock_movement'     => 'حركة الأصناف المخزنية',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',

@@ -54,6 +54,9 @@ try {
     // مزامنة مشاكل الفواتير دورياً كل ١٠ دقائق (بريف ١٩٩)
     try { require_once __DIR__ . '/invoice_problems_lib.php'; ip_maybe_recalc_auto($pdo, 10); } catch (Throwable $ex) { /* صامت */ }
 
+    // استيراد حركات المخزن من المرآة تلقائياً كل ١٠ دقائق (بريف ٢١٨)
+    try { require_once __DIR__ . '/stock_import_lib.php'; stock_import_maybe_run($pdo, 0, 10); } catch (Throwable $ex) { /* صامت */ }
+
     // ١) سحب ٥٠ صف من الطابور بترتيب المعرّف
     $st = $pdo->prepare(
         "SELECT id, user_id, title, body, link, tries

@@ -392,6 +392,8 @@ $reportTypes = [
     'transfer_shorts'=>'عجوزات التحويلات المستردة',
     'purchase_docs'=>'مستندات الشراء',
     'purchase_by_item'=>'الشراء بالصنف',
+    'stock_recon'=>'مطابقة المخزن مع True',
+    'stock_movement'=>'حركة الأصناف المخزنية',
 ];
 
 // بيانات تقرير «مشتريات مورد»

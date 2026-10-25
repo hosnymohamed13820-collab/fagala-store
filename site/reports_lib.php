@@ -1401,6 +1401,106 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 'totals' => $recTotals,
             ];
 
+        case 'stock_recon':
+            require_once __DIR__ . '/stock_import_lib.php';
+            $selB = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+            $branchesToRecon = $selB ? [$selB] : [1, 2, 3, 4, 6];
+            $reconRows = [];
+            $totMatched = 0;
+            $totDiff = 0;
+            $totDiffQty = 0.0;
+            $totDiffVal = 0.0;
+
+            foreach ($branchesToRecon as $bid) {
+                try {
+                    $res = stock_recon($pdo, $bid);
+                    $totMatched += $res['matched_count'];
+                    $totDiff    += $res['diff_count'];
+                    $totDiffQty += $res['total_diff_pieces'];
+                    $totDiffVal += $res['total_diff_value'];
+
+                    foreach ($res['differences'] as $d) {
+                        $reconRows[] = [
+                            $res['branch_name'],
+                            $d['code'],
+                            $d['name'],
+                            number_format((float)$d['ledger_qty'], 3),
+                            number_format((float)$d['true_qty'], 3),
+                            number_format((float)$d['diff_qty'], 3),
+                            number_format((float)$d['avg_cost'], 4),
+                            number_format((float)$d['diff_value'], 2),
+                            $d['has_unknown_unit'] ? 'نعم (وحدة مجهولة)' : 'لا',
+                            $d['last_move_at'] ?: '—',
+                        ];
+                    }
+                } catch (Throwable $e) {}
+            }
+
+            $reconTotals = array_fill(0, 10, '');
+            $reconTotals[0] = 'إجمالي الفروق: ' . count($reconRows);
+            $reconTotals[5] = number_format($totDiffQty, 3);
+            $reconTotals[7] = number_format($totDiffVal, 2);
+
+            return [
+                'title' => 'تقرير مطابقة أرصدة الدفتر مع True',
+                'headers' => ['المخزن', 'كود الصنف', 'اسم الصنف', 'رصيد الدفتر', 'رصيد True', 'فرق القطع', 'متوسط التكلفة', 'قيمة الفرق (ج.م)', 'وحدة غير معروفة؟', 'آخر حركة'],
+                'rows' => $reconRows,
+                'sum_cards' => [
+                    ['label' => 'الأصناف المتطابقة', 'val' => (string)$totMatched],
+                    ['label' => 'الأصناف المختلفة', 'val' => (string)$totDiff],
+                    ['label' => 'إجمالي فرق القطع', 'val' => number_format($totDiffQty, 3)],
+                    ['label' => 'إجمالي فرق القيمة', 'val' => number_format($totDiffVal, 2) . ' ج.م'],
+                ],
+                'totals' => $reconTotals,
+            ];
+
+        case 'stock_movement':
+            require_once __DIR__ . '/stock_import_lib.php';
+            $selB = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+            $selI = isset($_GET['item_id']) && $_GET['item_id'] !== '' ? (int)$_GET['item_id'] : null;
+            $movData = stock_movement_report($pdo, $from, $to, $selB, $selI);
+
+            $mRows = [];
+            foreach ($movData['rows'] as $mr) {
+                $mRows[] = [
+                    $mr['code'],
+                    $mr['name'],
+                    $mr['branch'],
+                    number_format((float)$mr['opening_qty'], 3),
+                    number_format((float)$mr['purchase_in'], 3),
+                    number_format((float)$mr['transfer_in'], 3),
+                    number_format((float)$mr['sale_out'], 3),
+                    number_format((float)$mr['transfer_out'], 3),
+                    number_format((float)$mr['adjust_qty'], 3),
+                    number_format((float)$mr['closing_qty'], 3),
+                ];
+            }
+
+            $mTotals = array_fill(0, 10, '');
+            $mTotals[0] = 'الإجمالي (' . count($mRows) . ' صنف)';
+            $mTotals[3] = number_format($movData['totals']['opening'], 3);
+            $mTotals[4] = number_format($movData['totals']['pur_in'], 3);
+            $mTotals[5] = number_format($movData['totals']['tr_in'], 3);
+            $mTotals[6] = number_format($movData['totals']['sale_out'], 3);
+            $mTotals[7] = number_format($movData['totals']['tr_out'], 3);
+            $mTotals[8] = number_format($movData['totals']['adjust'], 3);
+            $mTotals[9] = number_format($movData['totals']['closing'], 3);
+
+            return [
+                'title' => 'تقرير حركة الأصناف المخزنية',
+                'headers' => ['كود الصنف', 'اسم الصنف', 'المخزن', 'رصيد أول المدة', 'وارد شراء', 'وارد تحويل', 'منصرف بيع', 'منصرف تحويل/مردود', 'تسويات', 'رصيد آخر المدة'],
+                'rows' => $mRows,
+                'sum_cards' => [
+                    ['label' => 'رصيد أول المدة', 'val' => number_format($movData['totals']['opening'], 3)],
+                    ['label' => 'وارد شراء', 'val' => number_format($movData['totals']['pur_in'], 3)],
+                    ['label' => 'وارد تحويل', 'val' => number_format($movData['totals']['tr_in'], 3)],
+                    ['label' => 'منصرف بيع', 'val' => number_format($movData['totals']['sale_out'], 3)],
+                    ['label' => 'منصرف تحويل/مردود', 'val' => number_format($movData['totals']['tr_out'], 3)],
+                    ['label' => 'رصيد آخر المدة', 'val' => number_format($movData['totals']['closing'], 3)],
+                ],
+                'totals' => $mTotals,
+            ];
+
         default:
             return ['title'=>'','headers'=>[],'rows'=>[],'totals'=>[]];
     }

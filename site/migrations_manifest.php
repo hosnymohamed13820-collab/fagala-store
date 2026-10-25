@@ -19,5 +19,6 @@ return [
     '20261025_009_stock_ledger',
     '20261025_010_stock_transfers',
     '20261025_011_purchase_docs',
+    '20261025_012_stock_import_log',
     '20261025_013_reopen_shift_651',
 ];
