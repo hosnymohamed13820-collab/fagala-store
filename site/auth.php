@@ -145,6 +145,7 @@ function all_modules(): array
         'calls'         => ['label' => 'متابعة المكالمات', 'icon' => 'ti-device-mobile',    'url' => 'calls.php'],
         'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
         'item_card'     => ['label' => 'كارت الصنف',       'icon' => 'ti-list-details',     'url' => 'item_card.php'],
+        'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
 }
@@ -202,6 +203,8 @@ function module_parts(): array
             'receiving'  => 'استلام الفواتير',
             'daily'      => 'الملخص اليومي',
             'supplier_purchases' => 'مشتريات مورد',
+            'transfers'       => 'التحويلات بين المخازن',
+            'transfer_shorts' => 'عجوزات التحويلات المستردة',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',
@@ -230,6 +233,12 @@ function module_parts(): array
         'stock_ledger' => [
             'view'   => 'عرض الدفتر والمستندات',
             'manage' => 'العمليات والتسويات',
+        ],
+        'transfers' => [
+            'create'  => 'طلب وتجهيز وإرسال',
+            'receive' => 'عد واستلام',
+            'resolve' => 'فك فروق الزيادة',
+            'reports' => 'تقارير التحويلات',
         ],
     ];
 }

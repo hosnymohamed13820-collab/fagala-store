@@ -31,14 +31,23 @@ $_SERVER['SCRIPT_NAME'] = $_SERVER['PHP_SELF'] = '/' . $page;
 $_SERVER['REQUEST_URI'] = '/' . $page . ($qs !== '' ? '?' . $qs : '');
 $_SERVER['REQUEST_METHOD'] = $post !== '' ? 'POST' : 'GET';
 parse_str($qs, $_GET);
-if ($post !== '') parse_str($post, $_POST);
-
 session_id('clitest' . preg_replace('/\W/', '', $as));
 session_start();
 $_SESSION['app'] = getenv('RUN_APP') ?: 'fagala';
+if ($post !== '') {
+    parse_str($post, $_POST);
+    if (empty($_POST['csrf'])) {
+        $_SESSION['csrf'] = $_SESSION['csrf'] ?? bin2hex(random_bytes(32));
+        $_POST['csrf'] = $_SESSION['csrf'];
+        $_SERVER['HTTP_X_CSRF_TOKEN'] = $_SESSION['csrf'];
+    }
+}
 if ($as === 'owner') {
     $_SESSION['user'] = ['id' => 1, 'username' => 'owner', 'full_name' => 'المالك', 'is_owner' => 1, 'branch_id' => null, 'perms_version' => 0];
     $_SESSION['permissions'] = [];
+} elseif ($as === 'bonjour') {
+    $_SESSION['user'] = ['id' => 16, 'username' => '2', 'full_name' => 'موظف بونجور', 'is_owner' => 0, 'branch_id' => 1, 'perms_version' => 0];
+    $_SESSION['permissions'] = ['transfers', 'transfers:receive'];
 } else {
     // عاشور مش موجود في النسخة المحلية (الداتا قبل ما يتعمل).
     // require_login() بيتأكد من المستخدم في القاعدة مع كل صفحة، فلازم يوزر حقيقي:

@@ -17,5 +17,6 @@ return [
     '20261025_007_line_unit_factor',
     '20261025_008_item_reorder',
     '20261025_009_stock_ledger',
+    '20261025_010_stock_transfers',
     '20261025_013_reopen_shift_651',
 ];

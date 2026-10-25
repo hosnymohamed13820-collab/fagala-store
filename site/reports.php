@@ -309,7 +309,7 @@ if ($type === 'salaries' && !sens_unlocked()) {
 //    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
 //    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
 //    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
-if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supplier_purchases') {
+if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supplier_purchases' && $type !== 'transfers' && $type !== 'transfer_shorts') {
     if ($type === 'salaries' && !sens_unlocked()) {
         http_response_code(403);
         exit('الرواتب مقفولة');
@@ -381,6 +381,8 @@ $reportTypes = [
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
     'daily'=>'الملخص اليومي',
     'supplier_purchases'=>'مشتريات مورد',
+    'transfers'=>'التحويلات بين المخازن',
+    'transfer_shorts'=>'عجوزات التحويلات المستردة',
 ];
 
 // بيانات تقرير «مشتريات مورد»
@@ -428,6 +430,92 @@ if ($type === 'supplier_purchases') {
         ], true);
 
         $x->download('supplier_purchases_' . $from . '_' . $to . '.xlsx');
+        exit;
+    }
+}
+
+// بيانات تقرير «التحويلات بين المخازن»
+$trReportRows = [];
+$trBranches = [];
+$trSelBranch = null;
+if ($type === 'transfers') {
+    require_once __DIR__ . '/stock_transfer_lib.php';
+    try {
+        $trBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 AND id <> 5 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable) {
+        $trBranches = [];
+    }
+    $trSelBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+    $trReportRows = transfer_reports_transfers($pdo, $from, $to, $trSelBranch);
+
+    if ($export) {
+        require_once __DIR__ . '/xlsx_lib.php';
+        $x = new SimpleXlsx('التحويلات بين المخازن');
+        $x->setColumnTypes(['s', 's', 's', 's', 's', 'n', 'n', 'n', 'n', 'n', 's']);
+        $x->addRow(['التحويل', 'من مخزن', 'إلى مخزن', 'تاريخ الإرسال', 'تاريخ الاستلام', 'المدة (ساعات)', 'عدد الأصناف', 'إجمالي القطع', 'عجز (ناقص)', 'زيادة', 'الحالة'], true);
+
+        foreach ($trReportRows as $r) {
+            $docLabel = $r['doc_no'] ? ('#' . $r['doc_no'] . '/' . $r['doc_year']) : ('#مسودة-' . $r['id']);
+            $statusLabel = match($r['status']) {
+                'requested' => 'طلب جديد',
+                'preparing' => 'جاري التجهيز',
+                'sent'      => 'في الطريق',
+                'diff_open' => 'فروق مفتوحة',
+                'closed'    => 'مكتمل ومغلق',
+                'cancelled' => 'ملغي',
+                default     => $r['status'],
+            };
+            $x->addRow([
+                $docLabel,
+                $r['from_branch_name'] ?? ('مخزن ' . $r['branch_id']),
+                $r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id']),
+                $r['sent_at'] ?: '—',
+                $r['received_at'] ?: '—',
+                $r['duration_hours'] !== null ? $r['duration_hours'] : 0,
+                $r['lines_count'],
+                $r['total_pieces'],
+                $r['short_qty'],
+                $r['excess_qty'],
+                $statusLabel,
+            ]);
+        }
+        $x->download('transfers_' . $from . '_' . $to . '.xlsx');
+        exit;
+    }
+}
+
+// بيانات تقرير «عجوزات التحويلات المستردة»
+$trShortRows = [];
+if ($type === 'transfer_shorts') {
+    require_once __DIR__ . '/stock_transfer_lib.php';
+    try {
+        $trBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 AND id <> 5 ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable) {
+        $trBranches = [];
+    }
+    $trSelBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
+    $trShortRows = transfer_reports_shorts($pdo, $from, $to, $trSelBranch);
+
+    if ($export) {
+        require_once __DIR__ . '/xlsx_lib.php';
+        $x = new SimpleXlsx('عجوزات التحويلات المستردة');
+        $x->setColumnTypes(['s', 's', 's', 's', 'n', 's', 's', 's']);
+        $x->addRow(['تاريخ التحويل', 'رقم التحويل', 'كود الصنف', 'اسم الصنف', 'الكمية المستردة (بالقطعة)', 'من مخزن (المستلم)', 'إلى مخزن (الراسل)', 'الملاحظات'], true);
+
+        foreach ($trShortRows as $r) {
+            $docLabel = $r['doc_no'] ? ('#' . $r['doc_no'] . '/' . $r['doc_year']) : ('#' . $r['doc_id']);
+            $x->addRow([
+                $r['doc_date'],
+                $docLabel,
+                $r['code'] ?? '',
+                $r['item_name'] ?? ('صنف ' . $r['item_id']),
+                $r['qty'],
+                $r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id']),
+                $r['from_branch_name'] ?? ('مخزن ' . $r['branch_id']),
+                $r['note'] ?: 'تم الرد للراسل',
+            ]);
+        }
+        $x->download('transfer_shorts_' . $from . '_' . $to . '.xlsx');
         exit;
     }
 }
@@ -858,11 +946,20 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'transfers' || $type === 'transfer_shorts'): ?>
+        <label>الفرع</label>
+        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+            <option value="">كل الفروع</option>
+            <?php foreach ($trBranches as $tb): ?>
+                <option value="<?= (int)$tb['id'] ?>" <?= (isset($_GET['branch']) && (int)$_GET['branch'] === (int)$tb['id']) ? 'selected' : '' ?>><?= e($tb['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    <?php endif; ?>
     <?php if ($type === 'treasury' || ($type === 'custody' && isset($_GET['branch']))): ?>
         <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -1580,6 +1677,152 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                         <td class="num" style="<?= $tot['net'] < 0 ? 'color:var(--neg);' : '' ?>">
                             <?= $tot['net'] < 0 ? '(' . number_format(abs($tot['net']), 2) . ')' : number_format($tot['net'], 2) ?>
                         </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php elseif ($type === 'transfers'): ?>
+<?php /* ===== تقرير «التحويلات بين المخازن» (بريف ٢١٥) ===== */ ?>
+<div class="card">
+    <div class="rep-title">تقرير التحويلات بين المخازن<?= $trSelBranch !== null ? ' — ' . e(array_column($trBranches, 'name', 'id')[$trSelBranch] ?? 'مخزن ' . $trSelBranch) : ' — كل المخازن' ?></div>
+    <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($trReportRows)) ?> تحويل</div>
+
+    <?php if (empty($trReportRows)): ?>
+        <div class="empty">لا توجد تحويلات مسجلة في هذه الفترة.</div>
+    <?php else: ?>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th class="num">التحويل</th>
+                        <th>من مخزن</th>
+                        <th>إلى مخزن</th>
+                        <th>تاريخ الإرسال</th>
+                        <th>تاريخ الاستلام</th>
+                        <th class="num">المدة (ساعات)</th>
+                        <th class="num">عدد الأصناف</th>
+                        <th class="num">إجمالي القطع</th>
+                        <th class="num">عجز (ناقص)</th>
+                        <th class="num">زيادة</th>
+                        <th style="text-align:center;">الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $totPieces = 0.0;
+                    $totShort = 0.0;
+                    $totExcess = 0.0;
+                    foreach ($trReportRows as $r):
+                        $totPieces += (float) $r['total_pieces'];
+                        $totShort += (float) $r['short_qty'];
+                        $totExcess += (float) $r['excess_qty'];
+                        $docLabel = $r['doc_no'] ? ('#' . $r['doc_no'] . '/' . $r['doc_year']) : ('#مسودة-' . $r['id']);
+                        $statusChipClass = match($r['status']) {
+                            'sent'      => 'fchip-warn',
+                            'closed'    => 'fchip-pos',
+                            'diff_open' => 'fchip-neg',
+                            'cancelled' => 'fchip-dim',
+                            default     => 'fchip-info',
+                        };
+                        $statusLabel = match($r['status']) {
+                            'requested' => 'طلب جديد',
+                            'preparing' => 'جاري التجهيز',
+                            'sent'      => 'في الطريق',
+                            'diff_open' => 'فروق مفتوحة',
+                            'closed'    => 'مكتمل ومغلق',
+                            'cancelled' => 'ملغي',
+                            default     => $r['status'],
+                        };
+                    ?>
+                        <tr>
+                            <td class="num"><a href="transfers.php?id=<?= (int)$r['id'] ?>" style="font-weight:600;"><?= e($docLabel) ?></a></td>
+                            <td><?= e($r['from_branch_name'] ?? ('مخزن ' . $r['branch_id'])) ?></td>
+                            <td><?= e($r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id'])) ?></td>
+                            <td><?= $r['sent_at'] ? e($r['sent_at']) : '<span style="color:var(--text-dim);">—</span>' ?></td>
+                            <td><?= $r['received_at'] ? e($r['received_at']) : '<span style="color:var(--text-dim);">—</span>' ?></td>
+                            <td class="num"><?= $r['duration_hours'] !== null ? number_format((float)$r['duration_hours'], 2) : '—' ?></td>
+                            <td class="num"><?= number_format((int)$r['lines_count']) ?></td>
+                            <td class="num"><?= number_format((float)$r['total_pieces'], 3) ?></td>
+                            <td class="num" style="<?= (float)$r['short_qty'] > 0 ? 'color:var(--neg);font-weight:600;' : '' ?>">
+                                <?= (float)$r['short_qty'] > 0 ? number_format((float)$r['short_qty'], 3) : '0' ?>
+                            </td>
+                            <td class="num" style="<?= (float)$r['excess_qty'] > 0 ? 'color:var(--pos);font-weight:600;' : '' ?>">
+                                <?= (float)$r['excess_qty'] > 0 ? number_format((float)$r['excess_qty'], 3) : '0' ?>
+                            </td>
+                            <td style="text-align:center;">
+                                <span class="fchip <?= $statusChipClass ?>"><?= e($statusLabel) ?></span>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="background:var(--bg);font-weight:700;">
+                        <td class="num">الإجمالي</td>
+                        <td><?= count($trReportRows) ?> تحويل</td>
+                        <td colspan="5"></td>
+                        <td class="num"><?= number_format($totPieces, 3) ?></td>
+                        <td class="num" style="<?= $totShort > 0 ? 'color:var(--neg);' : '' ?>"><?= number_format($totShort, 3) ?></td>
+                        <td class="num" style="<?= $totExcess > 0 ? 'color:var(--pos);' : '' ?>"><?= number_format($totExcess, 3) ?></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+
+<?php elseif ($type === 'transfer_shorts'): ?>
+<?php /* ===== تقرير «عجوزات التحويلات المستردة» (بريف ٢١٥) ===== */ ?>
+<div class="card">
+    <div class="rep-title">تقرير عجز التحويلات المسترد تلقائياً<?= $trSelBranch !== null ? ' — ' . e(array_column($trBranches, 'name', 'id')[$trSelBranch] ?? 'مخزن ' . $trSelBranch) : ' — كل المخازن' ?></div>
+    <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($trShortRows)) ?> حالة عجز مستردة</div>
+
+    <?php if (empty($trShortRows)): ?>
+        <div class="empty">لا توجد حالات عجز مستردة في هذه الفترة.</div>
+    <?php else: ?>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th>تاريخ التحويل</th>
+                        <th class="num">التحويل</th>
+                        <th>كود الصنف</th>
+                        <th>اسم الصنف</th>
+                        <th class="num">الكمية المستردة (بالقطعة)</th>
+                        <th>من مخزن (المستلم)</th>
+                        <th>إلى مخزن (الراسل)</th>
+                        <th>الملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $totShortQty = 0.0;
+                    foreach ($trShortRows as $r):
+                        $totShortQty += (float) $r['qty'];
+                        $docLabel = $r['doc_no'] ? ('#' . $r['doc_no'] . '/' . $r['doc_year']) : ('#' . $r['doc_id']);
+                    ?>
+                        <tr>
+                            <td><?= e($r['doc_date']) ?></td>
+                            <td class="num"><a href="transfers.php?id=<?= (int)$r['doc_id'] ?>" style="font-weight:600;"><?= e($docLabel) ?></a></td>
+                            <td><?= e($r['code'] ?? '') ?></td>
+                            <td class="name" title="<?= e($r['item_name'] ?? '') ?>"><?= e($r['item_name'] ?? ('صنف ' . $r['item_id'])) ?></td>
+                            <td class="num" style="color:var(--pos);font-weight:600;"><?= number_format((float)$r['qty'], 3) ?></td>
+                            <td><?= e($r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id'])) ?></td>
+                            <td><?= e($r['from_branch_name'] ?? ('مخزن ' . $r['branch_id'])) ?></td>
+                            <td style="color:var(--text-dim);font-size:12px;"><?= e($r['note'] ?: 'تم الرد للراسل') ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="background:var(--bg);font-weight:700;">
+                        <td class="num">الإجمالي</td>
+                        <td><?= count($trShortRows) ?> حالة</td>
+                        <td colspan="2"></td>
+                        <td class="num" style="color:var(--pos);"><?= number_format($totShortQty, 3) ?></td>
+                        <td colspan="3"></td>
                     </tr>
                 </tfoot>
             </table>
