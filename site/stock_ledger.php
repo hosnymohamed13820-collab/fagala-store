@@ -322,6 +322,10 @@ require_once __DIR__ . '/includes/header.php';
 <script>
 const CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;
 
+// كل نص جاي من القاعدة وبيتحط في innerHTML لازم يعدي من هنا — وإلا
+// ملاحظة أو سبب إلغاء فيه <img onerror=...> بيشتغل سكربت عند فتح المستند.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 async function apiRequest(action, data = null) {
     const isPost = data !== null;
     const url = 'stock_api.php' + (!isPost ? ('?' + new URLSearchParams(action)) : '');
@@ -437,18 +441,18 @@ async function viewDoc(docId) {
 
         let statusChip = doc.status === 'posted' ? '<span class="fchip fchip-pos">مرحل</span>'
             : (doc.status === 'draft' ? '<span class="fchip fchip-warn">مسودة</span>'
-            : (doc.status === 'cancelled' ? '<span class="fchip fchip-neg">ملغي</span>' : `<span class="fchip">${doc.status}</span>`));
+            : (doc.status === 'cancelled' ? '<span class="fchip fchip-neg">ملغي</span>' : `<span class="fchip">${esc(doc.status)}</span>`));
 
         let html = `
             <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:16px;background:var(--bg-main, #f8f9fa);padding:14px;border-radius:8px;">
-                <div><b>المعرف:</b> #${doc.id}</div>
-                <div><b>النوع:</b> ${doc.doc_type}</div>
-                <div><b>الرقم:</b> ${doc.doc_no || '—'} / ${doc.doc_year || '—'}</div>
-                <div><b>المخزن:</b> ${doc.branch_name || doc.branch_id}</div>
-                <div><b>التاريخ:</b> ${doc.doc_date}</div>
+                <div><b>المعرف:</b> #${esc(doc.id)}</div>
+                <div><b>النوع:</b> ${esc(doc.doc_type)}</div>
+                <div><b>الرقم:</b> ${esc(doc.doc_no || '—')} / ${esc(doc.doc_year || '—')}</div>
+                <div><b>المخزن:</b> ${esc(doc.branch_name || doc.branch_id)}</div>
+                <div><b>التاريخ:</b> ${esc(doc.doc_date)}</div>
                 <div><b>الحالة:</b> ${statusChip}</div>
-                <div><b>أنشئ بواسطة:</b> ${doc.created_by_name || doc.created_by} (${doc.created_at})</div>
-                ${doc.cancel_reason ? `<div style="grid-column:1/-1;color:var(--neg);"><b>سبب الإلغاء:</b> ${doc.cancel_reason}</div>` : ''}
+                <div><b>أنشئ بواسطة:</b> ${esc(doc.created_by_name || doc.created_by)} (${esc(doc.created_at)})</div>
+                ${doc.cancel_reason ? `<div style="grid-column:1/-1;color:var(--neg);"><b>سبب الإلغاء:</b> ${esc(doc.cancel_reason)}</div>` : ''}
             </div>
 
             <h4 style="margin:16px 0 8px 0;"><i class="ti ti-list"></i> سطور المستند (${lines.length})</h4>
@@ -470,15 +474,15 @@ async function viewDoc(docId) {
                     <tbody>
                         ${lines.map(l => `
                             <tr>
-                                <td class="num">${l.line_no}</td>
-                                <td>${l.code || '—'}</td>
-                                <td class="num">${l.item_id}</td>
-                                <td>${l.item_name || '—'}</td>
-                                <td class="num">${l.unit_factor}</td>
+                                <td class="num">${esc(l.line_no)}</td>
+                                <td>${esc(l.code || '—')}</td>
+                                <td class="num">${esc(l.item_id)}</td>
+                                <td>${esc(l.item_name || '—')}</td>
+                                <td class="num">${esc(l.unit_factor)}</td>
                                 <td class="num">${parseFloat(l.qty_units).toFixed(3)}</td>
                                 <td class="num">${parseFloat(l.qty_pieces).toFixed(3)}</td>
                                 <td class="num">${l.unit_cost !== null ? parseFloat(l.unit_cost).toFixed(4) : '—'}</td>
-                                <td>${l.notes || ''}</td>
+                                <td>${esc(l.notes || '')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -504,16 +508,16 @@ async function viewDoc(docId) {
                         ${moves.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:#888;">لا توجد حركات مسجلة للمستند</td></tr>' :
                         moves.map(m => `
                             <tr>
-                                <td class="num">${m.id}</td>
-                                <td class="num">${m.item_id}</td>
+                                <td class="num">${esc(m.id)}</td>
+                                <td class="num">${esc(m.item_id)}</td>
                                 <td class="num" style="color:${m.qty >= 0 ? 'var(--pos)' : 'var(--neg)'};font-weight:bold;">
                                     ${m.qty >= 0 ? '+' : ''}${parseFloat(m.qty).toFixed(3)}
                                 </td>
                                 <td class="num">${parseFloat(m.unit_cost).toFixed(4)}</td>
                                 <td class="num">${parseFloat(m.qty_after).toFixed(3)}</td>
                                 <td class="num">${parseFloat(m.avg_cost_after).toFixed(4)}</td>
-                                <td>${m.move_at}</td>
-                                <td class="num">${m.reverses_move_id || '—'}</td>
+                                <td>${esc(m.move_at)}</td>
+                                <td class="num">${esc(m.reverses_move_id || '—')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -535,11 +539,11 @@ async function viewDoc(docId) {
                     <tbody>
                         ${events.map(ev => `
                             <tr>
-                                <td class="num">${ev.id}</td>
-                                <td><span class="fchip">${ev.event}</span></td>
-                                <td>${ev.user_name || ev.user_id || 'النظام'}</td>
-                                <td>${ev.at}</td>
-                                <td style="font-size:12px;max-width:350px;word-break:break-all;">${ev.details || ''}</td>
+                                <td class="num">${esc(ev.id)}</td>
+                                <td><span class="fchip">${esc(ev.event)}</span></td>
+                                <td>${esc(ev.user_name || ev.user_id || 'النظام')}</td>
+                                <td>${esc(ev.at)}</td>
+                                <td style="font-size:12px;max-width:350px;word-break:break-all;">${esc(ev.details || '')}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -549,7 +553,7 @@ async function viewDoc(docId) {
 
         content.innerHTML = html;
     } catch (e) {
-        content.innerHTML = `<div class="alert alert-danger">فشل تحميل المستند: ${e.message}</div>`;
+        content.innerHTML = `<div class="alert alert-danger">فشل تحميل المستند: ${esc(e.message)}</div>`;
     }
 }
 
