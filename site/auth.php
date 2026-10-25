@@ -133,6 +133,7 @@ function all_modules(): array
         'stocktake'     => ['label' => 'الجرد',             'icon' => 'ti-packages',   'url' => 'stocktake.php'],
         'labels'        => ['label' => 'طباعة ليبلز',       'icon' => 'ti-printer',    'url' => 'labels.php'],
         'shortage'      => ['label' => 'طلب نواقص',         'icon' => 'ti-shopping-cart', 'url' => 'shortage.php'],
+        'reorder'       => ['label' => 'حد إعادة الطلب',    'icon' => 'ti-package',       'url' => 'reorder.php'],
         'analysis'      => ['label' => 'تحليل الموسم',     'icon' => 'ti-calculator'   , 'url' => 'analysis.php'],
         'item_sales'    => ['label' => 'تحليل المبيعات',   'icon' => 'ti-arrow-up-right', 'url' => 'item_sales.php'],
         'reports'       => ['label' => 'التقارير',          'icon' => 'ti-chart-bar',        'url' => 'reports.php'],
