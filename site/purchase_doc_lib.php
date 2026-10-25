@@ -46,16 +46,17 @@ function purchase_normalize_lines(PDO $pdo, array $lines): array
     foreach ($lines as $line) {
         $code = trim((string) ($line['code'] ?? ''));
         $codeRow = $codeRows[$code] ?? null;
-        $itemId = (int) ($line['item_id'] ?? ($codeRow['item_id'] ?? 0));
+        if ($code === '' || $codeRow === null) {
+            throw new RuntimeException("الكود في السطر $lineNo مش موجود.");
+        }
+        $itemId = (int) $codeRow['item_id'];
         $qtyUnits = round((float) ($line['qty_units'] ?? 0), 3);
         $unitPrice = round((float) ($line['unit_price'] ?? 0), 4);
         $discount = round((float) ($line['discount_pct'] ?? 0), 3);
-        $lineFactor = isset($line['unit_factor']) && (float) $line['unit_factor'] > 0
-            ? (float) $line['unit_factor'] : null;
-        $codeFactor = $codeRow !== null ? (float) $codeRow['unit_factor'] : null;
-        $pieces = item_line_pieces($qtyUnits, $lineFactor, $codeFactor);
+        $codeFactor = (float) $codeRow['unit_factor'];
+        $pieces = item_line_pieces($qtyUnits, null, $codeFactor);
 
-        if ($code === '' || $itemId <= 0 || $qtyUnits <= 0 || $pieces['pieces'] <= 0) {
+        if ($itemId <= 0 || $qtyUnits <= 0 || $pieces['pieces'] <= 0) {
             throw new RuntimeException("بيانات السطر $lineNo ناقصة أو الكمية مش صحيحة.");
         }
         if ($unitPrice < 0 || $discount < 0 || $discount > 100) {

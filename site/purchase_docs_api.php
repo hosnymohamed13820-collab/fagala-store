@@ -43,9 +43,10 @@ if ($method === 'GET') {
         api_ok(['suppliers'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
     }
     if ($action === 'code') {
+        api_require('purchase_docs:create');
         $code = trim((string) ($_GET['code'] ?? ''));
         $supplierId = (int) ($_GET['supplier_id'] ?? 0);
-        $st = $pdo->prepare('SELECT code,item_id,name,unit_factor,price,cost FROM hq_codes WHERE code=? LIMIT 1');
+        $st = $pdo->prepare('SELECT code,item_id,name,unit_factor,price FROM hq_codes WHERE code=? LIMIT 1');
         $st->execute([$code]);
         $item = $st->fetch(PDO::FETCH_ASSOC);
         if (!$item) api_fail('الكود مش موجود', 404, 'not_found');
@@ -54,7 +55,7 @@ if ($method === 'GET') {
     }
     if ($action === 'doc') {
         $doc = purchase_api_doc($pdo, (int) ($_GET['id'] ?? 0));
-        $st = $pdo->prepare('SELECT l.*,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
+        $st = $pdo->prepare('SELECT l.id,l.doc_id,l.line_no,l.item_id,l.code,l.unit_factor,l.qty_units,l.qty_pieces,l.unit_price,l.discount_pct,l.line_total,l.notes,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
         $st->execute([(int) $doc['id']]);
         $lines = $st->fetchAll(PDO::FETCH_ASSOC);
         $ev = $pdo->prepare('SELECT e.*,u.full_name user_name FROM doc_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.doc_kind=\'stock\' AND e.doc_id=? ORDER BY e.id');

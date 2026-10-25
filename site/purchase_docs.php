@@ -17,6 +17,7 @@ $tab = in_array(($_GET['tab'] ?? ''), ['purchase','purchase_return','draft'], tr
 $from = (string) ($_GET['from'] ?? date('Y-m-01'));
 $to = (string) ($_GET['to'] ?? date('Y-m-d'));
 $filterBranch = $owner ? (int)($_GET['branch_id'] ?? 0) : $userBranch;
+$branchMissing = !$owner && $userBranch <= 0;
 $filterSupplier = (int) ($_GET['supplier_id'] ?? 0);
 
 $branches = $pdo->query('SELECT id,name,sto_id FROM branches WHERE is_active=1 AND id IN (1,2,3,4,6) ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
@@ -27,7 +28,7 @@ $suppliers = $ss->fetchAll(PDO::FETCH_ASSOC);
 
 $where = ["d.doc_type IN ('purchase','purchase_return')",'d.doc_date BETWEEN ? AND ?'];
 $params = [$from,$to];
-if ($filterBranch > 0) { $where[]='d.branch_id=?'; $params[]=$filterBranch; }
+if (!$owner || $filterBranch > 0) { $where[]='d.branch_id=?'; $params[]=$filterBranch; }
 if ($filterSupplier > 0) { $where[]='d.supplier_id=?'; $params[]=$filterSupplier; }
 if ($tab === 'draft') $where[]="d.status='draft'";
 else { $where[]='d.doc_type=?'; $params[]=$tab; $where[]="d.status<>'draft'"; }
@@ -71,6 +72,8 @@ require_once __DIR__ . '/includes/header.php';
     <div><button class="btn btn-secondary" type="submit">عرض</button></div>
   </form>
 </div>
+
+<?php if ($branchMissing): ?><div class="alert alert-danger" style="margin-top:14px">حسابك مش مربوط بفرع</div><?php endif; ?>
 
 <div class="card purchase-table-wrap" style="margin-top:14px">
 <table class="ftable"><thead><tr><th>الرقم</th><th>التاريخ</th><th>المورد</th><th>المخزن</th><th>رقم فاتورة المورد</th><th class="num">الأصناف</th><th class="num">الإجمالي</th><th>الحالة</th><th>في True؟</th><th></th></tr></thead><tbody>
@@ -116,7 +119,7 @@ const PURCHASE_OWNER=<?= $owner ? 'true' : 'false' ?>;
 let purchaseTimer=null,purchaseLoading=false,purchaseLineSeq=0;
 const pe=id=>document.getElementById(id);
 function purchaseMessage(text,bad=false){pe('purchaseMessage').innerHTML=text?'<div class="alert '+(bad?'alert-danger':'alert-success')+'">'+purchaseEsc(text)+'</div>':''}
-function purchaseEsc(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML}
+function purchaseEsc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function purchaseApi(url,options={}){const r=await fetch(url,options);const j=await r.json();if(!j.ok)throw new Error(j.error||'حصل خطأ');return j.data}
 function purchaseNew(type){purchaseLoading=true;pe('purchaseEditor').style.display='block';pe('purchaseEditor').querySelectorAll('input,select').forEach(x=>x.disabled=false);if(!PURCHASE_OWNER)pe('purchaseBranch').disabled=true;pe('purchaseDocId').value='';pe('purchaseType').value=type;pe('purchaseTitle').textContent=type==='purchase'?'فاتورة شراء جديدة':'مرتجع مورد جديد';pe('purchaseOriginWrap').style.display=type==='purchase_return'?'flex':'none';pe('purchaseRef').value='';pe('purchaseNotes').value='';pe('purchaseDate').value=new Date().toISOString().slice(0,10);pe('purchaseLines').innerHTML='';pe('purchaseEvents').innerHTML='';pe('purchaseCancel')?.style.setProperty('display','none');pe('purchasePost')?.style.removeProperty('display');purchaseAddLine();purchaseLoading=false;if(type==='purchase_return')purchaseLoadOrigins();pe('purchaseEditor').scrollIntoView({behavior:'smooth'})}
 function purchaseAddLine(row={}){const div=document.createElement('div');div.className='purchase-line';const codeId='purchaseCode'+(++purchaseLineSeq);div.innerHTML='<label>الكود<span style="display:flex;gap:5px"><input id="'+codeId+'" class="line-code" value="'+purchaseEsc(row.code||'')+'"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></span></label><label class="item-name">الصنف<input class="line-name" value="'+purchaseEsc(row.item_name||'')+'" readonly><input class="line-item" type="hidden" value="'+purchaseEsc(row.item_id||'')+'"><input class="line-factor" type="hidden" value="'+purchaseEsc(row.unit_factor||1)+'"></label><label>الكمية<input class="line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(row.qty_units||1)+'"></label><label>السعر<input class="line-price" type="number" min="0" step="0.0001" value="'+purchaseEsc(row.unit_price||0)+'"></label><label>الخصم %<input class="line-discount" type="number" min="0" max="100" step="0.001" value="'+purchaseEsc(row.discount_pct||0)+'"></label><span class="line-total">0.00</span><button class="btn btn-sm btn-danger purchase-no-print line-remove" type="button">حذف</button>';
