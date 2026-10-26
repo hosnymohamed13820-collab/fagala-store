@@ -130,6 +130,18 @@ else
 fi
 
 echo
+echo "== apiFetch قبل تحميل app.js =="
+# بريف ٢٣٥ (٢٧ أكتوبر ٢٠٢٦): `window.apiFetch` في assets/app.js وبيتحمّل في
+# includes/footer.php آخر الصفحة. أي نداء ليه (أو لدالة بتستدعيه) بره دالة/مستمع
+# حدث بيحصل قبل ما app.js يوصل ← «apiFetch is not defined» وصفحة فاضية.
+# حصلت في item_master · item_classes · item_prices.
+if [ -n "$PY" ]; then
+    PYTHONIOENCODING=utf-8 $PY tests/check_apifetch_init.py || FAIL=1
+else
+    echo "  ⚠️ مفيش بايثون — فحص apiFetch ما اتعملش"
+fi
+
+echo
 echo "== ترميز ملفات باورشيل =="
 # القاعدة مش «ASCII خالص» — دي كانت تقريب غلط أول مرة.
 # باورشيل بيقرا الملف كـANSI لو مفيش BOM. يعني:

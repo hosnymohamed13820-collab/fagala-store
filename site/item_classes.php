@@ -211,7 +211,8 @@ const IC_KINDS = <?= json_encode($icKinds, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG
         }
     });
 
-    load('section');
+    // 🔴 بعد DOMContentLoaded: `apiFetch` في assets/app.js بيتحمّل في الفوتر (بريف ٢٣٥)
+    document.addEventListener('DOMContentLoaded', () => { load('section'); });
 })();
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

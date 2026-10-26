@@ -81,7 +81,11 @@ require_once __DIR__ . '/includes/header.php';
     async function batchDetail(id,page){state.batchId=id;try{const r=await apiFetch('item_prices_api.php?part=batch&id='+id+'&page='+page);$('ippBatchCard').classList.remove('ipp-hidden');$('ippBatchTitle').textContent='تفاصيل الدفعة #'+id;$('ippBatchRows').innerHTML=r.data.rows.map(x=>'<tr><td class="ipp-code">'+esc(x.code)+'</td><td class="num">'+money(x.old_price)+'</td><td class="num">'+money(x.proposed_price)+'</td><td class="num">'+money(x.true_price_at_preview)+'</td><td><span class="fchip '+(x.result==='applied'?'fchip-pos':'fchip-warn')+'">'+(x.result==='applied'?'اتطبق':'اتخطى')+'</span></td><td>'+esc(x.skip_reason||'')+'</td></tr>').join('');pager('ippBatchLinePager',r.data.page,r.data.pages,'batch_lines');$('ippBatchCard').scrollIntoView({behavior:'smooth',block:'start'});}catch(e){status('ippBatchStatus',e.message,'err');}}
     document.addEventListener('click',e=>{const p=e.target.closest('[data-kind][data-page]');if(p){const n=Number(p.dataset.page);if(p.dataset.kind==='preview')previewPage(n);else if(p.dataset.kind==='batches')batches(n);else batchDetail(state.batchId,n);return;}const b=e.target.closest('[data-batch]');if(b)batchDetail(Number(b.dataset.batch),1);});
     $('ippForm').addEventListener('submit',makePreview);const apply=$('ippApply');if(apply)apply.addEventListener('click',applyPreview);
-    meta().catch(e=>status('ippStatus',e.message,'err'));batches(1);
+    // 🔴 التحميل الأول بعد DOMContentLoaded: `apiFetch` في assets/app.js بيتحمّل
+    //    في الفوتر بعد البلوك ده (بريف ٢٣٥).
+    document.addEventListener('DOMContentLoaded', () => {
+        meta().catch(e=>status('ippStatus',e.message,'err'));batches(1);
+    });
 })();
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

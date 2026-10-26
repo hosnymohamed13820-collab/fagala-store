@@ -136,7 +136,11 @@ const IM_BOOT = <?= json_encode($imBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG |
     $('imCard').addEventListener('blur',e=>{if(e.target.matches('[data-field]'))saveMain(e.target);else if(e.target.matches('[data-code-key]'))saveCode(e.target);else if(e.target.matches('[data-price-code]'))savePrice(e.target);},true);$('imCard').addEventListener('change',e=>{if(e.target.type==='checkbox'&&e.target.matches('[data-field]'))saveMain(e.target);});
     $('imCard').addEventListener('click',e=>{if(e.target.closest('#imAddCode')){state.item.codes.push({id:0,code:'',name1:state.item.main.name1,name2:'',code_type:1,unit_name:state.item.main.base_unit||'قطعة',unit_type:'sub',unit_factor:1,whole_qty:1,open_price:0,prep_days:0,display_screen:'',display_order:0,is_purchase_code:1,is_sale_code:1});renderCodes();}});
     if(IM_BOOT.canEdit){$('imNewBtn').addEventListener('click',()=>{$('imCreate').hidden=!$('imCreate').hidden;if(!$('imCreateCodes').children.length)createRow(true);});$('imCreateAdd').addEventListener('click',()=>createRow(false));$('imCreate').addEventListener('submit',createItem);}
-    loadCategories().catch(e=>status('imSearchStatus',e.message,'err'));
+    // 🔴 النداء هنا مايتنفذش وقت قراية السكربت: `apiFetch` في assets/app.js
+    //    اللي بيتحمّل في الفوتر بعد البلوك ده (بريف ٢٣٥).
+    document.addEventListener('DOMContentLoaded', () => {
+        loadCategories().catch(e=>status('imSearchStatus',e.message,'err'));
+    });
 })();
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
