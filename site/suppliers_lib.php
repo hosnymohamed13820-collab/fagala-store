@@ -14,6 +14,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/recon_lib.php';
+require_once __DIR__ . '/purchase_doc_lib.php';
 
 if (!defined('SUPP_INTERNAL_IDS')) {
     define('SUPP_INTERNAL_IDS', [2, 3, 4, 7, 10, 21, 24]);
@@ -86,6 +87,73 @@ function suppliers_parse_params(array $params, string $stStart): array {
  */
 function suppliers_get_active_list(PDO $pdo): array {
     return $pdo->query('SELECT id, name FROM suppliers WHERE is_active = 1 ORDER BY name')->fetchAll();
+}
+
+/**
+ * مستندات شراء الموقع الداخلة في كشف الموردين، مع نتيجة مطابقتها مع True.
+ * المطابقة بتتنادى مرة واحدة لكل المستندات المطلوبة، واللي يتحسب منها هو missing بس.
+ *
+ * @param ?array<int, int> $supplierIds null = كل الموردين، [] = مفيش موردين
+ * @return array<int, array<string, mixed>>
+ */
+function suppliers_get_site_docs(PDO $pdo, string $from, string $to, ?array $currBranch, ?array $supplierIds = null): array {
+    if ((string) setting('supplier_site_docs', '1') === '0') {
+        return [];
+    }
+
+    if ($supplierIds !== null) {
+        $supplierIds = array_values(array_unique(array_filter(array_map('intval', $supplierIds), static fn($v) => $v > 0)));
+        if (!$supplierIds) return [];
+    }
+
+    $where = [
+        "d.doc_type IN ('purchase', 'purchase_return')",
+        "d.status = 'posted'",
+        'd.doc_date >= ?',
+        'd.doc_date < DATE_ADD(?, INTERVAL 1 DAY)',
+    ];
+    $params = [$from, $to];
+
+    if ($currBranch !== null) {
+        $where[] = 'd.branch_id = ?';
+        $params[] = (int) $currBranch['bid'];
+    }
+    if ($supplierIds !== null) {
+        $where[] = 'd.supplier_id IN (' . implode(',', array_fill(0, count($supplierIds), '?')) . ')';
+        array_push($params, ...$supplierIds);
+    }
+
+    $localInternal = array_values(array_unique(array_map('intval', SUPP_INTERNAL_IDS)));
+    if ($localInternal) {
+        $where[] = 'd.supplier_id NOT IN (' . implode(',', array_fill(0, count($localInternal), '?')) . ')';
+        array_push($params, ...$localInternal);
+    }
+    $erpInternal = array_values(array_unique(array_map('intval', PURCHASE_INTERNAL_ERP_SUPPLIERS)));
+    if ($erpInternal) {
+        $where[] = '(s.erp_supplier_id IS NULL OR s.erp_supplier_id NOT IN (' . implode(',', array_fill(0, count($erpInternal), '?')) . '))';
+        array_push($params, ...$erpInternal);
+    }
+
+    $sql = 'SELECT d.id, d.supplier_id, d.doc_type, d.doc_no, d.doc_date, d.total_amount
+            FROM stock_docs d
+            JOIN suppliers s ON s.id = d.supplier_id
+            WHERE ' . implode(' AND ', $where) . '
+            ORDER BY d.doc_date, d.id';
+    $st = $pdo->prepare($sql);
+    $st->execute($params);
+    $docs = $st->fetchAll(PDO::FETCH_ASSOC);
+    if (!$docs) return [];
+
+    $matches = purchase_match_hq($pdo, array_column($docs, 'id'));
+    foreach ($docs as &$doc) {
+        $match = $matches[(int) $doc['id']] ?? ['state' => 'missing', 'hq_match' => null, 'doc_no' => null];
+        $doc['state'] = (string) $match['state'];
+        $doc['hq_match'] = $match['hq_match'];
+        $doc['hq_doc_no'] = $match['doc_no'];
+    }
+    unset($doc);
+
+    return $docs;
 }
 
 /**
@@ -178,6 +246,31 @@ function suppliers_get_summary(PDO $pdo, string $from, string $to, string $stSta
     $stActive->execute($excludedSuppIds);
     $activeSuppliers = $stActive->fetchAll();
 
+    // 4) مستندات الموقع: استعلام واحد + مطابقة واحدة، ثم تجميع في الذاكرة.
+    $siteRows = suppliers_get_site_docs(
+        $pdo,
+        $stStart,
+        $to,
+        $currBranch,
+        array_map('intval', array_column($activeSuppliers, 'id'))
+    );
+    $siteMap = [];
+    foreach ($siteRows as $r) {
+        if ($r['state'] !== 'missing') continue;
+        $sid = (int) $r['supplier_id'];
+        $amt = (float) $r['total_amount'];
+        $isPurchase = $r['doc_type'] === 'purchase';
+        if (!isset($siteMap[$sid])) {
+            $siteMap[$sid] = ['purchases' => 0.0, 'returns' => 0.0, 'tot_purchases' => 0.0, 'tot_returns' => 0.0];
+        }
+        $totKey = $isPurchase ? 'tot_purchases' : 'tot_returns';
+        $siteMap[$sid][$totKey] += $amt;
+        if ((string) $r['doc_date'] >= $from) {
+            $periodKey = $isPurchase ? 'purchases' : 'returns';
+            $siteMap[$sid][$periodKey] += $amt;
+        }
+    }
+
     $statementSummary = [];
     $totSumPurchases  = 0.0;
     $totSumReturns    = 0.0;
@@ -187,13 +280,13 @@ function suppliers_get_summary(PDO $pdo, string $from, string $to, string $stSta
 
     foreach ($activeSuppliers as $s) {
         $sid = (int) $s['id'];
-        $p   = (float) ($hqMap[$sid]['purchases'] ?? 0);
-        $ret = (float) ($hqMap[$sid]['returns'] ?? 0);
+        $p   = (float) ($hqMap[$sid]['purchases'] ?? 0) + (float) ($siteMap[$sid]['purchases'] ?? 0);
+        $ret = (float) ($hqMap[$sid]['returns'] ?? 0) + (float) ($siteMap[$sid]['returns'] ?? 0);
         $pd  = (float) ($jeMap[$sid]['paid'] ?? 0);
         $rc  = (float) ($jeMap[$sid]['received'] ?? 0);
 
-        $totP   = (float) ($hqMap[$sid]['tot_purchases'] ?? 0);
-        $totRet = (float) ($hqMap[$sid]['tot_returns'] ?? 0);
+        $totP   = (float) ($hqMap[$sid]['tot_purchases'] ?? 0) + (float) ($siteMap[$sid]['tot_purchases'] ?? 0);
+        $totRet = (float) ($hqMap[$sid]['tot_returns'] ?? 0) + (float) ($siteMap[$sid]['tot_returns'] ?? 0);
         $totPd  = (float) ($jeMap[$sid]['tot_paid'] ?? 0);
         $totRc  = (float) ($jeMap[$sid]['tot_received'] ?? 0);
         $bal    = $totP - $totRet - $totPd + $totRc;
@@ -269,6 +362,9 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
         return null;
     }
 
+    // نفس مجموعة مستندات الموقع بتخدم الرصيد السابق والفترة الحالية.
+    $siteRows = suppliers_get_site_docs($pdo, $stStart, $to, $currBranch, [$supplierId]);
+
     // حساب المورد في الشجرة
     $stAcc = $pdo->prepare("SELECT id FROM accounts WHERE src_table = 'suppliers' AND src_id = ? AND is_active = 1 LIMIT 1");
     $stAcc->execute([$supplierId]);
@@ -311,6 +407,15 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
         $priorPurchases = (float) ($priorHq['purchases'] ?? 0);
         $priorReturns   = (float) ($priorHq['returns'] ?? 0);
 
+        foreach ($siteRows as $siteDoc) {
+            if ($siteDoc['state'] !== 'missing' || (string) $siteDoc['doc_date'] >= $from) continue;
+            if ($siteDoc['doc_type'] === 'purchase') {
+                $priorPurchases += (float) $siteDoc['total_amount'];
+            } else {
+                $priorReturns += (float) $siteDoc['total_amount'];
+            }
+        }
+
         if ($suppAccId > 0) {
             $priorJeSql = "SELECT
                 SUM(je.debit) AS paid,
@@ -336,7 +441,7 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
     }
 
     // حركات الفترة [from, to] — مع إصلاح DATETIME بـ DATE_ADD
-    $periodHqSql = "SELECT sth_id, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
+    $periodHqSql = "SELECT sth_id, suffix, DATE(invoice_date) AS tx_date, doc_type, doc_no, net_amount
      FROM hq_invoices
      WHERE invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
        AND doc_type IN (2, 6)
@@ -361,6 +466,17 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
     $stHq = $pdo->prepare($periodHqSql);
     $stHq->execute($periodHqParams);
     $periodHqRows = $stHq->fetchAll();
+
+    $periodSiteRows = [];
+    $siteMatchesByHq = [];
+    foreach ($siteRows as $siteDoc) {
+        if ((string) $siteDoc['doc_date'] < $from) continue;
+        if ($siteDoc['state'] === 'matched' && !empty($siteDoc['hq_match'])) {
+            $siteMatchesByHq[(string) $siteDoc['hq_match']][] = $siteDoc;
+            continue;
+        }
+        $periodSiteRows[] = $siteDoc;
+    }
 
     $periodJeRows = [];
     if ($suppAccId > 0) {
@@ -391,7 +507,8 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
     foreach ($periodHqRows as $h) {
         $amt = (float) $h['net_amount'];
         $isPurchase = ((int)$h['doc_type'] === 2);
-        $allMoves[] = [
+        $hqKey = $h['sth_id'] . ':' . $h['suffix'];
+        $hqMove = [
             'source'        => 'hq',
             'id'            => (int) $h['sth_id'],
             'tx_date'       => $h['tx_date'],
@@ -401,6 +518,29 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
             'debit'         => $isPurchase ? 0.0 : $amt,
             'notes'         => '',
             'sort_order'    => 1,
+        ];
+        if (!empty($siteMatchesByHq[$hqKey])) {
+            $hqMove['site_matches'] = $siteMatchesByHq[$hqKey];
+        }
+        $allMoves[] = $hqMove;
+    }
+    foreach ($periodSiteRows as $d) {
+        $amt = (float) $d['total_amount'];
+        $isPurchase = $d['doc_type'] === 'purchase';
+        $isMissing = $d['state'] === 'missing';
+        $docNo = (string) ($d['doc_no'] ?? $d['id']);
+        $allMoves[] = [
+            'source'        => 'site',
+            'id'            => (int) $d['id'],
+            'tx_date'       => (string) $d['doc_date'],
+            'description'   => ($isPurchase ? 'فاتورة شراء ' : 'مردود ') . '#' . $docNo,
+            'treasury_name' => '—',
+            'credit'        => $isMissing && $isPurchase ? $amt : 0.0,
+            'debit'         => $isMissing && !$isPurchase ? $amt : 0.0,
+            'notes'         => '',
+            'sort_order'    => 1,
+            'site_state'    => (string) $d['state'],
+            'site_doc_no'   => $docNo,
         ];
     }
     foreach ($periodJeRows as $j) {
@@ -434,7 +574,7 @@ function suppliers_get_statement(PDO $pdo, int $supplierId, string $from, string
     $runningBal = $priorBalance;
 
     foreach ($allMoves as &$m) {
-        if ($m['source'] === 'hq') {
+        if ($m['source'] === 'hq' || ($m['source'] === 'site' && ($m['site_state'] ?? '') === 'missing')) {
             if ($m['credit'] > 0) $periodPurchases += $m['credit'];
             if ($m['debit'] > 0)  $periodReturns   += $m['debit'];
         } else {

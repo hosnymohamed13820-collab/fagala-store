@@ -27,6 +27,7 @@ if (isset($_SESSION['flash'])) {
 require_once __DIR__ . '/suppliers_lib.php';
 
 $stStart = suppliers_get_start_date($pdo);
+$supplierSiteDocsOn = (string) setting('supplier_site_docs', '1') !== '0';
 $params  = suppliers_parse_params($_GET, $stStart);
 $from    = $params['from'];
 $to      = $params['to'];
@@ -136,9 +137,18 @@ if ($tab === 'statement') {
                     $x->addRow([$from, 'رصيد سابق', '—', 0, 0, round($priorBalance, 2)]);
                 }
                 foreach ($allMoves as $m) {
+                    $exportDescription = $m['description'];
+                    if (($m['source'] ?? '') === 'site') {
+                        $exportDescription .= (($m['site_state'] ?? '') === 'ambiguous')
+                            ? ' (محتاجة مراجعة — فيه أكتر من فاتورة True شبهها)'
+                            : ' (من الموقع)';
+                    } elseif (!empty($m['site_matches'])) {
+                        $matchedNos = array_map(static fn($d) => '#' . ($d['doc_no'] ?? $d['id']), $m['site_matches']);
+                        $exportDescription .= ' (متسجلة على الموقع كمان ' . implode('، ', $matchedNos) . ')';
+                    }
                     $x->addRow([
                         $m['tx_date'],
-                        $m['description'] . (!empty($m['notes']) ? (' (' . $m['notes'] . ')') : ''),
+                        $exportDescription . (!empty($m['notes']) ? (' (' . $m['notes'] . ')') : ''),
                         $m['treasury_name'],
                         $m['credit'] > 0 ? round($m['credit'], 2) : '',
                         $m['debit'] > 0 ? round($m['debit'], 2) : '',
@@ -254,6 +264,14 @@ require_once __DIR__ . '/includes/header.php';
     .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid #fff; }
     body.pen-active .recon-table tbody tr { cursor:crosshair !important; }
 </style>
+<?php if ($supplierSiteDocsOn): ?>
+<style>
+    .site-doc-row { background:var(--line-soft); }
+    .site-doc-flags { display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px; }
+    .site-doc-link { color:var(--accent-text);font-weight:600;text-decoration:none; }
+    .site-doc-link:hover { text-decoration:underline; }
+</style>
+<?php endif; ?>
 
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
@@ -483,10 +501,30 @@ require_once __DIR__ . '/includes/header.php';
                     <tr><td colspan="6" class="empty">لا توجد حركات لهذا المورد في هذه الفترة.</td></tr>
                 <?php else: ?>
                     <?php foreach ($allMoves as $m): ?>
-                        <tr>
+                        <?php $isSiteMove = ($m['source'] ?? '') === 'site'; ?>
+                        <tr<?= $isSiteMove ? ' class="site-doc-row"' : '' ?>>
                             <td><?= e($m['tx_date']) ?></td>
                             <td>
-                                <?= e($m['description']) ?>
+                                <?php if ($isSiteMove): ?>
+                                    <?= e(str_starts_with($m['description'], 'مردود') ? 'مردود ' : 'فاتورة شراء ') ?>
+                                    <a class="site-doc-link" href="purchase_docs.php?id=<?= (int)$m['id'] ?>">#<?= e($m['site_doc_no']) ?></a>
+                                    <div class="site-doc-flags">
+                                        <?php if (($m['site_state'] ?? '') === 'ambiguous'): ?>
+                                            <span class="fchip fchip-warn">محتاجة مراجعة — فيه أكتر من فاتورة True شبهها</span>
+                                        <?php else: ?>
+                                            <span class="fchip fchip-mute">من الموقع</span>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <?= e($m['description']) ?>
+                                    <?php if (!empty($m['site_matches'])): ?>
+                                        <div class="site-doc-flags">
+                                            <?php foreach ($m['site_matches'] as $siteMatch): ?>
+                                                <span class="fchip fchip-mute">متسجلة على الموقع كمان #<?= e((string)($siteMatch['doc_no'] ?? $siteMatch['id'])) ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                                 <?php if (!empty($m['notes'])): ?>
                                     <div style="font-size:12px;color:var(--ink-500);margin-top:2px;"><?= e($m['notes']) ?></div>
                                 <?php endif; ?>

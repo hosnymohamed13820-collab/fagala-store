@@ -491,7 +491,11 @@ $dsUsers = settings_ds_users($pdo);
                                 <span class="st-knob"></span>
                             </label>
                             <span class="toggle-status">
-                                <?= $isBoolOn ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب' ?>
+                                <?php if ($key === 'cashier_deficit_carry'): ?>
+                                    <?= $isBoolOn ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب' ?>
+                                <?php else: ?>
+                                    <?= $isBoolOn ? 'شغّال' : 'مقفول' ?>
+                                <?php endif; ?>
                             </span>
                         </div>
                     <?php else: ?>
