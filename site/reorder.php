@@ -60,15 +60,7 @@ if (!$selectedBranch) {
 }
 
 // ٣) جلب الأقسام للفلتر
-$catsMap = [];
-try {
-    $cst = $pdo->query('SELECT is1_id, name FROM hq_cat_names ORDER BY name ASC');
-    while ($cr = $cst->fetch(PDO::FETCH_ASSOC)) {
-        $catsMap[(int) $cr['is1_id']] = (string) $cr['name'];
-    }
-} catch (Throwable $e) {
-    $catsMap = [];
-}
+$catsMap = reorder_categories($pdo);
 
 $catFilter = isset($_GET['cat']) && (int) $_GET['cat'] > 0 ? (int) $_GET['cat'] : null;
 $searchQuery = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
@@ -121,8 +113,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
 $items = reorder_branch_items($pdo, $selectedBranchId, $catFilter, $searchQuery);
 
 // وقت آخر حساب
-$lastCalcStmt = $pdo->query('SELECT MAX(calc_at) FROM item_reorder');
-$lastCalcAt = $lastCalcStmt->fetchColumn() ?: 'لم يُحسب بعد';
+$lastCalcAt = reorder_last_calc_at($pdo) ?: 'لم يُحسب بعد';
 
 $page_title = 'حد إعادة الطلب — ' . e($selectedBranch['name']);
 require_once __DIR__ . '/includes/header.php';

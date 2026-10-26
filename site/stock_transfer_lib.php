@@ -1133,6 +1133,27 @@ function transfer_open_diffs(PDO $pdo, ?int $branchId = null): array
 }
 
 /**
+ * المخازن المدعومة للتحويل (١ بونجور · ٢ اي بي سي · ٣ الفجالة · ٤ دجلة · ٦ الإدارة).
+ *
+ * بريف ٢٢٩: الاستعلام اتنقل من transfers.php بالحرف — الصفحة عرض بس.
+ */
+function transfer_supported_branches(PDO $pdo): array
+{
+    $st = $pdo->query('SELECT id, name FROM branches WHERE id IN (1, 2, 3, 4, 6) ORDER BY id ASC');
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * عدد فروق التحويل المفتوحة (الشارة الحمرا في تاب «فروق مفتوحة»).
+ *
+ * بريف ٢٢٩: الاستعلام اتنقل من transfers.php بالحرف.
+ */
+function transfer_open_diffs_count(PDO $pdo): int
+{
+    return (int) $pdo->query("SELECT COUNT(*) FROM stock_transfer_diffs WHERE status = 'open'")->fetchColumn();
+}
+
+/**
  * استعلام تقرير التحويلات الشامل (type=transfers).
  */
 function transfer_reports_transfers(PDO $pdo, string $from, string $to, ?int $branchId = null): array

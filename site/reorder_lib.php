@@ -294,6 +294,40 @@ function reorder_should_recalc(PDO $pdo): bool
 }
 
 /**
+ * وقت آخر حساب لحد إعادة الطلب (MAX(calc_at))، أو null لو لسه ماحصلش حساب.
+ *
+ * بريف ٢٢٩: الاستعلام اتنقل من reorder.php بالحرف — الصفحة عرض بس.
+ */
+function reorder_last_calc_at(PDO $pdo): ?string
+{
+    $stmt = $pdo->query('SELECT MAX(calc_at) FROM item_reorder');
+    $val = $stmt->fetchColumn();
+    return ($val === false || $val === null || $val === '') ? null : (string) $val;
+}
+
+/**
+ * أقسام الأصناف للفلتر: خريطة [is1_id => الاسم] مرتبة بالاسم.
+ *
+ * بريف ٢٢٩: الاستعلام (والـtry/catch اللي حواليه) اتنقل من reorder.php بالحرف.
+ * لو الجدول مش موجود الفلتر يبقى فاضي بدل ما الصفحة تقع.
+ *
+ * @return array<int, string>
+ */
+function reorder_categories(PDO $pdo): array
+{
+    $map = [];
+    try {
+        $st = $pdo->query('SELECT is1_id, name FROM hq_cat_names ORDER BY name ASC');
+        while ($cr = $st->fetch(PDO::FETCH_ASSOC)) {
+            $map[(int) $cr['is1_id']] = (string) $cr['name'];
+        }
+    } catch (Throwable $e) {
+        $map = [];
+    }
+    return $map;
+}
+
+/**
  * تشغيل الحساب بقفل GET_LOCK لتفادي التزامن بين مستخدمين.
  *
  * @param PDO $pdo

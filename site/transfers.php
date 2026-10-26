@@ -223,12 +223,11 @@ if (!in_array($tab, ['out', 'in', 'diffs', 'archive'], true)) {
 }
 
 // جلب المخازن المدعومة للتحويل (١ بونجور · ٢ اي بي سي · ٣ الفجالة · ٤ دجلة · ٦ الإدارة)
-$stBranches = $pdo->query('SELECT id, name FROM branches WHERE id IN (1, 2, 3, 4, 6) ORDER BY id ASC');
-$supportedBranches = $stBranches->fetchAll(PDO::FETCH_ASSOC);
+$supportedBranches = transfer_supported_branches($pdo);
 $branchNamesMap = array_column($supportedBranches, 'name', 'id');
 
 // جلب عدد الفروقات المفتوحة لعرض شارة في التاب
-$openDiffsCount = (int) $pdo->query("SELECT COUNT(*) FROM stock_transfer_diffs WHERE status = 'open'")->fetchColumn();
+$openDiffsCount = transfer_open_diffs_count($pdo);
 
 // جلب قائمة التحويلات حسب التاب
 $filters = [

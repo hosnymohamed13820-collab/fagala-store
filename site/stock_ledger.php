@@ -11,6 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/stock_lib.php';
 require_once __DIR__ . '/stock_import_lib.php';
+require_once __DIR__ . '/stock_ledger_lib.php';
 
 require_login();
 require_module_access('stock_ledger');
@@ -39,8 +40,7 @@ if (!in_array($tab, ['docs', 'recon', 'import'], true)) {
 }
 
 // جلب المخازن المدعومة (١ بونجور · ٢ اي بي سي · ٣ الفجالة · ٤ دجلة · ٦ الإدارة)
-$stBranches = $pdo->query('SELECT id, name, sto_id FROM branches WHERE id IN (1, 2, 3, 4, 6) ORDER BY id ASC');
-$branches = $stBranches->fetchAll(PDO::FETCH_ASSOC);
+$branches = stock_ledger_branches($pdo);
 
 $docTypeNames = [
     'opening'         => 'رصيد افتتاحي',
@@ -117,14 +117,7 @@ if ($tab === 'recon') {
 // بيانات تاب الاستيراد (آخر ٥٠ تشغيل)
 $importRuns = [];
 if ($tab === 'import') {
-    $stRuns = $pdo->query("
-        SELECT r.*, u.full_name AS user_name
-          FROM stock_import_runs r
-          LEFT JOIN users u ON u.id = r.created_by
-         ORDER BY r.run_at DESC
-         LIMIT 50
-    ");
-    $importRuns = $stRuns->fetchAll(PDO::FETCH_ASSOC);
+    $importRuns = stock_ledger_import_runs($pdo);
 }
 
 // بيانات تاب المستندات
@@ -137,48 +130,9 @@ $filterFrom   = !empty($_GET['from']) ? (string) $_GET['from'] : '';
 $filterTo     = !empty($_GET['to']) ? (string) $_GET['to'] : '';
 
 if ($tab === 'docs') {
-    $stOpenings = $pdo->query("SELECT branch_id, id, doc_no, doc_date FROM stock_docs WHERE doc_type = 'opening' AND status = 'posted'");
-    while ($r = $stOpenings->fetch(PDO::FETCH_ASSOC)) {
-        $postedOpenings[(int) $r['branch_id']] = $r;
-    }
+    $postedOpenings = stock_ledger_posted_openings($pdo);
 
-    $where = [];
-    $params = [];
-    if ($filterBranch > 0) {
-        $where[] = 'd.branch_id = ?';
-        $params[] = $filterBranch;
-    }
-    if ($filterType !== '') {
-        $where[] = 'd.doc_type = ?';
-        $params[] = $filterType;
-    }
-    if ($filterStatus !== '') {
-        $where[] = 'd.status = ?';
-        $params[] = $filterStatus;
-    }
-    if ($filterFrom !== '') {
-        $where[] = 'd.doc_date >= ?';
-        $params[] = $filterFrom;
-    }
-    if ($filterTo !== '') {
-        $where[] = 'd.doc_date <= ?';
-        $params[] = $filterTo;
-    }
-
-    $whereSql = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-
-    $sqlDocs = "
-        SELECT d.*, b.name AS branch_name, u.full_name AS created_by_name
-          FROM stock_docs d
-          LEFT JOIN branches b ON b.id = d.branch_id
-          LEFT JOIN users u ON u.id = d.created_by
-         $whereSql
-         ORDER BY d.doc_date DESC, d.id DESC
-         LIMIT 150
-    ";
-    $stDocs = $pdo->prepare($sqlDocs);
-    $stDocs->execute($params);
-    $docsList = $stDocs->fetchAll(PDO::FETCH_ASSOC);
+    $docsList = stock_ledger_docs($pdo, $filterBranch, $filterType, $filterStatus, $filterFrom, $filterTo);
 }
 
 $pageTitle = 'دفتر المخزن';
