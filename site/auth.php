@@ -145,7 +145,6 @@ function all_modules(): array
         'calls'         => ['label' => 'متابعة المكالمات', 'icon' => 'ti-device-mobile',    'url' => 'calls.php'],
         'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
         'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
-        'item_card'     => ['label' => 'كارت الصنف',       'icon' => 'ti-list-details',     'url' => 'item_card.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
@@ -211,6 +210,7 @@ function module_parts(): array
             'purchase_by_item' => 'الشراء بالصنف',
             'stock_recon'        => 'مطابقة المخزن مع True',
             'stock_movement'     => 'حركة الأصناف المخزنية',
+            'item_movement'      => 'حركة الصنف',
         ],
         'invoices' => [
             'problems' => 'مشاكل الفواتير',

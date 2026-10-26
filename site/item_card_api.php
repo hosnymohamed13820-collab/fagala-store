@@ -23,7 +23,15 @@ $part = (string) ($_GET['part'] ?? '');
 // ===== تصدير الإكسيل =====
 // ملف مش رد JSON، فبيتعالج **قبل** api_begin (اللي بيقفل نوع الرد على JSON).
 if ($part === 'xlsx') {
-    require_permission('item_card');
+    require_login();
+    if (!can('reports:item_movement') && !can('item_card')) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        exit('غير مصرّح');
+    }
+    if (view_all_borrowed('reports:item_movement') || view_all_borrowed('item_card')) {
+        $GLOBALS['VIEW_ALL_PAGE'] = true;
+    }
     api_method('GET');
 
     $itemId = (int) ($_GET['item_id'] ?? 0);
@@ -80,7 +88,13 @@ if ($part === 'xlsx') {
 }
 
 api_begin();
-require_permission('item_card');
+require_login();
+if (!can('reports:item_movement') && !can('item_card')) {
+    api_fail('مالكش صلاحية', 403, 'forbidden');
+}
+if (view_all_borrowed('reports:item_movement') || view_all_borrowed('item_card')) {
+    $GLOBALS['VIEW_ALL_PAGE'] = true;
+}
 api_method('GET');
 
 // ===== بحث =====

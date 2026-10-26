@@ -10,8 +10,14 @@
 require_once __DIR__ . '/auth.php';
 $requestedPurchaseReport = in_array((string)($_GET['type'] ?? ''), ['purchase_docs','purchase_by_item'], true)
     && can('purchase_docs:reports');
+$requestedItemMovement = ((string)($_GET['type'] ?? '') === 'item_movement')
+    && (can('reports:item_movement') || can('item_card'));
 if ($requestedPurchaseReport) require_permission('purchase_docs:reports');
-else require_module_access('reports');
+elseif ($requestedItemMovement) {
+    require_login();
+} else {
+    require_module_access('reports');
+}
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/reports_lib.php';
@@ -23,7 +29,7 @@ $repParts = module_parts()['reports'] ?? [];
 $allowedTypes = [];
 foreach ($repParts as $k => $label) {
     if (in_array($k, ['insta_recon', 'stock_recon', 'stock_movement'], true) && !is_owner()) continue;
-    if (can('reports:' . $k)) {
+    if (can('reports:' . $k) || ($k === 'item_movement' && can('item_card'))) {
         $allowedTypes[$k] = $label;
     }
 }
@@ -300,6 +306,8 @@ if ($ajax !== '') {
 
 if ($type === 'salaries' && !sens_unlocked()) {
     $report = ['title'=>'تقرير الرواتب','headers'=>[],'rows'=>[],'totals'=>[]];
+} elseif ($type === 'item_movement') {
+    $report = ['title'=>'حركة الصنف','headers'=>[],'rows'=>[],'totals'=>[]];
 } else {
     $report = build_report($pdo, $type, $from, $to);
 }
@@ -320,7 +328,7 @@ if ($type === 'salaries' && !sens_unlocked()) {
 //    `SimpleXlsx` بتكتب ملف إكسل حقيقي: الترميز جوّاه UTF-8 دايماً،
 //    والأعمدة خلايا مش نص مفصول، والرقم بيدخل رقم.
 //    نفس المكتبة شغالة في أربع صفحات تصدير تانية من زمان.
-if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supplier_purchases' && $type !== 'transfers' && $type !== 'transfer_shorts') {
+if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supplier_purchases' && $type !== 'transfers' && $type !== 'transfer_shorts' && $type !== 'item_movement') {
     if ($type === 'salaries' && !sens_unlocked()) {
         http_response_code(403);
         exit('الرواتب مقفولة');
@@ -398,6 +406,7 @@ $reportTypes = [
     'purchase_by_item'=>'الشراء بالصنف',
     'stock_recon'=>'مطابقة المخزن مع True',
     'stock_movement'=>'حركة الأصناف المخزنية',
+    'item_movement'=>'حركة الصنف',
 ];
 
 $distFilterOptions = ['branches' => [], 'suppliers' => []];
@@ -823,7 +832,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     }
 }
 ?>
-<?php if ($type !== 'stocktake' && $type !== 'noprice'): ?>
+<?php if ($type !== 'stocktake' && $type !== 'noprice' && $type !== 'item_movement'): ?>
 <form method="get" class="filter-bar">
     <input type="hidden" name="type" value="<?= e($type) ?>">
     <?php if (($type === 'custody' || $type === 'sales') && isset($_GET['branch']) && $_GET['branch'] !== ''): ?>
@@ -1892,6 +1901,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         </div>
     <?php endif; ?>
 </div>
+
+<?php elseif ($type === 'item_movement'): ?>
+    <?php require __DIR__ . '/includes/item_movement_view.php'; ?>
 
 <?php else: ?>
 <div class="card">
