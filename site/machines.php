@@ -9,97 +9,34 @@ require_once __DIR__ . '/machines_lib.php';
 
 $pdo = db();
 $user = current_user();
-$userBranch = (int)($user['branch_id'] ?? 0);
-$allScope = is_real_owner() || in_array('view_all', $_SESSION['permissions'] ?? [], true);
-$tabParts = ['readings'=>'readings','daily'=>'daily','monthly'=>'monthly','manage'=>'manage'];
+$tabParts = mc_tab_parts();
 $tab = (string)($_GET['tab'] ?? 'readings');
 if (!isset($tabParts[$tab])) $tab = 'readings';
 if (!can('machines:' . $tabParts[$tab])) {
     http_response_code(403); exit('مالكش صلاحية للتاب ده.');
 }
-$allBranches = mc_branches($pdo);
-$requestedBranch = (string)($_GET['branch'] ?? '');
-$branchId = $allScope && ctype_digit($requestedBranch) ? (int)$requestedBranch : $userBranch;
-if ($allScope && $requestedBranch === 'all' && $tab !== 'readings' && $tab !== 'manage') $branchId = 0;
-if ($allScope && $branchId === 0 && in_array($tab,['readings','manage'],true)) {
-    $branchId = $allBranches ? (int)$allBranches[0]['id'] : 0;
+try {
+    // النطاق في المكتبة عشان machines_api.php يحسبه بنفس الطريقة بالحرف.
+    $scope = mc_scope($pdo, $tab, $user, (string)($_GET['branch'] ?? ''));
+} catch (McInputError $e) {
+    http_response_code(403); exit($e->getMessage());
 }
-$allowedIds = array_map(static fn($b) => (int)$b['id'], $allBranches);
-if ($branchId !== 0 && !in_array($branchId,$allowedIds,true)) {
-    http_response_code(403); exit('الفرع مش متاح.');
-}
-if (!$allScope && $userBranch <= 0) {
-    http_response_code(403); exit('حسابك مش مربوط بفرع.');
-}
-$scopeBranches = $branchId > 0 ? mc_branches($pdo,$branchId) : $allBranches;
-$scopeIds = array_map(static fn($b) => (int)$b['id'], $scopeBranches);
+$allScope = $scope['all_scope'];
+$allBranches = $scope['all_branches'];
+$branchId = $scope['branch_id'];
 $today = date('Y-m-d');
 $readingDate = (string)($_GET['date'] ?? $today);
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/',$readingDate) || $readingDate > $today) $readingDate=$today;
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json; charset=utf-8');
-    try {
-        if (!csrf_verify($_POST['csrf'] ?? '')) throw new RuntimeException('الجلسة انتهت، حدّث الصفحة.');
-        $action = (string)($_POST['action'] ?? '');
-        if ($action === 'reading') {
-            if (!can('machines:readings')) throw new RuntimeException('مالكش صلاحية إدخال قراية.');
-            $machineId=(int)($_POST['machine_id'] ?? 0);
-            $st=$pdo->prepare('SELECT branch_id FROM machines WHERE id = ?');
-            $st->execute([$machineId]);
-            $machineBranch=(int)$st->fetchColumn();
-            if (!$machineBranch || (!is_real_owner() && $machineBranch !== $userBranch)
-                || !in_array($machineBranch,$allowedIds,true)) {
-                http_response_code(403); throw new RuntimeException('المكنة مش في فرعك.');
-            }
-            $raw=trim((string)($_POST['value'] ?? ''));
-            if ($raw !== '' && (!ctype_digit($raw) || strlen($raw)>18)) {
-                throw new RuntimeException('اكتب عدد صحيح موجب أو سيب الخانة فاضية.');
-            }
-            $result=mc_save_reading($pdo,$machineId,$machineBranch,
-                (string)($_POST['date'] ?? ''),(string)($_POST['field'] ?? ''),
-                $raw === '' ? null : (int)$raw,(int)$user['id']);
-            echo json_encode(['ok'=>true]+$result,JSON_UNESCAPED_UNICODE); exit;
-        }
-        if ($action === 'add_machine' || $action === 'toggle_machine') {
-            if (!can('machines:manage')) {
-                http_response_code(403); throw new RuntimeException('إدارة المكن للمالك أو مدير الفرع بس.');
-            }
-            $postBranch=(int)($_POST['branch_id'] ?? 0);
-            if ((!is_real_owner() && $postBranch !== $userBranch)
-                || !in_array($postBranch,$allowedIds,true)) {
-                http_response_code(403); throw new RuntimeException('الفرع مش متاح لك.');
-            }
-            if ($action === 'add_machine') {
-                $id=mc_add_machine($pdo,$postBranch,(string)($_POST['name'] ?? ''),
-                    (string)($_POST['kind'] ?? ''));
-                echo json_encode(['ok'=>true,'id'=>$id],JSON_UNESCAPED_UNICODE); exit;
-            }
-            mc_toggle_machine($pdo,(int)($_POST['machine_id'] ?? 0),$postBranch,
-                ($_POST['active'] ?? '') === '1');
-            echo json_encode(['ok'=>true],JSON_UNESCAPED_UNICODE); exit;
-        }
-        throw new RuntimeException('العملية غير معروفة.');
-    } catch (Throwable $e) {
-        if (http_response_code() !== 403) http_response_code(400);
-        echo json_encode(['ok'=>false,'error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE); exit;
-    }
-}
-
-$allMachines=mc_machines($pdo,$scopeIds,false);
-$machineIds=array_map(static fn($m)=>(int)$m['id'],$allMachines);
-$readings=mc_readings($pdo,$machineIds,$today);
-$daily=[]; $monthly=[]; $unknown=[]; $unmapped=[]; $salesReady=true;
-if ($tab==='daily' || $tab==='monthly') {
-    $from=$tab==='daily' ? date('Y-m-d',strtotime($today . ' -30 days'))
-        : date('Y-m-01',strtotime($today . ' -11 months'));
-    $saleData=mc_sales($pdo,$scopeBranches,$from,$today);
-    $unknown=$saleData['unknown'];
-    $unmapped=$saleData['unmapped'];
-    $salesReady=$saleData['sales_ready'];
-    $daily=mc_daily_rows($scopeBranches,$allMachines,$readings,$saleData['sales'],$from,$today);
-    if ($tab==='monthly') $monthly=mc_monthly_rows($scopeBranches,$daily,$from,$today);
-}
+// الكتابة (القرايات · إضافة/تعطيل مكنة) بقت في machines_api.php — بريف ٢٢٣ج.
+$view = mc_view($pdo, $scope, $tab, $today, $readingDate);
+$allMachines = $view['machines'];
+$readingRows = $view['readings'];
+$daily = $view['daily'];
+$monthly = $view['monthly'];
+$unknown = $view['unknown'];
+$unmapped = $view['unmapped'];
+$salesReady = $view['sales_ready'];
 
 if (($_GET['export'] ?? '') === 'xlsx' && in_array($tab,['daily','monthly'],true)) {
     require_once __DIR__ . '/xlsx_lib.php';
@@ -158,26 +95,20 @@ function mc_chip(string $status): string {
     <?php if (!$allMachines): ?><p>مفيش مكن متسجل للفرع ده.</p><?php else: ?>
     <div style="overflow-x:auto"><table class="ftable" data-xt-off>
         <thead><tr><th>المكنة</th><th>النوع</th><th>العدادات</th></tr></thead><tbody>
-        <?php foreach ($allMachines as $m): if (!(int)$m['is_active']) continue;
-            $mid=(int)$m['id']; $current=$readings[$mid][$readingDate] ?? [];
+        <?php foreach ($readingRows as $m): if (!(int)$m['is_active']) continue;
+            $mid=(int)$m['id'];
         ?>
         <tr><td><?= e($m['name']) ?></td><td><?= $m['kind']==='color'?'ألوان':'أبيض وأسود' ?></td><td>
             <div style="display:flex;gap:12px;flex-wrap:wrap;">
-            <?php foreach (mc_fields($m['kind']) as $field=>$label):
-                $prev=null; $prevDate=null;
-                foreach ($readings[$mid] ?? [] as $d=>$old) {
-                    if ($d >= $readingDate || $old[$field]===null) continue;
-                    if ($prevDate===null || $d>$prevDate) { $prevDate=$d; $prev=(int)$old[$field]; }
-                }
-                $value=$current[$field] ?? null;
-                $delta=$value!==null && $prev!==null ? (int)$value-$prev : null;
+            <?php foreach ($m['fields'] as $field=>$f):
+                $prev=$f['prev']; $prevDate=$f['prev_date']; $value=$f['value']; $delta=$f['delta'];
             ?>
-                <label style="min-width:150px;display:block;"><?= e($label) ?><br>
+                <label style="min-width:150px;display:block;"><?= e($f['label']) ?><br>
                     <input type="number" min="0" step="1" inputmode="numeric"
                            value="<?= $value===null?'':(int)$value ?>" data-machine="<?= $mid ?>"
                            data-field="<?= e($field) ?>" data-day="<?= e($readingDate) ?>"
                            data-prev="<?= $prev===null?'':$prev ?>" data-saved="<?= $value===null?'':(int)$value ?>"
-                           aria-label="<?= e($m['name'] . ' ' . $label) ?>">
+                           aria-label="<?= e($m['name'] . ' ' . $f['label']) ?>">
                     <small style="display:block;color:var(--ink-500);">قبلها: <?= $prev===null?'—':number_format($prev) ?><?= $prevDate?' (' . e($prevDate) . ')':'' ?></small>
                     <small class="mc-delta" style="display:block;">الفرق: <?= $delta===null?'—':number_format($delta) ?></small>
                     <small class="mc-warning" style="display:<?= $delta!==null && $delta<0?'block':'none' ?>;color:var(--neg);">العداد رجع لورا؟ مكنة اتغيّرت؟ اليوم ده مش هيدخل الحسبة.</small>
@@ -194,7 +125,6 @@ function mc_chip(string $status): string {
 // الحفظ لما تسيب الخانة، والتنقّل بالسهم أو Enter من غير زرار حفظ.
 (function () {
     const fields = [...document.querySelectorAll('[data-machine][data-field]')];
-    const csrf = <?= json_encode(csrf_token()) ?>;
     function show(input) {
         const box = input.closest('label'), prev = input.dataset.prev === '' ? null : Number(input.dataset.prev);
         const val = input.value === '' ? null : Number(input.value);
@@ -214,12 +144,11 @@ function mc_chip(string $status): string {
             if (input.value === input.dataset.saved) return;
             const msg = input.closest('label').querySelector('.mc-save');
             msg.textContent = 'بيتحفظ…';
-            const body = new URLSearchParams({csrf,action:'reading',machine_id:input.dataset.machine,
-                date:input.dataset.day,field:input.dataset.field,value:input.value});
             try {
-                const res = await fetch('machines.php',{method:'POST',body});
-                const data = await res.json();
-                if (!res.ok || !data.ok) throw new Error(data.error || 'الحفظ فشل.');
+                const j = await apiFetch('machines_api.php',{method:'POST',body:{action:'reading',
+                    machine_id:input.dataset.machine,date:input.dataset.day,
+                    field:input.dataset.field,value:input.value}});
+                const data = j.data || {};
                 input.dataset.saved = input.value;
                 msg.textContent = data.backwards ? 'اتحفظت؛ راجع القراية.' : 'اتحفظت';
                 msg.style.color = data.backwards ? 'var(--neg)' : 'var(--pos)';
@@ -254,9 +183,8 @@ function mc_chip(string $status): string {
 <?php if ($tab==='daily' && $unknown): ?>
 <div class="card"><h3>أكواد مش متعرّفة</h3>
     <table class="ftable"><thead><tr><th>اليوم</th><th>الفرع</th><th>الكود</th><th>الاسم</th><th class="num">صافي الكمية</th></tr></thead><tbody>
-    <?php foreach ($unknown as $r):
-        $name=''; foreach ($scopeBranches as $b) if ((int)$b['id']===$r['branch_id']) { $name=$b['name']; break; } ?>
-        <tr><td><?= e($r['day']) ?></td><td><?= e($name) ?></td><td><?= e($r['code']) ?></td>
+    <?php foreach ($unknown as $r): ?>
+        <tr><td><?= e($r['day']) ?></td><td><?= e($r['branch']) ?></td><td><?= e($r['code']) ?></td>
             <td><?= e($r['name']) ?></td><td class="num"><?= mc_fmt($r['qty']) ?></td></tr>
     <?php endforeach; ?></tbody></table>
 </div>
@@ -287,20 +215,14 @@ function mc_chip(string $status): string {
     form.addEventListener('submit', async e => {
         e.preventDefault();
         try {
-            const res = await fetch('machines.php',{method:'POST',body:new URLSearchParams(new FormData(form))});
-            const data = await res.json();
-            if (!res.ok || !data.ok) throw new Error(data.error || 'الإضافة فشلت.');
+            await apiFetch('machines_api.php',{method:'POST',body:new FormData(form)});
             location.reload();
         } catch (err) { msg.textContent = err.message; }
     });
     document.querySelectorAll('.mc-toggle').forEach(btn => btn.addEventListener('click', async () => {
-        const body = new URLSearchParams({csrf:form.querySelector('[name=csrf]').value,
-            action:'toggle_machine',machine_id:btn.dataset.id,branch_id:btn.dataset.branch,
-            active:btn.dataset.active});
         try {
-            const res = await fetch('machines.php',{method:'POST',body});
-            const data = await res.json();
-            if (!res.ok || !data.ok) throw new Error(data.error || 'التغيير فشل.');
+            await apiFetch('machines_api.php',{method:'POST',body:{action:'toggle_machine',
+                machine_id:btn.dataset.id,branch_id:btn.dataset.branch,active:btn.dataset.active}});
             location.reload();
         } catch (err) { msg.textContent = err.message; }
     }));

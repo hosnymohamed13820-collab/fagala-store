@@ -4,6 +4,9 @@
  */
 declare(strict_types=1);
 
+/** خطأ إدخال/نطاق رسالته عربية ومقصود تظهر للمستخدم — مش تفاصيل قاعدة بيانات. */
+class McInputError extends RuntimeException {}
+
 function mc_fields(string $kind): array {
     return $kind === 'color'
         ? ['black_large'=>'أسود كبير 112', 'black_small'=>'أسود صغير 113',
@@ -56,14 +59,14 @@ function mc_save_reading(PDO $pdo, int $machineId, int $branchId, string $day,
                          string $field, ?int $value, int $userId): array {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)
         || DateTime::createFromFormat('!Y-m-d', $day)?->format('Y-m-d') !== $day
-        || $day > date('Y-m-d')) throw new RuntimeException('تاريخ القراية غير صحيح.');
+        || $day > date('Y-m-d')) throw new McInputError('تاريخ القراية غير صحيح.');
     $st = $pdo->prepare('SELECT kind FROM machines WHERE id = ? AND branch_id = ? AND is_active = 1');
     $st->execute([$machineId, $branchId]);
     $kind = $st->fetchColumn();
     if ($kind === false || !array_key_exists($field, mc_fields((string)$kind))) {
-        throw new RuntimeException('المكنة أو الخانة مش متاحة لفرعك.');
+        throw new McInputError('المكنة أو الخانة مش متاحة لفرعك.');
     }
-    if ($value !== null && $value < 0) throw new RuntimeException('القراية لازم تكون صفر أو أكبر.');
+    if ($value !== null && $value < 0) throw new McInputError('القراية لازم تكون صفر أو أكبر.');
     // اسم العمود من القائمة الثابتة فوق، ومش من نص الطلب مباشرة.
     $st = $pdo->prepare("INSERT INTO machine_readings (machine_id, reading_date, $field, created_by)
         VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE $field = VALUES($field)");
@@ -81,10 +84,10 @@ function mc_save_reading(PDO $pdo, int $machineId, int $branchId, string $day,
 function mc_add_machine(PDO $pdo, int $branchId, string $name, string $kind): int {
     $name = trim($name);
     if ($branchId <= 0 || $name === '' || mb_strlen($name) > 120
-        || !in_array($kind, ['bw','color'], true)) throw new RuntimeException('راجع اسم المكنة ونوعها وفرعها.');
+        || !in_array($kind, ['bw','color'], true)) throw new McInputError('راجع اسم المكنة ونوعها وفرعها.');
     $st = $pdo->prepare('SELECT id FROM branches WHERE id = ? AND is_active = 1');
     $st->execute([$branchId]);
-    if (!$st->fetchColumn()) throw new RuntimeException('الفرع مش متاح.');
+    if (!$st->fetchColumn()) throw new McInputError('الفرع مش متاح.');
     $st = $pdo->prepare('INSERT INTO machines (branch_id, name, kind) VALUES (?, ?, ?)');
     $st->execute([$branchId, $name, $kind]);
     return (int)$pdo->lastInsertId();
@@ -96,7 +99,7 @@ function mc_toggle_machine(PDO $pdo, int $machineId, int $branchId, bool $active
     if ($st->rowCount() < 1) {
         $check = $pdo->prepare('SELECT id FROM machines WHERE id = ? AND branch_id = ?');
         $check->execute([$machineId, $branchId]);
-        if (!$check->fetchColumn()) throw new RuntimeException('المكنة مش في الفرع ده.');
+        if (!$check->fetchColumn()) throw new McInputError('المكنة مش في الفرع ده.');
     }
 }
 
@@ -261,6 +264,127 @@ function mc_daily_rows(array $branches, array $machines, array $readings, array 
         }
     }
     usort($out, static fn($a,$b) => strcmp($b['end'],$a['end']) ?: strcmp($a['branch'],$b['branch']));
+    return $out;
+}
+
+/* =====================================================================
+ *  نطاق الفروع وداتا التابات — مشتركة بين machines.php و machines_api.php
+ *  (بريف ٢٢٣ج). الصفحة بترسم من نفس الدوال اللي الـAPI بيرجّعها،
+ *  عشان الرقم في الشاشة والرقم في JSON ما يختلفوش أبداً.
+ * ===================================================================== */
+
+/** أجزاء تاب machines — نفس مفاتيح module_parts()['machines']. */
+function mc_tab_parts(): array {
+    return ['readings'=>'readings','daily'=>'daily','monthly'=>'monthly','manage'=>'manage'];
+}
+
+/** أرقام الفروع المفعّلة — نفس allowedIds اللي الصفحة والـAPI بيتحققوا بيها. */
+function mc_allowed_branch_ids(PDO $pdo): array {
+    return array_map(static fn($b) => (int)$b['id'], mc_branches($pdo));
+}
+
+/**
+ * تثبيت نطاق الفرع للتاب — نفس منطق الصفحة سطر بسطر (بريف ٢٢٣ج).
+ * بيرمي McInputError برسالة عربية لو النطاق مرفوض: الصفحة بتطبعها،
+ * والـAPI بيردها 403 JSON.
+ */
+function mc_scope(PDO $pdo, string $tab, ?array $user, string $requestedBranch): array {
+    $userBranch = (int)($user['branch_id'] ?? 0);
+    $allScope = is_real_owner() || in_array('view_all', $_SESSION['permissions'] ?? [], true);
+    $allBranches = mc_branches($pdo);
+    $branchId = $allScope && ctype_digit($requestedBranch) ? (int)$requestedBranch : $userBranch;
+    if ($allScope && $requestedBranch === 'all' && $tab !== 'readings' && $tab !== 'manage') $branchId = 0;
+    if ($allScope && $branchId === 0 && in_array($tab,['readings','manage'],true)) {
+        $branchId = $allBranches ? (int)$allBranches[0]['id'] : 0;
+    }
+    $allowedIds = array_map(static fn($b) => (int)$b['id'], $allBranches);
+    if ($branchId !== 0 && !in_array($branchId,$allowedIds,true)) {
+        throw new McInputError('الفرع مش متاح.');
+    }
+    if (!$allScope && $userBranch <= 0) {
+        throw new McInputError('حسابك مش مربوط بفرع.');
+    }
+    $scopeBranches = $branchId > 0 ? mc_branches($pdo,$branchId) : $allBranches;
+    return [
+        'branch_id'      => $branchId,
+        'all_scope'      => $allScope,
+        'user_branch'    => $userBranch,
+        'all_branches'   => $allBranches,
+        'scope_branches' => $scopeBranches,
+        'scope_ids'      => array_map(static fn($b) => (int)$b['id'], $scopeBranches),
+    ];
+}
+
+/**
+ * صفوف تاب القراءات: قيمة كل خانة + آخر قراية قبلها + الفرق.
+ * نفس الحساب اللي كان جوه قالب الصفحة، مرفوع هنا عشان الـAPI يرجّعه JSON.
+ */
+function mc_readings_rows(array $machines, array $readings, string $readingDate): array {
+    $out = [];
+    foreach ($machines as $m) {
+        $mid = (int)$m['id'];
+        $current = $readings[$mid][$readingDate] ?? [];
+        $fields = [];
+        foreach (mc_fields((string)$m['kind']) as $field => $label) {
+            $prev = null; $prevDate = null;
+            foreach ($readings[$mid] ?? [] as $d => $old) {
+                if ($d >= $readingDate || $old[$field] === null) continue;
+                if ($prevDate === null || $d > $prevDate) { $prevDate = $d; $prev = (int)$old[$field]; }
+            }
+            $value = $current[$field] ?? null;
+            $fields[$field] = [
+                'label'     => $label,
+                'value'     => $value === null ? null : (int)$value,
+                'prev'      => $prev,
+                'prev_date' => $prevDate,
+                'delta'     => $value !== null && $prev !== null ? (int)$value - $prev : null,
+            ];
+        }
+        $out[] = [
+            'id'          => $mid,
+            'name'        => $m['name'],
+            'kind'        => $m['kind'],
+            'branch_id'   => (int)$m['branch_id'],
+            'branch_name' => $m['branch_name'],
+            'is_active'   => (int)$m['is_active'],
+            'fields'      => $fields,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * داتا تاب واحد (بريف ٢٢٣ج). الصفحة بترسم من المفاتيح دي، والـAPI
+ * بيرجّعها زي ما هي — فمستحيل يختلفوا.
+ */
+function mc_view(PDO $pdo, array $scope, string $tab, string $today, string $readingDate): array {
+    $machines = mc_machines($pdo, $scope['scope_ids'], false);
+    $readings = mc_readings($pdo, array_map(static fn($m) => (int)$m['id'], $machines), $today);
+    $out = ['machines'=>$machines, 'readings'=>[], 'daily'=>[], 'monthly'=>[],
+            'unknown'=>[], 'unmapped'=>[], 'sales_ready'=>true, 'from'=>null];
+    if ($tab === 'readings') {
+        $out['readings'] = mc_readings_rows($machines, $readings, $readingDate);
+        return $out;
+    }
+    if ($tab === 'manage') return $out;
+
+    $from = $tab === 'daily' ? date('Y-m-d',strtotime($today . ' -30 days'))
+        : date('Y-m-01',strtotime($today . ' -11 months'));
+    $saleData = mc_sales($pdo, $scope['scope_branches'], $from, $today);
+    $branchNames = [];
+    foreach ($scope['scope_branches'] as $b) $branchNames[(int)$b['id']] = $b['name'];
+    foreach ($saleData['unknown'] as &$u) $u['branch'] = $branchNames[(int)$u['branch_id']] ?? '';
+    unset($u);
+
+    $out['from'] = $from;
+    $out['unknown'] = $saleData['unknown'];
+    $out['unmapped'] = $saleData['unmapped'];
+    $out['sales_ready'] = $saleData['sales_ready'];
+    $out['daily'] = mc_daily_rows($scope['scope_branches'], $machines, $readings,
+        $saleData['sales'], $from, $today);
+    if ($tab === 'monthly') {
+        $out['monthly'] = mc_monthly_rows($scope['scope_branches'], $out['daily'], $from, $today);
+    }
     return $out;
 }
 
