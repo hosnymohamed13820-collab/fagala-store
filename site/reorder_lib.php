@@ -390,8 +390,12 @@ function reorder_branch_items(
 
     $search = trim((string) $search);
     if ($search !== '') {
-        $where[] = '(c.code LIKE :q OR c.name LIKE :q)';
-        $params['q'] = '%' . $search . '%';
+        // بريف ٢٢٩ب: :q مرة واحدة كانت بتكسر الاستعلام — PDO بـEMULATE_PREPARES=false
+        // مابيسمحش بتكرار نفس الـnamed placeholder (HY093). فبنستخدم :q_code و :q_name
+        // بنفس القيمة، والنتيجة زي ما المفروض: بحث في الكود أو الاسم.
+        $where[] = '(c.code LIKE :q_code OR c.name LIKE :q_name)';
+        $params['q_code'] = '%' . $search . '%';
+        $params['q_name'] = '%' . $search . '%';
     }
 
     $whereSql = implode(' AND ', $where);
