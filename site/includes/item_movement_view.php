@@ -165,7 +165,7 @@ $init = [
 <script>
     let IC_ITEM = 0;          // الصنف المفتوح دلوقتي
     let IC_TIMER = null;      // مؤقت البحث
-    const IC_INIT = <?= json_encode($init, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const IC_INIT = <?= json_encode($init, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
     let IC_STO_OVERRIDE = null;   // مخزن جاي من رابط مباشر (أول تحميل بس)
 
     // ===== البحث =====
