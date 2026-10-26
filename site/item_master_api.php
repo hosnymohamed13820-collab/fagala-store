@@ -38,7 +38,7 @@ try {
     switch ($part) {
         case 'create':
             api_require('item_master:edit');
-            api_ok(['id' => im_create($input, $userId)]);
+            api_ok(['id' => im_create($input, $userId, can('item_master:prices'))]);
         case 'update':
             api_require('item_master:edit');
             im_update_field((int) ($input['id'] ?? 0), (string) ($input['field'] ?? ''), $input['value'] ?? null, $userId);
@@ -58,6 +58,8 @@ try {
     }
 } catch (DomainException $e) {
     api_fail($e->getMessage(), 409, 'duplicate');
+} catch (ImForbiddenException $e) {
+    api_fail($e->getMessage(), 403, 'forbidden');
 } catch (InvalidArgumentException $e) {
     api_fail($e->getMessage(), 400, 'bad_request');
 }

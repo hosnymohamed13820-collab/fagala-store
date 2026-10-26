@@ -146,6 +146,7 @@ function all_modules(): array
         'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
         'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
         'item_master'   => ['label' => 'كارت الصنف',       'icon' => 'ti-package',           'url' => 'item_master.php'],
+        'sale_prices'   => ['label' => 'أسعار البيع',       'icon' => 'ti-cash',              'url' => 'item_prices.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
@@ -258,6 +259,10 @@ function module_parts(): array
             'edit'   => 'تعريف وتعديل أصناف الموقع',
             'prices' => 'تغيير الأسعار',
             'classes' => 'الأقسام والتصنيفات',
+        ],
+        'sale_prices' => [
+            'view'  => 'عرض',
+            'apply' => 'تطبيق الأسعار',
         ],
     ];
 }

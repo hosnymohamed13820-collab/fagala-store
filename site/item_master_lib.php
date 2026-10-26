@@ -18,6 +18,8 @@ const IM_CAT_KINDS = [
     'cat_company_id'   => 'company',
 ];
 
+class ImForbiddenException extends RuntimeException {}
+
 /** @return string[] */
 function im_words(string $q): array
 {
@@ -285,10 +287,17 @@ function im_duplicate_codes(array $codes, ?int $excludeCodeId = null): array
 }
 
 /** @param array<string,mixed> $input */
-function im_create(array $input, int $userId): int
+function im_create(array $input, int $userId, bool $canPrices): int
 {
     $name = trim((string) ($input['name1'] ?? ''));
     $codes = is_array($input['codes'] ?? null) ? array_values($input['codes']) : [];
+    if (!$canPrices) {
+        foreach ($codes as $row) {
+            if (is_array($row) && array_key_exists('price', $row) && trim((string) $row['price']) !== '') {
+                throw new ImForbiddenException('مش معاك صلاحية الأسعار');
+            }
+        }
+    }
     if ($name === '' || !$codes) throw new InvalidArgumentException('اسم الصنف والكود الأساسي مطلوبين');
     $clean = [];
     $hasBase = false;
@@ -494,16 +503,52 @@ function im_change_price(string $code, float $price, string $reason, int $userId
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $up = $pdo->prepare('INSERT INTO item_prices (code,price,true_price_at_change,updated_by,updated_at)
-            VALUES (?,?,?,?,NOW()) ON DUPLICATE KEY UPDATE price=VALUES(price),true_price_at_change=VALUES(true_price_at_change),
-            updated_by=VALUES(updated_by),updated_at=NOW()');
-        $up->execute([$code, $price, $truePrice, $userId]);
-        $hist = $pdo->prepare('INSERT INTO item_price_history
-            (code,old_price,new_price,true_price,reason,user_id,created_at,batch_id) VALUES (?,?,?,?,?,?,NOW(),NULL)');
-        $hist->execute([$code, $oldPrice, $price, $truePrice, trim($reason) ?: null, $userId]);
+        im_write_price_changes(
+            $pdo,
+            'SELECT ? code,? old_price,? new_price,? true_price,? reason',
+            [$code, $oldPrice, $price, $truePrice, trim($reason) ?: null],
+            $userId,
+            null
+        );
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
+}
+
+/**
+ * نقطة الكتابة المشتركة لسعر الموقع وسجله. المصدر لازم يرجّع:
+ * code, old_price, new_price, true_price, reason.
+ *
+ * @param array<int,mixed> $params
+ */
+function im_write_price_changes(PDO $pdo, string $sourceSql, array $params, int $userId, ?int $batchId): void
+{
+    if (!preg_match('/^\s*SELECT\b/i', $sourceSql)) {
+        throw new InvalidArgumentException('مصدر تغييرات السعر غير صحيح');
+    }
+    $pdo->exec('DROP TEMPORARY TABLE IF EXISTS im_price_changes');
+    $pdo->exec('CREATE TEMPORARY TABLE im_price_changes (
+        code VARCHAR(64) NOT NULL PRIMARY KEY,
+        old_price DECIMAL(14,2) NULL,
+        new_price DECIMAL(14,2) NOT NULL,
+        true_price DECIMAL(14,2) NULL,
+        reason VARCHAR(500) NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+
+    $load = $pdo->prepare('INSERT INTO im_price_changes (code,old_price,new_price,true_price,reason) ' . $sourceSql);
+    $load->execute($params);
+
+    $up = $pdo->prepare('INSERT INTO item_prices (code,price,true_price_at_change,updated_by,updated_at)
+        SELECT code,new_price,true_price,?,NOW() FROM im_price_changes
+        ON DUPLICATE KEY UPDATE price=VALUES(price),true_price_at_change=VALUES(true_price_at_change),
+        updated_by=VALUES(updated_by),updated_at=NOW()');
+    $up->execute([$userId]);
+
+    $hist = $pdo->prepare('INSERT INTO item_price_history
+        (code,old_price,new_price,true_price,reason,user_id,created_at,batch_id)
+        SELECT code,old_price,new_price,true_price,reason,?,NOW(),? FROM im_price_changes');
+    $hist->execute([$userId, $batchId]);
+    $pdo->exec('DROP TEMPORARY TABLE im_price_changes');
 }
