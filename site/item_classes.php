@@ -21,11 +21,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
 .ic-banner{padding:12px 14px;border:1px solid var(--warn);background:var(--warn-soft);border-radius:10px;margin-bottom:14px}
-.ic-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px;margin-bottom:14px}
-.ic-tab{border:1px solid var(--line);background:var(--surface);color:var(--text);padding:9px 12px;border-radius:8px;cursor:pointer;font:inherit}
-.ic-tab.active{background:var(--accent);color:var(--fill-strong-fg);border-color:var(--accent)}
 .ic-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-.ic-input{padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;max-width:100%}
 .ic-rename{width:100%;min-width:180px}
 .ic-hint{font-size:12px;color:var(--ink-500)}
 .ic-muted{color:var(--ink-400);font-size:12px}
@@ -34,7 +30,7 @@ require_once __DIR__ . '/includes/header.php';
 .ic-status{min-height:22px;margin-top:8px;color:var(--ink-500)}
 .ic-status.err{color:var(--neg)}
 .ic-status.ok{color:var(--pos)}
-@media(max-width:700px){.ic-add .ic-input{flex:1 1 100%}.ic-tab{flex:1 1 45%}}
+@media(max-width:700px){.ic-add .finput{flex:1 1 100%}.ftab{flex:1 1 45%}}
 </style>
 
 <div class="ic-banner">
@@ -42,18 +38,18 @@ require_once __DIR__ . '/includes/header.php';
     كل تصنيف بيتخزن عندنا، ومفيش أي كتابة في True.
 </div>
 
-<div class="card">
+<div class="fcard">
     <div class="section-title"><i class="ti ti-list"></i> الأقسام والتصنيفات</div>
 
-    <div class="ic-tabs" id="icTabs">
+    <div class="ftabs" id="icTabs">
         <?php foreach ($icKinds as $kindKey => $kindLabel): ?>
-            <button type="button" class="ic-tab<?= $kindKey === 'section' ? ' active' : '' ?>"
+            <button type="button" class="ftab ic-tab<?= $kindKey === 'section' ? ' active' : '' ?>"
                     data-kind="<?= htmlspecialchars($kindKey, ENT_QUOTES) ?>"><?= htmlspecialchars($kindLabel) ?></button>
         <?php endforeach; ?>
     </div>
 
     <form class="ic-add" id="icAddForm" autocomplete="off">
-        <input class="ic-input" id="icNewName" maxlength="255" placeholder="اسم جديد…" required>
+        <input class="finput" id="icNewName" maxlength="255" placeholder="اسم جديد…" required>
         <button type="submit" class="btn btn-primary"><i class="ti ti-plus"></i> إضافة</button>
         <span class="ic-hint">الاسم لازم يبقى فريد جوه نفس النوع.</span>
     </form>
@@ -131,7 +127,7 @@ const IC_KINDS = <?= json_encode($icKinds, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG
         if (!tr) return;
         const cell = tr.querySelector('td.name');
         const old = tr.querySelector('.ic-name').textContent;
-        cell.innerHTML = '<input class="ic-input ic-rename" maxlength="255" value="' + esc(old) + '">'
+        cell.innerHTML = '<input class="finput ic-rename" maxlength="255" value="' + esc(old) + '">'
             + ' <button type="button" class="btn btn-sm btn-primary" data-act="save">حفظ</button> '
             + '<button type="button" class="btn btn-sm btn-outline" data-act="cancel">إلغاء</button>';
         const inp = cell.querySelector('.ic-rename');

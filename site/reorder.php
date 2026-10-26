@@ -142,37 +142,6 @@ require_once __DIR__ . '/includes/header.php';
     align-items: center;
     gap: 8px;
 }
-.branch-tabs {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
-}
-.branch-tabs .btab {
-    padding: 8px 18px;
-    border-radius: 9px;
-    background: var(--surface);
-    color: var(--text);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 600;
-    border: 1.5px solid var(--line);
-    transition: .15s;
-    font-family: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.branch-tabs .btab:hover {
-    border-color: var(--accent);
-}
-.branch-tabs .btab.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-}
-
 .reorder-toolbar {
     display: flex;
     justify-content: space-between;
@@ -195,16 +164,7 @@ require_once __DIR__ . '/includes/header.php';
     position: relative;
     min-width: 220px;
 }
-.reorder-search-box input {
-    width: 100%;
-    padding: 7px 30px 7px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: var(--surface-soft);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 14px;
-}
+.reorder-search-box .finput { width:100%; padding-inline-start:30px; }
 .reorder-search-box .search-icon {
     position: absolute;
     right: 9px;
@@ -212,15 +172,6 @@ require_once __DIR__ . '/includes/header.php';
     transform: translateY(-50%);
     color: var(--muted);
     pointer-events: none;
-}
-.reorder-select {
-    padding: 7px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--line);
-    background: var(--surface-soft);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 14px;
 }
 
 .table-responsive {
@@ -242,22 +193,6 @@ require_once __DIR__ . '/includes/header.php';
 }
 .reorder-input {
     width: 68px;
-    padding: 5px 6px;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--surface-soft);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-    transition: border-color .15s, background .15s;
-}
-.reorder-input:focus {
-    border-color: var(--accent);
-    outline: none;
-    background: var(--surface);
-    box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .reorder-input.saving {
     background: var(--warn-soft);
@@ -312,12 +247,12 @@ require_once __DIR__ . '/includes/header.php';
     position: fixed;
     bottom: 24px;
     left: 24px;
-    z-index: 9999;
+    z-index: var(--z-toast);
     padding: 12px 20px;
     border-radius: 10px;
     font-size: 14px;
     font-weight: 600;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    box-shadow: var(--shadow);
     display: none;
     align-items: center;
     gap: 8px;
@@ -354,11 +289,11 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- تابات الفروع -->
     <?php if ($isOwner || count($visibleBranches) > 1): ?>
-    <div class="branch-tabs">
+    <div class="ftabs">
         <?php foreach ($visibleBranches as $b): ?>
         <a href="reorder.php?branch=<?= (int)$b['id'] ?>&cat=<?= (int)$catFilter ?>&q=<?= urlencode($searchQuery) ?>" 
-           class="btab <?= (int)$b['id'] === $selectedBranchId ? 'active' : '' ?>">
-            <i class="ti-building-store"></i>
+           class="ftab <?= (int)$b['id'] === $selectedBranchId ? 'is-active' : '' ?>">
+            <i class="ti ti-building-store"></i>
             <?= e($b['name']) ?>
         </a>
         <?php endforeach; ?>
@@ -369,12 +304,12 @@ require_once __DIR__ . '/includes/header.php';
     <div class="reorder-toolbar">
         <div class="reorder-tools-right">
             <div class="reorder-search-box">
-                <i class="ti-search search-icon"></i>
-                <input type="text" id="searchInput" placeholder="بحث بالاسم أو الكود..." value="<?= e($searchQuery) ?>" oninput="onSearchInput(this.value)">
+                <i class="ti ti-search search-icon"></i>
+                <input class="finput finput-sm" type="text" id="searchInput" placeholder="بحث بالاسم أو الكود..." value="<?= e($searchQuery) ?>" oninput="onSearchInput(this.value)">
             </div>
 
             <?php if (!empty($catsMap)): ?>
-            <select class="reorder-select" id="catSelect" onchange="onCatChange(this.value)">
+            <select class="fselect finput-sm reorder-select" id="catSelect" onchange="onCatChange(this.value)">
                 <option value="">كل الأقسام (<?= count($catsMap) ?>)</option>
                 <?php foreach ($catsMap as $cid => $cname): ?>
                 <option value="<?= $cid ?>" <?= $catFilter === $cid ? 'selected' : '' ?>><?= e($cname) ?></option>
@@ -388,7 +323,7 @@ require_once __DIR__ . '/includes/header.php';
                 مختار: <b id="selCount">0</b> صنف
             </span>
             <button type="button" class="btn btn-primary btn-sm" id="btnSendShortage" onclick="sendShortageRequest()" disabled>
-                <i class="ti-send"></i>
+                <i class="ti ti-send"></i>
                 ابعت طلب نواقص للإدارة
             </button>
         </div>
@@ -432,7 +367,7 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="checkbox" class="row-chk" value="<?= $iid ?>" onchange="onRowCheckChange()">
                     </td>
                     <td>
-                        <span style="font-family: monospace; font-size: 12px;"><?= e($it['code']) ?></span>
+                        <span style="font-variant-numeric:tabular-nums;font-size:12px;"><?= e($it['code']) ?></span>
                     </td>
                     <td class="item-name-cell" title="<?= e($it['name']) ?>">
                         <?= e($it['name']) ?>
@@ -445,7 +380,7 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td class="num">
                         <input type="number" 
-                               class="reorder-input" 
+                               class="finput finput-sm num reorder-input"
                                id="min_<?= $iid ?>" 
                                value="<?= (float) $it['min_qty'] ?>" 
                                step="1" 
@@ -454,7 +389,7 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td class="num">
                         <input type="number" 
-                               class="reorder-input" 
+                               class="finput finput-sm num reorder-input"
                                id="max_<?= $iid ?>" 
                                value="<?= (float) $it['max_qty'] ?>" 
                                step="1" 

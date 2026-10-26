@@ -24,7 +24,7 @@ if ($branchScope['branch_missing']) {
     $active_module = 'calls';
     $page_title = 'متابعة المكالمات';
     require_once __DIR__ . '/includes/header.php';
-    echo '<div class="card" style="text-align:center;padding:40px;color:var(--ink-500);margin:20px auto;max-width:500px;">
+    echo '<div class="fcard" style="text-align:center;padding:40px;color:var(--ink-500);margin:20px auto;max-width:500px;">
             <h3>حسابك مش مربوط بفرع</h3>
             <p>برجاء مراجعة الإدارة لربط حسابك بالفرع التابع له.</p>
           </div>';
@@ -73,35 +73,10 @@ require_once __DIR__ . '/includes/header.php';
   .calls-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
   .calls-head h2 { margin:0; font-size:1.25rem; color:var(--ink-900); }
   .followup-box { display:flex; align-items:center; gap:8px; background:var(--surface); padding:6px 12px; border-radius:8px; border:1px solid var(--line); font-size:0.875rem; }
-  .followup-box input { width:65px; text-align:center; padding:4px 8px; border:1px solid var(--line); border-radius:6px; font-family:inherit; }
-  .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
-      text-decoration:none; font-size:14px; border:1.5px solid var(--line);
-      transition:.15s; font-family:inherit; cursor:pointer;
-  }
-  .branch-tabs .btab:hover  { border-color:var(--accent); }
-  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
+  .followup-box .finput { width:65px; text-align:center; }
 
   .period-bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:16px; font-size:13px; }
-  .period-bar .ptab {
-      padding:5px 12px; border-radius:6px; background:var(--surface); color:var(--ink-500);
-      text-decoration:none; border:1px solid var(--line); transition:.15s;
-  }
-  .period-bar .ptab:hover { border-color:var(--ink-900); color:var(--ink-900); }
-  .period-bar .ptab.active { background:var(--ink-900); color:#fff; border-color:var(--ink-900); font-weight:600; }
   .period-bar .custom-form { display:inline-flex; align-items:center; gap:6px; margin-inline-start:6px; }
-  .period-bar .custom-form input[type="date"] { padding:4px 8px; border:1px solid var(--line); border-radius:6px; font-size:12px; font-family:inherit; }
-  .period-bar .custom-form button { padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:var(--surface); cursor:pointer; font-family:inherit; font-size:12px; }
-
-  .rv-tabs { display:flex; gap:18px; border-bottom:2px solid var(--line); margin-bottom:20px; overflow-x:auto; }
-  .rv-tab {
-      padding:10px 6px; cursor:pointer; color:var(--ink-500); font-weight:600; font-size:15px;
-      border-bottom:3px solid transparent; margin-bottom:-2px; background:none; border-top:none; border-left:none; border-right:none;
-      text-decoration:none; display:inline-block; font-family:inherit; white-space:nowrap;
-  }
-  .rv-tab:hover { color:var(--ink-900); }
-  .rv-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
 
   .table-responsive { width:100%; overflow-x:auto; }
   .tel-link { color:var(--accent-text); text-decoration:none; font-weight:600; }
@@ -114,7 +89,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if ($isOwner): ?>
     <div class="followup-box">
         <label for="followup_input">مهلة المتابعة:</label>
-        <input type="number" id="followup_input" min="5" max="240" value="<?= $followupMinutes ?>"
+        <input class="finput finput-sm num" type="number" id="followup_input" min="5" max="240" value="<?= $followupMinutes ?>"
                data-csrf="<?= csrf_token() ?>" title="تعديل المهلة بالدقائق (يتم الحفظ تلقائياً عند الخروج)">
         <span>دقيقة</span>
         <span id="followup_status" style="font-size:12px;display:none;"></span>
@@ -123,12 +98,12 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($isOwner): ?>
-<div class="branch-tabs">
-    <a href="<?= e($buildUrl(['branch' => null])) ?>" class="btab <?= $selectedBranch === null ? 'active' : '' ?>">
+<div class="ftabs">
+    <a href="<?= e($buildUrl(['branch' => null])) ?>" class="ftab <?= $selectedBranch === null ? 'is-active' : '' ?>">
         الكل
     </a>
     <?php foreach ($branches as $bId => $bName): ?>
-    <a href="<?= e($buildUrl(['branch' => $bId])) ?>" class="btab <?= $selectedBranch === $bId ? 'active' : '' ?>">
+    <a href="<?= e($buildUrl(['branch' => $bId])) ?>" class="ftab <?= $selectedBranch === $bId ? 'is-active' : '' ?>">
         <?= e($bName) ?>
     </a>
     <?php endforeach; ?>
@@ -136,12 +111,12 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <!-- فلتر الفترة -->
-<div class="period-bar">
-    <a href="<?= e($buildUrl(['period' => 'today'])) ?>" class="ptab <?= $period === 'today' ? 'active' : '' ?>">النهارده</a>
-    <a href="<?= e($buildUrl(['period' => 'yesterday'])) ?>" class="ptab <?= $period === 'yesterday' ? 'active' : '' ?>">امبارح</a>
-    <a href="<?= e($buildUrl(['period' => '7days'])) ?>" class="ptab <?= $period === '7days' ? 'active' : '' ?>">٧ أيام</a>
-    <a href="<?= e($buildUrl(['period' => '30days'])) ?>" class="ptab <?= $period === '30days' ? 'active' : '' ?>">٣٠ يوم</a>
-    <a href="<?= e($buildUrl(['period' => 'custom'])) ?>" class="ptab <?= $period === 'custom' ? 'active' : '' ?>">مخصص</a>
+<div class="ftabs period-bar">
+    <a href="<?= e($buildUrl(['period' => 'today'])) ?>" class="ftab <?= $period === 'today' ? 'is-active' : '' ?>">النهارده</a>
+    <a href="<?= e($buildUrl(['period' => 'yesterday'])) ?>" class="ftab <?= $period === 'yesterday' ? 'is-active' : '' ?>">امبارح</a>
+    <a href="<?= e($buildUrl(['period' => '7days'])) ?>" class="ftab <?= $period === '7days' ? 'is-active' : '' ?>">٧ أيام</a>
+    <a href="<?= e($buildUrl(['period' => '30days'])) ?>" class="ftab <?= $period === '30days' ? 'is-active' : '' ?>">٣٠ يوم</a>
+    <a href="<?= e($buildUrl(['period' => 'custom'])) ?>" class="ftab <?= $period === 'custom' ? 'is-active' : '' ?>">مخصص</a>
 
     <?php if ($period === 'custom'): ?>
     <form method="GET" action="calls.php" class="custom-form">
@@ -150,23 +125,23 @@ require_once __DIR__ . '/includes/header.php';
         <?php if ($isOwner && $selectedBranch !== null): ?>
         <input type="hidden" name="branch" value="<?= $selectedBranch ?>">
         <?php endif; ?>
-        <input type="date" name="from" value="<?= e($dateFrom) ?>" required>
+        <input class="finput finput-sm" type="date" name="from" value="<?= e($dateFrom) ?>" required>
         <span>إلى</span>
-        <input type="date" name="to" value="<?= e($dateTo) ?>" required>
-        <button type="submit">تطبيق</button>
+        <input class="finput finput-sm" type="date" name="to" value="<?= e($dateTo) ?>" required>
+        <button class="btn btn-sm" type="submit">تطبيق</button>
     </form>
     <?php endif; ?>
 </div>
 
 <!-- تابات العرض الثلاثة -->
-<div class="rv-tabs">
-    <a href="<?= e($buildUrl(['view' => 'missed'])) ?>" class="rv-tab <?= $view === 'missed' ? 'active' : '' ?>">
+<div class="ftabs">
+    <a href="<?= e($buildUrl(['view' => 'missed'])) ?>" class="ftab <?= $view === 'missed' ? 'is-active' : '' ?>">
         فايتة من غير رد
     </a>
-    <a href="<?= e($buildUrl(['view' => 'log'])) ?>" class="rv-tab <?= $view === 'log' ? 'active' : '' ?>">
+    <a href="<?= e($buildUrl(['view' => 'log'])) ?>" class="ftab <?= $view === 'log' ? 'is-active' : '' ?>">
         السجل
     </a>
-    <a href="<?= e($buildUrl(['view' => 'summary'])) ?>" class="rv-tab <?= $view === 'summary' ? 'active' : '' ?>">
+    <a href="<?= e($buildUrl(['view' => 'summary'])) ?>" class="ftab <?= $view === 'summary' ? 'is-active' : '' ?>">
         ملخص الفروع
     </a>
 </div>
@@ -227,7 +202,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if ($missedData['hidden_count'] > 0): ?>
-    <div class="card" style="margin-top:12px;padding:12px 18px;color:var(--ink-500);text-align:center;font-size:14px;">
+    <div class="fcard" style="margin-top:12px;padding:12px 18px;color:var(--ink-500);text-align:center;font-size:14px;">
         <?= (int)$missedData['hidden_count'] ?> مكالمة فايتة من رقم مخفي
     </div>
     <?php endif; ?>
@@ -361,7 +336,7 @@ require_once __DIR__ . '/includes/header.php';
             if (data.ok) {
                 lastVal = val;
                 if (st) {
-                    st.style.color = 'var(--pos, #10b981)';
+                    st.style.color = 'var(--pos)';
                     st.textContent = 'تم الحفظ';
                     setTimeout(function() { st.style.display = 'none'; }, 2000);
                 }

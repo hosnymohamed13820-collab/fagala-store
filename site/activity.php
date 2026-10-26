@@ -151,23 +151,8 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* تابات الصفحة والفروع بنفس شكل صفحة المراجعة */
-.branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-.branch-tabs .btab {
-    padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
-    text-decoration:none; font-size:14px; border:1.5px solid var(--line);
-    transition:.15s; font-family:inherit; cursor:pointer;
-}
-.branch-tabs .btab:hover  { border-color:var(--accent); }
-.branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
-.rv-tabs { display:flex; gap:18px; border-bottom:2px solid var(--line); margin-bottom:20px; }
-.rv-tab { padding:10px 4px; cursor:pointer; color:var(--ink-500); font-weight:600; font-size:15px;
-    border-bottom:3px solid transparent; margin-bottom:-2px; background:none; border-top:none; border-left:none; border-right:none; font-family:inherit; }
-.rv-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
 .rv-pane { display:none; } .rv-pane.active { display:block; }
-.rv-tabs a { text-decoration:none; }
-.activity-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
-.activity-stat { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px; min-width:0; }
+.activity-stat { min-width:0; }
 .activity-stat-label { display:block; color:var(--ink-500); font-size:12px; margin-bottom:6px; }
 .activity-stat-value { font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; }
 .activity-table-wrap { overflow-x:auto; max-width:100%; -webkit-overflow-scrolling:touch; }
@@ -181,45 +166,38 @@ require_once __DIR__ . '/includes/header.php';
     gap: 14px;
     margin-bottom: 22px;
 }
-.action-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 14px 16px;
+.action-tile {
     display: flex;
     align-items: center;
     justify-content: space-between;
     text-decoration: none;
     color: var(--text);
-    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s;
 }
-.action-card:hover {
+.action-tile:hover {
     transform: translateY(-2px);
-    border-color: var(--accent);
-    box-shadow: var(--shadow);
 }
-.action-card-info {
+.action-tile-info {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
-.action-card-label {
+.action-tile-label {
     font-size: 13px;
     font-weight: 600;
     color: var(--ink-500);
 }
-.action-card-num {
+.action-tile-num {
     font-size: 24px;
     font-weight: 700;
     line-height: 1.1;
 }
-.action-card-sub {
+.action-tile-sub {
     font-size: 11px;
     color: var(--ink-400);
     margin-top: 2px;
 }
-.action-card-icon {
+.action-tile-icon {
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -229,40 +207,7 @@ require_once __DIR__ . '/includes/header.php';
     font-size: 22px;
 }
 
-/* شريط الفلاتر */
-.filter-bar {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 14px 16px;
-    margin-bottom: 18px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-.filter-bar select, .filter-bar input[type="date"] {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm, 6px);
-    padding: 6px 10px;
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13px;
-}
-.filter-bar select:focus, .filter-bar input:focus {
-    border-color: var(--accent);
-    outline: none;
-}
-
 /* جدول الخط الزمني */
-.timeline-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 16px;
-    box-shadow: var(--shadow-sm);
-}
 .timeline-header {
     display: flex;
     justify-content: space-between;
@@ -318,14 +263,13 @@ require_once __DIR__ . '/includes/header.php';
 /* موبايل ٣٩٠ — مفيش سكرول بالعرض */
 @media (max-width: 600px) {
     .action-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
-    .action-card { padding: 10px 12px; }
-    .action-card-num { font-size: 20px; }
-    .action-card-icon { width: 34px; height: 34px; font-size: 18px; }
-    .filter-bar { padding: 10px; gap: 8px; }
-    .filter-bar > div { width: 100%; }
-    .filter-bar select, .filter-bar input[type="date"] { flex: 1 1 auto; min-width: 0; }
-    .filter-bar .btn { width: 100%; margin-right: 0 !important; }
-    .timeline-card { padding: 10px; }
+    .action-tile { padding: 10px 12px; }
+    .action-tile-num { font-size: 20px; }
+    .action-tile-icon { width: 34px; height: 34px; font-size: 18px; }
+    .ffilters { padding: 10px; gap: 8px; }
+    .ffilters > div { width: 100%; }
+    .ffilters .fselect, .ffilters .finput { flex: 1 1 auto; min-width: 0; }
+    .ffilters .btn { width: 100%; margin-right: 0 !important; }
     .act-table th, .act-table td { padding: 7px 6px; font-size: 11.5px; }
     .act-table .act-col-time { width: 62px; }
     .act-table .act-col-type { width: 82px; }
@@ -340,9 +284,9 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="content-container">
 
-    <nav class="rv-tabs" aria-label="أقسام حركات النظام">
+    <nav class="ftabs" aria-label="أقسام حركات النظام">
         <?php foreach (['timeline' => 'الخط الزمني', 'sales' => 'المبيعات', 'purchases' => 'المشتريات'] as $tabKey => $tabLabel): ?>
-            <a class="rv-tab <?= $view === $tabKey ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => $tabKey]))) ?>"><?= e($tabLabel) ?></a>
+            <a class="ftab <?= $view === $tabKey ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => $tabKey]))) ?>"><?= e($tabLabel) ?></a>
         <?php endforeach; ?>
     </nav>
 
@@ -351,41 +295,41 @@ require_once __DIR__ . '/includes/header.php';
     <!-- كروت «محتاج تصرّف» -->
     <div class="action-grid">
         <!-- ورديات مستنية مراجعة -->
-        <a href="review.php" class="action-card">
-            <div class="action-card-info">
-                <span class="action-card-label">ورديات مستنية مراجعة</span>
-                <span class="action-card-num" style="color:<?= $pendingShiftsCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
+        <a href="review.php" class="fcard action-tile">
+            <div class="action-tile-info">
+                <span class="action-tile-label">ورديات مستنية مراجعة</span>
+                <span class="action-tile-num" style="color:<?= $pendingShiftsCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
                     <?= $pendingShiftsCount ?>
                 </span>
-                <span class="action-card-sub"><?= $pendingShiftsCount > 0 ? 'تحتاج فحص المحاسب' : 'كل الورديات مراجعة' ?></span>
+                <span class="action-tile-sub"><?= $pendingShiftsCount > 0 ? 'تحتاج فحص المحاسب' : 'كل الورديات مراجعة' ?></span>
             </div>
-            <div class="action-card-icon" style="background:var(--warn-soft);color:var(--warn);">
+            <div class="action-tile-icon" style="background:var(--warn-soft);color:var(--warn);">
                 <i class="ti ti-clock"></i>
             </div>
         </a>
 
         <!-- عهد مستنية اعتماد -->
-        <a href="custody.php" class="action-card">
-            <div class="action-card-info">
-                <span class="action-card-label">عهد مستنية اعتماد</span>
-                <span class="action-card-num" style="color:<?= $pendingCustodyCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
+        <a href="custody.php" class="fcard action-tile">
+            <div class="action-tile-info">
+                <span class="action-tile-label">عهد مستنية اعتماد</span>
+                <span class="action-tile-num" style="color:<?= $pendingCustodyCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
                     <?= $pendingCustodyCount ?>
                 </span>
-                <span class="action-card-sub"><?= $pendingCustodyCount > 0 ? 'بانتظار الاعتماد' : 'لا توجد عهد معلقة' ?></span>
+                <span class="action-tile-sub"><?= $pendingCustodyCount > 0 ? 'بانتظار الاعتماد' : 'لا توجد عهد معلقة' ?></span>
             </div>
-            <div class="action-card-icon" style="background:var(--accent-soft);color:var(--accent-text);">
+            <div class="action-tile-icon" style="background:var(--accent-soft);color:var(--accent-text);">
                 <i class="ti ti-cash"></i>
             </div>
         </a>
 
         <!-- فواتير متأخر استلامها -->
-        <a href="receiving.php" class="action-card">
-            <div class="action-card-info">
-                <span class="action-card-label">فواتير متأخر استلامها</span>
-                <span class="action-card-num" style="color:<?= $lateInvoicesTotal > 0 ? 'var(--neg)' : 'var(--pos)' ?>;">
+        <a href="receiving.php" class="fcard action-tile">
+            <div class="action-tile-info">
+                <span class="action-tile-label">فواتير متأخر استلامها</span>
+                <span class="action-tile-num" style="color:<?= $lateInvoicesTotal > 0 ? 'var(--neg)' : 'var(--pos)' ?>;">
                     <?= $lateInvoicesTotal ?>
                 </span>
-                <span class="action-card-sub">
+                <span class="action-tile-sub">
                     <?php if ($lateInvoicesTotal > 0 && !empty($lateInvoicesBreakdown)): ?>
                         <?= e(implode(' · ', array_slice($lateInvoicesBreakdown, 0, 2))) ?>
                     <?php else: ?>
@@ -393,21 +337,21 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endif; ?>
                 </span>
             </div>
-            <div class="action-card-icon" style="background:var(--neg-soft);color:var(--neg);">
+            <div class="action-tile-icon" style="background:var(--neg-soft);color:var(--neg);">
                 <i class="ti ti-truck"></i>
             </div>
         </a>
 
         <!-- رسايل إنستا الواردة من غير إذن — آخر ٧ أيام -->
-        <a href="sms_inbox.php?from=<?= e($smsCardFrom) ?>&to=<?= e($smsCardTo) ?>&kind=in" class="action-card">
-            <div class="action-card-info">
-                <span class="action-card-label">رسايل إنستا بدون إذن</span>
-                <span class="action-card-num" style="color:<?= $smsNoPermitCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
+        <a href="sms_inbox.php?from=<?= e($smsCardFrom) ?>&to=<?= e($smsCardTo) ?>&kind=in" class="fcard action-tile">
+            <div class="action-tile-info">
+                <span class="action-tile-label">رسايل إنستا بدون إذن</span>
+                <span class="action-tile-num" style="color:<?= $smsNoPermitCount > 0 ? 'var(--warn)' : 'var(--pos)' ?>;">
                     <?= $smsNoPermitCount ?>
                 </span>
-                <span class="action-card-sub"><?= $smsNoPermitCount > 0 ? 'واردة آخر ٧ أيام — تحتاج تسوية أو إذن' : 'كل الرسايل الواردة مضبوطة' ?></span>
+                <span class="action-tile-sub"><?= $smsNoPermitCount > 0 ? 'واردة آخر ٧ أيام — تحتاج تسوية أو إذن' : 'كل الرسايل الواردة مضبوطة' ?></span>
             </div>
-            <div class="action-card-icon" style="background:var(--accent-soft);color:var(--accent-text);">
+            <div class="action-tile-icon" style="background:var(--accent-soft);color:var(--accent-text);">
                 <i class="ti ti-device-mobile"></i>
             </div>
         </a>
@@ -416,11 +360,11 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <!-- شريط الفلاتر -->
-    <form method="GET" action="activity.php" class="filter-bar">
+    <form method="GET" action="activity.php" class="ffilters">
         <input type="hidden" name="view" value="<?= e($view) ?>">
         <div style="display:flex;align-items:center;gap:6px;">
             <label for="periodSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-calendar"></i> الفترة:</label>
-            <select name="period" id="periodSelect" onchange="toggleCustomDates(this.value)">
+            <select class="fselect finput-sm" name="period" id="periodSelect" onchange="toggleCustomDates(this.value)">
                 <option value="today" <?= $period === 'today' ? 'selected' : '' ?>>النهارده</option>
                 <option value="yesterday" <?= $period === 'yesterday' ? 'selected' : '' ?>>أمس</option>
                 <option value="7d" <?= $period === '7d' ? 'selected' : '' ?>>آخر ٧ أيام</option>
@@ -431,15 +375,15 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div id="customDatesWrap" style="display:<?= $period === 'custom' ? 'flex' : 'none' ?>;align-items:center;gap:6px;">
-            <input type="date" name="from" value="<?= e($customFrom) ?>" title="من تاريخ">
+            <input class="finput finput-sm" type="date" name="from" value="<?= e($customFrom) ?>" title="من تاريخ">
             <span style="color:var(--ink-400);">إلى</span>
-            <input type="date" name="to" value="<?= e($customTo) ?>" title="إلى تاريخ">
+            <input class="finput finput-sm" type="date" name="to" value="<?= e($customTo) ?>" title="إلى تاريخ">
         </div>
 
         <?php if ($view === 'timeline'): ?>
         <div style="display:flex;align-items:center;gap:6px;">
             <label for="branchSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-building-store"></i> الفرع:</label>
-            <select name="branch" id="branchSelect">
+            <select class="fselect finput-sm" name="branch" id="branchSelect">
                 <option value="all">كل الفروع</option>
                 <?php foreach ($branchesList as $b): ?>
                     <option value="<?= (int)$b['id'] ?>" <?= $branchFilter === (int)$b['id'] ? 'selected' : '' ?>>
@@ -451,7 +395,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div style="display:flex;align-items:center;gap:6px;">
             <label for="typeSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-filter"></i> النوع:</label>
-            <select name="type" id="typeSelect">
+            <select class="fselect finput-sm" name="type" id="typeSelect">
                 <option value="all" <?= $typeFilter === 'all' ? 'selected' : '' ?>>كل الحركات</option>
                 <option value="newitems" <?= $typeFilter === 'newitems' ? 'selected' : '' ?>>أصناف جديدة</option>
                 <option value="shifts" <?= $typeFilter === 'shifts' ? 'selected' : '' ?>>ورديات</option>
@@ -477,7 +421,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if ($view === 'timeline'): ?>
     <!-- الخط الزمني -->
-    <div class="timeline-card">
+    <div class="fcard timeline-panel">
         <div class="timeline-header">
             <h3 class="timeline-title">
                 <i class="ti ti-list-details" style="color:var(--accent-text);"></i> سجل الحركات بالوقت
@@ -556,19 +500,19 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <?php elseif ($view === 'sales'): ?>
-        <nav class="branch-tabs" aria-label="فروع المبيعات">
-            <a class="btab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => 'all']))) ?>">الكل</a>
+        <nav class="ftabs" aria-label="فروع المبيعات">
+            <a class="ftab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => 'all']))) ?>">الكل</a>
             <?php foreach ($salesBranches as $b): ?>
-                <a class="btab <?= $branchFilter === (int) $b['id'] ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => (int) $b['id']]))) ?>">
+                <a class="ftab <?= $branchFilter === (int) $b['id'] ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => (int) $b['id']]))) ?>">
                     <?= e($b['name']) ?> (<?= number_format($salesCounts[(string) $b['agent']] ?? 0) ?>)
                 </a>
             <?php endforeach; ?>
         </nav>
         <?php if ($salesTooLong): ?>
-            <div class="timeline-card">اختار فترة أقل من سنة.</div>
+            <div class="fcard timeline-panel">اختار فترة أقل من سنة.</div>
         <?php else: ?>
             <?php $salesNet = $salesTotals['sale_sum'] - $salesTotals['ret_sum']; ?>
-            <div class="activity-stats">
+            <div class="fkpis">
                 <?php foreach ([
                     ['فواتير البيع', number_format($salesTotals['sale_cnt'])],
                     ['إجمالي البيع', sens_mask(number_format($salesTotals['sale_sum'], 2))],
@@ -579,7 +523,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
                 <?php endforeach; ?>
             </div>
-            <div class="timeline-card">
+            <div class="fcard timeline-panel">
                 <div class="timeline-header"><h3 class="timeline-title">فواتير المبيعات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
                 <div class="activity-table-wrap">
                     <table class="ftable">
@@ -610,7 +554,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <?php endif; ?>
                                     <td>
                                         <span style="font-weight:600;"><?= e((string) $inv['doc_no']) ?></span>
-                                        <button type="button" class="btn-icon" onclick="var d=this.closest('tr').nextElementSibling; d.hidden=!d.hidden; this.querySelector('i').classList.toggle('ti-chevron-up');" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:13px;color:var(--ink-500);vertical-align:middle;" title="عرض أصناف الفاتورة" aria-label="عرض الأصناف">
+                                        <button type="button" class="btn-icon" onclick="var d=this.closest('tr').nextElementSibling; d.hidden=!d.hidden; var i=this.querySelector('i'); i.classList.toggle('ti-chevron-down'); i.classList.toggle('ti-arrow-up');" style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:13px;color:var(--ink-500);vertical-align:middle;" title="عرض أصناف الفاتورة" aria-label="عرض الأصناف">
                                             <i class="ti ti-chevron-down"></i>
                                         </button>
                                     </td>
@@ -620,7 +564,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <td class="num"><?= sens_mask(number_format((float) $inv['net_amount'], 2)) ?></td>
                                 </tr>
                                 <tr data-xt-ignore data-xt-nosort hidden>
-                                    <td colspan="<?= $branchFilter === null ? 7 : 6 ?>" style="padding:10px 16px;background:var(--surface-soft, rgba(0,0,0,0.02));">
+                                    <td colspan="<?= $branchFilter === null ? 7 : 6 ?>" style="padding:10px 16px;background:var(--surface-soft);">
                                         <?php if (empty($lines)): ?>
                                             <span style="color:var(--ink-500);font-size:13px;">مفيش أصناف مسجلة للفاتورة دي.</span>
                                         <?php else: ?>
@@ -689,7 +633,7 @@ require_once __DIR__ . '/includes/header.php';
                                     الأحدث
                                 </a>
                             <?php else: ?>
-                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300, #ccc);cursor:not-allowed;">
+                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300);cursor:not-allowed;">
                                     الأحدث
                                 </span>
                             <?php endif; ?>
@@ -699,7 +643,7 @@ require_once __DIR__ . '/includes/header.php';
                                     الأقدم
                                 </a>
                             <?php else: ?>
-                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300, #ccc);cursor:not-allowed;">
+                                <span class="btn-page disabled" style="padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink-300);cursor:not-allowed;">
                                     الأقدم
                                 </span>
                             <?php endif; ?>
@@ -709,16 +653,16 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
     <?php else: ?>
-        <nav class="branch-tabs" aria-label="فروع المشتريات">
-            <a class="btab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => 'all']))) ?>">الكل</a>
+        <nav class="ftabs" aria-label="فروع المشتريات">
+            <a class="ftab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => 'all']))) ?>">الكل</a>
             <?php foreach ($purchaseBranches as $cb): ?>
-                <a class="btab <?= $branchFilter === $cb ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => $cb]))) ?>">
+                <a class="ftab <?= $branchFilter === $cb ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'purchases', 'branch' => $cb]))) ?>">
                     <?= e(act_company_branch_name($cb, $branchBySto)) ?> (<?= number_format($purchaseCounts[$cb][2] ?? 0) ?>)
                 </a>
             <?php endforeach; ?>
         </nav>
         <?php $purchaseNet = $purchaseTotals['sale_sum'] - $purchaseTotals['ret_sum']; $purchaseCount = $purchaseTotals['sale_cnt'] + $purchaseTotals['ret_cnt']; ?>
-        <div class="activity-stats">
+        <div class="fkpis">
             <?php foreach ([
                 ['فواتير الشراء', number_format($purchaseTotals['sale_cnt'])],
                 ['إجمالي الشراء', sens_mask(number_format($purchaseTotals['sale_sum'], 2))],
@@ -729,7 +673,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
             <?php endforeach; ?>
         </div>
-        <div class="timeline-card">
+        <div class="fcard timeline-panel">
             <div class="timeline-header"><h3 class="timeline-title">فواتير المشتريات والمردودات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
             <div class="activity-table-wrap">
                 <table class="ftable">

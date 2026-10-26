@@ -31,13 +31,7 @@ $init = [
 
     .ic-bar { display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; }
     .ic-search-wrap { position:relative; flex:1; min-width:220px; }
-    .ic-bar input.main {
-        width:100%; box-sizing:border-box; padding:12px 16px;
-        border:1.5px solid var(--line); border-radius:var(--r-md);
-        background:var(--surface); color:var(--ink-800);
-        font-size:15px; font-family:inherit;
-    }
-    .ic-bar input.main:focus { outline:none; border-color:var(--accent); }
+    .ic-bar .main { width:100%; font-size:15px; }
 
     /* نتائج البحث المنسدلة */
     .ic-sug {
@@ -61,26 +55,13 @@ $init = [
     .ic-head-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
     .ic-name { margin:0 0 4px; font-size:19px; color:var(--ink-900); }
     .ic-sub { font-size:12.5px; color:var(--ink-500); }
-    .ic-kpis { display:flex; gap:10px; flex-wrap:wrap; }
-    .ic-kpi {
-        background:var(--bg); border:1px solid var(--line); border-radius:var(--r);
-        padding:8px 14px; min-width:120px;
-    }
-    .ic-kpi span { display:block; font-size:12px; color:var(--ink-500); margin-bottom:2px; }
-    .ic-kpi b { font-size:17px; font-variant-numeric:tabular-nums; direction:ltr; display:inline-block; }
 
     .ic-block-title { font-size:14px; font-weight:700; color:var(--ink-700); margin:18px 0 8px; }
     .ic-note { font-size:12px; color:var(--ink-500); margin-top:8px; line-height:1.7; }
     .ic-est { font-size:11px; color:var(--ink-500); display:block; }
     .ic-empty { text-align:center; color:var(--ink-400); padding:26px 12px; font-size:14px; }
 
-    .ic-filters { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
-    .ic-filters label { font-size:12px; color:var(--ink-500); display:flex; flex-direction:column; gap:4px; }
-    .ic-filters select, .ic-filters input {
-        padding:8px 10px; border:1px solid var(--line); border-radius:var(--r-sm);
-        background:var(--surface); color:var(--ink-800);
-        font-size:13px; font-family:inherit; min-width:120px;
-    }
+    .ic-filters .finput, .ic-filters .fselect { min-width:120px; }
 
     /* الموبايل: الجداول بتتحوّل كروت — مفيش سكرول بالعرض */
     @media (max-width: 560px) {
@@ -105,16 +86,16 @@ $init = [
         .ic-card-tbl td.num::before { direction:rtl; text-align:right; }
         .ic-card-tbl tfoot tr { border-top:2px solid var(--line); }
         .ic-ftable-wrap { border:0; }
-        .ic-kpi { flex:1 1 44%; min-width:0; }
+        .fkpi { flex:1 1 44%; min-width:0; }
     }
 </style>
 
-<div class="card" style="margin-bottom:16px;">
+<div class="fcard" style="margin-bottom:16px;">
     <div class="section-title"><i class="ti ti-list-details"></i> حركة الصنف</div>
 
     <div class="ic-bar">
         <div class="ic-search-wrap">
-            <input type="text" class="main" id="icQ" autocomplete="off"
+            <input type="text" class="finput main" id="icQ" autocomplete="off"
                    placeholder="امسح باركود، أو اكتب كود/اسم الصنف…"
                    enterkeyhint="search"
                    oninput="icOnType()"
@@ -132,21 +113,21 @@ $init = [
     <div class="ic-status" id="icStatus">امسح باركود أو اكتب اسم الصنف عشان تفتح كارتّه</div>
 </div>
 
-<div class="card" id="icFilterCard" style="margin-bottom:16px; display:none;">
-    <div class="ic-filters">
+<div class="fcard" id="icFilterCard" style="margin-bottom:16px; display:none;">
+    <div class="ffilters ic-filters">
         <label>من
-            <input type="date" id="icFrom" value="<?= e($period['from']) ?>" onchange="icReload()">
+            <input class="finput finput-sm" type="date" id="icFrom" value="<?= e($period['from']) ?>" onchange="icReload()">
         </label>
         <label>إلى
-            <input type="date" id="icTo" value="<?= e($period['to']) ?>" onchange="icReload()">
+            <input class="finput finput-sm" type="date" id="icTo" value="<?= e($period['to']) ?>" onchange="icReload()">
         </label>
         <label>المخزن
-            <select id="icSto" onchange="icReload()">
+            <select class="fselect finput-sm" id="icSto" onchange="icReload()">
                 <option value="0">كل المخازن</option>
             </select>
         </label>
         <label>نوع الحركة
-            <select id="icType" onchange="icReload()">
+            <select class="fselect finput-sm" id="icType" onchange="icReload()">
                 <option value="">كل الأنواع</option>
                 <?php foreach ($types as $tk => $tl): ?>
                     <option value="<?= e($tk) ?>"><?= e($tl) ?></option>
@@ -245,7 +226,7 @@ $init = [
                 const card = j.data ? j.data.card : null;
                 if (!card) {
                     document.getElementById('icCard').innerHTML =
-                        '<div class="card"><div class="ic-empty">الصنف ده مش موجود في المرآة</div></div>';
+                        '<div class="fcard">' + window.ui.empty('الصنف ده مش موجود في المرآة') + '</div>';
                     icStatus('✗ مش موجود', 'var(--neg)');
                     return;
                 }
@@ -272,7 +253,7 @@ $init = [
         let html = '';
 
         // ---------- الرأس ----------
-        html += '<div class="card" style="margin-bottom:16px;">' +
+        html += '<div class="fcard" style="margin-bottom:16px;">' +
             '<div class="ic-head-top">' +
                 '<div>' +
                     '<h2 class="ic-name">' + icEsc(it.name) + '</h2>' +
@@ -283,9 +264,9 @@ $init = [
                         ' · رقم الصنف: ' + (+it.item_id) +
                     '</div>' +
                 '</div>' +
-                '<div class="ic-kpis">' +
-                    '<div class="ic-kpi"><span>سعر البيع</span><b>' + (it.sale_price_html || '—') + '</b></div>' +
-                    '<div class="ic-kpi"><span>متوسط التكلفة</span><b>' + (it.cost_html || '—') + '</b></div>' +
+                '<div class="fkpis">' +
+                    '<div class="fkpi"><span>سعر البيع</span><strong>' + (it.sale_price_html || '—') + '</strong></div>' +
+                    '<div class="fkpi"><span>متوسط التكلفة</span><strong>' + (it.cost_html || '—') + '</strong></div>' +
                 '</div>' +
             '</div>' +
             (locked
@@ -296,7 +277,7 @@ $init = [
         const codes = it.codes || [];
         html += '<div class="ic-block-title">أكواد الصنف (' + codes.length + ')</div>';
         if (!codes.length) {
-            html += '<div class="ic-empty">الصنف ده مالوش أكواد في المرآة</div>';
+            html += window.ui.empty('الصنف ده مالوش أكواد في المرآة');
         } else {
             html += '<div class="ftable-wrap ic-ftable-wrap"><table class="ftable ic-card-tbl" data-xt-off>' +
                 '<thead><tr>' +
@@ -317,7 +298,7 @@ $init = [
         html += '</div>';
 
         // ---------- الأرصدة ----------
-        html += '<div class="card" style="margin-bottom:16px;">' +
+        html += '<div class="fcard" style="margin-bottom:16px;">' +
             '<div class="ic-block-title" style="margin-top:0;">الرصيد دلوقتي</div>' +
             '<div class="ftable-wrap ic-ftable-wrap"><table class="ftable ic-card-tbl" data-xt-off>' +
             '<thead><tr><th>المخزن</th><th class="num">الرصيد</th>' +
@@ -343,7 +324,7 @@ $init = [
 
         // ---------- الحركات ----------
         const movs = card.movements || [];
-        html += '<div class="card">' +
+        html += '<div class="fcard">' +
             '<div class="ic-head-top">' +
                 '<div class="ic-block-title" style="margin:0;">الحركات (' + movs.length + ')</div>' +
                 ((card.counts && card.counts.truncated)
@@ -352,7 +333,7 @@ $init = [
             '</div>';
 
         if (!movs.length) {
-            html += '<div class="ic-empty">مفيش حركة في الفترة دي</div>';
+            html += window.ui.empty('مفيش حركة في الفترة دي');
         } else {
             html += '<div class="ftable-wrap ic-ftable-wrap" style="margin-top:10px;">' +
                 '<table class="ftable ic-card-tbl" data-xt-off><thead><tr>' +

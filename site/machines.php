@@ -63,33 +63,33 @@ function mc_chip(string $status): string {
     };
 }
 ?>
-<div class="card">
+<div class="fcard">
     <h3>عداد المكن</h3>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    <div class="ftabs">
         <?php foreach (['readings'=>'القراءات','daily'=>'اليومي','monthly'=>'الشهري','manage'=>'المكن'] as $key=>$label): ?>
             <?php if (can('machines:' . $tabParts[$key])): ?>
-                <a class="btn btn-sm <?= $tab===$key?'btn-primary':'btn-ghost' ?>"
+                <a class="ftab <?= $tab===$key?'is-active':'' ?>"
                    href="?tab=<?= e($key) ?>&branch=<?= $branchId ?: 'all' ?>"><?= e($label) ?></a>
             <?php endif; ?>
         <?php endforeach; ?>
     </div>
-    <form method="get" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+    <form method="get" class="ffilters">
         <input type="hidden" name="tab" value="<?= e($tab) ?>">
         <?php if ($allScope): ?>
-            <label>الفرع<br><select name="branch">
+            <label class="ffield">الفرع<select class="fselect" name="branch">
                 <?php if ($tab==='daily' || $tab==='monthly'): ?><option value="all" <?= !$branchId?'selected':'' ?>>كل الفروع</option><?php endif; ?>
                 <?php foreach ($allBranches as $b): ?><option value="<?= (int)$b['id'] ?>" <?= $branchId===(int)$b['id']?'selected':'' ?>><?= e($b['name']) ?></option><?php endforeach; ?>
             </select></label>
         <?php else: ?><input type="hidden" name="branch" value="<?= $branchId ?>"><?php endif; ?>
         <?php if ($tab==='readings'): ?>
-            <label>تاريخ قراية الصبح<br><input type="date" name="date" max="<?= e($today) ?>" value="<?= e($readingDate) ?>"></label>
+            <label class="ffield">تاريخ قراية الصبح<input class="finput" type="date" name="date" max="<?= e($today) ?>" value="<?= e($readingDate) ?>"></label>
         <?php endif; ?>
         <button class="btn btn-sm" type="submit">عرض</button>
     </form>
 </div>
 
 <?php if ($tab==='readings'): ?>
-<div class="card">
+<div class="fcard">
     <h3>قرايات صبح <?= e($readingDate) ?></h3>
     <p>قراية النهارده بداية استهلاك النهارده؛ يوم امبارح بيتقفل بقراية الصبح دي.</p>
     <?php if (!$allMachines): ?><p>مفيش مكن متسجل للفرع ده.</p><?php else: ?>
@@ -104,7 +104,7 @@ function mc_chip(string $status): string {
                 $prev=$f['prev']; $prevDate=$f['prev_date']; $value=$f['value']; $delta=$f['delta'];
             ?>
                 <label style="min-width:150px;display:block;"><?= e($f['label']) ?><br>
-                    <input type="number" min="0" step="1" inputmode="numeric"
+                    <input class="finput finput-sm num" type="number" min="0" step="1" inputmode="numeric"
                            value="<?= $value===null?'':(int)$value ?>" data-machine="<?= $mid ?>"
                            data-field="<?= e($field) ?>" data-day="<?= e($readingDate) ?>"
                            data-prev="<?= $prev===null?'':$prev ?>" data-saved="<?= $value===null?'':(int)$value ?>"
@@ -161,7 +161,7 @@ function mc_chip(string $status): string {
 })();
 </script>
 <?php elseif ($tab==='daily' || $tab==='monthly'): ?>
-<div class="card">
+<div class="fcard">
     <h3><?= $tab==='daily'?'اليومي — آخر ٣١ يوم':'الشهري — آخر ١٢ شهر' ?></h3>
     <?php if (!$salesReady): ?><p style="color:var(--neg)">بيانات مبيعات الفروع مش متزامنة هنا؛ عمود المباع وفروق المطابقة غير موثوقين لحد ما ربط الوكلاء يتوفر.</p><?php endif; ?>
     <p>الضغطات بتتحسب من قراية صباح بداية اليوم لقراية الصبح اللي بعده. الأيام اللي في النص بتتجمع من غير تقسيم تقديري.</p>
@@ -181,7 +181,7 @@ function mc_chip(string $status): string {
     </tbody></table></div>
 </div>
 <?php if ($tab==='daily' && $unknown): ?>
-<div class="card"><h3>أكواد مش متعرّفة</h3>
+<div class="fcard"><h3>أكواد مش متعرّفة</h3>
     <table class="ftable"><thead><tr><th>اليوم</th><th>الفرع</th><th>الكود</th><th>الاسم</th><th class="num">صافي الكمية</th></tr></thead><tbody>
     <?php foreach ($unknown as $r): ?>
         <tr><td><?= e($r['day']) ?></td><td><?= e($r['branch']) ?></td><td><?= e($r['code']) ?></td>
@@ -189,15 +189,15 @@ function mc_chip(string $status): string {
     <?php endforeach; ?></tbody></table>
 </div>
 <?php endif; ?>
-<?php if ($unmapped): ?><div class="card">فيه مبيعات وكلاء من غير ربط مؤكد بفرع: <?= e(implode('، ',$unmapped)) ?>.</div><?php endif; ?>
+<?php if ($unmapped): ?><div class="fcard">فيه مبيعات وكلاء من غير ربط مؤكد بفرع: <?= e(implode('، ',$unmapped)) ?>.</div><?php endif; ?>
 <?php elseif ($tab==='manage'): ?>
-<div class="card">
+<div class="fcard">
     <h3>إضافة مكنة</h3>
     <form id="mc-add" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>"><input type="hidden" name="action" value="add_machine">
         <input type="hidden" name="branch_id" value="<?= $branchId ?>">
-        <label>الاسم<br><input name="name" required maxlength="120"></label>
-        <label>النوع<br><select name="kind"><option value="bw">أبيض وأسود</option><option value="color">ألوان</option></select></label>
+        <label class="ffield">الاسم<input class="finput" name="name" required maxlength="120"></label>
+        <label class="ffield">النوع<select class="fselect" name="kind"><option value="bw">أبيض وأسود</option><option value="color">ألوان</option></select></label>
         <button class="btn btn-sm" type="submit">إضافة</button><span id="mc-add-msg" aria-live="polite"></span>
     </form>
     <table class="ftable"><thead><tr><th>المكنة</th><th>النوع</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>

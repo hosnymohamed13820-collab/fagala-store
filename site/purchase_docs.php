@@ -24,19 +24,18 @@ require_once __DIR__ . '/includes/header.php';
 .purchase-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .purchase-title{display:flex;align-items:center;gap:10px}.purchase-title h2{margin:0;font-size:21px}.purchase-title-meta{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
 .purchase-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.purchase-actions a{text-decoration:none}
-.purchase-head-grid{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(220px,1.5fr) minmax(150px,.8fr) minmax(145px,.75fr);gap:10px}
-.purchase-head-grid label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--ink-600)}
-.purchase-head-grid .purchase-notes{grid-column:span 2}.purchase-head-grid input,.purchase-head-grid select{width:100%}
-.purchase-lines-card{flex:1;display:flex;flex-direction:column;min-height:360px;padding:0;overflow:hidden}
+.purchase-head-grid{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(220px,1.5fr) minmax(150px,.8fr) minmax(145px,.75fr);gap:10px;align-items:end}
+.purchase-head-grid .purchase-notes{grid-column:span 2}.purchase-head-grid .finput,.purchase-head-grid .fselect{width:100%}
+.purchase-lines-panel{flex:1;display:flex;flex-direction:column;min-height:360px;padding:0;overflow:hidden}
 .purchase-lines-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line-soft)}
 .purchase-lines-title h3{margin:0;font-size:16px}.purchase-barcode-hint{font-size:12px;color:var(--ink-500)}
 .purchase-table-wrap{overflow:auto;flex:1}.purchase-table{min-width:800px}.purchase-table th,.purchase-table td{vertical-align:middle}.purchase-table .line-index{width:45px;text-align:center;color:var(--ink-500)}
 .purchase-table .line-code-cell{width:190px}.purchase-table .line-name-cell{min-width:250px}.purchase-table .line-unit{width:95px}.purchase-table .line-number{width:125px}.purchase-table .line-remove-cell{width:60px;text-align:center}
-.purchase-code-wrap{display:flex;align-items:center;gap:5px}.purchase-code-wrap input{min-width:0;width:100%}.purchase-code-wrap .btn{flex:0 0 auto}
-.purchase-table input{width:100%;min-width:0}.purchase-table .line-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px}.purchase-table .line-total{font-variant-numeric:tabular-nums;font-weight:700}
+.purchase-code-wrap{display:flex;align-items:center;gap:5px}.purchase-code-wrap .finput{min-width:0;width:100%}.purchase-code-wrap .btn{flex:0 0 auto}
+.purchase-table .finput{width:100%;min-width:0}.purchase-table .line-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px}.purchase-table .line-total{font-variant-numeric:tabular-nums;font-weight:700}
 .purchase-summary{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:20px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:var(--surface);border-top:1px solid var(--line-soft);font-size:13px}.purchase-summary strong{font-size:18px;font-variant-numeric:tabular-nums}
 .purchase-save-state{min-width:90px;font-size:12px;color:var(--ink-500)}.purchase-save-state.is-ok{color:var(--pos)}.purchase-save-state.is-bad{color:var(--neg)}
-.purchase-origin[hidden],.purchase-events[hidden]{display:none}.purchase-events{font-size:12px;line-height:1.9;color:var(--ink-500)}
+.purchase-origin[hidden],.purchase-event-list[hidden]{display:none}.purchase-event-list{font-size:12px;line-height:1.9;color:var(--ink-500)}
 .purchase-readonly-note{margin:0}
 @media(max-width:900px){.purchase-head-grid{grid-template-columns:1fr 1fr}.purchase-head-grid .purchase-notes{grid-column:span 2}}
 @media(max-width:600px){.purchase-head-grid{grid-template-columns:1fr}.purchase-head-grid .purchase-notes{grid-column:auto}.purchase-summary{justify-content:space-between;gap:10px}.purchase-title h2{font-size:18px}}
@@ -45,13 +44,13 @@ require_once __DIR__ . '/includes/header.php';
   header,aside,.sidebar,footer,.purchase-no-print,.purchase-save-state{display:none!important}
   body,main,.content{background:var(--surface)!important;margin:0!important;padding:0!important;width:100%!important}
   .purchase-shell{min-height:0;display:block}.card{box-shadow:none!important;border:0!important;padding:0!important}
-  .purchase-head-grid{grid-template-columns:repeat(3,1fr);margin:12px 0}.purchase-head-grid input,.purchase-head-grid select{border:0!important;padding:2px!important;appearance:none}
-  .purchase-lines-card{min-height:0;overflow:visible}.purchase-table-wrap{overflow:visible}.purchase-table{min-width:0;width:100%;font-size:11px}.purchase-table input{border:0;padding:2px;background:transparent}.purchase-table .line-remove-cell{display:none}.purchase-summary{position:static;border-top:1px solid var(--line);padding:10px 0}
+  .purchase-head-grid{grid-template-columns:repeat(3,1fr);margin:12px 0}.purchase-head-grid .finput,.purchase-head-grid .fselect{border:0!important;padding:2px!important;appearance:none}
+  .purchase-lines-panel{min-height:0;overflow:visible}.purchase-table-wrap{overflow:visible}.purchase-table{min-width:0;width:100%;font-size:11px}.purchase-table .finput{border:0;padding:2px;background:transparent}.purchase-table .line-remove-cell{display:none}.purchase-summary{position:static;border-top:1px solid var(--line);padding:10px 0}
 }
 </style>
 
 <div class="purchase-shell">
-  <div class="card">
+  <div class="fcard">
     <div class="purchase-head">
       <div class="purchase-title">
         <i class="ti ti-package-import"></i>
@@ -77,36 +76,36 @@ require_once __DIR__ . '/includes/header.php';
 
     <input id="purchaseDocId" type="hidden" value="<?= $initialId ?>">
     <input id="purchaseSupplierId" type="hidden">
-    <div class="purchase-head-grid">
-      <label>النوع
-        <select id="purchaseType" data-edit>
+    <div class="fgrid purchase-head-grid">
+      <label class="ffield">النوع
+        <select class="fselect" id="purchaseType" data-edit>
           <option value="purchase" <?= $initialType === 'purchase' ? 'selected' : '' ?>>شراء</option>
           <option value="purchase_return" <?= $initialType === 'purchase_return' ? 'selected' : '' ?>>مرتجع مورد</option>
         </select>
       </label>
-      <label>المورد (بحث)
-        <input id="purchaseSupplier" list="purchaseSupplierList" autocomplete="off" placeholder="اكتب اسم المورد" data-edit>
+      <label class="ffield">المورد (بحث)
+        <input class="finput" id="purchaseSupplier" list="purchaseSupplierList" autocomplete="off" placeholder="اكتب اسم المورد" data-edit>
         <datalist id="purchaseSupplierList"></datalist>
       </label>
-      <label>الفرع
-        <select id="purchaseBranch" data-edit></select>
+      <label class="ffield">الفرع
+        <select class="fselect" id="purchaseBranch" data-edit></select>
       </label>
-      <label>التاريخ
-        <input id="purchaseDate" type="date" value="<?= date('Y-m-d') ?>" data-edit>
+      <label class="ffield">التاريخ
+        <input class="finput" id="purchaseDate" type="date" value="<?= date('Y-m-d') ?>" data-edit>
       </label>
-      <label>رقم فاتورة المورد
-        <input id="purchaseRef" maxlength="100" data-edit>
+      <label class="ffield">رقم فاتورة المورد
+        <input class="finput" id="purchaseRef" maxlength="100" data-edit>
       </label>
-      <label id="purchaseOriginWrap" class="purchase-origin" hidden>مرتجع على فاتورة
-        <select id="purchaseOrigin" data-edit><option value="">مرتجع من غير أصل</option></select>
+      <label id="purchaseOriginWrap" class="ffield purchase-origin" hidden>مرتجع على فاتورة
+        <select class="fselect" id="purchaseOrigin" data-edit><option value="">مرتجع من غير أصل</option></select>
       </label>
-      <label class="purchase-notes">ملاحظات
-        <input id="purchaseNotes" maxlength="1000" data-edit>
+      <label class="ffield purchase-notes">ملاحظات
+        <input class="finput" id="purchaseNotes" maxlength="1000" data-edit>
       </label>
     </div>
   </div>
 
-  <div class="card purchase-lines-card">
+  <div class="fcard purchase-lines-panel">
     <div class="purchase-lines-title">
       <h3>الأصناف</h3>
       <span class="purchase-barcode-hint purchase-no-print">اكتب أو امسح الباركود واضغط Enter</span>
@@ -124,7 +123,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
   </div>
 
-  <div id="purchaseEvents" class="card purchase-events" hidden></div>
+  <div id="purchaseEvents" class="fcard purchase-event-list" hidden></div>
 </div>
 
 <script src="assets/barcode_scanner.js?v=9"></script>
@@ -170,11 +169,11 @@ function purchaseLineTemplate(row={}){
   const discount=Number(row.discount_pct)||0;
   return '<tr class="purchase-line" data-line="'+id+'" data-lookup-code="'+purchaseEsc(itemId?row.code||'':'')+'">'
     +'<td class="line-index"></td>'
-    +'<td class="line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"><input class="line-discount" type="hidden" value="'+discount+'"></td>'
+    +'<td class="line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="finput finput-sm line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"><input class="line-discount" type="hidden" value="'+discount+'"></td>'
     +'<td class="line-name-cell"><span class="line-name" title="'+purchaseEsc(row.item_name||'')+'">'+purchaseEsc(row.item_name||'')+'</span></td>'
     +'<td><span class="line-unit">'+(itemId?purchaseEsc(purchaseUnitText(factor)):'—')+'</span></td>'
-    +'<td class="num line-number"><input class="line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(qty)+'"></td>'
-    +'<td class="num line-number"><input class="line-cost" type="number" min="0" step="0.0001" value="'+purchaseEsc(price)+'"></td>'
+    +'<td class="num line-number"><input class="finput finput-sm num line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(qty)+'"></td>'
+    +'<td class="num line-number"><input class="finput finput-sm num line-cost" type="number" min="0" step="0.0001" value="'+purchaseEsc(price)+'"></td>'
     +'<td class="num line-number"><span class="line-total">0.00</span></td>'
     +'<td class="line-remove-cell purchase-no-print"><button class="btn btn-sm btn-danger line-remove" type="button" aria-label="حذف السطر"><i class="ti ti-trash"></i></button></td></tr>';
 }

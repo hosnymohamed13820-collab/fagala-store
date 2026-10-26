@@ -21,7 +21,7 @@ if (!is_real_owner()) {
     $pageTitle = 'دفتر المخزن';
     $active_module = 'stock_ledger';
     require_once __DIR__ . '/includes/header.php';
-    echo '<div class="card"><div class="alert alert-danger">غير مصرح — هذه الصفحة متاحة للمالك فقط.</div></div>';
+    echo '<div class="fcard"><div class="alert alert-danger">غير مصرح — هذه الصفحة متاحة للمالك فقط.</div></div>';
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }
@@ -140,11 +140,11 @@ $active_module = 'stock_ledger';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<div class="card" style="margin-bottom:16px;">
+<div class="fcard" style="margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
         <div>
             <h2 style="margin:0 0 4px 0;"><i class="ti ti-packages"></i> دفتر المخزن على الموقع</h2>
-            <div style="font-size:13px;color:var(--text-muted, #888);">
+            <div style="font-size:13px;color:var(--text-muted);">
                 حركات الصنف والأرصدة المتخزنة ومتوسط التكلفة المتحرك
             </div>
         </div>
@@ -163,23 +163,23 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- شريط التبويبات -->
-<div class="inv-tabs" style="display:flex;gap:6px;border-bottom:1px solid var(--line-soft, #ddd);margin-bottom:16px;">
-    <a class="tab-btn <?= $tab === 'docs' ? 'active' : '' ?>" href="stock_ledger.php?tab=docs"><i class="ti ti-file-text"></i> مستندات المخزن</a>
-    <a class="tab-btn <?= $tab === 'recon' ? 'active' : '' ?>" href="stock_ledger.php?tab=recon"><i class="ti ti-arrows-diff"></i> المطابقة مع True</a>
-    <a class="tab-btn <?= $tab === 'import' ? 'active' : '' ?>" href="stock_ledger.php?tab=import"><i class="ti ti-history"></i> الاستيراد</a>
+<div class="ftabs">
+    <a class="ftab <?= $tab === 'docs' ? 'is-active' : '' ?>" href="stock_ledger.php?tab=docs"><i class="ti ti-file-invoice"></i> مستندات المخزن</a>
+    <a class="ftab <?= $tab === 'recon' ? 'is-active' : '' ?>" href="stock_ledger.php?tab=recon"><i class="ti ti-transfer"></i> المطابقة مع True</a>
+    <a class="ftab <?= $tab === 'import' ? 'is-active' : '' ?>" href="stock_ledger.php?tab=import"><i class="ti ti-clock"></i> الاستيراد</a>
 </div>
 
 <?php if ($tab === 'docs'): ?>
 <!-- كروت الرصيد الافتتاحي من المرآة -->
-<div class="card" style="margin-bottom:16px;">
-    <h3 style="margin:0 0 12px 0;"><i class="ti ti-building-warehouse"></i> الرصيد الافتتاحي من المرآة</h3>
-    <p style="font-size:13px;color:var(--text-muted, #888);margin-top:0;">
+<div class="fcard" style="margin-bottom:16px;">
+    <h3 style="margin:0 0 12px 0;"><i class="ti ti-building-store"></i> الرصيد الافتتاحي من المرآة</h3>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:0;">
         يمكن إنشاء وترحيل مستند رصيد افتتاحي من مرآة True مرة واحدة فقط لكل مخزن:
     </p>
     <div style="display:flex;flex-wrap:wrap;gap:10px;">
         <?php foreach ($branches as $b): ?>
             <?php $bId = (int) $b['id']; ?>
-            <div style="border:1px solid var(--line-soft, #ddd);border-radius:8px;padding:10px 14px;background:var(--bg-surface, #fff);display:flex;align-items:center;gap:10px;">
+            <div style="border:1px solid var(--line-soft);border-radius:8px;padding:10px 14px;background:var(--bg-surface);display:flex;align-items:center;gap:10px;">
                 <b><?= e($b['name']) ?></b>
                 <?php if (isset($postedOpenings[$bId])): ?>
                     <span class="fchip fchip-pos">
@@ -198,12 +198,12 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- فورم تسوية مخزنية بسيط للاختبار -->
-<div class="card" style="margin-bottom:16px;">
+<div class="fcard" style="margin-bottom:16px;">
     <h3 style="margin:0 0 12px 0;"><i class="ti ti-adjustments"></i> تسوية مخزنية سريعة (للاختبار)</h3>
     <form id="adjForm" onsubmit="submitAdjust(event)" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">المخزن</label>
-            <select id="adj_branch" required style="padding:6px 10px;border-radius:6px;border:1px solid var(--line-soft, #ddd);">
+            <select class="fselect" id="adj_branch" required>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= (int) $b['id'] ?>"><?= e($b['name']) ?></option>
                 <?php endforeach; ?>
@@ -211,14 +211,14 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">التاريخ</label>
-            <input type="date" id="adj_date" value="<?= date('Y-m-d') ?>" required
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);">
+            <input class="finput" type="date" id="adj_date" value="<?= date('Y-m-d') ?>" required
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);">
         </div>
         <div style="position:relative;">
             <label style="display:block;font-size:12px;margin-bottom:4px;">الباركود / الكود</label>
             <div style="display:flex;gap:4px;">
-                <input type="text" id="adj_code" placeholder="أدخل الباركود..." required
-                       style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:150px;">
+                <input class="finput" type="text" id="adj_code" placeholder="أدخل الباركود..." required
+                       style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:150px;">
                 <button type="button" class="btn btn-sm btn-ghost" onclick="openBarcodeScanner('adj_code')" title="سكانر الكاميرا">
                     <i class="ti ti-scan"></i>
                 </button>
@@ -226,28 +226,28 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">معرّف الصنف (item_id)</label>
-            <input type="number" id="adj_item_id" placeholder="رقم الصنف" required
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:110px;">
+            <input class="finput num" type="number" id="adj_item_id" placeholder="رقم الصنف" required
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:110px;">
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">معامل الوحدة</label>
-            <input type="number" step="0.0001" id="adj_factor" value="1"
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:90px;">
+            <input class="finput num" type="number" step="0.0001" id="adj_factor" value="1"
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:90px;">
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">الكمية بالوحدة (+/-)</label>
-            <input type="number" step="0.001" id="adj_qty" placeholder="+ زيادة / - عجز" required
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:130px;">
+            <input class="finput num" type="number" step="0.001" id="adj_qty" placeholder="+ زيادة / - عجز" required
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:130px;">
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">التكلفة للقطعة (اختياري)</label>
-            <input type="number" step="0.0001" id="adj_cost" placeholder="فارغ = المتوسط"
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:130px;">
+            <input class="finput num" type="number" step="0.0001" id="adj_cost" placeholder="فارغ = المتوسط"
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:130px;">
         </div>
         <div>
             <label style="display:block;font-size:12px;margin-bottom:4px;">ملاحظات</label>
-            <input type="text" id="adj_notes" placeholder="سبب التسوية..."
-                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft, #ddd);width:150px;">
+            <input class="finput" type="text" id="adj_notes" placeholder="سبب التسوية..."
+                   style="padding:5px 8px;border-radius:6px;border:1px solid var(--line-soft);width:150px;">
         </div>
         <div>
             <button type="submit" class="btn btn-primary" <?= !$stockEnabled ? 'disabled title="المخزن مقفول حالياً"' : '' ?>>
@@ -258,11 +258,12 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- جدول المستندات -->
-<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
-        <h3 style="margin:0;"><i class="ti ti-file-text"></i> مستندات المخزن</h3>
-        <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <select name="branch_id" style="padding:4px 8px;border-radius:4px;border:1px solid var(--line-soft, #ddd);">
+<div class="fcard">
+    <div class="fcard-head">
+        <h3 class="fcard-title"><i class="ti ti-file-invoice"></i> مستندات المخزن</h3>
+    </div>
+    <form method="get" class="ffilters">
+            <select class="fselect finput-sm" name="branch_id">
                 <option value="">كل المخازن</option>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= (int) $b['id'] ?>" <?= $filterBranch === (int) $b['id'] ? 'selected' : '' ?>>
@@ -270,23 +271,22 @@ require_once __DIR__ . '/includes/header.php';
                     </option>
                 <?php endforeach; ?>
             </select>
-            <select name="type" style="padding:4px 8px;border-radius:4px;border:1px solid var(--line-soft, #ddd);">
+            <select class="fselect finput-sm" name="type">
                 <option value="">كل الأنواع</option>
                 <?php foreach ($docTypeNames as $k => $lbl): ?>
                     <option value="<?= e($k) ?>" <?= $filterType === $k ? 'selected' : '' ?>><?= e($lbl) ?></option>
                 <?php endforeach; ?>
             </select>
-            <select name="status" style="padding:4px 8px;border-radius:4px;border:1px solid var(--line-soft, #ddd);">
+            <select class="fselect finput-sm" name="status">
                 <option value="">كل الحالات</option>
                 <option value="draft" <?= $filterStatus === 'draft' ? 'selected' : '' ?>>مسودة</option>
                 <option value="posted" <?= $filterStatus === 'posted' ? 'selected' : '' ?>>مرحل</option>
                 <option value="cancelled" <?= $filterStatus === 'cancelled' ? 'selected' : '' ?>>ملغي</option>
             </select>
-            <input type="date" name="from" value="<?= e($filterFrom) ?>" style="padding:3px 6px;border-radius:4px;border:1px solid var(--line-soft, #ddd);">
-            <input type="date" name="to" value="<?= e($filterTo) ?>" style="padding:3px 6px;border-radius:4px;border:1px solid var(--line-soft, #ddd);">
+            <input class="finput finput-sm" type="date" name="from" value="<?= e($filterFrom) ?>">
+            <input class="finput finput-sm" type="date" name="to" value="<?= e($filterTo) ?>">
             <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-filter"></i> تصفية</button>
-        </form>
-    </div>
+    </form>
 
     <div style="overflow-x:auto;">
         <table class="ftable" id="docsTable">
@@ -306,7 +306,7 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php if (empty($docsList)): ?>
                     <tr>
-                        <td colspan="9" style="text-align:center;color:var(--text-muted, #888);padding:24px;">
+                        <td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">
                             لا توجد مستندات مخزنية مسجلة
                         </td>
                     </tr>
@@ -366,7 +366,7 @@ require_once __DIR__ . '/includes/header.php';
             $diffCnt = (int)($c['diff_count'] ?? 0);
             $matchedCnt = (int)($c['matched_count'] ?? 0);
         ?>
-        <div class="card" style="margin:0;padding:12px;border:2px solid <?= $isSelected ? 'var(--accent, #0070f3)' : 'var(--line-soft, #ddd)' ?>;cursor:pointer;position:relative;"
+        <div class="fcard" style="margin:0;padding:12px;border:2px solid <?= $isSelected ? 'var(--accent)' : 'var(--line-soft)' ?>;cursor:pointer;position:relative;"
              onclick="location.href='stock_ledger.php?tab=recon&branch_id=<?= $bId ?>'">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <b style="font-size:15px;"><?= e($b['name']) ?></b>
@@ -374,7 +374,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?= $isMirror ? 'مرآة (mirror)' : 'حي (live)' ?>
                 </span>
             </div>
-            <div style="font-size:12px;color:var(--text-muted, #888);margin-bottom:8px;">
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
                 رصيد True من: <?= e($c['true_updated_at'] ?? '—') ?>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -396,13 +396,13 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <!-- جدول الفروق للمخزن المختار -->
-<div class="card">
+<div class="fcard">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
         <div>
             <h3 style="margin:0 0 4px 0;">
-                <i class="ti ti-arrows-diff"></i> فروق المطابقة — مخزن <?= e($activeRecon['branch_name'] ?? '') ?>
+                <i class="ti ti-transfer"></i> فروق المطابقة — مخزن <?= e($activeRecon['branch_name'] ?? '') ?>
             </h3>
-            <div style="font-size:13px;color:var(--text-muted, #888);">
+            <div style="font-size:13px;color:var(--text-muted);">
                 رصيد True من: <b><?= e($activeRecon['true_updated_at'] ?? '—') ?></b> ·
                 الدفتر لحد: <b><?= e($activeRecon['ledger_updated_at'] ?? '—') ?></b>
             </div>
@@ -464,7 +464,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php if (!empty($diff['has_unknown_unit'])): ?>
                                     <span class="fchip fchip-warn"><i class="ti ti-alert-triangle"></i> نعم (unit:unknown)</span>
                                 <?php else: ?>
-                                    <span style="color:var(--text-muted, #888);">لا</span>
+                                    <span style="color:var(--text-muted);">لا</span>
                                 <?php endif; ?>
                             </td>
                             <td><?= e($diff['last_move_at'] ?: '—') ?></td>
@@ -477,11 +477,11 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php elseif ($tab === 'import'): ?>
-<div class="card">
+<div class="fcard">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
         <div>
-            <h3 style="margin:0 0 4px 0;"><i class="ti ti-history"></i> سجل دورات الاستيراد من True (آخر ٥٠ تشغيل)</h3>
-            <div style="font-size:13px;color:var(--text-muted, #888);">
+            <h3 style="margin:0 0 4px 0;"><i class="ti ti-clock"></i> سجل دورات الاستيراد من True (آخر ٥٠ تشغيل)</h3>
+            <div style="font-size:13px;color:var(--text-muted);">
                 الاستيراد الدوري الآلي (كل ١٠ دقائق عبر الوركر أو عند فتح الشاشة) + الاستيراد اليدوي
             </div>
         </div>
@@ -510,7 +510,7 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php if (empty($importRuns)): ?>
                     <tr>
-                        <td colspan="9" style="text-align:center;color:var(--text-muted, #888);padding:24px;">
+                        <td colspan="9" style="text-align:center;color:var(--text-muted);padding:24px;">
                             لا توجد دورات استيراد مسجلة حتى الآن
                         </td>
                     </tr>
@@ -537,7 +537,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if (!empty($det['errors'])) {
                                         echo '<span style="color:var(--neg, red);">' . e(count($det['errors']) . ' خطأ: ' . ($det['errors'][0]['error'] ?? '')) . '</span>';
                                     } else {
-                                        echo '<span style="color:var(--text-muted, #888);">نجح بدون أخطاء</span>';
+                                        echo '<span style="color:var(--text-muted);">نجح بدون أخطاء</span>';
                                     }
                                 ?>
                             </td>
@@ -552,8 +552,8 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- Modal لعرض المستند وسجله وحركاته -->
 <div id="docModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;padding:20px;">
-    <div style="background:var(--bg-surface, #fff);border-radius:10px;width:100%;max-width:960px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 25px rgba(0,0,0,0.3);overflow:hidden;">
-        <div style="padding:14px 20px;border-bottom:1px solid var(--line-soft, #ddd);display:flex;justify-content:space-between;align-items:center;">
+    <div style="background:var(--bg-surface);border-radius:10px;width:100%;max-width:960px;max-height:90vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden;">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--line-soft);display:flex;justify-content:space-between;align-items:center;">
             <h3 id="modalTitle" style="margin:0;"><i class="ti ti-file-invoice"></i> تفاصيل المستند</h3>
             <button type="button" class="btn btn-sm btn-ghost" onclick="closeDocModal()"><i class="ti ti-x"></i></button>
         </div>
@@ -704,7 +704,7 @@ async function viewDoc(docId) {
             : (doc.status === 'cancelled' ? '<span class="fchip fchip-neg">ملغي</span>' : `<span class="fchip">${esc(doc.status)}</span>`));
 
         let html = `
-            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:16px;background:var(--bg-main, #f8f9fa);padding:14px;border-radius:8px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px;margin-bottom:16px;background:var(--bg-main);padding:14px;border-radius:8px;">
                 <div><b>المعرف:</b> #${esc(doc.id)}</div>
                 <div><b>النوع:</b> ${esc(doc.doc_type)}</div>
                 <div><b>الرقم:</b> ${esc(doc.doc_no || '—')} / ${esc(doc.doc_year || '—')}</div>
@@ -749,7 +749,7 @@ async function viewDoc(docId) {
                 </table>
             </div>
 
-            <h4 style="margin:16px 0 8px 0;"><i class="ti ti-history"></i> حركات الدفتر (stock_moves: ${moves.length})</h4>
+            <h4 style="margin:16px 0 8px 0;"><i class="ti ti-clock"></i> حركات الدفتر (stock_moves: ${moves.length})</h4>
             <div style="overflow-x:auto;margin-bottom:16px;">
                 <table class="ftable">
                     <thead>
@@ -765,7 +765,7 @@ async function viewDoc(docId) {
                         </tr>
                     </thead>
                     <tbody>
-                        ${moves.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:#888;">لا توجد حركات مسجلة للمستند</td></tr>' :
+                        ${moves.length === 0 ? '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">لا توجد حركات مسجلة للمستند</td></tr>' :
                         moves.map(m => `
                             <tr>
                                 <td class="num">${esc(m.id)}</td>
@@ -784,7 +784,7 @@ async function viewDoc(docId) {
                 </table>
             </div>
 
-            <h4 style="margin:16px 0 8px 0;"><i class="ti ti-notes"></i> سجل المستند (doc_events: ${events.length})</h4>
+            <h4 style="margin:16px 0 8px 0;"><i class="ti ti-note"></i> سجل المستند (doc_events: ${events.length})</h4>
             <div style="overflow-x:auto;">
                 <table class="ftable">
                     <thead>

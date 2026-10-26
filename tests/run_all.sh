@@ -74,6 +74,14 @@ else
 fi
 
 echo
+echo "== مكتبة الواجهة الموحّدة =="
+if [ -n "$PY" ]; then
+    PYTHONIOENCODING=utf-8 $PY tests/check_ui.py || FAIL=1
+else
+    echo "  ⚠️ مفيش بايثون — فحص الواجهة ما اتعملش"
+fi
+
+echo
 echo "== فحص الأمان =="
 bash tests/check_security.sh || FAIL=1
 
