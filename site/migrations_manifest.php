@@ -21,4 +21,5 @@ return [
     '20261025_011_purchase_docs',
     '20261025_012_stock_import_log',
     '20261025_013_reopen_shift_651',
+    '20261026_014_cancel_dup_shift_386',
 ];
