@@ -13,38 +13,14 @@ require_once __DIR__ . '/calls_lib.php';
 require_permission('calls');
 
 $pdo = db();
-
-// حفظ مهلة المتابعة عبر POST للمالك فقط
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_followup_minutes') {
-    header('Content-Type: application/json; charset=utf-8');
-    if (!is_owner()) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'غير مصرح.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    $csrf = (string)($_POST['csrf'] ?? '');
-    if (!csrf_verify($csrf)) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'رمز التحقق غير صالح.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    $mins = (int)($_POST['minutes'] ?? 0);
-    if ($mins < 5 || $mins > 240) {
-        http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'المهلة يجب أن تكون بين ٥ و ٢٤٠ دقيقة.'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    $ok = calls_set_followup_minutes($pdo, $mins);
-    echo json_encode(['ok' => $ok, 'minutes' => $mins], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-$branches = calls_get_branches($pdo);
 $isOwner = is_owner();
 $userBranchId = (int)($_SESSION['user']['branch_id'] ?? 0);
+$branchScope = calls_resolve_branch_scope($pdo, $isOwner, $userBranchId, $_GET);
+$branches = $branchScope['branches'];
+$selectedBranch = $branchScope['selected_branch'];
 
 // التحقق من ربط حساب غير المالك بفرع
-if (!$isOwner && $userBranchId <= 0) {
+if ($branchScope['branch_missing']) {
     $active_module = 'calls';
     $page_title = 'متابعة المكالمات';
     require_once __DIR__ . '/includes/header.php';
@@ -56,50 +32,11 @@ if (!$isOwner && $userBranchId <= 0) {
     exit;
 }
 
-// تحديد الفرع المفلتر في السيرفر
-if ($isOwner) {
-    $bParam = isset($_GET['branch']) ? (int)$_GET['branch'] : 0;
-    $selectedBranch = ($bParam > 0 && isset($branches[$bParam])) ? $bParam : null;
-} else {
-    // غير المالك يشوف فرعه بس دايماً وأي رابط يتجاهل
-    $selectedBranch = $userBranchId;
-}
-
 // فلتر الفترة
-$period = (string)($_GET['period'] ?? 'today');
-$validPeriods = ['today', 'yesterday', '7days', '30days', 'custom'];
-if (!in_array($period, $validPeriods, true)) {
-    $period = 'today';
-}
-
-$todayDate = date('Y-m-d');
-switch ($period) {
-    case 'yesterday':
-        $dateFrom = date('Y-m-d', strtotime('-1 day'));
-        $dateTo   = $dateFrom;
-        break;
-    case '7days':
-        $dateFrom = date('Y-m-d', strtotime('-6 days'));
-        $dateTo   = $todayDate;
-        break;
-    case '30days':
-        $dateFrom = date('Y-m-d', strtotime('-29 days'));
-        $dateTo   = $todayDate;
-        break;
-    case 'custom':
-        $dateFrom = !empty($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$_GET['from'])
-            ? (string)$_GET['from']
-            : $todayDate;
-        $dateTo = !empty($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$_GET['to'])
-            ? (string)$_GET['to']
-            : $todayDate;
-        break;
-    case 'today':
-    default:
-        $dateFrom = $todayDate;
-        $dateTo   = $todayDate;
-        break;
-}
+$periodFilter = calls_resolve_period($_GET);
+$period = $periodFilter['period'];
+$dateFrom = $periodFilter['date_from'];
+$dateTo = $periodFilter['date_to'];
 
 // التابات الثلاثة
 $view = (string)($_GET['view'] ?? 'missed');
@@ -124,22 +61,7 @@ if ($view === 'missed') {
 
 // دالة مساعدة لبناء الروابط
 $buildUrl = function (array $overrides) use ($view, $period, $selectedBranch, $dateFrom, $dateTo, $isOwner): string {
-    $params = [
-        'view'   => $overrides['view'] ?? $view,
-        'period' => $overrides['period'] ?? $period,
-    ];
-    if ($isOwner) {
-        $b = array_key_exists('branch', $overrides) ? $overrides['branch'] : $selectedBranch;
-        if ($b !== null && $b > 0) {
-            $params['branch'] = $b;
-        }
-    }
-    $p = $overrides['period'] ?? $period;
-    if ($p === 'custom') {
-        $params['from'] = $overrides['from'] ?? $dateFrom;
-        $params['to']   = $overrides['to'] ?? $dateTo;
-    }
-    return 'calls.php?' . http_build_query($params);
+    return calls_build_url($overrides, $view, $period, $selectedBranch, $dateFrom, $dateTo, $isOwner);
 };
 
 $active_module = 'calls';
@@ -431,11 +353,10 @@ require_once __DIR__ . '/includes/header.php';
         fd.append('minutes', val);
         fd.append('csrf', inp.getAttribute('data-csrf') || '');
 
-        fetch('calls.php', {
+        apiFetch('calls_api.php', {
             method: 'POST',
             body: fd
         })
-        .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.ok) {
                 lastVal = val;

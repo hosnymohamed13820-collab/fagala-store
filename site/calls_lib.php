@@ -6,6 +6,110 @@
 declare(strict_types=1);
 
 /**
+ * تحديد فرع العرض بنفس قواعد صفحة المكالمات والـAPI.
+ *
+ * @return array{branches: array<int,string>, selected_branch: ?int, branch_missing: bool}
+ */
+function calls_resolve_branch_scope(PDO $pdo, bool $isOwner, int $userBranchId, array $input): array
+{
+    $branches = calls_get_branches($pdo);
+
+    if (!$isOwner) {
+        return [
+            'branches'       => $branches,
+            'selected_branch' => $userBranchId > 0 ? $userBranchId : null,
+            'branch_missing' => $userBranchId <= 0,
+        ];
+    }
+
+    $branchParam = isset($input['branch']) ? (int) $input['branch'] : 0;
+    return [
+        'branches'       => $branches,
+        'selected_branch' => ($branchParam > 0 && isset($branches[$branchParam])) ? $branchParam : null,
+        'branch_missing' => false,
+    ];
+}
+
+/**
+ * فلتر الفترة بنفس السلوك القديم للصفحة.
+ *
+ * @return array{period: string, date_from: string, date_to: string}
+ */
+function calls_resolve_period(array $input): array
+{
+    $period = (string) ($input['period'] ?? 'today');
+    $validPeriods = ['today', 'yesterday', '7days', '30days', 'custom'];
+    if (!in_array($period, $validPeriods, true)) {
+        $period = 'today';
+    }
+
+    $todayDate = date('Y-m-d');
+    switch ($period) {
+        case 'yesterday':
+            $dateFrom = date('Y-m-d', strtotime('-1 day'));
+            $dateTo   = $dateFrom;
+            break;
+        case '7days':
+            $dateFrom = date('Y-m-d', strtotime('-6 days'));
+            $dateTo   = $todayDate;
+            break;
+        case '30days':
+            $dateFrom = date('Y-m-d', strtotime('-29 days'));
+            $dateTo   = $todayDate;
+            break;
+        case 'custom':
+            $dateFrom = !empty($input['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $input['from'])
+                ? (string) $input['from']
+                : $todayDate;
+            $dateTo = !empty($input['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $input['to'])
+                ? (string) $input['to']
+                : $todayDate;
+            break;
+        case 'today':
+        default:
+            $dateFrom = $todayDate;
+            $dateTo   = $todayDate;
+            break;
+    }
+
+    return [
+        'period'    => $period,
+        'date_from' => $dateFrom,
+        'date_to'   => $dateTo,
+    ];
+}
+
+/**
+ * بناء روابط فلاتر الصفحة من غير ما يبقى في ملف العرض أي استدعاء يطابق فحص SQL.
+ */
+function calls_build_url(
+    array $overrides,
+    string $view,
+    string $period,
+    ?int $selectedBranch,
+    string $dateFrom,
+    string $dateTo,
+    bool $isOwner
+): string {
+    $params = [
+        'view'   => $overrides['view'] ?? $view,
+        'period' => $overrides['period'] ?? $period,
+    ];
+    if ($isOwner) {
+        $branch = array_key_exists('branch', $overrides) ? $overrides['branch'] : $selectedBranch;
+        if ($branch !== null && $branch > 0) {
+            $params['branch'] = $branch;
+        }
+    }
+    $targetPeriod = $overrides['period'] ?? $period;
+    if ($targetPeriod === 'custom') {
+        $params['from'] = $overrides['from'] ?? $dateFrom;
+        $params['to']   = $overrides['to'] ?? $dateTo;
+    }
+    return 'calls.php?' . http_build_query($params);
+}
+
+/**
  * توحيد رقم التليفون
  * - إزالة أي مسافات أو حروف أو رموز
  * - تحويل الأرقام بصيغة 0020... أو 20... (12 رقم) إلى 0...
