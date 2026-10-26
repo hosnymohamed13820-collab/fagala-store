@@ -1,0 +1,24 @@
+# tests/api_first_legacy.txt
+# صفحات قديمة لسه فيها SQL — ممنوع يزيد عددها وممنوع صفحة جديدة تدخل.
+# الصيغة: page.php  عدد-الاستعلامات  # ملاحظة
+# اتطلّع بـ: python tests/check_api_first.py --dump
+
+attendance.php	3
+book_reserve.php	1
+branch_recon.php	2
+cashier.php	15
+custody.php	5
+definitions.php	24
+hr.php	30
+invoices.php	7
+ops.php	1
+purchase_groups.php	1
+reports.php	12
+review.php	10
+settings.php	5
+shortage.php	1
+sms_inbox.php	7
+stocktake.php	2
+tasks.php	2
+treasury.php	2
+users.php	27

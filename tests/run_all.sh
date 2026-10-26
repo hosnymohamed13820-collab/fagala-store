@@ -62,6 +62,18 @@ else
 fi
 
 echo
+echo "== أي صفحة جديدة API-first (RULES قاعدة ٩) =="
+# محمد (٢٦ أكتوبر ٢٠٢٦): «اتأكد إن أي صفحة جديدة تتعمل بالطريقة الجديدة».
+# القاعدة ٩ (مفيش SQL في ملف الصفحة) كانت مكتوبة بس محدش بيمسكها أوتوماتيك.
+# الصفحة القديمة اللي لسه فيها SQL مسموحة بعددها الحالي في
+# tests/api_first_legacy.txt — لو زاد = فشل، ولو نقص = حدّث الملف.
+if [ -n "$PY" ]; then
+    PYTHONIOENCODING=utf-8 $PY tests/check_api_first.py || FAIL=1
+else
+    echo "  ⚠️ مفيش بايثون — فحص الـAPI-first ما اتعملش"
+fi
+
+echo
 echo "== فحص الأمان =="
 bash tests/check_security.sh || FAIL=1
 
