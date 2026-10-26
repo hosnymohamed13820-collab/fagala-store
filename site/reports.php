@@ -43,6 +43,10 @@ if (empty($allowedTypes)) {
 
 // تحديد نوع التقرير النشط: لو طلب نوع مسموح يفتحه، لو مالوش صلاحيته (أو مبعتش) يتحوّل لأول نوع مسموح له
 $requestedType = (string)($_GET['type'] ?? '');
+if ($requestedType === 'dist_invoices' && !isset($allowedTypes['dist_invoices'])) {
+    http_response_code(403);
+    exit('غير مصرح');
+}
 if (in_array($requestedType, ['insta_recon', 'stock_recon', 'stock_movement'], true) && !is_owner()) {
     http_response_code(403);
     exit('غير مصرح');
@@ -382,7 +386,7 @@ if ($export && $type !== 'stocktake' && $type !== 'customers' && $type !== 'supp
 }
 
 $reportTypes = [
-    'sales'=>'المبيعات','insta_recon'=>'مطابقة إنستاباي','treasury'=>'الخزينة','expenses'=>'المصاريف','jtotals'=>'إجماليات القيود','custody'=>'العهد',
+    'sales'=>'المبيعات','insta_recon'=>'مطابقة إنستاباي','treasury'=>'الخزينة','expenses'=>'المصاريف','dist_invoices'=>'الفواتير الموزّعة','jtotals'=>'إجماليات القيود','custody'=>'العهد',
     'deficits'=>'العجوزات',
     'suppliers'=>'الموردين','salaries'=>'الرواتب','advances'=>'السلف','attendance'=>'الحضور','attendance_totals'=>'إجمالي الحضور',
     'stocktake'=>'الجرد','noprice'=>'أصناف بدون سعر بيع','customers'=>'داتا العملاء','receiving'=>'استلام الفواتير',
@@ -395,6 +399,11 @@ $reportTypes = [
     'stock_recon'=>'مطابقة المخزن مع True',
     'stock_movement'=>'حركة الأصناف المخزنية',
 ];
+
+$distFilterOptions = ['branches' => [], 'suppliers' => []];
+if ($type === 'dist_invoices') {
+    $distFilterOptions = dr_filter_options();
+}
 
 // بيانات تقرير «مشتريات مورد»
 $spReport = null;
@@ -723,6 +732,12 @@ require_once __DIR__ . '/includes/header.php';
     .acc-inner th { background:var(--line-soft); font-size:12px; }
     .acc-inner td, .acc-inner th { padding:7px 10px; font-size:12.5px; }
     .acc-msg { padding:14px; text-align:center; color:var(--ink-400); font-size:13px; }
+    tr.dist-row { cursor:pointer; }
+    tr.dist-row:hover, tr.dist-row.open { background:var(--accent-soft); }
+    tr.dist-body > td { background:var(--line-soft); padding:0; }
+    .dist-inner { padding:12px 16px; overflow-x:auto; }
+    .dist-inner .ftable { background:var(--surface); }
+    .dist-item-name { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
     /* أزرار الفروع في تقرير العهدة */
     .br-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
     .br-tab { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
@@ -908,6 +923,33 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endforeach; ?>
         </select>
     <?php endif; ?>
+    <?php if ($type === 'dist_invoices'):
+        $selDistBranch = (int) ($_GET['branch'] ?? 0);
+        $selDistSupplier = (int) ($_GET['supplier_id'] ?? 0);
+        $selDistStatus = (string) ($_GET['status'] ?? '');
+    ?>
+        <label>الفرع</label>
+        <select name="branch">
+            <option value="">كل الفروع</option>
+            <?php foreach ($distFilterOptions['branches'] as $branchOption): ?>
+                <option value="<?= (int) $branchOption['id'] ?>" <?= $selDistBranch === (int) $branchOption['id'] ? 'selected' : '' ?>><?= e($branchOption['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>المورد</label>
+        <select name="supplier_id">
+            <option value="">كل الموردين</option>
+            <?php foreach ($distFilterOptions['suppliers'] as $supplierOption): ?>
+                <option value="<?= (int) $supplierOption['id'] ?>" <?= $selDistSupplier === (int) $supplierOption['id'] ? 'selected' : '' ?>><?= e($supplierOption['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label>الحالة</label>
+        <select name="status">
+            <option value="">كل الحالات</option>
+            <option value="new" <?= $selDistStatus === 'new' ? 'selected' : '' ?>>جديدة</option>
+            <option value="split" <?= $selDistStatus === 'split' ? 'selected' : '' ?>>متقسّمة</option>
+            <option value="done" <?= $selDistStatus === 'done' ? 'selected' : '' ?>>تمت</option>
+        </select>
+    <?php endif; ?>
     <?php if ($type === 'deficits'): $selDefStatus = $_GET['status'] ?? ''; ?>
         <label>الحالة</label>
         <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
@@ -980,7 +1022,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
-    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts' || $type==='purchase_docs' || $type==='purchase_by_item') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= ($type==='purchase_docs' || $type==='purchase_by_item') && !empty($_GET['supplier_id']) ? '&supplier_id='.(int)$_GET['supplier_id'] : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
+    <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts' || $type==='purchase_docs' || $type==='purchase_by_item' || $type==='dist_invoices') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= ($type==='purchase_docs' || $type==='purchase_by_item' || $type==='dist_invoices') && !empty($_GET['supplier_id']) ? '&supplier_id='.(int)$_GET['supplier_id'] : '' ?><?= $type==='dist_invoices' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
         <i class="ti ti-download"></i> تصدير إكسل
     </a>
 </form>
@@ -2477,7 +2519,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 ?>
                 <div class="sum-card" data-card="<?= (int)$ci ?>">
                     <div class="sc-label"><?= e($cd['label']) ?></div>
-                    <div class="sc-value"><?= (!empty($cd['int']) || !empty($cd['count'])) ? number_format($t) : number_format($t, 2) ?></div>
+                    <div class="sc-value"><?= !empty($cd['qty']) ? rtrim(rtrim(number_format($t, 10, '.', ','), '0'), '.') : ((!empty($cd['int']) || !empty($cd['count'])) ? number_format($t) : number_format($t, 2)) ?></div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -2578,11 +2620,71 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             cell.innerHTML = '<div class="acc-msg">' + (ex.message || 'الاتصال فشل') + '</div>';
         });
     }
+
+    function distToggle(tr) {
+        var body = tr.nextElementSibling;
+        if (!body || !body.classList.contains('dist-body')) return;
+
+        var isOpen = !body.hidden;
+        if (isOpen) {
+            body.hidden = true;
+            tr.classList.remove('open');
+            tr.setAttribute('aria-expanded', 'false');
+            return;
+        }
+
+        body.hidden = false;
+        tr.classList.add('open');
+        tr.setAttribute('aria-expanded', 'true');
+        if (tr.dataset.loaded === '1') return;
+
+        var cell = body.firstElementChild;
+        cell.innerHTML = '<div class="acc-msg">جارِ تحميل الأصناف...</div>';
+        apiFetch('reports_api.php?type=dist_invoices&part=items&dist_id=' + encodeURIComponent(tr.dataset.distId))
+            .then(function (reply) {
+                var data = reply.data || {};
+                var branches = data.branches || {};
+                var branchIds = Object.keys(branches).sort(function (a, b) { return Number(a) - Number(b); });
+                var items = data.items || [];
+                if (!items.length) {
+                    cell.innerHTML = '<div class="acc-msg">الفاتورة دي مافيهاش كميات موزّعة.</div>';
+                    tr.dataset.loaded = '1';
+                    return;
+                }
+                var esc = function (value) {
+                    return String(value == null ? '' : value).replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                };
+                var qty = function (value) {
+                    return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 20 });
+                };
+                var html = '<div class="dist-inner"><table class="ftable" data-xt-off><thead><tr>' +
+                    '<th>الصنف</th><th>الكود</th>';
+                branchIds.forEach(function (branchId) {
+                    html += '<th class="num">' + esc(branches[branchId]) + '</th>';
+                });
+                html += '<th class="num">الإجمالي</th></tr></thead><tbody>';
+                items.forEach(function (item) {
+                    html += '<tr><td class="dist-item-name" title="' + esc(item.name) + '">' + esc(item.name) + '</td>' +
+                        '<td>' + esc(item.code) + '</td>';
+                    branchIds.forEach(function (branchId) {
+                        html += '<td class="num">' + qty((item.qty_by_branch || {})[branchId]) + '</td>';
+                    });
+                    html += '<td class="num">' + qty(item.qty_total) + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+                cell.innerHTML = html;
+                tr.dataset.loaded = '1';
+            })
+            .catch(function (error) {
+                cell.innerHTML = '<div class="acc-msg">' + (error.message || 'معرفناش نحمّل الأصناف.') + '</div>';
+            });
+    }
     </script>
 
-    <table data-xt-min="1"<?= $type === 'insta_recon' ? ' data-xt-nosort class="ftable"' : '' ?>>
+    <table data-xt-min="1"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort class="ftable"' : '' ?>>
         <thead>
-            <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
+            <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= in_array($hi, $report['num_cols'] ?? [], true) ? ' class="num"' : '' ?><?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>
         <tbody>
             <?php foreach ($report['rows'] as $ri => $row): ?>
@@ -2594,14 +2696,18 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 $brId    = is_array($rowMeta) ? (int)($rowMeta['branch'] ?? 0) : 0;
                 $trClasses = [];
                 if ($isAcc) $trClasses[] = 'acc-row';
+                $isDist = $type === 'dist_invoices' && $rowMeta !== null;
+                if ($isDist) $trClasses[] = 'dist-row';
                 if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $trClassAttr ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?><?= $isDist ? ' data-dist-id="'.(int)$rowMeta.'" tabindex="0" role="button" aria-expanded="false" onclick="distToggle(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();distToggle(this);}"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($type === 'insta_recon' && $ci === 8): ?>
                         <td><span class="fchip <?= $cell === 'مطابق' ? 'fchip-pos' : 'fchip-warn' ?>"><?= e((string)$cell) ?></span></td>
+                    <?php elseif ($type === 'dist_invoices' && $ci === ($report['status_col'] ?? -1)): ?>
+                        <td><span class="fchip <?= $cell === 'تمت' ? 'fchip-pos' : ($cell === 'متقسّمة' ? 'fchip-warn' : 'fchip-mute') ?>"><?= e((string)$cell) ?></span></td>
                     <?php elseif ($isAcc && $ci === 0): ?>
                         <td><span class="acc-caret">&#9656;</span> <?= e((string)$cell) ?></td>
                     <?php elseif ($type === 'deficits' && $ci === 5 && $cell !== '—'): ?>
@@ -2623,10 +2729,17 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                 <?= e($report['row_paths'][$ri]) ?>
                             </div>
                         </td>
+                    <?php elseif (in_array($ci, $report['num_cols'] ?? [], true)): ?>
+                        <td class="num"><?= e((string)$cell) ?></td>
                     <?php else: ?>
                         <td><?= e((string)$cell) ?></td>
                     <?php endif; ?>
                 <?php endforeach; ?></tr>
+                <?php if ($isDist): ?>
+                    <tr class="dist-body" data-xt-ignore data-xt-nosort hidden>
+                        <td colspan="<?= count($report['headers']) ?>"></td>
+                    </tr>
+                <?php endif; ?>
                 <?php if ($type === 'insta_recon'): ?>
                     <tr data-xt-ignore data-xt-nosort hidden>
                         <td colspan="<?= count($report['headers']) ?>">
@@ -2762,7 +2875,8 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         return isNaN(v) ? 0 : v;
     }
 
-    function fmt(v, isInt) {
+    function fmt(v, isInt, isQty) {
+        if (isQty) return v.toLocaleString('en-US', { maximumFractionDigits: 20 });
         return isInt
             ? v.toLocaleString('en-US', { maximumFractionDigits: 0 })
             : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -2775,7 +2889,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             var minus = cd.minus || [];        // أعمدة بتتطرح (الصافي)
             if (cd.count) {                    // كارت عدّاد: عدد الصفوف الظاهرة
                 var el0 = box.querySelector('[data-card="' + i + '"] .sc-value');
-                if (el0) { el0.textContent = fmt(rows.length, true);
+                if (el0) { el0.textContent = fmt(rows.length, true, false);
                            el0.classList.remove('neg','pos'); }
                 continue;
             }
@@ -2792,7 +2906,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             }
             var el = box.querySelector('[data-card="' + i + '"] .sc-value');
             if (!el) continue;
-            el.textContent = fmt(sum, !!cd.int);
+            el.textContent = fmt(sum, !!cd.int, !!cd.qty);
             el.classList.remove('neg', 'pos');
             if (cd.signed && sum < 0) el.classList.add('neg');
             else if (cd.signed && sum > 0) el.classList.add('pos');

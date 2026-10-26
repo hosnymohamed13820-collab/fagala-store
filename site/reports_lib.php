@@ -10,6 +10,7 @@ require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/sms_lib.php';
 require_once __DIR__ . '/cashier_lib.php';
 require_once __DIR__ . '/purchase_doc_lib.php';
+require_once __DIR__ . '/dist_report_lib.php';
 
 /** آخر رصيد محفوظ قبل الفترة لنفس الخزنة؛ لا نعيد حساب أرصدة القيود. */
 function treasury_prior_balance(PDO $pdo, int $treasuryId, string $from, bool $showCancelled = false): float {
@@ -676,6 +677,68 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             }
             return ['title'=>'تقرير العهد','headers'=>['من','إلى','الفرع','أول المدة','المصروفات','آخر المدة','المعدود','الفرق','الحالة'],
                 'rows'=>$rows,'totals'=>[]];
+
+        case 'dist_invoices':
+            $branchId = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int) $_GET['branch'] : null;
+            $supplierFilter = $_GET['supplier_id'] ?? ($_GET['supplier'] ?? null);
+            $supplierId = $supplierFilter !== null && $supplierFilter !== '' ? (int) $supplierFilter : null;
+            $status = isset($_GET['status']) && $_GET['status'] !== '' ? (string) $_GET['status'] : null;
+            $data = dr_invoices($from, $to, $branchId, $supplierId, $status);
+            $statusLabels = ['new' => 'جديدة', 'split' => 'متقسّمة', 'done' => 'تمت'];
+
+            $headers = ['التاريخ', 'رقم الفاتورة', 'المورد', 'الحالة', 'عدد الأصناف'];
+            foreach ($data['branches'] as $branchName) {
+                $headers[] = $branchName;
+            }
+            $headers[] = 'إجمالي الكمية';
+            $headers[] = 'قيمة الفاتورة';
+
+            $rows = [];
+            $rowIds = [];
+            $amountTotal = 0.0;
+            foreach ($data['invoices'] as $invoice) {
+                $row = [
+                    $invoice['dist_date'],
+                    $invoice['invoice_no'] !== '' ? $invoice['invoice_no'] : ('#' . $invoice['id']),
+                    $invoice['supplier_name'],
+                    $statusLabels[$invoice['status']] ?? $invoice['status'],
+                    (string) $invoice['items_count'],
+                ];
+                foreach ($data['branches'] as $branchIdKey => $_branchName) {
+                    $row[] = (string) dr_qty($invoice['qty_by_branch'][$branchIdKey] ?? 0);
+                }
+                $row[] = (string) dr_qty($invoice['qty_total']);
+                $row[] = number_format((float) $invoice['total_amount'], 2);
+                $rows[] = $row;
+                $rowIds[] = $invoice['id'];
+                $amountTotal += (float) $invoice['total_amount'];
+            }
+
+            $firstBranchCol = 5;
+            $qtyTotalCol = $firstBranchCol + count($data['branches']);
+            $amountCol = $qtyTotalCol + 1;
+            $sumCards = [
+                ['label' => 'عدد الفواتير', 'count' => true],
+                ['label' => 'إجمالي الكميات', 'col' => $qtyTotalCol, 'qty' => true],
+            ];
+            foreach (array_values($data['branches']) as $offset => $branchName) {
+                $sumCards[] = ['label' => 'إجمالي ' . $branchName, 'col' => $firstBranchCol + $offset, 'qty' => true];
+            }
+
+            $totals = array_fill(0, count($headers), '');
+            $totals[0] = 'الإجمالي';
+            $totals[$amountCol] = number_format($amountTotal, 2);
+            return [
+                'title' => 'تقرير الفواتير الموزّعة',
+                'headers' => $headers,
+                'rows' => $rows,
+                'row_ids' => $rowIds,
+                'sum_cards' => $sumCards,
+                'totals' => $totals,
+                'num_cols' => array_merge(range(4, $qtyTotalCol), [$amountCol]),
+                'status_col' => 3,
+                'dist_branches' => $data['branches'],
+            ];
 
         case 'expenses':
             // المصاريف = كل صرف نقدي من الخزائن في الفترة.

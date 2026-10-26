@@ -189,6 +189,7 @@ function module_parts(): array
             'insta_recon' => 'مطابقة إنستاباي',
             'treasury'   => 'الخزينة',
             'expenses'   => 'المصاريف',
+            'dist_invoices' => 'الفواتير الموزّعة',
             'jtotals'    => 'إجماليات القيود',
             'custody'    => 'العهد',
             'deficits'   => 'العجوزات',

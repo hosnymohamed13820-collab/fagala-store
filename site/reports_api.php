@@ -25,7 +25,7 @@ require_once __DIR__ . '/reports_lib.php';
 
 $part = (string) ($_GET['part'] ?? ($_POST['part'] ?? ''));
 
-if ($part !== 'report') {
+if (!in_array($part, ['report', 'items'], true)) {
     api_fail('جزء غير معروف (part)', 400, 'bad_request');
 }
 
@@ -56,6 +56,7 @@ $allowedTypes = [
     'salaries',
     'advances',
     'daily',
+    'dist_invoices',
 ];
 
 if (!in_array($type, $allowedTypes, true)) {
@@ -78,6 +79,19 @@ if ($type === 'daily') {
     }
 } else {
     api_require('reports:' . $type);
+}
+
+if ($part === 'items') {
+    if ($type !== 'dist_invoices') {
+        api_fail('الجزء ده متاح لتقرير الفواتير الموزّعة بس', 400, 'bad_request');
+    }
+    $distId = (int) ($_GET['dist_id'] ?? 0);
+    $items = dr_items($distId);
+    if (!$items['found']) {
+        api_fail('الفاتورة دي مش موجودة', 404, 'not_found');
+    }
+    unset($items['found']);
+    api_ok($items);
 }
 
 // التواريخ الافتراضية مطابقة لصفحة reports.php
@@ -105,6 +119,7 @@ switch ($type) {
     case 'suppliers':
     case 'salaries':
     case 'advances':
+    case 'dist_invoices':
         api_ok(build_report($pdo, $type, $from, $to));
 
     case 'customers':
