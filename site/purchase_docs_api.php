@@ -95,7 +95,12 @@ if ($method === 'GET') {
         $supplierId = (int) ($_GET['supplier_id'] ?? 0);
         $st = $pdo->prepare('SELECT id,doc_no,doc_year,doc_date,ref_text,total_amount FROM stock_docs WHERE doc_type=\'purchase\' AND status=\'posted\' AND branch_id=? AND supplier_id=? ORDER BY doc_date DESC,id DESC LIMIT 100');
         $st->execute([$branchId,$supplierId]);
-        api_ok(['origins'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
+        $origins = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (!sens_unlocked()) {
+            foreach ($origins as &$origin) $origin['total_amount'] = null;
+            unset($origin);
+        }
+        api_ok(['origins'=>$origins]);
     }
     if ($action === 'return_available') {
         api_require('purchase_docs:create');

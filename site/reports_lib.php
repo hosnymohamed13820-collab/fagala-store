@@ -314,6 +314,9 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $docs = $st->fetchAll(PDO::FETCH_ASSOC);
             $postedIds = array_column(array_filter($docs, static fn($doc) => $doc['status'] === 'posted'), 'id');
             $matches = purchase_match_hq($pdo,$postedIds);
+            $amountsUnlocked = sens_unlocked();
+            $maskedAmount = strip_tags(sens_mask(''));
+            if (!$amountsUnlocked && isset($_GET['export'])) $maskedAmount = '—';
             $rows=[]; $links=[]; $purchases=0.0; $returns=0.0;
             foreach($docs as $d){
                 $amount=round((float)$d['total_amount'],2);
@@ -325,12 +328,12 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
                 $number=$d['doc_no']!==null?$d['doc_year'].'/'.$d['doc_no']:'مسودة-'.$d['id'];
                 $rows[]=[
                     $number,$d['doc_date'],$d['doc_type']==='purchase'?'شراء':'مرتجع',
-                    $d['supplier_name'],$d['branch_name'],$d['ref_text']?:'—',(int)$d['lines_count'],number_format($amount,2),$status,
+                    $d['supplier_name'],$d['branch_name'],$d['ref_text']?:'—',(int)$d['lines_count'],$amountsUnlocked?number_format($amount,2):$maskedAmount,$status,
                     $d['status']!=='posted'?'—':($state==='matched'?'متطابقة':($state==='ambiguous'?'مطابقة مش أكيدة':'مش لاقي')),
                 ];
                 $links[]='purchase_docs.php?id='.(int)$d['id'];
             }
-            return ['title'=>'تقرير مستندات الشراء','headers'=>['المستند','التاريخ','النوع','المورد','المخزن','فاتورة المورد','الأصناف','القيمة','الحالة','في True؟'],'rows'=>$rows,'row_links'=>$links,'num_cols'=>[6,7],'totals'=>['صافي المرحّل','','','','','','',number_format($purchases-$returns,2),'','']];
+            return ['title'=>'تقرير مستندات الشراء','headers'=>['المستند','التاريخ','النوع','المورد','المخزن','فاتورة المورد','الأصناف','القيمة','الحالة','في True؟'],'rows'=>$rows,'row_links'=>$links,'num_cols'=>[6,7],'totals'=>['صافي المرحّل','','','','','','',$amountsUnlocked?number_format($purchases-$returns,2):$maskedAmount,'','']];
 
         case 'purchase_by_item':
             $owner = is_real_owner();
