@@ -5,8 +5,18 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/item_classes_lib.php';
 
 const IM_PAGE_SIZE = 20;
+
+/** خانات التصنيف الخمسة في item_master ← النوع بتاعها في item_classes. */
+const IM_CAT_KINDS = [
+    'cat_is1_id'       => 'section',
+    'cat_description_id' => 'description',
+    'cat_type_id'      => 'type',
+    'cat_stage_id'     => 'stage',
+    'cat_company_id'   => 'company',
+];
 
 /** @return string[] */
 function im_words(string $q): array
@@ -70,10 +80,14 @@ function im_search(string $q, int $page): array
     return ['rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'page' => $page, 'pages' => $pages, 'total' => $total];
 }
 
-/** @return array<int,array{is1_id:int,name:string}> */
-function im_categories(): array
+/**
+ * اختيارات التصنيفات الخمسة لكارت الصنف — النشط بس (بريف ٢٣٤).
+ *
+ * @return array{kinds:array<string,string>,options:array<string,array<int,array{id:int,name:string}>>}
+ */
+function im_class_options(): array
 {
-    return db()->query('SELECT is1_id,name FROM hq_cat_names ORDER BY name,is1_id')->fetchAll(PDO::FETCH_ASSOC);
+    return ['kinds' => ic_kinds(), 'options' => ic_options()];
 }
 
 /** @param string[] $codes */
@@ -146,13 +160,18 @@ function im_detail(string $source, int $id): ?array
 
     if ($source === 'true') {
         $st = db()->prepare(
-            'SELECT c.code,c.name name1,c.code_type,c.unit_factor,c.price,c.cost,
-                    ic.item_name,ic.is1_id,cn.name category_name,ip.price site_price
+            "SELECT c.code,c.name name1,c.code_type,c.unit_factor,c.price,c.cost,
+                    ic.item_name,ic.is1_id,cn.name true_category_name,ip.price site_price,
+                    sc.id section_id,sc.name section_name
                FROM hq_codes c
                LEFT JOIN hq_item_cats ic ON ic.item_id=c.item_id
                LEFT JOIN hq_cat_names cn ON cn.is1_id=ic.is1_id
+               LEFT JOIN item_classes sc ON sc.id = (
+                    SELECT MIN(x.id) FROM item_classes x
+                     WHERE x.kind='section' AND x.true_id=ic.is1_id
+               )
                LEFT JOIN item_prices ip ON ip.code=c.code
-              WHERE c.item_id=? ORDER BY c.code_type,c.code'
+              WHERE c.item_id=? ORDER BY c.code_type,c.code"
         );
         $st->execute([$id]);
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -176,20 +195,33 @@ function im_detail(string $source, int $id): ?array
             'name1' => (string) ($first['item_name'] ?: $first['name1']),
             'sale_price_class' => null, 'item_type' => null, 'is_cancelled' => null,
             'base_unit' => null, 'open_price' => null,
-            'cat_is1_id' => $first['is1_id'] !== null ? (int) $first['is1_id'] : null,
-            'category_name' => (string) ($first['category_name'] ?? ''),
+            'cat_is1_id' => $first['section_id'] !== null ? (int) $first['section_id'] : null,
+            'category_name' => (string) ($first['section_name'] ?? '') !== ''
+                ? (string) $first['section_name']
+                : (string) ($first['true_category_name'] ?? ''),
+            'class_names' => [
+                'section' => (string) ($first['section_name'] ?? '') !== ''
+                    ? (string) $first['section_name']
+                    : (string) ($first['true_category_name'] ?? ''),
+            ],
             'cat_description_id' => null, 'cat_type_id' => null, 'cat_stage_id' => null,
             'cat_company_id' => null, 'min_qty' => null, 'max_qty' => null,
             'max_discount_pct' => null,
         ];
     } else {
         $st = db()->prepare(
-            'SELECT m.*,cn.name category_name,mc.id code_id,mc.code,mc.name1 code_name1,mc.name2,
+            'SELECT m.*,cs.name cat_section_name,cd.name cat_description_name,ct.name cat_type_name,
+                    cg.name cat_stage_name,cc.name cat_company_name,
+                    mc.id code_id,mc.code,mc.name1 code_name1,mc.name2,
                     mc.code_type,mc.unit_name,mc.unit_type,mc.unit_factor,mc.whole_qty,mc.open_price code_open_price,
                     mc.prep_days,mc.display_screen,mc.display_order,mc.is_purchase_code,mc.is_sale_code,
                     hp.price true_price,hp.cost,ip.price site_price
                FROM item_master m
-               LEFT JOIN hq_cat_names cn ON cn.is1_id=m.cat_is1_id
+               LEFT JOIN item_classes cs ON cs.id=m.cat_is1_id AND cs.kind=\'section\'
+               LEFT JOIN item_classes cd ON cd.id=m.cat_description_id AND cd.kind=\'description\'
+               LEFT JOIN item_classes ct ON ct.id=m.cat_type_id AND ct.kind=\'type\'
+               LEFT JOIN item_classes cg ON cg.id=m.cat_stage_id AND cg.kind=\'stage\'
+               LEFT JOIN item_classes cc ON cc.id=m.cat_company_id AND cc.kind=\'company\'
                LEFT JOIN item_master_codes mc ON mc.item_master_id=m.id
                LEFT JOIN hq_codes hp ON hp.code=mc.code
                LEFT JOIN item_prices ip ON ip.code=mc.code
@@ -203,7 +235,14 @@ function im_detail(string $source, int $id): ?array
             'cat_is1_id','cat_description_id','cat_type_id','cat_stage_id','cat_company_id','min_qty','max_qty','max_discount_pct'];
         $main = [];
         foreach ($mainKeys as $key) $main[$key] = $first[$key];
-        $main['category_name'] = (string) ($first['category_name'] ?? '');
+        $main['category_name'] = (string) ($first['cat_section_name'] ?? '');
+        $main['class_names'] = [
+            'section'     => (string) ($first['cat_section_name'] ?? ''),
+            'description' => (string) ($first['cat_description_name'] ?? ''),
+            'type'        => (string) ($first['cat_type_name'] ?? ''),
+            'stage'       => (string) ($first['cat_stage_name'] ?? ''),
+            'company'     => (string) ($first['cat_company_name'] ?? ''),
+        ];
         $codes = [];
         foreach ($rows as $row) {
             if ($row['code_id'] === null) continue;
@@ -283,10 +322,16 @@ function im_create(array $input, int $userId): int
     }
     $duplicates = im_duplicate_codes(array_column($clean, 'code'));
     if ($duplicates) throw new DomainException('الكود موجود: ' . implode('، ', $duplicates));
-    if (($input['cat_is1_id'] ?? '') !== '') {
-        $cat = db()->prepare('SELECT 1 FROM hq_cat_names WHERE is1_id=?');
-        $cat->execute([(int) $input['cat_is1_id']]);
-        if (!$cat->fetchColumn()) throw new InvalidArgumentException('القسم مش موجود في أقسام True');
+    if (($input['cat_is1_id'] ?? '') !== '' || ($input['cat_description_id'] ?? '') !== ''
+        || ($input['cat_type_id'] ?? '') !== '' || ($input['cat_stage_id'] ?? '') !== ''
+        || ($input['cat_company_id'] ?? '') !== '') {
+        ic_check_refs([
+            'section'     => $input['cat_is1_id'] ?? null,
+            'description' => $input['cat_description_id'] ?? null,
+            'type'        => $input['cat_type_id'] ?? null,
+            'stage'       => $input['cat_stage_id'] ?? null,
+            'company'     => $input['cat_company_id'] ?? null,
+        ]);
     }
     if (($input['max_discount_pct'] ?? '') !== ''
         && ((float) $input['max_discount_pct'] < 0 || (float) $input['max_discount_pct'] > 100)) {
@@ -369,10 +414,8 @@ function im_update_field(int $id, string $field, mixed $value, int $userId): voi
     if (str_starts_with($field, 'cat_') || in_array($field, ['min_qty','max_qty','max_discount_pct'], true)) {
         $value = $value === '' || $value === null ? null : $value;
     }
-    if ($field === 'cat_is1_id' && $value !== null) {
-        $cat = db()->prepare('SELECT 1 FROM hq_cat_names WHERE is1_id=?');
-        $cat->execute([(int) $value]);
-        if (!$cat->fetchColumn()) throw new InvalidArgumentException('القسم مش موجود في أقسام True');
+    if (isset(IM_CAT_KINDS[$field]) && $value !== null) {
+        ic_check_refs([IM_CAT_KINDS[$field] => $value]);
         $value = (int) $value;
     }
     if ($field === 'max_discount_pct' && $value !== null && ((float) $value < 0 || (float) $value > 100)) {

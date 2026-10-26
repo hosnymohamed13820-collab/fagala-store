@@ -20,7 +20,9 @@ if ($method === 'GET') {
         case 'detail':
             api_ok(['item' => im_detail((string) ($_GET['source'] ?? ''), (int) ($_GET['id'] ?? 0))]);
         case 'categories':
-            api_ok(['rows' => im_categories()]);
+            // اختيارات التصنيفات الخمسة — لازم تتفتح لأي حد عنده view (كارت الصنف
+            // محتاجها في الفورم)، مش صلاحية «الأقسام والتصنيفات».
+            api_ok(im_class_options());
         default:
             api_fail('جزء غير معروف', 400, 'bad_request');
     }

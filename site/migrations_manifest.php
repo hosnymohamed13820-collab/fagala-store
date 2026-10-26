@@ -24,4 +24,5 @@ return [
     '20261026_014_cancel_dup_shift_386',
     '20261026_015_item_movement_perm',
     '20261026_016_item_master',
+    '20261026_018_item_classes',
 ];
