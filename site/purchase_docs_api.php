@@ -5,11 +5,13 @@ declare(strict_types=1);
 define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
+require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/purchase_doc_lib.php';
 
 api_begin();
 require_login();
 require_module_access('purchase_docs');
+sens_page();
 
 $pdo = db();
 $uid = (int) ($_SESSION['user']['id'] ?? 0);
@@ -36,6 +38,27 @@ function purchase_api_doc(PDO $pdo, int $docId, bool $lock = false): array
 
 if ($method === 'GET') {
     $action = (string) ($_GET['action'] ?? 'docs');
+    if ($action === 'options') {
+        $branchSql = 'SELECT id,name FROM branches WHERE is_active=1 AND id IN (1,2,3,4,6)';
+        $branchParams = [];
+        if (!is_real_owner()) {
+            $branchSql .= ' AND id=?';
+            $branchParams[] = $userBranch;
+        }
+        $branchSql .= ' ORDER BY id';
+        $bs = $pdo->prepare($branchSql);
+        $bs->execute($branchParams);
+
+        $marks = implode(',', array_fill(0, count(PURCHASE_INTERNAL_ERP_SUPPLIERS), '?'));
+        $ss = $pdo->prepare("SELECT id,name FROM suppliers WHERE is_active=1 AND (erp_supplier_id IS NULL OR erp_supplier_id NOT IN ($marks)) ORDER BY name");
+        $ss->execute(PURCHASE_INTERNAL_ERP_SUPPLIERS);
+        api_ok([
+            'branches' => $bs->fetchAll(PDO::FETCH_ASSOC),
+            'suppliers' => $ss->fetchAll(PDO::FETCH_ASSOC),
+            'owner' => is_real_owner(),
+            'user_branch' => $userBranch,
+        ]);
+    }
     if ($action === 'suppliers') {
         $marks = implode(',', array_fill(0, count(PURCHASE_INTERNAL_ERP_SUPPLIERS), '?'));
         $st = $pdo->prepare("SELECT id,name,erp_supplier_id FROM suppliers WHERE is_active=1 AND (erp_supplier_id IS NULL OR erp_supplier_id NOT IN ($marks)) ORDER BY name");
@@ -50,7 +73,10 @@ if ($method === 'GET') {
         $st->execute([$code]);
         $item = $st->fetch(PDO::FETCH_ASSOC);
         if (!$item) api_fail('الكود مش موجود', 404, 'not_found');
-        $item['last_purchase_price'] = $supplierId > 0 ? purchase_last_true_price($pdo, $supplierId, (int) $item['item_id']) : null;
+        // التكلفة رقم حساس؛ ماتخرجش في الرد إلا والجلسة فاتحة الأرقام الحساسة.
+        $item['last_purchase_price'] = $supplierId > 0 && sens_unlocked()
+            ? purchase_last_true_price($pdo, $supplierId, (int) $item['item_id'])
+            : null;
         api_ok(['item'=>$item]);
     }
     if ($action === 'doc') {

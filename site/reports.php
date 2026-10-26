@@ -2702,7 +2702,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
                 <tr<?= $trClassAttr ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?><?= $isDist ? ' data-dist-id="'.(int)$rowMeta.'" tabindex="0" role="button" aria-expanded="false" onclick="distToggle(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();distToggle(this);}"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
-                    <?php if ($ci === $noteCol): ?>
+                    <?php if ($type === 'purchase_docs' && $ci === 0 && !empty($report['row_links'][$ri])): ?>
+                        <td><a href="<?= e($report['row_links'][$ri]) ?>"><?= e((string)$cell) ?></a></td>
+                    <?php elseif ($type === 'purchase_docs' && $ci === 8): ?>
+                        <td><span class="fchip <?= $cell === 'مترحلة' ? 'fchip-pos' : ($cell === 'ملغية' ? 'fchip-neg' : 'fchip-warn') ?>"><?= e((string)$cell) ?></span></td>
+                    <?php elseif ($ci === $noteCol): ?>
                         <td class="rep-note" data-xt-skip title="<?= e((string)$cell) ?>"><?= $cell !== '' ? e((string)$cell) : '—' ?></td>
                     <?php elseif ($type === 'insta_recon' && $ci === 8): ?>
                         <td><span class="fchip <?= $cell === 'مطابق' ? 'fchip-pos' : 'fchip-warn' ?>"><?= e((string)$cell) ?></span></td>

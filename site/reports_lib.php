@@ -305,26 +305,32 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $owner = is_real_owner();
             $branchId = $owner ? (int) ($_GET['branch'] ?? 0) : (int) ($_SESSION['user']['branch_id'] ?? 0);
             $supplierId = (int) ($_GET['supplier_id'] ?? 0);
-            $where = ["d.doc_type IN ('purchase','purchase_return')", "d.status='posted'", 'd.doc_date BETWEEN ? AND ?'];
+            $where = ["d.doc_type IN ('purchase','purchase_return')", 'd.doc_date BETWEEN ? AND ?'];
             $params = [$from, $to];
             if (!$owner || $branchId > 0) { $where[]='d.branch_id=?'; $params[]=$branchId; }
             if ($supplierId > 0) { $where[]='d.supplier_id=?'; $params[]=$supplierId; }
-            $st = $pdo->prepare('SELECT d.id,d.doc_type,d.doc_no,d.doc_year,d.doc_date,d.ref_text,d.total_amount,d.hq_match,s.name supplier_name,b.name branch_name FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id WHERE '.implode(' AND ',$where).' ORDER BY d.doc_date,d.id');
+            $st = $pdo->prepare('SELECT d.id,d.doc_type,d.doc_no,d.doc_year,d.doc_date,d.ref_text,d.total_amount,d.hq_match,d.status,s.name supplier_name,b.name branch_name,SUM(CASE WHEN l.qty_pieces<>0 THEN 1 ELSE 0 END) lines_count FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id LEFT JOIN stock_doc_lines l ON l.doc_id=d.id WHERE '.implode(' AND ',$where).' GROUP BY d.id ORDER BY d.doc_date,d.id');
             $st->execute($params);
             $docs = $st->fetchAll(PDO::FETCH_ASSOC);
-            $matches = purchase_match_hq($pdo,array_column($docs,'id'));
-            $rows=[]; $purchases=0.0; $returns=0.0;
+            $postedIds = array_column(array_filter($docs, static fn($doc) => $doc['status'] === 'posted'), 'id');
+            $matches = purchase_match_hq($pdo,$postedIds);
+            $rows=[]; $links=[]; $purchases=0.0; $returns=0.0;
             foreach($docs as $d){
                 $amount=round((float)$d['total_amount'],2);
-                if($d['doc_type']==='purchase')$purchases+=$amount; else $returns+=$amount;
+                if($d['status']==='posted') {
+                    if($d['doc_type']==='purchase')$purchases+=$amount; else $returns+=$amount;
+                }
                 $state=$matches[(int)$d['id']]['state']??'missing';
+                $status=$d['status']==='posted'?'مترحلة':($d['status']==='cancelled'?'ملغية':'مسودة');
+                $number=$d['doc_no']!==null?$d['doc_year'].'/'.$d['doc_no']:'مسودة-'.$d['id'];
                 $rows[]=[
-                    $d['doc_year'].'/'.$d['doc_no'],$d['doc_date'],$d['doc_type']==='purchase'?'شراء':'مرتجع',
-                    $d['supplier_name'],$d['branch_name'],$d['ref_text']?:'—',number_format($amount,2),
-                    $state==='matched'?'متطابقة':($state==='ambiguous'?'مطابقة مش أكيدة':'مش لاقي'),
+                    $number,$d['doc_date'],$d['doc_type']==='purchase'?'شراء':'مرتجع',
+                    $d['supplier_name'],$d['branch_name'],$d['ref_text']?:'—',(int)$d['lines_count'],number_format($amount,2),$status,
+                    $d['status']!=='posted'?'—':($state==='matched'?'متطابقة':($state==='ambiguous'?'مطابقة مش أكيدة':'مش لاقي')),
                 ];
+                $links[]='purchase_docs.php?id='.(int)$d['id'];
             }
-            return ['title'=>'تقرير مستندات الشراء','headers'=>['المستند','التاريخ','النوع','المورد','المخزن','فاتورة المورد','القيمة','في True؟'],'rows'=>$rows,'totals'=>['الصافي','','','','','',number_format($purchases-$returns,2),'']];
+            return ['title'=>'تقرير مستندات الشراء','headers'=>['المستند','التاريخ','النوع','المورد','المخزن','فاتورة المورد','الأصناف','القيمة','الحالة','في True؟'],'rows'=>$rows,'row_links'=>$links,'num_cols'=>[6,7],'totals'=>['صافي المرحّل','','','','','','',number_format($purchases-$returns,2),'','']];
 
         case 'purchase_by_item':
             $owner = is_real_owner();
