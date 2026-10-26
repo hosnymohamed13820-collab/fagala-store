@@ -106,11 +106,11 @@ function im_suppliers(string $source, int $id): array
     $sql = "SELECT supplier_name,unit_price,unit_factor,unit_name,quantity,purchase_date,source
               FROM (
                     SELECT COALESCE(h.supplier_name,h.supplier_code,'مورد غير معروف') supplier_name,
-                           l.unit_price,l.unit_factor,NULL unit_name,l.quantity,
+                           hl.unit_price,hl.unit_factor,NULL unit_name,hl.quantity,
                            h.invoice_date purchase_date,'true' source
-                      FROM hq_invoice_lines l
-                      JOIN hq_invoices h ON h.sth_id=l.sth_id AND h.suffix=l.suffix
-                     WHERE h.doc_type=2 AND l.item_id=?
+                      FROM hq_invoice_lines hl
+                      JOIN hq_invoices h ON h.sth_id=hl.sth_id AND h.suffix=hl.suffix
+                     WHERE h.doc_type=2 AND hl.item_id=?
                     UNION ALL
                     SELECT s.name supplier_name,l.unit_price,l.unit_factor,
                            COALESCE(mc.unit_name,'') unit_name,l.qty_units quantity,
