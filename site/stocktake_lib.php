@@ -821,36 +821,77 @@ function stk_search_by_name(string $term, int $limit = 50): array
     $term = trim($term);
     if (mb_strlen($term) < 2) return [];
 
-    // نبعت الكلمة UTF-8 نضيف — الجسر بيتولّى تحويلها لترميز SQL Server.
+    $limit = max(1, $limit);
+    $words = array_slice(preg_split('/\s+/u', $term, -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 4);
+    if (!$words) return [];
+
     $out = []; $seen = [];
-    {
-        $v = $term;
-        // JOIN لجلب سعر البيع (CIP_PRICE) وسعر التكلفة (CI_AVR_COST)
-        $sql = "SELECT TOP $limit c." . STK_IC_CODE . " AS code, c." . STK_NAME . " AS name,
-                       c." . STK_UNIT_TYPE . " AS unit, c." . STK_CODE_TYPE . " AS code_type,
-                       p." . STK_PP_PRICE . " AS sale_price, ci." . STK_COST_COL . " AS cost_price
-                FROM " . STK_CODES_TABLE . " c
-                LEFT JOIN " . STK_PRICE_TABLE . " p ON p." . STK_PP_CIP_ID . " = c." . STK_CIP_ID . "
-                LEFT JOIN " . STK_COST_TABLE . " ci ON ci." . STK_COST_ITEMID . " = c." . STK_ITEM_ID . "
-                WHERE c." . STK_NAME . " LIKE ?
-                ORDER BY c." . STK_CODE_TYPE . " ASC";
-        try {
-            foreach (sqlsrv_query($sql, ['%' . $v . '%']) as $r) {
-                $code = (string)$r['code'];
-                if (isset($seen[$code])) continue;
-                $seen[$code] = true;
-                $out[] = [
-                    'code' => $code,
-                    'name' => sqlsrv_fix_encoding((string)$r['name']),
-                    'unit' => (float)$r['unit'],
-                    'sale' => $r['sale_price'] !== null ? (float)$r['sale_price'] : null,
-                    'cost' => $r['cost_price'] !== null ? (float)$r['cost_price'] : null,
-                ];
-                if (count($out) >= $limit) break;
-            }
-        } catch (Throwable $ex) {
-            // تجاهل الخطأ وارجع اللي لقيناه
+
+    // ١) النسخة المحلية الأول، وكل كلمة لازم تكون موجودة في الاسم بأي ترتيب.
+    try {
+        $where = implode(' AND ', array_fill(0, count($words), 'name LIKE ?'));
+        $st = db()->prepare(
+            'SELECT code, name, code_type, unit_factor, price, cost
+             FROM hq_codes WHERE ' . $where . '
+             ORDER BY code_type ASC, name ASC LIMIT ?'
+        );
+        $param = 1;
+        foreach ($words as $word) {
+            $st->bindValue($param++, '%' . $word . '%', PDO::PARAM_STR);
         }
+        $st->bindValue($param, $limit, PDO::PARAM_INT);
+        $st->execute();
+        foreach ($st->fetchAll() as $r) {
+            $code = (string) $r['code'];
+            if (isset($seen[$code])) continue;
+            $seen[$code] = true;
+            $unit = (float) $r['unit_factor'];
+            if ($unit <= 0) $unit = 1;
+            $out[] = [
+                'code' => $code,
+                'name' => (string) ($r['name'] ?? ''),
+                'unit' => $unit,
+                'sale' => $r['price'] !== null ? (float) $r['price'] : null,
+                'cost' => $r['cost'] !== null ? (float) $r['cost'] : null,
+            ];
+        }
+        if ($out) return $out;
+    } catch (Throwable $ex) {
+        error_log('stk_search_by_name local: ' . $ex->getMessage());
+    }
+
+    // ٢) الجسر fallback لو المحلي مرجّعش نتائج.
+    $bridgeWhere = implode(
+        ' AND ',
+        array_fill(0, count($words), 'c.' . STK_NAME . ' LIKE ?')
+    );
+    $sql = "SELECT TOP $limit c." . STK_IC_CODE . " AS code, c." . STK_NAME . " AS name,
+                   c." . STK_UNIT_TYPE . " AS unit, c." . STK_CODE_TYPE . " AS code_type,
+                   p." . STK_PP_PRICE . " AS sale_price, ci." . STK_COST_COL . " AS cost_price
+            FROM " . STK_CODES_TABLE . " c
+            LEFT JOIN " . STK_PRICE_TABLE . " p ON p." . STK_PP_CIP_ID . " = c." . STK_CIP_ID . "
+            LEFT JOIN " . STK_COST_TABLE . " ci ON ci." . STK_COST_ITEMID . " = c." . STK_ITEM_ID . "
+            WHERE $bridgeWhere
+            ORDER BY c." . STK_CODE_TYPE . " ASC";
+    try {
+        $params = array_map(static fn(string $word): string => '%' . $word . '%', $words);
+        foreach (sqlsrv_query($sql, $params) as $r) {
+            $code = (string) $r['code'];
+            if (isset($seen[$code])) continue;
+            $seen[$code] = true;
+            $unit = (float) $r['unit'];
+            if ($unit <= 0) $unit = 1;
+            $out[] = [
+                'code' => $code,
+                'name' => sqlsrv_fix_encoding((string) $r['name']),
+                'unit' => $unit,
+                'sale' => $r['sale_price'] !== null ? (float) $r['sale_price'] : null,
+                'cost' => $r['cost_price'] !== null ? (float) $r['cost_price'] : null,
+            ];
+            if (count($out) >= $limit) break;
+        }
+    } catch (Throwable $ex) {
+        error_log('stk_search_by_name bridge: ' . $ex->getMessage());
     }
     return $out;
 }
