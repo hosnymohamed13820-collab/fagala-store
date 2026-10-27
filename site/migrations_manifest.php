@@ -26,4 +26,5 @@ return [
     '20261026_016_item_master',
     '20261026_017_item_price_batches',
     '20261026_018_item_classes',
+    '20261027_019_pos_core',
 ];

@@ -177,6 +177,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $roleId   = (int) ($_POST['role_id'] ?? 0);
             $branchId = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
             $perms    = $_POST['permissions'] ?? [];
+            $discountRaw = $_POST['discount_cap_pct'] ?? '0';
+            $discountCap = is_numeric($discountRaw) ? (float) $discountRaw : -1;
             // بيانات الموظف
             $isEmp    = !empty($_POST['is_employee']);
             $salary   = (float) ($_POST['base_salary'] ?? 0);
@@ -188,6 +190,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($username === '' || $fullName === '' || $password === '' || $roleId === 0) {
                 $flash = 'من فضلك املأ كل الحقول المطلوبة.';
+                $flashType = 'error';
+            } elseif ($discountCap < 0 || $discountCap > 100) {
+                $flash = 'سقف الخصم لازم يكون من ٠ لـ١٠٠.';
                 $flashType = 'error';
             } elseif (mb_strlen($password) < 8) {
                 $flash = 'الباسورد لازم ٨ حروف على الأقل.';
@@ -201,9 +206,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $hash = password_hash($password, PASSWORD_DEFAULT);
                     $pdo->prepare(
-                        'INSERT INTO users (username, full_name, password_hash, role_id, branch_id, is_active)
-                         VALUES (?, ?, ?, ?, ?, 1)'
-                    )->execute([$username, $fullName, $hash, $roleId, $branchId]);
+                        'INSERT INTO users (username, full_name, password_hash, role_id, branch_id, discount_cap_pct, is_active)
+                         VALUES (?, ?, ?, ?, ?, ?, 1)'
+                    )->execute([$username, $fullName, $hash, $roleId, $branchId, number_format($discountCap, 2, '.', '')]);
                     $newId = (int) $pdo->lastInsertId();
 
                     $insP = $pdo->prepare('INSERT IGNORE INTO user_permissions (user_id, module_key) VALUES (?, ?)');
@@ -231,6 +236,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $roleId   = (int) ($_POST['role_id'] ?? 0);
             $branchId = ($_POST['branch_id'] ?? '') !== '' ? (int) $_POST['branch_id'] : null;
             $perms    = $_POST['permissions'] ?? [];
+            $discountRaw = $_POST['discount_cap_pct'] ?? '0';
+            $discountCap = is_numeric($discountRaw) ? (float) $discountRaw : -1;
             $isEmp    = !empty($_POST['is_employee']);
             $salary   = (float) ($_POST['base_salary'] ?? 0);
             $jobTitle = trim($_POST['job_title'] ?? '');
@@ -240,7 +247,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $allowAny = !empty($_POST['allow_anywhere']) ? 1 : 0;
 
             if ($userId > 0 && $fullName !== '' && $roleId > 0) {
-                if ($password !== '' && mb_strlen($password) < 8) {
+                if ($discountCap < 0 || $discountCap > 100) {
+                    $flash = 'سقف الخصم لازم يكون من ٠ لـ١٠٠.';
+                    $flashType = 'error';
+                } elseif ($password !== '' && mb_strlen($password) < 8) {
                     $flash = 'الباسورد لازم ٨ حروف على الأقل.';
                     $flashType = 'error';
                 } else {
@@ -249,12 +259,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($password !== '') {
                             $hash = password_hash($password, PASSWORD_DEFAULT);
                             $pdo->prepare(
-                                'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, password_hash = ?, perms_version = perms_version + 1 WHERE id = ?'
-                            )->execute([$fullName, $roleId, $branchId, $hash, $userId]);
+                                'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, discount_cap_pct = ?, password_hash = ?, perms_version = perms_version + 1 WHERE id = ?'
+                            )->execute([$fullName, $roleId, $branchId, number_format($discountCap, 2, '.', ''), $hash, $userId]);
                         } else {
                             $pdo->prepare(
-                                'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, perms_version = perms_version + 1 WHERE id = ?'
-                            )->execute([$fullName, $roleId, $branchId, $userId]);
+                                'UPDATE users SET full_name = ?, role_id = ?, branch_id = ?, discount_cap_pct = ?, perms_version = perms_version + 1 WHERE id = ?'
+                            )->execute([$fullName, $roleId, $branchId, number_format($discountCap, 2, '.', ''), $userId]);
                         }
 
                         $pdo->prepare('DELETE FROM user_permissions WHERE user_id = ?')->execute([$userId]);
@@ -760,6 +770,7 @@ require_once __DIR__ . '/includes/header.php';
                                     "username" => $usr["username"],
                                     "role_id" => (int)$usr["role_id"],
                                     "branch_id" => $usr["branch_id"] !== null ? (int)$usr["branch_id"] : "",
+                                    "discount_cap_pct" => number_format((float)$usr["discount_cap_pct"], 2, '.', ''),
                                     "perms" => $uperms,
                                     "is_employee" => $usr["emp_id"] ? 1 : 0,
                                     "base_salary" => $usr["base_salary"] !== null ? (float)$usr["base_salary"] : "",
@@ -847,6 +858,12 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
                 <div class="hint">مهم للكاشير المسؤول عن عهدة فرع.</div>
+            </div>
+
+            <div class="form-row">
+                <label for="f_discount">سقف الخصم %</label>
+                <input type="number" step="0.01" min="0" max="100" name="discount_cap_pct" id="f_discount" value="0.00">
+                <div class="hint">نسبة من إجمالي الفاتورة. صفر = مفيش خصم من غير مشرف، والتعديل بيتحفظ تلقائي للمستخدم الموجود.</div>
             </div>
 
             <!-- بيانات الموظف (اليوزر = موظف) -->
@@ -1074,6 +1091,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('formUserId').value = '';
         document.getElementById('userForm').reset();
         document.getElementById('f_salary').disabled = false;
+        document.getElementById('f_discount').value = '0.00';
         document.getElementById('f_salary').placeholder = '';
         clearPerms();
         currentUserPerms = [];
@@ -1106,6 +1124,7 @@ require_once __DIR__ . '/includes/header.php';
         // الدور والفرع (نقطة 6: ما يضيعوش)
         document.getElementById('f_role').value = data.role_id || '';
         document.getElementById('f_branch').value = (data.branch_id === '' || data.branch_id == null) ? '' : data.branch_id;
+        document.getElementById('f_discount').value = data.discount_cap_pct || '0.00';
         // بيانات الموظف
         document.getElementById('f_isemp').checked = !!data.is_employee;
         if (!('base_salary' in data)) {
@@ -1175,6 +1194,7 @@ require_once __DIR__ . '/includes/header.php';
     var userForm = document.getElementById('userForm');
     var pw = document.getElementById('f_password');
     var passErr = document.getElementById('passErr');
+    var discountInput = document.getElementById('f_discount');
 
     function showPassError(len) {
         var msg = 'الباسورد لازم ٨ حروف على الأقل — انت كاتب ' + len;
@@ -1197,6 +1217,27 @@ require_once __DIR__ . '/includes/header.php';
                 e.preventDefault();
                 showPassError(pw.value.length);
             }
+        });
+    }
+
+    if (discountInput) {
+        discountInput.addEventListener('blur', function () {
+            if (document.getElementById('formAction').value !== 'edit') return;
+            var uid = Number(document.getElementById('formUserId').value || 0);
+            var cap = Number(discountInput.value);
+            if (!uid || !Number.isFinite(cap) || cap < 0 || cap > 100) {
+                if (typeof fgToast === 'function') fgToast('سقف الخصم لازم يكون من ٠ لـ١٠٠.', 'err');
+                return;
+            }
+            window.apiFetch('users_api.php?part=discount_cap', {
+                method: 'POST',
+                body: {user_id: uid, discount_cap_pct: cap}
+            }).then(function (j) {
+                discountInput.value = j.data.discount_cap_pct;
+                if (typeof fgToast === 'function') fgToast('اتحفظ سقف الخصم.', 'ok');
+            }).catch(function (e) {
+                if (typeof fgToast === 'function') fgToast(e.message || 'سقف الخصم ماتحفظش.', 'err');
+            });
         });
     }
 

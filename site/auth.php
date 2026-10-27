@@ -147,6 +147,8 @@ function all_modules(): array
         'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
         'item_master'   => ['label' => 'كارت الصنف',       'icon' => 'ti-package',           'url' => 'item_master.php'],
         'sale_prices'   => ['label' => 'أسعار البيع',       'icon' => 'ti-cash',              'url' => 'item_prices.php'],
+        // شاشة البيع نفسها في بريف ٢٤١؛ لحد وقتها رابط الموديول يفتح إدارة الأجهزة.
+        'pos'           => ['label' => 'نقطة البيع',       'icon' => 'ti-device-desktop',    'url' => 'pos_devices.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
@@ -263,6 +265,17 @@ function module_parts(): array
         'sale_prices' => [
             'view'  => 'عرض',
             'apply' => 'تطبيق الأسعار',
+        ],
+        'pos' => [
+            'sell'                   => 'بيع',
+            'discount_override'      => 'اعتماد خصم فوق السقف',
+            'return_ref'             => 'مرتجع على فاتورة',
+            'return_general'         => 'مرتجع عام',
+            'return_method_override' => 'رد بطريقة غير طريقة الدفع',
+            'drawer'                 => 'فتح الدرج من غير بيع',
+            'held_cancel'            => 'إلغاء فاتورة معلّقة',
+            'devices'                => 'تسجيل الأجهزة',
+            'reports'                => 'تقارير نقطة البيع',
         ],
     ];
 }

@@ -105,7 +105,7 @@ function stock_get_branch_info(int $branchId): ?array
  * إنشاء مستند مخزني جديد كمسودة مع سطوره وسجله (من غير حركات).
  *
  * @param PDO $pdo
- * @param string $type opening · adjust · transfer · purchase · purchase_return
+ * @param string $type opening · adjust · transfer · purchase · purchase_return · sale · sale_return
  * @param array $head بيانات الرأس (branch_id, counter_branch_id, supplier_id, doc_date, ref_text, notes)
  * @param array $lines مصفوفة السطور
  * @param int $uid معرّف المستخدم المنشئ
@@ -425,6 +425,24 @@ function stock_doc_moves(array $doc, array $lines): array
                 'qty'         => -abs($qtyPieces),
                 // الخروج بيتكلف بمتوسط المخزن الحالي، مش بسعر فاتورة المورد.
                 'unit_cost'   => null,
+                'doc_line_id' => $lineId,
+            ],
+            'sale' => $moves[] = [
+                'item_id'     => $itemId,
+                'branch_id'   => $branchId,
+                'is_transit'  => 0,
+                'qty'         => -abs($qtyPieces),
+                // البيع خارج بيتكلف بمتوسط المخزن الحالي.
+                'unit_cost'   => null,
+                'doc_line_id' => $lineId,
+            ],
+            'sale_return' => $moves[] = [
+                'item_id'     => $itemId,
+                'branch_id'   => $branchId,
+                'is_transit'  => 0,
+                'qty'         => abs($qtyPieces),
+                // المرتجع المرجعي بيرجع بتكلفة سطر البيع الأصلية لو متاحة.
+                'unit_cost'   => $unitCost,
                 'doc_line_id' => $lineId,
             ],
             'import' => $moves[] = [

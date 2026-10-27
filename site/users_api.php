@@ -30,20 +30,19 @@ $allowedParts = [
     'users',
     'roles',
     'meta',
+    'discount_cap',
 ];
 
 if (!in_array($part, $allowedParts, true)) {
     api_fail('جزء غير معروف (part)', 400, 'bad_request');
 }
 
-// جميع أجزاء المرحلة (أ) تدعم GET فقط
-api_method('GET');
-
 $pdo = db();
 
 try {
     switch ($part) {
         case 'users':
+            api_method('GET');
             $usersRaw    = users_get_list($pdo);
             $permsByUser = users_get_perms_map($pdo);
             $rolePerms   = users_get_role_perms_map($pdo);
@@ -66,6 +65,7 @@ try {
                     'is_owner'       => (int) $row['is_owner'],
                     'branch_id'      => $row['branch_id'] !== null ? (int) $row['branch_id'] : null,
                     'branch_name'    => $row['branch_name'],
+                    'discount_cap_pct' => number_format((float) $row['discount_cap_pct'], 2, '.', ''),
                     'emp_id'         => $row['emp_id'] !== null ? (int) $row['emp_id'] : null,
                     'job_title'      => $row['job_title'],
                     'phone'          => $row['phone'],
@@ -87,6 +87,7 @@ try {
             api_ok(['users' => $users]);
 
         case 'roles':
+            api_method('GET');
             $rolesRaw  = users_get_roles($pdo);
             $rolePerms = users_get_role_perms_map($pdo);
 
@@ -105,12 +106,30 @@ try {
             api_ok(['roles' => $roles]);
 
         case 'meta':
+            api_method('GET');
             api_ok([
                 'modules'      => all_modules(),
                 'module_parts' => module_parts(),
                 'branches'     => users_get_branches($pdo),
             ]);
+
+        case 'discount_cap':
+            api_method('POST');
+            api_csrf();
+            api_idempotent();
+            $in = api_input();
+            $rawCap = $in['discount_cap_pct'] ?? null;
+            if (!is_numeric($rawCap)) {
+                api_fail('سقف الخصم لازم يكون رقم.', 400, 'bad_request');
+            }
+            users_update_discount_cap($pdo, (int) ($in['user_id'] ?? 0), (float) $rawCap);
+            api_ok(['discount_cap_pct' => number_format((float) $rawCap, 2, '.', '')]);
     }
+} catch (InvalidArgumentException $e) {
+    api_fail($e->getMessage(), 400, 'bad_request');
+} catch (RuntimeException $e) {
+    api_fail($e->getMessage(), 404, 'bad_request');
 } catch (Throwable $e) {
-    api_fail($e->getMessage(), 422, 'error');
+    error_log('users_api: ' . $e->getMessage());
+    api_fail('حصل خطأ في السيرفر', 500, 'server');
 }

@@ -89,6 +89,7 @@ function users_get_list(PDO $pdo): array
 {
     return $pdo->query(
         'SELECT u.id, u.username, u.full_name, u.is_active, u.last_login, u.role_id, u.branch_id,
+                u.discount_cap_pct,
                 r.name_ar AS role_name, r.is_owner, b.name AS branch_name,
                 e.id AS emp_id, e.base_salary, e.job_title, e.phone, e.expected_in, e.expected_out, e.allow_anywhere
          FROM users u
@@ -97,6 +98,25 @@ function users_get_list(PDO $pdo): array
          LEFT JOIN employees e ON e.user_id = u.id AND e.is_active = 1
          ORDER BY u.id'
     )->fetchAll();
+}
+
+/**
+ * حفظ سقف خصم المستخدم كنسبة من إجمالي الفاتورة.
+ */
+function users_update_discount_cap(PDO $pdo, int $userId, float $cap): void
+{
+    if ($userId <= 0 || !is_finite($cap) || $cap < 0 || $cap > 100) {
+        throw new InvalidArgumentException('سقف الخصم لازم يكون من ٠ لـ١٠٠.');
+    }
+    $st = $pdo->prepare('UPDATE users SET discount_cap_pct = ? WHERE id = ?');
+    $st->execute([number_format($cap, 2, '.', ''), $userId]);
+    if ($st->rowCount() === 0) {
+        $chk = $pdo->prepare('SELECT id FROM users WHERE id = ?');
+        $chk->execute([$userId]);
+        if (!$chk->fetchColumn()) {
+            throw new RuntimeException('المستخدم ده مش موجود.');
+        }
+    }
 }
 
 /**
