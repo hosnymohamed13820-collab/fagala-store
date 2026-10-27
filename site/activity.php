@@ -21,8 +21,6 @@ require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/activity_lib.php';
 sens_page();
 
-$pdo = db();
-
 [$branchesList, $branchById, $branchBySto] = act_get_branches();
 
 // =========================================================================
@@ -88,10 +86,30 @@ if ($customTo !== '') {
 
 $feed = [];
 $newItemsEver = false;
+$timelineGroups = [];
+$allGroupsMeta = act_groups();
+$typeLabels = act_type_labels();
+$feedByGroup = [];
+foreach ($allGroupsMeta as $gKey => $gMeta) {
+    $feedByGroup[$gKey] = [];
+}
+$initType = $typeFilter;
+$initGroup = $typeFilter !== 'all' ? act_group_of_type($typeFilter) : '';
+
 if ($view === 'timeline') {
-    $timelineData = act_timeline_data($dateStart, $dateEnd, $typeFilter, $branchFilter, $branchById);
+    $timelineData = act_timeline_data($dateStart, $dateEnd, 'all', $branchFilter, $branchById);
     $feed = $timelineData['feed'];
     $newItemsEver = $timelineData['new_items_ever'];
+    $timelineGroups = $timelineData['groups'];
+
+    foreach ($feed as $item) {
+        $g = $item['group'] ?? 'other';
+        if (!isset($feedByGroup[$g])) {
+            $feedByGroup['other'][] = $item;
+        } else {
+            $feedByGroup[$g][] = $item;
+        }
+    }
 }
 
 // المبيعات: عدد التاب من كل الفروع، والتفاصيل اليومية من استعلام مجمّع واحد.
@@ -282,7 +300,107 @@ require_once __DIR__ . '/includes/header.php';
 }
 </style>
 
-<div class="content-container">
+<?php if ($view === 'timeline'): ?>
+<style>
+/* أكورديون مجموعات الخط الزمني (بريف ٢٤٦) */
+.act-group {
+    margin-bottom: 14px;
+    padding: 0;
+    overflow: hidden;
+}
+.act-group-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 16px;
+    cursor: pointer;
+    background: var(--surface);
+    user-select: none;
+    list-style: none;
+    transition: background 0.15s;
+}
+.act-group-summary::-webkit-details-marker {
+    display: none;
+}
+.act-group-summary:hover {
+    background: var(--surface-soft);
+}
+.act-group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14.5px;
+    font-weight: 700;
+}
+.act-group-icon {
+    font-size: 19px;
+    color: var(--accent-text);
+    display: inline-flex;
+    align-items: center;
+}
+.act-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink-500);
+}
+.act-group-chevron {
+    transition: transform 0.2s;
+    font-size: 15px;
+}
+details[open] > .act-group-summary .act-group-chevron {
+    transform: rotate(180deg);
+}
+.act-group-body {
+    border-top: 1px solid var(--line);
+}
+.act-group-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px;
+    background: var(--surface-soft);
+    border-bottom: 1px solid var(--line-soft);
+}
+.act-type-chip {
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.act-type-chip:hover {
+    border-color: var(--line);
+    color: var(--accent-text);
+}
+.act-type-chip.active {
+    background: var(--accent-soft);
+    border-color: var(--line);
+    color: var(--accent-text);
+    font-weight: 600;
+}
+.act-chip-cnt {
+    font-size: 11px;
+    color: var(--ink-500);
+    font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+    .act-group-summary { padding: 10px 12px; }
+    .act-group-header { font-size: 13.5px; gap: 8px; }
+    .act-group-icon { font-size: 17px; }
+    .act-group-chips { padding: 8px 10px; gap: 4px; }
+    .act-type-chip { font-size: 11px; padding: 2px 7px; }
+}
+</style>
+<?php endif; ?><div class="content-container">
 
     <nav class="ftabs" aria-label="أقسام حركات النظام">
         <?php foreach (['timeline' => 'الخط الزمني', 'sales' => 'المبيعات', 'purchases' => 'المشتريات'] as $tabKey => $tabLabel): ?>
@@ -392,26 +510,6 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </select>
         </div>
-
-        <div style="display:flex;align-items:center;gap:6px;">
-            <label for="typeSelect" style="font-size:12.5px;font-weight:600;color:var(--ink-500);"><i class="ti ti-filter"></i> النوع:</label>
-            <select class="fselect finput-sm" name="type" id="typeSelect">
-                <option value="all" <?= $typeFilter === 'all' ? 'selected' : '' ?>>كل الحركات</option>
-                <option value="newitems" <?= $typeFilter === 'newitems' ? 'selected' : '' ?>>أصناف جديدة</option>
-                <option value="shifts" <?= $typeFilter === 'shifts' ? 'selected' : '' ?>>ورديات</option>
-                <option value="custody" <?= $typeFilter === 'custody' ? 'selected' : '' ?>>عهد</option>
-                <option value="receiving" <?= $typeFilter === 'receiving' ? 'selected' : '' ?>>استلام فواتير</option>
-                <option value="treasury" <?= $typeFilter === 'treasury' ? 'selected' : '' ?>>خزينة</option>
-                <option value="transfers" <?= $typeFilter === 'transfers' ? 'selected' : '' ?>>تحويلات خزائن</option>
-                <option value="shortage" <?= $typeFilter === 'shortage' ? 'selected' : '' ?>>نواقص وطلبات</option>
-                <option value="attendance" <?= $typeFilter === 'attendance' ? 'selected' : '' ?>>حضور وانصراف</option>
-                <option value="stocktake" <?= $typeFilter === 'stocktake' ? 'selected' : '' ?>>جرد</option>
-                <option value="sms" <?= $typeFilter === 'sms' ? 'selected' : '' ?>>رسايل بنك</option>
-                <option value="permits" <?= $typeFilter === 'permits' ? 'selected' : '' ?>>أذون إنستاباي</option>
-                <option value="salaries" <?= $typeFilter === 'salaries' ? 'selected' : '' ?>>صرف مرتبات</option>
-                <option value="advances" <?= $typeFilter === 'advances' ? 'selected' : '' ?>>سلف</option>
-            </select>
-        </div>
         <?php endif; ?>
 
         <button type="submit" class="btn btn-primary btn-sm" style="margin-right:auto;">
@@ -420,85 +518,146 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 
     <?php if ($view === 'timeline'): ?>
-    <!-- الخط الزمني -->
-    <div class="fcard timeline-panel">
-        <div class="timeline-header">
-            <h3 class="timeline-title">
-                <i class="ti ti-list-details" style="color:var(--accent-text);"></i> سجل الحركات بالوقت
-                <span class="fchip fchip-mute" style="font-size:11px;"><?= count($feed) ?> حركة</span>
-            </h3>
-            <span class="timeline-meta">
-                الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?> · تم التحميل في <?= e((string)$timeElapsedMs) ?> مللي ثانية
-            </span>
-        </div>
+    <!-- شريط معلومات الخط الزمني -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <h3 class="timeline-title">
+            <i class="ti ti-list-details" style="color:var(--accent-text);"></i> سجل الحركات بالوقت
+            <span class="fchip fchip-mute" style="font-size:11px;"><?= count($feed) ?> حركة</span>
+        </h3>
+        <span class="timeline-meta">
+            الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?> · تم التحميل في <?= e((string)$timeElapsedMs) ?> مللي ثانية
+        </span>
+    </div>
 
-        <div class="timeline-table-wrap">
-            <table class="ftable act-table" style="width:100%;margin:0;">
-                <thead>
-                    <tr>
-                        <th class="act-col-time">الوقت</th>
-                        <th class="act-col-type">النوع</th>
-                        <th class="act-col-branch">الفرع</th>
-                        <th>الوصف</th>
-                        <th class="act-col-actor">مين</th>
-                        <th class="act-col-link">إجراء</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($feed)): ?>
-                        <tr>
-                            <td colspan="6">
-                                <div class="empty-box">
-                                    <i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>
-                                    <?php if ($typeFilter === 'newitems'): ?>
-                                        <?php if (!$newItemsEver): ?>
-                                            مفيش أصناف اتضافت من وقت ما بدأنا نسجّل.
+    <!-- مجموعات الخط الزمني (أكورديون) -->
+    <?php
+    foreach ($allGroupsMeta as $gKey => $gMeta):
+        $items = $feedByGroup[$gKey] ?? [];
+        $gCount = count($items);
+        if ($gKey === 'other' && $gCount === 0) {
+            continue;
+        }
+
+        if ($initType !== 'all') {
+            $isOpen = ($initGroup === $gKey);
+        } else {
+            $isOpen = ($gCount > 0);
+        }
+
+        $initMatchCount = 0;
+        if ($initType !== 'all' && $initGroup === $gKey) {
+            foreach ($items as $it) {
+                if ($it['type'] === $initType) {
+                    $initMatchCount++;
+                }
+            }
+        }
+    ?>
+    <details class="fcard act-group" id="grp-<?= e($gKey) ?>" <?= $isOpen ? 'open' : '' ?>>
+        <summary class="act-group-summary">
+            <div class="act-group-header">
+                <span class="act-group-icon"><i class="ti <?= e($gMeta['icon']) ?>"></i></span>
+                <span><?= e($gMeta['name']) ?></span>
+            </div>
+            <div class="act-group-toggle">
+                <span class="fchip <?= $gCount > 0 ? 'fchip-mute' : '' ?>" style="font-size:11.5px;"><?= $gCount ?></span>
+                <i class="ti ti-chevron-down act-group-chevron"></i>
+            </div>
+        </summary>
+        <div class="act-group-body">
+            <?php if (!empty($gMeta['types'])): ?>
+            <!-- شرائح تصفية الأنواع داخل المجموعة -->
+            <div class="act-group-chips" role="group" aria-label="تصفية الأنواع">
+                <button type="button" class="act-type-chip <?= ($initType === 'all' || $initGroup !== $gKey ? 'active' : '') ?>" onclick="actFilterType(this, '<?= e($gKey) ?>', 'all')">
+                    الكل <span class="act-chip-cnt">(<?= $gCount ?>)</span>
+                </button>
+                <?php foreach ($gMeta['types'] as $tKey):
+                    $tCount = 0;
+                    foreach ($items as $it) {
+                        if ($it['type'] === $tKey) {
+                            $tCount++;
+                        }
+                    }
+                ?>
+                    <button type="button" class="act-type-chip <?= ($initType === $tKey ? 'active' : '') ?>" onclick="actFilterType(this, '<?= e($gKey) ?>', '<?= e($tKey) ?>')">
+                        <?= e($typeLabels[$tKey] ?? $tKey) ?> <span class="act-chip-cnt">(<?= $tCount ?>)</span>
+                    </button>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($gCount === 0): ?>
+                <div class="empty-box" style="padding:24px 16px;">
+                    <i class="ti ti-inbox" style="font-size:28px;display:block;margin-bottom:6px;"></i>
+                    لا توجد حركات في هذه المجموعة للفترة المحددة.
+                </div>
+            <?php else: ?>
+                <div class="timeline-table-wrap">
+                    <table class="ftable act-table" style="width:100%;margin:0;">
+                        <thead>
+                            <tr>
+                                <th class="act-col-time">الوقت</th>
+                                <th class="act-col-type">النوع</th>
+                                <th class="act-col-branch">الفرع</th>
+                                <th>الوصف</th>
+                                <th class="act-col-actor">مين</th>
+                                <th class="act-col-link">إجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($items as $item):
+                                $isItemHidden = ($initType !== 'all' && $initGroup === $gKey && $item['type'] !== $initType);
+                            ?>
+                                <tr class="activity-row" data-type="<?= e($item['type']) ?>" style="<?= $isItemHidden ? 'display:none;' : '' ?>">
+                                    <td class="act-col-time" style="font-size:12px;color:var(--ink-500);white-space:nowrap;" dir="ltr">
+                                        <?= e($item['time_label'] ?? date('m/d H:i', strtotime($item['time']))) ?>
+                                    </td>
+                                    <td class="act-col-type">
+                                        <span class="fchip <?= e($item['badge_class']) ?>" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;">
+                                            <i class="ti <?= e($item['icon']) ?>"></i> <?= e($item['type_label']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="act-col-branch" style="font-weight:600;font-size:12.5px;">
+                                        <?= e($item['branch']) ?>
+                                    </td>
+                                    <td style="font-size:13px;line-height:1.4;">
+                                        <?= $item['desc'] ?>
+                                    </td>
+                                    <td class="act-col-actor" style="font-size:12px;color:var(--ink-600);">
+                                        <?= e($item['actor']) ?>
+                                    </td>
+                                    <td class="act-col-link">
+                                        <?php if (!empty($item['link'])): ?>
+                                            <a href="<?= e($item['link']) ?>" class="activity-link" title="عرض التفاصيل">
+                                                فتح <i class="ti ti-chevron-left"></i>
+                                            </a>
                                         <?php else: ?>
-                                            مفيش أصناف جديدة في الفترة المختارة.
+                                            —
                                         <?php endif; ?>
-                                    <?php else: ?>
-                                        لا توجد حركات مسجلة في هذه الفترة بالفلاتر المحددة.
-                                    <?php endif; ?>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($feed as $item): ?>
-                            <tr class="activity-row">
-                                <td class="act-col-time" style="font-size:12px;color:var(--ink-500);white-space:nowrap;" dir="ltr">
-                                    <?= e($item['time_label'] ?? date('m/d H:i', strtotime($item['time']))) ?>
-                                </td>
-                                <td class="act-col-type">
-                                    <span class="fchip <?= e($item['badge_class']) ?>" style="display:inline-flex;align-items:center;gap:4px;font-size:11.5px;">
-                                        <i class="ti <?= e($item['icon']) ?>"></i> <?= e($item['type_label']) ?>
-                                    </span>
-                                </td>
-                                <td class="act-col-branch" style="font-weight:600;font-size:12.5px;">
-                                    <?= e($item['branch']) ?>
-                                </td>
-                                <td style="font-size:13px;line-height:1.4;">
-                                    <?php /* desc جواه HTML من sens_mask — الأجزاء النصية اتعملها e() وقت البناء */ ?>
-                                    <?= $item['desc'] ?>
-                                </td>
-                                <td class="act-col-actor" style="font-size:12px;color:var(--ink-600);">
-                                    <?= e($item['actor']) ?>
-                                </td>
-                                <td class="act-col-link">
-                                    <?php if (!empty($item['link'])): ?>
-                                        <a href="<?= e($item['link']) ?>" class="activity-link" title="عرض التفاصيل">
-                                            فتح <i class="ti ti-chevron-left"></i>
-                                        </a>
-                                    <?php else: ?>
-                                        —
-                                    <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <tr class="act-empty-filter-row" style="<?= ($initType !== 'all' && $initGroup === $gKey && $initMatchCount === 0) ? '' : 'display:none;' ?>">
+                                <td colspan="6">
+                                    <div class="empty-box" style="padding:20px;">
+                                        لا توجد حركات من هذا النوع في هذه الفترة.
+                                    </div>
                                 </td>
                             </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
-    </div>
+    </details>
+    <?php endforeach; ?>
+
+    <?php if (count($feed) === 0): ?>
+        <div class="empty-box" style="padding:28px 16px;">
+            <i class="ti ti-inbox" style="font-size:32px;display:block;margin-bottom:8px;"></i>
+            لا توجد حركات مسجلة في هذه الفترة بالفلاتر المحددة.
+        </div>
+    <?php endif; ?>
     <?php elseif ($view === 'sales'): ?>
         <nav class="ftabs" aria-label="فروع المبيعات">
             <a class="ftab <?= $branchFilter === null ? 'active' : '' ?>" href="<?= e(act_url(array_merge($periodParams, ['view' => 'sales', 'branch' => 'all']))) ?>">الكل</a>
@@ -706,5 +865,32 @@ function toggleCustomDates(val) {
     if (el) el.style.display = (val === 'custom') ? 'flex' : 'none';
 }
 </script>
+<?php if ($view === 'timeline'): ?>
+<script>
+function actFilterType(btn, groupKey, type) {
+    var details = document.getElementById('grp-' + groupKey);
+    if (!details) return;
+    var chips = details.querySelectorAll('.act-type-chip');
+    chips.forEach(function(c) { c.classList.remove('active'); });
+    btn.classList.add('active');
+
+    var rows = details.querySelectorAll('tbody tr.activity-row');
+    var visibleCount = 0;
+    rows.forEach(function(r) {
+        if (type === 'all' || r.getAttribute('data-type') === type) {
+            r.style.display = '';
+            visibleCount++;
+        } else {
+            r.style.display = 'none';
+        }
+    });
+
+    var emptyRow = details.querySelector('.act-empty-filter-row');
+    if (emptyRow) {
+        emptyRow.style.display = (visibleCount === 0 && rows.length > 0) ? '' : 'none';
+    }
+}
+</script>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

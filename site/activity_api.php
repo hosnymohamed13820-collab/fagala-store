@@ -60,15 +60,22 @@ switch ($part) {
         if (!in_array($typeFilter, $validTypes, true)) {
             $typeFilter = 'all';
         }
+        $groupFilter = (string) ($_GET['group'] ?? 'all');
+        $validGroups = array_merge(['all'], array_keys(act_groups()));
+        if (!in_array($groupFilter, $validGroups, true)) {
+            $groupFilter = 'all';
+        }
         [$branchesList, $branchById, $branchBySto] = act_get_branches();
-        $timelineData = act_timeline_data($dateStart, $dateEnd, $typeFilter, $branchFilter, $branchById);
+        $timelineData = act_timeline_data($dateStart, $dateEnd, $typeFilter, $branchFilter, $branchById, $groupFilter);
         api_ok([
             'period'         => $period,
             'date_start'     => $dateStart,
             'date_end'       => $dateEnd,
             'branch'         => $branchFilter,
             'type'           => $typeFilter,
+            'group'          => $groupFilter,
             'count'          => $timelineData['count'],
+            'groups'         => $timelineData['groups'],
             'new_items_ever' => $timelineData['new_items_ever'],
             'feed'           => $timelineData['feed'],
         ]);

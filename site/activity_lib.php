@@ -12,6 +12,9 @@
  *  - act_url()                : تكوين الرابط مع الباراميترات
  *  - act_cards_data()         : كروت «محتاج تصرّف»
  *  - act_timeline_data()      : الخط الزمني بجميع أنواعه
+ *  - act_groups()             : خريطة المجموعات للخط الزمني (بريف ٢٤٦)
+ *  - act_group_of_type()      : تحديد مجموعة نوع الحركة
+ *  - act_type_labels()        : مسميات الأنواع لشرائح الفلترة
  *  - act_sales_data()         : فواتير المبيعات والمرتجعات مع الأصناف
  *  - act_purchases_data()     : فواتير المشتريات والمردودات
  *
@@ -210,6 +213,88 @@ function act_cards_data(): array
 }
 
 /**
+ * خريطة مجموعات حركات الخط الزمني (بريف ٢٤٦).
+ *
+ * @return array<string, array{key: string, name: string, icon: string, types: list<string>}>
+ */
+function act_groups(): array
+{
+    return [
+        'sales' => [
+            'key'   => 'sales',
+            'name'  => 'المبيعات والورديات',
+            'icon'  => 'ti-building-store',
+            'types' => ['shifts', 'sms', 'permits'],
+        ],
+        'purchases' => [
+            'key'   => 'purchases',
+            'name'  => 'المشتريات والمخزن',
+            'icon'  => 'ti-packages',
+            'types' => ['receiving', 'shortage', 'newitems', 'stocktake'],
+        ],
+        'treasury' => [
+            'key'   => 'treasury',
+            'name'  => 'الخزينة والعهد',
+            'icon'  => 'ti-building-bank',
+            'types' => ['treasury', 'transfers', 'custody'],
+        ],
+        'employees' => [
+            'key'   => 'employees',
+            'name'  => 'الموظفين',
+            'icon'  => 'ti-users',
+            'types' => ['salaries', 'advances', 'attendance'],
+        ],
+        'other' => [
+            'key'   => 'other',
+            'name'  => 'أخرى',
+            'icon'  => 'ti-list-details',
+            'types' => [],
+        ],
+    ];
+}
+
+/**
+ * اسم المجموعة لنوع الحركة — أي نوع غير معرّف يروح 'other' عشان مفيش حركة تختفي.
+ */
+function act_group_of_type(string $type): string
+{
+    static $typeToGroup = null;
+    if ($typeToGroup === null) {
+        $typeToGroup = [];
+        foreach (act_groups() as $gKey => $gMeta) {
+            foreach ($gMeta['types'] as $t) {
+                $typeToGroup[$t] = $gKey;
+            }
+        }
+    }
+    return $typeToGroup[$type] ?? 'other';
+}
+
+/**
+ * مسميات الأنواع لشرائح الفلترة (chips) داخل المجموعات.
+ *
+ * @return array<string, string>
+ */
+function act_type_labels(): array
+{
+    return [
+        'shifts'     => 'ورديات',
+        'sms'        => 'رسايل بنك',
+        'permits'    => 'أذون إنستاباي',
+        'receiving'  => 'استلام فواتير',
+        'shortage'   => 'نواقص وطلبات',
+        'newitems'   => 'أصناف جديدة',
+        'stocktake'  => 'جرد',
+        'treasury'   => 'خزينة',
+        'transfers'  => 'تحويلات خزائن',
+        'custody'    => 'عهد',
+        'salaries'   => 'صرف مرتبات',
+        'advances'   => 'سلف',
+        'attendance' => 'حضور وانصراف',
+    ];
+}
+
+/**
  * استعلامات الخط الزمني (استعلام واحد لكل نوع بـLIMIT 200).
  *
  * @param string $dateStart تاريخ البداية 'Y-m-d H:i:s'
@@ -217,25 +302,42 @@ function act_cards_data(): array
  * @param string $typeFilter نوع الحركة
  * @param int|null $branchFilter فلتر الفرع branches.id
  * @param array|null $branchById خريطة branches.id => صف الفرع
- * @return array{feed: array<int, array>, new_items_ever: bool, count: int}
+ * @param string $groupFilter فلتر المجموعة (sales, purchases, treasury, employees, other, all)
+ * @return array{feed: array<int, array>, new_items_ever: bool, count: int, groups: array<string, array>}
  */
 function act_timeline_data(
     string $dateStart,
     string $dateEnd,
     string $typeFilter = 'all',
     ?int $branchFilter = null,
-    ?array $branchById = null
+    ?array $branchById = null,
+    string $groupFilter = 'all'
 ): array {
     $pdo = db();
     if ($branchById === null) {
         [, $branchById] = act_get_branches();
     }
 
+    $allGroups = act_groups();
+    if ($groupFilter !== 'all' && !isset($allGroups[$groupFilter])) {
+        $groupFilter = 'all';
+    }
+
+    $shouldRun = static function (string $type) use ($typeFilter, $groupFilter): bool {
+        if ($typeFilter !== 'all') {
+            return $typeFilter === $type;
+        }
+        if ($groupFilter !== 'all') {
+            return act_group_of_type($type) === $groupFilter;
+        }
+        return true;
+    };
+
     $feed = [];
     $smsExtra = 'AND s.dup_of IS NULL';
 
     // ج) الورديات (shifts) + حدث «مراجعة وردية» منفصل
-    if ($typeFilter === 'all' || $typeFilter === 'shifts') {
+    if ($shouldRun('shifts')) {
         $sql = "
             SELECT
                 s.id, s.branch_id, b.name AS branch_name, s.user_id, u.full_name AS user_name,
@@ -281,6 +383,7 @@ function act_timeline_data(
                 $feed[] = [
                     'time'        => (string) $r['created_at'],
                     'type'        => 'shifts',
+                    'group'       => 'sales',
                     'type_label'  => 'وردية',
                     'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'rejected' ? 'fchip-neg' : 'fchip-mute'),
                     'icon'        => 'ti-clock',
@@ -297,6 +400,7 @@ function act_timeline_data(
                 $feed[] = [
                     'time'        => (string) $r['reviewed_at'],
                     'type'        => 'shifts',
+                    'group'       => 'sales',
                     'type_label'  => 'مراجعة وردية',
                     'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : 'fchip-neg',
                     'icon'        => 'ti-check',
@@ -311,7 +415,7 @@ function act_timeline_data(
     }
 
     // د) العهد (branch_custody)
-    if ($typeFilter === 'all' || $typeFilter === 'custody') {
+    if ($shouldRun('custody')) {
         $sql = "
             SELECT
                 c.id, c.branch_id, b.name AS branch_name, c.employee_id,
@@ -335,6 +439,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'custody',
+                'group'       => 'treasury',
                 'type_label'  => 'عهدة',
                 'badge_class' => $r['status'] === 'closed' ? 'fchip-pos' : ($r['status'] === 'pending_review' ? 'fchip-warn' : 'fchip-mute'),
                 'icon'        => 'ti-cash',
@@ -350,7 +455,7 @@ function act_timeline_data(
     }
 
     // هـ) استلام الفواتير في الفروع (receipts)
-    if ($typeFilter === 'all' || $typeFilter === 'receiving') {
+    if ($shouldRun('receiving')) {
         $sql = "
             SELECT
                 r.id, r.group_id, r.distribution_id, r.branch_id, b.name AS branch_name,
@@ -380,6 +485,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'receiving',
+                'group'       => 'purchases',
                 'type_label'  => 'استلام بضاعة',
                 'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : ($r['status'] === 'received' ? 'fchip-mute' : 'fchip-warn'),
                 'icon'        => 'ti-truck',
@@ -393,7 +499,7 @@ function act_timeline_data(
 
     // و) الخزينة (journal_entries)
     // 🔴 فرع التكلفة = نفس COALESCE وبنفس الـJOINs بتاعة reports_lib.php (case 'treasury').
-    if ($typeFilter === 'all' || $typeFilter === 'treasury') {
+    if ($shouldRun('treasury')) {
         $sql = "
             SELECT
                 j.id, j.treasury_id, t.name AS treasury_name,
@@ -429,6 +535,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'treasury',
+                'group'       => 'treasury',
                 'type_label'  => 'سند خزينة',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-building-bank',
@@ -441,7 +548,7 @@ function act_timeline_data(
     }
 
     // ز) رسايل إنستا والبنك (sms_inbox)
-    if ($typeFilter === 'all' || $typeFilter === 'sms') {
+    if ($shouldRun('sms')) {
         $sql = "
             SELECT
                 s.id, s.sender, s.body, s.sms_at AS event_time,
@@ -458,6 +565,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'sms',
+                'group'       => 'sales',
                 'type_label'  => 'رسالة بنك',
                 'badge_class' => $hasPermit ? 'fchip-pos' : 'fchip-warn',
                 'icon'        => 'ti-device-mobile',
@@ -472,7 +580,7 @@ function act_timeline_data(
     }
 
     // ح) طلبات النواقص والفروع (shortage_requests)
-    if ($typeFilter === 'all' || $typeFilter === 'shortage') {
+    if ($shouldRun('shortage')) {
         $sql = "
             SELECT
                 sr.id, sr.task_id, sr.from_branch_id, b1.name AS from_branch_name,
@@ -499,6 +607,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'shortage',
+                'group'       => 'purchases',
                 'type_label'  => 'طلب نواقص',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-shopping-cart',
@@ -511,7 +620,7 @@ function act_timeline_data(
     }
 
     // ط) الحضور والانصراف (attendance)
-    if ($typeFilter === 'all' || $typeFilter === 'attendance') {
+    if ($shouldRun('attendance')) {
         $sql = "
             SELECT
                 a.id, a.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
@@ -537,6 +646,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'attendance',
+                'group'       => 'employees',
                 'type_label'  => 'حضور وانصراف',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-user-check',
@@ -549,7 +659,7 @@ function act_timeline_data(
     }
 
     // ي) جلسات الجرد (stocktake_sessions)
-    if ($typeFilter === 'all' || $typeFilter === 'stocktake') {
+    if ($shouldRun('stocktake')) {
         $sql = "
             SELECT
                 ss.id, ss.status, ss.has_balance, ss.started_by, u_st.full_name AS started_by_name,
@@ -567,6 +677,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'stocktake',
+                'group'       => 'purchases',
                 'type_label'  => 'جلسة جرد',
                 'badge_class' => $r['status'] === 'closed' ? 'fchip-pos' : 'fchip-warn',
                 'icon'        => 'ti-checklist',
@@ -580,7 +691,7 @@ function act_timeline_data(
 
     // ل) الأصناف الجديدة (hq_codes.created_at — بريف ٢٠٦)
     $newItemsEver = false;
-    if ($typeFilter === 'all' || $typeFilter === 'newitems') {
+    if ($shouldRun('newitems')) {
         $stEver = $pdo->query('SELECT 1 FROM hq_codes WHERE created_at IS NOT NULL LIMIT 1');
         $newItemsEver = (bool) ($stEver ? $stEver->fetchColumn() : false);
 
@@ -600,6 +711,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'newitems',
+                'group'       => 'purchases',
                 'type_label'  => 'صنف جديد',
                 'badge_class' => 'fchip-pos',
                 'icon'        => 'ti-package',
@@ -612,7 +724,7 @@ function act_timeline_data(
     }
 
     // م) اعتماد ورفض أذونات إنستاباي (sms_permits.reviewed_at)
-    if ($typeFilter === 'all' || $typeFilter === 'permits') {
+    if ($shouldRun('permits')) {
         $sql = "
             SELECT
                 p.id, p.sms_id, p.action, p.amount, p.status, p.reviewed_at,
@@ -633,6 +745,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['reviewed_at'],
                 'type'        => 'permits',
+                'group'       => 'sales',
                 'type_label'  => $r['status'] === 'approved' ? 'اعتماد إذن' : 'رفض إذن',
                 'badge_class' => $r['status'] === 'approved' ? 'fchip-pos' : 'fchip-neg',
                 'icon'        => 'ti-circle-check',
@@ -646,7 +759,7 @@ function act_timeline_data(
     }
 
     // ن) التحويلات بين الخزائن (treasury_transfers)
-    if ($typeFilter === 'all' || $typeFilter === 'transfers') {
+    if ($shouldRun('transfers')) {
         $sql = "
             SELECT
                 tt.id, tt.from_treasury_id, tf.name AS from_name, tf.branch_id AS from_branch_id,
@@ -675,6 +788,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'transfers',
+                'group'       => 'treasury',
                 'type_label'  => 'تحويل خزائن',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-transfer',
@@ -689,7 +803,7 @@ function act_timeline_data(
     }
 
     // س) صرف المرتبات (salaries.paid_at)
-    if ($typeFilter === 'all' || $typeFilter === 'salaries') {
+    if ($shouldRun('salaries')) {
         $sql = "
             SELECT
                 s.id, s.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
@@ -713,6 +827,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'salaries',
+                'group'       => 'employees',
                 'type_label'  => 'صرف مرتب',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-wallet',
@@ -726,7 +841,7 @@ function act_timeline_data(
     }
 
     // ع) السلف (employee_advances)
-    if ($typeFilter === 'all' || $typeFilter === 'advances') {
+    if ($shouldRun('advances')) {
         $sql = "
             SELECT
                 a.id, a.employee_id, e.full_name AS employee_name, e.branch_id, b.name AS branch_name,
@@ -749,6 +864,7 @@ function act_timeline_data(
             $feed[] = [
                 'time'        => (string) $r['event_time'],
                 'type'        => 'advances',
+                'group'       => 'employees',
                 'type_label'  => 'سلفة',
                 'badge_class' => 'fchip-mute',
                 'icon'        => 'ti-cash-banknote',
@@ -763,6 +879,14 @@ function act_timeline_data(
         }
     }
 
+    // ضمان وجود مفتاح group لكل حركة
+    foreach ($feed as &$item) {
+        if (!isset($item['group'])) {
+            $item['group'] = act_group_of_type((string) ($item['type'] ?? ''));
+        }
+    }
+    unset($item);
+
     // ترتيب الخط الزمني تنازلياً حسب الوقت (الأحدث فوق)
     usort($feed, function ($a, $b) {
         return strcmp($b['time'], $a['time']);
@@ -773,10 +897,30 @@ function act_timeline_data(
         $feed = array_slice($feed, 0, 500);
     }
 
+    // تجميع شارات وأعداد المجموعات من الداتا المجلوبة مباشرة (بدون استعلام إضافي)
+    $groupsSummary = [];
+    foreach ($allGroups as $gKey => $gMeta) {
+        $groupsSummary[$gKey] = [
+            'key'   => $gKey,
+            'name'  => $gMeta['name'],
+            'icon'  => $gMeta['icon'],
+            'types' => $gMeta['types'],
+            'count' => 0,
+        ];
+    }
+    foreach ($feed as $item) {
+        $g = $item['group'] ?? 'other';
+        if (!isset($groupsSummary[$g])) {
+            $g = 'other';
+        }
+        $groupsSummary[$g]['count']++;
+    }
+
     return [
         'feed'           => $feed,
         'new_items_ever' => $newItemsEver,
         'count'          => count($feed),
+        'groups'         => $groupsSummary,
     ];
 }
 
