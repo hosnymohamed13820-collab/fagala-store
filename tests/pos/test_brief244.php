@@ -5,11 +5,12 @@
 declare(strict_types=1);
 
 $root = getenv('LARAGON_WWW') ?: 'D:/laragon/www_ds2';
+$siteRoot = getenv('WORKTREE_SITE') ?: $root;
 chdir($root);
 require_once "$root/config.php";
 require_once "$root/auth.php";
-require_once "$root/sale_lib.php";
-require_once "$root/pos_devices_lib.php";
+require_once "$siteRoot/sale_lib.php";
+require_once "$siteRoot/pos_devices_lib.php";
 
 $pdo = db();
 
@@ -173,6 +174,15 @@ try {
         }
     }
     assert_true($caught403, "مستخدم من فرع 5 ممنوع من فتح فاتورة فرع 1 ورجع 403");
+
+    $branchlessUser = ['id' => 999999, 'username' => 'branchless', 'full_name' => 'من غير نطاق', 'is_owner' => 0, 'branch_id' => null];
+    $branchless403 = false;
+    try {
+        sale_receipt_payload($testDocId, false, $branchlessUser);
+    } catch (SaleApiException $e) {
+        $branchless403 = $e->http === 403;
+    }
+    assert_true($branchless403, "مستخدم branch_id=NULL ومن غير نطاق ممنوع ورجع 403");
 
     echo "\n✅ جميع حالات اختبار بريف ٢٤٤ نجحت بالكامل!\n";
 

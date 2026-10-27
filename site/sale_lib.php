@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/stock_lib.php';
 require_once __DIR__ . '/item_master_lib.php';
 require_once __DIR__ . '/push_lib.php';
+require_once __DIR__ . '/cash_denominations_lib.php';
 
 final class SaleApiException extends RuntimeException
 {
@@ -233,6 +234,245 @@ function sale_session_open(PDO $pdo, string $uuid, float $openingCash, array $us
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/** ملخص أرقام وردية جهاز من المستندات المكتملة فقط. */
+function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = false): array
+{
+    $device = sale_device($pdo, $uuid, $user, $lock);
+    $session = sale_open_session($pdo, (int) $device['id'], $lock);
+    if (!$session) {
+        throw new SaleApiException('مفيش وردية مفتوحة على الجهاز.', 409, 'locked');
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'sale' THEN p.cash_amount ELSE 0 END), 0) sale_cash,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'sale' THEN d.change_due ELSE 0 END), 0) sale_change,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'return' THEN p.cash_amount ELSE 0 END), 0) return_cash,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'sale' THEN p.visa_amount ELSE 0 END), 0) sale_visa,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'return' THEN p.visa_amount ELSE 0 END), 0) return_visa,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'sale' THEN p.instapay_amount ELSE 0 END), 0) sale_instapay,
+            COALESCE(SUM(CASE WHEN d.doc_kind = 'return' THEN p.instapay_amount ELSE 0 END), 0) return_instapay
+           FROM sale_docs d
+           LEFT JOIN (
+                SELECT doc_id,
+                       SUM(CASE WHEN method = 'cash' THEN amount ELSE 0 END) cash_amount,
+                       SUM(CASE WHEN method = 'visa' THEN amount ELSE 0 END) visa_amount,
+                       SUM(CASE WHEN method = 'instapay' THEN amount ELSE 0 END) instapay_amount
+                  FROM sale_payments
+                 GROUP BY doc_id
+           ) p ON p.doc_id = d.id
+          WHERE d.session_id = ? AND d.status = 'completed'"
+    );
+    $stmt->execute([(int) $session['id']]);
+    $totals = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $openingCash = round((float) $session['opening_cash'], 2);
+    $expectedCash = round(
+        $openingCash + (float) ($totals['sale_cash'] ?? 0)
+        - (float) ($totals['sale_change'] ?? 0) - (float) ($totals['return_cash'] ?? 0),
+        2
+    );
+    $expectedVisa = round((float) ($totals['sale_visa'] ?? 0) - (float) ($totals['return_visa'] ?? 0), 2);
+    $expectedInstapay = round(
+        (float) ($totals['sale_instapay'] ?? 0) - (float) ($totals['return_instapay'] ?? 0),
+        2
+    );
+
+    $heldStmt = $pdo->prepare(
+        "SELECT id, client_uuid, gross, net, created_at
+           FROM sale_docs
+          WHERE session_id = ? AND status = 'held'
+          ORDER BY created_at, id"
+    );
+    $heldStmt->execute([(int) $session['id']]);
+
+    return [
+        'device' => ['id' => (int) $device['id'], 'name' => $device['name'], 'code' => $device['code']],
+        'session' => [
+            'id' => (int) $session['id'],
+            'business_date' => $session['business_date'],
+            'opened_at' => $session['opened_at'],
+            'opening_cash' => $openingCash,
+        ],
+        'expected' => [
+            'cash' => $expectedCash,
+            'visa' => $expectedVisa,
+            'instapay' => $expectedInstapay,
+            'total' => round($expectedCash + $expectedVisa + $expectedInstapay, 2),
+        ],
+        'held_docs' => $heldStmt->fetchAll(PDO::FETCH_ASSOC),
+        'denominations' => cashier_cash_denominations(),
+    ];
+}
+
+/** تقفيل وردية الجهاز وإرسال صف shifts لدورة المراجعة الموجودة. */
+function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): array
+{
+    $clientUuid = trim((string) ($input['client_uuid'] ?? ''));
+    if ($clientUuid === '' || mb_strlen($clientUuid) > 64) {
+        throw new SaleApiException('معرّف عملية التقفيل مطلوب وبحد أقصى ٦٤ خانة.');
+    }
+
+    $modeStmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'pos_close_expenses_mode'");
+    $modeStmt->execute();
+    $expensesMode = (string) ($modeStmt->fetchColumn() ?: 'fagala');
+    if ($expensesMode !== 'fagala') {
+        throw new SaleApiException('وضع مصروفات إشراقة محتاج اعتماد مسار القيود الأول.', 409, 'locked');
+    }
+
+    $cashCounts = (array) ($input['cash_counts'] ?? []);
+    $allowedDenoms = cashier_cash_denominations();
+    $cleanCash = [];
+    $countedCash = 0.0;
+    foreach ($allowedDenoms as $denom) {
+        $key = (string) $denom;
+        $count = max(0, (int) ($cashCounts[$key] ?? $cashCounts[(int) $denom] ?? 0));
+        if ($count > 0) {
+            $subtotal = round($denom * $count, 2);
+            $cleanCash[] = ['denomination' => $denom, 'count' => $count, 'subtotal' => $subtotal];
+            $countedCash = round($countedCash + $subtotal, 2);
+        }
+    }
+
+    $paymentLines = [];
+    $counted = ['visa' => 0.0, 'instapay' => 0.0];
+    foreach ((array) ($input['payment_lines'] ?? []) as $idx => $line) {
+        if (!is_array($line)) {
+            continue;
+        }
+        $method = (string) ($line['method'] ?? '');
+        $amount = round((float) ($line['amount'] ?? 0), 2);
+        if (!isset($counted[$method]) || $amount <= 0) {
+            continue;
+        }
+        $reference = trim((string) ($line['reference'] ?? ''));
+        $lineNo = count($paymentLines) + 1;
+        if ($lineNo > 255) {
+            throw new SaleApiException('عدد سطور المطابقة أكبر من المسموح.');
+        }
+        $paymentLines[] = [
+            'method' => $method,
+            'line_no' => $lineNo,
+            'reference' => $reference !== '' ? mb_substr($reference, 0, 100) : null,
+            'amount' => $amount,
+        ];
+        $counted[$method] = round($counted[$method] + $amount, 2);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $summary = sale_session_summary($pdo, $uuid, $user, true);
+        $sessionId = (int) $summary['session']['id'];
+        $sessionStmt = $pdo->prepare('SELECT * FROM sale_sessions WHERE id = ? FOR UPDATE');
+        $sessionStmt->execute([$sessionId]);
+        $session = $sessionStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$session || $session['status'] !== 'open' || !empty($session['shift_id'])) {
+            throw new SaleApiException('الوردية دي اتقفلت قبل كده.', 409, 'duplicate');
+        }
+
+        $systemTotal = round((float) $summary['expected']['total'], 2);
+        $collected = round($countedCash + $counted['visa'] + $counted['instapay'], 2);
+        $difference = round($collected - $systemTotal, 2);
+        $device = $summary['device'];
+        $shiftName = 'POS-' . $sessionId;
+
+        $shiftStmt = $pdo->prepare(
+            "INSERT INTO shifts
+                (user_id, branch_id, business_date, shift_name, cash_total, visa_total,
+                 wallet_total, instapay_total, system_total, difference, status, source, session_id)
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'submitted', 'pos', ?)"
+        );
+        $shiftStmt->execute([
+            (int) $session['cashier_id'],
+            (int) $session['branch_id'],
+            $session['business_date'],
+            $shiftName,
+            $countedCash,
+            $counted['visa'],
+            $counted['instapay'],
+            $systemTotal,
+            $difference,
+            $sessionId,
+        ]);
+        $shiftId = (int) $pdo->lastInsertId();
+
+        if ($cleanCash) {
+            $groups = [];
+            $params = [];
+            foreach ($cleanCash as $row) {
+                $groups[] = '(?,?,?,?)';
+                array_push($params, $shiftId, $row['denomination'], $row['count'], $row['subtotal']);
+            }
+            $pdo->prepare(
+                'INSERT INTO shift_cash (shift_id, denomination, count, subtotal) VALUES ' . implode(',', $groups)
+            )->execute($params);
+        }
+        if ($paymentLines) {
+            $groups = [];
+            $params = [];
+            foreach ($paymentLines as $row) {
+                $groups[] = '(?,?,?,?,?)';
+                array_push($params, $shiftId, $row['method'], $row['line_no'], $row['reference'], $row['amount']);
+            }
+            $pdo->prepare(
+                'INSERT INTO shift_payment_lines (shift_id, method, line_no, reference, amount) VALUES '
+                . implode(',', $groups)
+            )->execute($params);
+        }
+
+        $pdo->prepare(
+            "UPDATE sale_sessions
+                SET status = 'closed', closed_at = NOW(), shift_id = ?, close_client_uuid = ?
+              WHERE id = ? AND status = 'open' AND shift_id IS NULL"
+        )->execute([$shiftId, $clientUuid, $sessionId]);
+
+        sale_events_insert($pdo, [[
+            'branch_id' => (int) $session['branch_id'],
+            'device_id' => (int) $device['id'],
+            'session_id' => $sessionId,
+            'user_id' => (int) $user['id'],
+            'doc_id' => null,
+            'event_type' => 'session_closed',
+            'payload' => [
+                'shift_id' => $shiftId,
+                'expected' => $summary['expected'],
+                'counted' => ['cash' => $countedCash] + $counted,
+                'difference' => [
+                    'cash' => round($countedCash - (float) $summary['expected']['cash'], 2),
+                    'visa' => round($counted['visa'] - (float) $summary['expected']['visa'], 2),
+                    'instapay' => round($counted['instapay'] - (float) $summary['expected']['instapay'], 2),
+                    'total' => $difference,
+                ],
+                'held_count' => count($summary['held_docs']),
+            ],
+            'approved_by' => null,
+        ]]);
+
+        $pdo->commit();
+        return [
+            'shift_id' => $shiftId,
+            'status' => 'submitted',
+            'expected' => $summary['expected'],
+            'counted' => ['cash' => $countedCash] + $counted,
+            'difference' => [
+                'cash' => round($countedCash - (float) $summary['expected']['cash'], 2),
+                'visa' => round($counted['visa'] - (float) $summary['expected']['visa'], 2),
+                'instapay' => round($counted['instapay'] - (float) $summary['expected']['instapay'], 2),
+                'total' => $difference,
+            ],
+            'held_docs' => $summary['held_docs'],
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($e instanceof PDOException && (int) ($e->errorInfo[1] ?? 0) === 1062) {
+            throw new SaleApiException('الوردية دي اتقفلت قبل كده.', 409, 'duplicate');
         }
         throw $e;
     }
@@ -1292,6 +1532,7 @@ function sale_approve(PDO $pdo, array $input, array $user): array
     $value = (float) ($input['value'] ?? 0);
     $username = trim((string) ($input['username'] ?? ''));
     $password = (string) ($input['password'] ?? '');
+    $refDocId = (int) ($input['doc_id'] ?? 0);
 
     $allowedTypes = ['discount', 'return_late', 'return_method'];
     if (!in_array($approvalType, $allowedTypes, true) || !is_finite($value) || $value < 0) {
@@ -1299,6 +1540,22 @@ function sale_approve(PDO $pdo, array $input, array $user): array
     }
     if ($approvalType === 'discount' && $value > 100) {
         throw new SaleApiException('نوع الاعتماد أو قيمته مش صحيح.');
+    }
+    if ($approvalType !== 'discount') {
+        if ($refDocId <= 0 || $value <= 0) {
+            throw new SaleApiException('الفاتورة الأصلية ومبلغ الرد مطلوبين للاعتماد.');
+        }
+        $docStmt = $pdo->prepare(
+            "SELECT id
+               FROM sale_docs
+              WHERE id = ? AND branch_id = ? AND doc_kind = 'sale' AND status = 'completed'"
+        );
+        $docStmt->execute([$refDocId, (int) $device['branch_id']]);
+        if (!$docStmt->fetchColumn()) {
+            throw new SaleApiException('الفاتورة الأصلية مش موجودة في فرع الجهاز.', 403, 'forbidden');
+        }
+    } else {
+        $refDocId = 0;
     }
 
     $stmt = $pdo->prepare(
@@ -1362,14 +1619,15 @@ function sale_approve(PDO $pdo, array $input, array $user): array
     $expiresAt = date('Y-m-d H:i:s', time() + 300);
     $pdo->prepare(
         'INSERT INTO sale_approval_tokens
-            (token_hash, device_id, approval_type, approved_value, approved_by,
+            (token_hash, device_id, approval_type, approved_value, ref_doc_id, approved_by,
              requested_by, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)'
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )->execute([
         hash('sha256', $plainToken),
         (int) $device['id'],
         $approvalType,
         round($value, 3),
+        $refDocId > 0 ? $refDocId : null,
         (int) $supervisor['id'],
         (int) $user['id'],
         $expiresAt,
@@ -1384,6 +1642,7 @@ function sale_approve(PDO $pdo, array $input, array $user): array
         'payload' => [
             'approval_type' => $approvalType,
             'value' => round($value, 3),
+            'ref_doc_id' => $refDocId > 0 ? $refDocId : null,
             'expires_at' => $expiresAt,
         ],
         'approved_by' => (int) $supervisor['id'],
@@ -1459,6 +1718,7 @@ function sale_cart_event(PDO $pdo, array $input, array $user): void
         $payload = [
             'item_id' => (int) ($input['item_id'] ?? 0),
             'code' => trim((string) ($input['code'] ?? '')),
+            'name' => mb_substr(trim((string) ($input['name'] ?? '')), 0, 255),
             'qty' => round((float) ($input['qty'] ?? 0), 3),
             'price' => round((float) ($input['price'] ?? 0), 2),
         ];
@@ -1471,7 +1731,30 @@ function sale_cart_event(PDO $pdo, array $input, array $user): void
             throw new SaleApiException('بيانات الصنف الملغي ناقصة.');
         }
     } else {
-        $payload = ['lines_count' => max(0, (int) ($input['lines_count'] ?? 0))];
+        $cleanLines = [];
+        foreach (array_slice((array) ($input['lines'] ?? []), 0, 200) as $line) {
+            if (!is_array($line)) {
+                continue;
+            }
+            $itemId = (int) ($line['item_id'] ?? 0);
+            $code = trim((string) ($line['code'] ?? ''));
+            $qty = round((float) ($line['qty'] ?? 0), 3);
+            $price = round((float) ($line['price'] ?? 0), 2);
+            if ($itemId === 0 || $code === '' || $qty <= 0 || $price < 0) {
+                continue;
+            }
+            $cleanLines[] = [
+                'item_id' => $itemId,
+                'code' => mb_substr($code, 0, 64),
+                'name' => mb_substr(trim((string) ($line['name'] ?? '')), 0, 255),
+                'qty' => $qty,
+                'price' => $price,
+            ];
+        }
+        $payload = [
+            'lines_count' => max(0, (int) ($input['lines_count'] ?? count($cleanLines))),
+            'lines' => $cleanLines,
+        ];
     }
     sale_events_insert($pdo, [[
         'branch_id' => (int) $device['branch_id'],
@@ -1493,7 +1776,7 @@ function sale_lookup_token(PDO $pdo, int $deviceId, string $type, string $token)
         return null;
     }
     $stmt = $pdo->prepare(
-        "SELECT id, approved_by, approved_value
+        "SELECT id, approved_by, approved_value, ref_doc_id
            FROM sale_approval_tokens
           WHERE token_hash = ? AND device_id = ? AND approval_type = ?
             AND used_at IS NULL AND expires_at >= NOW()
@@ -1502,6 +1785,17 @@ function sale_lookup_token(PDO $pdo, int $deviceId, string $type, string $token)
     $stmt->execute([hash('sha256', $token), $deviceId, $type]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
+}
+
+/** اعتماد المرتجع لازم يخص نفس الفاتورة ويغطي مبلغ الرد الفعلي لحد فرق قرش. */
+function sale_require_return_approval(array $approval, int $origDocId, float $actualValue): void
+{
+    if (
+        (int) ($approval['ref_doc_id'] ?? 0) !== $origDocId
+        || $actualValue - (float) ($approval['approved_value'] ?? 0) > 0.01001
+    ) {
+        throw new SaleApiException('اعتماد المشرف مش خاص بالفاتورة أو مبلغ المرتجع ده.', 403, 'forbidden');
+    }
 }
 
 /** تعليم توكن الاعتماد كمستهلك. */
@@ -1976,6 +2270,9 @@ function sale_return_ref(PDO $pdo, array $input, array $user): array
         $returnLines = $calc['lines'];
         $totalReturnNet = $calc['total_net'];
         $totalReturnGross = $calc['total_gross'];
+        if ($lateApproval) {
+            sale_require_return_approval($lateApproval, $origDocId, $totalReturnNet);
+        }
 
         $origPayStmt = $pdo->prepare('SELECT method, SUM(amount) AS amount FROM sale_payments WHERE doc_id = ? GROUP BY method');
         $origPayStmt->execute([$origDocId]);
@@ -2013,6 +2310,7 @@ function sale_return_ref(PDO $pdo, array $input, array $user): array
                     'forbidden'
                 );
             }
+            sale_require_return_approval($methodApproval, $origDocId, $totalReturnNet);
         }
 
         $receiptNo = sale_next_receipt($pdo, $device);
@@ -2516,6 +2814,9 @@ function sale_exchange(PDO $pdo, array $input, array $user): array
         $returnLines = $returnCalc['lines'];
         $returnNet = $returnCalc['total_net'];
         $returnGross = $returnCalc['total_gross'];
+        if ($lateApproval) {
+            sale_require_return_approval($lateApproval, $origDocId, $returnNet);
+        }
 
         $saleLinesInput = (array) ($saleInput['lines'] ?? []);
         if (!$saleLinesInput) {
@@ -2592,6 +2893,7 @@ function sale_exchange(PDO $pdo, array $input, array $user): array
                 if (!$methodApproval) {
                     throw new SaleApiException('طريقة رد الفرق مختلفة عن الفاتورة الأصلية — محتاجة اعتماد مشرف.', 403, 'forbidden');
                 }
+                sale_require_return_approval($methodApproval, $origDocId, $refundNeeded);
                 $methodOverrideReason = trim((string) ($input['method_override_reason'] ?? ($input['reason'] ?? '')));
             }
         } else {
@@ -2853,13 +3155,10 @@ function sale_receipt_payload(int $docId, bool $forceReprint = false, ?array $us
 
     $currentUser = $user ?? (function_exists('current_user') ? current_user() : null);
     if ($currentUser && !empty($currentUser['id'])) {
-        $isOwner = !empty($currentUser['is_owner']);
         if ($user === null && function_exists('is_real_owner') && is_real_owner()) {
-            $isOwner = true;
+            $currentUser['is_owner'] = 1;
         }
-        if (!$isOwner && !empty($currentUser['branch_id']) && (int) $currentUser['branch_id'] !== (int) $doc['branch_id']) {
-            throw new SaleApiException('الفاتورة تابعة لفرع تاني.', 403, 'forbidden');
-        }
+        sale_require_branch($pdo, (int) $doc['branch_id'], $currentUser);
     }
 
     // بيانات الفرع

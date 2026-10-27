@@ -7,9 +7,10 @@
 declare(strict_types=1);
 
 $wwwRoot = getenv('LARAGON_WWW') ?: 'D:/laragon/www_ds2';
+$siteRoot = getenv('WORKTREE_SITE') ?: $wwwRoot;
 require_once $wwwRoot . '/config.php';
-require_once $wwwRoot . '/stock_lib.php';
-require_once $wwwRoot . '/sale_lib.php';
+require_once $siteRoot . '/stock_lib.php';
+require_once $siteRoot . '/sale_lib.php';
 
 $pdo = db();
 
@@ -164,7 +165,8 @@ try {
     $apprLate = sale_approve($pdo, [
         'device_uuid' => $devUuid,
         'approval_type' => 'return_late',
-        'value' => 0,
+        'value' => $ret5Amount,
+        'doc_id' => $sale5['doc_id'],
         'username' => (string)$owner['username'],
         'password' => $testPassword,
     ], $userOwner);
@@ -267,6 +269,7 @@ try {
         'device_uuid' => $devUuid,
         'approval_type' => 'return_method',
         'value' => 6.00,
+        'doc_id' => $sale6['doc_id'],
         'username' => (string)$owner['username'],
         'password' => $testPassword,
     ], $userOwner);
@@ -275,6 +278,30 @@ try {
     $createdTokenIds[] = $tokMethodId;
     $tokenMethod = (string)$apprMethod['approval_token'];
     echo "  ✓ تم إصدار توكن موافقة تغيير طريقة الرد بنجاح (Token: " . substr($tokenMethod, 0, 10) . "...).\n";
+
+    // بريف ٢٤٣: التوكن مربوط بالفاتورة وبحد مبلغ الرد.
+    $methodTokenData = sale_lookup_token($pdo, 1, 'return_method', $tokenMethod);
+    $wrongDocBlocked = false;
+    try {
+        sale_require_return_approval($methodTokenData, (int)$sale5['doc_id'], 6.00);
+    } catch (SaleApiException $e) {
+        $wrongDocBlocked = $e->http === 403;
+    }
+    if (!$wrongDocBlocked) {
+        throw new Exception('فشل: توكن فاتورة A اتقبل على فاتورة B.');
+    }
+    $smallApproval = $methodTokenData;
+    $smallApproval['approved_value'] = 5.00;
+    $amountBlocked = false;
+    try {
+        sale_require_return_approval($smallApproval, (int)$sale6['doc_id'], 50.00);
+    } catch (SaleApiException $e) {
+        $amountBlocked = $e->http === 403;
+    }
+    if (!$amountBlocked) {
+        throw new Exception('فشل: توكن ٥ ج اتقبل على مرتجع ٥٠ ج.');
+    }
+    echo "  ✓ توكن فاتورة A اترفض على B، وتوكن ٥ ج اترفض على مبلغ ٥٠ ج (403).\n";
 
     // تنفيذ المرتجع بالتوكن
     $uuid6Ret = 'test-b242-case6-ret-ok-' . bin2hex(random_bytes(4));

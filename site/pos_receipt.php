@@ -26,11 +26,6 @@ try {
     exit('طلب غير صالح.');
 }
 
-if (!is_real_owner() && !empty(current_user()['branch_id']) && (int) current_user()['branch_id'] !== (int) $payload['branch_id']) {
-    http_response_code(403);
-    exit('الفاتورة تابعة لفرع تاني.');
-}
-
 $isReprint = !empty($payload['is_reprint']);
 $isReturn = !empty($payload['is_return']);
 $branchName = (string) ($payload['branch_name'] ?? '');

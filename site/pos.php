@@ -275,6 +275,12 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn btn-sm btn-success" id="posBtnOpenSession" style="display:none;">
                 <i class="ti ti-plus"></i> فتح وردية
             </button>
+            <button type="button" class="btn btn-sm btn-primary" id="posBtnCloseSession" style="display:none;">
+                <i class="ti ti-lock"></i> تقفيل الوردية
+            </button>
+            <?php if (can('pos:reports') || is_real_owner()): ?>
+                <a class="btn btn-sm btn-outline" href="pos_reports.php"><i class="ti ti-chart-bar"></i> تقارير نقطة البيع</a>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -725,6 +731,36 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
+    <!-- نافذة تقفيل الوردية -->
+    <div class="fg-dlg-bg" id="posModalCloseSession" style="display:none;" role="dialog" aria-modal="true">
+        <div class="fg-dlg" style="width:min(96vw,900px);max-height:92vh;overflow:auto;">
+            <h3 class="fg-dlg-title"><i class="ti ti-lock"></i> تقفيل الوردية</h3>
+            <div id="posCloseSessionAlert"></div>
+            <div id="posCloseExpected"></div>
+            <div class="falert falert-warn" id="posCloseHeldWarning" style="display:none;"></div>
+            <h4>عد فئات الكاش</h4>
+            <div class="ftable-wrap">
+                <table class="ftable" data-xt-off>
+                    <thead><tr><th class="num">الفئة</th><th class="num">العدد</th><th class="num">الإجمالي</th></tr></thead>
+                    <tbody id="posCloseCashBody"></tbody>
+                </table>
+            </div>
+            <h4>مطابقة فيزا وإنستا باي</h4>
+            <div class="ftable-wrap">
+                <table class="ftable" data-xt-off>
+                    <thead><tr><th>الطريقة</th><th>المرجع</th><th class="num">المبلغ</th><th></th></tr></thead>
+                    <tbody id="posClosePaymentsBody"></tbody>
+                </table>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="posBtnAddClosePayment">إضافة سطر مطابقة</button>
+            <div id="posCloseDifferences" style="margin-top:var(--sp-3);"></div>
+            <div class="fg-dlg-actions">
+                <button type="button" class="fg-dlg-btn fg-dlg-ok" id="posBtnConfirmCloseSession">تأكيد التقفيل وإرساله للمراجعة</button>
+                <button type="button" class="fg-dlg-btn fg-dlg-cancel" id="posBtnCancelCloseSession">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
     <!-- نافذة الدفع (F10) -->
     <div class="fg-dlg-bg" id="posModalPayment" style="display:none;" role="dialog" aria-modal="true">
         <div class="fg-dlg" style="width: min(92vw, 560px);">
@@ -969,6 +1005,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const deviceBadge = document.getElementById('posDeviceBadge');
     const sessionBadge = document.getElementById('posSessionBadge');
     const openSessionBtn = document.getElementById('posBtnOpenSession');
+    const closeSessionBtn = document.getElementById('posBtnCloseSession');
     const customerBar = document.getElementById('posCustomerBar');
     const customerNameEl = document.getElementById('posCustomerName');
 
@@ -1069,11 +1106,13 @@ document.addEventListener('DOMContentLoaded', function () {
             sessionBadge.className = 'fchip fchip-warn';
             sessionBadge.textContent = 'مفيش وردية';
             openSessionBtn.style.display = 'inline-flex';
+            closeSessionBtn.style.display = 'none';
             showAlert('info', 'الجهاز جاهز لكن مفيش وردية مفتوحة — افتح وردية لبدء البيع.');
         } else {
             sessionBadge.className = 'fchip fchip-pos';
             sessionBadge.textContent = 'وردية مفتوحة #' + context.session.id;
             openSessionBtn.style.display = 'none';
+            closeSessionBtn.style.display = 'inline-flex';
             scanInput.disabled = false;
         }
         refocusScan();
@@ -1176,6 +1215,138 @@ document.addEventListener('DOMContentLoaded', function () {
         .finally(function () {
             document.getElementById('posBtnConfirmOpenSession').disabled = false;
         });
+    });
+
+    // ==========================================
+    // تقفيل الوردية
+    // ==========================================
+    const modalCloseSession = document.getElementById('posModalCloseSession');
+    const closeAlert = document.getElementById('posCloseSessionAlert');
+    const closeCashBody = document.getElementById('posCloseCashBody');
+    const closePaymentsBody = document.getElementById('posClosePaymentsBody');
+    let closeSummary = null;
+
+    function closePaymentRow(method) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td><select class="fselect pos-close-method">' +
+            '<option value="visa"' + (method === 'visa' ? ' selected' : '') + '>فيزا</option>' +
+            '<option value="instapay"' + (method === 'instapay' ? ' selected' : '') + '>إنستا باي</option>' +
+            '</select></td>' +
+            '<td><input class="finput pos-close-ref" type="text" maxlength="100" placeholder="رقم المرجع"></td>' +
+            '<td class="num"><input class="finput num pos-close-amount" type="number" min="0" step="0.01" value="0"></td>' +
+            '<td><button type="button" class="btn btn-sm btn-ghost pos-close-remove">حذف</button></td>';
+        closePaymentsBody.appendChild(tr);
+    }
+
+    function renderCloseDiffs() {
+        if (!closeSummary) return;
+        let cash = 0;
+        closeCashBody.querySelectorAll('[data-denom]').forEach(function (input) {
+            cash += Number(input.dataset.denom) * Math.max(0, parseInt(input.value || '0', 10));
+            const subtotal = input.closest('tr').querySelector('.pos-close-subtotal');
+            subtotal.textContent = (Number(input.dataset.denom) * Math.max(0, parseInt(input.value || '0', 10))).toFixed(2);
+        });
+        const counted = { cash: cash, visa: 0, instapay: 0 };
+        closePaymentsBody.querySelectorAll('tr').forEach(function (tr) {
+            const method = tr.querySelector('.pos-close-method').value;
+            counted[method] += Math.max(0, Number(tr.querySelector('.pos-close-amount').value || 0));
+        });
+        const exp = closeSummary.expected;
+        const totalDiff = counted.cash + counted.visa + counted.instapay - Number(exp.total);
+        document.getElementById('posCloseDifferences').innerHTML =
+            '<table class="ftable" data-xt-off><thead><tr><th>الطريقة</th><th class="num">المتوقع</th><th class="num">المعدود</th><th class="num">الفرق</th></tr></thead><tbody>' +
+            ['cash', 'visa', 'instapay'].map(function (method) {
+                const names = { cash: 'كاش', visa: 'فيزا', instapay: 'إنستا باي' };
+                const diff = counted[method] - Number(exp[method]);
+                return '<tr><td>' + names[method] + '</td><td class="num">' + Number(exp[method]).toFixed(2) + '</td><td class="num">' + counted[method].toFixed(2) + '</td><td class="num">' + diff.toFixed(2) + '</td></tr>';
+            }).join('') +
+            '<tr><td><strong>الإجمالي</strong></td><td class="num"><strong>' + Number(exp.total).toFixed(2) + '</strong></td><td class="num"><strong>' + (counted.cash + counted.visa + counted.instapay).toFixed(2) + '</strong></td><td class="num"><strong>' + totalDiff.toFixed(2) + '</strong></td></tr>' +
+            '</tbody></table>';
+    }
+
+    closeSessionBtn.addEventListener('click', function () {
+        closeAlert.innerHTML = '';
+        window.apiFetch('pos_api.php?part=session_summary&device_uuid=' + encodeURIComponent(deviceUuid))
+            .then(function (res) {
+                closeSummary = res.data || {};
+                const exp = closeSummary.expected || {};
+                document.getElementById('posCloseExpected').innerHTML = ui.alert('info',
+                    'المتوقع: كاش ' + Number(exp.cash || 0).toFixed(2) +
+                    ' · فيزا ' + Number(exp.visa || 0).toFixed(2) +
+                    ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2));
+                closeCashBody.innerHTML = (closeSummary.denominations || []).map(function (denom) {
+                    return '<tr><td class="num">' + Number(denom).toFixed(2) + '</td>' +
+                        '<td class="num"><input class="finput num" data-denom="' + ui.esc(String(denom)) + '" type="number" min="0" step="1" value="0"></td>' +
+                        '<td class="num pos-close-subtotal">0.00</td></tr>';
+                }).join('');
+                closePaymentsBody.innerHTML = '';
+                closePaymentRow('visa');
+                closePaymentRow('instapay');
+                const held = closeSummary.held_docs || [];
+                const warning = document.getElementById('posCloseHeldWarning');
+                if (held.length) {
+                    warning.style.display = 'block';
+                    warning.innerHTML = 'فيه ' + held.length + ' فاتورة معلقة مفتوحة في الوردية: ' +
+                        held.map(function (doc) { return '#' + ui.esc(String(doc.id)); }).join(' · ') +
+                        '. التقفيل مسموح، والفواتير هتفضل معلقة.';
+                } else {
+                    warning.style.display = 'none';
+                    warning.innerHTML = '';
+                }
+                renderCloseDiffs();
+                openModal(modalCloseSession);
+            })
+            .catch(function (err) { showAlert('neg', err.message || 'تعذر تحميل ملخص الوردية.'); });
+    });
+
+    closeCashBody.addEventListener('input', renderCloseDiffs);
+    closePaymentsBody.addEventListener('input', renderCloseDiffs);
+    closePaymentsBody.addEventListener('change', renderCloseDiffs);
+    closePaymentsBody.addEventListener('click', function (event) {
+        const btn = event.target.closest('.pos-close-remove');
+        if (!btn) return;
+        btn.closest('tr').remove();
+        renderCloseDiffs();
+    });
+    document.getElementById('posBtnAddClosePayment').addEventListener('click', function () {
+        closePaymentRow('visa');
+        renderCloseDiffs();
+    });
+    document.getElementById('posBtnCancelCloseSession').addEventListener('click', function () {
+        closeModal(modalCloseSession);
+    });
+    document.getElementById('posBtnConfirmCloseSession').addEventListener('click', function () {
+        const btn = this;
+        const cashCounts = {};
+        closeCashBody.querySelectorAll('[data-denom]').forEach(function (input) {
+            cashCounts[input.dataset.denom] = Math.max(0, parseInt(input.value || '0', 10));
+        });
+        const paymentLines = [];
+        closePaymentsBody.querySelectorAll('tr').forEach(function (tr) {
+            const amount = Math.max(0, Number(tr.querySelector('.pos-close-amount').value || 0));
+            if (amount <= 0) return;
+            paymentLines.push({
+                method: tr.querySelector('.pos-close-method').value,
+                reference: tr.querySelector('.pos-close-ref').value.trim(),
+                amount: amount
+            });
+        });
+        btn.disabled = true;
+        window.apiFetch('pos_api.php?part=session_close', {
+            method: 'POST',
+            body: {
+                device_uuid: deviceUuid,
+                client_uuid: crypto.randomUUID(),
+                cash_counts: cashCounts,
+                payment_lines: paymentLines
+            }
+        }).then(function (res) {
+            closeModal(modalCloseSession);
+            showAlert('pos', 'تم تقفيل الوردية وإرسالها للمراجعة. رقم التقفيل #' + Number(res.data.shift_id));
+            initContext();
+        }).catch(function (err) {
+            closeAlert.innerHTML = ui.alert('neg', err.message || 'تعذر تقفيل الوردية.');
+        }).finally(function () { btn.disabled = false; });
     });
 
     // ==========================================
@@ -1360,6 +1531,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     event_type: 'line_removed',
                     item_id: removed.item_id,
                     code: removed.code,
+                    name: removed.name,
                     qty: removed.qty,
                     price: removed.unit_price
                 }
@@ -1370,6 +1542,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function clearCart(silent) {
         if (!cart.length) return;
         const count = cart.length;
+        const clearedLines = cart.map(function (line) {
+            return {
+                item_id: line.item_id,
+                code: line.code,
+                name: line.name,
+                qty: line.qty,
+                price: line.unit_price
+            };
+        });
         cart = [];
         invoiceDiscount = 0;
         currentCustomer = null;
@@ -1386,7 +1567,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: {
                     device_uuid: deviceUuid,
                     event_type: 'cart_cleared',
-                    lines_count: count
+                    lines_count: count,
+                    lines: clearedLines
                 }
             }).catch(function () {});
         }
@@ -2058,6 +2240,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 device_uuid: deviceUuid,
                 approval_type: pendingApproval.type,
                 value: pendingApproval.value,
+                doc_id: pendingApproval.docId || undefined,
                 username: u,
                 password: p
             }
@@ -2735,7 +2918,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (err.message && err.message.indexOf('١٤ يوم') !== -1) {
                         promptSupervisorApproval({
                             type: 'return_late',
-                            value: returnDoc.days_since || 15,
+                            value: returnTotals.net,
+                            docId: returnDoc.id,
                             title: 'اعتماد مرتجع متأخر',
                             warning: err.message,
                             onSuccess: function (tok) {
@@ -2747,6 +2931,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         promptSupervisorApproval({
                             type: 'return_method',
                             value: returnTotals.net,
+                            docId: returnDoc.id,
                             title: 'اعتماد تغيير طريقة الرد',
                             warning: err.message || 'طريقة الرد تختلف عن الفاتورة الأصلية. يلزم اعتماد مشرف.',
                             onSuccess: function (tok) {
@@ -3338,7 +3523,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (err.message && err.message.indexOf('١٤ يوم') !== -1) {
                         promptSupervisorApproval({
                             type: 'return_late',
-                            value: exchReturnDoc.days_since || 15,
+                            value: exchTotals.returnNet,
+                            docId: exchReturnDoc.id,
                             title: 'اعتماد مرتجع متأخر للاستبدال',
                             warning: err.message,
                             onSuccess: function (tok) {
@@ -3350,6 +3536,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         promptSupervisorApproval({
                             type: 'return_method',
                             value: Math.abs(exchTotals.diff),
+                            docId: exchReturnDoc.id,
                             title: 'اعتماد طريقة رد الفرق للاستبدال',
                             warning: err.message,
                             onSuccess: function (tok) {

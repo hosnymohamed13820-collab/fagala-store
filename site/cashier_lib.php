@@ -17,6 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/cash_denominations_lib.php';
 
 /**
  * حساب يوم العمل المحاسبي (من 9 صباحاً إلى 9 صباح اليوم التالي).

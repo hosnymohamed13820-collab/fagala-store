@@ -14,6 +14,8 @@ $contracts = [
     'context'      => ['GET',  'pos:sell'],
     'lookup'       => ['GET',  'pos:sell'],
     'session_open' => ['POST', 'pos:sell'],
+    'session_summary' => ['GET', 'pos:sell'],
+    'session_close' => ['POST', 'pos:sell'],
     'finalize'     => ['POST', 'pos:sell'],
     'hold'         => ['POST', 'pos:sell'],
     'held_list'    => ['GET',  'pos:sell'],
@@ -49,7 +51,7 @@ if ($permission !== null) {
 if ($method === 'POST') {
     api_csrf();
 }
-if (in_array($part, ['session_open', 'finalize', 'hold', 'return_ref', 'return_general', 'exchange'], true)) {
+if (in_array($part, ['session_open', 'session_close', 'finalize', 'hold', 'return_ref', 'return_general', 'exchange'], true)) {
     api_idempotent();
 }
 
@@ -74,6 +76,19 @@ try {
                 $pdo,
                 (string) ($in['device_uuid'] ?? ''),
                 (float) ($in['opening_cash'] ?? 0),
+                $user
+            ));
+        case 'session_summary':
+            api_ok(sale_session_summary(
+                $pdo,
+                (string) ($in['device_uuid'] ?? ''),
+                $user
+            ));
+        case 'session_close':
+            api_ok(sale_session_close(
+                $pdo,
+                (string) ($in['device_uuid'] ?? ''),
+                $in,
                 $user
             ));
         case 'finalize':

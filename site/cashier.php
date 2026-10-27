@@ -20,7 +20,7 @@ $flash = ''; $flashType = 'success';
 
 // فئات الكاش. 0.5 و 0.25 كانوا في المراجعة بس ومش في التقفيل،
 // فالكاشير ماكانش يقدر يعدّ الفكة.
-$denominations = [200, 100, 50, 20, 10, 5, 1, 0.5, 0.25];
+$denominations = cashier_cash_denominations();
 $payMethods    = ['visa' => 'فيزا', 'instapay' => 'إنستا باي'];
 $rowsPerMethod = 10;
 
