@@ -216,16 +216,11 @@ require_once __DIR__ . '/nav_icons.php';
             <button class="menu-toggle" onclick="toggleSidebar()"><i class="ti ti-menu-2"></i></button>
             <h2><?= e($pageTitle) ?></h2>
             <?php
-                // الإشعارات (الجرس) — استعلام مستقل محمي لو الجداول لسه مش موجودة
-                $notifItems = []; $notifUnread = 0;
+                // الجرس محتاج العدّاد بس وقت الرندر؛ تفاصيل المجموعات بتتحمّل عند فتحه.
+                require_once dirname(__DIR__) . '/notifications_lib.php';
+                $notifUnread = 0;
                 try {
-                    $nuid = (int) $u['id'];
-                    $nc = db()->prepare('SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0');
-                    $nc->execute([$nuid]);
-                    $notifUnread = (int) $nc->fetchColumn();
-                    $nl = db()->prepare('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 15');
-                    $nl->execute([$nuid]);
-                    $notifItems = $nl->fetchAll();
+                    $notifUnread = notifgrp_unread_count((int) $u['id']);
                 } catch (Throwable $e) { /* الجداول لسه مش موجودة */ }
             ?>
             <button class="theme-toggle" onclick="toggleTheme()"
@@ -247,17 +242,15 @@ require_once __DIR__ . '/nav_icons.php';
                 </span></span>
             </button>
             <div class="notif-wrap">
-                <button class="notif-bell" onclick="toggleNotif(event)" title="الإشعارات">
+                <button class="notif-bell" id="notifBell" onclick="toggleNotif(event)" title="الإشعارات">
                     <i class="ti ti-bell"></i>
-                    <?php if ($notifUnread > 0): ?><span class="notif-badge"><?= $notifUnread > 9 ? '9+' : $notifUnread ?></span><?php endif; ?>
+                    <span class="notif-badge" id="notifBadge"<?= $notifUnread > 0 ? '' : ' style="display:none;"' ?>><?= $notifUnread > 9 ? '9+' : $notifUnread ?></span>
                 </button>
                 <div class="notif-panel" id="notifPanel">
                     <div class="notif-head">
                         <span>الإشعارات</span>
                         <div class="notif-actions">
-                            <?php if ($notifUnread > 0): ?>
-                                <a href="notifications_read.php?back=<?= urlencode($_SERVER['REQUEST_URI'] ?? 'dashboard.php') ?>" class="notif-mark">تعليم الكل كمقروء</a>
-                            <?php endif; ?>
+                            <button type="button" id="notifMarkAll" class="notif-mark"<?= $notifUnread > 0 ? '' : ' style="display:none;"' ?>>علّم الكل كمقروء</button>
                             <?php if ($vapidPublicKey !== ''): ?>
                                 <button id="pushPromptBtn" class="notif-push-btn" style="display:none;" onclick="enablePushNotifications()">
                                     <i class="ti ti-bell"></i> فعّل إشعارات الموبايل
@@ -270,27 +263,21 @@ require_once __DIR__ . '/nav_icons.php';
                             عشان الإشعارات توصلك على الآيفون، افتح قايمة المشاركة تحت واختار (إضافة إلى الشاشة الرئيسية)، وبعدين افتح الموقع من الأيقونة وفعّل الإشعارات من هنا.
                         </div>
                     <?php endif; ?>
-                    <div class="notif-list">
-                        <?php if (empty($notifItems)): ?>
-                            <div class="notif-empty">مفيش إشعارات</div>
-                        <?php else: foreach ($notifItems as $n):
-                            // الجرس بيبعت رقم الإشعار — أدق من المطابقة باللينك،
-                            // وبيشتغل كمان مع الإشعارات اللي ملهاش لينك.
-                            $notifHref = $n['is_read']
-                                ? ($n['link'] ?: '#')
-                                : 'notifications_read.php?id=' . (int) $n['id'];
-                        ?>
-                            <a href="<?= e($notifHref) ?>" class="notif-item <?= $n['is_read'] ? '' : 'unread' ?>">
-                                <div class="ni-title"><?= e($n['title']) ?></div>
-                                <?php if ($n['body']): ?><div class="ni-body"><?= e($n['body']) ?></div><?php endif; ?>
-                                <div class="ni-time"><?= e(date('Y-m-d H:i', strtotime($n['created_at']))) ?></div>
-                            </a>
-                        <?php endforeach; endif; ?>
+                    <div class="notif-list" id="notifGroups">
+                        <div class="notif-empty">افتح الجرس لتحميل الإشعارات</div>
                     </div>
                 </div>
             </div>
             <style>
                 .notif-actions { display: flex; align-items: center; gap: 8px; }
+                .notif-mark { border:0; background:transparent; cursor:pointer; font-family:inherit; padding:0; }
+                .notif-group { border-bottom:1px solid var(--line-soft); }
+                .notif-group > summary { display:flex; align-items:center; gap:8px; padding:11px 14px; cursor:pointer; list-style:none; }
+                .notif-group > summary::-webkit-details-marker { display:none; }
+                .notif-group-name { flex:1; font-weight:600; }
+                .notif-group-items { border-top:1px solid var(--line-soft); }
+                .notif-group-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; }
+                .notif-group-actions .btn { min-height:30px; padding:5px 9px; font-size:var(--fs-xs); }
                 .notif-push-btn {
                     display: inline-flex;
                     align-items: center;
@@ -407,6 +394,85 @@ require_once __DIR__ . '/nav_icons.php';
             })();
             </script>
             <?php endif; ?>
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                var bell = document.getElementById('notifBell');
+                var panel = document.getElementById('notifPanel');
+                var groupsBox = document.getElementById('notifGroups');
+                var markAll = document.getElementById('notifMarkAll');
+                var loading = false;
+
+                function notifSetCount(total) {
+                    var badge = document.getElementById('notifBadge');
+                    total = Number(total) || 0;
+                    badge.textContent = total > 9 ? '9+' : String(total);
+                    badge.style.display = total > 0 ? 'flex' : 'none';
+                    markAll.style.display = total > 0 ? '' : 'none';
+                }
+
+                function notifItemHtml(item) {
+                    var esc = window.ui.esc;
+                    return '<a href="' + esc(item.href) + '" class="notif-item ' + (item.is_read ? '' : 'unread') + '">' +
+                        '<div class="ni-title">' + esc(item.title) + '</div>' +
+                        (item.body ? '<div class="ni-body">' + esc(item.body) + '</div>' : '') +
+                        '<div class="ni-time">' + esc(item.time) + '</div></a>';
+                }
+
+                function notifRender(data) {
+                    notifSetCount(data.total_unread);
+                    groupsBox.innerHTML = (data.groups || []).map(function (group) {
+                        var unread = Number(group.unread) || 0;
+                        var items = (group.items || []).length
+                            ? group.items.map(notifItemHtml).join('')
+                            : '<div class="notif-empty">مفيش إشعارات في المجموعة دي</div>';
+                        return '<details class="notif-group"' + (unread > 0 ? ' open' : '') + '>' +
+                            '<summary>' + window.ui.icon(group.icon) +
+                            '<span class="notif-group-name">' + window.ui.esc(group.name) + '</span>' +
+                            window.ui.chip(unread, unread ? 'neg' : 'mute') + '</summary>' +
+                            '<div class="notif-group-items">' + items +
+                            '<div class="notif-group-actions">' +
+                            '<button type="button" class="btn btn-ghost btn-sm" data-notif-mark="' + window.ui.esc(group.key) + '"' + (unread ? '' : ' disabled') + '>علّم المجموعة كمقروءة</button>' +
+                            '<a class="btn btn-ghost btn-sm" href="notifications.php?group=' + encodeURIComponent(group.key) + '">عرض الكل</a>' +
+                            '</div></div></details>';
+                    }).join('');
+                }
+
+                function notifLoad() {
+                    if (loading) return;
+                    loading = true;
+                    groupsBox.innerHTML = window.ui.alert('info', 'جاري تحميل الإشعارات...');
+                    window.apiFetch('notifications_api.php?part=summary')
+                        .then(function (res) { notifRender(res.data); })
+                        .catch(function (err) {
+                            groupsBox.innerHTML = window.ui.alert('neg', (err && err.error) || 'حصل خطأ في تحميل الإشعارات');
+                        })
+                        .finally(function () { loading = false; });
+                }
+
+                function notifMark(body, button) {
+                    if (button) button.disabled = true;
+                    window.apiFetch('notifications_api.php?part=mark_read', {method:'POST', body:body})
+                        .then(notifLoad)
+                        .catch(function (err) {
+                            groupsBox.innerHTML = window.ui.alert('neg', (err && err.error) || 'معرفناش نعلّم الإشعارات');
+                        })
+                        .finally(function () { if (button) button.disabled = false; });
+                }
+
+                bell.addEventListener('click', function () {
+                    if (panel.classList.contains('open')) notifLoad();
+                });
+                groupsBox.addEventListener('click', function (event) {
+                    var button = event.target.closest('[data-notif-mark]');
+                    if (!button) return;
+                    notifMark({group:button.dataset.notifMark}, button);
+                });
+                markAll.addEventListener('click', function () { notifMark({all:true}, markAll); });
+
+                // لو المستخدم فتح الجرس قبل اكتمال تحميل الصفحة، حمّله أول ما apiFetch يبقى جاهز.
+                if (panel.classList.contains('open')) notifLoad();
+            });
+            </script>
         </div>
         <div class="content">
 <?php
