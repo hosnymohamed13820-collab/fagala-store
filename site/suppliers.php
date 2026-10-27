@@ -181,47 +181,15 @@ require_once __DIR__ . '/includes/header.php';
     .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
     .flash.success { background:var(--pos-soft); color:var(--pos); }
     .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
-    .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
-    .tab { padding:10px 20px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
-        font-size:14px; font-weight:500; }
-    .tab.active { background:var(--accent); color:#fff; }
-    .tab:not(.active):hover { background:var(--bg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 11px; border-radius:20px; font-size:12px; font-weight:500; }
     .inv-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     .inv-link:hover { text-decoration:underline; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
-    .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
-        z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
-    .modal-bg.open { display:flex; }
-    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:460px; padding:26px; }
-    .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
-    .form-row { margin-bottom:14px; }
-    .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
-        border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
-    .pay-type-row { display:flex; gap:10px; }
-    .pay-opt { flex:1; }
-    .pay-opt input { display:none; }
-    .pay-opt label { display:block; text-align:center; padding:11px; border:1.5px solid var(--line);
-        border-radius:9px; cursor:pointer; font-size:14px; color:var(--ink-700); }
-    .pay-opt input:checked + label { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
-    .modal-actions { display:flex; gap:10px; margin-top:20px; }
-    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-top:20px; }
-    .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:14px 16px; }
-    .sum-card .label { font-size:12px; color:var(--ink-500); margin-bottom:4px; font-weight:500; }
-    .sum-card .val { font-size:18px; font-weight:700; color:var(--ink-900); }
     .filter-form { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .filter-form label { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-700); font-weight:500; }
-    .filter-form input[type="date"] { padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-900); }
-    .reconcile-card { border:1.5px solid var(--line); border-radius:14px; background:var(--surface); padding:16px 20px; margin-bottom:18px; }
+    .filter-form .finput { padding:8px 10px; font-size:13px; }
     .reconcile-row { cursor:pointer; transition:background 0.15s ease; }
     .reconcile-row:hover { background:var(--line-soft); }
     .sub-cnt { font-size:11px; color:var(--ink-500); display:block; margin-top:2px; font-weight:normal; }
@@ -247,7 +215,7 @@ require_once __DIR__ . '/includes/header.php';
     .pen-toolbar { display:inline-flex; align-items:center; gap:8px; background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:4px 10px; }
     .pen-toggle-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-800); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.15s ease; }
     .pen-toggle-btn:hover { background:var(--line); }
-    .pen-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .pen-toggle-btn.active { background:var(--accent); color:rgb(255, 255, 255); border-color:var(--accent); }
     .color-dots { display:inline-flex; align-items:center; gap:6px; }
     .color-dot { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.1s ease, border-color 0.1s ease; padding:0; outline:none; }
     .color-dot:hover { transform:scale(1.15); }
@@ -255,13 +223,13 @@ require_once __DIR__ . '/includes/header.php';
     .color-dot.dot-red    { background:var(--neg); }
     .color-dot.dot-green  { background:var(--pos); }
     .color-dot.dot-yellow { background:var(--warn); }
-    .color-dot.dot-orange { background:#f76707; }
+    .color-dot.dot-orange { background:rgb(247, 103, 7); }
     .eraser-btn { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:6px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-600); cursor:pointer; font-size:13px; padding:0; transition:all 0.15s ease; }
     .eraser-btn:hover { background:var(--line); color:var(--ink-900); }
-    .eraser-btn.active { background:var(--ink-800); color:#fff; border-color:var(--ink-800); }
+    .eraser-btn.active { background:var(--ink-800); color:rgb(255, 255, 255); border-color:var(--ink-800); }
 
     /* مؤشر القلم العائم */
-    .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid #fff; }
+    .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid rgb(255, 255, 255); }
     body.pen-active .recon-table tbody tr { cursor:crosshair !important; }
 </style>
 <?php if ($supplierSiteDocsOn): ?>
@@ -279,10 +247,10 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if ($selectedSupplierId <= 0 || !$singleSupplier): ?>
         <!-- تابات الفروع -->
-        <div class="tabs">
-            <a href="?tab=statement&br=&from=<?= e($from) ?>&to=<?= e($to) ?>" class="tab <?= $currBranchKey === '' ? 'active' : '' ?>">الكل</a>
+        <div class="ftabs">
+            <a href="?tab=statement&br=&from=<?= e($from) ?>&to=<?= e($to) ?>" class="ftab <?= $currBranchKey === '' ? 'active' : '' ?>">الكل</a>
             <?php foreach (SUPP_BRANCHES as $k => $b): ?>
-                <a href="?tab=statement&br=<?= e($k) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="tab <?= $currBranchKey === $k ? 'active' : '' ?>"><?= e($b['label']) ?></a>
+                <a href="?tab=statement&br=<?= e($k) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="ftab <?= $currBranchKey === $k ? 'active' : '' ?>"><?= e($b['label']) ?></a>
             <?php endforeach; ?>
         </div>
 
@@ -305,40 +273,40 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-                <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+                <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+                <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
                 <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                     <i class="ti ti-download"></i> تصدير إكسيل
                 </a>
             </form>
         </div>
 
-        <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
-            <div class="sum-card">
-                <div class="label">عدد الموردين</div>
-                <div class="val" id="cardSuppCount"><?= count($statementSummary) ?></div>
+        <div class="fkpis">
+            <div class="fkpi">
+                <span>عدد الموردين</span>
+                <strong id="cardSuppCount"><?= count($statementSummary) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المشتريات</div>
-                <div class="val" id="cardTotPurchases"><?= number_format($totSumPurchases, 2) ?></div>
+            <div class="fkpi">
+                <span>إجمالي المشتريات</span>
+                <strong id="cardTotPurchases"><?= number_format($totSumPurchases, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المردودات</div>
-                <div class="val" id="cardTotReturns"><?= number_format($totSumReturns, 2) ?></div>
+            <div class="fkpi">
+                <span>إجمالي المردودات</span>
+                <strong id="cardTotReturns"><?= number_format($totSumReturns, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المصروف للموردين</div>
-                <div class="val" id="cardTotPaid"><?= number_format($totSumPaid, 2) ?></div>
+            <div class="fkpi">
+                <span>إجمالي المصروف للموردين</span>
+                <strong id="cardTotPaid"><?= number_format($totSumPaid, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">إجمالي المستلم من الموردين</div>
-                <div class="val" id="cardTotReceived"><?= number_format($totSumReceived, 2) ?></div>
+            <div class="fkpi">
+                <span>إجمالي المستلم من الموردين</span>
+                <strong id="cardTotReceived"><?= number_format($totSumReceived, 2) ?></strong>
             </div>
-            <div class="sum-card" id="cardBalanceBox" style="background:<?= $totSumBalance > 0 ? 'var(--neg-soft)' : ($totSumBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
-                <div class="label">إجمالي الرصيد القائم</div>
-                <div class="val" id="cardTotBalance" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
+            <div class="fkpi" id="cardBalanceBox" style="background:<?= $totSumBalance > 0 ? 'var(--neg-soft)' : ($totSumBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
+                <span>إجمالي الرصيد القائم</span>
+                <strong id="cardTotBalance" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
                     <?= number_format($totSumBalance, 2) ?>
-                </div>
+                </strong>
                 <small id="cardBalanceHint" style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
                     <?= $totSumBalance > 0 ? 'احنا مديونين للموردين' : ($totSumBalance < 0 ? 'الموردين مدينين لنا' : 'الأرصدة متوازنة') ?>
                 </small>
@@ -353,12 +321,12 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <?php endif; ?>
 
-        <div class="card">
+        <div class="fcard">
             <?php if (empty($statementSummary)): ?>
                 <div class="empty">لا يوجد موردون بحركات أو أرصدة في هذه الفترة.</div>
             <?php else: ?>
-            <div style="overflow-x:auto;">
-            <table id="suppTable">
+            <div class="ftable-wrap">
+            <table class="ftable" id="suppTable">
                 <thead>
                     <tr>
                         <th>المورد</th>
@@ -463,8 +431,8 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
-                <label>إلى <input type="date" name="to" value="<?= e($to) ?>"></label>
+                <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
+                <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>"></label>
                 <button type="submit" class="btn btn-sm">تطبيق</button>
                 <a href="?tab=statement&supplier=<?= $selectedSupplierId ?>&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                     <i class="ti ti-download"></i> تصدير إكسيل
@@ -472,8 +440,9 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
 
-        <div class="card">
-            <table>
+        <div class="fcard">
+            <div class="ftable-wrap">
+            <table class="ftable">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -550,30 +519,31 @@ require_once __DIR__ . '/includes/header.php';
                     </tr>
                 </tbody>
             </table>
+            </div>
         </div>
 
-        <div class="sum-cards">
-            <div class="sum-card">
-                <div class="label">المشتريات</div>
-                <div class="val"><?= number_format($periodPurchases, 2) ?></div>
+        <div class="fkpis">
+            <div class="fkpi">
+                <span>المشتريات</span>
+                <strong><?= number_format($periodPurchases, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">المردودات</div>
-                <div class="val"><?= number_format($periodReturns, 2) ?></div>
+            <div class="fkpi">
+                <span>المردودات</span>
+                <strong><?= number_format($periodReturns, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">المصروف له</div>
-                <div class="val"><?= number_format($periodPaid, 2) ?></div>
+            <div class="fkpi">
+                <span>المصروف له</span>
+                <strong><?= number_format($periodPaid, 2) ?></strong>
             </div>
-            <div class="sum-card">
-                <div class="label">المستلم منه</div>
-                <div class="val"><?= number_format($periodReceived, 2) ?></div>
+            <div class="fkpi">
+                <span>المستلم منه</span>
+                <strong><?= number_format($periodReceived, 2) ?></strong>
             </div>
-            <div class="sum-card" style="background:<?= $finalBalance > 0 ? 'var(--neg-soft)' : ($finalBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $finalBalance > 0 ? 'var(--neg)' : ($finalBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
-                <div class="label">الرصيد الختامي</div>
-                <div class="val" style="color:<?= $finalBalance > 0 ? 'var(--neg)' : ($finalBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
+            <div class="fkpi" style="background:<?= $finalBalance > 0 ? 'var(--neg-soft)' : ($finalBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $finalBalance > 0 ? 'var(--neg)' : ($finalBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
+                <span>الرصيد الختامي</span>
+                <strong style="color:<?= $finalBalance > 0 ? 'var(--neg)' : ($finalBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
                     <?= number_format($finalBalance, 2) ?>
-                </div>
+                </strong>
                 <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
                     <?= $finalBalance > 0 ? 'احنا مديونين له' : ($finalBalance < 0 ? 'هو مدين لنا' : 'خالص') ?>
                 </small>

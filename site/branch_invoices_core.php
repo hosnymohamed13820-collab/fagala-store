@@ -302,8 +302,6 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { padding: 8px 16px; font-size: 13.5px; }
     .btn-sm {
         padding: 5px 11px;
         font-size: 12.5px;
@@ -376,10 +374,7 @@ require_once __DIR__ . '/includes/header.php';
         display:flex; align-items:center; gap:11px; box-shadow:var(--shadow-sm); }
     .ilk-bar > i { color:var(--ink-500); font-size:18px; }
     .ilk-wrap { position:relative; flex:1; }
-    .ilk-wrap input { width:100%; box-sizing:border-box; padding:9px 11px;
-        border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px;
-        background:var(--surface); color:var(--ink-900); }
-    .ilk-wrap input:focus { outline:none; border-color:var(--accent-text); }
+    .ilk-wrap .finput { width:100%; box-sizing:border-box; font-size:13.5px; }
     .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
         background:var(--surface); border:1px solid var(--line); border-radius:10px;
         box-shadow:var(--shadow-lg); max-height:300px; overflow-y:auto; display:none; }
@@ -432,7 +427,7 @@ require_once __DIR__ . '/includes/header.php';
         background: var(--bg);
     }
     .c-code {
-        font-family: monospace;
+        font-variant-numeric: tabular-nums;
         font-size: 12.5px;
         color: var(--ink-600);
         direction: ltr;
@@ -570,7 +565,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="ilk-bar">
         <i class="ti ti-search"></i>
         <div class="ilk-wrap">
-            <input type="text" id="ilkInput" autocomplete="off" inputmode="search"
+            <input type="text" class="finput" id="ilkInput" autocomplete="off" inputmode="search"
                    aria-label="بحث عن صنف"
                    placeholder="دوّر على صنف بالكود أو الاسم — يوريك نزل في أنهي فواتير <?= $BR_NAME_H ?>…">
             <div class="ilk-sugg" id="ilkSugg"></div>
@@ -608,8 +603,8 @@ require_once __DIR__ . '/includes/header.php';
                    aria-label="فلتر برقم الفاتورة" placeholder="فلتر: رقم الفاتورة…"
                    oninput="ashApply(true)">
 
-            <div class="ash-table-wrap">
-                <table class="ash-table" id="invTable" data-xt-off data-filter="all">
+            <div class="ash-table-wrap ftable-wrap">
+                <table class="ftable ash-table" id="invTable" data-xt-off data-filter="all">
                     <thead>
                         <tr>
                             <th style="width:50px;">#</th>
@@ -983,8 +978,8 @@ require_once __DIR__ . '/includes/header.php';
             <span id="ashMrkBulkNote" style="display:none;font-size:13px;"></span>
         </div>
 
-        <div class="ash-table-wrap">
-            <table class="ash-table" data-xt-min="1">
+        <div class="ash-table-wrap ftable-wrap">
+            <table class="ftable ash-table" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
@@ -1070,12 +1065,13 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <?php if (!empty($orphanedDistItems)): ?>
-            <div class="card" style="margin-top:16px;background:var(--warn-soft, #fff8e6);border:1.5px solid var(--warn, #f59e0b);padding:16px;">
-                <div style="font-weight:600;color:var(--warn-ink, #92400e);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+            <div class="fcard" style="margin-top:16px;background:var(--warn-soft);border:1.5px solid var(--warn);padding:16px;">
+                <div style="font-weight:600;color:var(--warn);margin-bottom:8px;display:flex;align-items:center;gap:6px;">
                     <i class="ti ti-alert-triangle"></i>
                     أصناف اتوزّعت لفرع <?= $BR_NAME_H ?> ومش موجودة في الفاتورة دي دلوقتي (الفاتورة ممكن تكون اتعدّلت في نظام الشركة):
                 </div>
-                <table style="width:100%;font-size:13px;">
+                <div class="ftable-wrap">
+                <table class="ftable" style="width:100%;font-size:13px;">
                     <thead>
                         <tr>
                             <th style="text-align:right;">الكود</th>
@@ -1093,6 +1089,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
             </div>
         <?php endif; ?>
 

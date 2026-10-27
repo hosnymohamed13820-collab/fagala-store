@@ -34,35 +34,20 @@ $page_title    = 'فواتير الفروع';
 $active_module = 'branch_invoices';
 require_once __DIR__ . '/includes/header.php';
 ?>
-<style>
-    .bi-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px; }
-    .bi-card { display:flex; align-items:center; gap:12px; padding:18px; border-radius:14px;
-               background:var(--surface); border:1.5px solid var(--line); text-decoration:none;
-               color:var(--ink-900); font-weight:700; font-size:15px; }
-    .bi-card:hover { border-color:var(--accent); color:var(--accent-text); }
-    .bi-card i { font-size:22px; color:var(--accent-text); }
-    .bi-empty { text-align:center; padding:40px; color:var(--ink-500); }
-</style>
+<?= ui_page_head('فواتير الفروع', 'اختار الفرع — هتلاقي الفواتير اللي اتوزّع منها كميات ليه.') ?>
 
-<div class="card">
-    <h1 style="font-size:18px;margin:0 0 4px 0;color:var(--ink-900);">فواتير الفروع</h1>
-    <div style="font-size:13px;color:var(--ink-500);margin-bottom:16px;">
-        اختار الفرع — هتلاقي الفواتير اللي اتوزّع منها كميات ليه.
-    </div>
-
+<section class="fcard">
     <?php if ($full || $scope === 'all'): ?>
-        <div class="bi-grid">
+        <div class="bi-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:var(--sp-4);">
             <?php foreach ($pages as $p): ?>
-                <a class="bi-card" href="<?= e($p['url']) ?>">
-                    <i class="ti ti-building-store"></i> فواتير <?= e($p['name']) ?>
+                <a class="btn btn-outline" style="justify-content:flex-start;padding:var(--sp-4);gap:var(--sp-3);font-size:var(--fs-md);font-weight:700;" href="<?= e($p['url']) ?>">
+                    <i class="ti ti-building-store" style="font-size:22px;color:var(--accent);"></i> فواتير <?= e($p['name']) ?>
                 </a>
             <?php endforeach; ?>
         </div>
     <?php else: ?>
-        <div class="bi-empty">
-            حسابك مش متسجّل على فرع — كلّم الإدارة تسجّلك على فرعك.
-        </div>
+        <?= ui_alert('info', 'حسابك مش متسجّل على فرع — كلّم الإدارة تسجّلك على فرعك.') ?>
     <?php endif; ?>
-</div>
+</section>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

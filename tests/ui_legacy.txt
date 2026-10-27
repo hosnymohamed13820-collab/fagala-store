@@ -1,26 +1,15 @@
 # صفحة  التصنيف=العدد — القديم مسموح يقل بس ممنوع يزيد
-ashraqa_invoices.php hex=3 var=1 btn=1 table=3 mono=1 control=2
 book_lib.php hex=1 component=1
 book_orders.php hex=1 btn=1 table=1 mono=4 control=2
 book_reserve.php btn=1 table=2 mono=4 control=6
-branch_invoices.php component=3
-branch_invoices_core.php hex=3 var=1 btn=1 table=3 mono=1 control=2
-branch_recon.php hex=4 table=6 mono=1 control=1 component=3
-branch_requests.php btn=1 table=4 mono=1
 definitions.php hex=1 table=4 control=5
 includes/footer.php table=1 component=1
 includes/header.php hex=10
-invoices.php hex=3 var=4 table=5 control=2
 login.php hex=37 control=5 component=2
-market_prices.php hex=3 component=1
 pos_migrate.php hex=1 btn=2 table=3 control=1
-price_inquiry.php hex=1 control=4 component=6
-purchase_groups.php hex=4 btn=1 table=2 mono=3 component=3
 settings.php hex=1 btn=1 table=1 control=11
-shortage.php hex=3 btn=2 table=1 mono=2 control=8
 sms_export.php hex=2
 sms_inbox.php hex=1 var=1 icon=1 table=1 mono=3 control=7
-suppliers.php hex=5 table=2 control=7 component=4
 tasks.php icon=6 table=1 mono=1 control=5 component=1
 tasks_issue.php control=5 component=1
 users.php table=2 control=6

@@ -19,19 +19,8 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .price-wrap { max-width:560px; margin:0 auto; width:100%; }
-    .search-card { background:var(--surface); border-radius:var(--r-lg); padding:20px; border:1px solid var(--line);
-        box-shadow:var(--shadow-sm); margin-bottom:16px; }
     .barcode-row { display:flex; gap:10px; margin-bottom:14px; }
-    .barcode-row input { flex:1 1 auto; min-width:0; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px;
-        font-size:17px; font-family:inherit; background:var(--line-soft); text-align:center; letter-spacing:1px; }
-    .barcode-row input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
-    .btn-scan { flex:0 0 auto; background:var(--accent); color:#fff; border:none; border-radius:var(--r); padding:0 16px;
-        font-size:22px; cursor:pointer; display:flex; align-items:center; }
-    .btn-scan:hover { background:var(--accent-hover); }
-    .result-card { background:var(--surface); border-radius:var(--r-lg); padding:24px; border:1px solid var(--line); box-shadow:var(--shadow-sm);
-        text-align:center; margin-bottom:18px; display:none; }
-    .result-card.show { display:block; }
-    .result-card.notfound { background:var(--neg-soft); }
+    .barcode-row .finput { font-size:18px; }
     .res-name { font-size:20px; font-weight:700; color:var(--ink-900); margin-bottom:8px; }
     .res-code { font-size:13px; color:var(--ink-500); margin-bottom:18px; }
     .res-price { font-size:42px; font-weight:800; color:var(--pos); }
@@ -41,46 +30,39 @@ require_once __DIR__ . '/includes/header.php';
     #reader { width:100%; max-width:100%; }
     #reader video, #reader canvas { width:100% !important; height:auto !important; max-width:100% !important; display:block; border-radius:12px; }
     #reader img { max-width:100% !important; }
-    /* بحث بالاسم */
-    @media (max-width: 640px) {
-        .price-wrap  { max-width:100%; }
-        .search-card { padding:16px; border-radius:var(--r); }
-        .result-card { padding:18px; border-radius:var(--r); }
-        .barcode-row { gap:8px; }
-        .barcode-row input { font-size:16px; padding:12px 10px; letter-spacing:0; }
-        .btn-scan { padding:0 13px; font-size:20px; }
-    }
     .name-search { margin-top:8px; }
-    .name-search input { width:100%; padding:11px 14px; border:1.5px solid var(--line); border-radius:10px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
     .search-results { margin-top:10px; }
     .sr-item { display:flex; justify-content:space-between; padding:11px 14px; border-bottom:1px solid var(--line);
         cursor:pointer; font-size:14px; }
     .sr-item:hover { background:var(--bg); }
     .sr-price { font-weight:700; color:var(--pos); }
+    @media (max-width: 640px) {
+        .price-wrap  { max-width:100%; }
+        .barcode-row { gap:8px; }
+    }
 </style>
 
 <div class="price-wrap">
-    <div class="search-card">
+    <div class="fcard" style="margin-bottom:16px;">
         <div class="barcode-row">
-            <input type="text" id="barcode" placeholder="امسح أو اكتب الباركود..."
+            <input type="text" id="barcode" class="finput num" placeholder="امسح أو اكتب الباركود..."
                    aria-label="باركود الصنف" autocomplete="off"
-                   inputmode="numeric" autocomplete="off" autofocus
+                   inputmode="numeric" autofocus
                    enterkeyhint="search"
                    onkeydown="if(isEnterKey(event)){event.preventDefault();doLookup();}">
-            <button class="btn-scan" onclick="openBarcodeScanner('barcode')" title="مسح بالكاميرا"><i class="ti ti-camera"></i></button>
+            <button class="btn btn-primary" onclick="openBarcodeScanner('barcode')" title="مسح بالكاميرا" style="font-size:20px;padding:0 16px;"><i class="ti ti-camera"></i></button>
         </div>
         <p class="hint">امسح الباركود بالكاميرا أو اكتبه واضغط Enter.</p>
 
         <div class="name-search">
-            <input type="text" id="nameSearch" placeholder="أو ابحث باسم الصنف..."
+            <input type="text" id="nameSearch" class="finput" placeholder="أو ابحث باسم الصنف..."
                    aria-label="بحث باسم الصنف" autocomplete="off"
-                   oninput="debouncedSearch()" autocomplete="off">
+                   oninput="debouncedSearch()">
             <div class="search-results" id="searchResults"></div>
         </div>
     </div>
 
-    <div class="result-card" id="resultCard">
+    <div class="fcard" id="resultCard" style="text-align:center;margin-bottom:18px;display:none;">
         <div id="resultContent"></div>
     </div>
 </div>
@@ -106,13 +88,15 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function showResult(data) {
-        resultCard.classList.add('show');
+        resultCard.style.display = 'block';
         if (data.error) {
-            resultCard.classList.add('notfound');
+            resultCard.style.background = 'var(--neg-soft)';
+            resultCard.style.borderColor = 'var(--neg)';
             resultContent.innerHTML = '<div class="res-error"><i class="ti ti-x"></i> ' + escapeHtml(data.error) + '</div>';
             return;
         }
-        resultCard.classList.remove('notfound');
+        resultCard.style.background = 'var(--surface)';
+        resultCard.style.borderColor = 'var(--line)';
         const price = data.price !== null && data.price !== undefined
             ? Number(data.price).toFixed(2) + ' <span class="cur">ج.م</span>'
             : '<span class="cur">السعر غير محدد</span>';
@@ -123,7 +107,9 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function showError(msg) {
-        resultCard.classList.add('show','notfound');
+        resultCard.style.display = 'block';
+        resultCard.style.background = 'var(--neg-soft)';
+        resultCard.style.borderColor = 'var(--neg)';
         resultContent.innerHTML = '<div class="res-error">' + msg + '</div>';
     }
 

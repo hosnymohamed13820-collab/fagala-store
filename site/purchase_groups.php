@@ -143,22 +143,17 @@ $page_title = 'تجميع الحجوزات';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { white-space: nowrap; }
-
     .btn-branch { background:var(--surface); color:var(--ink-700); border:1.5px solid var(--line);
                   border-radius:20px; padding:4px 12px; font-size:12.5px; font-weight:600; cursor:pointer;
                   transition:all .15s; font-family:inherit; }
     .btn-branch:hover { background:var(--line-soft); color:var(--ink-700); }
-    .btn-branch.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
-    .btn-branch.active:hover { filter:brightness(0.94); color:#fff; }
+    .btn-branch.active { background:var(--accent); color:var(--fill-strong-fg); border-color:var(--accent-text); }
+    .btn-branch.active:hover { filter:brightness(0.94); color:var(--fill-strong-fg); }
 
     /* كروت المجموعات */
-    .grp-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
-    .grp-card { display:block; background:var(--surface); border:1.5px solid var(--line); border-radius:14px;
-        padding:16px 18px; text-decoration:none; color:inherit; transition:all .15s; }
-    .grp-card:hover { border-color:var(--accent-text); transform:translateY(-2px);
-        box-shadow:0 8px 22px var(--accent-ring); }
+    .grp-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+    .grp-item { display:block; text-decoration:none; color:inherit; transition:all .15s; }
+    .grp-item:hover { border-color:var(--accent-text); transform:translateY(-2px); }
     .gc-top { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
     .gc-title { font-weight:700; color:var(--ink-900); font-size:15px; }
     .gc-state { font-size:11.5px; padding:3px 10px; border-radius:20px; white-space:nowrap; font-weight:600; }
@@ -176,7 +171,6 @@ require_once __DIR__ . '/includes/header.php';
     .keep-back-link:hover { background:var(--line-soft); color:var(--ink-800); }
     .keep-save-toast { font-size:12.5px; font-weight:600; color:var(--pos); display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; background:var(--pos-soft); }
 
-    .keep-card { background:var(--surface); border:1.5px solid var(--line); border-radius:16px; box-shadow:var(--shadow-sm); padding:20px 22px; position:relative; }
     .keep-header { display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1.5px solid var(--line-soft); padding-bottom:14px; margin-bottom:12px; }
     .keep-title-input { flex:1; border:none; background:transparent; font-size:18px; font-weight:700; color:var(--ink-900); font-family:inherit; padding:4px 0; outline:none; border-bottom:2px solid transparent; transition:border-color .15s; }
     .keep-title-input:focus { border-bottom-color:var(--accent-text); }
@@ -210,13 +204,13 @@ require_once __DIR__ . '/includes/header.php';
     .keep-cb-input { position:absolute; opacity:0; width:0; height:0; }
     .keep-cb-box { width:20px; height:20px; border:2px solid var(--ink-400); border-radius:5px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; color:transparent; background:var(--surface); }
     .keep-cb-wrap:hover .keep-cb-box { border-color:var(--accent-text); }
-    .keep-cb-input:checked + .keep-cb-box { background:var(--accent); border-color:var(--accent-text); color:#fff; }
+    .keep-cb-input:checked + .keep-cb-box { background:var(--accent); border-color:var(--accent-text); color:var(--fill-strong-fg); }
     .keep-cb-box i { font-size:13px; font-weight:bold; }
 
     /* اسم الصنف والكمية */
     .keep-item-info { flex:1; display:flex; align-items:center; gap:8px; cursor:pointer; min-width:0; }
     .keep-item-name { font-size:14.5px; font-weight:600; color:var(--ink-900); }
-    .keep-item-code { font-family:monospace; font-size:12px; color:var(--ink-400); }
+    .keep-item-code { font-variant-numeric:tabular-nums; font-size:12px; color:var(--ink-400); }
     .keep-qty { font-size:15px; font-weight:700; color:var(--ink-800); min-width:38px; text-align:left; cursor:pointer; }
     .keep-btn-del { border:none; background:none; color:var(--ink-400); font-size:18px; font-weight:bold; cursor:pointer; padding:3px 8px; border-radius:6px; font-family:inherit; transition:all .15s; }
     .keep-btn-del:hover { background:var(--neg-soft); color:var(--neg); }
@@ -244,7 +238,7 @@ require_once __DIR__ . '/includes/header.php';
     .keep-src-val { color:var(--accent-text); font-weight:700; }
     .keep-src-sub-list { display:flex; flex-direction:column; gap:3px; margin-right:16px; }
     .keep-src-sub-item { display:flex; align-items:center; gap:6px; color:var(--ink-700); font-size:12.5px; }
-    .keep-tree-char { color:var(--ink-400); font-family:monospace; font-weight:bold; }
+    .keep-tree-char { color:var(--ink-400); font-variant-numeric:tabular-nums; font-weight:bold; }
     .keep-src-dash { color:var(--ink-400); margin:0 2px; }
     .keep-src-sub-qty { color:var(--ink-900); }
     .keep-src-empty { color:var(--ink-400); font-style:italic; }
@@ -253,19 +247,15 @@ require_once __DIR__ . '/includes/header.php';
     .keep-src-cb-input { position:absolute; opacity:0; width:0; height:0; }
     .keep-src-cb-box { width:16px; height:16px; border:1.5px solid var(--ink-400); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; transition:all .15s; color:transparent; background:var(--surface); }
     .keep-src-cb-wrap:hover .keep-src-cb-box { border-color:var(--accent-text); }
-    .keep-src-cb-input:checked + .keep-src-cb-box { background:var(--accent); border-color:var(--accent-text); color:#fff; }
+    .keep-src-cb-input:checked + .keep-src-cb-box { background:var(--accent); border-color:var(--accent-text); color:var(--fill-strong-fg); }
     .keep-src-cb-box i { font-size:10px; font-weight:bold; }
     .keep-src-date { font-size:11.5px; color:var(--ink-500); margin-right:4px; }
     .keep-src-sub-item.is-checked { text-decoration:line-through; color:var(--ink-400); }
     .keep-src-sub-item.is-checked .keep-src-sub-qty { color:var(--ink-400); }
 
     /* بوب أب التجميع */
-    .pg-table { width:100%; border-collapse:collapse; }
-    .pg-table th, .pg-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
-                                 text-align:center; font-size:13.5px; }
-    .pg-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .pg-table .nm { text-align:right; font-weight:500; min-width:200px; }
-    .pg-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .pg-table .cd { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:12px; }
 
     .pg-modal { position:fixed; inset:0; background:rgba(22,35,61,0.6); z-index:300;
                 display:none; align-items:center; justify-content:center; padding:16px; }
@@ -1050,8 +1040,8 @@ require_once __DIR__ . '/includes/header.php';
                     <?php if (empty($candidates['reservations'])): ?>
                         <div class="pg-empty">مفيش حجوزات متاحة للتجميع</div>
                     <?php else: ?>
-                        <div style="overflow-x:auto;max-height:260px;">
-                            <table class="pg-table">
+                        <div class="ftable-wrap" style="max-height:260px;">
+                            <table class="ftable pg-table">
                                 <thead>
                                     <tr>
                                         <th style="width:40px;"></th>
@@ -1112,8 +1102,8 @@ require_once __DIR__ . '/includes/header.php';
                     <?php if (empty($candidates['shortages'])): ?>
                         <div class="pg-empty">مفيش طلبات نواقص متاحة للتجميع</div>
                     <?php else: ?>
-                        <div style="overflow-x:auto;max-height:260px;">
-                            <table class="pg-table">
+                        <div class="ftable-wrap" style="max-height:260px;">
+                            <table class="ftable pg-table">
                                 <thead>
                                     <tr>
                                         <th style="width:40px;"></th>

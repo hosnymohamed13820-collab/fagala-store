@@ -251,23 +251,13 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
     .inv-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     .inv-link:hover { text-decoration:underline; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
-    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-top:20px; }
-    .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:14px 16px; }
-    .sum-card .label { font-size:12px; color:var(--ink-500); margin-bottom:4px; font-weight:500; }
-    .sum-card .val { font-size:18px; font-weight:700; color:var(--ink-900); }
     .filter-form { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .filter-form label { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-700); font-weight:500; }
-    .filter-form input[type="date"] { padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-900); }
     .sub-cnt { font-size:11px; color:var(--ink-500); display:block; margin-top:2px; font-weight:normal; }
     .diff-pill { display:inline-block; font-weight:700; direction:ltr; unicode-bidi:isolate; }
     .diff-match { color:var(--pos); font-weight:700; }
@@ -293,7 +283,7 @@ require_once __DIR__ . '/includes/header.php';
     .pen-toolbar { display:inline-flex; align-items:center; gap:8px; background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:4px 10px; }
     .pen-toggle-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:8px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-800); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.15s ease; }
     .pen-toggle-btn:hover { background:var(--line); }
-    .pen-toggle-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .pen-toggle-btn.active { background:var(--accent); color:var(--fill-strong-fg); border-color:var(--accent); }
     .color-dots { display:inline-flex; align-items:center; gap:6px; }
     .color-dot { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:transform 0.1s ease, border-color 0.1s ease; padding:0; outline:none; }
     .color-dot:hover { transform:scale(1.15); }
@@ -301,13 +291,13 @@ require_once __DIR__ . '/includes/header.php';
     .color-dot.dot-red    { background:var(--neg); }
     .color-dot.dot-green  { background:var(--pos); }
     .color-dot.dot-yellow { background:var(--warn); }
-    .color-dot.dot-orange { background:#f76707; }
+    .color-dot.dot-orange { background:var(--warn); }
     .eraser-btn { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:6px; border:1.5px solid var(--line); background:var(--line-soft); color:var(--ink-600); cursor:pointer; font-size:13px; padding:0; transition:all 0.15s ease; }
     .eraser-btn:hover { background:var(--line); color:var(--ink-900); }
-    .eraser-btn.active { background:var(--ink-800); color:#fff; border-color:var(--ink-800); }
+    .eraser-btn.active { background:var(--ink-800); color:var(--fill-strong-fg); border-color:var(--ink-800); }
 
     /* مؤشر القلم العائم */
-    .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid #fff; }
+    .recon-cursor-dot { position:fixed; width:14px; height:14px; border-radius:50%; pointer-events:none; z-index:99999; display:none; transform:translate(-50%, -50%); box-shadow:0 0 6px rgba(0,0,0,0.35); border:2px solid var(--surface); }
     body.pen-active .recon-table tbody tr { cursor:crosshair !important; }
 </style>
 
@@ -348,8 +338,8 @@ require_once __DIR__ . '/includes/header.php';
             <form method="get" class="filter-form" style="margin-bottom:0;">
                 <input type="hidden" name="a" value="<?= e($aKey) ?>">
                 <input type="hidden" name="b" value="<?= e($bKey) ?>">
-                <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-                <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+                <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+                <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
                 <a href="branch_recon.php?a=<?= e($aKey) ?>&b=<?= e($bKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                     <i class="ti ti-download"></i> تصدير إكسيل
                 </a>
@@ -361,15 +351,15 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="dual-tables-grid">
         <!-- جدول الطرف A -->
-        <div class="card" style="margin-bottom:0;">
+        <div class="fcard" style="margin-bottom:0;">
             <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;padding-bottom:8px;border-bottom:1.5px solid var(--line);">
                 دفاتر <?= e($partyA['label']) ?>
             </div>
             <?php if (empty($partyMovesOur)): ?>
                 <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
             <?php else: ?>
-            <div style="overflow-x:auto;">
-            <table class="recon-table">
+            <div class="ftable-wrap">
+            <table class="ftable recon-table">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -397,28 +387,28 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <?php endif; ?>
 
-            <div class="sum-cards" style="margin-top:16px;">
-                <div class="sum-card">
-                    <div class="label">إجمالي الشراء</div>
-                    <div class="val"><?= number_format($partyTotOurBuy, 2) ?></div>
+            <div class="fkpis" style="margin-top:16px;">
+                <div class="fkpi">
+                    <span>إجمالي الشراء</span>
+                    <strong><?= number_format($partyTotOurBuy, 2) ?></strong>
                 </div>
-                <div class="sum-card">
-                    <div class="label">إجمالي المردود</div>
-                    <div class="val"><?= number_format($partyTotOurRet, 2) ?></div>
+                <div class="fkpi">
+                    <span>إجمالي المردود</span>
+                    <strong><?= number_format($partyTotOurRet, 2) ?></strong>
                 </div>
             </div>
         </div>
 
         <!-- جدول الطرف B -->
-        <div class="card" style="margin-bottom:0;">
+        <div class="fcard" style="margin-bottom:0;">
             <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;padding-bottom:8px;border-bottom:1.5px solid var(--line);">
                 دفاتر <?= e($partyB['label']) ?>
             </div>
             <?php if (empty($partyMovesHis)): ?>
                 <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
             <?php else: ?>
-            <div style="overflow-x:auto;">
-            <table class="recon-table">
+            <div class="ftable-wrap">
+            <table class="ftable recon-table">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -446,44 +436,44 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <?php endif; ?>
 
-            <div class="sum-cards" style="margin-top:16px;">
-                <div class="sum-card">
-                    <div class="label">إجمالي الشراء</div>
-                    <div class="val"><?= number_format($partyTotHisBuy, 2) ?></div>
+            <div class="fkpis" style="margin-top:16px;">
+                <div class="fkpi">
+                    <span>إجمالي الشراء</span>
+                    <strong><?= number_format($partyTotHisBuy, 2) ?></strong>
                 </div>
-                <div class="sum-card">
-                    <div class="label">إجمالي المردود</div>
-                    <div class="val"><?= number_format($partyTotHisRet, 2) ?></div>
+                <div class="fkpi">
+                    <span>إجمالي المردود</span>
+                    <strong><?= number_format($partyTotHisRet, 2) ?></strong>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- كروت صافي المطابقة -->
-    <div class="card" style="margin-top:16px;">
+    <div class="fcard" style="margin-top:16px;">
         <div style="font-weight:700;font-size:15px;color:var(--ink-900);margin-bottom:12px;">
             صافي المطابقة بين الطرفين
         </div>
-        <div class="sum-cards" style="margin-top:0;">
-            <div class="sum-card">
-                <div class="label">وصلنا منه — صافي (دفاتر <?= e($partyA['label']) ?>)</div>
-                <div class="val" style="direction:ltr;text-align:right;"><?= number_format($partyNetOur, 2) ?></div>
+        <div class="fkpis" style="margin-top:0;">
+            <div class="fkpi">
+                <span>وصلنا منه — صافي (دفاتر <?= e($partyA['label']) ?>)</span>
+                <strong style="direction:ltr;text-align:right;"><?= number_format($partyNetOur, 2) ?></strong>
                 <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
                     شراء <?= number_format($partyTotOurBuy, 2) ?> − مردود <?= number_format($partyTotOurRet, 2) ?>
                 </small>
             </div>
-            <div class="sum-card">
-                <div class="label">بعتهولنا — صافي (دفاتر <?= e($partyB['label']) ?>)</div>
-                <div class="val" style="direction:ltr;text-align:right;"><?= number_format($partyNetHis, 2) ?></div>
+            <div class="fkpi">
+                <span>بعتهولنا — صافي (دفاتر <?= e($partyB['label']) ?>)</span>
+                <strong style="direction:ltr;text-align:right;"><?= number_format($partyNetHis, 2) ?></strong>
                 <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
                     شراء <?= number_format($partyTotHisRet, 2) ?> − مردود <?= number_format($partyTotHisBuy, 2) ?>
                 </small>
             </div>
-            <div class="sum-card" style="background:<?= $partyIsMatch ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;border-color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;">
-                <div class="label">الفرق (دفاتر <?= e($partyA['label']) ?> − دفاتر <?= e($partyB['label']) ?>)</div>
-                <div class="val" style="color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;direction:ltr;text-align:right;">
+            <div class="fkpi" style="background:<?= $partyIsMatch ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;border-color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;">
+                <span>الفرق (دفاتر <?= e($partyA['label']) ?> − دفاتر <?= e($partyB['label']) ?>)</span>
+                <strong style="color:<?= $partyIsMatch ? 'var(--pos)' : 'var(--neg)' ?>;direction:ltr;text-align:right;">
                     <?= $partyIsMatch ? '✓ متطابق' : number_format($partyDiff, 2) ?>
-                </div>
+                </strong>
                 <small style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
                     <?php if ($partyIsMatch): ?>
                         الطرفين مسجّلين نفس الرصيد الصافي
@@ -705,29 +695,29 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </label>
-            <label>من <input type="date" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
         </form>
     </div>
 
     <!-- ٣ كروت إحصائية للتنبيهات -->
-    <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
-        <div class="sum-card" style="background:var(--neg-soft);border-color:var(--neg);">
-            <div class="label" style="color:var(--neg);">أحمر (حرج)</div>
-            <div class="val" style="color:var(--neg);"><?= (int)$redCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($redAmt, 2) ?>)</span></div>
+    <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
+        <div class="fkpi" style="background:var(--neg-soft);border-color:var(--neg);">
+            <span style="color:var(--neg);">أحمر (حرج)</span>
+            <strong style="color:var(--neg);"><?= (int)$redCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($redAmt, 2) ?>)</span></strong>
         </div>
-        <div class="sum-card" style="background:var(--warn-soft);border-color:var(--warn);">
-            <div class="label" style="color:var(--warn);">أصفر (تنبيه)</div>
-            <div class="val" style="color:var(--warn);"><?= (int)$yellowCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($yellowAmt, 2) ?>)</span></div>
+        <div class="fkpi" style="background:var(--warn-soft);border-color:var(--warn);">
+            <span style="color:var(--warn);">أصفر (تنبيه)</span>
+            <strong style="color:var(--warn);"><?= (int)$yellowCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($yellowAmt, 2) ?>)</span></strong>
         </div>
-        <div class="sum-card" style="background:var(--line-soft);border-color:var(--line);">
-            <div class="label" style="color:var(--ink-500);">رمادي (متابعة)</div>
-            <div class="val" style="color:var(--ink-900);"><?= (int)$grayCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($grayAmt, 2) ?>)</span></div>
+        <div class="fkpi" style="background:var(--line-soft);border-color:var(--line);">
+            <span style="color:var(--ink-500);">رمادي (متابعة)</span>
+            <strong style="color:var(--ink-900);"><?= (int)$grayCount ?> <span style="font-size:13px;font-weight:normal;">(<?= number_format($grayAmt, 2) ?>)</span></strong>
         </div>
     </div>
 
     <?php if (empty($alerts)): ?>
-        <div class="card empty" style="text-align:center;padding:30px;color:var(--pos);font-size:15px;font-weight:600;">
+        <div class="fcard empty" style="text-align:center;padding:30px;color:var(--pos);font-size:15px;font-weight:600;">
             <i class="ti ti-circle-check"></i> مفيش حاجة غلط من <?= e($from) ?> لحد <?= e($to) ?>
         </div>
     <?php else: ?>
@@ -773,8 +763,8 @@ require_once __DIR__ . '/includes/header.php';
                         <summary style="cursor:pointer;color:var(--accent-text);font-size:13px;font-weight:600;">
                             الأصناف (<?= count($al['lines']) ?>)
                         </summary>
-                        <div style="overflow-x:auto;margin-top:8px;">
-                            <table>
+                        <div class="ftable-wrap" style="margin-top:8px;">
+                            <table class="ftable">
                                 <thead>
                                     <tr>
                                         <th>الصنف</th>
@@ -826,11 +816,11 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if ($ashDocNotFound || !$ashDoc): ?>
-        <div class="card empty" style="text-align:center;padding:30px;color:var(--neg);font-size:15px;font-weight:600;">
+        <div class="fcard empty" style="text-align:center;padding:30px;color:var(--neg);font-size:15px;font-weight:600;">
             الفاتورة مش موجودة
         </div>
     <?php else: ?>
-        <div class="card" style="margin-bottom:18px;">
+        <div class="fcard" style="margin-bottom:18px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
                 <div>
                     <span class="section-title" style="margin-bottom:4px;font-size:17px;">
@@ -851,8 +841,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <div style="overflow-x:auto;">
-                <table>
+            <div class="ftable-wrap">
+                <table class="ftable">
                     <thead>
                         <tr>
                             <th style="width:40px;">#</th>
@@ -883,7 +873,7 @@ require_once __DIR__ . '/includes/header.php';
                             <tr>
                                 <td><?= (int)$ln['line_no'] ?></td>
                                 <td style="font-weight:600;"><?= e($ln['item_name']) ?></td>
-                                <td style="direction:ltr;text-align:right;font-family:monospace;"><?= e($firstBc) ?></td>
+                                <td style="direction:ltr;text-align:right;font-variant-numeric:tabular-nums;"><?= e($firstBc) ?></td>
                                 <td>
                                     <?php if ($ourName !== null): ?>
                                         <span style="color:var(--ink-900);"><?= e($ourName) ?></span>
@@ -937,8 +927,8 @@ require_once __DIR__ . '/includes/header.php';
                 </select>
             </label>
             <label>بحث <input type="text" name="q" value="<?= e($ashSearch) ?>" placeholder="رقم الفاتورة أو الملاحظات" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);"></label>
-            <label>من <input type="date" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
             <label style="cursor:pointer;">
                 <input type="checkbox" name="show_cancelled" value="1" <?= $ashShowCancelled ? 'checked' : '' ?> onchange="this.form.submit()"> اعرض الملغي
             </label>
@@ -946,24 +936,24 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- ٣ كروت إحصائية لإشراقة -->
-    <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
-        <div class="sum-card">
-            <div class="label">عدد الفواتير</div>
-            <div class="val"><?= count($ashInvoices) ?></div>
+    <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
+        <div class="fkpi">
+            <span>عدد الفواتير</span>
+            <strong><?= count($ashInvoices) ?></strong>
         </div>
-        <div class="sum-card" style="background:var(--pos-soft);border-color:var(--pos);">
-            <div class="label" style="color:var(--pos);">إجمالي الشراء</div>
-            <div class="val" style="color:var(--pos);direction:ltr;text-align:right;"><?= number_format($totAshBuy, 2) ?></div>
+        <div class="fkpi" style="background:var(--pos-soft);border-color:var(--pos);">
+            <span style="color:var(--pos);">إجمالي الشراء</span>
+            <strong style="color:var(--pos);direction:ltr;text-align:right;"><?= number_format($totAshBuy, 2) ?></strong>
         </div>
-        <div class="sum-card" style="background:var(--neg-soft);border-color:var(--neg);">
-            <div class="label" style="color:var(--neg);">إجمالي المرتجع</div>
-            <div class="val" style="color:var(--neg);direction:ltr;text-align:right;"><?= number_format($totAshRet, 2) ?></div>
+        <div class="fkpi" style="background:var(--neg-soft);border-color:var(--neg);">
+            <span style="color:var(--neg);">إجمالي المرتجع</span>
+            <strong style="color:var(--neg);direction:ltr;text-align:right;"><?= number_format($totAshRet, 2) ?></strong>
         </div>
     </div>
 
-    <div class="card" style="margin-bottom:18px;">
-        <div style="overflow-x:auto;">
-            <table>
+    <div class="fcard" style="margin-bottom:18px;">
+        <div class="ftable-wrap">
+            <table class="ftable">
                 <thead>
                     <tr>
                         <th>الرقم</th>
@@ -1028,8 +1018,8 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
         <form method="get" class="filter-form" style="margin-bottom:0;">
-            <label>من <input type="date" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
             <a href="branch_recon.php?from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                 <i class="ti ti-download"></i> تصدير إكسيل
             </a>
@@ -1037,28 +1027,28 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- ٣ كروت إحصائية -->
-    <div class="sum-cards" style="margin-top:0;margin-bottom:18px;">
-        <div class="sum-card">
-            <div class="label">عدد الأزواج</div>
-            <div class="val"><?= (int)$totPairsCount ?></div>
+    <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
+        <div class="fkpi">
+            <span>عدد الأزواج</span>
+            <strong><?= (int)$totPairsCount ?></strong>
         </div>
-        <div class="sum-card" style="background:var(--pos-soft);border-color:var(--pos);">
-            <div class="label" style="color:var(--pos);">متطابق</div>
-            <div class="val" style="color:var(--pos);"><?= (int)$matchCount ?></div>
+        <div class="fkpi" style="background:var(--pos-soft);border-color:var(--pos);">
+            <span style="color:var(--pos);">متطابق</span>
+            <strong style="color:var(--pos);"><?= (int)$matchCount ?></strong>
         </div>
-        <div class="sum-card" style="background:<?= $mismatchCount > 0 ? 'var(--neg-soft)' : 'var(--line-soft)' ?>;border-color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--line)' ?>;">
-            <div class="label" style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;">فيه فرق</div>
-            <div class="val" style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><?= (int)$mismatchCount ?></div>
+        <div class="fkpi" style="background:<?= $mismatchCount > 0 ? 'var(--neg-soft)' : 'var(--line-soft)' ?>;border-color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--line)' ?>;">
+            <span style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;">فيه فرق</span>
+            <strong style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><?= (int)$mismatchCount ?></strong>
         </div>
     </div>
 
-    <div class="card" style="margin-bottom:18px;">
+    <div class="fcard" style="margin-bottom:18px;">
         <div style="font-size:13px;color:var(--ink-600);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line-soft);line-height:1.6;">
             صافي البضاعة اللي دخلت الفرع من كل طرف حسب دفاترنا، قصاد صافي اللي خرج لنا من عنده حسب دفاتره. الفرق صفر = الطرفين مسجّلين نفس الحاجة. اضغط على الصف تشوف الفواتير.
         </div>
 
-        <div style="overflow-x:auto;">
-        <table>
+        <div class="ftable-wrap">
+        <table class="ftable">
             <thead>
                 <tr>
                     <th>من</th>

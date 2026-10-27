@@ -76,15 +76,9 @@ $active_module = 'shortage';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { white-space: nowrap; }
-    .btn i { font-size:16px; }
-
     .sq-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; position:relative;
               flex-wrap:wrap; }
-    .sq-bar input.main { flex:1; min-width:260px; padding:12px 16px; border:1.5px solid var(--line);
-                         border-radius:10px; font-size:15px; font-family:inherit; }
-    .sq-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .sq-bar .main { flex:1; min-width:260px; font-size:15px; }
     .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
               overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
@@ -92,7 +86,7 @@ require_once __DIR__ . '/includes/header.php';
     .sq-sug-item { padding:10px 14px; cursor:pointer; display:flex; justify-content:space-between;
                    gap:10px; border-bottom:1px solid var(--line-soft); font-size:14px; }
     .sq-sug-item:hover { background:var(--accent-soft); }
-    .sq-sug-item .sug-code { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .sq-sug-item .sug-code { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:12px; }
     .sq-sug-item .sug-bal { font-weight:700; color:var(--pos); white-space:nowrap; }
 
     .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
@@ -101,12 +95,11 @@ require_once __DIR__ . '/includes/header.php';
                  background:var(--surface); color:var(--ink-700,var(--accent-text)); font-size:13.5px; font-weight:600;
                  user-select:none; transition:all 0.15s; }
     .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
-    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
+    .sq-filter.active { background:var(--accent); color:rgb(255, 255, 255); border-color:var(--accent-text); }
     .sq-sub { display:none; align-items:center; gap:6px; }
     .sq-sub.show { display:inline-flex; }
-    .sq-sub select, .sq-sub input { padding:8px 12px; border:1.5px solid var(--line); border-radius:9px;
-                                     font-size:13.5px; font-family:inherit; }
-    .sq-sub input { width:90px; }
+    .sq-sub .fselect, .sq-sub .finput { padding:8px 12px; font-size:13.5px; }
+    .sq-sub .finput { width:90px; }
 
     .sq-table { width:100%; border-collapse:collapse; }
     .sq-table th, .sq-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
@@ -115,15 +108,14 @@ require_once __DIR__ . '/includes/header.php';
     .sq-table th.admin, .sq-table td.admin { background:var(--accent-soft); font-weight:700; }
     .sq-table th.req, .sq-table td.req { background:rgba(34,197,94,0.07); }
     .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
-    .sq-table .code-cell { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .sq-table .code-cell { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:12px; }
     .sq-table .zero { color:var(--ink-400); }
     .sq-table .pos { color:var(--pos); font-weight:600; }
     .sq-table tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
     .sq-table tbody tr:hover td { background:rgba(124,111,247,0.04); }
     .sq-table td .rm { color:var(--neg); cursor:pointer; opacity:0.5; }
     .sq-table td .rm:hover { opacity:1; }
-    .qty-inp { width:74px; padding:7px 8px; border:1.5px solid var(--line); border-radius:8px;
-               font-size:14px; font-family:inherit; text-align:center; }
+    .qty-inp { width:74px; text-align:center; }
     .qty-inp:focus { outline:none; border-color:var(--pos); }
 
     .sq-status { font-size:13px; min-height:20px; margin-bottom:10px; }
@@ -141,9 +133,8 @@ require_once __DIR__ . '/includes/header.php';
     .shr-modal h3 { color:var(--ink-900); font-size:17px; margin-bottom:16px; }
     .shr-fld { margin-bottom:14px; }
     .shr-fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:600; }
-    .shr-fld select, .shr-fld textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line);
-        border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
-    .shr-fld textarea { min-height:70px; resize:vertical; }
+    .shr-fld .fselect, .shr-fld .finput { width:100%; box-sizing:border-box; }
+    .shr-fld .shr-notes { min-height:70px; resize:vertical; }
     .shr-fixed { padding:10px 12px; background:var(--line-soft); border-radius:9px; font-size:14px;
                  color:var(--ink-900); font-weight:600; }
     .shr-summary { background:rgba(34,197,94,0.08); border-radius:10px; padding:10px 14px;
@@ -152,20 +143,20 @@ require_once __DIR__ . '/includes/header.php';
                    background:var(--surface); color:var(--ink-700); font-size:13.5px; font-weight:600;
                    cursor:pointer; font-family:inherit; transition:all 0.15s; }
     .shr-src-btn:hover { border-color:var(--accent-text); color:var(--accent-text); background:var(--line-soft); }
-    .shr-src-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
-    .shr-src-btn.active:hover { background:var(--accent-hover); color:#fff; }
+    .shr-src-btn.active { background:var(--accent); color:rgb(255, 255, 255); border-color:var(--accent-text); }
+    .shr-src-btn.active:hover { background:var(--accent-hover); color:rgb(255, 255, 255); }
     .shr-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
     .shr-err { color:var(--neg); font-size:13px; min-height:18px; margin-top:8px; }
 </style>
 
 <?= book_tabs_bar('shortage') ?>
 
-<div class="card">
+<div class="fcard">
     <div class="section-title"><i class="ti ti-shopping-cart"></i> طلب نواقص</div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">
-        <input type="text" class="main" id="q" autocomplete="off"
+        <input type="text" class="finput main" id="q" autocomplete="off"
                placeholder="امسح باركود، أو اكتب كود/اسم الصنف…"
                enterkeyhint="search"
                oninput="onType()"
@@ -186,7 +177,7 @@ require_once __DIR__ . '/includes/header.php';
         <span class="sq-filter active" data-f="none" onclick="setFilter(this)">المضاف</span>
         <span class="sq-filter" data-f="has_stock" onclick="setFilter(this)">عندها رصيد</span>
         <span class="sq-sub" id="subBranch">
-            <select id="branchPick" onchange="runFilter()">
+            <select id="branchPick" class="fselect" onchange="runFilter()">
                 <option value="0">في كل المخازن</option>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= (int)$b['sto_id'] ?>"><?= e($b['is_admin']?'الإدارة':$b['name']) ?></option>
@@ -197,7 +188,7 @@ require_once __DIR__ . '/includes/header.php';
         <span class="sq-filter" data-f="zero" onclick="setFilter(this)">رصيد صفر</span>
         <span class="sq-filter" data-f="below" onclick="setFilter(this)">أقل من</span>
         <span class="sq-sub" id="subBelow">
-            <input type="number" id="belowVal" value="5" min="0" onchange="runFilter()">
+            <input type="number" id="belowVal" class="finput" value="5" min="0" onchange="runFilter()">
         </span>
     </div>
 
@@ -216,8 +207,8 @@ require_once __DIR__ . '/includes/header.php';
         </span>
     </div>
 
-    <div style="overflow-x:auto;">
-        <table class="sq-table" id="tbl">
+    <div class="ftable-wrap">
+        <table class="ftable sq-table" id="tbl">
             <thead>
                 <tr>
                     <th style="width:34px;">#</th>
@@ -258,7 +249,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="shr-fixed"><?= e($myBranchName ?: ('فرع #' . $myBranchId)) ?> (فرعك)</div>
                 <input type="hidden" id="fromBranch" value="<?= $myBranchId ?>">
             <?php else: ?>
-                <select id="fromBranch">
+                <select id="fromBranch" class="fselect">
                     <option value="0">— اختار الفرع اللي انت واقف فيه —</option>
                     <?php foreach ($localBranches as $lb): ?>
                         <option value="<?= (int)$lb['id'] ?>"><?= e($lb['name']) ?></option>
@@ -269,7 +260,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="shr-fld" id="toBranchFld">
             <label>الفرع المطلوب منه (اللي هيجهّز)</label>
-            <select id="toBranch">
+            <select id="toBranch" class="fselect">
                 <option value="0">— اختار الفرع —</option>
                 <?php foreach ($localBranches as $lb): ?>
                     <option value="<?= (int)$lb['id'] ?>"><?= e($lb['name']) ?></option>
@@ -279,7 +270,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="shr-fld">
             <label>ملاحظات (اختياري)</label>
-            <textarea id="shrNotes" placeholder="أي تفاصيل زيادة…"></textarea>
+            <textarea id="shrNotes" class="finput shr-notes" placeholder="أي تفاصيل زيادة…"></textarea>
         </div>
 
         <div class="shr-err" id="shrErr"></div>
@@ -486,7 +477,7 @@ require_once __DIR__ . '/includes/header.php';
             html += '<tr><td>' + (i+1) + '</td>' +
                     '<td class="code-cell">' + esc(r.code) + '</td>' +
                     '<td class="name-cell">' + esc(r.name) + '</td>' +
-                    '<td class="req"><input type="number" class="qty-inp" min="0" step="any"' +
+                    '<td class="req"><input type="number" class="finput qty-inp" min="0" step="any"' +
                         ' data-code="' + esc(r.code) + '" value="' + q + '"' +
                         ' placeholder="0" oninput="onQty(this.dataset.code, this.value)"></td>';
             BRANCHES.forEach(b => {

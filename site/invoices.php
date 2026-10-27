@@ -1247,7 +1247,7 @@ require_once __DIR__ . '/includes/header.php';
             <span id="problemToastItem" style="font-weight:bold;margin-right:4px;"></span>
         </span>
         <div class="problem-toast-actions">
-            <button type="button" class="btn btn-sm" id="problemToastYes" style="background:var(--accent);color:#fff;">أيوه</button>
+            <button type="button" class="btn btn-sm btn-primary" id="problemToastYes">أيوه</button>
             <button type="button" class="btn btn-sm btn-ghost" id="problemToastNo" style="background:var(--surface);color:var(--text);border:1px solid var(--line);">لأ</button>
         </div>
     </div>
@@ -1294,7 +1294,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="ilk-bar">
     <i class="ti ti-search"></i>
     <div class="ilk-wrap">
-        <input type="text" id="ilkInput" autocomplete="off"
+        <input type="text" class="finput" id="ilkInput" autocomplete="off"
                placeholder="دوّر على صنف بالكود أو الاسم — يوريك نزل في أنهي فواتير وتوزيعته…">
         <div class="ilk-sugg" id="ilkSugg"></div>
     </div>
@@ -1322,9 +1322,7 @@ require_once __DIR__ . '/includes/header.php';
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .ilk-bar > i { color:var(--ink-500); font-size:18px; }
     .ilk-wrap { position:relative; flex:1; }
-    .ilk-wrap input { width:100%; box-sizing:border-box; padding:9px 11px;
-        border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13.5px; }
-    .ilk-wrap input:focus { outline:none; border-color:var(--accent-text); }
+    .ilk-wrap .finput { width:100%; box-sizing:border-box; font-size:13.5px; }
     .ilk-sugg { position:absolute; top:calc(100% + 5px); right:0; left:0; z-index:60;
         background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:330px; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.13); display:none; }
@@ -1349,7 +1347,7 @@ require_once __DIR__ . '/includes/header.php';
     .ilk-inv { border:1.5px solid var(--line); border-radius:11px; padding:12px 14px; margin-bottom:10px; }
     .ilk-inv.ilk-ret { border-color:var(--neg); background:var(--surface); }
     .ilk-top { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .ilk-tag { padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; background:var(--accent); }
+    .ilk-tag { padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; color:rgb(255, 255, 255); background:var(--accent); }
     .ilk-tag.ret { background:var(--neg-fill); }
     .ilk-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
     .ilk-chip { background:var(--bg); border:1px solid var(--line); border-radius:8px;
@@ -1554,7 +1552,7 @@ require_once __DIR__ . '/includes/header.php';
                  بيظهر وقت قفل الحالة يدوي بيسأل السيرفر من جديد
                  (فرع `dry`) لأن جدول التوزيع بيتحفظ من غير ريفرش. */ ?>
         <?php if (!$noDistDoc && !$isManual && !empty($pendingItems)): ?>
-            <div class="card" style="background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn-text, var(--warn));padding:12px 16px;border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
+            <div class="fcard" style="background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);padding:12px 16px;border-radius:10px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start;">
                 <i class="ti ti-alert-triangle" style="font-size:20px;flex-shrink:0;margin-top:2px;"></i>
                 <div>
                     <strong style="font-size:14px;">الفاتورة لسه ما راحتش للاستلام — فيه أصناف توزيعها ناقص:</strong>
@@ -1686,8 +1684,8 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             <?= ifl_bar() ?>
             <?php if ($noDistDoc): ?>
-            <div class="lines-wrap">
-            <table class="lines-table" id="linesTable" data-xt-min="1">
+            <div class="lines-wrap ftable-wrap">
+            <table class="ftable lines-table" id="linesTable" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
@@ -1717,8 +1715,8 @@ require_once __DIR__ . '/includes/header.php';
             </table>
             </div>
             <?php else: ?>
-            <div class="lines-wrap">
-            <table class="lines-table" id="linesTable" data-xt-min="1">
+            <div class="lines-wrap ftable-wrap">
+            <table class="ftable lines-table" id="linesTable" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
@@ -1800,7 +1798,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--neg);"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -1865,7 +1863,7 @@ require_once __DIR__ . '/includes/header.php';
                                     if ($bbal === null) {
                                         echo '<span class="bal-na">—</span>';
                                     } else {
-                                        $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
+                                        $neg = $bbal < 0 ? ' style="color:var(--neg);"' : '';
                                         echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                     }
                                 ?></td>
@@ -2017,7 +2015,7 @@ require_once __DIR__ . '/includes/header.php';
         <a class="tab-btn <?= $tab==='group'?'active':'' ?>" href="invoices.php?tab=group">
             <i class="ti ti-stack-2"></i> فواتير مجمّعة
             <?php $grpOpenCount = group_open_count(); if ($grpOpenCount > 0): ?>
-                <span style="background:var(--pos-fill);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;">
+                <span style="background:var(--pos-fill);color:rgb(255, 255, 255);border-radius:10px;padding:1px 7px;font-size:11px;">
                     <?= $grpOpenCount ?>
                 </span>
             <?php endif; ?>
@@ -2293,8 +2291,8 @@ require_once __DIR__ . '/includes/header.php';
             <?php endif; ?>
             <?= mrk_bulk_bar() ?>
             <?= ifl_bar() ?>
-            <div class="lines-wrap">
-            <table class="lines-table" id="grpTable" data-xt-min="1">
+            <div class="lines-wrap ftable-wrap">
+            <table class="ftable lines-table" id="grpTable" data-xt-min="1">
                 <thead>
                     <tr>
                         <th>كود الصنف</th>
@@ -2389,7 +2387,7 @@ require_once __DIR__ . '/includes/header.php';
                                 if ($bbal === null) {
                                     echo '<span class="bal-na">—</span>';
                                 } else {
-                                    $neg = $bbal < 0 ? ' style="color:var(--danger,var(--neg));"' : '';
+                                    $neg = $bbal < 0 ? ' style="color:var(--neg);"' : '';
                                     echo '<span'.$neg.'>'.rtrim(rtrim(number_format((float)$bbal, 2, '.', ''), '0'), '.').'</span>';
                                 }
                             ?></td>
@@ -2698,9 +2696,10 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         </div>
 
-        <div class="card" style="margin-bottom:16px;">
+        <div class="fcard" style="margin-bottom:16px;">
             <div class="section-title">الأصناف بعد الخصم</div>
-            <table class="lines-table" id="discTable"
+            <div class="ftable-wrap">
+            <table class="ftable lines-table" id="discTable"
                    data-rate="<?= e((string)$rate) ?>"
                    data-dp="<?= DISC_PRICE_DP ?>">
                 <thead><tr>
@@ -2745,6 +2744,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td id="discGrand"><?= number_format($t['after'],2) ?></td>
                 </tr></tfoot>
             </table>
+            </div>
         </div>
 
         <?php $resd = (float) ($discCalc['residual'] ?? 0); ?>
@@ -2927,7 +2927,8 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($invoiceGroups)): ?>
             <div class="empty">لا توجد فواتير.</div>
         <?php else: ?>
-        <table class="inv-table">
+        <div class="ftable-wrap">
+        <table class="ftable inv-table">
             <colgroup>
                 <col style="width:48px;">
                 <col style="width:13%;">
@@ -3011,6 +3012,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
     <?php endif; ?>

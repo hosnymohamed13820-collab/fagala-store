@@ -148,34 +148,12 @@ require_once __DIR__ . '/includes/header.php';
 <?= book_tabs_bar('market') ?>
 
 <style>
-    .mk-head { background:var(--surface); border-radius:12px; padding:16px; margin-bottom:14px;
-        display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-        box-shadow:0 2px 10px rgba(124,111,247,0.06); }
-    .mk-stat { font-size:13px; color:var(--ink-500); }
+    .mk-stat { font-size:var(--fs-xs); color:var(--ink-500); }
     .mk-stat b { color:var(--ink-900); }
-    .mk-filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
-    .mk-f { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
-        color:var(--ink-700,var(--accent-text)); font-size:13px; text-decoration:none; }
-    .mk-f.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
-    .mk-card { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:10px;
-        box-shadow:0 1px 6px rgba(124,111,247,0.06); }
-    .mk-our { font-size:14px; font-weight:600; color:var(--ink-900); }
-    .mk-sub { font-size:12px; color:var(--ink-500); margin-top:3px; }
+    .mk-our { font-size:var(--fs-base); font-weight:600; color:var(--ink-900); }
+    .mk-sub { font-size:var(--fs-xs); color:var(--ink-500); margin-top:3px; }
     .mk-sugg { margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
-    .mk-opt { display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-        padding:7px 0; font-size:13px; }
-    .mk-badge { padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; color:#fff; }
-    .mk-strong { background:var(--pos-fill); }
-    .mk-maybe  { background:var(--warn-fill); }
-    .mk-weak   { background:var(--fill-strong); color:var(--fill-strong-fg); }
-    .mk-linked { background:var(--line-soft); border:1.5px solid var(--pos); }
-    .mk-ign    { opacity:.55; }
-    .btn-sm { padding:6px 13px; font-size:12px; border-radius:8px; border:none; cursor:pointer;
-        font-family:inherit; background:var(--accent); color:#fff; }
-    .btn-sm.ghost { background:var(--surface); border:1.5px solid var(--line); color:var(--ink-700,var(--accent-text)); }
-    .btn-sm[disabled] { opacity:.5; cursor:not-allowed; }
-    .mk-search { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px;
-        font-family:inherit; font-size:13px; }
+    .mk-opt { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:7px 0; font-size:13px; }
     .mk-manual { margin-top:8px; display:none; }
     .mk-mres div { padding:7px 10px; border-bottom:1px solid var(--line-soft); cursor:pointer; font-size:13px; }
     .mk-mres div:hover { background:var(--bg); }
@@ -183,13 +161,13 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <?php if (!$ready): ?>
-    <div class="mk-card" style="color:var(--neg);text-align:center;padding:30px;">
+    <div class="fcard" style="color:var(--neg);text-align:center;padding:30px;">
         الجداول لسه ما اتعملتش — شغّل <b>upgrade_market_prices.sql</b> الأول.
     </div>
 <?php else: ?>
 
-<div class="mk-head">
-    <button class="btn" id="mkFetch" <?= $cool > 0 ? 'disabled' : '' ?>>
+<div class="fcard" style="margin-bottom:var(--sp-4);display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;">
+    <button class="btn btn-primary" id="mkFetch" <?= $cool > 0 ? 'disabled' : '' ?>>
         <i class="ti ti-refresh"></i> حدّث أسعار السوق
     </button>
     <span class="mk-stat">
@@ -209,7 +187,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($stats['products'] === 0): ?>
-    <div class="mk-card" style="text-align:center;padding:34px;color:var(--ink-500);">
+    <div class="fcard" style="text-align:center;padding:34px;color:var(--ink-500);margin-bottom:var(--sp-4);">
         اضغط «حدّث أسعار السوق» الأول عشان نجيب المنتجات ونبدأ الربط.
     </div>
 <?php else: ?>
@@ -220,54 +198,52 @@ require_once __DIR__ . '/includes/header.php';
 [$staleN, $staleChecked] = mk_norm_stale();
 ?>
 <?php if ($staleN > 0): ?>
-    <div class="mk-card" id="mkStale" style="border-right:4px solid var(--warn);
-         background:var(--warn-soft);padding:14px;margin-bottom:12px;
-         display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <i class="ti ti-alert-triangle" style="color:var(--warn);font-size:20px;"></i>
+    <div class="falert falert-warn" id="mkStale" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <i class="ti ti-alert-triangle" style="font-size:20px;"></i>
         <div style="flex:1;min-width:220px;">
             <b>المنتجات المحفوظة محتاجة إعادة تطبيع.</b><br>
-            <span style="font-size:12.5px;color:var(--ink-600);">
+            <span style="font-size:12.5px;">
                 قاموس المرادفات اتغيّر، و<?= $staleN ?> من <?= $staleChecked ?> منتج
                 فحصناهم لسه بالصيغة القديمة. من غير الخطوة دي المطابقة هتطلع
                 أسوأ من الأول. مابيتغيّرش أي سعر ولا أي ربط أكّدته.
             </span>
         </div>
-        <button class="btn" id="mkRenorm">
+        <button class="btn btn-primary" id="mkRenorm">
             <i class="ti ti-refresh"></i> أعد التطبيع دلوقتي
         </button>
     </div>
 <?php endif; ?>
 
-<form method="get" style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+<form method="get" class="ffilters" style="margin-bottom:12px;">
     <input type="hidden" name="f" value="<?= e($filter) ?>">
-    <input type="text" name="q" class="mk-search" value="<?= e($term) ?>"
+    <input type="text" name="q" class="finput" value="<?= e($term) ?>"
            placeholder="دوّر على كتاب عندنا…" style="flex:1;min-width:200px;">
-    <button class="btn" type="submit"><i class="ti ti-search"></i> بحث</button>
+    <button class="btn btn-primary" type="submit"><i class="ti ti-search"></i> بحث</button>
 </form>
 
-<div class="mk-filters">
+<nav class="ftabs" style="margin-bottom:12px;">
     <?php foreach (['unlinked'=>'مش مربوط','linked'=>'مربوط','ignored'=>'مستبعد','all'=>'الكل'] as $k=>$lbl): ?>
-        <a class="mk-f <?= $filter===$k?'on':'' ?>"
+        <a class="ftab <?= $filter===$k?'is-active':'' ?>"
            href="?f=<?= $k ?>&q=<?= urlencode($term) ?>"><?= e($lbl) ?></a>
     <?php endforeach; ?>
-    <span class="mk-stat" style="align-self:center;">(<?= number_format($books['total']) ?> كتاب)</span>
-</div>
+    <span class="mk-stat" style="align-self:center;margin-right:auto;">(<?= number_format($books['total']) ?> كتاب)</span>
+</nav>
 
 <?php if ($filter === 'unlinked' && $books['total'] > 0): ?>
-<div class="mk-card" style="background:var(--surface);border:1.5px dashed var(--accent);">
+<div class="fcard" style="border:1.5px dashed var(--accent);margin-bottom:var(--sp-3);">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <button class="btn" id="mkBulk"><i class="ti ti-wand"></i> أكّد كل المطابقات القوية</button>
+        <button class="btn btn-primary" id="mkBulk"><i class="ti ti-wand"></i> أكّد كل المطابقات القوية</button>
         <span class="mk-stat" id="mkBulkMsg" style="flex:1;">
             بدل ما تدوس «أكّد» <?= number_format($books['total']) ?> مرة — ده بيربط اللي فوق
             <?= (int) round(MARKET_STRONG * 100) ?>% بس، وبيسيب أي كتاب ليه اقتراحين متقاربين لعينك.
         </span>
-        <button class="btn-sm ghost" id="mkUndo" style="display:none;">تراجع عن الدفعة دي</button>
+        <button class="btn btn-sm btn-secondary" id="mkUndo" style="display:none;">تراجع عن الدفعة دي</button>
     </div>
 </div>
 <?php endif; ?>
 
 <?php if (!$books['rows']): ?>
-    <div class="mk-card" style="text-align:center;padding:30px;color:var(--ink-500);">
+    <div class="fcard" style="text-align:center;padding:30px;color:var(--ink-500);margin-bottom:var(--sp-3);">
         مفيش كتب في الفلتر ده.
     </div>
 <?php endif; ?>
@@ -277,7 +253,7 @@ require_once __DIR__ . '/includes/header.php';
     $opts = $sugg[$iid] ?? [];
     $lnk  = $b['linked'];
 ?>
-<div class="mk-card <?= $lnk ? 'mk-linked' : '' ?><?= $b['ignored'] ? ' mk-ign' : '' ?>" data-item="<?= $iid ?>">
+<div class="fcard" style="margin-bottom:var(--sp-3);<?= $lnk ? 'background:var(--line-soft);border-color:var(--pos);' : '' ?><?= $b['ignored'] ? 'opacity:.55;' : '' ?>" data-item="<?= $iid ?>">
     <div class="mk-our"><?= e($b['name']) ?></div>
     <div class="mk-sub">
         <?= e($b['code']) ?> · سعرنا: <b><?= number_format($b['sale'], 2) ?></b>
@@ -285,34 +261,34 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if ($lnk !== null && isset($prods[$lnk])): $p = $prods[$lnk];
         $ls = $b['lnk_score'];
-        $lcls = $ls === null ? 'mk-strong' : ($ls >= MARKET_STRONG ? 'mk-strong' : ($ls >= MARKET_MAYBE ? 'mk-maybe' : 'mk-weak'));
+        $lcls = $ls === null ? 'fchip-pos' : ($ls >= MARKET_STRONG ? 'fchip-pos' : ($ls >= MARKET_MAYBE ? 'fchip-warn' : 'fchip-mute'));
     ?>
         <div class="mk-sugg">
             <div class="mk-opt">
-                <span class="mk-badge <?= $lcls ?>">
+                <span class="fchip <?= $lcls ?>">
                     <?= $ls === null ? 'يدوي' : number_format($ls * 100) . '%' ?>
                 </span>
                 <span style="flex:1;"><?= e($p['name']) ?></span>
                 <b><?= number_format($p['price'], 2) ?></b>
                 <?php if ($p['permalink'] !== ''): ?>
-                    <a class="btn-sm ghost" href="<?= e($p['permalink']) ?>" target="_blank"
+                    <a class="btn btn-sm btn-secondary" href="<?= e($p['permalink']) ?>" target="_blank"
                        rel="noopener" style="text-decoration:none;">شوفه</a>
                 <?php endif; ?>
-                <button class="btn-sm ghost" data-act="unlink">فك الربط</button>
+                <button class="btn btn-sm btn-secondary" data-act="unlink">فك الربط</button>
             </div>
         </div>
     <?php elseif ($b['ignored']): ?>
         <div class="mk-sugg">
             <div class="mk-opt">
-                <span class="mk-badge mk-weak">مستبعد</span>
+                <span class="fchip fchip-mute">مستبعد</span>
                 <span style="flex:1;">قلت إن مالوش مقابل عندهم</span>
-                <button class="btn-sm ghost" data-act="unignore">رجّعه</button>
+                <button class="btn btn-sm btn-secondary" data-act="unignore">رجّعه</button>
             </div>
         </div>
     <?php else: ?>
         <div class="mk-sugg">
             <?php if (!$opts): ?>
-                <div class="mk-opt"><span class="mk-badge mk-weak">مفيش اقتراح</span>
+                <div class="mk-opt"><span class="fchip fchip-mute">مفيش اقتراح</span>
                     <span style="flex:1;color:var(--ink-500);">دوّر عليه بإيدك</span></div>
             <?php endif; ?>
 
@@ -320,25 +296,25 @@ require_once __DIR__ . '/includes/header.php';
                 $p = $prods[$o['market_id']] ?? null;
                 if (!$p) continue;
                 $s = (float) $o['score'];
-                $cls = $s >= MARKET_STRONG ? 'mk-strong' : ($s >= MARKET_MAYBE ? 'mk-maybe' : 'mk-weak');
+                $cls = $s >= MARKET_STRONG ? 'fchip-pos' : ($s >= MARKET_MAYBE ? 'fchip-warn' : 'fchip-mute');
             ?>
                 <div class="mk-opt">
-                    <span class="mk-badge <?= $cls ?>"><?= number_format($s * 100) ?>%</span>
+                    <span class="fchip <?= $cls ?>"><?= number_format($s * 100) ?>%</span>
                     <span style="flex:1;"><?= e($p['name']) ?></span>
                     <b><?= number_format($p['price'], 2) ?></b>
-                    <button class="btn-sm" data-act="link"
+                    <button class="btn btn-sm btn-primary" data-act="link"
                             data-market="<?= (int) $o['market_id'] ?>"
                             data-score="<?= $s ?>">أكّد</button>
                 </div>
             <?php endforeach; ?>
 
             <div class="mk-opt">
-                <button class="btn-sm ghost" data-act="manual">دوّر بإيدي</button>
-                <button class="btn-sm ghost" data-act="ignore">مالوش مقابل</button>
+                <button class="btn btn-sm btn-secondary" data-act="manual">دوّر بإيدي</button>
+                <button class="btn btn-sm btn-secondary" data-act="ignore">مالوش مقابل</button>
             </div>
 
             <div class="mk-manual">
-                <input type="text" class="mk-search mk-mterm" placeholder="ابحث في منتجاتهم…" style="width:100%;box-sizing:border-box;">
+                <input type="text" class="finput mk-mterm" placeholder="ابحث في منتجاتهم…" style="width:100%;box-sizing:border-box;">
                 <div class="mk-mres"></div>
             </div>
         </div>
@@ -349,9 +325,9 @@ require_once __DIR__ . '/includes/header.php';
 <?php if ($pages > 1): ?>
 <div class="mk-pager">
     <?php $qs = 'f=' . urlencode($filter) . '&q=' . urlencode($term); ?>
-    <?php if ($page > 1): ?><a class="mk-f" href="?<?= $qs ?>&p=<?= $page-1 ?>">السابق</a><?php endif; ?>
+    <?php if ($page > 1): ?><a class="btn btn-outline btn-sm" href="?<?= $qs ?>&p=<?= $page-1 ?>">السابق</a><?php endif; ?>
     <span class="mk-stat">صفحة <?= $page ?> من <?= $pages ?></span>
-    <?php if ($page < $pages): ?><a class="mk-f" href="?<?= $qs ?>&p=<?= $page+1 ?>">التالي</a><?php endif; ?>
+    <?php if ($page < $pages): ?><a class="btn btn-outline btn-sm" href="?<?= $qs ?>&p=<?= $page+1 ?>">التالي</a><?php endif; ?>
 </div>
 <?php endif; ?>
 
