@@ -132,6 +132,13 @@ function treasury_apply_op(string $action, array $in, int $uid, ?int &$outMoveme
         $empId = (int) ($in['employee_id'] ?? 0);
         if ($empId <= 0) throw new RuntimeException('اختر الموظف للسلفة.');
         disburse_advance($empId, $amount, $tid, $date, $desc ?: null, $uid);
+        notify_advance_disbursed([
+            [
+                'employee_id' => $empId,
+                'amount'      => $amount,
+                'date'        => $date,
+            ],
+        ]);
         $flash = 'تم صرف السلفة وتسجيلها على الموظف.';
     }
     elseif ($action === 'disbursement' && $opType === 'custody') {

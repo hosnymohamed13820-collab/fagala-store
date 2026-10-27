@@ -1668,6 +1668,7 @@ function save_custody_review(
         $isEmployeeCustody = !empty($custody['employee_id']);
         $onEmployee = false;
         $deficitId = null;
+        $advItems = [];
 
         if ($isEmployeeCustody) {
             // =================================================================
@@ -1713,6 +1714,7 @@ function save_custody_review(
                     $insAdv->execute([$advEmpId, $expAmt, $expDate, $expDesc]);
                     $advId = (int) $pdo->lastInsertId();
                     emp_ledger_add($advEmpId, 'debit', $expAmt, $expDate, 'advance', $expDesc, $cashId, 'advance', $advId, $userId, $pdo);
+                    $advItems[] = ['employee_id' => $advEmpId, 'amount' => $expAmt, 'date' => $expDate];
                 }
             }
 
@@ -1796,6 +1798,9 @@ function save_custody_review(
         ]);
 
         if ($own) $pdo->commit();
+        if (!empty($advItems)) {
+            notify_advance_disbursed($advItems);
+        }
         return ['variance' => $variance, 'on_employee' => $onEmployee, 'deficit_id' => $deficitId];
     } catch (Throwable $ex) {
         if ($own && $pdo->inTransaction()) $pdo->rollBack();
@@ -4506,6 +4511,105 @@ function notify_salaries_paid(array $employeeIds, string $month): void
         notify($pdo, $userIds, $type, $title, $body, $link);
     } catch (Throwable $e) {
         error_log('notify_salaries_paid error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * إشعار للموظفين بعد صرف سلفة (من الخزينة أو عند اعتماد العهدة)
+ *
+ * - استعلام واحد مجمّع يجيب user_id لكل الموظفين المطلوبين (تجنباً لأي استعلام جوه حلقة).
+ * - الموظف اللي user_id بتاعه NULL أو فاضي بيتخطى بهدوء.
+ * - لو موظف عنده أكتر من سلفة في نفس العملية: إشعار واحد بمجموع المبالغ.
+ * - الدالة كلها ملفوفة في try/catch عشان فشل الإشعار ما يوقّعش الصرف المالي أبداً.
+ *
+ * @param array<array{employee_id: int, amount: float, date?: string}> $items
+ */
+function notify_advance_disbursed(array $items): void
+{
+    if (empty($items)) {
+        return;
+    }
+
+    try {
+        // تجميع المبالغ لكل موظف لو اتكرر في نفس العملية
+        $empTotals = [];
+        foreach ($items as $it) {
+            $empId = (int)($it['employee_id'] ?? 0);
+            $amt   = (float)($it['amount'] ?? 0.0);
+            $dt    = trim((string)($it['date'] ?? ''));
+            if ($dt === '') {
+                $dt = date('Y-m-d');
+            }
+            if ($empId <= 0 || $amt <= 0.005) {
+                continue;
+            }
+            if (!isset($empTotals[$empId])) {
+                $empTotals[$empId] = [
+                    'amount' => 0.0,
+                    'date'   => $dt,
+                ];
+            }
+            $empTotals[$empId]['amount'] += $amt;
+            if ($dt > $empTotals[$empId]['date']) {
+                $empTotals[$empId]['date'] = $dt;
+            }
+        }
+
+        if (empty($empTotals)) {
+            return;
+        }
+
+        $pdo = db();
+        $empIds = array_keys($empTotals);
+        $in = implode(',', array_fill(0, count($empIds), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT id, user_id
+             FROM employees
+             WHERE id IN ($in) AND user_id IS NOT NULL"
+        );
+        $stmt->execute($empIds);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            return;
+        }
+
+        $empToUser = [];
+        foreach ($rows as $r) {
+            $uid = (int)($r['user_id'] ?? 0);
+            if ($uid > 0) {
+                $empToUser[(int)$r['id']] = $uid;
+            }
+        }
+
+        if (empty($empToUser)) {
+            return;
+        }
+
+        // تجميع المستخدمين حسب نص الإشعار لو اتطابق المبلغ والتاريخ
+        $groups = [];
+        foreach ($empTotals as $empId => $data) {
+            if (!isset($empToUser[$empId])) {
+                continue;
+            }
+            $userId    = $empToUser[$empId];
+            $amountStr = number_format($data['amount'], 2);
+            $body      = 'سلفة بمبلغ ' . $amountStr . ' ج.م بتاريخ ' . $data['date'] . ' — هتتخصم من المرتب';
+            $groups[$body][] = $userId;
+        }
+
+        $title = 'اتصرفتلك سلفة';
+        $type  = 'advance';
+        $link  = 'my_salary.php';
+
+        foreach ($groups as $body => $userIds) {
+            $userIds = array_values(array_unique($userIds));
+            if (!empty($userIds)) {
+                notify($pdo, $userIds, $type, $title, $body, $link);
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('notify_advance_disbursed error: ' . $e->getMessage());
     }
 }
 
