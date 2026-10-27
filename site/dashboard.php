@@ -66,10 +66,9 @@ require_once __DIR__ . '/includes/header.php';
     .period-bar { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
     .period-btn { background:var(--surface); border:1.5px solid var(--line); border-radius:10px; padding:10px 16px;
         font-size:14px; color:var(--accent-text); cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:7px; text-decoration:none; }
-    .period-btn.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
+    .period-btn.active { background:var(--accent); color:var(--fill-strong-fg); border-color:var(--accent-text); }
     .period-custom { display:flex; gap:8px; align-items:center; }
-    .period-custom input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
-    .period-custom button { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 14px; cursor:pointer; font-family:inherit; }
+    .period-input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
     .sec-label { font-size:13px; color:var(--ink-500); margin:0 0 8px; font-weight:600; }
     /* الكارت المجمّع سطر كامل، والخزائن تحته تتوزّع بالتساوي على العرض. */
     .treasury-grid { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:22px; }
@@ -79,7 +78,7 @@ require_once __DIR__ . '/includes/header.php';
     .tre-box.main {
         flex:1 1 58%;   /* كان 100% — ضاق عشان كارت الكاش الفعلي يقف جنبه */
         border:2px solid var(--accent);
-        background:linear-gradient(135deg,var(--line-soft) 0%,#fff 60%);
+        background:linear-gradient(135deg,var(--line-soft) 0%,var(--surface) 60%);
         display:flex;
         align-items:center;
         justify-content:space-between;
@@ -98,8 +97,7 @@ require_once __DIR__ . '/includes/header.php';
     .tre-box.realcash .tre-top { margin-bottom:0; font-size:14px; color:var(--pos); }
     .tre-box.realcash .tre-val { font-size:30px; }
     /* 🔴 الكارت ده كان أخضر مهما كانت القيمة — «خزينة الكاش الفعلي -82,131»
-           في إطار أخضر. اللون لازم يتبع الإشارة وإلا بيبقى بلا معنى.
-           و`#fff` كان مثبّت فالجراديانت كان بيبيّض في الوضع الليلي. */
+           في إطار أخضر. اللون لازم يتبع الإشارة وإلا بيبقى بلا معنى. */
     .tre-box.realcash.neg {
         border-color:var(--neg);
         background:linear-gradient(135deg,var(--neg-soft) 0%,var(--surface) 70%);
@@ -119,7 +117,6 @@ require_once __DIR__ . '/includes/header.php';
     .sum-box .v { font-size:28px; font-weight:800; }
     .sum-box .u { font-size:12px; color:var(--ink-400); margin-top:2px; }
     .v-green { color:var(--pos); } .v-orange { color:var(--warn); } .v-purple { color:var(--accent-text); }
-    .bars-card, .shifts-card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:880px){ .bottom-grid { grid-template-columns:1fr; } }
     .bar-row { margin-bottom:16px; }
@@ -134,18 +131,15 @@ require_once __DIR__ . '/includes/header.php';
     .bar-fill.empty { background:transparent; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .shift-item { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
-    .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500; }
     .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .quick-actions { display:flex; gap:8px; margin-top:14px; }
-    .qa-btn { padding:9px 16px; border-radius:9px; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
-    .qa-primary { background:var(--accent); color:#fff; } .qa-ghost { background:var(--bg); color:var(--accent-text); }
     /* موبايل: الكروت تبقى أعمدة مرنة من غير عرض ثابت يطلّع الصفحة عريضة */
     @media (max-width:760px){
         .summary-grid { grid-template-columns:repeat(2,1fr); }
         .tre-box .tre-val { font-size:22px; }
         .sum-box .v { font-size:24px; }
         .period-custom { flex-wrap:wrap; }
-        .period-custom input { flex:1; min-width:120px; }
+        .period-custom .period-input { flex:1; min-width:120px; }
         .quick-actions { flex-wrap:wrap; }
     }
     @media (max-width:430px){
@@ -157,10 +151,10 @@ require_once __DIR__ . '/includes/header.php';
     <a href="dashboard.php" class="period-btn <?= $isToday?'active':'' ?>"><i class="ti ti-calendar"></i> مبيعات اليوم</a>
     <form method="get" class="period-custom">
         <span style="color:var(--ink-500);font-size:13px;">من</span>
-        <input type="date" name="from" value="<?= e($from) ?>">
+        <input type="date" name="from" class="finput period-input" value="<?= e($from) ?>">
         <span style="color:var(--ink-500);font-size:13px;">إلى</span>
-        <input type="date" name="to" value="<?= e($to) ?>">
-        <button type="submit">عرض</button>
+        <input type="date" name="to" class="finput period-input" value="<?= e($to) ?>">
+        <button type="submit" class="btn btn-primary btn-sm">عرض</button>
     </form>
 </div>
 
@@ -210,7 +204,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <div class="bottom-grid">
-    <div class="bars-card">
+    <div class="fcard">
         <div class="section-title">خزنة العهدة — حالة الفروع</div>
         <?php if (empty($custodyBars)): ?>
             <div class="empty">لا توجد فروع.</div>
@@ -244,7 +238,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 
-    <div class="shifts-card">
+    <div class="fcard">
         <div class="section-title">حالة التقفيلات <?= $isToday?'اليوم':'' ?></div>
         <?php if (empty($periodShifts)): ?>
             <div class="empty">لا توجد تقفيلات في هذه الفترة.</div>
@@ -253,13 +247,13 @@ require_once __DIR__ . '/includes/header.php';
                 <?php $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)']; ?>
                 <div class="shift-item">
                     <span><?= e($s['cashier_name']) ?> — <?= e($s['branch_name']) ?></span>
-                    <span class="badge" style="color:<?=$sl[1]?>;background:<?=$sl[2]?>;"><?= e($sl[0]) ?></span>
+                    <span class="fchip" style="color:<?=$sl[1]?>;background:<?=$sl[2]?>;"><?= e($sl[0]) ?></span>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
         <div class="quick-actions">
-            <?php if (can('review')): ?><a href="review.php" class="qa-btn qa-primary"><i class="ti ti-checklist"></i> مراجعة</a><?php endif; ?>
-            <?php if (can('cashier')): ?><a href="cashier.php" class="qa-btn qa-ghost"><i class="ti ti-plus"></i> إضافة تقفيل</a><?php endif; ?>
+            <?php if (can('review')): ?><a href="review.php" class="btn btn-primary btn-sm"><i class="ti ti-checklist"></i> مراجعة</a><?php endif; ?>
+            <?php if (can('cashier')): ?><a href="cashier.php" class="btn btn-ghost btn-sm"><i class="ti ti-plus"></i> إضافة تقفيل</a><?php endif; ?>
         </div>
     </div>
 </div>

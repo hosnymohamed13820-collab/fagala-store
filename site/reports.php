@@ -705,28 +705,19 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .rep-tabs { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
-    .rep-tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
-        font-size:14px; font-weight:500; }
-    .rep-tab.active { background:var(--accent); color:#fff; }
-    .rep-tab:not(.active):hover { background:var(--bg); }
-    .filter-bar { background:var(--surface); border-radius:12px; padding:16px; margin-bottom:18px;
-        display:flex; gap:10px; align-items:center; flex-wrap:wrap; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
-    .filter-bar label { font-size:13px; color:var(--ink-500); }
-    .filter-bar input { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; }
+    .rep-nav { margin-bottom:18px; }
+    .rep-filters { margin-bottom:18px; }
+    .rep-filters .ffield { flex:0 1 175px; }
     .btn-csv { background:var(--pos-fill); } .btn-csv:hover { background:var(--pos-fill); }
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .rep-title { font-size:17px; color:var(--ink-900); font-weight:700; margin-bottom:4px; }
     /* كروت الإجماليات — بتتحسب من الصفوف الظاهرة في الجدول */
     .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
         gap:10px; margin:14px 0 4px; }
-    .sum-card { background:var(--line-soft); border:1.5px solid var(--line);
-        border-radius:12px; padding:12px 14px; }
     .sc-label { font-size:12px; color:var(--ink-500); margin-bottom:5px; }
     .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
     .sc-value.neg { color:var(--neg); }
     .sc-value.pos { color:var(--pos); }
-    .sum-cards.filtered .sum-card { border-color:var(--accent-text); background:var(--accent-soft); }
+    .sum-cards.filtered .sum-box { border-color:var(--accent-text); background:var(--accent-soft); }
     .sc-note { font-size:11px; color:var(--accent-text); margin-top:4px; }
     /* أكورديون تفاصيل القيد */
     tr.acc-row { cursor:pointer; }
@@ -745,14 +736,9 @@ require_once __DIR__ . '/includes/header.php';
     tr.dist-row:hover, tr.dist-row.open { background:var(--accent-soft); }
     tr.dist-body > td { background:var(--line-soft); padding:0; }
     .dist-inner { padding:12px 16px; overflow-x:auto; }
-    .dist-inner .ftable { background:var(--surface); }
     .dist-item-name { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
     /* أزرار الفروع في تقرير العهدة */
-    .br-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-    .br-tab { padding:8px 15px; border-radius:9px; background:var(--surface); border:1.5px solid var(--line);
-        color:var(--ink-700); font-size:13px; text-decoration:none; }
-    .br-tab:hover { border-color:var(--accent-text); }
-    .br-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; font-weight:600; }
+    .br-nav { margin-bottom:16px; }
     .rep-period { font-size:13px; color:var(--ink-500); margin-bottom:16px; }
     /* عمود الملاحظات — نص طويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل (مش من الخلية). */
@@ -767,19 +753,17 @@ require_once __DIR__ . '/includes/header.php';
     /* قائمة وتفصيل الرواتب (Master-Detail) */
     .sal-sum-cards { margin-bottom:16px; }
     .sal-filter-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
-    .sal-input, .sal-select { padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:13px; background:var(--surface); color:var(--ink-800); }
     .sal-input { flex:1; min-width:160px; }
     .sal-select { min-width:130px; }
-    .sal-input:focus, .sal-select:focus { outline:none; border-color:var(--accent); }
     .sal-master-detail { display:grid; grid-template-columns:330px 1fr; gap:16px; align-items:start; }
     @media (max-width: 768px) {
         .sal-master-detail { grid-template-columns:1fr; }
     }
     .sal-master-list { display:flex; flex-direction:column; gap:8px; max-height:750px; overflow-y:auto; padding-left:2px; }
-    .sal-card { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:12px 14px; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .15s; user-select:none; }
-    .sal-card:hover { border-color:var(--ink-300); background:var(--bg); }
-    .sal-card.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent); }
-    .sal-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .sal-item { background:var(--surface); border:1.5px solid var(--line); border-radius:12px; padding:12px 14px; cursor:pointer; transition:border-color .15s, background .15s, box-shadow .15s; user-select:none; }
+    .sal-item:hover { border-color:var(--ink-300); background:var(--bg); }
+    .sal-item.active { border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent); }
+    .sal-item:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     .sal-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; gap:8px; }
     .sal-card-name { font-weight:600; color:var(--ink-900); font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .sal-card-net { font-size:17px; font-weight:700; margin-bottom:4px; }
@@ -788,9 +772,8 @@ require_once __DIR__ . '/includes/header.php';
     .sal-curr { font-size:11px; font-weight:normal; color:var(--ink-500); }
     .sal-badge-paid { background:var(--pos-soft); color:var(--pos); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
     .sal-badge-draft { background:var(--warn-soft); color:var(--warn); padding:2px 8px; border-radius:6px; font-size:11.5px; font-weight:600; }
-    .sal-detail-panel { background:var(--surface); border:1.5px solid var(--line); border-radius:14px; padding:20px; }
-    .sal-detail-card { display:flex; flex-direction:column; gap:14px; }
-    .sal-detail-card[hidden] { display:none !important; }
+    .sal-detail-box { display:flex; flex-direction:column; gap:14px; }
+    .sal-detail-box[hidden] { display:none !important; }
     .sal-detail-header { border-bottom:1.5px solid var(--line-soft); padding-bottom:12px; }
     .sal-detail-name-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
     .sal-detail-name { font-size:18px; font-weight:700; color:var(--ink-900); margin:0; }
@@ -813,11 +796,11 @@ require_once __DIR__ . '/includes/header.php';
     .sal-net-val { font-size:18px; font-weight:800; }
 </style>
 
-<div class="rep-tabs">
+<div class="ftabs rep-nav">
     <?php foreach ($reportTypes as $k=>$label): ?>
         <?php if (!isset($allowedTypes[$k])) continue; ?>
         <a href="<?= $k === 'daily' ? 'daily_summary.php' : '?type=' . $k . '&from=' . e($from) . '&to=' . e($to) ?>"
-           class="rep-tab <?= $type===$k?'active':'' ?>"><?= e($label) ?></a>
+           class="ftab rep-tab <?= $type===$k?'is-active active':'' ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
 
@@ -833,7 +816,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 }
 ?>
 <?php if ($type !== 'stocktake' && $type !== 'noprice' && $type !== 'item_movement'): ?>
-<form method="get" class="filter-bar">
+<form method="get" class="ffilters rep-filters">
     <input type="hidden" name="type" value="<?= e($type) ?>">
     <?php if (($type === 'custody' || $type === 'sales') && isset($_GET['branch']) && $_GET['branch'] !== ''): ?>
         <?php /* الفرع فلتر مستقل عن التاريخ: لازم يفضل معانا لما نغيّر
@@ -843,52 +826,64 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     <?php if ($type === 'custody' && ($_GET['view'] ?? '') === 'periods'): ?>
         <input type="hidden" name="view" value="periods">
     <?php endif; ?>
-    <label>من</label>
-    <input type="date" name="from" value="<?= e($from) ?>">
-    <label>إلى</label>
-    <input type="date" name="to" value="<?= e($to) ?>">
+    <div class="ffield">
+        <label>من</label>
+        <input type="date" name="from" class="finput" value="<?= e($from) ?>">
+    </div>
+    <div class="ffield">
+        <label>إلى</label>
+        <input type="date" name="to" class="finput" value="<?= e($to) ?>">
+    </div>
     <?php if ($type === 'insta_recon'): ?>
-        <label><input type="checkbox" name="diff_only" value="1" <?= ($_GET['diff_only'] ?? '') === '1' ? 'checked' : '' ?>> المحتاج مراجعة بس</label>
+        <label class="ffield-check" style="display:inline-flex;align-items:center;gap:6px;padding-bottom:10px;cursor:pointer;"><input type="checkbox" name="diff_only" value="1" <?= ($_GET['diff_only'] ?? '') === '1' ? 'checked' : '' ?>> المحتاج مراجعة بس</label>
     <?php endif; ?>
     <?php if ($type === 'treasury'): $selEntry = $_GET['entry_code'] ?? ''; ?>
         <?php $repTreasuries = $pdo->query('SELECT id, name FROM treasuries WHERE is_active = 1 ORDER BY name')->fetchAll(); $selTreasury = (int)($_GET['treasury'] ?? 0); ?>
-        <label>الخزينة</label>
-        <select name="treasury" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الخزائن</option>
-            <?php foreach ($repTreasuries as $tr): ?>
-                <option value="<?= (int)$tr['id'] ?>" <?= $selTreasury === (int)$tr['id'] ? 'selected' : '' ?>><?= e($tr['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>القيد</label>
-        <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل القيود</option>
-            <?php foreach ($repEntryGroups as $root => $codes): ?>
-                <optgroup label="<?= e($root) ?>">
-                    <?php foreach ($codes as $ec): ?>
-                        <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
-                    <?php endforeach; ?>
-                </optgroup>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>الخزينة</label>
+            <select name="treasury" class="fselect">
+                <option value="">كل الخزائن</option>
+                <?php foreach ($repTreasuries as $tr): ?>
+                    <option value="<?= (int)$tr['id'] ?>" <?= $selTreasury === (int)$tr['id'] ? 'selected' : '' ?>><?= e($tr['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>القيد</label>
+            <select name="entry_code" class="fselect">
+                <option value="">كل القيود</option>
+                <?php foreach ($repEntryGroups as $root => $codes): ?>
+                    <optgroup label="<?= e($root) ?>">
+                        <?php foreach ($codes as $ec): ?>
+                            <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <?php $repCostBranches = cost_branches_list(); $selCostBranch = $_GET['cost_branch'] ?? ''; ?>
-        <label>الفرع</label>
-        <select name="cost_branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($repCostBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="cost_branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($repCostBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'custody' && !isset($_GET['branch']) && ($_GET['view'] ?? '') !== 'periods'):
         $repCustodyBranches = cost_branches_list(); $selCustodyCostBranch = $_GET['cost_branch'] ?? '';
     ?>
-        <label>فرع المصروف</label>
-        <select name="cost_branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($repCustodyBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCustodyCostBranch === (string)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>فرع المصروف</label>
+            <select name="cost_branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($repCustodyBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCustodyCostBranch === (string)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'expenses'):
         $repCostBranches = cost_branches_list();
@@ -899,123 +894,151 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         $repUsers        = $pdo->query("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name")->fetchAll();
         $selUser         = $_GET['user'] ?? '';
     ?>
-        <label>الفرع</label>
-        <select name="cost_branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($repCostBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>الخزينة</label>
-        <select name="treasury" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الخزائن</option>
-            <?php foreach ($repTreasuries as $tr): ?>
-                <option value="<?= (int)$tr['id'] ?>" <?= (string)$selTreasury===(string)$tr['id']?'selected':'' ?>><?= e($tr['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>القيد</label>
-        <select name="entry_code" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل القيود</option>
-            <?php foreach ($repEntryGroups as $root => $codes): ?>
-                <optgroup label="<?= e($root) ?>">
-                    <?php foreach ($codes as $ec): ?>
-                        <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
-                    <?php endforeach; ?>
-                </optgroup>
-            <?php endforeach; ?>
-        </select>
-        <label>بواسطة</label>
-        <select name="user" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">الكل</option>
-            <?php foreach ($repUsers as $u): ?>
-                <option value="<?= (int)$u['id'] ?>" <?= (string)$selUser===(string)$u['id']?'selected':'' ?>><?= e($u['full_name']) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="cost_branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($repCostBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= (string)$selCostBranch===(string)$cb['id']?'selected':'' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>الخزينة</label>
+            <select name="treasury" class="fselect">
+                <option value="">كل الخزائن</option>
+                <?php foreach ($repTreasuries as $tr): ?>
+                    <option value="<?= (int)$tr['id'] ?>" <?= (string)$selTreasury===(string)$tr['id']?'selected':'' ?>><?= e($tr['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>القيد</label>
+            <select name="entry_code" class="fselect">
+                <option value="">كل القيود</option>
+                <?php foreach ($repEntryGroups as $root => $codes): ?>
+                    <optgroup label="<?= e($root) ?>">
+                        <?php foreach ($codes as $ec): ?>
+                            <option value="<?= (int)$ec['id'] ?>" <?= (string)$selEntry===(string)$ec['id']?'selected':'' ?>><?= e($ec['path']) ?></option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>بواسطة</label>
+            <select name="user" class="fselect">
+                <option value="">الكل</option>
+                <?php foreach ($repUsers as $u): ?>
+                    <option value="<?= (int)$u['id'] ?>" <?= (string)$selUser===(string)$u['id']?'selected':'' ?>><?= e($u['full_name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'dist_invoices'):
         $selDistBranch = (int) ($_GET['branch'] ?? 0);
         $selDistSupplier = (int) ($_GET['supplier_id'] ?? 0);
         $selDistStatus = (string) ($_GET['status'] ?? '');
     ?>
-        <label>الفرع</label>
-        <select name="branch">
-            <option value="">كل الفروع</option>
-            <?php foreach ($distFilterOptions['branches'] as $branchOption): ?>
-                <option value="<?= (int) $branchOption['id'] ?>" <?= $selDistBranch === (int) $branchOption['id'] ? 'selected' : '' ?>><?= e($branchOption['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>المورد</label>
-        <select name="supplier_id">
-            <option value="">كل الموردين</option>
-            <?php foreach ($distFilterOptions['suppliers'] as $supplierOption): ?>
-                <option value="<?= (int) $supplierOption['id'] ?>" <?= $selDistSupplier === (int) $supplierOption['id'] ? 'selected' : '' ?>><?= e($supplierOption['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>الحالة</label>
-        <select name="status">
-            <option value="">كل الحالات</option>
-            <option value="new" <?= $selDistStatus === 'new' ? 'selected' : '' ?>>جديدة</option>
-            <option value="split" <?= $selDistStatus === 'split' ? 'selected' : '' ?>>متقسّمة</option>
-            <option value="done" <?= $selDistStatus === 'done' ? 'selected' : '' ?>>تمت</option>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($distFilterOptions['branches'] as $branchOption): ?>
+                    <option value="<?= (int) $branchOption['id'] ?>" <?= $selDistBranch === (int) $branchOption['id'] ? 'selected' : '' ?>><?= e($branchOption['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>المورد</label>
+            <select name="supplier_id" class="fselect">
+                <option value="">كل الموردين</option>
+                <?php foreach ($distFilterOptions['suppliers'] as $supplierOption): ?>
+                    <option value="<?= (int) $supplierOption['id'] ?>" <?= $selDistSupplier === (int) $supplierOption['id'] ? 'selected' : '' ?>><?= e($supplierOption['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>الحالة</label>
+            <select name="status" class="fselect">
+                <option value="">كل الحالات</option>
+                <option value="new" <?= $selDistStatus === 'new' ? 'selected' : '' ?>>جديدة</option>
+                <option value="split" <?= $selDistStatus === 'split' ? 'selected' : '' ?>>متقسّمة</option>
+                <option value="done" <?= $selDistStatus === 'done' ? 'selected' : '' ?>>تمت</option>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'deficits'): $selDefStatus = $_GET['status'] ?? ''; ?>
-        <label>الحالة</label>
-        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">الكل</option>
-            <option value="within" <?= $selDefStatus==='within'?'selected':'' ?>>داخل العتبة</option>
-            <option value="exceeded" <?= $selDefStatus==='exceeded'?'selected':'' ?>>تجاوز العتبة</option>
-        </select>
+        <div class="ffield">
+            <label>الحالة</label>
+            <select name="status" class="fselect">
+                <option value="">الكل</option>
+                <option value="within" <?= $selDefStatus==='within'?'selected':'' ?>>داخل العتبة</option>
+                <option value="exceeded" <?= $selDefStatus==='exceeded'?'selected':'' ?>>تجاوز العتبة</option>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'customers'): $selCustBranch = (int)($_GET['branch'] ?? 0); ?>
-        <label>الفرع</label>
-        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($custBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= $selCustBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <input type="text" name="q" value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="الاسم أو التليفون" aria-label="بحث بالاسم أو التليفون"
-               style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($custBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= $selCustBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>بحث</label>
+            <input type="text" name="q" class="finput" value="<?= e((string)($_GET['q'] ?? '')) ?>" placeholder="الاسم أو التليفون" aria-label="بحث بالاسم أو التليفون">
+        </div>
     <?php endif; ?>
     <?php if ($type === 'receiving'):
         $recBranches = $pdo->query("SELECT id, name FROM branches WHERE is_active = 1 ORDER BY name")->fetchAll();
         $selRecBranch = (int)($_GET['branch'] ?? 0);
         $selRecStatus = (string)($_GET['status'] ?? '');
     ?>
-        <label>الفرع</label>
-        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($recBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= $selRecBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <label>الحالة</label>
-        <select name="status" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الحالات</option>
-            <option value="sent" <?= $selRecStatus === 'sent' ? 'selected' : '' ?>>موزعة (بانتظار البدء)</option>
-            <option value="receiving" <?= $selRecStatus === 'receiving' ? 'selected' : '' ?>>جاري الاستلام</option>
-            <option value="received" <?= $selRecStatus === 'received' ? 'selected' : '' ?>>تم الاستلام (بانتظار الاعتماد)</option>
-            <option value="approved" <?= $selRecStatus === 'approved' ? 'selected' : '' ?>>معتمدة</option>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($recBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= $selRecBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>الحالة</label>
+            <select name="status" class="fselect">
+                <option value="">كل الحالات</option>
+                <option value="sent" <?= $selRecStatus === 'sent' ? 'selected' : '' ?>>موزعة (بانتظار البدء)</option>
+                <option value="receiving" <?= $selRecStatus === 'receiving' ? 'selected' : '' ?>>جاري الاستلام</option>
+                <option value="received" <?= $selRecStatus === 'received' ? 'selected' : '' ?>>تم الاستلام (بانتظار الاعتماد)</option>
+                <option value="approved" <?= $selRecStatus === 'approved' ? 'selected' : '' ?>>معتمدة</option>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'supplier_purchases'): ?>
-        <label>الفرع</label>
-        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($spBranches as $cb): ?>
-                <option value="<?= (int)$cb['id'] ?>" <?= $spSelBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($spBranches as $cb): ?>
+                    <option value="<?= (int)$cb['id'] ?>" <?= $spSelBranch === (int)$cb['id'] ? 'selected' : '' ?>><?= e($cb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'transfers' || $type === 'transfer_shorts'): ?>
-        <label>الفرع</label>
-        <select name="branch" style="padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:13px;">
-            <option value="">كل الفروع</option>
-            <?php foreach ($trBranches as $tb): ?>
-                <option value="<?= (int)$tb['id'] ?>" <?= (isset($_GET['branch']) && (int)$_GET['branch'] === (int)$tb['id']) ? 'selected' : '' ?>><?= e($tb['name']) ?></option>
-            <?php endforeach; ?>
-        </select>
+        <div class="ffield">
+            <label>الفرع</label>
+            <select name="branch" class="fselect">
+                <option value="">كل الفروع</option>
+                <?php foreach ($trBranches as $tb): ?>
+                    <option value="<?= (int)$tb['id'] ?>" <?= (isset($_GET['branch']) && (int)$_GET['branch'] === (int)$tb['id']) ? 'selected' : '' ?>><?= e($tb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'purchase_docs' || $type === 'purchase_by_item'): ?>
         <?php
@@ -1024,11 +1047,27 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         $pdBranches = $pdo->query('SELECT id,name FROM branches WHERE is_active=1 AND id IN (1,2,3,4,6) ORDER BY name')->fetchAll();
         $pdSuppliers = $pdo->query('SELECT id,name FROM suppliers WHERE is_active=1 ORDER BY name')->fetchAll();
         ?>
-        <label>المخزن</label><select name="branch" <?= !is_real_owner()?'disabled':'' ?>><option value="">كل المخازن</option><?php foreach($pdBranches as $pb): if(!is_real_owner() && (int)$pb['id']!==$pdBranch)continue; ?><option value="<?= (int)$pb['id'] ?>" <?= $pdBranch===(int)$pb['id']?'selected':'' ?>><?= e($pb['name']) ?></option><?php endforeach ?></select>
-        <label>المورد</label><select name="supplier_id"><option value="">كل الموردين</option><?php foreach($pdSuppliers as $ps): ?><option value="<?= (int)$ps['id'] ?>" <?= $pdSupplier===(int)$ps['id']?'selected':'' ?>><?= e($ps['name']) ?></option><?php endforeach ?></select>
+        <div class="ffield">
+            <label>المخزن</label>
+            <select name="branch" class="fselect" <?= !is_real_owner()?'disabled':'' ?>>
+                <option value="">كل المخازن</option>
+                <?php foreach($pdBranches as $pb): if(!is_real_owner() && (int)$pb['id']!==$pdBranch)continue; ?>
+                    <option value="<?= (int)$pb['id'] ?>" <?= $pdBranch===(int)$pb['id']?'selected':'' ?>><?= e($pb['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="ffield">
+            <label>المورد</label>
+            <select name="supplier_id" class="fselect">
+                <option value="">كل الموردين</option>
+                <?php foreach($pdSuppliers as $ps): ?>
+                    <option value="<?= (int)$ps['id'] ?>" <?= $pdSupplier===(int)$ps['id']?'selected':'' ?>><?= e($ps['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
     <?php endif; ?>
     <?php if ($type === 'treasury' || ($type === 'custody' && isset($_GET['branch']))): ?>
-        <label><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
+        <label class="ffield-check" style="display:inline-flex;align-items:center;gap:6px;padding-bottom:10px;cursor:pointer;"><input type="checkbox" name="show_cancelled" value="1" <?= ($_GET['show_cancelled'] ?? '') === '1' ? 'checked' : '' ?>> إظهار الملغي</label>
     <?php endif; ?>
     <button type="submit" class="btn"><i class="ti ti-filter"></i> عرض</button>
     <a href="?type=<?= e($type) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $type==='treasury' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='treasury' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='treasury' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='expenses' && !empty($_GET['treasury']) ? '&treasury='.(int)$_GET['treasury'] : '' ?><?= $type==='expenses' && !empty($_GET['entry_code']) ? '&entry_code='.(int)$_GET['entry_code'] : '' ?><?= $type==='expenses' && !empty($_GET['user']) ? '&user='.(int)$_GET['user'] : '' ?><?= ($type==='custody' || $type==='sales' || $type==='supplier_purchases' || $type==='transfers' || $type==='transfer_shorts' || $type==='purchase_docs' || $type==='purchase_by_item' || $type==='dist_invoices') && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= ($type==='purchase_docs' || $type==='purchase_by_item' || $type==='dist_invoices') && !empty($_GET['supplier_id']) ? '&supplier_id='.(int)$_GET['supplier_id'] : '' ?><?= $type==='dist_invoices' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='custody' && !empty($_GET['cost_branch']) ? '&cost_branch='.(int)$_GET['cost_branch'] : '' ?><?= $type==='custody' && ($_GET['view'] ?? '') === 'periods' ? '&view=periods' : '' ?><?= ($type==='treasury' || $type==='custody') && ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '' ?><?= $type==='deficits' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='customers' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='customers' && trim((string)($_GET['q'] ?? '')) !== '' ? '&q='.urlencode(trim((string)$_GET['q'])) : '' ?><?= $type==='receiving' && !empty($_GET['branch']) ? '&branch='.(int)$_GET['branch'] : '' ?><?= $type==='receiving' && !empty($_GET['status']) ? '&status='.urlencode($_GET['status']) : '' ?><?= $type==='insta_recon' && ($_GET['diff_only'] ?? '') === '1' ? '&diff_only=1' : '' ?>&export=1" class="btn btn-csv">
@@ -1047,11 +1086,11 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     $selBranch = isset($_GET['branch']) && $_GET['branch'] !== '' ? (int)$_GET['branch'] : null;
     $qs = 'type=sales&from=' . urlencode($from) . '&to=' . urlencode($to);
 ?>
-<div class="br-tabs">
-    <a href="?<?= $qs ?>" class="br-tab <?= $selBranch===null?'active':'' ?>">كل المبيعات</a>
+<div class="ftabs br-nav">
+    <a href="?<?= $qs ?>" class="ftab br-tab <?= $selBranch===null?'is-active active':'' ?>">كل المبيعات</a>
     <?php foreach ($salesBranches as $sb): ?>
         <a href="?<?= $qs ?>&branch=<?= (int)$sb['id'] ?>"
-           class="br-tab <?= $selBranch===(int)$sb['id']?'active':'' ?>"><?= e($sb['name']) ?></a>
+           class="ftab br-tab <?= $selBranch===(int)$sb['id']?'is-active active':'' ?>"><?= e($sb['name']) ?></a>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
@@ -1072,12 +1111,12 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     $custodyView = (string) ($_GET['view'] ?? '');
     $qs .= ($_GET['show_cancelled'] ?? '') === '1' ? '&show_cancelled=1' : '';
 ?>
-<div class="br-tabs">
-    <a href="?<?= $qs ?>" class="br-tab <?= $selBranch===null && $custodyView !== 'periods'?'active':'' ?>">مصروفات العهد حسب الفرع</a>
-    <a href="?<?= $qs ?>&view=periods" class="br-tab <?= $selBranch===null && $custodyView === 'periods'?'active':'' ?>">فترات العهدة</a>
+<div class="ftabs br-nav">
+    <a href="?<?= $qs ?>" class="ftab br-tab <?= $selBranch===null && $custodyView !== 'periods'?'is-active active':'' ?>">مصروفات العهد حسب الفرع</a>
+    <a href="?<?= $qs ?>&view=periods" class="ftab br-tab <?= $selBranch===null && $custodyView === 'periods'?'is-active active':'' ?>">فترات العهدة</a>
     <?php foreach ($repBranches as $rb): ?>
         <a href="?<?= $qs ?>&branch=<?= (int)$rb['id'] ?>"
-           class="br-tab <?= $selBranch===(int)$rb['id']?'active':'' ?>"><?= e($rb['name']) ?></a>
+           class="ftab br-tab <?= $selBranch===(int)$rb['id']?'is-active active':'' ?>"><?= e($rb['name']) ?></a>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
@@ -1085,7 +1124,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
 <?php if ($type === 'stocktake'): ?>
     <!-- تاب الجرد: أرشيف للقراءة فقط -->
-    <div class="card">
+    <div class="fcard card">
         <div class="rep-title">أرشيف الجرد (للقراءة فقط)</div>
         <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:8px;">
             <input type="hidden" name="type" value="stocktake">
@@ -1126,7 +1165,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             <button type="button" class="btn btn-sm btn-ghost" onclick="toggleAllSheets(false)">إلغاء الكل</button>
                         </div>
                         <div style="overflow-y:auto;flex:1;border:1.5px solid var(--line);border-radius:10px;">
-                            <table style="width:100%;border-collapse:collapse;">
+                            <table class="ftable" style="width:100%;border-collapse:collapse;">
                                 <thead><tr style="background:var(--line-soft);">
                                     <th style="padding:9px 12px;width:40px;"></th>
                                     <th style="padding:9px 12px;text-align:right;font-size:13px;color:var(--ink-500);">المحضر</th>
@@ -1167,7 +1206,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     </div>
 
     <?php if ($stkSelSession): ?>
-    <div class="card">
+    <div class="fcard card">
         <?php if (empty($stkLines)): ?>
             <div class="empty">لا توجد أصناف في المحاضر المختارة.</div>
         <?php else: ?>
@@ -1183,7 +1222,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <a href="?<?= $expQs ?>&fmt=xlsx" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
             </div>
         </div>
-        <table>
+        <table class="ftable">
             <thead><tr>
                 <th>المحضر</th><th>الكود</th><th>اسم الصنف</th><th>الوحدة</th>
                 <th>جرد الجارد</th><th>جرد المراجع</th><th>النهائية</th>
@@ -1224,7 +1263,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 <?php elseif ($type === 'noprice'): ?>
 <?php /* ===== تقرير «أصناف بدون سعر بيع» — الواجهة ===== */ ?>
 <?php if (!$npReady): ?>
-    <div class="card">
+    <div class="fcard card">
         <div class="empty" style="color:var(--neg);"><?= e($npMsg) ?></div>
     </div>
 <?php else: ?>
@@ -1233,11 +1272,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     .np-bar { background:var(--surface); border-radius:12px; padding:14px 16px; margin-bottom:14px;
         display:flex; gap:10px; align-items:center; flex-wrap:wrap;
         box-shadow:0 2px 10px rgba(124,111,247,0.06); }
-    .np-bar input[type=text], .np-bar input[type=number] {
-        padding:9px 11px; border:1.5px solid var(--line); border-radius:9px;
-        font-family:inherit; font-size:13px; }
     .np-search-wrap { position:relative; flex:1 1 280px; min-width:220px; }
-    .np-search-wrap input { width:100%; box-sizing:border-box; }
     .np-sugg { position:absolute; top:calc(100% + 4px); right:0; left:0; z-index:40;
         background:var(--surface); border:1.5px solid var(--line); border-radius:10px;
         max-height:300px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,0.12); display:none; }
@@ -1248,10 +1283,8 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
     .np-table td, .np-table th { white-space:nowrap; }
     .np-table td.np-name { white-space:normal; min-width:180px; }
-    .np-table input { padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
-        font-family:inherit; font-size:13px; width:100px; text-align:left; direction:ltr; }
-    .np-table input:focus { outline:none; border-color:var(--accent-text); }
-    .np-table input.np-dirty { border-color:var(--pos); background:var(--surface); }
+    .np-table .finput { width:100px; text-align:left; direction:ltr; }
+    .np-table .np-dirty { border-color:var(--pos); }
     .np-table tr.np-nocost td { background:var(--line-soft); }
     .np-x { background:none; border:none; cursor:pointer; color:var(--neg); font-size:16px; padding:2px 6px; }
 
@@ -1279,19 +1312,19 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 <!-- ===================== الشريط العلوي ===================== -->
 <div class="np-bar">
     <div class="np-search-wrap">
-        <input type="text" id="npSearch" placeholder="ابحث بالكود أو اسم الصنف وأضفه…" autocomplete="off">
+        <input type="text" id="npSearch" class="finput" placeholder="ابحث بالكود أو اسم الصنف وأضفه…" autocomplete="off">
         <div class="np-sugg" id="npSugg"></div>
     </div>
 
     <label style="font-size:13px;color:var(--ink-500);">نسبة موحدة</label>
-    <input type="number" id="npPct" step="0.5" style="width:90px;" placeholder="%">
+    <input type="number" id="npPct" step="0.5" class="finput finput-sm" style="width:90px;" placeholder="%">
     <button class="btn" id="npApply"><i class="ti ti-percentage"></i> تطبيق النسبة</button>
 
     <button class="btn btn-ghost" id="npZeroBtn"><i class="ti ti-filter"></i> أصناف أسعار بيعها 0</button>
 </div>
 
 <!-- ===================== الجدول ===================== -->
-<div class="card">
+<div class="fcard card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
         <div class="rep-title" style="margin:0;">
             أصناف بدون سعر بيع <span class="np-muted" id="npCount"></span>
@@ -1300,7 +1333,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     </div>
 
     <div style="overflow-x:auto;">
-        <table class="np-table">
+        <table class="ftable np-table">
             <thead><tr>
                 <th>كود الصنف</th>
                 <th>اسم الصنف</th>
@@ -1418,9 +1451,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 '<td style="direction:ltr;text-align:right;">' + esc(r.code) + '</td>' +
                 '<td class="np-name">' + esc(r.name || '—') + '</td>' +
                 '<td>' + (r.cost > 0 ? money(r.cost) : '—') + '</td>' +
-                '<td><input type="number" step="0.01" min="0" class="np-price" ' +
+                '<td><input type="number" step="0.01" min="0" class="finput finput-sm np-price" ' +
                     'data-code="' + esc(r.code) + '" value="' + money(r.sale) + '"></td>' +
-                '<td><input type="number" step="0.5" class="np-pct" ' +
+                '<td><input type="number" step="0.5" class="finput finput-sm np-pct" ' +
                     'data-code="' + esc(r.code) + '" value="' + (r.pct === null ? '' : r.pct) + '"' +
                     (r.cost > 0 ? '' : ' disabled title="مفيش تكلفة"') + '></td>' +
                 '<td><button class="np-x" data-del="' + esc(r.code) + '" title="شيل">✕</button></td>';
@@ -1659,7 +1692,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
 <?php elseif ($type === 'customers'): ?>
 <?php /* ===== تقرير «داتا العملاء» — الواجهة (سطر لكل تليفون، والاسم وآخر تاريخ من نفس آخر حجز) ===== */ ?>
-<div class="card">
+<div class="fcard card">
     <div class="rep-title">داتا العملاء<?= $custBranchName !== '' ? ' — ' . e($custBranchName) : '' ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($custRows)) ?> عميل</div>
     <?php if (!$custReady): ?>
@@ -1668,7 +1701,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <div class="empty">مفيش حجوزات في الفترة دي.</div>
     <?php else: ?>
     <div style="overflow-x:auto;">
-    <table>
+    <table class="ftable">
         <thead><tr>
             <th>الاسم</th><th>رقم التليفون</th><th>الفروع</th><th>عدد الحجوزات</th><th>تاريخ آخر حجز</th>
         </tr></thead>
@@ -1690,7 +1723,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
 <?php elseif ($type === 'supplier_purchases'): ?>
 <?php /* ===== تقرير «مشتريات مورد» (بريف ١٢٥) ===== */ ?>
-<div class="card">
+<div class="fcard card">
     <div class="rep-title">تقرير مشتريات مورد<?= $spSelBranch !== null ? ' — ' . e(array_column($spBranches, 'name', 'id')[$spSelBranch] ?? 'فرع ' . $spSelBranch) : ' — كل الفروع' ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format($spReport['totals']['count']) ?> مورد</div>
 
@@ -1758,7 +1791,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
 <?php elseif ($type === 'transfers'): ?>
 <?php /* ===== تقرير «التحويلات بين المخازن» (بريف ٢١٥) ===== */ ?>
-<div class="card">
+<div class="fcard card">
     <div class="rep-title">تقرير التحويلات بين المخازن<?= $trSelBranch !== null ? ' — ' . e(array_column($trBranches, 'name', 'id')[$trSelBranch] ?? 'مخزن ' . $trSelBranch) : ' — كل المخازن' ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($trReportRows)) ?> تحويل</div>
 
@@ -1813,8 +1846,8 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             <td class="num"><a href="transfers.php?id=<?= (int)$r['id'] ?>" style="font-weight:600;"><?= e($docLabel) ?></a></td>
                             <td><?= e($r['from_branch_name'] ?? ('مخزن ' . $r['branch_id'])) ?></td>
                             <td><?= e($r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id'])) ?></td>
-                            <td><?= $r['sent_at'] ? e($r['sent_at']) : '<span style="color:var(--text-dim);">—</span>' ?></td>
-                            <td><?= $r['received_at'] ? e($r['received_at']) : '<span style="color:var(--text-dim);">—</span>' ?></td>
+                            <td><?= $r['sent_at'] ? e($r['sent_at']) : '<span style="color:var(--ink-400);">—</span>' ?></td>
+                            <td><?= $r['received_at'] ? e($r['received_at']) : '<span style="color:var(--ink-400);">—</span>' ?></td>
                             <td class="num"><?= $r['duration_hours'] !== null ? number_format((float)$r['duration_hours'], 2) : '—' ?></td>
                             <td class="num"><?= number_format((int)$r['lines_count']) ?></td>
                             <td class="num"><?= number_format((float)$r['total_pieces'], 3) ?></td>
@@ -1848,7 +1881,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 
 <?php elseif ($type === 'transfer_shorts'): ?>
 <?php /* ===== تقرير «عجوزات التحويلات المستردة» (بريف ٢١٥) ===== */ ?>
-<div class="card">
+<div class="fcard card">
     <div class="rep-title">تقرير عجز التحويلات المسترد تلقائياً<?= $trSelBranch !== null ? ' — ' . e(array_column($trBranches, 'name', 'id')[$trSelBranch] ?? 'مخزن ' . $trSelBranch) : ' — كل المخازن' ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?> · <?= number_format(count($trShortRows)) ?> حالة عجز مستردة</div>
 
@@ -1884,7 +1917,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             <td class="num" style="color:var(--pos);font-weight:600;"><?= number_format((float)$r['qty'], 3) ?></td>
                             <td><?= e($r['to_branch_name'] ?? ('مخزن ' . $r['counter_branch_id'])) ?></td>
                             <td><?= e($r['from_branch_name'] ?? ('مخزن ' . $r['branch_id'])) ?></td>
-                            <td style="color:var(--text-dim);font-size:12px;"><?= e($r['note'] ?: 'تم الرد للراسل') ?></td>
+                            <td style="color:var(--ink-400);font-size:12px;"><?= e($r['note'] ?: 'تم الرد للراسل') ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -1906,7 +1939,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     <?php require __DIR__ . '/includes/item_movement_view.php'; ?>
 
 <?php else: ?>
-<div class="card">
+<div class="fcard card">
     <div class="rep-title"><?= e($report['title']) ?></div>
     <div class="rep-period">من <?= e($from) ?> إلى <?= e($to) ?></div>
     <?php if ($type === 'insta_recon'): ?>
@@ -1926,30 +1959,30 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <div class="empty">لا توجد بيانات في هذه الفترة.</div>
             <?php else: ?>
                 <div class="sum-cards sal-sum-cards" id="advSummaryCards">
-                    <div class="sum-card">
+                    <div class="fcard sum-box sum-card">
                         <div class="sc-label">عدد الموظفين</div>
                         <div class="sc-value" id="advCountCard"><?= number_format($report['count']) ?></div>
                     </div>
-                    <div class="sum-card">
+                    <div class="fcard sum-box sum-card">
                         <div class="sc-label">إجمالي المتبقي</div>
                         <div class="sc-value" id="advRemainingCard" style="color:var(--ink-900);"><?= number_format($report['total_remaining'], 2) ?></div>
                     </div>
                 </div>
 
                 <div class="sal-filter-bar">
-                    <input type="text" id="advSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
-                    <select id="advBranchFilter" class="sal-select">
+                    <input type="text" id="advSearch" class="finput sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                    <select id="advBranchFilter" class="fselect sal-select">
                         <option value="">كل الفروع</option>
                         <?php foreach ($report['branches'] as $br): ?>
                             <option value="<?= e($br) ?>"><?= e($br) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <select id="advTypeFilter" class="sal-select">
+                    <select id="advTypeFilter" class="fselect sal-select">
                         <option value="">كل الأنواع</option>
                         <option value="monthly">سلفة شهر</option>
                         <option value="standing">مستديمة</option>
                     </select>
-                    <select id="advStatusFilter" class="sal-select">
+                    <select id="advStatusFilter" class="fselect sal-select">
                         <option value="">كل الحالات</option>
                         <option value="pending">معلّقة</option>
                         <option value="deducted">اتخصمت</option>
@@ -1961,7 +1994,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     <!-- القائمة (يمين) -->
                     <div class="sal-master-list" id="advMasterList">
                         <?php foreach ($report['details'] as $idx => $d): ?>
-                            <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                            <div class="fcard sal-item sal-card <?= $idx === 0 ? 'is-active active' : '' ?>"
                                  data-id="<?= $d['id'] ?>"
                                  data-name="<?= e($d['full_name']) ?>"
                                  data-branch="<?= e($d['branch_name']) ?>"
@@ -1998,9 +2031,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     </div>
 
                     <!-- التفصيل (شمال) -->
-                    <div class="sal-detail-panel" id="advDetailPanel">
+                    <div class="fcard sal-detail-panel" id="advDetailPanel">
                         <?php foreach ($report['details'] as $idx => $d): ?>
-                            <div class="sal-detail-card" id="advDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                            <div class="sal-detail-box sal-detail-card" id="advDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
                                 <div class="sal-detail-header">
                                     <div class="sal-detail-name-row">
                                         <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
@@ -2016,7 +2049,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                 </div>
 
                                 <div style="overflow-x:auto;">
-                                    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
+                                    <table class="ftable" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
                                         <thead>
                                             <tr style="background:var(--line-soft);">
                                                 <th style="padding:8px 10px;text-align:right;">التاريخ</th>
@@ -2040,9 +2073,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                                             <?= e($adv['type_label']) ?>
                                                         </span>
                                                     </td>
-                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['amount_fmt']) ?></td>
-                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;font-weight:600;direction:ltr;text-align:right;color:var(--ink-900);"><?= e($adv['remaining_fmt']) ?></td>
-                                                    <td style="padding:9px 10px;font-family:'IBM Plex Mono',monospace;direction:ltr;text-align:right;"><?= e($adv['monthly_deduction_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-variant-numeric:tabular-nums;direction:ltr;text-align:right;"><?= e($adv['amount_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-variant-numeric:tabular-nums;font-weight:600;direction:ltr;text-align:right;color:var(--ink-900);"><?= e($adv['remaining_fmt']) ?></td>
+                                                    <td style="padding:9px 10px;font-variant-numeric:tabular-nums;direction:ltr;text-align:right;"><?= e($adv['monthly_deduction_fmt']) ?></td>
                                                     <td style="padding:9px 10px;">
                                                         <?php if ($adv['status'] === 'pending'): ?>
                                                             <span class="badge" style="background:var(--warn-soft);color:var(--warn);">معلّقة</span>
@@ -2073,7 +2106,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             </div>
                         <?php endforeach; ?>
 
-                        <div id="advDetailEmpty" class="sal-detail-card" hidden>
+                        <div id="advDetailEmpty" class="sal-detail-box sal-detail-card" hidden>
                             <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
                         </div>
                     </div>
@@ -2107,6 +2140,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     function selectCard(card) {
                         cards.forEach(function (c) {
                             c.classList.remove('active');
+                            c.classList.remove('is-active');
                             c.setAttribute('aria-pressed', 'false');
                         });
                         if (detailPanel) {
@@ -2120,6 +2154,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                         }
 
                         card.classList.add('active');
+                        card.classList.add('is-active');
                         card.setAttribute('aria-pressed', 'true');
                         var targetId = 'advDetail_' + card.dataset.id;
                         var targetDetail = document.getElementById(targetId);
@@ -2242,25 +2277,25 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <div class="empty">لا توجد بيانات في هذه الفترة.</div>
         <?php else: ?>
             <div class="sum-cards sal-sum-cards" id="salSummaryCards">
-                <div class="sum-card">
+                <div class="fcard sum-box sum-card">
                     <div class="sc-label">عدد الموظفين</div>
                     <div class="sc-value" id="salCountCard"><?= number_format($report['count']) ?></div>
                 </div>
-                <div class="sum-card">
+                <div class="fcard sum-box sum-card">
                     <div class="sc-label">إجمالي الصافي</div>
                     <div class="sc-value pos" id="salNetCard"><?= number_format($report['total_net'], 2) ?></div>
                 </div>
             </div>
 
             <div class="sal-filter-bar">
-                <input type="text" id="salSearch" class="sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
-                <select id="salTreasuryFilter" class="sal-select">
+                <input type="text" id="salSearch" class="finput sal-input" placeholder="بحث باسم الموظف..." autocomplete="off">
+                <select id="salTreasuryFilter" class="fselect sal-select">
                     <option value="">كل الخزائن</option>
                     <?php foreach ($report['treasuries'] as $tr): ?>
                         <option value="<?= e($tr) ?>"><?= e($tr) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <select id="salStatusFilter" class="sal-select">
+                <select id="salStatusFilter" class="fselect sal-select">
                     <option value="">كل الحالات</option>
                     <option value="paid">مدفوع</option>
                     <option value="draft">مسودة</option>
@@ -2271,7 +2306,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <!-- القائمة (يمين) -->
                 <div class="sal-master-list" id="salMasterList">
                     <?php foreach ($report['details'] as $idx => $d): ?>
-                        <div class="sal-card <?= $idx === 0 ? 'active' : '' ?>"
+                        <div class="fcard sal-item sal-card <?= $idx === 0 ? 'is-active active' : '' ?>"
                              data-id="<?= $d['id'] ?>"
                              data-name="<?= e($d['full_name']) ?>"
                              data-treasury="<?= e($d['treasury_name']) ?>"
@@ -2300,9 +2335,9 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 </div>
 
                 <!-- التفصيل (شمال) -->
-                <div class="sal-detail-panel" id="salDetailPanel">
+                <div class="fcard sal-detail-panel" id="salDetailPanel">
                     <?php foreach ($report['details'] as $idx => $d): ?>
-                        <div class="sal-detail-card" id="salDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
+                        <div class="sal-detail-box sal-detail-card" id="salDetail_<?= $d['id'] ?>" <?= $idx === 0 ? '' : 'hidden' ?>>
                             <div class="sal-detail-header">
                                 <div class="sal-detail-name-row">
                                     <h3 class="sal-detail-name"><?= e($d['full_name']) ?></h3>
@@ -2368,7 +2403,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                         </div>
                     <?php endforeach; ?>
 
-                    <div id="salDetailEmpty" class="sal-detail-card" hidden>
+                    <div id="salDetailEmpty" class="sal-detail-box sal-detail-card" hidden>
                         <div class="empty" style="padding:40px 10px;">مفيش موظف مطابق للفلتر.</div>
                     </div>
                 </div>
@@ -2401,6 +2436,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 function selectCard(card) {
                     cards.forEach(function (c) {
                         c.classList.remove('active');
+                        c.classList.remove('is-active');
                         c.setAttribute('aria-pressed', 'false');
                     });
                     if (detailPanel) {
@@ -2414,6 +2450,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     }
 
                     card.classList.add('active');
+                    card.classList.add('is-active');
                     card.setAttribute('aria-pressed', 'true');
                     var targetId = 'salDetail_' + card.dataset.id;
                     var targetDetail = document.getElementById(targetId);
@@ -2529,7 +2566,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     }
                 }
                 ?>
-                <div class="sum-card" data-card="<?= (int)$ci ?>">
+                <div class="fcard sum-box sum-card" data-card="<?= (int)$ci ?>">
                     <div class="sc-label"><?= e($cd['label']) ?></div>
                     <div class="sc-value"><?= !empty($cd['qty']) ? rtrim(rtrim(number_format($t, 10, '.', ','), '0'), '.') : ((!empty($cd['int']) || !empty($cd['count'])) ? number_format($t) : number_format($t, 2)) ?></div>
                 </div>
@@ -2604,7 +2641,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
                     '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
                     '</div>' +
-                    '<div style="overflow-x:auto;"><table><thead><tr>' +
+                    '<div style="overflow-x:auto;"><table class="ftable"><thead><tr>' +
                     '<th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                     '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                     '</tr></thead><tbody>';
@@ -2694,7 +2731,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     }
     </script>
 
-    <table data-xt-min="1"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort class="ftable"' : '' ?>>
+    <table data-xt-min="1" class="ftable"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort' : '' ?>>
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= in_array($hi, $report['num_cols'] ?? [], true) ? ' class="num"' : '' ?><?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>

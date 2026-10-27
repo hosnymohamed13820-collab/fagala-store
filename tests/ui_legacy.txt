@@ -1,5 +1,4 @@
 # صفحة  التصنيف=العدد — القديم مسموح يقل بس ممنوع يزيد
-analysis.php hex=4 btn=2 table=2 control=4 component=2
 ashraqa_invoices.php hex=3 var=1 btn=1 table=3 mono=1 control=2
 book_lib.php hex=1 component=1
 book_orders.php hex=1 btn=1 table=1 mono=4 control=2
@@ -8,29 +7,21 @@ branch_invoices.php component=3
 branch_invoices_core.php hex=3 var=1 btn=1 table=3 mono=1 control=2
 branch_recon.php hex=4 table=6 mono=1 control=1 component=3
 branch_requests.php btn=1 table=4 mono=1
-dashboard.php hex=5 control=2 component=2
 definitions.php hex=1 table=4 control=5
-errors.php btn=1 table=1 mono=1
 includes/footer.php table=1 component=1
 includes/header.php hex=10
-invoice_problems.php hex=1 btn=1 table=3 component=1
 invoices.php hex=3 var=4 table=5 control=2
-item_sales.php hex=10 mono=1 component=3
 labels.php control=7
 labels_print.php hex=17
 login.php hex=37 control=5 component=2
 market_prices.php hex=3 component=1
-ops.php hex=8 mono=2 component=2
 pc_scan.php control=1
 pos_migrate.php hex=1 btn=2 table=3 control=1
 price_inquiry.php hex=1 control=4 component=6
 purchase_groups.php hex=4 btn=1 table=2 mono=3 component=3
-rabt_guard.php table=2 component=1
 receiving.php hex=2 btn=2 table=3 control=1 component=3
 receiving_diffs.php btn=1 table=1 component=1
 remote_scan.php control=1
-reports.php hex=2 var=3 table=6 mono=3 control=7 component=10
-review.php hex=21 table=6 control=3 component=8
 settings.php hex=1 btn=1 table=1 control=11
 shortage.php hex=3 btn=2 table=1 mono=2 control=8
 sms_export.php hex=2

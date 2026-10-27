@@ -107,17 +107,6 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-.btn { padding: 8px 16px; font-size: 13.5px; font-weight: 600; border: 1px solid transparent; }
-/* لازم يفضل هنا: .btn اللي فوقه بييجي بعد fagala.css فبيغلب .btn-sm بتاعها */
-.btn-sm {
-    padding: 4px 10px;
-    font-size: 12px;
-}
-
-.prob-card {
-    margin-bottom: 16px;
-}
 .modal-bg {
     display: none;
     position: fixed;
@@ -150,23 +139,6 @@ require_once __DIR__ . '/includes/header.php';
     flex-wrap: wrap;
     gap: 10px;
 }
-.prob-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 13px;
-}
-.prob-table th, .prob-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--line-soft);
-    text-align: right;
-    vertical-align: middle;
-}
-.prob-table th {
-    background: var(--line-soft);
-    color: var(--ink-700);
-    font-weight: 600;
-}
 .prob-table tbody tr.inv-row {
     cursor: pointer;
     transition: background 0.12s ease;
@@ -192,6 +164,7 @@ require_once __DIR__ . '/includes/header.php';
 .prob-input-num {
     text-align: center;
     max-width: 90px;
+    font-variant-numeric: tabular-nums;
 }
 .save-ind {
     display: inline-flex;
@@ -233,7 +206,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 .filter-pill.active {
     background: var(--accent);
-    color: #fff;
+    color: var(--fill-strong-fg);
     border-color: var(--accent);
 }
 </style>
@@ -276,7 +249,7 @@ require_once __DIR__ . '/includes/header.php';
     ?>
 
     <!-- شريط اختيار فاتورة لفتحها وإضافة مشاكل لها -->
-    <div class="card prob-card" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+    <div class="fcard" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
         <div>
             <div style="font-size:14px;font-weight:700;color:var(--ink-900);margin-bottom:3px;display:flex;align-items:center;gap:6px;">
                 <i class="ti ti-file-invoice" style="color:var(--accent-text);"></i> فتح فاتورة معينة لعرض أصنافها أو إضافة مشاكل
@@ -285,7 +258,7 @@ require_once __DIR__ . '/includes/header.php';
                 اختر أي فاتورة مشتريات للإدارة للتحقق من كمياتها، أصنافها، أو تسجيل عجز/زيادة وملاحظات
             </div>
         </div>
-        <button type="button" class="btn" onclick="openInvoicePickerModal()">
+        <button type="button" class="btn btn-secondary" onclick="openInvoicePickerModal()">
             <i class="ti ti-search"></i> اختيار فاتورة مشتريات...
         </button>
     </div>
@@ -297,21 +270,20 @@ require_once __DIR__ . '/includes/header.php';
                 <div style="font-size:16px;font-weight:700;color:var(--ink-900);display:flex;align-items:center;gap:8px;">
                     <i class="ti ti-file-invoice" style="color:var(--accent-text);"></i> اختيار فاتورة مشتريات
                 </div>
-                <button type="button" class="btn-ghost btn-sm" onclick="closeInvoicePickerModal()" style="border:none;font-size:16px;cursor:pointer;padding:4px 8px;" title="إغلاق">
+                <button type="button" class="btn btn-ghost btn-sm" onclick="closeInvoicePickerModal()" style="border:none;font-size:16px;cursor:pointer;padding:4px 8px;" title="إغلاق">
                     <i class="ti ti-x"></i>
                 </button>
             </div>
             
             <div style="margin-bottom:12px;">
-                <input type="text" id="invSearchInput" oninput="filterInvoicesList()" placeholder="ابحث برقم الفاتورة أو اسم المورد..."
-                       style="width:100%;padding:10px 14px;border:1px solid var(--line);border-radius:var(--r);font-size:13.5px;background:var(--surface);color:var(--text);box-sizing:border-box;">
+                <input type="text" id="invSearchInput" oninput="filterInvoicesList()" placeholder="ابحث برقم الفاتورة أو اسم المورد..." class="finput" style="width:100%;box-sizing:border-box;">
             </div>
 
-            <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r);min-height:220px;max-height:50vh;">
-                <table class="prob-table" id="invPickTable" style="margin:0;">
+            <div class="ftable-wrap" style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r);min-height:220px;max-height:50vh;">
+                <table class="ftable prob-table" id="invPickTable" style="margin:0;">
                     <thead style="position:sticky;top:0;z-index:1;">
                         <tr>
-                            <th style="width:110px;">رقم الفاتورة</th>
+                            <th class="num" style="width:110px;">رقم الفاتورة</th>
                             <th>المورد</th>
                             <th style="width:110px;">التاريخ</th>
                             <th style="width:70px;text-align:center;">إجراء</th>
@@ -324,7 +296,7 @@ require_once __DIR__ . '/includes/header.php';
                                 data-supplier="<?= e(mb_strtolower((string)$ai['supplier_name'])) ?>"
                                 style="cursor:pointer;"
                                 onclick="location.href='invoice_problems.php?d=<?= (int)$ai['id'] ?>'">
-                                <td><b>#<?= e((string)$ai['invoice_no']) ?></b></td>
+                                <td class="num"><b>#<?= e((string)$ai['invoice_no']) ?></b></td>
                                 <td><?= e((string)$ai['supplier_name']) ?></td>
                                 <td style="font-size:12px;color:var(--ink-500);"><?= e((string)$ai['dist_date']) ?></td>
                                 <td style="text-align:center;">
@@ -351,55 +323,57 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if (empty($problemInvoices)): ?>
-        <div class="card prob-card" style="text-align:center;padding:40px 20px;color:var(--ink-400);">
+        <div class="fcard" style="text-align:center;padding:40px 20px;color:var(--ink-400);margin-bottom:16px;">
             <i class="ti ti-circle-check" style="font-size:38px;color:var(--pos);display:block;margin-bottom:8px;"></i>
             لا توجد مشاكل أو فروقات مسجلة في فواتير الإدارة حالياً.
         </div>
     <?php else: ?>
-        <div class="card prob-card">
+        <div class="fcard" style="margin-bottom:16px;">
             <h3 style="margin:0 0 12px 0;font-size:15px;">قائمة فواتير الإدارة التي بها مشاكل (<?= count($problemInvoices) ?> فاتورة)</h3>
-            <table class="prob-table">
-                <thead>
-                    <tr>
-                        <th style="width:100px;">رقم الفاتورة</th>
-                        <th>اسم المورد</th>
-                        <th style="width:120px;">تاريخ الفاتورة</th>
-                        <th style="width:150px;">مين دخّلها</th>
-                        <th style="width:120px;">الأصناف المتأثرة</th>
-                        <th style="width:60px;text-align:center;">إجراء</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($problemInvoices as $pi):
-                        $dUrl = 'invoice_problems.php?d=' . (int)$pi['dist_id'];
-                    ?>
-                        <tr class="inv-row" tabindex="0" role="link"
-                            onclick="location.href='<?= $dUrl ?>'"
-                            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='<?= $dUrl ?>';}">
-                            <td><b>#<?= e((string)$pi['invoice_no']) ?></b></td>
-                            <td><?= e((string)$pi['supplier_name']) ?></td>
-                            <td><?= e((string)$pi['dist_date']) ?></td>
-                            <td><?= e((string)($pi['entered_by'] ?: 'غير معروف')) ?></td>
-                            <td>
-                                <span style="font-weight:bold;color:var(--neg);"><?= (int)$pi['problems_count'] ?> صنف</span>
-                                <?php if ($pi['short_count'] > 0): ?>
-                                    <span style="font-size:11px;color:var(--neg);">(<?= (int)$pi['short_count'] ?> عجز)</span>
-                                <?php endif; ?>
-                                <?php if ($pi['over_count'] > 0): ?>
-                                    <span style="font-size:11px;color:var(--accent-text);">(<?= (int)$pi['over_count'] ?> زيادة)</span>
-                                <?php endif; ?>
-                            </td>
-                            <td style="text-align:center;">
-                                <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);padding:4px 8px;"
-                                        title="حذف كل مشاكل هذه الفاتورة"
-                                        onclick="event.stopPropagation(); deleteInvoiceProblems(<?= (int)$pi['dist_id'] ?>, this)">
-                                    <i class="ti ti-trash"></i>
-                                </button>
-                            </td>
+            <div class="ftable-wrap">
+                <table class="ftable prob-table">
+                    <thead>
+                        <tr>
+                            <th class="num" style="width:100px;">رقم الفاتورة</th>
+                            <th>اسم المورد</th>
+                            <th style="width:120px;">تاريخ الفاتورة</th>
+                            <th style="width:150px;">مين دخّلها</th>
+                            <th class="num" style="width:120px;">الأصناف المتأثرة</th>
+                            <th style="width:60px;text-align:center;">إجراء</th>
                         </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($problemInvoices as $pi):
+                            $dUrl = 'invoice_problems.php?d=' . (int)$pi['dist_id'];
+                        ?>
+                            <tr class="inv-row" tabindex="0" role="link"
+                                onclick="location.href='<?= $dUrl ?>'"
+                                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.href='<?= $dUrl ?>';}">
+                                <td class="num"><b>#<?= e((string)$pi['invoice_no']) ?></b></td>
+                                <td><?= e((string)$pi['supplier_name']) ?></td>
+                                <td><?= e((string)$pi['dist_date']) ?></td>
+                                <td><?= e((string)($pi['entered_by'] ?: 'غير معروف')) ?></td>
+                                <td class="num">
+                                    <span style="font-weight:bold;color:var(--neg);"><?= (int)$pi['problems_count'] ?> صنف</span>
+                                    <?php if ($pi['short_count'] > 0): ?>
+                                        <span style="font-size:11px;color:var(--neg);">(<?= (int)$pi['short_count'] ?> عجز)</span>
+                                    <?php endif; ?>
+                                    <?php if ($pi['over_count'] > 0): ?>
+                                        <span style="font-size:11px;color:var(--accent-text);">(<?= (int)$pi['over_count'] ?> زيادة)</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="text-align:center;">
+                                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--neg);padding:4px 8px;"
+                                            title="حذف كل مشاكل هذه الفاتورة"
+                                            onclick="event.stopPropagation(); deleteInvoiceProblems(<?= (int)$pi['dist_id'] ?>, this)">
+                                        <i class="ti ti-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     <?php endif; ?>
 
@@ -479,7 +453,7 @@ require_once __DIR__ . '/includes/header.php';
 
     if (!$distHeader):
     ?>
-        <div class="card prob-card" style="text-align:center;color:var(--neg);padding:30px;">
+        <div class="fcard" style="text-align:center;color:var(--neg);padding:30px;">
             <i class="ti ti-alert-triangle"></i> الفاتورة المطلوبة غير موجودة أو ليست من فواتير مشتريات الإدارة.
             <div style="margin-top:12px;"><a href="invoice_problems.php" class="btn btn-ghost btn-sm">← الرجوع للقائمة</a></div>
         </div>
@@ -488,7 +462,7 @@ require_once __DIR__ . '/includes/header.php';
         $itemsList = ip_invoice_items($pdo, $distHeader);
         $problemsOnlyCount = count(array_filter($itemsList, fn($it) => $it['has_problem']));
     ?>
-        <div class="card prob-card">
+        <div class="fcard">
             <div class="prob-header">
                 <div>
                     <h2 style="margin:0 0 6px 0;font-size:18px;">
@@ -520,14 +494,15 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
             </div>
 
-            <table class="prob-table" id="itemsTable">
+            <div class="ftable-wrap">
+            <table class="ftable prob-table" id="itemsTable">
                 <thead>
                     <tr>
                         <th style="width:140px;">كود الصنف</th>
                         <th>اسم الصنف</th>
-                        <th style="width:85px;text-align:center;">كمية الفاتورة</th>
-                        <th style="width:110px;text-align:center;">الناقص</th>
-                        <th style="width:110px;text-align:center;">الزيادة</th>
+                        <th class="num" style="width:85px;text-align:center;">كمية الفاتورة</th>
+                        <th class="num" style="width:110px;text-align:center;">الناقص</th>
+                        <th class="num" style="width:110px;text-align:center;">الزيادة</th>
                         <th>الملاحظة</th>
                         <th style="width:80px;text-align:center;">المصدر</th>
                         <th style="width:130px;">التسجيل</th>
@@ -608,6 +583,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         </div>
 
         <script>

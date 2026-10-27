@@ -228,82 +228,18 @@ require_once __DIR__ . '/includes/header.php';
     gap: 12px;
     margin-bottom: var(--sp-4, 16px);
 }
-.ops-tabs {
-    display: flex;
-    gap: 8px;
-    border-bottom: 2px solid var(--line-soft, #e2e8f0);
-    margin-bottom: var(--sp-4, 16px);
-    padding-bottom: 4px;
-}
-.ops-tab {
-    padding: 8px 18px;
-    border-radius: var(--r-md, 8px) var(--r-md, 8px) 0 0;
-    font-weight: 600;
-    font-size: var(--fs-sm, 14px);
-    color: var(--ink-500);
-    text-decoration: none;
-    transition: all .15s;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.ops-tab:hover {
-    color: var(--ink-800);
-    background: var(--bg);
-}
-.ops-tab.active {
-    color: var(--fill-strong-fg, #fff);
-    background: var(--fill-strong, #1e293b);
-}
 .ops-filter-form {
     display: flex;
     align-items: center;
     gap: 8px;
 }
-.ops-select {
-    padding: 7px 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md, 8px);
-    background: var(--surface);
-    color: var(--ink-800);
-    font-family: inherit;
-    font-size: var(--fs-sm, 13.5px);
-}
-/* كروت الإحصائيات العلوية */
-.ops-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: var(--sp-4, 16px);
-    margin-bottom: var(--sp-6, 24px);
-}
-.ops-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg, 12px);
-    padding: 16px 20px;
-}
-.ops-card-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink-500);
-    margin-bottom: 6px;
-}
-.ops-card-val {
-    font-size: 26px;
-    font-weight: 800;
-    color: var(--ink-900);
-    font-variant-numeric: tabular-nums;
-}
-.ops-card-sub {
-    font-size: 12px;
-    color: var(--ink-400);
-    margin-top: 4px;
-}
 .ftable td.ops-page-name {
     font-weight: 600;
-    font-family: monospace;
+    font-variant-numeric: tabular-nums;
     font-size: 13px;
-    color: var(--accent-text, #0f766e);
+    color: var(--accent-text);
+    direction: ltr;
+    text-align: left;
 }
 .ops-sec-title {
     font-size: 16px;
@@ -320,16 +256,6 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--ink-500);
     font-size: 14px;
 }
-/* سجل العمليات */
-.ops-input {
-    padding: 7px 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-md, 8px);
-    background: var(--surface);
-    color: var(--ink-800);
-    font-family: inherit;
-    font-size: var(--fs-sm, 13.5px);
-}
 /* تفاصيل المودال */
 .ops-modal-backdrop {
     display: none;
@@ -339,7 +265,7 @@ require_once __DIR__ . '/includes/header.php';
     right: 0;
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 9999;
+    z-index: var(--z-modal);
     align-items: center;
     justify-content: center;
     padding: 16px;
@@ -367,20 +293,13 @@ require_once __DIR__ . '/includes/header.php';
 .ops-modal-body {
     padding: 16px;
     overflow-y: auto;
-    font-family: monospace;
+    font-variant-numeric: tabular-nums;
     font-size: 13px;
     direction: ltr;
     text-align: left;
     white-space: pre-wrap;
     word-break: break-all;
     background: var(--bg);
-}
-.ops-badge-status {
-    display: inline-block;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
 }
 </style>
 
@@ -391,7 +310,7 @@ require_once __DIR__ . '/includes/header.php';
         <form method="get" action="ops.php" class="ops-filter-form">
             <input type="hidden" name="tab" value="perf">
             <label for="daySelect" style="font-size:13px;font-weight:600;color:var(--ink-600);">اليوم:</label>
-            <select name="day" id="daySelect" class="ops-select" onchange="this.form.submit()">
+            <select name="day" id="daySelect" class="fselect" onchange="this.form.submit()">
                 <?php if (!empty($availableDays)): ?>
                     <?php foreach ($availableDays as $d): ?>
                         <option value="<?= e($d) ?>" <?= $d === $selectedDay ? 'selected' : '' ?>>
@@ -407,59 +326,56 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- التبويبات -->
-    <div class="ops-tabs">
+    <nav class="ftabs" style="margin-bottom:var(--sp-4);">
         <?php if ($canPerf): ?>
-            <a href="ops.php?tab=perf&day=<?= e($selectedDay) ?>" class="ops-tab <?= $tabParam === 'perf' ? 'active' : '' ?>">
+            <a href="ops.php?tab=perf&day=<?= e($selectedDay) ?>" class="ftab <?= $tabParam === 'perf' ? 'is-active' : '' ?>">
                 <i class="ti ti-chart-bar"></i> السرعة
             </a>
         <?php endif; ?>
         <?php if ($canAudit): ?>
-            <a href="ops.php?tab=audit" class="ops-tab <?= $tabParam === 'audit' ? 'active' : '' ?>">
+            <a href="ops.php?tab=audit" class="ftab <?= $tabParam === 'audit' ? 'is-active' : '' ?>">
                 <i class="ti ti-clock"></i> سجل العمليات
             </a>
         <?php endif; ?>
         <?php if ($canDevices): ?>
-            <a href="ops.php?tab=devices" class="ops-tab <?= $tabParam === 'devices' ? 'active' : '' ?>">
+            <a href="ops.php?tab=devices" class="ftab <?= $tabParam === 'devices' ? 'is-active' : '' ?>">
                 <i class="ti ti-device-mobile"></i> الأجهزة
             </a>
         <?php endif; ?>
         <?php if ($canDb): ?>
-            <a href="ops.php?tab=db" class="ops-tab <?= $tabParam === 'db' ? 'active' : '' ?>">
+            <a href="ops.php?tab=db" class="ftab <?= $tabParam === 'db' ? 'is-active' : '' ?>">
                 <i class="ti ti-list-check"></i> القاعدة
             </a>
         <?php endif; ?>
-    </div>
+    </nav>
 
     <?php if ($tabParam === 'perf'): ?>
         <?php if (!$canPerf): ?>
-            <div class="ops-card ops-empty">
+            <div class="fcard ops-empty">
                 مالكش صلاحية تشوف سجل السرعة.
             </div>
         <?php elseif ($totalRequests === 0): ?>
-            <div class="ops-card ops-empty">
+            <div class="fcard ops-empty">
                 مفيش بيانات مسجلة ليوم <?= e($selectedDay) ?> بعد.
             </div>
         <?php else: ?>
             <!-- كروت الإحصائيات -->
-            <div class="ops-cards">
-                <div class="ops-card">
-                    <div class="ops-card-label">إجمالي الطلبات</div>
-                    <div class="ops-card-val"><?= number_format($totalRequests) ?></div>
-                    <div class="ops-card-sub">كل الزيارات والعمليات المسجلة</div>
+            <div class="fkpis" style="margin-bottom:var(--sp-6);">
+                <div class="fkpi">
+                    <span>إجمالي الطلبات</span>
+                    <strong><?= number_format($totalRequests) ?></strong>
                 </div>
-                <div class="ops-card">
-                    <div class="ops-card-label">المتوسط العام</div>
-                    <div class="ops-card-val" style="<?= ops_ms_style($overallAvg) ?>">
+                <div class="fkpi">
+                    <span>المتوسط العام</span>
+                    <strong style="<?= ops_ms_style($overallAvg) ?>">
                         <?= number_format($overallAvg, 1) ?> <span style="font-size:15px;font-weight:600;">ms</span>
-                    </div>
-                    <div class="ops-card-sub">زمن استجابة الصفحة بالمتوسط</div>
+                    </strong>
                 </div>
-                <div class="ops-card">
-                    <div class="ops-card-label">طلبات فوق ثانية</div>
-                    <div class="ops-card-val" style="<?= $over1SecCount > 0 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">
+                <div class="fkpi">
+                    <span>طلبات فوق ثانية</span>
+                    <strong style="<?= $over1SecCount > 0 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">
                         <?= number_format($over1SecCount) ?>
-                    </div>
-                    <div class="ops-card-sub">أكبر من ١٠٠٠ مللي ثانية</div>
+                    </strong>
                 </div>
             </div>
 
@@ -538,28 +454,28 @@ require_once __DIR__ . '/includes/header.php';
         <?php sens_lock_screen('سجل العمليات'); ?>
     <?php elseif ($tabParam === 'audit'): ?>
         <?php if (!$canAudit): ?>
-            <div class="ops-card ops-empty">
+            <div class="fcard ops-empty">
                 مالكش صلاحية تشوف سجل العمليات.
             </div>
         <?php else: ?>
             <!-- فلاتر سجل العمليات -->
-            <div class="ops-card" style="margin-bottom:var(--sp-4, 16px);padding:14px 18px;">
+            <div class="fcard" style="margin-bottom:var(--sp-4, 16px);padding:14px 18px;">
                 <form method="get" action="ops.php" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
                     <input type="hidden" name="tab" value="audit">
                     
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <label style="font-size:12px;font-weight:600;color:var(--ink-500);">من تاريخ:</label>
-                        <input type="date" name="from" value="<?= e($fromAudit) ?>" class="ops-input">
+                        <input type="date" name="from" value="<?= e($fromAudit) ?>" class="finput">
                     </div>
                     
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <label style="font-size:12px;font-weight:600;color:var(--ink-500);">إلى تاريخ:</label>
-                        <input type="date" name="to" value="<?= e($toAudit) ?>" class="ops-input">
+                        <input type="date" name="to" value="<?= e($toAudit) ?>" class="finput">
                     </div>
 
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <label style="font-size:12px;font-weight:600;color:var(--ink-500);">المستخدم:</label>
-                        <select name="user_id" class="ops-select">
+                        <select name="user_id" class="fselect">
                             <option value="">كل المستخدمين</option>
                             <?php foreach ($auditUsersList as $u): ?>
                                 <option value="<?= (int)$u['id'] ?>" <?= $uParam === (int)$u['id'] ? 'selected' : '' ?>>
@@ -571,7 +487,7 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <label style="font-size:12px;font-weight:600;color:var(--ink-500);">الصفحة:</label>
-                        <select name="page" class="ops-select">
+                        <select name="page" class="fselect">
                             <option value="">كل الصفحات</option>
                             <?php foreach ($auditPagesList as $p): ?>
                                 <option value="<?= e($p) ?>" <?= $pParam === $p ? 'selected' : '' ?>>
@@ -583,7 +499,7 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div style="display:flex;flex-direction:column;gap:4px;">
                         <label style="font-size:12px;font-weight:600;color:var(--ink-500);">بحث في العملية:</label>
-                        <input type="text" name="action_search" value="<?= e($aParam) ?>" placeholder="اسم أو جزء من action" class="ops-input">
+                        <input type="text" name="action_search" value="<?= e($aParam) ?>" placeholder="اسم أو جزء من action" class="finput">
                     </div>
 
                     <div style="display:flex;gap:8px;margin-top:auto;">
@@ -601,7 +517,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <?php if (empty($auditRows)): ?>
-                <div class="ops-card ops-empty">
+                <div class="fcard ops-empty">
                     مفيش عمليات مسجلة تطابق الفلاتر الحالية.
                 </div>
             <?php else: ?>
@@ -685,23 +601,23 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     <?php elseif ($tabParam === 'devices'): ?>
         <?php if (!$canDevices): ?>
-            <div class="ops-card ops-empty">
+            <div class="fcard ops-empty">
                 مالكش صلاحية تشوف الأجهزة.
             </div>
         <?php else: ?>
             <?php if ($deviceMsg !== ''): ?>
-                <div style="background:var(--pos-soft, #ecfdf5);color:var(--pos, #047857);padding:12px 16px;border-radius:var(--r-md, 8px);margin-bottom:16px;font-size:14px;border:1px solid currentColor;">
+                <div class="falert falert-pos" style="margin-bottom:16px;">
                     <?= e($deviceMsg) ?>
                 </div>
             <?php endif; ?>
             <?php if ($deviceErr !== ''): ?>
-                <div style="background:var(--neg-soft, #fef2f2);color:var(--neg, #b91c1c);padding:12px 16px;border-radius:var(--r-md, 8px);margin-bottom:16px;font-size:14px;border:1px solid currentColor;">
+                <div class="falert falert-neg" style="margin-bottom:16px;">
                     <?= e($deviceErr) ?>
                 </div>
             <?php endif; ?>
 
             <?php if (empty($deviceRows)): ?>
-                <div class="ops-card ops-empty">
+                <div class="fcard ops-empty">
                     مفيش أجهزة مسجلة حالياً.
                 </div>
             <?php else: ?>
@@ -731,16 +647,16 @@ require_once __DIR__ . '/includes/header.php';
 
                                     if ($isRevoked) {
                                         $statusLabel = 'ملغي';
-                                        $statusStyle = 'background:var(--neg-soft, #fef2f2);color:var(--neg, #b91c1c);';
+                                        $statusClass = 'fchip fchip-neg';
                                     } elseif ($pwChanged) {
                                         $statusLabel = 'باسورد اتغيّر';
-                                        $statusStyle = 'background:var(--warn-soft, #fffbeb);color:var(--warn, #b45309);';
+                                        $statusClass = 'fchip fchip-warn';
                                     } elseif (!$isUserActive) {
                                         $statusLabel = 'المستخدم معطّل';
-                                        $statusStyle = 'background:var(--ink-100, #f1f5f9);color:var(--ink-600, #475569);';
+                                        $statusClass = 'fchip fchip-mute';
                                     } else {
                                         $statusLabel = 'شغال';
-                                        $statusStyle = 'background:var(--pos-soft, #ecfdf5);color:var(--pos, #047857);';
+                                        $statusClass = 'fchip fchip-pos';
                                     }
 
                                     $canRevoke = is_owner() && !$isRevoked;
@@ -755,7 +671,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <td class="num" style="color:var(--ink-600);"><?= e($dr['last_used_at'] ?? '—') ?></td>
                                     <td class="num" style="color:var(--ink-600);"><?= e($dr['last_ip'] ?? '—') ?></td>
                                     <td style="text-align:center;">
-                                        <span class="ops-badge-status" style="<?= $statusStyle ?>"><?= $statusLabel ?></span>
+                                        <span class="<?= $statusClass ?>"><?= $statusLabel ?></span>
                                     </td>
                                     <?php if (is_owner()): ?>
                                         <td style="text-align:center;">
@@ -782,7 +698,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     <?php elseif ($tabParam === 'db' && $canDb): ?>
         <?php if (!$dbReady): ?>
-            <div class="ops-card ops-empty">
+            <div class="fcard ops-empty">
                 جدول تعديلات القاعدة لسه ماتعملش — شغّل
                 <b>local/migrations/20261004_000_schema_migrations.sql</b> الأول من phpMyAdmin على قاعدة الفجالة.
             </div>

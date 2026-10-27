@@ -257,41 +257,18 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    /* ===== الزراير — نفس البلوك المتبع في كل صفحات النظام =====
-       ⚠️ `.btn` في fagala.css بيحدد الشكل العام بس (حواف/خط)، واللون
-       والحشو بيتعرّفوا محلياً في كل صفحة. نسيت البلوك ده أول مرة
-       فطلعت الزراير عريانة. */
-    .btn { background:var(--accent); color:#fff; border:none; padding:11px 20px; border-radius:10px;
-        font-size:14px; font-family:inherit; cursor:pointer; text-decoration:none;
-        display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
-    .btn:hover { background:var(--accent-hover); }
-    .btn-sm { padding:7px 13px; font-size:13px; border-radius:8px; }
-    .btn-ghost { background:var(--surface); color:var(--accent-text); border:1.5px solid var(--line); }
-    .btn-ghost:hover { background:var(--accent-soft); border-color:var(--accent-text); }
-    .btn-danger { background:var(--surface); color:var(--neg); border:1.5px solid var(--neg-soft); }
-    .btn-danger:hover { background:var(--neg-soft); }
-
-    /* ===== التابات ===== */
-    .an-tabs { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-    .an-tab { padding:10px 18px; border-radius:var(--r); background:var(--surface);
-        border:1.5px solid var(--line); color:var(--ink-600); font-size:13.5px;
-        text-decoration:none; display:inline-flex; align-items:center; gap:7px; }
-    .an-tab:hover { border-color:var(--ink-300); color:var(--ink-800); }
-    .an-tab.on { background:var(--accent); border-color:var(--accent-text); color:#fff; }
-
+    /* .btn { background:var(--accent); — موروث من fagala.css */
     /* ===== الكروت والنماذج ===== */
-    .an-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
-        padding:18px; margin-bottom:14px; box-shadow:var(--shadow-sm); }
     .an-h { font-size:14px; font-weight:700; color:var(--ink-900); margin-bottom:14px;
         padding-bottom:10px; border-bottom:1px solid var(--line-soft); }
     .an-row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
     .an-fld { display:flex; flex-direction:column; gap:6px; }
     .an-fld label { font-size:11.5px; color:var(--ink-500); font-weight:500; }
-    .an-fld input, .an-fld select {
+    .an-fld .finput, .an-fld .fselect {
         padding:10px 12px; border:1.5px solid var(--line); border-radius:var(--r-sm);
         font-family:inherit; font-size:13.5px; color:var(--ink-800); background:var(--surface);
         min-height:42px; }
-    .an-fld input:focus, .an-fld select:focus {
+    .an-fld .finput:focus, .an-fld .fselect:focus {
         outline:none; border-color:var(--accent-text); box-shadow:0 0 0 3px var(--accent-ring); }
     .an-hint { font-size:11.5px; color:var(--ink-400); margin-top:9px; line-height:1.7; }
 
@@ -335,7 +312,7 @@ require_once __DIR__ . '/includes/header.php';
         white-space:nowrap; display:inline-block; }
     .b-naqes  { background:var(--neg-soft);    color:var(--neg); }
     .b-raked  { background:var(--warn-soft);   color:var(--warn); }
-    .b-rakedf { background:var(--warn-fill);        color:#fff; }
+    .b-rakedf { background:var(--warn-fill);        color:var(--fill-strong-fg); }
     .b-nazar  { background:var(--accent-soft); color:var(--accent-text); }
     .b-tamam  { background:var(--pos-soft);    color:var(--pos); }
 
@@ -361,7 +338,7 @@ require_once __DIR__ . '/includes/header.php';
           «-16» مش «16-»). فكانت بترسم البوردر على شمالها بدل يمينها،
           والنتيجة إن الحد بين «القسم» و«مبيعات الفجالة» — وبين
           «الحالة» و«الأولوية» — يطلع فاضي. */
-    /* 🔴 كان `#000` صريح. في الوضع الليلي خط أسود على أرضية سودا =
+    /* 🔴 كان أسود صريح. في الوضع الليلي خط أسود على أرضية سودا =
        شبكة مختفية والجدول بيبقى كتلة أرقام من غير حدود. `--ink-300`
        بيقلب مع الوضع: رمادي فاتح على الأبيض، ورمادي غامق على الأسود —
        فالشبكة بتفضل ظاهرة في الاتنين. */
@@ -457,7 +434,7 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <?php if (!$ready): ?>
-    <div class="an-card" style="color:var(--neg);text-align:center;padding:32px;">
+    <div class="fcard" style="color:var(--neg);text-align:center;padding:32px;">
         الجداول لسه ما اتعملتش — شغّل <b>upgrade_shortage.sql</b> من phpMyAdmin الأول.
     </div>
 <?php else: ?>
@@ -469,12 +446,12 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 <?php endif; ?>
 
-<div class="an-tabs">
-    <a class="an-tab <?= $tab === 'batches' ? 'on' : '' ?>"
+<div class="ftabs" style="margin-bottom:14px;">
+    <a class="ftab <?= $tab === 'batches' ? 'is-active' : '' ?>"
        href="analysis.php?tab=batches&amp;batch=<?= $curBatch ?>">
         <i class="ti ti-upload"></i> الرفعات والملفات
     </a>
-    <a class="an-tab <?= $tab === 'report' ? 'on' : '' ?>"
+    <a class="ftab <?= $tab === 'report' ? 'is-active' : '' ?>"
        href="analysis.php?tab=report&amp;batch=<?= $curBatch ?>">
         <i class="ti ti-file-spreadsheet"></i> التقرير
     </a>
@@ -484,14 +461,14 @@ require_once __DIR__ . '/includes/header.php';
       //  شاشة الربط اليدوي — بتظهر بس لو التلقائي فشل
       // ============================================================= ?>
 <?php if ($preview): ?>
-    <div class="an-card" style="border:2px solid var(--accent);">
+    <div class="fcard" style="border:2px solid var(--accent);">
         <div class="an-h">اربط أعمدة الملف — مرة واحدة بس</div>
         <div style="font-size:12.5px;color:var(--ink-500);margin-bottom:10px;">
             <b><?= e($preview['file']) ?></b> · الترميز <?= e($preview['encoding']) ?>
             · الفاصل <?= e($preview['delim']) ?> · <?= count($preview['headers']) ?> عمود
         </div>
 
-        <table class="an-prev">
+        <table class="ftable an-prev">
             <tr><?php foreach ($preview['headers'] as $i => $h): ?>
                 <th><?= $i ?><br><?= e((string) $h) ?></th>
             <?php endforeach; ?></tr>
@@ -514,7 +491,7 @@ require_once __DIR__ . '/includes/header.php';
                         <label><?= e($flabel) ?>
                             <?= in_array($fk, AN_REQUIRED_FIELDS, true)
                                 ? '<span style="color:var(--neg)">*</span>' : '' ?></label>
-                        <select name="col_<?= e($fk) ?>">
+                        <select name="col_<?= e($fk) ?>" class="fselect">
                             <option value="">— مفيش —</option>
                             <?php foreach ($preview['headers'] as $i => $h): ?>
                                 <option value="<?= $i ?>"
@@ -525,7 +502,7 @@ require_once __DIR__ . '/includes/header.php';
                         </select>
                     </div>
                 <?php endforeach; ?>
-                <button class="btn" type="submit"><i class="ti ti-check"></i> استورد</button>
+                <button class="btn btn-primary" type="submit"><i class="ti ti-check"></i> استورد</button>
             </div>
         </form>
     </div>
@@ -536,33 +513,33 @@ require_once __DIR__ . '/includes/header.php';
       // ============================================================= ?>
 <?php if ($tab === 'batches'): ?>
 
-    <div class="an-card">
+    <div class="fcard">
         <div class="an-h">رفعة جديدة</div>
         <form method="post" class="an-row">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="new_batch">
             <div class="an-fld">
                 <label>الاسم</label>
-                <input name="label" placeholder="موسم 2026" required style="min-width:180px;">
+                <input class="finput" name="label" placeholder="موسم 2026" required style="min-width:180px;">
             </div>
             <div class="an-fld">
                 <label>من</label>
-                <input type="date" name="period_from" required>
+                <input class="finput" type="date" name="period_from" required>
             </div>
             <div class="an-fld">
                 <label>لـ</label>
-                <input type="date" name="period_to" required>
+                <input class="finput" type="date" name="period_to" required>
             </div>
-            <button class="btn" type="submit"><i class="ti ti-plus"></i> اعمل رفعة</button>
+            <button class="btn btn-primary" type="submit"><i class="ti ti-plus"></i> اعمل رفعة</button>
         </form>
     </div>
 
     <?php if (!$batches): ?>
-        <div class="an-card" style="text-align:center;color:var(--ink-500);padding:26px;">
+        <div class="fcard" style="text-align:center;color:var(--ink-500);padding:26px;">
             مفيش رفعات لسه. اعمل واحدة وارفع عليها ملفات الفروع.
         </div>
     <?php else: ?>
-        <div class="an-card">
+        <div class="fcard">
             <div class="an-h">الرفعات</div>
             <div class="an-blist">
                 <?php foreach ($batches as $b): ?>
@@ -579,7 +556,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <?php if ($curBatch): ?>
-        <div class="an-card">
+        <div class="fcard">
             <div class="an-h">ملفات الفروع</div>
             <div class="an-stores" style="margin-bottom:16px;">
                 <?php foreach ($stores as $sid => $s): ?>
@@ -597,13 +574,13 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="batch_id" value="<?= $curBatch ?>">
                 <div class="an-fld">
                     <label>من تاريخ</label>
-                    <input type="date" name="period_from" value="<?= e($curBatchObj['period_from'] ?? '') ?>" required>
+                    <input class="finput" type="date" name="period_from" value="<?= e($curBatchObj['period_from'] ?? '') ?>" required>
                 </div>
                 <div class="an-fld">
                     <label>لـ تاريخ</label>
-                    <input type="date" name="period_to" value="<?= e($curBatchObj['period_to'] ?? '') ?>" required>
+                    <input class="finput" type="date" name="period_to" value="<?= e($curBatchObj['period_to'] ?? '') ?>" required>
                 </div>
-                <button class="btn" type="submit"><i class="ti ti-refresh"></i> ابنِ من الداتا الحيّة</button>
+                <button class="btn btn-primary" type="submit"><i class="ti ti-refresh"></i> ابنِ من الداتا الحيّة</button>
             </form>
 
             <form method="post" enctype="multipart/form-data" class="an-row" style="margin-top:14px;">
@@ -612,7 +589,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="batch_id" value="<?= $curBatch ?>">
                 <div class="an-fld">
                     <label>الفرع</label>
-                    <select name="store_id" required>
+                    <select name="store_id" class="fselect" required>
                         <option value="">— اختار —</option>
                         <?php foreach ($stores as $sid => $s): ?>
                             <option value="<?= $sid ?>"><?= e($s['name']) ?></option>
@@ -621,9 +598,9 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="an-fld">
                     <label>ملف الـTXT</label>
-                    <input type="file" name="txt" accept=".txt,.csv,.tsv,text/plain" required>
+                    <input class="finput" type="file" name="txt" accept=".txt,.csv,.tsv,text/plain" required>
                 </div>
-                <button class="btn" type="submit"><i class="ti ti-upload"></i> ارفع</button>
+                <button class="btn btn-primary" type="submit"><i class="ti ti-upload"></i> ارفع</button>
             </form>
             <div class="an-hint">
                 الترميز بيتكشف لوحده (بونجور <code>cp1256</code> والباقي <code>utf-8</code>).
@@ -648,17 +625,17 @@ require_once __DIR__ . '/includes/header.php';
 <?php elseif ($tab === 'report'): ?>
 
     <?php if (!$curBatch): ?>
-        <div class="an-card" style="text-align:center;color:var(--ink-500);padding:26px;">
+        <div class="fcard" style="text-align:center;color:var(--ink-500);padding:26px;">
             اعمل رفعة الأول من تاب «الرفعات».
         </div>
     <?php else: ?>
 
-    <div class="an-card">
+    <div class="fcard">
         <form method="get" class="an-bar">
             <input type="hidden" name="tab" value="report">
             <div class="an-fld">
                 <label>الرفعة</label>
-                <select name="batch" onchange="formSubmit(this.form)">
+                <select name="batch" class="fselect" onchange="formSubmit(this.form)">
                     <?php foreach ($batches as $b): ?>
                         <option value="<?= (int) $b['id'] ?>" <?= (int) $b['id'] === $curBatch ? 'selected' : '' ?>>
                             <?= e($b['label'] ?: ('#' . $b['id'])) ?>
@@ -668,7 +645,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="an-fld">
                 <label>القسم</label>
-                <select name="cat">
+                <select name="cat" class="fselect">
                     <option value="0">كل الأقسام</option>
                     <?php foreach ($cats as $cid => $cn): ?>
                         <option value="<?= (int) $cid ?>"
@@ -680,14 +657,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="an-fld">
                 <label>الحالة والتنقيلات</label>
-                <select name="st">
+                <select name="st" class="fselect">
                     <option value="1" <?= ($_GET['st'] ?? '1') === '1' ? 'selected' : '' ?>>احسبها</option>
                     <option value="0" <?= ($_GET['st'] ?? '1') === '0' ? 'selected' : '' ?>>الأرقام بس (أسرع)</option>
                 </select>
             </div>
             <div class="sp"></div>
             <div class="acts">
-                <button class="btn" type="submit"><i class="ti ti-refresh"></i> ابني التقرير</button>
+                <button class="btn btn-primary" type="submit"><i class="ti ti-refresh"></i> ابني التقرير</button>
                 <a class="btn btn-ghost"
                    href="analysis.php?export=1&amp;batch=<?= $curBatch ?>&amp;cat=<?= (int) ($_GET['cat'] ?? 0) ?>">
                     <i class="ti ti-download"></i> تصدير الكل
@@ -697,7 +674,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if ($report && $report['total'] === 0): ?>
-        <div class="an-card" style="text-align:center;color:var(--ink-500);padding:26px;">
+        <div class="fcard" style="text-align:center;color:var(--ink-500);padding:26px;">
             الرفعة دي مفيهاش بنود — ارفع ملفات الفروع الأول.
         </div>
     <?php elseif ($report): ?>
@@ -736,7 +713,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="an-wrap">
-            <table class="an-tbl">
+            <table class="ftable an-tbl">
                 <thead>
                     <?php $nb = count($report['names']); ?>
                     <?php // صف المجموعات — بيغطي كل الأعمدة عشان الصف

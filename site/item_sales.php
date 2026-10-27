@@ -260,13 +260,6 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-.isl-header-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg, 12px);
-    padding: var(--sp-4);
-    margin-bottom: var(--sp-4);
-}
 .isl-filters {
     display: flex;
     flex-wrap: wrap;
@@ -291,33 +284,6 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--ink-800);
     font-family: inherit;
     font-size: var(--fs-sm, 13.5px);
-}
-.isl-tabs {
-    display: flex;
-    gap: 8px;
-    border-bottom: 2px solid var(--line-soft, #e2e8f0);
-    margin-bottom: var(--sp-4);
-    padding-bottom: 4px;
-}
-.isl-tab {
-    padding: 8px 18px;
-    border-radius: var(--r-md, 8px) var(--r-md, 8px) 0 0;
-    font-weight: 600;
-    font-size: var(--fs-sm, 14px);
-    color: var(--ink-500);
-    text-decoration: none;
-    transition: all .15s;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.isl-tab:hover {
-    color: var(--ink-800);
-    background: var(--bg);
-}
-.isl-tab.active {
-    color: var(--fill-strong-fg, #fff);
-    background: var(--fill-strong, #1e293b);
 }
 /* نسخ أزرار الفلترة بدقة من invoices.php */
 .status-filters {
@@ -350,26 +316,26 @@ require_once __DIR__ . '/includes/header.php';
     min-width: 20px;
     padding: 1px 6px;
     border-radius: 20px;
-    background: var(--line-soft, #f1f5f9);
+    background: var(--line-soft);
     color: var(--ink-500);
     font-size: 11.5px;
     font-weight: 700;
 }
 .sf-btn.active {
-    background: var(--fill-strong, #1e293b);
-    border-color: var(--fill-strong, #1e293b);
-    color: var(--fill-strong-fg, #fff);
+    background: var(--fill-strong);
+    border-color: var(--fill-strong);
+    color: var(--fill-strong-fg);
 }
 .sf-btn.active span {
-    background: var(--fill-strong-veil, rgba(255,255,255,0.25));
-    color: var(--fill-strong-fg, #fff);
+    background: var(--fill-strong-veil);
+    color: var(--fill-strong-fg);
 }
 th[data-sort] {
     cursor: pointer;
     user-select: none;
 }
 th[data-sort]:hover {
-    background: var(--line-soft, #f1f5f9);
+    background: var(--line-soft);
     color: var(--ink-900);
 }
 .sort-icon {
@@ -381,7 +347,7 @@ th[data-sort]:hover {
 }
 th.sorted .sort-icon {
     opacity: 1;
-    color: var(--accent-text, #0f766e);
+    color: var(--accent-text);
 }
 .sort-asc {
     transform: rotate(180deg);
@@ -393,32 +359,6 @@ th.sorted .sort-icon {
 }
 @media (max-width: 900px) {
     .isl-grid-2 { grid-template-columns: 1fr; }
-}
-.isl-kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 14px;
-    margin-bottom: 16px;
-}
-.isl-kpi-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md, 10px);
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-.isl-kpi-title {
-    font-size: var(--fs-xs, 12px);
-    color: var(--ink-500);
-    font-weight: 600;
-}
-.isl-kpi-val {
-    font-size: var(--fs-xl, 22px);
-    font-weight: 700;
-    color: var(--ink-900);
-    font-family: monospace;
 }
 .isl-tag-negative {
     color: var(--neg);
@@ -462,7 +402,7 @@ th.sorted .sort-icon {
 
 <div class="content-wrapper">
     <!-- كارت الفلاتر الرئيسي -->
-    <div class="isl-header-card">
+    <div class="fcard" style="margin-bottom:var(--sp-4);">
         <form method="get" id="filterForm" class="isl-filters">
             <input type="hidden" name="tab" value="<?= e($tabParam) ?>">
             <?php if ($tabParam === 'movement' || $tabParam === 'monthly'): ?>
@@ -542,32 +482,32 @@ th.sorted .sort-icon {
     </div>
 
     <!-- التبويبات -->
-    <div class="isl-tabs">
+    <nav class="ftabs" style="margin-bottom:var(--sp-4);">
         <?php if ($canStock): ?>
             <?php $qsStock = http_build_query(array_merge($_GET, ['tab' => 'stock'])); ?>
-            <a href="?<?= $qsStock ?>" class="isl-tab <?= $tabParam === 'stock' ? 'active' : '' ?>">
+            <a href="?<?= $qsStock ?>" class="ftab <?= $tabParam === 'stock' ? 'is-active' : '' ?>">
                 <i class="ti ti-packages"></i> حالة الرصيد
             </a>
         <?php endif; ?>
 
         <?php if ($canMovement): ?>
             <?php $qsMove = http_build_query(array_merge($_GET, ['tab' => 'movement'])); ?>
-            <a href="?<?= $qsMove ?>" class="isl-tab <?= $tabParam === 'movement' ? 'active' : '' ?>">
+            <a href="?<?= $qsMove ?>" class="ftab <?= $tabParam === 'movement' ? 'is-active' : '' ?>">
                 <i class="ti ti-transfer"></i> حركة البيع
             </a>
             <?php $qsMonthly = http_build_query(array_merge($_GET, ['tab' => 'monthly'])); ?>
-            <a href="?<?= $qsMonthly ?>" class="isl-tab <?= $tabParam === 'monthly' ? 'active' : '' ?>">
+            <a href="?<?= $qsMonthly ?>" class="ftab <?= $tabParam === 'monthly' ? 'is-active' : '' ?>">
                 <i class="ti ti-calendar"></i> الشهور
             </a>
         <?php endif; ?>
 
         <?php if ($canProfit): ?>
             <?php $qsProfit = http_build_query(array_merge($_GET, ['tab' => 'profit'])); ?>
-            <a href="?<?= $qsProfit ?>" class="isl-tab <?= $tabParam === 'profit' ? 'active' : '' ?>">
+            <a href="?<?= $qsProfit ?>" class="ftab <?= $tabParam === 'profit' ? 'is-active' : '' ?>">
                 <i class="ti ti-lock"></i> الأرباح
             </a>
         <?php endif; ?>
-    </div>
+    </nav>
 
     <!-- =================================================================== -->
     <!--  الجزء الأول: حالة الرصيد                                           -->
@@ -1001,22 +941,22 @@ th.sorted .sort-icon {
 
             <!-- كروت الإجمالي -->
             <?php $tot = $profitData['totals']; ?>
-            <div class="isl-kpi-grid">
-                <div class="isl-kpi-card">
-                    <div class="isl-kpi-title">إجمالي الإيراد الصافي</div>
-                    <div class="isl-kpi-val"><?= number_format($tot['revenue'], 2) ?></div>
+            <div class="fkpis">
+                <div class="fkpi">
+                    <span>إجمالي الإيراد الصافي</span>
+                    <strong><?= number_format($tot['revenue'], 2) ?></strong>
                 </div>
-                <div class="isl-kpi-card">
-                    <div class="isl-kpi-title">إجمالي التكلفة</div>
-                    <div class="isl-kpi-val"><?= number_format($tot['cost'], 2) ?></div>
+                <div class="fkpi">
+                    <span>إجمالي التكلفة</span>
+                    <strong><?= number_format($tot['cost'], 2) ?></strong>
                 </div>
-                <div class="isl-kpi-card">
-                    <div class="isl-kpi-title">إجمالي الربح</div>
-                    <div class="isl-kpi-val" style="color:var(--pos);"><?= number_format($tot['profit'], 2) ?></div>
+                <div class="fkpi">
+                    <span>إجمالي الربح</span>
+                    <strong style="color:var(--pos);"><?= number_format($tot['profit'], 2) ?></strong>
                 </div>
-                <div class="isl-kpi-card">
-                    <div class="isl-kpi-title">هامش الربح العام</div>
-                    <div class="isl-kpi-val" style="color:var(--fill-strong);"><?= $tot['margin'] ?>%</div>
+                <div class="fkpi">
+                    <span>هامش الربح العام</span>
+                    <strong style="color:var(--fill-strong);"><?= $tot['margin'] ?>%</strong>
                 </div>
             </div>
 

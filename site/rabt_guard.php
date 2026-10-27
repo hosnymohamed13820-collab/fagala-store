@@ -48,45 +48,34 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .rg-sec-title { font-size:16px; font-weight:700; color:var(--ink-900); margin-bottom:12px; display:flex; align-items:center; gap:8px; }
-    .rg-card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,0.03); }
-    .rg-badge { display:inline-block; padding:3px 8px; border-radius:6px; font-size:12px; font-weight:600; }
-    .rg-badge-new { background:var(--neg-soft); color:var(--neg); }
-    .rg-badge-claimed { background:var(--warn-soft); color:var(--warn); }
-    .rg-badge-analyzed { background:var(--accent-soft); color:var(--accent-text); }
-    .rg-badge-closed { background:var(--line-soft); color:var(--ink-500); }
-    .rg-badge-done { background:var(--pos-soft); color:var(--pos); }
-    .rg-badge-failed { background:var(--neg-soft); color:var(--neg); }
-    .rg-badge-pending { background:var(--warn-soft); color:var(--warn); }
-    .rg-badge-picked { background:var(--accent-soft); color:var(--accent-text); }
-    .rg-badge-expired { background:var(--line-soft); color:var(--ink-400); }
-    .rg-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .rg-table th, .rg-table td { padding:10px 12px; text-align:right; border-bottom:1px solid var(--line); }
-    .rg-table th { background:var(--line-soft); color:var(--ink-700); font-weight:600; }
-    .rg-table tr:hover td { background:rgba(0,0,0,0.01); }
+    .fchip-accent { background: var(--accent-soft); color: var(--accent-text); }
 </style>
 
 <div class="content-wrap">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
-        <h2 style="font-size:20px; font-weight:700; color:var(--ink-900); margin:0;">
-            <i class="ti ti-alert-triangle"></i> لوحة تحكم حارس الربط
-        </h2>
-        <a href="settings.php#agents" class="btn" style="text-decoration:none;">
-            <i class="ti ti-arrow-right"></i> رجوع للإعدادات
-        </a>
+    <div class="fpage-head">
+        <div>
+            <h1 class="fpage-title"><i class="ti ti-alert-triangle"></i> لوحة تحكم حارس الربط</h1>
+        </div>
+        <div class="fpage-actions">
+            <a href="settings.php#agents" class="btn btn-secondary">
+                <i class="ti ti-arrow-right"></i> رجوع للإعدادات
+            </a>
+        </div>
     </div>
 
     <?php if ($flash): ?>
-        <div class="flash <?= e($flashType) ?>" style="padding:12px 16px; border-radius:8px; margin-bottom:18px; background:<?= $flashType === 'success' ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>; color:<?= $flashType === 'success' ? 'var(--pos)' : 'var(--neg)' ?>;">
+        <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>">
             <?= e($flash) ?>
         </div>
     <?php endif; ?>
 
     <!-- ١) الحوادث المفتوحة -->
-    <div class="rg-card">
-        <div class="rg-sec-title">
-            <i class="ti ti-alert-circle" style="color:var(--neg);"></i>
-            <span>الحوادث المفتوحة (<?= count($openIncidents) ?>)</span>
+    <div class="fcard">
+        <div class="fcard-head">
+            <h3 class="fcard-title">
+                <i class="ti ti-alert-circle" style="color:var(--neg);"></i>
+                الحوادث المفتوحة (<?= count($openIncidents) ?>)
+            </h3>
         </div>
 
         <?php if (empty($openIncidents)): ?>
@@ -97,14 +86,14 @@ require_once __DIR__ . '/includes/header.php';
             <div style="display:flex; flex-direction:column; gap:14px;">
                 <?php foreach ($openIncidents as $inc):
                     $incId = (int) $inc['id'];
-                    $stBadge = 'rg-badge-new';
-                    if ($inc['status'] === 'claimed')  $stBadge = 'rg-badge-claimed';
-                    if ($inc['status'] === 'analyzed') $stBadge = 'rg-badge-analyzed';
+                    $stBadge = 'fchip-neg';
+                    if ($inc['status'] === 'claimed')  $stBadge = 'fchip-warn';
+                    if ($inc['status'] === 'analyzed') $stBadge = 'fchip-accent';
                 ?>
                     <div id="i<?= $incId ?>" style="border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--surface);">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
                             <div>
-                                <span class="rg-badge <?= $stBadge ?>"><?= e($inc['status']) ?></span>
+                                <span class="fchip <?= $stBadge ?>"><?= e($inc['status']) ?></span>
                                 <b style="font-size:14px; color:var(--ink-900); margin:0 6px;">[<?= e($inc['check_code']) ?>]</b>
                                 <?php if (!empty($inc['branch_key'])): ?>
                                     <span style="font-size:13px; color:var(--ink-700); background:var(--line-soft); padding:2px 6px; border-radius:4px;">فرع: <?= e($inc['branch_key']) ?></span>
@@ -120,7 +109,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <input type="hidden" name="action" value="close">
                                 <input type="hidden" name="id" value="<?= $incId ?>">
                                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-                                <button type="submit" class="btn btn-sm" style="background:var(--line-soft); color:var(--ink-700);">
+                                <button type="submit" class="btn btn-sm btn-secondary">
                                     <i class="ti ti-check"></i> اقفلها
                                 </button>
                             </form>
@@ -146,19 +135,21 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- ٢) أوامر إعادة التشغيل -->
-    <div class="rg-card">
-        <div class="rg-sec-title">
-            <i class="ti ti-refresh" style="color:var(--accent-text);"></i>
-            <span>أوامر إعادة التشغيل (آخر ٥٠ أمر)</span>
+    <div class="fcard">
+        <div class="fcard-head">
+            <h3 class="fcard-title">
+                <i class="ti ti-refresh" style="color:var(--accent-text);"></i>
+                أوامر إعادة التشغيل (آخر ٥٠ أمر)
+            </h3>
         </div>
         <?php if (empty($commands)): ?>
             <p style="color:var(--ink-500); margin:0; font-size:13px;">لا توجد أي أوامر مسجلة حتى الآن.</p>
         <?php else: ?>
-            <div style="overflow-x:auto;">
-                <table class="rg-table">
+            <div class="ftable-wrap">
+                <table class="ftable">
                     <thead>
                         <tr>
-                            <th>#</th>
+                            <th class="num">#</th>
                             <th>الوكيل</th>
                             <th>الأمر</th>
                             <th>السبب</th>
@@ -172,18 +163,18 @@ require_once __DIR__ . '/includes/header.php';
                     <tbody>
                         <?php foreach ($commands as $cmd):
                             $cStatus = (string) $cmd['status'];
-                            $bClass = 'rg-badge-pending';
-                            if ($cStatus === 'picked')  $bClass = 'rg-badge-picked';
-                            if ($cStatus === 'done')    $bClass = 'rg-badge-done';
-                            if ($cStatus === 'failed')  $bClass = 'rg-badge-failed';
-                            if ($cStatus === 'expired') $bClass = 'rg-badge-expired';
+                            $bClass = 'fchip-warn';
+                            if ($cStatus === 'picked')  $bClass = 'fchip-accent';
+                            if ($cStatus === 'done')    $bClass = 'fchip-pos';
+                            if ($cStatus === 'failed')  $bClass = 'fchip-neg';
+                            if ($cStatus === 'expired') $bClass = 'fchip-mute';
                         ?>
                             <tr>
-                                <td><?= (int) $cmd['id'] ?></td>
+                                <td class="num"><?= (int) $cmd['id'] ?></td>
                                 <td><b><?= e($cmd['agent_key']) ?></b></td>
                                 <td><code><?= e($cmd['cmd']) ?></code></td>
                                 <td style="max-width:220px;"><?= e($cmd['reason'] ?? '—') ?></td>
-                                <td><span class="rg-badge <?= $bClass ?>"><?= e($cStatus) ?></span></td>
+                                <td><span class="fchip <?= $bClass ?>"><?= e($cStatus) ?></span></td>
                                 <td><?= e($cmd['created_at']) ?></td>
                                 <td><?= e($cmd['picked_at'] ?? '—') ?></td>
                                 <td><?= e($cmd['done_at'] ?? '—') ?></td>
@@ -197,22 +188,24 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- ٣) حوادث أُغلقت -->
-    <div class="rg-card">
-        <div class="rg-sec-title">
-            <i class="ti ti-circle-check" style="color:var(--pos);"></i>
-            <span>حوادث أُغلقت (آخر ٥٠ حادثة)</span>
+    <div class="fcard">
+        <div class="fcard-head">
+            <h3 class="fcard-title">
+                <i class="ti ti-circle-check" style="color:var(--pos);"></i>
+                حوادث أُغلقت (آخر ٥٠ حادثة)
+            </h3>
         </div>
         <?php if (empty($closedIncidents)): ?>
             <p style="color:var(--ink-500); margin:0; font-size:13px;">لا توجد حوادث مغلقة حتى الآن.</p>
         <?php else: ?>
-            <div style="overflow-x:auto;">
-                <table class="rg-table">
+            <div class="ftable-wrap">
+                <table class="ftable">
                     <thead>
                         <tr>
                             <th>الكود</th>
                             <th>الفرع</th>
                             <th>العنوان</th>
-                            <th>التكرار</th>
+                            <th class="num">التكرار</th>
                             <th>أول ظهور</th>
                             <th>آخر ظهور</th>
                             <th>تاريخ الإغلاق</th>
@@ -225,7 +218,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td><b><?= e($cl['check_code']) ?></b></td>
                                 <td><?= e($cl['branch_key'] ?? 'hq') ?></td>
                                 <td><?= e($cl['title']) ?></td>
-                                <td><?= (int) $cl['seen_count'] ?></td>
+                                <td class="num"><?= (int) $cl['seen_count'] ?></td>
                                 <td><?= e($cl['first_seen']) ?></td>
                                 <td><?= e($cl['last_seen']) ?></td>
                                 <td><?= e($cl['closed_at'] ?? '—') ?></td>

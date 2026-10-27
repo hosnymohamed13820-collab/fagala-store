@@ -391,96 +391,81 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-  .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
-      text-decoration:none; font-size:14px; border:1.5px solid var(--line);
-      transition:.15s; font-family:inherit; cursor:pointer;
-  }
-  .branch-tabs .btab:hover  { border-color:var(--accent); }
-  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .rv-tabs { display:flex; gap:18px; border-bottom:2px solid var(--line); margin-bottom:20px; }
-    .rv-tab { padding:10px 4px; cursor:pointer; color:var(--ink-500); font-weight:600; font-size:15px;
-        border-bottom:3px solid transparent; margin-bottom:-2px; background:none; border-top:none; border-left:none; border-right:none; font-family:inherit; }
-    .rv-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
-    .rv-pane { display:none; } .rv-pane.active { display:block; }
-    /* كروت الورديات */
-    .shift-card { background:var(--surface); border-radius:14px; padding:18px 20px; margin-bottom:16px;
-        max-width:980px; margin-inline:auto; box-shadow:0 2px 10px rgba(124,111,247,0.06); border-right:4px solid var(--warn); }
-    .shift-card.done { border-right-color:var(--pos); }
-    .shift-card.rej { border-right-color:var(--neg); }
-    .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
-    .sc-title { font-size:16px; color:var(--ink-900); }
-    .sc-title b { color:var(--accent-text); }
-    .sc-sub { color:var(--ink-500); font-size:13px; }
-    .sc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-    .sc-stat { background:var(--line-soft); border-radius:10px; padding:12px; text-align:center; }
-    .sc-stat .l { font-size:12px; color:var(--ink-500); margin-bottom:4px; }
-    .sc-stat .v { font-size:16px; font-weight:700; color:var(--ink-900); }
-    /* 🔴 الفرق كان بياخد `red` من `abs($diff)` — يعني الزيادة كانت
-           بتتلوّن زي العجز بالظبط، والمحاسب مابيفرقش بينهم.
-           دلوقتي اللون بيتبع الإشارة. */
-    .sc-stat .v.neg { color:var(--neg); }   /* ناقص عن المطلوب */
-    .sc-stat .v.pos { color:var(--pos); }   /* زيادة عن المطلوب */
-    .btn-review { background:var(--accent); color:#fff; border:none; border-radius:9px; padding:9px 18px; cursor:pointer; font-family:inherit; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
-    /* بوب أب */
-    .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
-    .rv-modal.open { display:flex; }
-    .rv-box { background:var(--surface); border-radius:16px; width:100%; max-width:620px; margin:auto; box-shadow:0 18px 50px rgba(0,0,0,0.25); }
-    .rv-mhead { display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; }
-    .rv-mhead .t { font-size:16px; color:var(--ink-900); font-weight:700; }
-    .rv-x { background:none; border:none; font-size:26px; color:var(--ink-400); cursor:pointer; }
-    .rv-mbody { padding:18px 22px; }
-    .rv-note { background:var(--surface); color:var(--accent-text); padding:10px 14px; border-radius:9px; font-size:13px; margin-bottom:14px; }
-    .rv-sys { margin-bottom:14px; }
-    .rv-sys label { font-size:13px; color:var(--ink-500); display:block; margin-bottom:5px; }
-    .rv-sys input { width:100%; padding:9px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:15px; }
-    .rv-ptabs { display:flex; gap:4px; flex-wrap:wrap; border-bottom:2px solid var(--line); margin-bottom:16px; }
-    .rv-ptab { padding:8px 12px; cursor:pointer; color:var(--ink-500); font-size:13px; font-weight:500; border:none; background:none; border-bottom:2px solid transparent; margin-bottom:-2px; font-family:inherit; }
-    .rv-ptab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
-    .rv-ppane { display:none; } .rv-ppane.active { display:block; }
-    /* تاب الكاش (شكل قديم: قائمة + بوكس إجمالي) */
-    .rv-cash-layout { display:grid; grid-template-columns:1fr 0.9fr; gap:14px; align-items:start; }
-    @media (max-width:560px){ .rv-cash-layout { grid-template-columns:1fr; } }
-    .denom-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; justify-content:flex-end; }
-    .denom-row .dn { width:70px; color:var(--ink-700); font-size:13px; text-align:left; }
-    .denom-row input { width:80px; padding:6px 8px; border:1.5px solid var(--line); border-radius:7px; text-align:center; font-family:inherit; }
-    .denom-row .sub { width:90px; color:var(--ink-500); font-size:13px; }
-    .rv-cash-box { background:var(--bg); border-radius:12px; padding:16px; }
-    .rv-cash-box .l { font-size:13px; color:var(--ink-500); }
-    .rv-cash-box .v { font-size:24px; font-weight:700; color:var(--accent-text); margin-top:2px; }
-    .pay-row { display:grid; grid-template-columns:1fr 100px 1fr 36px; gap:8px; margin-bottom:6px; align-items:center; }
-    .pay-row input { padding:6px 8px; border:1.5px solid var(--line); border-radius:7px; font-family:inherit; font-size:13px; }
-    .rv-total { background:var(--line-soft); border-radius:9px; padding:10px 14px; font-weight:600; color:var(--accent-text); text-align:center; margin-top:8px; }
-    .cmp-table { width:100%; border-collapse:collapse; }
-    .cmp-table th, .cmp-table td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--line-soft); font-size:14px; }
-    .cmp-table th { background:var(--line-soft); color:var(--ink-500); }
-    .cmp-ok { color:var(--pos); } .cmp-bad { color:var(--neg); }
-    .cmp-expandable { cursor:pointer; user-select:none; }
-    .cmp-arrow { display:inline-block; transition:transform 0.2s ease; margin-inline-start:6px; font-size:13px; vertical-align:middle; }
-    .cmp-expandable.open .cmp-arrow { transform:rotate(180deg); }
-    .cmp-detail td { padding:0 !important; border-bottom:1px solid var(--line-soft); background:var(--bg); }
-    .cmp-sub-table { width:100%; border-collapse:collapse; font-size:12px; }
-    .cmp-sub-table th, .cmp-sub-table td { padding:6px 10px; text-align:center; border-bottom:1px solid var(--line-soft); }
-    .cmp-sub-table th { background:var(--line-soft); color:var(--ink-500); font-weight:600; }
-    .cmp-sub-table td { color:var(--ink-700); }
-    .rv-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-start; }
-    /* الزراير كانت `flex:1` فبتاخد عرض الكارت كله. وكمان «رفض» كان
-       بنفس بروز «اعتماد» — والعين مابتفرقش بين اللي بيمشّي واللي بيرجّع.
-       دلوقتي: عرض طبيعي، و«رفض» مفرّغ مش مصمت. */
-    .btn-approve { background:var(--pos-fill); color:#fff; min-width:160px; }
-    .btn-reject  { background:transparent; color:var(--neg);
-                   border:1px solid var(--neg); min-width:120px; }
-    .btn-reject:hover { background:var(--neg-soft); color:var(--neg); }
-    /* قسم عهد الفروع */
-    .cst-row { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-bottom:4px; }
-    .section-head { font-size:15px; font-weight:600; color:var(--ink-700); margin:26px 0 12px; }
-    .btn-shift-db { background:var(--line-soft); color:var(--ink-700); border:1px solid var(--line); border-radius:9px; padding:7px 12px; cursor:pointer; font-family:inherit; font-size:13px; display:inline-flex; align-items:center; gap:5px; }
-    .btn-shift-db:hover { background:var(--line); color:var(--ink-900); }
-    @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .pay-row { grid-template-columns:1fr 80px 36px; } .cst-row { grid-template-columns:1fr; } }
+  #reviewBranchTabs { margin-bottom:14px; }
+  .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
+  .flash.success { background:var(--pos-soft); color:var(--pos); }
+  .flash.error   { background:var(--neg-soft); color:var(--neg); }
+  .rv-nav { margin-bottom:20px; }
+  .rv-pane { display:none; } .rv-pane.active { display:block; }
+  /* كروت الورديات */
+  .fcard { max-width:980px; margin-inline:auto; margin-bottom:16px; }
+  .rv-pending-shift, .rv-pending-custody, .rv-pending-permit, .rv-custody-history, .rv-shift-history { border-right:4px solid var(--warn); }
+  .rv-custody-history.done, .rv-shift-history.done { border-right-color:var(--pos); }
+  .rv-custody-history.rej, .rv-shift-history.rej { border-right-color:var(--neg); }
+  .sc-head { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .sc-title { font-size:16px; color:var(--ink-900); }
+  .sc-title b { color:var(--accent-text); }
+  .sc-sub { color:var(--ink-500); font-size:13px; }
+  .sc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .sc-stat { background:var(--line-soft); border-radius:10px; padding:12px; text-align:center; }
+  .sc-stat .l { font-size:12px; color:var(--ink-500); margin-bottom:4px; }
+  .sc-stat .v { font-size:16px; font-weight:700; color:var(--ink-900); font-variant-numeric:tabular-nums; }
+  /* 🔴 الفرق كان بياخد `red` من `abs($diff)` — يعني الزيادة كانت
+         بتتلوّن زي العجز بالظبط، والمحاسب مابيفرقش بينهم.
+         دلوقتي اللون بيتبع الإشارة. */
+  .sc-stat .v.neg { color:var(--neg); }   /* ناقص عن المطلوب */
+  .sc-stat .v.pos { color:var(--pos); }   /* زيادة عن المطلوب */
+  .btn-review { background:var(--accent); color:var(--fill-strong-fg); border:none; border-radius:9px; padding:9px 18px; cursor:pointer; font-family:inherit; font-size:14px; display:inline-flex; align-items:center; gap:6px; }
+  /* بوب أب */
+  .rv-modal { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.5); z-index:var(--z-modal); align-items:flex-start; justify-content:center; padding:24px 14px; overflow-y:auto; }
+  .rv-modal.open { display:flex; }
+  .rv-box { background:var(--surface); border-radius:16px; width:100%; max-width:620px; margin:auto; box-shadow:0 18px 50px rgba(0,0,0,0.25); }
+  .rv-mhead { display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1.5px solid var(--line); position:sticky; top:0; background:var(--surface); border-radius:16px 16px 0 0; }
+  .rv-mhead .t { font-size:16px; color:var(--ink-900); font-weight:700; }
+  .rv-x { background:none; border:none; font-size:26px; color:var(--ink-400); cursor:pointer; }
+  .rv-mbody { padding:18px 22px; }
+  .rv-note { background:var(--surface); color:var(--accent-text); padding:10px 14px; border-radius:9px; font-size:13px; margin-bottom:14px; }
+  .rv-sys { margin-bottom:14px; }
+  .rv-sys label { font-size:13px; color:var(--ink-500); display:block; margin-bottom:5px; }
+  .rv-ptabs { margin-bottom:16px; }
+  .rv-ppane { display:none; } .rv-ppane.active { display:block; }
+  /* تاب الكاش (شكل قديم: قائمة + بوكس إجمالي) */
+  .rv-cash-layout { display:grid; grid-template-columns:1fr 0.9fr; gap:14px; align-items:start; }
+  @media (max-width:560px){ .rv-cash-layout { grid-template-columns:1fr; } }
+  .denom-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; justify-content:flex-end; }
+  .denom-row .dn { width:70px; color:var(--ink-700); font-size:13px; text-align:left; }
+  .denom-row .finput { width:80px; text-align:center; }
+  .denom-row .sub { width:90px; color:var(--ink-500); font-size:13px; }
+  .rv-cash-box { background:var(--bg); border-radius:12px; padding:16px; }
+  .rv-cash-box .l { font-size:13px; color:var(--ink-500); }
+  .rv-cash-box .v { font-size:24px; font-weight:700; color:var(--accent-text); margin-top:2px; }
+  .rv-total { background:var(--line-soft); border-radius:9px; padding:10px 14px; font-weight:600; color:var(--accent-text); text-align:center; margin-top:8px; }
+  .cmp-table { width:100%; border-collapse:collapse; }
+  .cmp-table th, .cmp-table td { padding:9px 12px; text-align:center; border-bottom:1px solid var(--line-soft); font-size:14px; }
+  .cmp-table th { background:var(--line-soft); color:var(--ink-500); }
+  .cmp-ok { color:var(--pos); } .cmp-bad { color:var(--neg); }
+  .cmp-expandable { cursor:pointer; user-select:none; }
+  .cmp-arrow { display:inline-block; transition:transform 0.2s ease; margin-inline-start:6px; font-size:13px; vertical-align:middle; }
+  .cmp-expandable.open .cmp-arrow { transform:rotate(180deg); }
+  .cmp-detail td { padding:0 !important; border-bottom:1px solid var(--line-soft); background:var(--bg); }
+  .cmp-sub-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .cmp-sub-table th, .cmp-sub-table td { padding:6px 10px; text-align:center; border-bottom:1px solid var(--line-soft); }
+  .cmp-sub-table th { background:var(--line-soft); color:var(--ink-500); font-weight:600; }
+  .cmp-sub-table td { color:var(--ink-700); }
+  .rv-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-start; }
+  /* الزراير كانت `flex:1` فبتاخد عرض الكارت كله. وكمان «رفض» كان
+     بنفس بروز «اعتماد» — والعين مابتفرقش بين اللي بيمشّي واللي بيرجّع.
+     دلوقتي: عرض طبيعي، و«رفض» مفرّغ مش مصمت. */
+  .btn-approve { background:var(--pos-fill); color:var(--fill-strong-fg); min-width:160px; }
+  .btn-reject  { background:transparent; color:var(--neg);
+                 border:1px solid var(--neg); min-width:120px; }
+  .btn-reject:hover { background:var(--neg-soft); color:var(--neg); }
+  /* قسم عهد الفروع */
+  .cst-row { display:grid; grid-template-columns:1fr 1.4fr; gap:12px; margin-bottom:4px; }
+  .section-head { font-size:15px; font-weight:600; color:var(--ink-700); margin:26px 0 12px; }
+  .btn-shift-db { background:var(--line-soft); color:var(--ink-700); border:1px solid var(--line); border-radius:9px; padding:7px 12px; cursor:pointer; font-family:inherit; font-size:13px; display:inline-flex; align-items:center; gap:5px; }
+  .btn-shift-db:hover { background:var(--line); color:var(--ink-900); }
+  @media (max-width:560px){ .sc-stats { grid-template-columns:repeat(2,1fr); } .cst-row { grid-template-columns:1fr; } }
 </style>
 
 <?php if ($flash): ?>
@@ -497,7 +482,9 @@ require_once __DIR__ . '/includes/header.php';
         } catch (e) {}
 
         document.querySelectorAll('#reviewBranchTabs .btab').forEach(function(b) {
-            b.classList.toggle('active', b.dataset.b === String(branchId));
+            var match = (branchId === 'all' || b.dataset.b === String(branchId));
+            b.classList.toggle('active', match);
+            b.classList.toggle('is-active', match);
         });
 
         var visiblePending = 0;
@@ -538,26 +525,26 @@ require_once __DIR__ . '/includes/header.php';
     }
 </script>
 
-<div class="branch-tabs" id="reviewBranchTabs">
-    <button type="button" class="btab active" data-b="all" onclick="filterReviewBranch('all')">
+<div class="ftabs branch-tabs" id="reviewBranchTabs">
+    <button type="button" class="ftab btab is-active active" data-b="all" onclick="filterReviewBranch('all')">
         الكل (<?= $totalPendingReviewCount ?>)
     </button>
     <?php foreach ($reviewBranches as $rb):
         $cnt = $reviewBranchCounts[(int)$rb['id']] ?? 0;
     ?>
-    <button type="button" class="btab" data-b="<?= (int)$rb['id'] ?>" onclick="filterReviewBranch('<?= (int)$rb['id'] ?>')">
+    <button type="button" class="ftab btab" data-b="<?= (int)$rb['id'] ?>" onclick="filterReviewBranch('<?= (int)$rb['id'] ?>')">
         <?= e($rb['name']) ?> (<?= $cnt ?>)
     </button>
     <?php endforeach; ?>
 </div>
 
-<div class="rv-tabs">
-    <button class="rv-tab active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
-    <button class="rv-tab" onclick="rvTab(this,'pane_custody')">العهد (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
-    <button class="rv-tab" id="tab_instapay_btn" onclick="rvTab(this,'pane_instapay')">إنستا (<span id="cnt_instapay"><?= $pendingInstapayCount ?></span>)</button>
-    <button class="rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
+<div class="ftabs rv-nav">
+    <button class="ftab rv-tab is-active active" onclick="rvTab(this,'pane_pending')">في انتظار المراجعة (<span id="cnt_pending"><?= count($pending) ?></span>)</button>
+    <button class="ftab rv-tab" onclick="rvTab(this,'pane_custody')">العهد (<span id="cnt_custody"><?= count($pendingCustody) ?></span>)</button>
+    <button class="ftab rv-tab" id="tab_instapay_btn" onclick="rvTab(this,'pane_instapay')">إنستا (<span id="cnt_instapay"><?= $pendingInstapayCount ?></span>)</button>
+    <button class="ftab rv-tab" onclick="rvTab(this,'pane_history')">السجل</button>
     <?php if (can_edit_shift_date_branch() && $seqIssuesTableExists): ?>
-        <button class="rv-tab" id="tab_seq_btn" onclick="rvTab(this,'pane_seq')">تسلسل الورديات (<?= $openSeqCount ?> مفتوحة)</button>
+        <button class="ftab rv-tab" id="tab_seq_btn" onclick="rvTab(this,'pane_seq')">تسلسل الورديات (<?= $openSeqCount ?> مفتوحة)</button>
     <?php endif; ?>
 </div>
 
@@ -567,7 +554,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش ورديات في انتظار المراجعة.</div>
     <?php else: ?>
         <?php foreach ($pending as $s): $amt = shift_cashier_amounts($s); $diff = ($amt['cash']+$amt['visa']+$amt['instapay']) - $amt['system']; ?>
-            <div class="shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
+            <div class="fcard shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
                         <div class="sc-title"><b><?= e($s['branch_name']) ?></b> <span class="sc-sub"><?= e($s['business_date']) ?> · رقم الوردية: <?= !empty($s['shift_name']) ? e($s['shift_name']) : '—' ?> · كاشير: <?= e($s['cashier_name']) ?></span></div>
@@ -615,7 +602,7 @@ require_once __DIR__ . '/includes/header.php';
             $cCounted  = (float) ($c['counted_cash'] ?? 0);
             $cDiff     = $cCounted - $cExpected;
         ?>
-            <div class="shift-card rv-pending-custody" data-branch="<?= (int)$c['branch_id'] ?>">
+            <div class="fcard shift-card rv-pending-custody" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
                         <b><?= !empty($c['employee_id']) ? ('عهدة موظف: ' . e($c['employee_name'] ?: ('#' . $c['employee_id']))) : (e($c['branch_name'] ?? '') . ' — عهدة') ?></b>
@@ -678,7 +665,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php foreach ($custodyHistory as $c):
             $isDone = $c['status'] === 'closed';
         ?>
-            <div class="shift-card rv-custody-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$c['branch_id'] ?>">
+            <div class="fcard shift-card rv-custody-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$c['branch_id'] ?>">
                 <div class="sc-head">
                     <div class="sc-title">
                         <b><?= !empty($c['employee_id']) ? ('عهدة موظف: ' . e($c['employee_name'] ?: ('#' . $c['employee_id']))) : (e($c['branch_name'] ?? '') . ' — عهدة') ?></b>
@@ -738,11 +725,11 @@ require_once __DIR__ . '/includes/header.php';
             $displayNote = trim($desc . ($desc !== '' && $notes !== '' ? ' · ' : '') . $notes);
             $pBranchId = (int)($pl['cost_branch_id'] ?? $pl['branch_id'] ?? 0);
         ?>
-            <div class="shift-card rv-pending-permit" data-branch="<?= $pBranchId ?>">
+            <div class="fcard shift-card rv-pending-permit" data-branch="<?= $pBranchId ?>">
                 <div class="sc-head">
                     <div>
                         <div class="sc-title">
-                            <span class="badge" style="background:<?= $isReceipt ? 'var(--pos-soft, #e6f4ea)' : 'var(--neg-soft, #fce8e6)' ?>;color:<?= $amtColor ?>;font-weight:700;margin-inline-end:6px;">
+                            <span class="badge" style="background:<?= $isReceipt ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;color:<?= $amtColor ?>;font-weight:700;margin-inline-end:6px;">
                                 <?= $typeLabel ?>
                             </span>
                             <b>إذن #<?= (int)$p['id'] ?></b>
@@ -758,7 +745,7 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <?php if ($isApproving): ?>
-                        <span class="badge" style="background:var(--neg-soft, #fef3c7);color:#b45309;font-weight:700;padding:6px 12px;font-size:13px;">
+                        <span class="badge" style="background:var(--warn-soft);color:var(--warn);font-weight:700;padding:6px 12px;font-size:13px;">
                             <i class="ti ti-loader" style="animation:spin 1s linear infinite;"></i> جاري الاعتماد...
                         </span>
                     <?php endif; ?>
@@ -843,8 +830,8 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="hidden" name="permit_id" value="<?= (int)$p['id'] ?>">
                             <label style="display:block;font-size:13px;color:var(--ink-500);margin-bottom:5px;">سبب الرفض (إجباري):</label>
                             <div style="display:flex;gap:8px;">
-                                <input type="text" name="rejection_note" class="form-input" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" placeholder="اكتب سبب الرفض..." required>
-                                <button type="submit" class="btn-review btn-reject" style="min-width:110px;background:var(--neg);color:#fff;">
+                                <input type="text" name="rejection_note" class="form-input finput" style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" placeholder="اكتب سبب الرفض..." required>
+                                <button type="submit" class="btn-review btn-reject" style="min-width:110px;background:var(--neg);color:var(--fill-strong-fg);">
                                     تأكيد الرفض
                                 </button>
                                 <button type="button" class="btn-review" style="background:var(--line-soft);color:var(--ink-700);" onclick="toggleRejectBox(<?= (int)$p['id'] ?>)">
@@ -862,7 +849,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (!empty($reviewedPermits)): ?>
         <div class="section-head" style="margin-top:30px;">آخر أذونات إنستا تمت مراجعتها</div>
         <div class="card" style="overflow-x:auto;padding:0;">
-            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:right;">
+            <table class="ftable data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:right;">
                 <thead>
                     <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
                         <th style="padding:10px 12px;">#</th>
@@ -904,7 +891,7 @@ require_once __DIR__ . '/includes/header.php';
                             <td style="padding:8px 12px;"><?= $tLabel ?></td>
                             <td style="padding:8px 12px;"><?= e($rtName) ?></td>
                             <td style="padding:8px 12px;">
-                                <span class="badge" style="background:<?= $isApp ? 'var(--pos-soft, #e6f4ea)' : 'var(--neg-soft, #fce8e6)' ?>;color:<?= $isApp ? 'var(--pos)' : 'var(--neg)' ?>;font-weight:600;">
+                                <span class="badge" style="background:<?= $isApp ? 'var(--pos-soft)' : 'var(--neg-soft)' ?>;color:<?= $isApp ? 'var(--pos)' : 'var(--neg)' ?>;font-weight:600;">
                                     <?= $isApp ? 'معتمد' : 'مرفوض' ?>
                                 </span>
                             </td>
@@ -933,7 +920,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش سجل بعد.</div>
     <?php else: ?>
         <?php foreach ($history as $s): $amt = shift_cashier_amounts($s); $isDone = $s['status']==='approved'; ?>
-            <div class="shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
+            <div class="fcard shift-card rv-shift-history <?= $isDone?'done':'rej' ?>" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
                         <div class="sc-title"><b><?= e($s['branch_name']) ?></b> <span class="sc-sub"><?= e($s['business_date']) ?> · رقم الوردية: <?= !empty($s['shift_name']) ? e($s['shift_name']) : '—' ?> · <?= e($s['cashier_name']) ?></span></div>
@@ -966,7 +953,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">لا توجد مشاكل في تسلسل الورديات.</div>
     <?php else: ?>
         <div class="card" style="overflow-x:auto;padding:0;">
-            <table class="data-table" style="width:100%;border-collapse:collapse;font-size:14px;text-align:right;">
+            <table class="ftable data-table" style="width:100%;border-collapse:collapse;font-size:14px;text-align:right;">
                 <thead>
                     <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
                         <th style="padding:10px 14px;">الفرع</th>
@@ -985,10 +972,10 @@ require_once __DIR__ . '/includes/header.php';
                         $descText = $isDup ? ('رقم ' . e($iss['found_no']) . ' اتكرر') : ('بعد ' . e($iss['expected_no'] - 1) . ' جه ' . e($iss['found_no']));
                         $st = $iss['status'];
                         $stBadge = match($st) {
-                            'open'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--warn-soft,#fff3cd);color:var(--warn,#856404);font-size:12px;font-weight:600;">مفتوحة</span>',
-                            'ignored'  => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--line-soft,#e9ecef);color:var(--ink-500,#6c757d);font-size:12px;font-weight:600;">تم التغاضي</span>',
-                            'sent'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--surface,#e0e7ff);color:var(--accent-text,#4338ca);font-size:12px;font-weight:600;">مُرسلة للموظف</span>',
-                            'answered' => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--pos-soft,#d4edda);color:var(--pos,#155724);font-size:12px;font-weight:600;">تم الرد</span>',
+                            'open'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:600;">مفتوحة</span>',
+                            'ignored'  => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--line-soft);color:var(--ink-500);font-size:12px;font-weight:600;">تم التغاضي</span>',
+                            'sent'     => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--surface);color:var(--accent-text);font-size:12px;font-weight:600;">مُرسلة للموظف</span>',
+                            'answered' => '<span style="display:inline-block;padding:3px 8px;border-radius:6px;background:var(--pos-soft);color:var(--pos);font-size:12px;font-weight:600;">تم الرد</span>',
                             default    => e($st),
                         };
                     ?>
@@ -1049,14 +1036,14 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="rv-sys">
                 <label for="rv_acc_system">مبيعات السيستم</label>
-                <input type="number" step="0.01" min="0" name="acc_system" id="rv_acc_system" value="" placeholder="0.00" oninput="rvCalc()">
+                <input type="number" step="0.01" min="0" name="acc_system" id="rv_acc_system" class="finput" value="" placeholder="0.00" oninput="rvCalc()">
             </div>
 
-            <div class="rv-ptabs">
-                <button type="button" class="rv-ptab active" onclick="rvPtab(this,'rp_cash')">كاش</button>
-                <button type="button" class="rv-ptab" onclick="rvPtab(this,'rp_visa')">فيزا</button>
-                <button type="button" class="rv-ptab" onclick="rvPtab(this,'rp_instapay')">إنستا باي</button>
-                <button type="button" class="rv-ptab" id="rv_cmp_tab" onclick="rvCompare(this)">قارن</button>
+            <div class="ftabs rv-ptabs">
+                <button type="button" class="ftab rv-ptab is-active active" onclick="rvPtab(this,'rp_cash')">كاش</button>
+                <button type="button" class="ftab rv-ptab" onclick="rvPtab(this,'rp_visa')">فيزا</button>
+                <button type="button" class="ftab rv-ptab" onclick="rvPtab(this,'rp_instapay')">إنستا باي</button>
+                <button type="button" class="ftab rv-ptab" id="rv_cmp_tab" onclick="rvCompare(this)">قارن</button>
             </div>
 
             <!-- كاش -->
@@ -1067,7 +1054,7 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="denom-row">
                                 <span class="sub" id="rvd_<?= str_replace('.','_',(string)$d) ?>">0.00</span>
                                 <span>×</span>
-                                <input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="rv-denom" data-d="<?= $d ?>" value="" placeholder="0" oninput="rvCalc()">
+                                <input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="finput finput-sm rv-denom" data-d="<?= $d ?>" value="" placeholder="0" oninput="rvCalc()">
                                 <span class="dn"><?= $d ?> ج.م</span>
                             </div>
                         <?php endforeach; ?>
@@ -1082,7 +1069,7 @@ require_once __DIR__ . '/includes/header.php';
             <!-- فيزا / إنستا (سطور) -->
             <?php foreach (['visa'=>'فيزا','instapay'=>'إنستا باي'] as $mk=>$ml): ?>
             <div class="rv-ppane" id="rp_<?= $mk ?>">
-                <table class="pay-table" style="width:100%;border-collapse:collapse;">
+                <table class="ftable pay-table" style="width:100%;border-collapse:collapse;">
                     <thead>
                         <tr>
                             <th style="width:28px;padding:4px 6px 8px;text-align:right;font-size:12px;color:var(--ink-500);font-weight:600;">#</th>
@@ -1094,8 +1081,8 @@ require_once __DIR__ . '/includes/header.php';
                     <?php for ($i=1;$i<=10;$i++): ?>
                         <tr>
                             <td style="padding:4px;color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
-                            <td style="padding:4px;"><input type="text" class="rv-<?= $mk ?>-ref" placeholder="رقم السيريال" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" aria-label="رقم السيريال"></td><!-- rv-visa-ref / rv-instapay-ref -->
-                            <td style="padding:4px;"><input type="number" aria-label="المبلغ" step="0.01" min="0" class="rv-<?= $mk ?>" value="" placeholder="0.00" oninput="rvCalc()" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;text-align:center;"></td>
+                            <td style="padding:4px;"><input type="text" class="finput rv-<?= $mk ?>-ref" placeholder="رقم السيريال" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;" aria-label="رقم السيريال"></td><!-- rv-visa-ref / rv-instapay-ref -->
+                            <td style="padding:4px;"><input type="number" aria-label="المبلغ" step="0.01" min="0" class="finput rv-<?= $mk ?>" value="" placeholder="0.00" oninput="rvCalc()" style="width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-size:13px;text-align:center;"></td>
                         </tr>
                     <?php endfor; ?>
                     </tbody>
@@ -1119,14 +1106,14 @@ require_once __DIR__ . '/includes/header.php';
                      padding:22px;text-align:center;color:var(--ink-500);font-size:14px;">
                     <i class="ti ti-lock"></i> أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
                 </div>
-                <table class="cmp-table" id="cmp_table" data-xt-off style="display:none;">
+                <table class="ftable cmp-table" id="cmp_table" data-xt-off style="display:none;">
                     <thead><tr><th>البند</th><th>الموظف</th><th>المحاسب</th><th>الفرق</th></tr></thead>
                     <tbody id="cmp_body"></tbody>
                 </table>
                 <div id="cmp_msg" style="margin:14px 0;padding:10px 14px;border-radius:9px;text-align:center;font-size:14px;display:none;"></div>
                 <div id="cmp_decide" style="display:none;">
                     <label style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">ملاحظات المحاسب (مطلوب للرفض)</label>
-                    <textarea name="reason" id="rv_reason" rows="2" placeholder="اكتب سبب الرجوع هنا..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;"></textarea>
+                    <textarea name="reason" id="rv_reason" class="ftextarea" rows="2" placeholder="اكتب سبب الرجوع هنا..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;"></textarea>
                     <div class="rv-actions">
                         <button type="submit" class="btn-approve" onclick="return rvDecide('approved')" style="border:none;border-radius:9px;padding:11px;cursor:pointer;font-family:inherit;font-size:14px;">✓ اعتماد وإنشاء القيود</button>
                         <button type="submit" class="btn-reject" onclick="return rvDecide('rejected')" style="border-radius:9px;padding:11px;cursor:pointer;font-family:inherit;font-size:14px;">↩ إرجاع للموظف</button>
@@ -1166,8 +1153,8 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
-                <button type="button" onclick="closeShiftDateBranch()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
-                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">حفظ</button>
+                <button type="button" onclick="closeShiftDateBranch()" class="btn btn-secondary">إلغاء</button>
+                <button type="submit" class="btn btn-primary" style="padding:9px 20px;font-size:14px;">حفظ</button>
             </div>
         </form>
     </div>
@@ -1191,12 +1178,12 @@ require_once __DIR__ . '/includes/header.php';
 
             <div style="margin-bottom:14px;">
                 <label for="ignore_owner_note" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">سبب التغاضي (إجباري)</label>
-                <textarea name="owner_note" id="ignore_owner_note" required rows="3" placeholder="اكتب سبب التغاضي..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
+                <textarea name="owner_note" id="ignore_owner_note" class="ftextarea" required rows="3" placeholder="اكتب سبب التغاضي..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
             </div>
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
-                <button type="button" onclick="closeSeqIgnore()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
-                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">تأكيد التغاضي</button>
+                <button type="button" onclick="closeSeqIgnore()" class="btn btn-secondary">إلغاء</button>
+                <button type="submit" class="btn btn-primary" style="padding:9px 20px;font-size:14px;">تأكيد التغاضي</button>
             </div>
         </form>
     </div>
@@ -1221,19 +1208,19 @@ require_once __DIR__ . '/includes/header.php';
 
             <div style="margin-bottom:14px;">
                 <label for="send_user_id" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">الموظف (من فرع المشكلة)</label>
-                <select name="assigned_user_id" id="send_user_id" required style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
+                <select name="assigned_user_id" id="send_user_id" class="fselect" required style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
                     <option value="">اختر الموظف...</option>
                 </select>
             </div>
 
             <div style="margin-bottom:14px;">
                 <label for="send_owner_note" style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">ملاحظة للموظف (اختياري)</label>
-                <textarea name="owner_note" id="send_owner_note" rows="2" placeholder="اكتب ملاحظة أو توجيه للموظف..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
+                <textarea name="owner_note" id="send_owner_note" class="ftextarea" rows="2" placeholder="اكتب ملاحظة أو توجيه للموظف..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;box-sizing:border-box;"></textarea>
             </div>
 
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
-                <button type="button" onclick="closeSeqSend()" style="background:var(--line-soft);color:var(--ink-700);border:1px solid var(--line);border-radius:9px;padding:9px 16px;cursor:pointer;font-family:inherit;font-size:14px;">إلغاء</button>
-                <button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 20px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;">إرسال للموظف</button>
+                <button type="button" onclick="closeSeqSend()" class="btn btn-secondary">إلغاء</button>
+                <button type="submit" class="btn btn-primary" style="padding:9px 20px;font-size:14px;">إرسال للموظف</button>
             </div>
         </form>
     </div>
@@ -1343,9 +1330,15 @@ require_once __DIR__ . '/includes/header.php';
         rvPtab(btn, 'rp_compare');
     }
     function rvTab(btn, pane) {
-        document.querySelectorAll('.rv-tab').forEach(t=>t.classList.remove('active'));
+        document.querySelectorAll('.rv-tab').forEach(function(t) {
+            t.classList.remove('active');
+            t.classList.remove('is-active');
+        });
         btn.classList.add('active');
-        document.querySelectorAll('.rv-pane').forEach(p=>p.classList.remove('active'));
+        btn.classList.add('is-active');
+        document.querySelectorAll('.rv-pane').forEach(function(p) {
+            p.classList.remove('active');
+        });
         document.getElementById(pane).classList.add('active');
         var tab = {pane_pending:'pending', pane_custody:'custody', pane_instapay:'instapay',
                    pane_history:'history', pane_seq:'seq'}[pane];
@@ -1358,9 +1351,15 @@ require_once __DIR__ . '/includes/header.php';
         }
     }
     function rvPtab(btn, pane) {
-        document.querySelectorAll('.rv-ptab').forEach(t=>t.classList.remove('active'));
+        document.querySelectorAll('.rv-ptab').forEach(function(t) {
+            t.classList.remove('active');
+            t.classList.remove('is-active');
+        });
         btn.classList.add('active');
-        document.querySelectorAll('.rv-ppane').forEach(p=>p.classList.remove('active'));
+        btn.classList.add('is-active');
+        document.querySelectorAll('.rv-ppane').forEach(function(p) {
+            p.classList.remove('active');
+        });
         document.getElementById(pane).classList.add('active');
     }
     function openReview(data) {
@@ -1523,7 +1522,7 @@ require_once __DIR__ . '/includes/header.php';
         });
 
         var body = rowsHtml
-            ? '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
+            ? '<div style="overflow-x:auto;"><table class="ftable cmp-sub-table"><thead><tr>'
               + '<th>الفئة</th><th>عدد الموظف</th><th>عدد المحاسب</th><th>فرق العدد</th><th>فرق القيمة</th>'
               + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
             : '<div style="padding:10px;text-align:center;color:var(--ink-500);font-size:13px;">مفيش تفاصيل فئات متسجّلة.</div>';
@@ -1665,7 +1664,7 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         // 🔴 الرؤوس لازم تتغيّر مع الخانات — ٤ خانات تحت ٦ رؤوس = جدول مكسور
-        var body = summaryHtml + '<div style="overflow-x:auto;"><table class="cmp-sub-table"><thead><tr>'
+        var body = summaryHtml + '<div style="overflow-x:auto;"><table class="ftable cmp-sub-table"><thead><tr>'
                  + '<th>الحالة</th>'
                  + (hasAnyRef ? '<th>سيريال الموظف</th>' : '')
                  + '<th>مبلغ الموظف</th>'
