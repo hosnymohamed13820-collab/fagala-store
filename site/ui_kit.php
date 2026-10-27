@@ -91,7 +91,7 @@ function ui_code(string $code): string
 
     <?= ui_card_open('الرسم من الجافاسكربت') ?>
     <div id="jsUiDemo"></div>
-    <?= ui_code("ui.btn('إضافة', {icon:'plus'})\nui.chip('متاح', 'pos')\nui.alert('info', 'رسالة')\nui.empty('مفيش بيانات')") ?>
+    <?= ui_code("ui.btn('إضافة', {icon:'plus'})\nui.chip('متاح', 'pos')\nui.alert('info', 'رسالة')\nui.empty('مفيش بيانات')\nui.esc('نص حر أو قيمة attribute')") ?>
     <?= ui_card_close() ?>
 </main>
 <script>

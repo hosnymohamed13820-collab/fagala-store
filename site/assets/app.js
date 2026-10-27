@@ -255,7 +255,7 @@
     function empty(value) {
         return '<div class="fg-empty">' + icon('inbox') + '<span>' + esc(value) + '</span></div>';
     }
-    window.ui = {icon:icon, btn:btn, chip:chip, alert:alert, empty:empty};
+    window.ui = {esc:esc, icon:icon, btn:btn, chip:chip, alert:alert, empty:empty};
 })();
 
 /* ============================================================

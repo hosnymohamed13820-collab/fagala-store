@@ -162,7 +162,7 @@
 <script>window.SENS = {unlocked: <?= sens_unlocked() ? 'true' : 'false' ?>, left: <?= sens_left() ?>, csrf: <?= json_encode(csrf_token()) ?>};</script>
 <script src="assets/sensitive.js?v=2"></script>
 <?php endif; ?>
-<script src="assets/app.js?v=12"></script>
+<script src="assets/app.js?v=13"></script>
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
      لاستثناء جدول: <table data-xt-off> -->

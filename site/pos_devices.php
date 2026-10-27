@@ -52,6 +52,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const ui = window.ui;
     const branch = document.getElementById('posdevBranch');
     const body = document.getElementById('posdevBody');
     const empty = document.getElementById('posdevEmpty');
@@ -59,14 +60,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const addBtn = document.getElementById('posdevAdd');
     let firstLoad = true;
 
-    function esc(value) {
-        const d = document.createElement('div');
-        d.textContent = value == null ? '' : String(value);
-        return d.innerHTML;
-    }
-
     function show(kind, message) {
-        alertBox.innerHTML = window.ui.alert(kind, message);
+        alertBox.innerHTML = ui.alert(kind, message);
     }
 
     function clearMessage() {
@@ -80,7 +75,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const data = j.data || {};
                 if (firstLoad) {
                     branch.innerHTML = (data.branches || []).map(function (b) {
-                        return '<option value="' + Number(b.id) + '">' + esc(b.name) + '</option>';
+                        return '<option value="' + Number(b.id) + '">' + ui.esc(b.name) + '</option>';
                     }).join('');
                     if (data.branch_id) branch.value = String(data.branch_id);
                     firstLoad = false;
@@ -94,17 +89,17 @@ document.addEventListener('DOMContentLoaded', function () {
         body.innerHTML = rows.map(function (d) {
             const state = Number(d.is_active) === 1 ? '1' : '0';
             return '<tr data-id="' + Number(d.id) + '" data-branch="' + Number(d.branch_id) + '">' +
-                '<td><input class="finput" name="name" value="' + esc(d.name) + '" maxlength="120" data-field="name"></td>' +
-                '<td><input class="finput" name="code" value="' + esc(d.code) + '" maxlength="12" dir="ltr" data-field="code"></td>' +
-                '<td class="num">' + esc(d.device_uuid) + '</td>' +
-                '<td>' + esc(d.last_seen_at || 'لسه ماظهرش') + '</td>' +
+                '<td><input class="finput" name="name" value="' + ui.esc(d.name) + '" maxlength="120" data-field="name"></td>' +
+                '<td><input class="finput" name="code" value="' + ui.esc(d.code) + '" maxlength="12" dir="ltr" data-field="code"></td>' +
+                '<td class="num">' + ui.esc(d.device_uuid) + '</td>' +
+                '<td>' + ui.esc(d.last_seen_at || 'لسه ماظهرش') + '</td>' +
                 '<td><select class="fselect" name="is_active" data-field="is_active">' +
                     '<option value="1"' + (state === '1' ? ' selected' : '') + '>مفعّل</option>' +
                     '<option value="0"' + (state === '0' ? ' selected' : '') + '>موقوف</option>' +
                 '</select></td>' +
                 '</tr>';
         }).join('');
-        empty.innerHTML = rows.length ? '' : window.ui.empty('مفيش أجهزة مسجّلة في الفرع ده');
+        empty.innerHTML = rows.length ? '' : ui.empty('مفيش أجهزة مسجّلة في الفرع ده');
     }
 
     function saveRow(row) {
