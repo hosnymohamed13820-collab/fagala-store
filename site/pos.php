@@ -261,6 +261,12 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn btn-sm btn-outline" id="posBtnHold">
                 <i class="ti ti-bookmark"></i> تعليق (F8)
             </button>
+            <button type="button" class="btn btn-sm btn-outline" id="posBtnSessionInvoices" title="فواتير الوردية">
+                <i class="ti ti-file-invoice"></i> فواتير الوردية
+            </button>
+            <button type="button" class="btn btn-sm btn-outline" id="posBtnPrintLast" style="display:none;" title="طباعة آخر إيصال">
+                <i class="ti ti-printer"></i> آخر إيصال
+            </button>
             <?php if (can('pos:drawer') || is_real_owner()): ?>
                 <button type="button" class="btn btn-sm btn-ghost" id="posBtnOpenDrawer">
                     <i class="ti ti-cash"></i> فتح الدرج
@@ -767,13 +773,43 @@ require_once __DIR__ . '/includes/header.php';
                     الباقي: 0.00 ج.م
                 </div>
                 <div class="fg-dlg-actions" style="justify-content:center;">
-                    <button type="button" class="btn btn-outline" disabled title="الطباعة قريباً في بريف ٢٤٤">
-                        <i class="ti ti-printer"></i> طباعة (قريباً)
+                    <button type="button" class="btn btn-outline" id="posBtnPrintReceipt">
+                        <i class="ti ti-printer"></i> طباعة الإيصال
                     </button>
                     <button type="button" class="btn btn-primary" id="posBtnNewSale">
                         <i class="ti ti-plus"></i> فاتورة جديدة (Enter / Esc)
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة فواتير الوردية -->
+    <div class="fg-dlg-bg" id="posModalSessionInvoices" style="display:none;" role="dialog" aria-modal="true">
+        <div class="fg-dlg" style="width: min(95vw, 760px);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
+                <h3 class="fg-dlg-title" style="margin:0;"><i class="ti ti-file-invoice"></i> فواتير الوردية الحالية</h3>
+                <button type="button" class="btn btn-sm btn-ghost" id="posBtnCloseSessionInvoices">✕</button>
+            </div>
+            <div id="posSessionInvoicesAlert"></div>
+            <div class="ftable-wrap" style="max-height:360px; overflow-y:auto; margin-top:var(--sp-2);">
+                <table class="ftable" data-xt-off>
+                    <thead>
+                        <tr>
+                            <th>رقم الإيصال</th>
+                            <th>النوع</th>
+                            <th>الوقت</th>
+                            <th>الصافي</th>
+                            <th>الكاشير</th>
+                            <th>إعادة الطباعة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="posSessionInvoicesBody"></tbody>
+                </table>
+            </div>
+            <div id="posSessionInvoicesEmpty"></div>
+            <div class="fg-dlg-actions" style="margin-top:var(--sp-3);">
+                <button type="button" class="btn btn-secondary" id="posBtnCloseSessionInvoicesAction">إغلاق (Esc)</button>
             </div>
         </div>
     </div>
@@ -1786,6 +1822,10 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(function (res) {
             const data = res.data || {};
+            lastDocId = Number(data.doc_id || 0);
+            const btnPrintLast = document.getElementById('posBtnPrintLast');
+            if (btnPrintLast) btnPrintLast.style.display = 'inline-flex';
+
             // نجاح: عرض شاشة التأكيد
             paymentViewNormal.style.display = 'none';
             paymentViewSuccess.style.display = 'block';
@@ -1794,6 +1834,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // تفريغ السلة في الذاكرة بدون حدث حذف
             clearCart(true);
+
+            // طباعة تلقائية بعد الحفظ — فشلها لا يوقف البيع
+            try {
+                triggerPrint(lastDocId, false);
+            } catch (e) {
+                showAlert('warn', 'الطباعة فشلت — اطبع تاني');
+            }
         })
         .catch(function (err) {
             // خطأ: لا يتم تفريغ السلة ويتم الاحتفاظ بـclient_uuid لإعادة المحاولة
@@ -1808,6 +1855,149 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('posBtnNewSale').addEventListener('click', function () {
         closeModal(modalPayment);
     });
+
+    // ==========================================
+    // الطباعة وطباعة آخر إيصال وفواتير الوردية (بريف ٢٤٤)
+    // ==========================================
+    let lastDocId = null;
+
+    function triggerPrint(docId, isReprint) {
+        if (!docId) return;
+        window.apiFetch('pos_api.php?part=print', {
+            method: 'POST',
+            body: {
+                device_uuid: deviceUuid,
+                doc_id: Number(docId),
+                reprint: !!isReprint
+            }
+        }).then(function (res) {
+            const data = res.data || {};
+            if (data.mode === 'browser' && data.url) {
+                printReceiptUrl(data.url);
+            } else if (data.mode === 'queue') {
+                showAlert('pos', 'تم إرسال الإيصال إلى طابور الطباعة.');
+            }
+        }).catch(function (err) {
+            showAlert('warn', 'الطباعة فشلت — اطبع تاني');
+        });
+    }
+
+    function printReceiptUrl(url) {
+        let iframe = document.getElementById('posPrintIframe');
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = 'posPrintIframe';
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            document.body.appendChild(iframe);
+        }
+        iframe.src = url;
+    }
+
+    const btnPrintReceipt = document.getElementById('posBtnPrintReceipt');
+    if (btnPrintReceipt) {
+        btnPrintReceipt.addEventListener('click', function () {
+            if (lastDocId) {
+                triggerPrint(lastDocId, true);
+            }
+        });
+    }
+
+    const btnPrintLast = document.getElementById('posBtnPrintLast');
+    if (btnPrintLast) {
+        btnPrintLast.addEventListener('click', function () {
+            if (lastDocId) {
+                triggerPrint(lastDocId, true);
+            }
+        });
+    }
+
+    // نافذة فواتير الوردية
+    const modalSessionInvoices = document.getElementById('posModalSessionInvoices');
+    const btnSessionInvoices = document.getElementById('posBtnSessionInvoices');
+    const sessionInvoicesBody = document.getElementById('posSessionInvoicesBody');
+    const sessionInvoicesEmpty = document.getElementById('posSessionInvoicesEmpty');
+    const sessionInvoicesAlert = document.getElementById('posSessionInvoicesAlert');
+
+    function openSessionInvoicesModal() {
+        if (!modalSessionInvoices) return;
+        sessionInvoicesAlert.innerHTML = '';
+        sessionInvoicesBody.innerHTML = '<tr><td colspan="6" style="text-align:center;">جاري التحميل...</td></tr>';
+        sessionInvoicesEmpty.innerHTML = '';
+        openModal(modalSessionInvoices);
+
+        window.apiFetch('pos_api.php?part=session_invoices&device_uuid=' + encodeURIComponent(deviceUuid))
+            .then(function (res) {
+                const docs = (res.data && res.data.docs) ? res.data.docs : [];
+                renderSessionInvoices(docs);
+            })
+            .catch(function (err) {
+                sessionInvoicesAlert.innerHTML = ui.alert('neg', err.message || 'تعذر تحميل فواتير الوردية.');
+                sessionInvoicesBody.innerHTML = '';
+            });
+    }
+
+    function renderSessionInvoices(docs) {
+        if (!docs.length) {
+            sessionInvoicesBody.innerHTML = '';
+            sessionInvoicesEmpty.innerHTML = ui.empty('مفيش فواتير مكتملة في الوردية الحالية');
+            return;
+        }
+        sessionInvoicesEmpty.innerHTML = '';
+        sessionInvoicesBody.innerHTML = docs.map(function (d) {
+            const isRet = d.doc_kind === 'return';
+            const typeBadge = isRet
+                ? '<span class="fchip fchip-warn">مرتجع</span>'
+                : '<span class="fchip fchip-pos">بيع</span>';
+            const timeStr = d.completed_at ? d.completed_at.slice(11, 16) : '--';
+            const reprints = Number(d.reprint_count || 0);
+            const reprintBadge = reprints > 0
+                ? '<span class="fchip fchip-mute" style="margin-right:4px;">' + reprints + ' نسخة</span>'
+                : '';
+            return '<tr data-doc-id="' + Number(d.id) + '">' +
+                '<td class="num" dir="ltr"><strong>' + ui.esc(d.receipt_no || '') + '</strong>' + reprintBadge + '</td>' +
+                '<td>' + typeBadge + '</td>' +
+                '<td>' + ui.esc(timeStr) + '</td>' +
+                '<td class="num">' + Number(d.net || 0).toFixed(2) + ' ج.م</td>' +
+                '<td>' + ui.esc(d.cashier_name || '') + '</td>' +
+                '<td><button type="button" class="btn btn-sm btn-outline pos-reprint-btn" data-doc-id="' + Number(d.id) + '">' +
+                    '<i class="ti ti-printer"></i> طباعة' +
+                '</button></td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    if (btnSessionInvoices) {
+        btnSessionInvoices.addEventListener('click', openSessionInvoicesModal);
+    }
+    const btnCloseSessionInvoices = document.getElementById('posBtnCloseSessionInvoices');
+    if (btnCloseSessionInvoices) {
+        btnCloseSessionInvoices.addEventListener('click', function () { closeModal(modalSessionInvoices); });
+    }
+    const btnCloseSessionInvoicesAction = document.getElementById('posBtnCloseSessionInvoicesAction');
+    if (btnCloseSessionInvoicesAction) {
+        btnCloseSessionInvoicesAction.addEventListener('click', function () { closeModal(modalSessionInvoices); });
+    }
+
+    if (sessionInvoicesBody) {
+        sessionInvoicesBody.addEventListener('click', function (e) {
+            const btn = e.target.closest('.pos-reprint-btn');
+            if (!btn) return;
+            const docId = Number(btn.getAttribute('data-doc-id'));
+            if (docId > 0) {
+                triggerPrint(docId, true);
+                btn.disabled = true;
+                setTimeout(function () {
+                    btn.disabled = false;
+                    openSessionInvoicesModal();
+                }, 800);
+            }
+        });
+    }
 
     // ==========================================
     // اعتماد المشرف (سقف الخصم · مرتجع متأخر · طريقة رد)
@@ -2525,12 +2715,21 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 })
                 .then(function (res) {
-                    showAlert('pos', 'تم حفظ المرتجع بنجاح! رقم الإيصال: ' + res.data.receipt_no + ' · صافي المرتجع: ' + Number(res.data.net).toFixed(2) + ' ج.م');
+                    const data = res.data || {};
+                    lastDocId = Number(data.doc_id || 0);
+                    const btnPrintLast = document.getElementById('posBtnPrintLast');
+                    if (btnPrintLast) btnPrintLast.style.display = 'inline-flex';
+                    showAlert('pos', 'تم حفظ المرتجع بنجاح! رقم الإيصال: ' + (data.receipt_no || '') + ' · صافي المرتجع: ' + Number(data.net || 0).toFixed(2) + ' ج.م');
                     returnDocInfoBox.style.display = 'none';
                     returnLayout.style.display = 'none';
                     returnDoc = null;
                     returnLines = [];
                     if (returnSearchInput) returnSearchInput.value = '';
+                    try {
+                        triggerPrint(lastDocId, false);
+                    } catch (e) {
+                        showAlert('warn', 'الطباعة فشلت — اطبع تاني');
+                    }
                 })
                 .catch(function (err) {
                     if (err.message && err.message.indexOf('١٤ يوم') !== -1) {
@@ -2750,10 +2949,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             })
             .then(function (res) {
-                showAlert('pos', 'تم تسجيل المرتجع العام بنجاح! رقم الإيصال: ' + res.data.receipt_no + ' · الصافي: ' + Number(res.data.net).toFixed(2) + ' ج.م');
+                const data = res.data || {};
+                lastDocId = Number(data.doc_id || 0);
+                const btnPrintLast = document.getElementById('posBtnPrintLast');
+                if (btnPrintLast) btnPrintLast.style.display = 'inline-flex';
+                showAlert('pos', 'تم تسجيل المرتجع العام بنجاح! رقم الإيصال: ' + (data.receipt_no || '') + ' · الصافي: ' + Number(data.net || 0).toFixed(2) + ' ج.م');
                 genCart = [];
                 if (genReasonInput) genReasonInput.value = '';
                 renderGenCart();
+                try {
+                    triggerPrint(lastDocId, false);
+                } catch (e) {
+                    showAlert('warn', 'الطباعة فشلت — اطبع تاني');
+                }
             })
             .catch(function (err) {
                 showAlert('neg', err.message || 'تعذر إتمام المرتجع العام.');
@@ -3107,7 +3315,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 })
                 .then(function (res) {
-                    showAlert('pos', 'تم الاستبدال بنجاح! إيصال المرتجع: ' + res.data.return_receipt_no + ' · إيصال البيع: ' + res.data.sale_receipt_no);
+                    const data = res.data || {};
+                    lastDocId = Number(data.sale_doc_id || data.return_doc_id || 0);
+                    const btnPrintLast = document.getElementById('posBtnPrintLast');
+                    if (btnPrintLast) btnPrintLast.style.display = 'inline-flex';
+                    showAlert('pos', 'تم الاستبدال بنجاح! إيصال المرتجع: ' + (data.return_receipt_no || '') + ' · إيصال البيع: ' + (data.sale_receipt_no || ''));
                     exchReturnDoc = null;
                     exchReturnLines = [];
                     exchSaleCart = [];
@@ -3116,6 +3328,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     renderExchReturnLines();
                     renderExchSaleCart();
                     computeExchangeTotals();
+                    try {
+                        triggerPrint(lastDocId, false);
+                    } catch (e) {
+                        showAlert('warn', 'الطباعة فشلت — اطبع تاني');
+                    }
                 })
                 .catch(function (err) {
                     if (err.message && err.message.indexOf('١٤ يوم') !== -1) {

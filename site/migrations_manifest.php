@@ -30,4 +30,5 @@ return [
     '20261027_020_customers',
     '20261027_021_pos_api',
     '20261027_023_custody_order_accounts',
+    '20261027_024_pos_print',
 ];

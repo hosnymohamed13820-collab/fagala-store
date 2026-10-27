@@ -2828,3 +2828,201 @@ function sale_exchange(PDO $pdo, array $input, array $user): array
         throw $e;
     }
 }
+
+/**
+ * بريف ٢٤٤: تجهيز payload موحد لإيصال البيع والمرتجع من الأرقام المحفوظة.
+ *
+ * @param int $docId معرّف المستند في sale_docs
+ * @param bool $forceReprint هل دي نسخة إعادة طباعة صريحة
+ * @param array|null $user المستخدم الحالي للتحقق من الصلاحيات (اختياري)
+ * @return array
+ */
+function sale_receipt_payload(int $docId, bool $forceReprint = false, ?array $user = null): array
+{
+    if ($docId <= 0) {
+        throw new SaleApiException('رقم الفاتورة غير صحيح.', 400, 'bad_request');
+    }
+    $pdo = db();
+
+    $stmt = $pdo->prepare('SELECT * FROM sale_docs WHERE id = ? LIMIT 1');
+    $stmt->execute([$docId]);
+    $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$doc) {
+        throw new SaleApiException('الفاتورة مش موجودة.', 404, 'not_found');
+    }
+
+    $currentUser = $user ?? (function_exists('current_user') ? current_user() : null);
+    if ($currentUser && !empty($currentUser['id'])) {
+        $isOwner = !empty($currentUser['is_owner']);
+        if ($user === null && function_exists('is_real_owner') && is_real_owner()) {
+            $isOwner = true;
+        }
+        if (!$isOwner && !empty($currentUser['branch_id']) && (int) $currentUser['branch_id'] !== (int) $doc['branch_id']) {
+            throw new SaleApiException('الفاتورة تابعة لفرع تاني.', 403, 'forbidden');
+        }
+    }
+
+    // بيانات الفرع
+    $branchStmt = $pdo->prepare('SELECT name, phone FROM branches WHERE id = ? LIMIT 1');
+    $branchStmt->execute([(int) $doc['branch_id']]);
+    $branchRow = $branchStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $branchName = (string) ($branchRow['name'] ?? '');
+    $branchPhone = (string) ($branchRow['phone'] ?? '');
+
+    // بيانات الجهاز
+    $devStmt = $pdo->prepare('SELECT name, code FROM sale_devices WHERE id = ? LIMIT 1');
+    $devStmt->execute([(int) $doc['device_id']]);
+    $devRow = $devStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $deviceName = (string) ($devRow['name'] ?? '');
+    $deviceCode = (string) ($devRow['code'] ?? '');
+
+    // بيانات الكاشير
+    $cashierStmt = $pdo->prepare('SELECT full_name FROM users WHERE id = ? LIMIT 1');
+    $cashierStmt->execute([(int) $doc['cashier_id']]);
+    $cashierName = (string) ($cashierStmt->fetchColumn() ?: '');
+
+    // بيانات العميل لو موجود
+    $customerName = '';
+    $customerPhone = '';
+    if (!empty($doc['customer_id'])) {
+        $custStmt = $pdo->prepare('SELECT name, phone FROM customers WHERE id = ? LIMIT 1');
+        $custStmt->execute([(int) $doc['customer_id']]);
+        if ($custRow = $custStmt->fetch(PDO::FETCH_ASSOC)) {
+            $customerName = (string) ($custRow['name'] ?? '');
+            $customerPhone = (string) ($custRow['phone'] ?? '');
+        }
+    }
+
+    // رقم الفاتورة الأصلية لو مرتجع
+    $refReceiptNo = '';
+    if (!empty($doc['ref_doc_id'])) {
+        $refStmt = $pdo->prepare('SELECT receipt_no FROM sale_docs WHERE id = ? LIMIT 1');
+        $refStmt->execute([(int) $doc['ref_doc_id']]);
+        $refReceiptNo = (string) ($refStmt->fetchColumn() ?: '');
+    }
+
+    // فحص أحداث إعادة الطباعة
+    $reprintStmt = $pdo->prepare("SELECT COUNT(*) FROM sale_events WHERE doc_id = ? AND event_type = 'receipt_reprint'");
+    $reprintStmt->execute([$docId]);
+    $reprintCount = (int) $reprintStmt->fetchColumn();
+    $isReprint = $forceReprint || ($reprintCount > 0);
+
+    // السطور من sale_lines
+    $linesStmt = $pdo->prepare(
+        "SELECT sl.id, sl.line_no, sl.item_id, sl.code, sl.unit_name, sl.unit_factor,
+                sl.qty, sl.qty_pieces, sl.unit_price, sl.line_discount, sl.net,
+                COALESCE(
+                    (SELECT COALESCE(ic.item_name, c.name)
+                       FROM hq_codes c
+                       LEFT JOIN hq_item_cats ic ON ic.item_id = c.item_id
+                      WHERE c.code = sl.code
+                      LIMIT 1),
+                    (SELECT m.name1
+                       FROM item_master_codes mc
+                       JOIN item_master m ON m.id = mc.item_master_id
+                      WHERE mc.code = sl.code
+                      LIMIT 1),
+                    sl.code
+                ) AS item_name
+           FROM sale_lines sl
+          WHERE sl.doc_id = ?
+          ORDER BY sl.line_no ASC"
+    );
+    $linesStmt->execute([$docId]);
+    $rawLines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $linesOut = [];
+    foreach ($rawLines as $l) {
+        $linesOut[] = [
+            'id'            => (int) $l['id'],
+            'line_no'       => (int) $l['line_no'],
+            'item_id'       => (int) $l['item_id'],
+            'name'          => (string) $l['item_name'],
+            'item_name'     => (string) $l['item_name'],
+            'code'          => (string) $l['code'],
+            'unit'          => (string) $l['unit_name'],
+            'unit_name'     => (string) $l['unit_name'],
+            'unit_factor'   => (float) $l['unit_factor'],
+            'qty'           => (float) $l['qty'],
+            'price'         => (float) $l['unit_price'],
+            'unit_price'    => (float) $l['unit_price'],
+            'discount'      => (float) $l['line_discount'],
+            'line_discount' => (float) $l['line_discount'],
+            'net'           => (float) $l['net'],
+        ];
+    }
+
+    // الدفعات من sale_payments
+    $payStmt = $pdo->prepare('SELECT method, amount, reference FROM sale_payments WHERE doc_id = ? ORDER BY id ASC');
+    $payStmt->execute([$docId]);
+    $rawPays = $payStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $methodNames = [
+        'cash'     => 'كاش',
+        'visa'     => 'فيزا',
+        'instapay' => 'إنستا باي',
+    ];
+
+    $paymentsOut = [];
+    foreach ($rawPays as $p) {
+        $m = (string) $p['method'];
+        $paymentsOut[] = [
+            'method'    => $m,
+            'name'      => $methodNames[$m] ?? $m,
+            'amount'    => (float) $p['amount'],
+            'reference' => (string) ($p['reference'] ?? ''),
+        ];
+    }
+
+    $rawCompletedAt = !empty($doc['completed_at']) ? (string) $doc['completed_at'] : (string) $doc['created_at'];
+    $ts = strtotime($rawCompletedAt) ?: time();
+    $dateStr = date('Y-m-d', $ts);
+    $timeStr = date('h:i', $ts) . (date('A', $ts) === 'AM' ? ' ص' : ' م');
+    $datetimeStr = $dateStr . ' ' . $timeStr;
+
+    $gross = (float) $doc['gross'];
+    $lineDiscount = (float) $doc['line_discount'];
+    $invoiceDiscount = (float) $doc['invoice_discount'];
+    $totalDiscount = round($lineDiscount + $invoiceDiscount, 2);
+    $net = (float) $doc['net'];
+    $paid = (float) $doc['paid'];
+    $changeDue = (float) $doc['change_due'];
+
+    return [
+        'v'                => 1,
+        'doc_id'           => (int) $doc['id'],
+        'doc_kind'         => (string) $doc['doc_kind'],
+        'is_return'        => $doc['doc_kind'] === 'return',
+        'status'           => (string) $doc['status'],
+        'receipt_no'       => (string) ($doc['receipt_no'] ?? ''),
+        'ref_doc_id'       => !empty($doc['ref_doc_id']) ? (int) $doc['ref_doc_id'] : null,
+        'ref_receipt_no'   => $refReceiptNo,
+        'branch_id'        => (int) $doc['branch_id'],
+        'branch_name'      => $branchName,
+        'branch_phone'     => $branchPhone,
+        'device_id'        => (int) $doc['device_id'],
+        'device_name'      => $deviceName,
+        'device_code'      => $deviceCode,
+        'cashier_id'       => (int) $doc['cashier_id'],
+        'cashier_name'     => $cashierName,
+        'customer_id'      => !empty($doc['customer_id']) ? (int) $doc['customer_id'] : null,
+        'customer_name'    => $customerName !== '' ? $customerName : null,
+        'customer_phone'   => $customerPhone !== '' ? $customerPhone : null,
+        'date'             => $dateStr,
+        'time'             => $timeStr,
+        'datetime'         => $datetimeStr,
+        'created_at'       => $rawCompletedAt,
+        'is_reprint'       => $isReprint,
+        'reprint_count'    => $reprintCount,
+        'lines'            => $linesOut,
+        'gross'            => $gross,
+        'line_discount'    => $lineDiscount,
+        'invoice_discount' => $invoiceDiscount,
+        'discount'         => $totalDiscount,
+        'net'              => $net,
+        'payments'         => $paymentsOut,
+        'paid'             => $paid,
+        'change'           => $changeDue,
+        'change_due'       => $changeDue,
+    ];
+}

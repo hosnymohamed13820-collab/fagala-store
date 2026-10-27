@@ -323,6 +323,292 @@ function Print-OneCopy($copy, [string]$targetPrinter, [string]$pdfFile) {
 }
 
 # =====================================================================
+#  دوال رسم وتخطيط إيصال البيع والمرتجع (بريف ٢٤٤)
+# =====================================================================
+function Render-SaleReceipt($g, $p, [bool]$isDraw) {
+    $fH1    = New-Object System.Drawing.Font("Tahoma", 12, [System.Drawing.FontStyle]::Bold)
+    $fH2    = New-Object System.Drawing.Font("Tahoma", 11, [System.Drawing.FontStyle]::Bold)
+    $fBig   = New-Object System.Drawing.Font("Tahoma", 11, [System.Drawing.FontStyle]::Bold)
+    $fBold  = New-Object System.Drawing.Font("Tahoma", 9,  [System.Drawing.FontStyle]::Bold)
+    $fNorm  = New-Object System.Drawing.Font("Tahoma", 9,  [System.Drawing.FontStyle]::Regular)
+    $fNote  = New-Object System.Drawing.Font("Tahoma", 8,  [System.Drawing.FontStyle]::Regular)
+    $fStamp = New-Object System.Drawing.Font("Tahoma", 14, [System.Drawing.FontStyle]::Bold)
+
+    $brush    = [System.Drawing.Brushes]::Black
+    $penSolid = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
+    $penDash  = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
+    $penDash.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+
+    $sfCenterRtl = New-Object System.Drawing.StringFormat
+    $sfCenterRtl.Alignment = [System.Drawing.StringAlignment]::Center
+    $sfCenterRtl.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+
+    $sfRightRtl = New-Object System.Drawing.StringFormat
+    $sfRightRtl.Alignment = [System.Drawing.StringAlignment]::Near
+    $sfRightRtl.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+
+    $sfLeftLtr = New-Object System.Drawing.StringFormat
+    $sfLeftLtr.Alignment = [System.Drawing.StringAlignment]::Near
+
+    $sfLeftRtl = New-Object System.Drawing.StringFormat
+    $sfLeftRtl.Alignment = [System.Drawing.StringAlignment]::Far
+    $sfLeftRtl.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+
+    [float]$y = 15.0
+
+    try {
+        # ختم نسخة إذا كانت إعادة طباعة
+        if ($p.is_reprint) {
+            $stampTxt = "نسخة"
+            $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+            $sz = $g.MeasureString($stampTxt, $fStamp, [int]$script:PrintWidth, $sfCenterRtl)
+            $rect.Height = $sz.Height
+            if ($isDraw) {
+                $boxX = $script:PrintableLeft + ($script:PrintWidth - $sz.Width) / 2 - 8
+                $boxW = $sz.Width + 16
+                $g.DrawRectangle($penSolid, $boxX, $y, $boxW, ($sz.Height + 2))
+                $g.DrawString($stampTxt, $fStamp, $brush, $rect, $sfCenterRtl)
+            }
+            $y += $sz.Height + 6
+        }
+
+        # اسم الفرع
+        $branchTxt = [string]$p.branch_name
+        if ($branchTxt -ne "") {
+            $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+            $sz = $g.MeasureString($branchTxt, $fH1, [int]$script:PrintWidth, $sfCenterRtl)
+            $rect.Height = $sz.Height
+            if ($isDraw) { $g.DrawString($branchTxt, $fH1, $brush, $rect, $sfCenterRtl) }
+            $y += $sz.Height + 3
+        }
+
+        # تليفون الفرع
+        $phoneTxt = [string]$p.branch_phone
+        if ($phoneTxt -ne "") {
+            $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+            $sz = $g.MeasureString($phoneTxt, $fNote, [int]$script:PrintWidth, $sfCenterRtl)
+            $rect.Height = $sz.Height
+            if ($isDraw) { $g.DrawString($phoneTxt, $fNote, $brush, $rect, $sfCenterRtl) }
+            $y += $sz.Height + 3
+        }
+
+        # نوع الإيصال (بيع / مرتجع)
+        $isReturn = [bool]$p.is_return
+        $titleTxt = if ($isReturn) { "إيصال مرتجع" } else { "إيصال بيع" }
+        $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+        $sz = $g.MeasureString($titleTxt, $fH2, [int]$script:PrintWidth, $sfCenterRtl)
+        $rect.Height = $sz.Height
+        if ($isDraw) { $g.DrawString($titleTxt, $fH2, $brush, $rect, $sfCenterRtl) }
+        $y += $sz.Height + 3
+
+        # لو مرتجع: رقم الفاتورة الأصلية
+        if ($isReturn -and [string]$p.ref_receipt_no -ne "") {
+            $refTxt = "فاتورة أصلية: " + [string]$p.ref_receipt_no
+            $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+            $sz = $g.MeasureString($refTxt, $fNote, [int]$script:PrintWidth, $sfCenterRtl)
+            $rect.Height = $sz.Height
+            if ($isDraw) { $g.DrawString($refTxt, $fNote, $brush, $rect, $sfCenterRtl) }
+            $y += $sz.Height + 3
+        }
+
+        # خط مزدوج
+        if ($isDraw) {
+            $g.DrawLine($penSolid, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+            $g.DrawLine($penSolid, $script:PrintableLeft, ($y + 3), $script:PrintableRight, ($y + 3))
+        }
+        $y += 8
+
+        $script:tmpY = $y
+        $DrawKV = {
+            param($k, $v, [bool]$ltr = $false)
+            if ([string]::IsNullOrWhiteSpace($v)) { return }
+            $valWidth = 120
+            $keyWidth = $script:PrintWidth - $valWidth
+            $valRect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $script:tmpY, $valWidth, 100)
+            $keyRect = New-Object System.Drawing.RectangleF(($script:PrintableLeft + $valWidth), $script:tmpY, $keyWidth, 100)
+            $szK = $g.MeasureString($k, $fNorm, [int]$keyWidth, $sfRightRtl)
+            $vSf = if ($ltr) { $sfLeftLtr } else { $sfLeftRtl }
+            $szV = $g.MeasureString($v, $fNorm, [int]$valWidth, $vSf)
+            $rowH = [Math]::Max($szK.Height, $szV.Height)
+            $valRect.Height = $rowH
+            $keyRect.Height = $rowH
+            if ($isDraw) {
+                $g.DrawString($k, $fNorm, $brush, $keyRect, $sfRightRtl)
+                $g.DrawString($v, $fNorm, $brush, $valRect, $vSf)
+            }
+            $script:tmpY += $rowH + 2
+        }
+
+        & $DrawKV "رقم الإيصال" ([string]$p.receipt_no) $true
+        & $DrawKV "التاريخ والوقت" ("$([string]$p.date) $([string]$p.time)") $false
+        & $DrawKV "الجهاز" ([string]$p.device_name) $false
+        & $DrawKV "الكاشير" ([string]$p.cashier_name) $false
+        if ([string]$p.customer_name -ne "") {
+            & $DrawKV "العميل" ([string]$p.customer_name) $false
+        }
+        $y = $script:tmpY
+
+        # خط مفرد
+        if ($isDraw) {
+            $g.DrawLine($penSolid, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+        }
+        $y += 6
+
+        # ترويسة الأصناف
+        if ($isDraw) {
+            $g.DrawString("الصنف", $fBold, $brush, (New-Object System.Drawing.RectangleF(($script:PrintableLeft + 70), $y, ($script:PrintWidth - 70), 20)), $sfRightRtl)
+            $g.DrawString("الصافي", $fBold, $brush, (New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, 65, 20)), $sfLeftLtr)
+        }
+        $y += 18
+
+        # خط منقط
+        if ($isDraw) {
+            $g.DrawLine($penDash, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+        }
+        $y += 6
+
+        # السطور
+        foreach ($line in $p.lines) {
+            $nameTxt = [string]$line.name
+            $szN = $g.MeasureString($nameTxt, $fNorm, [int]$script:PrintWidth, $sfRightRtl)
+            if ($isDraw) {
+                $g.DrawString($nameTxt, $fNorm, $brush, (New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, $szN.Height)), $sfRightRtl)
+            }
+            $y += $szN.Height + 1
+
+            $qtyVal = [double]$line.qty
+            $qtyStr = if ($qtyVal -eq [Math]::Floor($qtyVal)) { $qtyVal.ToString("0") } else { $qtyVal.ToString("0.00") }
+            $calcTxt = "$qtyStr $([string]$line.unit) × $([double]$line.price)"
+            if ([double]$line.discount -gt 0) {
+                $calcTxt += " (خصم $([double]$line.discount))"
+            }
+            $netTxt = ([double]$line.net).ToString("0.00")
+
+            $calcRect = New-Object System.Drawing.RectangleF(($script:PrintableLeft + 70), $y, ($script:PrintWidth - 70), 20)
+            $netRect  = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, 65, 20)
+            if ($isDraw) {
+                $g.DrawString($calcTxt, $fNote, $brush, $calcRect, $sfRightRtl)
+                $g.DrawString($netTxt, $fBold, $brush, $netRect, $sfLeftLtr)
+            }
+            $y += 18
+        }
+
+        # خط مزدوج
+        if ($isDraw) {
+            $g.DrawLine($penSolid, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+            $g.DrawLine($penSolid, $script:PrintableLeft, ($y + 3), $script:PrintableRight, ($y + 3))
+        }
+        $y += 8
+
+        # الإجماليات
+        $script:tmpY = $y
+        $DrawTotal = {
+            param($k, $v, [bool]$isBig = $false)
+            $font = if ($isBig) { $fBig } else { $fNorm }
+            $valWidth = 90
+            $keyWidth = $script:PrintWidth - $valWidth
+            $valRect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $script:tmpY, $valWidth, 30)
+            $keyRect = New-Object System.Drawing.RectangleF(($script:PrintableLeft + $valWidth), $script:tmpY, $keyWidth, 30)
+            $sz = $g.MeasureString($k, $font, [int]$keyWidth, $sfRightRtl)
+            $rowH = $sz.Height
+            $valRect.Height = $rowH
+            $keyRect.Height = $rowH
+            if ($isDraw) {
+                $g.DrawString($k, $font, $brush, $keyRect, $sfRightRtl)
+                $g.DrawString($v, $font, $brush, $valRect, $sfLeftLtr)
+            }
+            $script:tmpY += $rowH + 2
+        }
+
+        & $DrawTotal "الإجمالي:" (([double]$p.gross).ToString("0.00")) $false
+        if ([double]$p.discount -gt 0) {
+            & $DrawTotal "الخصم:" (([double]$p.discount).ToString("0.00")) $false
+        }
+        & $DrawTotal "الصافي:" ("$(([double]$p.net).ToString('0.00')) ج.م") $true
+        $y = $script:tmpY
+
+        # خط مفرد
+        if ($isDraw) {
+            $g.DrawLine($penSolid, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+        }
+        $y += 6
+
+        # الدفعات والباقي
+        $script:tmpY = $y
+        foreach ($pay in $p.payments) {
+            $mLabel = if ([string]$pay.name -ne "") { [string]$pay.name } else { [string]$pay.method }
+            & $DrawTotal "دفع ${mLabel}:" (([double]$pay.amount).ToString("0.00")) $false
+        }
+        & $DrawTotal "المدفوع:" (([double]$p.paid).ToString("0.00")) $false
+        & $DrawTotal "الباقي:" (([double]$p.change_due).ToString("0.00")) $false
+        $y = $script:tmpY
+
+        # خط منقط
+        if ($isDraw) {
+            $g.DrawLine($penDash, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+        }
+        $y += 6
+
+        # سطر الختام
+        $noteTxt = "شكراً لتعاملكم معنا"
+        $rect = New-Object System.Drawing.RectangleF($script:PrintableLeft, $y, $script:PrintWidth, 1000)
+        $sz = $g.MeasureString($noteTxt, $fNote, [int]$script:PrintWidth, $sfCenterRtl)
+        $rect.Height = $sz.Height
+        if ($isDraw) { $g.DrawString($noteTxt, $fNote, $brush, $rect, $sfCenterRtl) }
+        $y += $sz.Height + 6
+
+        # مسافة قبل القص
+        $y += 60
+        return $y
+
+    } finally {
+        $fH1.Dispose(); $fH2.Dispose(); $fBig.Dispose(); $fBold.Dispose(); $fNorm.Dispose(); $fNote.Dispose(); $fStamp.Dispose()
+        $penSolid.Dispose(); $penDash.Dispose()
+        $sfCenterRtl.Dispose(); $sfRightRtl.Dispose(); $sfLeftLtr.Dispose(); $sfLeftRtl.Dispose()
+    }
+}
+
+function Print-SaleReceipt($payload, [string]$targetPrinter, [string]$pdfFile) {
+    if (-not $payload) {
+        throw "بيانات الإيصال غير صالحة"
+    }
+
+    $doc = New-Object System.Drawing.Printing.PrintDocument
+    $doc.PrinterSettings.PrinterName = $targetPrinter
+
+    $isPdf = ($targetPrinter -like "*PDF*" -or $pdfFile -ne "")
+    if (-not $isPdf -and -not $doc.PrinterSettings.IsValid) {
+        $doc.Dispose()
+        throw "الطابعة '$targetPrinter' غير معرّفة أو غير متصلة بالنظام"
+    }
+
+    try {
+        $measG = $doc.PrinterSettings.CreateMeasurementGraphics()
+        $h = Render-SaleReceipt $measG $payload $false
+        $measG.Dispose()
+
+        $paperHeight = [int][Math]::Ceiling($h)
+        $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize("Receipt", $script:PaperWidth, $paperHeight)
+
+        if ($pdfFile -ne "") {
+            $doc.PrinterSettings.PrintToFile = $true
+            $doc.PrinterSettings.PrintFileName = $pdfFile
+        }
+
+        $script:currentSalePayload = $payload
+        $doc.add_PrintPage({
+            param($sender, $e)
+            Render-SaleReceipt $e.Graphics $script:currentSalePayload $true | Out-Null
+            $e.HasMorePages = $false
+        })
+
+        $doc.Print()
+    } finally {
+        $doc.Dispose()
+    }
+}
+
+# =====================================================================
 #  وضع الاختبار المحلي (-TestFile)
 # =====================================================================
 if ($TestFile -ne "") {
@@ -355,7 +641,11 @@ if ($TestFile -ne "") {
     $chkDoc.Dispose()
 
     try {
-        Print-Receipt $payloadData $actualPrinter $pdfTarget
+        if ($payloadData.kind -eq 'sale_receipt' -or $payloadData.receipt_no) {
+            Print-SaleReceipt $payloadData $actualPrinter $pdfTarget
+        } else {
+            Print-Receipt $payloadData $actualPrinter $pdfTarget
+        }
         Write-Host "SUCCESS: Receipt printed successfully." -ForegroundColor Green
         if ($pdfTarget -ne "" -and (Test-Path $pdfTarget)) {
             Write-Host "PDF size: $((Get-Item $pdfTarget).Length) bytes" -ForegroundColor Green
@@ -440,7 +730,11 @@ while ($true) {
                 Log "job #$jobId received ($($job.kind))"
 
                 try {
-                    Print-Receipt $job.payload $PrinterName ""
+                    if ($job.kind -eq 'sale_receipt') {
+                        Print-SaleReceipt $job.payload $PrinterName ""
+                    } else {
+                        Print-Receipt $job.payload $PrinterName ""
+                    }
                     $doneList += $jobId
                     $lastPrint = Get-Date
                     Write-Host ("    ✓ Printed successfully: #$jobId") -ForegroundColor Green

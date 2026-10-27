@@ -1,0 +1,426 @@
+<?php
+/**
+ * pos_receipt.php — صفحة إيصال نقطة البيع بعرض ٨٠ مم للطباعة المباشرة.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . '/auth.php';
+require_login();
+if (!can('pos:sell')) {
+    http_response_code(403);
+    exit('مالكش صلاحية نقطة البيع.');
+}
+
+require_once __DIR__ . '/sale_lib.php';
+
+$docId = (int) ($_GET['id'] ?? 0);
+$forceReprint = !empty($_GET['reprint']);
+
+try {
+    $payload = sale_receipt_payload($docId, $forceReprint);
+} catch (SaleApiException $e) {
+    http_response_code($e->http);
+    exit(htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+} catch (Throwable $e) {
+    http_response_code(400);
+    exit('طلب غير صالح.');
+}
+
+if (!is_real_owner() && !empty(current_user()['branch_id']) && (int) current_user()['branch_id'] !== (int) $payload['branch_id']) {
+    http_response_code(403);
+    exit('الفاتورة تابعة لفرع تاني.');
+}
+
+$isReprint = !empty($payload['is_reprint']);
+$isReturn = !empty($payload['is_return']);
+$branchName = (string) ($payload['branch_name'] ?? '');
+$branchPhone = (string) ($payload['branch_phone'] ?? '');
+$receiptNo = (string) ($payload['receipt_no'] ?? '');
+$refReceiptNo = (string) ($payload['ref_receipt_no'] ?? '');
+$dateStr = (string) ($payload['date'] ?? '');
+$timeStr = (string) ($payload['time'] ?? '');
+$deviceName = (string) ($payload['device_name'] ?? ($payload['device_code'] ?? ''));
+$cashierName = (string) ($payload['cashier_name'] ?? '');
+$customerName = (string) ($payload['customer_name'] ?? '');
+$lines = (array) ($payload['lines'] ?? []);
+$payments = (array) ($payload['payments'] ?? []);
+$gross = (float) ($payload['gross'] ?? 0.0);
+$discount = (float) ($payload['discount'] ?? 0.0);
+$net = (float) ($payload['net'] ?? 0.0);
+$paid = (float) ($payload['paid'] ?? 0.0);
+$changeDue = (float) ($payload['change_due'] ?? 0.0);
+?>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>try{const t=localStorage.getItem('fagala-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+    <title>إيصال <?= htmlspecialchars($receiptNo, ENT_QUOTES, 'UTF-8') ?></title>
+    <link rel="stylesheet" href="assets/fagala.css">
+    <style>
+        @page {
+            size: 80mm auto;
+            margin: 0;
+        }
+
+        body {
+            margin: 0;
+            padding: var(--sp-3) 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: Tahoma, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: var(--fs-sm);
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .receipt-sheet {
+            width: 80mm;
+            max-width: 80mm;
+            box-sizing: border-box;
+            background: var(--bg-surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 14px 12px;
+            margin: 0 auto;
+        }
+
+        .receipt-header {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .receipt-branch {
+            font-size: var(--fs-lg);
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .receipt-phone {
+            font-size: var(--fs-xs);
+            color: var(--muted);
+            margin-bottom: 4px;
+            direction: ltr;
+        }
+
+        .receipt-badge-reprint {
+            display: inline-block;
+            border: 2px solid var(--neg);
+            color: var(--neg);
+            font-weight: 700;
+            font-size: var(--fs-md);
+            padding: 1px 10px;
+            border-radius: 4px;
+            margin: 4px 0;
+            letter-spacing: 2px;
+        }
+
+        .receipt-title {
+            font-size: var(--fs-md);
+            font-weight: 700;
+            margin: 4px 0 2px;
+        }
+
+        .receipt-ref-no {
+            font-size: var(--fs-xs);
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .receipt-divider-double {
+            border-top: 3px double var(--line);
+            margin: 8px 0;
+        }
+
+        .receipt-divider-solid {
+            border-top: 1px solid var(--line);
+            margin: 6px 0;
+        }
+
+        .receipt-divider-dash {
+            border-top: 1px dashed var(--line);
+            margin: 6px 0;
+        }
+
+        .receipt-meta {
+            width: 100%;
+            font-size: var(--fs-xs);
+            margin-bottom: 4px;
+        }
+
+        .receipt-meta-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
+
+        .receipt-meta-label {
+            color: var(--muted);
+        }
+
+        .receipt-meta-val {
+            font-weight: 600;
+        }
+
+        .receipt-items {
+            width: 100%;
+            margin: 4px 0;
+        }
+
+        .receipt-item-row {
+            margin-bottom: 6px;
+        }
+
+        .receipt-item-name {
+            font-weight: 600;
+            font-size: var(--fs-sm);
+            word-break: break-word;
+        }
+
+        .receipt-item-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: var(--fs-xs);
+            color: var(--text);
+            margin-top: 1px;
+        }
+
+        .receipt-item-calc {
+            color: var(--muted);
+        }
+
+        .receipt-item-net {
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .receipt-totals {
+            width: 100%;
+            margin: 4px 0;
+        }
+
+        .receipt-total-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: var(--fs-sm);
+            margin-bottom: 2px;
+        }
+
+        .receipt-total-row.is-net {
+            font-size: var(--fs-lg);
+            font-weight: 700;
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 1px solid var(--line);
+        }
+
+        .receipt-payments {
+            width: 100%;
+            font-size: var(--fs-xs);
+            margin: 4px 0;
+        }
+
+        .receipt-footer {
+            text-align: center;
+            font-size: var(--fs-xs);
+            color: var(--muted);
+            margin-top: 10px;
+        }
+
+        .receipt-actions {
+            margin: 12px auto 0;
+            display: flex;
+            justify-content: center;
+            gap: var(--sp-2);
+        }
+
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                width: 80mm !important;
+            }
+
+            .receipt-sheet {
+                width: 80mm !important;
+                max-width: 80mm !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                padding: 4mm 3mm !important;
+                background: white !important;
+                color: black !important;
+            }
+
+            .receipt-phone,
+            .receipt-ref-no,
+            .receipt-meta-label,
+            .receipt-item-calc,
+            .receipt-footer {
+                color: black !important;
+            }
+
+            .receipt-badge-reprint {
+                border-color: black !important;
+                color: black !important;
+            }
+
+            .receipt-divider-double {
+                border-top-color: black !important;
+            }
+
+            .receipt-divider-solid {
+                border-top-color: black !important;
+            }
+
+            .receipt-divider-dash {
+                border-top-color: black !important;
+            }
+
+            .receipt-total-row.is-net {
+                border-top-color: black !important;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt-sheet fcard">
+        <div class="receipt-header">
+            <?php if ($isReprint): ?>
+                <div><span class="receipt-badge-reprint">نسخة</span></div>
+            <?php endif; ?>
+
+            <div class="receipt-branch"><?= htmlspecialchars($branchName, ENT_QUOTES, 'UTF-8') ?></div>
+            <?php if ($branchPhone !== ''): ?>
+                <div class="receipt-phone"><?= htmlspecialchars($branchPhone, ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif; ?>
+
+            <div class="receipt-title"><?= $isReturn ? 'إيصال مرتجع' : 'إيصال بيع' ?></div>
+            <?php if ($isReturn && $refReceiptNo !== ''): ?>
+                <div class="receipt-ref-no">فاتورة أصلية: <?= htmlspecialchars($refReceiptNo, ENT_QUOTES, 'UTF-8') ?></div>
+            <?php endif; ?>
+        </div>
+
+        <div class="receipt-divider-double"></div>
+
+        <div class="receipt-meta">
+            <div class="receipt-meta-row">
+                <span class="receipt-meta-label">رقم الإيصال:</span>
+                <span class="receipt-meta-val" dir="ltr"><?= htmlspecialchars($receiptNo, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="receipt-meta-row">
+                <span class="receipt-meta-label">التاريخ والوقت:</span>
+                <span class="receipt-meta-val"><?= htmlspecialchars($dateStr . ' ' . $timeStr, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="receipt-meta-row">
+                <span class="receipt-meta-label">الجهاز:</span>
+                <span class="receipt-meta-val"><?= htmlspecialchars($deviceName, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <div class="receipt-meta-row">
+                <span class="receipt-meta-label">الكاشير:</span>
+                <span class="receipt-meta-val"><?= htmlspecialchars($cashierName, ENT_QUOTES, 'UTF-8') ?></span>
+            </div>
+            <?php if ($customerName !== ''): ?>
+                <div class="receipt-meta-row">
+                    <span class="receipt-meta-label">العميل:</span>
+                    <span class="receipt-meta-val"><?= htmlspecialchars($customerName, ENT_QUOTES, 'UTF-8') ?></span>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="receipt-divider-solid"></div>
+
+        <div class="receipt-items">
+            <?php foreach ($lines as $line): ?>
+                <div class="receipt-item-row">
+                    <div class="receipt-item-name"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></div>
+                    <div class="receipt-item-details">
+                        <span class="receipt-item-calc">
+                            <?= rtrim(rtrim(number_format((float) ($line['qty'] ?? 0), 2, '.', ''), '0'), '.') ?>
+                            <?= htmlspecialchars($line['unit'] ?? '', ENT_QUOTES, 'UTF-8') ?>
+                            × <?= number_format((float) ($line['price'] ?? 0), 2) ?>
+                            <?php if (!empty($line['discount']) && (float) $line['discount'] > 0): ?>
+                                (خصم <?= number_format((float) $line['discount'], 2) ?>)
+                            <?php endif; ?>
+                        </span>
+                        <span class="receipt-item-net"><?= number_format((float) ($line['net'] ?? 0), 2) ?></span>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
+        <div class="receipt-divider-double"></div>
+
+        <div class="receipt-totals">
+            <div class="receipt-total-row">
+                <span>الإجمالي:</span>
+                <span dir="ltr"><?= number_format($gross, 2) ?></span>
+            </div>
+            <?php if ($discount > 0): ?>
+                <div class="receipt-total-row">
+                    <span>الخصم:</span>
+                    <span dir="ltr"><?= number_format($discount, 2) ?></span>
+                </div>
+            <?php endif; ?>
+            <div class="receipt-total-row is-net">
+                <span>الصافي:</span>
+                <span dir="ltr"><?= number_format($net, 2) ?> ج.م</span>
+            </div>
+        </div>
+
+        <div class="receipt-divider-solid"></div>
+
+        <div class="receipt-payments">
+            <?php foreach ($payments as $p): ?>
+                <div class="receipt-total-row">
+                    <span>دفع <?= htmlspecialchars($p['name'] ?? $p['method'], ENT_QUOTES, 'UTF-8') ?>:</span>
+                    <span dir="ltr"><?= number_format((float) ($p['amount'] ?? 0), 2) ?></span>
+                </div>
+            <?php endforeach; ?>
+            <div class="receipt-total-row">
+                <span>المدفوع:</span>
+                <span dir="ltr"><?= number_format($paid, 2) ?></span>
+            </div>
+            <div class="receipt-total-row">
+                <span>الباقي:</span>
+                <span dir="ltr"><?= number_format($changeDue, 2) ?></span>
+            </div>
+        </div>
+
+        <div class="receipt-divider-dash"></div>
+
+        <div class="receipt-footer">
+            <div>شكراً لتعاملكم معنا</div>
+        </div>
+    </div>
+
+    <div class="receipt-actions no-print">
+        <button type="button" class="btn btn-primary" onclick="window.print()">
+            <i class="ti ti-printer"></i> طباعة
+        </button>
+        <button type="button" class="btn btn-outline" onclick="window.close()">
+            إغلاق
+        </button>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has('noprint') && window.location.protocol !== 'file:') {
+            setTimeout(function () {
+                window.print();
+            }, 300);
+        }
+    });
+    </script>
+</body>
+</html>

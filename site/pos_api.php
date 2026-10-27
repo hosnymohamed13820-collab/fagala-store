@@ -28,6 +28,9 @@ $contracts = [
     'return_ref'     => ['POST', 'pos:return_ref'],
     'return_general' => ['POST', 'pos:return_general'],
     'exchange'       => ['POST', ['pos:return_ref', 'pos:sell']],
+    // بريف ٢٤٤: الطباعة وإعادة الطباعة
+    'print'            => ['POST', 'pos:sell'],
+    'session_invoices' => ['GET',  'pos:sell'],
 ];
 if (!isset($contracts[$part])) {
     api_fail('جزء غير معروف', 400, 'bad_request');
@@ -120,6 +123,102 @@ try {
             api_ok(sale_return_general($pdo, $in, $user));
         case 'exchange':
             api_ok(sale_exchange($pdo, $in, $user));
+        case 'print':
+            $deviceUuid = (string) ($in['device_uuid'] ?? '');
+            $device = sale_device($pdo, $deviceUuid, $user);
+            $docId = (int) ($in['doc_id'] ?? 0);
+            $reprint = !empty($in['reprint']);
+
+            if ($docId <= 0) {
+                throw new SaleApiException('معرّف الفاتورة غير صحيح.', 400, 'bad_request');
+            }
+
+            $docStmt = $pdo->prepare('SELECT id, branch_id, device_id, session_id, receipt_no, status, doc_kind FROM sale_docs WHERE id = ? LIMIT 1');
+            $docStmt->execute([$docId]);
+            $doc = $docStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$doc) {
+                throw new SaleApiException('الفاتورة مش موجودة.', 404, 'not_found');
+            }
+            if ($doc['status'] !== 'completed') {
+                throw new SaleApiException('الفاتورة لسه مش مكتملة.', 409, 'locked');
+            }
+            $isOwner = !empty($user['is_owner']) || (function_exists('is_real_owner') && is_real_owner());
+            if (!$isOwner && (int) $doc['branch_id'] !== (int) $device['branch_id']) {
+                throw new SaleApiException('الفاتورة تابعة لفرع تاني.', 403, 'forbidden');
+            }
+
+            if ($reprint) {
+                $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM sale_events WHERE doc_id = ? AND event_type = 'receipt_reprint'");
+                $cntStmt->execute([$docId]);
+                $reprintNo = ((int) $cntStmt->fetchColumn()) + 1;
+
+                sale_events_insert($pdo, [[
+                    'branch_id'   => (int) $device['branch_id'],
+                    'device_id'   => (int) $device['id'],
+                    'session_id'  => !empty($doc['session_id']) ? (int) $doc['session_id'] : null,
+                    'user_id'     => (int) $user['id'],
+                    'doc_id'      => $docId,
+                    'event_type'  => 'receipt_reprint',
+                    'payload'     => [
+                        'reprint_no'  => $reprintNo,
+                        'receipt_no'  => (string) $doc['receipt_no'],
+                        'device_uuid' => $deviceUuid,
+                    ],
+                    'approved_by' => null,
+                ]]);
+            }
+
+            $printMode = (string) ($device['print_mode'] ?? 'browser');
+            if ($printMode === 'queue') {
+                $payload = sale_receipt_payload($docId, $reprint, $user);
+                $st = $pdo->prepare(
+                    'INSERT INTO print_queue (branch_id, kind, ref_id, payload, created_by)
+                     VALUES (?, ?, ?, ?, ?)'
+                );
+                $st->execute([
+                    (int) $device['branch_id'],
+                    'sale_receipt',
+                    $docId,
+                    json_encode($payload, JSON_UNESCAPED_UNICODE),
+                    (int) $user['id'],
+                ]);
+                $jobId = (int) $pdo->lastInsertId();
+                api_ok([
+                    'mode'    => 'queue',
+                    'job_id'  => $jobId,
+                    'reprint' => $reprint,
+                ]);
+            } else {
+                $url = 'pos_receipt.php?id=' . $docId . ($reprint ? '&reprint=1' : '');
+                api_ok([
+                    'mode'    => 'browser',
+                    'url'     => $url,
+                    'reprint' => $reprint,
+                ]);
+            }
+
+        case 'session_invoices':
+            $deviceUuid = (string) ($in['device_uuid'] ?? '');
+            $device = sale_device($pdo, $deviceUuid, $user);
+            $session = sale_open_session($pdo, (int) $device['id']);
+            if (!$session) {
+                api_ok(['docs' => []]);
+            }
+            $st = $pdo->prepare(
+                "SELECT d.id, d.doc_kind, d.receipt_no, d.gross, d.line_discount, d.invoice_discount,
+                        d.net, d.paid, d.change_due, d.completed_at,
+                        u.full_name AS cashier_name,
+                        c.name AS customer_name,
+                        (SELECT COUNT(*) FROM sale_events WHERE doc_id = d.id AND event_type = 'receipt_reprint') AS reprint_count
+                   FROM sale_docs d
+                   JOIN users u ON u.id = d.cashier_id
+                   LEFT JOIN customers c ON c.id = d.customer_id
+                  WHERE d.session_id = ? AND d.status = 'completed'
+                  ORDER BY d.id DESC
+                  LIMIT 50"
+            );
+            $st->execute([(int) $session['id']]);
+            api_ok(['docs' => $st->fetchAll(PDO::FETCH_ASSOC)]);
     }
 } catch (SaleApiException $e) {
     api_fail($e->getMessage(), $e->http, $e->apiCode);

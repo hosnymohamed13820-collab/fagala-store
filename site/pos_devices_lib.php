@@ -56,6 +56,7 @@ function posdev_list(PDO $pdo, int $branchId): array
     posdev_require_branch($pdo, $branchId);
     $st = $pdo->prepare(
         'SELECT d.id, d.branch_id, d.name, d.device_uuid, d.code, d.is_active,
+                d.print_mode,
                 d.last_seen_at, d.created_at, u.full_name AS created_by_name
            FROM sale_devices d
            LEFT JOIN users u ON u.id = d.created_by
@@ -69,7 +70,7 @@ function posdev_list(PDO $pdo, int $branchId): array
 /**
  * إضافة جهاز جديد وتوليد UUID على السيرفر.
  */
-function posdev_add(PDO $pdo, int $branchId, string $name, string $code, int $uid): array
+function posdev_add(PDO $pdo, int $branchId, string $name, string $code, int $uid, string $printMode = 'browser'): array
 {
     posdev_require_branch($pdo, $branchId);
     $name = trim($name);
@@ -77,15 +78,16 @@ function posdev_add(PDO $pdo, int $branchId, string $name, string $code, int $ui
         throw new InvalidArgumentException('اسم الجهاز مطلوب وبحد أقصى ١٢٠ حرف.');
     }
     $code = posdev_clean_code($code);
+    $printMode = in_array($printMode, ['browser', 'queue'], true) ? $printMode : 'browser';
     $uuid = bin2hex(random_bytes(16));
 
     try {
         $st = $pdo->prepare(
             'INSERT INTO sale_devices
-                (branch_id, name, device_uuid, code, is_active, created_by, created_at)
-             VALUES (?, ?, ?, ?, 1, ?, NOW())'
+                (branch_id, name, device_uuid, code, is_active, print_mode, created_by, created_at)
+             VALUES (?, ?, ?, ?, 1, ?, ?, NOW())'
         );
-        $st->execute([$branchId, $name, $uuid, $code, $uid]);
+        $st->execute([$branchId, $name, $uuid, $code, $printMode, $uid]);
     } catch (PDOException $e) {
         if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
             throw new DomainException('كود الجهاز مستخدم قبل كده في الفرع ده.');
@@ -102,7 +104,7 @@ function posdev_add(PDO $pdo, int $branchId, string $name, string $code, int $ui
 /**
  * تعديل بيانات جهاز موجود من غير حذف أو تغيير UUID.
  */
-function posdev_update(PDO $pdo, int $deviceId, int $branchId, string $name, string $code, bool $isActive): void
+function posdev_update(PDO $pdo, int $deviceId, int $branchId, string $name, string $code, bool $isActive, string $printMode = 'browser'): void
 {
     posdev_require_branch($pdo, $branchId);
     $name = trim($name);
@@ -110,14 +112,15 @@ function posdev_update(PDO $pdo, int $deviceId, int $branchId, string $name, str
         throw new InvalidArgumentException('بيانات الجهاز مش كاملة.');
     }
     $code = posdev_clean_code($code);
+    $printMode = in_array($printMode, ['browser', 'queue'], true) ? $printMode : 'browser';
 
     try {
         $st = $pdo->prepare(
             'UPDATE sale_devices
-                SET name = ?, code = ?, is_active = ?
+                SET name = ?, code = ?, is_active = ?, print_mode = ?
               WHERE id = ? AND branch_id = ?'
         );
-        $st->execute([$name, $code, $isActive ? 1 : 0, $deviceId, $branchId]);
+        $st->execute([$name, $code, $isActive ? 1 : 0, $printMode, $deviceId, $branchId]);
     } catch (PDOException $e) {
         if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
             throw new DomainException('كود الجهاز مستخدم قبل كده في الفرع ده.');

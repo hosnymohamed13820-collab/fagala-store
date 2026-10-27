@@ -39,6 +39,7 @@ require_once __DIR__ . '/includes/header.php';
                     <th>اسم الجهاز</th>
                     <th>الكود</th>
                     <th>معرّف الجهاز</th>
+                    <th>وضع الطباعة</th>
                     <th>آخر ظهور</th>
                     <th>الحالة</th>
                 </tr>
@@ -88,10 +89,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function render(rows) {
         body.innerHTML = rows.map(function (d) {
             const state = Number(d.is_active) === 1 ? '1' : '0';
+            const printMode = d.print_mode === 'queue' ? 'queue' : 'browser';
             return '<tr data-id="' + Number(d.id) + '" data-branch="' + Number(d.branch_id) + '">' +
                 '<td><input class="finput" name="name" value="' + ui.esc(d.name) + '" maxlength="120" data-field="name"></td>' +
                 '<td><input class="finput" name="code" value="' + ui.esc(d.code) + '" maxlength="12" dir="ltr" data-field="code"></td>' +
                 '<td class="num">' + ui.esc(d.device_uuid) + '</td>' +
+                '<td><select class="fselect" name="print_mode" data-field="print_mode">' +
+                    '<option value="browser"' + (printMode === 'browser' ? ' selected' : '') + '>مباشر من المتصفح</option>' +
+                    '<option value="queue"' + (printMode === 'queue' ? ' selected' : '') + '>طابور الوكيل</option>' +
+                '</select></td>' +
                 '<td>' + ui.esc(d.last_seen_at || 'لسه ماظهرش') + '</td>' +
                 '<td><select class="fselect" name="is_active" data-field="is_active">' +
                     '<option value="1"' + (state === '1' ? ' selected' : '') + '>مفعّل</option>' +
@@ -109,6 +115,7 @@ document.addEventListener('DOMContentLoaded', function () {
             branch_id: Number(row.dataset.branch),
             name: row.querySelector('[data-field="name"]').value.trim(),
             code: row.querySelector('[data-field="code"]').value.trim(),
+            print_mode: row.querySelector('[data-field="print_mode"]').value,
             is_active: Number(row.querySelector('[data-field="is_active"]').value)
         };
         row.querySelectorAll('input,select').forEach(function (el) { el.disabled = true; });

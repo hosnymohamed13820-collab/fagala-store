@@ -48,7 +48,8 @@ switch ($part) {
                 (int) ($in['branch_id'] ?? 0),
                 (string) ($in['name'] ?? ''),
                 (string) ($in['code'] ?? ''),
-                (int) current_user()['id']
+                (int) current_user()['id'],
+                (string) ($in['print_mode'] ?? 'browser')
             );
             api_ok(['device' => $made]);
         } catch (DomainException $e) {
@@ -72,7 +73,8 @@ switch ($part) {
                 (int) ($in['branch_id'] ?? 0),
                 (string) ($in['name'] ?? ''),
                 (string) ($in['code'] ?? ''),
-                !empty($in['is_active'])
+                !empty($in['is_active']),
+                (string) ($in['print_mode'] ?? 'browser')
             );
             api_ok(['saved' => true]);
         } catch (DomainException $e) {
