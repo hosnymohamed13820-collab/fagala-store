@@ -1087,6 +1087,99 @@ function current_custody_for_employee(int $employeeId): ?array
 }
 
 /**
+ * إيجاد حساب عهدة الفرع تحت حساب «عهدة فرع» (73).
+ * لو الفرع مالوش ابن تحت 73، نرجع 73 نفسه.
+ */
+function get_branch_custody_account(int $branchId, ?PDO $pdo = null): int
+{
+    $pdo = $pdo ?? db();
+    $parentStmt = $pdo->query("SELECT id FROM accounts WHERE id = 73 OR (parent_id IS NULL AND name = 'عهدة فرع' AND is_active = 1) ORDER BY (id = 73) DESC LIMIT 1");
+    $parentId = (int) $parentStmt->fetchColumn();
+    if (!$parentId) {
+        $parentId = 73;
+    }
+
+    if ($branchId > 0) {
+        // فحص لو فيه حساب فرعي تحت 73 باسم الفرع
+        $brStmt = $pdo->prepare("SELECT name FROM branches WHERE id = ? LIMIT 1");
+        $brStmt->execute([$branchId]);
+        $brName = $brStmt->fetchColumn();
+        if ($brName) {
+            $chk = $pdo->prepare("SELECT id FROM accounts WHERE parent_id = ? AND is_active = 1 AND (name = ? OR name LIKE ?) LIMIT 1");
+            $chk->execute([$parentId, $brName, '%' . $brName . '%']);
+            $accId = (int) $chk->fetchColumn();
+            if ($accId > 0) {
+                return $accId;
+            }
+        }
+    }
+
+    return $parentId;
+}
+
+/**
+ * إيجاد أو إنشاء حساب العهدة للموظف تحت حساب «عهدة موظف» (204).
+ *
+ * @param int $employeeId معرّف الموظف في جدول employees
+ * @param string|null $employeeName اسم الموظف
+ * @param PDO|null $pdo
+ * @return int account_id في جدول accounts
+ */
+function get_or_create_employee_custody_account(int $employeeId, ?string $employeeName = null, ?PDO $pdo = null): int
+{
+    $pdo = $pdo ?? db();
+
+    if ($employeeName === null || trim($employeeName) === '') {
+        $st = $pdo->prepare("SELECT full_name FROM employees WHERE id = ? LIMIT 1");
+        $st->execute([$employeeId]);
+        $employeeName = (string) $st->fetchColumn();
+    }
+    $cleanName = trim((string) $employeeName);
+    if ($cleanName === '') {
+        throw new RuntimeException("اسم الموظف غير صالح لإنشاء حساب عهدة (id={$employeeId})");
+    }
+
+    // 1. إيجاد الحساب الأب «عهدة موظف» (الافتراضي 204)
+    $parentStmt = $pdo->query("SELECT id FROM accounts WHERE id = 204 OR (parent_id IS NULL AND name = 'عهدة موظف' AND is_active = 1) ORDER BY (id = 204) DESC LIMIT 1");
+    $parentId = (int) $parentStmt->fetchColumn();
+    if (!$parentId) {
+        throw new RuntimeException('حساب «عهدة موظف» (204) غير موجود في شجرة الحسابات');
+    }
+
+    // 2. البحث عن حساب الموظف تحت الأب 204
+    if ($employeeId > 0) {
+        $st = $pdo->prepare("SELECT id FROM accounts WHERE parent_id = ? AND is_active = 1 AND src_table = 'employees' AND src_id = ? LIMIT 1");
+        $st->execute([$parentId, $employeeId]);
+        $accId = (int) $st->fetchColumn();
+        if ($accId > 0) return $accId;
+    }
+
+    $st = $pdo->prepare("SELECT id FROM accounts WHERE parent_id = ? AND is_active = 1 AND name = ? LIMIT 1");
+    $st->execute([$parentId, $cleanName]);
+    $accId = (int) $st->fetchColumn();
+    if ($accId > 0) return $accId;
+
+    // معالجة الفروق الإملائية (ى / ي) و(أ / ا)
+    $st = $pdo->prepare("SELECT id, name FROM accounts WHERE parent_id = ? AND is_active = 1");
+    $st->execute([$parentId]);
+    $normClean = strtr($cleanName, ['ى' => 'ي', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا']);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $normRow = strtr($row['name'], ['ى' => 'ي', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا']);
+        if ($normClean === $normRow) {
+            return (int) $row['id'];
+        }
+    }
+
+    // 3. لو مش موجود: أنشئه بنفس الطريقة اللي اتعمل بيها 205/206/240
+    $ins = $pdo->prepare(
+        "INSERT INTO accounts (parent_id, name, type, is_custody, is_active)
+         VALUES (?, ?, 'expense', 0, 1)"
+    );
+    $ins->execute([$parentId, $cleanName]);
+    return (int) $pdo->lastInsertId();
+}
+
+/**
  * إصدار إذن صرف: الكاش الرئيسي → خزينة عهدة الفرع.
  * - بيسجل الإذن في disbursement_orders.
  * - بيحرّك الفلوس (مدين الكاش، دائن العهدة) عبر post_journal.
@@ -1138,9 +1231,12 @@ function issue_disbursement_order(
         )->execute([$branchId, $custodyTreasuryId, $amount, $date, $notes, $userId]);
         $orderId = (int) $pdo->lastInsertId();
 
+        // حساب العهدة للفرع تحت 73 (لو مفيش ابن، 73 نفسه)
+        $branchAccountId = get_branch_custody_account($branchId, $pdo);
+
         // حركة الفلوس: مدين الكاش، دائن العهدة
         post_journal($cashId, $amount, 0, 'إذن صرف لعهدة الفرع' . ($notes ? " - $notes" : ''),
-                     $date, 'disbursement_order', $orderId, $userId, $pdo);
+                     $date, 'disbursement_order', $orderId, $userId, $pdo, $branchAccountId);
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
@@ -1257,9 +1353,12 @@ function issue_employee_disbursement_order(
         )->execute([$employeeId, $empBranchId, $custodyTreasuryId, $amount, $date, $notes, $userId]);
         $orderId = (int) $pdo->lastInsertId();
 
+        // حساب العهدة للموظف تحت 204
+        $empAccountId = get_or_create_employee_custody_account($employeeId, $empName, $pdo);
+
         // حركة الفلوس: مدين الكاش، دائن العهدة
         post_journal($cashId, $amount, 0, 'إذن صرف لعهدة موظف: ' . $empName . ($notes ? " - $notes" : ''),
-                     $date, 'disbursement_order', $orderId, $userId, $pdo);
+                     $date, 'disbursement_order', $orderId, $userId, $pdo, $empAccountId);
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف عهدة' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
@@ -1721,8 +1820,11 @@ function save_custody_review(
             // عجز أو زيادة في الكاش المستلم
             if ($variance < 0) {
                 $deficit = abs($variance);
+                $empAccountId = ($employeeId !== null && $employeeId > 0)
+                    ? get_or_create_employee_custody_account($employeeId, $empName, $pdo)
+                    : null;
                 post_journal($cashId, $deficit, 0, 'عجز عهدة موظف عند الإقفال: ' . $empName,
-                             $date, 'custody_deficit', $custodyId, $userId, $pdo);
+                             $date, 'custody_deficit', $custodyId, $userId, $pdo, $empAccountId);
 
                 if ($deficit > $tolerance && $employeeId !== null && $employeeId > 0) {
                     $pdo->prepare(
