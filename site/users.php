@@ -120,7 +120,7 @@ function perm_picker_html(string $idPrefix): string
             <?php if (isset($moduleParts[$key])): ?>
                 <div class="perm-group">
                     <label class="perm-item" style="font-weight:600;">
-                        <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                        <input type="checkbox" class="perm-check" name="permissions[]" value="<?= e($key) ?>"
                                class="perm-check perm-mod-full" data-mod="<?= e($key) ?>"
                                onchange="onModuleFullChange(this)">
                         <span><?= e($mod['label']) ?> (كامل)</span>
@@ -129,7 +129,7 @@ function perm_picker_html(string $idPrefix): string
                     <div class="perm-parts-grid">
                         <?php foreach ($moduleParts[$key] as $pKey => $pLabel): ?>
                             <label class="perm-item perm-part-item">
-                                <input type="checkbox" name="permissions[]" value="<?= e($key . ':' . $pKey) ?>"
+                                <input type="checkbox" class="perm-check" name="permissions[]" value="<?= e($key . ':' . $pKey) ?>"
                                        class="perm-check perm-part-check" data-mod="<?= e($key) ?>"
                                        onchange="onPartChange(this)">
                                 <span><?= e($pLabel) ?></span>
@@ -139,7 +139,7 @@ function perm_picker_html(string $idPrefix): string
                 </div>
             <?php else: ?>
                 <label class="perm-item">
-                    <input type="checkbox" name="permissions[]" value="<?= e($key) ?>"
+                    <input type="checkbox" class="perm-check" name="permissions[]" value="<?= e($key) ?>"
                            class="perm-check">
                     <span><?= e($mod['label']) ?></span>
                 </label>
@@ -516,20 +516,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:13px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
-    .badge {
-        display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:500;
-    }
-    .badge.active { background:var(--pos-soft); color:var(--pos); }
-    .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
-    .badge.owner { background:var(--line-soft); color:var(--accent-text); }
     .perm-chips { display:flex; flex-wrap:wrap; gap:4px; }
     .perm-chip { background:var(--bg); color:var(--accent-text); padding:2px 8px; border-radius:6px; font-size:11px; }
     .perm-all { color:var(--accent-text); font-weight:600; font-size:12px; }
@@ -546,18 +533,13 @@ require_once __DIR__ . '/includes/header.php';
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:15px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select {
-        width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-        font-size:14px; font-family:inherit; background:var(--line-soft);
-    }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .perms-box {
         border:1.5px solid var(--line); border-radius:10px; padding:14px;
         display:grid; grid-template-columns:1fr 1fr; gap:9px; max-height:230px; overflow-y:auto;
     }
     .perm-item { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--ink-800); cursor:pointer; }
-    .perm-item input { width:auto; }
+    .perm-item .perm-check { width:auto; }
     .perm-group {
         grid-column: 1 / -1;
         background: var(--line-soft);
@@ -581,38 +563,29 @@ require_once __DIR__ . '/includes/header.php';
         font-size: 12.5px;
         color: var(--ink-700);
     }
-    .perm-part-item input:disabled + span {
+    .perm-part-item .perm-check:disabled + span {
         color: var(--ink-400);
     }
     .modal-actions { display:flex; gap:10px; justify-content:flex-start; margin-top:22px; }
     .hint { font-size:12px; color:var(--ink-400); margin-top:4px; }
     @media (max-width:600px){ .form-grid, .perms-box, .perm-parts-grid { grid-template-columns:1fr; } }
-    /* تابات الموظفين / الأدوار (بريف ١٠٧) — نفس شكل تابات التعريفات */
-    .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
-    .tab {
-        padding:10px 20px; border-radius:10px; text-decoration:none;
-        color:var(--accent-text); background:var(--surface); font-size:14px; font-weight:500;
-        border:1.5px solid transparent;
-    }
-    .tab.active { background:var(--accent); color:var(--fill-strong-fg); }
-    .tab:not(.active):hover { background:var(--bg); }
     .perm-chip.role { background:var(--line-soft); color:var(--ink-600); font-weight:600; }
     .role-tag { font-size:11px; color:var(--ink-500); margin-inline-start:4px; }
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-<div class="tabs">
-    <a href="users.php" class="tab <?= $view === 'users' ? 'active' : '' ?>">الموظفين</a>
-    <a href="users.php?view=roles" class="tab <?= $view === 'roles' ? 'active' : '' ?>">الأدوار</a>
-</div>
+<nav class="ftabs" aria-label="المستخدمين والأدوار">
+    <a href="users.php" class="ftab <?= $view === 'users' ? 'is-active' : '' ?>">الموظفين</a>
+    <a href="users.php?view=roles" class="ftab <?= $view === 'roles' ? 'is-active' : '' ?>">الأدوار</a>
+</nav>
 
 <?php if ($view === 'roles'): ?>
 
 <?php if (!$rolePermsReady): ?>
-    <div class="flash error">جدول صلاحيات الأدوار لسه ماتعملش على القاعدة — شغّل <b>local/upgrade_role_perms.sql</b> من phpMyAdmin.</div>
+    <div class="falert falert-neg">جدول صلاحيات الأدوار لسه ماتعملش على القاعدة — شغّل <b>local/upgrade_role_perms.sql</b> من phpMyAdmin.</div>
 <?php endif; ?>
 
 <div class="toolbar">
@@ -620,8 +593,8 @@ require_once __DIR__ . '/includes/header.php';
     <button class="btn" onclick="openRole(null)"<?= $rolePermsReady ? '' : ' disabled' ?>><i class="ti ti-plus"></i> دور جديد</button>
 </div>
 
-<div class="card">
-    <table>
+<div class="fcard">
+    <table class="ftable">
         <thead>
             <tr>
                 <th>الدور</th>
@@ -683,7 +656,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="role_id" id="r_id" value="">
             <div class="form-row">
                 <label for="r_name">اسم الدور *</label>
-                <input type="text" name="name_ar" id="r_name" maxlength="50" required>
+                <input type="text" class="finput" name="name_ar" id="r_name" maxlength="50" required>
             </div>
             <div class="form-row">
                 <label>صلاحيات الدور — كل موظف على الدور ده هياخدها لوحده</label>
@@ -711,8 +684,8 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<div class="card">
-    <table>
+<div class="fcard">
+    <table class="ftable">
         <thead>
             <tr>
                 <th>الاسم</th>
@@ -732,7 +705,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($usr['username']) ?></td>
                     <td>
                         <?php if ($usr['is_owner']): ?>
-                            <span class="badge owner"><?= e($usr['role_name']) ?></span>
+                            <span class="fchip"><?= e($usr['role_name']) ?></span>
                         <?php else: ?>
                             <?= e($usr['role_name']) ?>
                         <?php endif; ?>
@@ -757,7 +730,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td>
                     <td>
-                        <span class="badge <?= $usr['is_active'] ? 'active' : 'inactive' ?>">
+                        <span class="fchip <?= $usr['is_active'] ? 'fchip-pos' : '' ?>">
                             <?= $usr['is_active'] ? 'نشط' : 'موقوف' ?>
                         </span>
                     </td>
@@ -819,11 +792,11 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-grid">
                 <div class="form-row">
                     <label for="f_fullname">الاسم الكامل *</label>
-                    <input type="text" name="full_name" id="f_fullname" required>
+                    <input type="text" class="finput" name="full_name" id="f_fullname" required>
                 </div>
                 <div class="form-row">
                     <label for="f_username">اسم الدخول *</label>
-                    <input type="text" name="username" id="f_username" required autocomplete="off">
+                    <input type="text" class="finput" name="username" id="f_username" required autocomplete="off">
                     <div class="hint" id="usernameHint" style="display:none;">لا يمكن تغيير اسم الدخول</div>
                 </div>
             </div>
@@ -831,14 +804,14 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-grid">
                 <div class="form-row">
                     <label for="f_password">الباسورد <span id="passLabel">*</span></label>
-                    <input type="password" name="password" id="f_password" minlength="8" autocomplete="new-password">
+                    <input type="password" class="finput" name="password" id="f_password" minlength="8" autocomplete="new-password">
                     <div class="hint" id="passHint" style="display:none;">اتركه فارغاً لعدم التغيير</div>
                     <div class="hint">٨ حروف على الأقل</div>
                     <div id="passErr" class="hint" style="display:none;color:var(--neg);font-weight:600;"></div>
                 </div>
                 <div class="form-row">
                     <label for="f_salary">الدور *</label>
-                    <select name="role_id" id="f_role" required>
+                    <select class="fselect" name="role_id" id="f_role" required>
                         <option value="">— اختر —</option>
                         <?php foreach ($roles as $r): ?>
                             <?php if (!$r['is_owner']): // الأونر مش بيتعمل من هنا ?>
@@ -851,7 +824,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="form-row">
                 <label>الفرع</label>
-                <select name="branch_id" id="f_branch">
+                <select class="fselect" name="branch_id" id="f_branch">
                     <option value="">— بدون فرع —</option>
                     <?php foreach ($branches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
@@ -862,14 +835,14 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="form-row">
                 <label for="f_discount">سقف الخصم %</label>
-                <input type="number" step="0.01" min="0" max="100" name="discount_cap_pct" id="f_discount" value="0.00">
+                <input type="number" class="finput" step="0.01" min="0" max="100" name="discount_cap_pct" id="f_discount" value="0.00">
                 <div class="hint">نسبة من إجمالي الفاتورة. صفر = مفيش خصم من غير مشرف، والتعديل بيتحفظ تلقائي للمستخدم الموجود.</div>
             </div>
 
             <!-- بيانات الموظف (اليوزر = موظف) -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="is_employee" id="f_isemp" value="1" onchange="toggleEmp()" style="width:auto;">
+                    <input type="checkbox" class="perm-check" name="is_employee" id="f_isemp" value="1" onchange="toggleEmp()" style="width:auto;">
                     <span>ده موظف كمان (مرتب + حضور)</span>
                 </label>
                 <div id="empFields" style="display:none;margin-top:12px;">
@@ -879,30 +852,30 @@ require_once __DIR__ . '/includes/header.php';
                                 <label style="margin-bottom:0;">المرتب الأساسي</label>
                                 <?= sens_eye() ?>
                             </div>
-                            <input type="number" step="0.01" min="0" name="base_salary" id="f_salary" value="0">
+                            <input type="number" class="finput" step="0.01" min="0" name="base_salary" id="f_salary" value="0">
                         </div>
                         <div class="form-row">
                             <label for="f_job">الوظيفة</label>
-                            <input type="text" name="job_title" id="f_job" placeholder="كاشير، محاسب...">
+                            <input type="text" class="finput" name="job_title" id="f_job" placeholder="كاشير، محاسب...">
                         </div>
                     </div>
                     <div class="form-grid">
                         <div class="form-row">
                             <label for="f_phone">التليفون</label>
-                            <input type="text" name="phone" id="f_phone">
+                            <input type="text" class="finput" name="phone" id="f_phone">
                         </div>
                         <div class="form-row">
                             <label>ميعاد الحضور</label>
-                            <input type="time" name="expected_in" id="f_in">
+                            <input type="time" class="finput" name="expected_in" id="f_in">
                         </div>
                     </div>
                     <div class="form-row">
                         <label>ميعاد الانصراف</label>
-                        <input type="time" name="expected_out" id="f_out">
+                        <input type="time" class="finput" name="expected_out" id="f_out">
                     </div>
                     <div class="form-row" style="margin-top:6px;">
                         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
-                            <input type="checkbox" name="allow_anywhere" id="f_anywhere" value="1" style="width:auto;">
+                            <input type="checkbox" class="perm-check" name="allow_anywhere" id="f_anywhere" value="1" style="width:auto;">
                             يسجّل الحضور من أي مكان (موظف متنقّل — بدون التقيّد بنطاق الفرع)
                         </label>
                         <p style="font-size:12px;color:var(--ink-500);margin-top:4px;">فعّلها للموظف اللي بيتنقّل بين أماكن مختلفة. مكان بصمته هيتسجّل عادي لكن من غير رفض/تنبيه.</p>
@@ -935,7 +908,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-grid">
                 <div class="form-row">
                     <label for="b_mod">الصلاحية</label>
-                    <select name="module_key" id="b_mod" required>
+                    <select class="fselect" name="module_key" id="b_mod" required>
                         <?php foreach ($modules as $key => $mod): ?>
                             <?php if (isset($moduleParts[$key])): ?>
                                 <option value="<?= e($key) ?>"><?= e($mod['label']) ?> (كامل)</option>
@@ -960,7 +933,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-row">
                 <label>الموظفين <span id="b_count" style="color:var(--ink-500);font-weight:400;"></span></label>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-                    <select id="b_branch" onchange="bulkFilter()" style="flex:1;min-width:140px;">
+                    <select class="fselect" id="b_branch" onchange="bulkFilter()" style="flex:1;min-width:140px;">
                         <option value="">كل الفروع</option>
                         <?php foreach ($branches as $b): ?>
                             <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
@@ -973,7 +946,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="perms-box" style="max-height:260px;">
                     <?php foreach ($users as $bu): if (!(int)$bu['is_active'] || (int)$bu['is_owner']) continue; ?>
                         <label class="perm-item b-user" data-branch="<?= (int)($bu['branch_id'] ?? 0) ?>">
-                            <input type="checkbox" name="user_ids[]" value="<?= (int)$bu['id'] ?>" onchange="bulkCount()">
+                            <input type="checkbox" class="perm-check" name="user_ids[]" value="<?= (int)$bu['id'] ?>" onchange="bulkCount()">
                             <?= e($bu['full_name']) ?>
                             <span style="color:var(--ink-400);font-size:12px;">· <?= e($bu['branch_name'] ?? 'بدون فرع') ?></span>
                         </label>

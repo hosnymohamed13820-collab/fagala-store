@@ -46,24 +46,13 @@ function book_tabs_bar(string $active): string
         'market'   => ['أسعار السوق',  'ti-discount',      'market_prices.php'],
     ];
 
-    $css = '<style>
-        .bk-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-        .bk-tab { display:inline-flex; align-items:center; gap:7px; padding:11px 20px;
-                  border:1.5px solid var(--line); border-radius:11px; background:var(--surface);
-                  color:var(--ink-700,var(--accent-text)); font-size:14px; font-weight:600;
-                  text-decoration:none; transition:all .15s; }
-        .bk-tab:hover { border-color:var(--accent-text); color:var(--accent-text); }
-        .bk-tab.active { background:var(--accent); border-color:var(--accent-text); color:#fff; }
-        .bk-tab i { font-size:17px; }
-    </style>';
-
-    $html = '<div class="bk-tabs">';
+    $html = '<nav class="ftabs" aria-label="صفحات طلبات الكتب">';
     foreach ($tabs as $key => [$label, $icon, $url]) {
-        $cls = $key === $active ? 'bk-tab active' : 'bk-tab';
+        $cls = $key === $active ? 'ftab is-active' : 'ftab';
         $html .= '<a class="' . $cls . '" href="' . e($url) . '">'
                . '<i class="ti ' . e($icon) . '"></i> ' . e($label) . '</a>';
     }
-    return $css . $html . '</div>';
+    return $html . '</nav>';
 }
 
 /** قسم "كتب خارجية" في ITEM_SPEC1 (بيتظبط من settings) */

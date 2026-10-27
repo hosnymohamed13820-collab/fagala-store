@@ -1,15 +1,1 @@
 # صفحة  التصنيف=العدد — القديم مسموح يقل بس ممنوع يزيد
-book_lib.php hex=1 component=1
-book_orders.php hex=1 btn=1 table=1 mono=4 control=2
-book_reserve.php btn=1 table=2 mono=4 control=6
-definitions.php hex=1 table=4 control=5
-includes/footer.php table=1 component=1
-includes/header.php hex=10
-login.php hex=37 control=5 component=2
-pos_migrate.php hex=1 btn=2 table=3 control=1
-settings.php hex=1 btn=1 table=1 control=11
-sms_export.php hex=2
-sms_inbox.php hex=1 var=1 icon=1 table=1 mono=3 control=7
-tasks.php icon=6 table=1 mono=1 control=5 component=1
-tasks_issue.php control=5 component=1
-users.php table=2 control=6

@@ -286,31 +286,15 @@ $shifts = $pdo->query(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ترحيل البيانات</title>
+<link rel="stylesheet" href="assets/tabler-subset.css">
+<link rel="stylesheet" href="assets/fagala.css">
 <style>
-  body{font-family:Tahoma,Arial,sans-serif;background:var(--line-soft);margin:0;padding:24px;color:var(--ink-900)}
+  body{margin:0;padding:24px}
   .wrap{max-width:900px;margin:0 auto}
   h1{font-size:22px;margin:0 0 18px}
-  .danger{background:var(--surface);border:2px solid var(--neg);border-radius:10px;
-          padding:15px 18px;margin-bottom:20px;color:var(--neg)}
   .danger b{display:block;margin-bottom:6px;font-size:15px}
-  .card{background:var(--surface);border-radius:12px;padding:20px;margin-bottom:16px;
-        box-shadow:0 1px 6px rgba(0,0,0,.06)}
-  .card h2{font-size:16px;margin:0 0 14px;color:var(--ink-700)}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--ink-400)}
-  th{background:var(--surface);color:var(--ink-500)}
-  .btn{background:var(--accent);color:#fff;padding:9px 18px;border-radius:8px;
-       text-decoration:none;font-size:14px;border:0;cursor:pointer;font-family:inherit}
-  .btn-red{background:var(--neg-fill)}
-  .btn:disabled{background:var(--ink-200);cursor:not-allowed}
-  .err{background:var(--surface);border:2px solid var(--neg);color:var(--neg);
-       padding:14px;border-radius:10px;margin-bottom:16px}
   .ok-row{color:var(--pos);font-weight:bold}
   .bad-row{color:var(--neg);font-weight:bold}
-  input[type=text]{padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;
-                   font-family:inherit;font-size:14px;width:180px}
-  .sum{display:flex;gap:14px;margin-bottom:14px}
-  .sum div{flex:1;background:var(--surface);border-radius:9px;padding:12px;text-align:center}
   .sum .n{font-size:22px;font-weight:bold}
 </style>
 </head>
@@ -319,36 +303,36 @@ $shifts = $pdo->query(
 
   <h1>ترحيل البيانات لنظام الشركة</h1>
 
-  <div class="danger">
+  <div class="falert falert-neg danger">
     <b><i class="ti ti-alert-triangle"></i> الصفحة دي بتكتب فعليًا في نظام الشركة</b>
     قبل الترحيل، تأكد إن الكاشير خلّص كل الفواتير المعلّقة (رحّلها أو لغاها)،
     وإنه واقف ومش بيضرب فواتير دلوقتي.
   </div>
 
   <?php if ($error): ?>
-    <div class="err"><strong>خطأ:</strong> <?= e($error) ?></div>
+    <div class="falert falert-neg"><strong>خطأ:</strong> <?= e($error) ?></div>
   <?php endif; ?>
 
   <?php if ($summary): ?>
-    <div class="card">
+    <div class="fcard">
       <h2>نتيجة الترحيل</h2>
-      <div class="sum">
-        <div><div class="n" style="color:var(--pos)"><?= $summary['ok'] ?></div>نجحت</div>
-        <div><div class="n" style="color:var(--neg)"><?= $summary['fail'] ?></div>فشلت</div>
-        <div><div class="n"><?= $summary['total'] ?></div>الإجمالي</div>
+      <div class="fkpis sum">
+        <div class="fkpi"><div class="n" style="color:var(--pos)"><?= $summary['ok'] ?></div>نجحت</div>
+        <div class="fkpi"><div class="n" style="color:var(--neg)"><?= $summary['fail'] ?></div>فشلت</div>
+        <div class="fkpi"><div class="n"><?= $summary['total'] ?></div>الإجمالي</div>
       </div>
-      <table>
-        <tr><th>الفاتورة</th><th>الحالة</th><th>STH_ID</th><th>DOC_NO</th><th>الأوامر</th><th>الوقت</th></tr>
+      <table class="ftable">
+        <tr><th class="num">الفاتورة</th><th>الحالة</th><th class="num">STH_ID</th><th class="num">DOC_NO</th><th class="num">الأوامر</th><th class="num">الوقت</th></tr>
         <?php foreach ($results as $r): ?>
         <tr>
-          <td>#<?= (int)$r['inv'] ?></td>
+          <td class="num">#<?= (int)$r['inv'] ?></td>
           <td class="<?= $r['ok'] ? 'ok-row' : 'bad-row' ?>">
             <?= $r['ok'] ? '✓ اترحّلت' : '✗ ' . e($r['msg'] ?? '') ?>
           </td>
-          <td><?= $r['ok'] ? (int)$r['sth_id'] : '—' ?></td>
-          <td><?= $r['ok'] ? e((string)$r['doc_no']) : '—' ?></td>
-          <td><?= $r['ok'] ? (int)$r['ops'] : '—' ?></td>
-          <td><?= $r['ok'] ? (int)$r['ms'] . ' ms' : '—' ?></td>
+          <td class="num"><?= $r['ok'] ? (int)$r['sth_id'] : '—' ?></td>
+          <td class="num"><?= $r['ok'] ? e((string)$r['doc_no']) : '—' ?></td>
+          <td class="num"><?= $r['ok'] ? (int)$r['ops'] : '—' ?></td>
+          <td class="num"><?= $r['ok'] ? (int)$r['ms'] . ' ms' : '—' ?></td>
         </tr>
         <?php endforeach; ?>
       </table>
@@ -362,23 +346,22 @@ $shifts = $pdo->query(
     </div>
   <?php endif; ?>
 
-  <div class="card">
+  <div class="fcard">
     <h2>الورديات المقفولة</h2>
     <?php if (!$shifts): ?>
       <p style="color:var(--ink-500)">مفيش ورديات جاهزة.</p>
     <?php else: ?>
-      <table>
-        <tr><th>#</th><th>الفرع</th><th>الإقفال</th><th>الفواتير</th><th>الإجمالي</th><th></th></tr>
+      <table class="ftable">
+        <tr><th class="num">#</th><th class="num">الفرع</th><th>الإقفال</th><th class="num">الفواتير</th><th class="num">الإجمالي</th><th></th></tr>
         <?php foreach ($shifts as $s): ?>
         <tr>
-          <td><?= (int)$s['id'] ?></td>
-          <td><?= (int)$s['branch_id'] ?></td>
+          <td class="num"><?= (int)$s['id'] ?></td>
+          <td class="num"><?= (int)$s['branch_id'] ?></td>
           <td><?= e((string)$s['closed_at']) ?></td>
-          <td><?= (int)$s['inv_count'] ?></td>
-          <td><?= number_format((float)$s['total'], 2) ?></td>
+          <td class="num"><?= (int)$s['inv_count'] ?></td>
+          <td class="num"><?= number_format((float)$s['total'], 2) ?></td>
           <td>
-            <a class="btn" href="pos_dryrun.php?shift=<?= (int)$s['id'] ?>"
-               style="background:var(--ink-500)">معاينة</a>
+            <a class="btn btn-secondary" href="pos_dryrun.php?shift=<?= (int)$s['id'] ?>">معاينة</a>
           </td>
         </tr>
         <?php endforeach; ?>
@@ -387,16 +370,15 @@ $shifts = $pdo->query(
   </div>
 
   <?php if ($shifts): ?>
-  <div class="card">
+  <div class="fcard">
     <h2>تنفيذ الترحيل</h2>
     <form method="post" onsubmit="return confirm('متأكد؟ ده هيكتب في نظام الشركة فعليًا.')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-      <table style="margin-bottom:14px">
+      <table class="ftable" style="margin-bottom:14px">
         <tr>
           <th style="width:130px">الوردية</th>
           <td>
-            <select name="shift" required
-                    style="padding:9px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit">
+            <select class="fselect" name="shift" required>
               <option value="">— اختر —</option>
               <?php foreach ($shifts as $s): ?>
                 <option value="<?= (int)$s['id'] ?>">
@@ -411,7 +393,7 @@ $shifts = $pdo->query(
         <tr>
           <th>التأكيد</th>
           <td>
-            <input type="text" name="confirm" required autocomplete="off"
+            <input type="text" class="finput" name="confirm" required autocomplete="off"
                    placeholder="اكتب: ترحيل" aria-label="اكتب: ترحيل">
             <span style="color:var(--ink-500);font-size:12px;margin-right:8px">
               اكتب كلمة «ترحيل» بالظبط
@@ -419,7 +401,7 @@ $shifts = $pdo->query(
           </td>
         </tr>
       </table>
-      <button type="submit" class="btn btn-red">تنفيذ الترحيل</button>
+      <button type="submit" class="btn btn-danger">تنفيذ الترحيل</button>
     </form>
   </div>
   <?php endif; ?>

@@ -164,7 +164,7 @@ require_once __DIR__ . '/nav_icons.php';
          `APP_ENV` معرّفة في `config.php` وقيمتها 'hosting' على السيرفر،
          فالشريط ده عمره ما هيبان لأي مستخدم. */ ?>
 <?php if (defined('APP_ENV') && APP_ENV === 'local'): ?>
-    <div style="background:#946105;color:#fff;text-align:center;padding:5px 10px;
+    <div style="background:var(--warn-fill);color:var(--surface);text-align:center;padding:5px 10px;
                 font-size:13px;font-weight:600;letter-spacing:.2px;">
         نسخة محلية — أرشيف. أي تعديل هنا مابيوصلش للموقع الحقيقي.
     </div>
@@ -508,7 +508,7 @@ try {
 <div id="agtNag" style="display:none;margin-bottom:16px;">
     <a href="settings.php#agents" id="agtNagBox" style="display:flex;align-items:center;gap:12px;
         padding:14px 18px;border-radius:12px;text-decoration:none;font-size:14px;font-weight:600;
-        border:1.5px solid var(--warn,#d97706);background:var(--warn-soft,#fff7e6);color:var(--warn,#d97706);">
+        border:1.5px solid var(--warn);background:var(--warn-soft);color:var(--warn);">
         <i class="ti ti-alert-triangle" id="agtNagIcon"
            style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
         <span style="flex:1;" id="agtNagText"></span>
@@ -525,10 +525,10 @@ try {
      بيظهر بس لو: الجهاز بيدعم البوش · الإذن لسه مترفضش · مفيش اشتراك ·
      وماقفلهوش من أقل من ٣ أيام. -->
 <style>
-    .push-nag-btn { background:var(--accent); color:#fff; border:none; padding:8px 16px;
+    .push-nag-btn { background:var(--accent); color:var(--surface); border:none; padding:8px 16px;
         border-radius:8px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;
         white-space:nowrap; }
-    .push-nag-btn:hover { background:var(--accent-hover); color:#fff; }
+    .push-nag-btn:hover { background:var(--accent-hover); color:var(--surface); }
     .push-nag-x { background:none; border:none; color:var(--accent-text); cursor:pointer;
         font-size:18px; line-height:1; padding:4px; font-family:inherit; }
     .push-nag-x:hover { color:var(--accent-hover); }
@@ -596,8 +596,8 @@ try {
 
 <div id="shrNag" style="<?= $shortagePending > 0 ? '' : 'display:none;' ?>margin-bottom:16px;">
     <a href="tasks.php" style="display:flex;align-items:center;gap:12px;padding:14px 18px;
-        background:var(--warn-soft,#fff7e6);border:1.5px solid var(--warn,#d97706);border-radius:12px;
-        text-decoration:none;color:var(--warn,#d97706);font-size:14px;font-weight:600;">
+        background:var(--warn-soft);border:1.5px solid var(--warn);border-radius:12px;
+        text-decoration:none;color:var(--warn);font-size:14px;font-weight:600;">
         <i class="ti ti-shopping-cart" style="font-size:22px;animation:shrPulse 1.2s ease-in-out infinite;"></i>
         <span style="flex:1;"><i class="ti ti-shopping-cart"></i> عندك <span id="shrNagCount"><?= $shortagePending ?></span> طلب نواقص مستنيك —
             جهّز الطلب وارفع إثبات الفاتورة وعلّم المهمة تمت.</span>
@@ -630,8 +630,8 @@ try {
                         var red = (lvl === 'alert');
                         var box = document.getElementById('agtNagBox');
                         var ico = document.getElementById('agtNagIcon');
-                        var col = red ? 'var(--neg,#9d3b38)' : 'var(--warn,#d97706)';
-                        var bg  = red ? 'var(--neg-soft,#fbeceb)' : 'var(--warn-soft,#fff7e6)';
+                        var col = red ? 'var(--neg)' : 'var(--warn)';
+                        var bg  = red ? 'var(--neg-soft)' : 'var(--warn-soft)';
                         if (box) {
                             box.style.borderColor = col;
                             box.style.background  = bg;

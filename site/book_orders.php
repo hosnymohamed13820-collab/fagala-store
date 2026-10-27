@@ -37,62 +37,45 @@ $active_module = 'shortage';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { white-space: nowrap; }
-
     .bo-bar { display:flex; gap:10px; align-items:center; margin-bottom:10px; position:relative;
               flex-wrap:wrap; }
-    .bo-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
-                         border-radius:10px; font-size:15px; font-family:inherit; }
-    .bo-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .bo-bar .main { flex:1; min-width:250px; }
     .bo-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
-              overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
+              overflow-y:auto; box-shadow:var(--shadow); display:none; }
     .bo-sug.show { display:block; }
     .bo-sug-item { padding:10px 14px; cursor:pointer; display:flex; justify-content:space-between;
                    gap:10px; align-items:center; border-bottom:1px solid var(--line-soft);
                    font-size:14px; }
     .bo-sug-item:hover { background:var(--accent-soft); }
-    .bo-sug-item .c { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .bo-sug-item .c { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:12px; }
 
     .bo-copybar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
 
-    .bo-table { width:100%; border-collapse:collapse; }
-    .bo-table th, .bo-table td { padding:9px 10px; border-bottom:1px solid var(--line-soft);
-                                 text-align:center; font-size:13.5px; white-space:nowrap; }
-    .bo-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
-    .bo-table th.sup-e, .bo-table td.sup-e { border-left:2px solid var(--line); }
     .bo-table .nm { text-align:right; font-weight:500; min-width:210px; white-space:normal; }
     .bo-table .nm .pub { display:block; font-size:11.5px; color:var(--ink-500); font-weight:400; }
-    .bo-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
-    .bo-table tbody tr:hover td { background:rgba(124,111,247,.04); }
     .bo-table td .rm { color:var(--neg); cursor:pointer; opacity:.5; }
     .bo-table td .rm:hover { opacity:1; }
 
-    .q-inp { width:74px; padding:7px 8px; border:1.5px solid var(--line); border-radius:8px;
-             font-size:14px; font-family:inherit; text-align:center; }
-    .q-inp:focus { outline:none; border-color:var(--pos); }
+    .q-inp { width:74px; text-align:center; }
     .q-ind { font-size:12px; margin-right:4px; }
-
-    .tag-no { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px;
-              font-weight:700; background:var(--warn-soft); color:var(--warn); }
 
     .bo-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
     .bo-status { font-size:13px; min-height:20px; margin-bottom:10px; }
     .bo-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
-                background:var(--ink-900,var(--ink-900)); color:#fff; padding:13px 24px; border-radius:12px;
+                background:var(--fill-strong); color:var(--fill-strong-fg); padding:13px 24px; border-radius:12px;
                 font-size:14px; z-index:400; opacity:0; pointer-events:none; transition:opacity .2s; }
     .bo-toast.show { opacity:1; }
 </style>
 
 <?= book_tabs_bar('books') ?>
 
-<div class="card" style="margin-bottom:16px;">
+<div class="fcard" style="margin-bottom:16px;">
     <div class="section-title"><i class="ti ti-book"></i> طلبيات الكتب</div>
 
     <!-- البحث والإضافة -->
     <div class="bo-bar">
-        <input type="text" class="main" id="q" autocomplete="off"
+        <input type="text" class="finput main" id="q" autocomplete="off"
                placeholder="اكتب اسم الكتاب…"
                enterkeyhint="search"
                oninput="onType()"
@@ -102,17 +85,17 @@ require_once __DIR__ . '/includes/header.php';
     <div class="bo-status" id="status"></div>
 
     <div style="overflow-x:auto;">
-        <table class="bo-table">
+        <table class="ftable bo-table">
             <thead>
                 <tr>
-                    <th style="width:34px;">#</th>
+                    <th class="num" style="width:34px;">#</th>
                     <th>الكود</th>
                     <th class="nm">اسم الكتاب</th>
-                    <th>إجمالي المحجوز</th>
+                    <th class="num">إجمالي المحجوز</th>
                     <?php foreach ($suppliers as $s): ?>
-                        <th class="sup-e"><?= e($s['name']) ?></th>
+                        <th class="num sup-e"><?= e($s['name']) ?></th>
                     <?php endforeach; ?>
-                    <th>إجمالي الطلبيات</th>
+                    <th class="num">إجمالي الطلبيات</th>
                     <th style="width:34px;"></th>
                 </tr>
             </thead>
@@ -123,7 +106,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;
                 flex-wrap:wrap;margin-top:14px;">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
-        <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
+        <button type="button" class="btn btn-danger" onclick="clearAll()">
             <i class="ti ti-trash"></i> تفريغ الشاشة
         </button>
     </div>
@@ -132,17 +115,16 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
-<div class="card">
+<div class="fcard">
     <div class="section-title">نسخ الطلبيات</div>
     <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;line-height:1.8;">
         كل زرار بينسخ <b>اللي على الشاشة فوق بس</b> — الكتب اللي ضفتها بكمياتها عند المورد ده.
-        سطر لكل كتاب بالشكل <span style="font-family:monospace;">اسم الكتاب × الكمية</span>،
+        سطر لكل كتاب بالشكل <span style="font-variant-numeric:tabular-nums;">اسم الكتاب × الكمية</span>،
         والكتب اللي كميتها فاضية أو صفر عند المورد ده مابتنزلش.
     </p>
     <div class="bo-copybar">
         <?php foreach ($suppliers as $s): ?>
-            <button type="button" class="btn cpy" data-sup="<?= (int)$s['id'] ?>" disabled
-                    style="background:var(--pos-fill);"
+            <button type="button" class="btn btn-success cpy" data-sup="<?= (int)$s['id'] ?>" disabled
                     onclick="copyOrder(<?= (int)$s['id'] ?>, this)">
                 <i class="ti ti-copy"></i> طلبية <?= e($s['name']) ?>
                 <span class="cnt" data-sup="<?= (int)$s['id'] ?>" style="opacity:.8;font-size:12px;">(0)</span>
@@ -150,7 +132,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php endforeach; ?>
         <?php if (!$suppliers): ?>
             <span style="color:var(--ink-500);font-size:14px;">
-                مفيش موردين — شغّل <span style="font-family:monospace;">upgrade_book_orders.sql</span> الأول.
+                مفيش موردين — شغّل <span style="font-variant-numeric:tabular-nums;">upgrade_book_orders.sql</span> الأول.
             </span>
         <?php endif; ?>
     </div>
@@ -314,8 +296,8 @@ require_once __DIR__ . '/includes/header.php';
             SUPPLIERS.forEach(s => {
                 const kReq = r.id + ':' + s.id + ':req';
                 ordTotal += parseFloat(qty[kReq]) || 0;
-                tds += '<td class="sup-e">' +
-                    '<input type="number" class="q-inp" min="0" step="1" ' +
+                tds += '<td class="num sup-e">' +
+                    '<input type="number" class="finput q-inp" min="0" step="1" ' +
                         'aria-label="' + esc(s.name) + ' — الكمية المطلوبة" ' +
                         'value="' + esc(qty[kReq] || '') + '" ' +
                         'data-book="' + r.id + '" data-sup="' + s.id + '" data-field="req" ' +
@@ -327,17 +309,17 @@ require_once __DIR__ . '/includes/header.php';
             const isWarn = (ordTotal < resVal);
 
             return '<tr>' +
-                '<td>' + (i + 1) + '</td>' +
-                '<td class="cd">' + esc(r.code) + '</td>' +
+                '<td class="num">' + (i + 1) + '</td>' +
+                '<td class="num cd">' + esc(r.code) + '</td>' +
                 '<td class="nm">' + esc(r.name) +
                     '<span class="pub">' +
                         (r.publisher ? esc(r.publisher) : '') +
                         (r.term ? (r.publisher ? ' · ' : '') + esc(r.term) : '') +
-                        (r.has_order ? '' : ' <span class="tag-no">ملوش طلبية</span>') +
+                        (r.has_order ? '' : ' <span class="fchip fchip-warn">ملوش طلبية</span>') +
                     '</span></td>' +
-                '<td style="font-weight:600;">' + resText + '</td>' +
+                '<td class="num" style="font-weight:600;">' + resText + '</td>' +
                 tds +
-                '<td id="ord_total_' + r.id + '" style="font-weight:700;' + (isWarn ? 'color:var(--warn);' : '') + '">' + ordText + '</td>' +
+                '<td class="num" id="ord_total_' + r.id + '" style="font-weight:700;' + (isWarn ? 'color:var(--warn);' : '') + '">' + ordText + '</td>' +
                 '<td><span class="rm" title="شيل من الشاشة" onclick="removeRow(' + r.id + ')">✕</span></td>' +
             '</tr>';
         }).join('');

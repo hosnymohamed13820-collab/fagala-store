@@ -146,51 +146,26 @@ $active_module = 'shortage';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { white-space: nowrap; }
-
     .rs-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;
                margin-bottom:6px; }
-    .rs-fld label { display:block; font-size:12.5px; color:var(--ink-700); margin-bottom:5px;
-                    font-weight:600; }
-    .rs-fld input, .rs-fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line);
-        border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
-    .rs-fld input:focus, .rs-fld select:focus { outline:none; border-color:var(--accent-text); }
 
     .rs-bar { display:flex; gap:10px; align-items:center; margin:6px 0 12px; position:relative;
               flex-wrap:wrap; }
-    .rs-bar input.main { flex:1; min-width:250px; padding:12px 16px; border:1.5px solid var(--line);
-                         border-radius:10px; font-size:15px; font-family:inherit; }
-    .rs-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .rs-bar .main { flex:1; min-width:250px; }
     .rs-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
               border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:340px;
-              overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,.12); display:none; }
+              overflow-y:auto; box-shadow:var(--shadow); display:none; }
     .rs-sug.show { display:block; }
     .rs-sug-item { padding:10px 14px; cursor:pointer; display:flex; justify-content:space-between;
                    gap:10px; border-bottom:1px solid var(--line-soft); font-size:14px; }
     .rs-sug-item:hover { background:var(--accent-soft); }
-    .rs-sug-item .c { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .rs-sug-item .c { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:12px; }
 
-    .rs-table { width:100%; border-collapse:collapse; }
-    .rs-table th, .rs-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
-                                 text-align:center; font-size:13.5px; }
-    .rs-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
     .rs-table .nm { text-align:right; font-weight:500; min-width:210px; }
-    .rs-table .cd { font-family:monospace; color:var(--ink-500); font-size:12px; }
     .rs-table td .rm { color:var(--neg); cursor:pointer; opacity:.5; }
     .rs-table td .rm:hover { opacity:1; }
 
-    .pill { display:inline-block; padding:4px 13px; border-radius:20px; font-size:12.5px;
-            font-weight:700; white-space:nowrap; }
-    .pill.yes { background:rgba(34,197,94,.13); color:var(--pos); }
-    .pill.no  { background:var(--warn-soft); color:var(--warn); }
-    .pill.st-open { background:var(--accent-soft); color:var(--accent-text); }
-    .pill.st-delivered { background:rgba(34,197,94,.13); color:var(--pos); }
-    .pill.st-cancelled { background:var(--line-soft); color:var(--ink-500); }
-
-    .q-inp { width:80px; padding:7px 8px; border:1.5px solid var(--line); border-radius:8px;
-             font-size:14px; font-family:inherit; text-align:center; }
-    .q-inp:focus { outline:none; border-color:var(--pos); }
+    .q-inp { width:80px; text-align:center; }
 
     .rs-empty { text-align:center; color:var(--ink-400); padding:36px 20px; font-size:14.5px; }
     .rs-status { font-size:13px; min-height:20px; margin-bottom:8px; }
@@ -198,30 +173,27 @@ require_once __DIR__ . '/includes/header.php';
                    flex-wrap:wrap; padding:12px 16px; border:1px solid var(--line-soft);
                    border-radius:11px; margin-bottom:8px; text-decoration:none; color:inherit; }
     .rs-list-row:hover { border-color:var(--accent-text); background:var(--accent-soft); }
-    .rs-warn { padding:12px 18px; background:var(--warn-soft,var(--line-soft)); border-radius:10px;
-               border:1.5px solid var(--warn,var(--warn)); color:var(--warn,var(--warn));
-               font-size:13.5px; margin-bottom:16px; line-height:1.8; }
 </style>
 
 <?= book_tabs_bar('reserve') ?>
 
 <?php if (!$catReady): ?>
-    <div class="rs-warn">
+    <div class="falert falert-warn">
         <i class="ti ti-alert-triangle"></i>
-        جدول التصنيفات (<span style="font-family:monospace;">hq_item_cats</span>) لسه فاضي — البحث دلوقتي
+        جدول التصنيفات (<span style="font-variant-numeric:tabular-nums;">hq_item_cats</span>) لسه فاضي — البحث دلوقتي
         بيدوّر في <b>كل الأصناف</b> مش الكتب الخارجية بس.
-        ارفع <span style="font-family:monospace;">agent_hq.ps1</span> الجديد وشغّله مرة يدوي، والفلتر هيشتغل لوحده.
+        ارفع <span style="font-variant-numeric:tabular-nums;">agent_hq.ps1</span> الجديد وشغّله مرة يدوي، والفلتر هيشتغل لوحده.
     </div>
 <?php endif; ?>
 
 <?php if ($viewing): // ===== عرض حجز محفوظ ===== ?>
     <?php $r = $viewing['res']; $stLabels = ['open'=>'مفتوح','delivered'=>'اتسلّم','cancelled'=>'ملغي']; ?>
-    <div class="card" style="margin-bottom:16px;">
+    <div class="fcard" style="margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
             <div>
                 <div class="section-title" style="margin-bottom:8px;">
                     حجز رقم <?= (int)$r['id'] ?>
-                    <span class="pill st-<?= e($r['status']) ?>"><?= e($stLabels[$r['status']] ?? $r['status']) ?></span>
+                    <span class="fchip <?= $r['status'] === 'delivered' ? 'fchip-pos' : ($r['status'] === 'cancelled' ? 'fchip-neg' : '') ?>"><?= e($stLabels[$r['status']] ?? $r['status']) ?></span>
                 </div>
                 <div style="font-size:13.5px;color:var(--ink-700);line-height:2;">
                     <b><?= e($r['customer_name']) ?></b>
@@ -243,26 +215,26 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="hidden" name="action" value="set_status">
                             <input type="hidden" name="res" value="<?= (int)$r['id'] ?>">
                             <input type="hidden" name="status" value="<?= $sv ?>">
-                            <button class="btn" style="background:<?= $col ?>;padding:9px 16px;font-size:13px;"><?= e($lb) ?></button>
+                            <button class="btn <?= $sv === 'delivered' ? 'btn-success' : 'btn-danger' ?>"><?= e($lb) ?></button>
                         </form>
                     <?php endforeach; ?>
                 <?php endif; ?>
-                <a class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:9px 16px;font-size:13px;"
+                <a class="btn btn-primary"
                    href="book_reserve.php"><i class="ti ti-plus"></i> حجز جديد</a>
             </div>
         </div>
 
-        <table class="rs-table" style="margin-top:18px;">
+        <table class="ftable rs-table" style="margin-top:18px;">
             <thead><tr>
-                <th>كود الصنف</th><th class="nm">اسم الصنف</th><th>الكمية</th><th>حالة الكتاب</th>
+                <th class="num">كود الصنف</th><th class="nm">اسم الصنف</th><th class="num">الكمية</th><th>حالة الكتاب</th>
             </tr></thead>
             <tbody>
             <?php foreach ($viewing['lines'] as $l): ?>
                 <tr>
-                    <td class="cd"><?= e($l['code']) ?></td>
+                    <td class="num cd"><?= e($l['code']) ?></td>
                     <td class="nm"><?= e($l['item_name']) ?></td>
-                    <td><?= rtrim(rtrim(number_format((float)$l['qty'], 2, '.', ''), '0'), '.') ?></td>
-                    <td><span class="pill <?= $l['purchased'] ? 'yes' : 'no' ?>">
+                    <td class="num"><?= rtrim(rtrim(number_format((float)$l['qty'], 2, '.', ''), '0'), '.') ?></td>
+                    <td><span class="fchip <?= $l['purchased'] ? 'fchip-pos' : 'fchip-warn' ?>">
                         <?= $l['purchased'] ? 'نزل' : 'منزلش' ?></span></td>
                 </tr>
             <?php endforeach; ?>
@@ -296,7 +268,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="reprint">
                 <input type="hidden" name="res" value="<?= (int)$r['id'] ?>">
-                <button class="btn" style="padding:8px 15px;font-size:13px;">
+                <button class="btn btn-outline btn-sm">
                     <i class="ti ti-printer"></i> إعادة طباعة
                 </button>
             </form>
@@ -304,30 +276,30 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
 <?php else: // ===== حجز جديد ===== ?>
-    <div class="card" style="margin-bottom:16px;">
+    <div class="fcard" style="margin-bottom:16px;">
         <div class="section-title"><i class="ti ti-bookmark"></i> حجز جديد</div>
 
         <div class="rs-grid">
-            <div class="rs-fld">
+            <div class="ffield rs-fld">
                 <label>اسم العميل *</label>
-                <input type="text" id="cName" autocomplete="off" placeholder="اسم العميل">
+                <input type="text" class="finput" id="cName" autocomplete="off" placeholder="اسم العميل">
             </div>
-            <div class="rs-fld">
+            <div class="ffield rs-fld">
                 <label>رقم هاتف العميل</label>
-                <input type="tel" id="cPhone" autocomplete="off" inputmode="tel" placeholder="01xxxxxxxxx">
+                <input type="tel" class="finput" id="cPhone" autocomplete="off" inputmode="tel" placeholder="01xxxxxxxxx">
             </div>
-            <div class="rs-fld">
+            <div class="ffield rs-fld">
                 <label>اللي حجز</label>
-                <input type="text" id="cBy" autocomplete="off"
+                <input type="text" class="finput" id="cBy" autocomplete="off"
                        value="<?= e(current_user()['full_name'] ?? '') ?>">
             </div>
-            <div class="rs-fld">
+            <div class="ffield rs-fld">
                 <label>المقدم (Deposit)</label>
-                <input type="number" id="cDep" min="0" step="0.01" placeholder="0.00">
+                <input type="number" class="finput" id="cDep" min="0" step="0.01" placeholder="0.00">
             </div>
-            <div class="rs-fld">
+            <div class="ffield rs-fld">
                 <label>الفرع</label>
-                <select id="cBranch" <?= $resScope !== null ? 'disabled' : '' ?>>
+                <select class="fselect" id="cBranch" <?= $resScope !== null ? 'disabled' : '' ?>>
                     <option value="0">— اختار الفرع —</option>
                     <?php foreach ($branches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= ($resScope ?? $myBranch) === (int)$b['id'] ? 'selected' : '' ?>>
@@ -344,12 +316,12 @@ require_once __DIR__ . '/includes/header.php';
 
         <!-- بحث وإضافة الكتب -->
         <div class="rs-bar">
-            <input type="text" class="main" id="q" autocomplete="off"
+            <input type="text" class="finput main" id="q" autocomplete="off"
                    placeholder="امسح باركود، أو اكتب كود/اسم الكتاب…"
                    enterkeyhint="search"
                    oninput="onType()"
                    onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
+            <button type="button" class="btn btn-primary"
                     onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
                 <i class="ti ti-camera" style="font-size:18px;"></i>
             </button>
@@ -358,12 +330,12 @@ require_once __DIR__ . '/includes/header.php';
         <div class="rs-status" id="status"></div>
 
         <div style="overflow-x:auto;">
-            <table class="rs-table">
+            <table class="ftable rs-table">
                 <thead><tr>
-                    <th style="width:34px;">#</th>
-                    <th>كود الصنف</th>
+                    <th class="num" style="width:34px;">#</th>
+                    <th class="num">كود الصنف</th>
                     <th class="nm">اسم الصنف</th>
-                    <th style="width:110px;">كمية الحجز</th>
+                    <th class="num" style="width:110px;">كمية الحجز</th>
                     <th style="width:110px;">حالة الكتاب</th>
                     <th style="width:34px;"></th>
                 </tr></thead>
@@ -375,10 +347,10 @@ require_once __DIR__ . '/includes/header.php';
                     flex-wrap:wrap;margin-top:16px;">
             <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
             <span style="display:flex;gap:10px;flex-wrap:wrap;">
-                <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
+                <button type="button" class="btn btn-danger" onclick="clearAll()">
                     <i class="ti ti-trash"></i> تفريغ
                 </button>
-                <button type="button" class="btn" id="saveBtn" style="background:var(--pos-fill);" onclick="saveRes()">
+                <button type="button" class="btn btn-success" id="saveBtn" onclick="saveRes()">
                     <i class="ti ti-bookmark"></i> احفظ الحجز
                 </button>
             </span>
@@ -388,13 +360,13 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <!-- ===== الحجوزات ===== -->
-<div class="card">
+<div class="fcard">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;
                 flex-wrap:wrap;margin-bottom:14px;">
         <div class="section-title" style="margin:0;">الحجوزات</div>
         <div style="display:flex;gap:7px;flex-wrap:wrap;">
             <?php foreach ([['open','المفتوحة'],['delivered','اتسلّمت'],['cancelled','الملغية'],['all','الكل']] as [$sv,$lb]): ?>
-                <a class="btn" style="padding:8px 15px;font-size:13px;background:<?= $statusFilt===$sv?'var(--accent)':'var(--ink-800)' ?>;"
+                <a class="btn btn-sm <?= $statusFilt===$sv ? 'btn-primary' : 'btn-secondary' ?>"
                    href="book_reserve.php?st=<?= $sv ?>"><?= e($lb) ?></a>
             <?php endforeach; ?>
         </div>
@@ -416,7 +388,7 @@ require_once __DIR__ . '/includes/header.php';
                         · <?= e(date('Y-m-d H:i', strtotime((string)$rr['created_at']))) ?>
                     </span>
                 </span>
-                <span class="pill st-<?= e($rr['status']) ?>"><?= e($stLabels[$rr['status']] ?? $rr['status']) ?></span>
+                <span class="fchip <?= $rr['status'] === 'delivered' ? 'fchip-pos' : ($rr['status'] === 'cancelled' ? 'fchip-neg' : '') ?>"><?= e($stLabels[$rr['status']] ?? $rr['status']) ?></span>
             </a>
         <?php endforeach; ?>
     <?php endif; ?>
@@ -540,13 +512,13 @@ require_once __DIR__ . '/includes/header.php';
         }
         body.innerHTML = added.map((r, i) =>
             '<tr>' +
-              '<td>' + (i + 1) + '</td>' +
-              '<td class="cd">' + esc(r.code) + '</td>' +
+              '<td class="num">' + (i + 1) + '</td>' +
+              '<td class="num cd">' + esc(r.code) + '</td>' +
               '<td class="nm">' + esc(r.name) + '</td>' +
-              '<td><input type="number" class="q-inp" min="0" step="1" aria-label="كمية الحجز" ' +
+              '<td class="num"><input type="number" class="finput q-inp" min="0" step="1" aria-label="كمية الحجز" ' +
                   'value="' + (resQty[r.code] != null ? resQty[r.code] : 1) + '" ' +
                   'data-code="' + esc(r.code) + '" oninput="onQty(this)"></td>' +
-              '<td><span class="pill ' + (r.purchased ? 'yes' : 'no') + '">' +
+              '<td><span class="fchip ' + (r.purchased ? 'fchip-pos' : 'fchip-warn') + '">' +
                   (r.purchased ? 'نزل' : 'منزلش') + '</span></td>' +
               '<td><span class="rm" title="شيل" onclick="removeRow(' +
                   JSON.stringify(r.code).replace(/"/g, '&quot;') + ')">✕</span></td>' +

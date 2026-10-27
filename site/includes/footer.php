@@ -53,16 +53,6 @@
     color: var(--ink-500);
     margin-top: 1px;
 }
-.sens-lock-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 36px 20px;
-    text-align: center;
-    margin: 28px auto;
-    max-width: 440px;
-    box-shadow: var(--shadow-sm);
-}
 .sens-lock-icon {
     font-size: 40px;
     color: var(--ink-500);
@@ -117,22 +107,6 @@
 .sens-input-wrap {
     margin-bottom: 12px;
 }
-.sens-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    background: var(--surface);
-    color: var(--text);
-    font-size: var(--fs-sm);
-    font-family: inherit;
-    box-sizing: border-box;
-}
-.sens-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-soft);
-}
 .sens-error {
     color: var(--neg);
     font-size: var(--fs-xs);
@@ -149,7 +123,7 @@
         <h3 class="sens-modal-title"><i class="ti ti-key"></i> دخّل الباسورد بتاعك</h3>
         <form id="sensForm" onsubmit="sensSubmit(event)">
             <div class="sens-input-wrap">
-                <input type="password" id="sensPassword" class="sens-input" autocomplete="current-password" placeholder="كلمة المرور">
+                <input type="password" id="sensPassword" class="finput sens-input" autocomplete="current-password" placeholder="كلمة المرور">
             </div>
             <div id="sensError" class="sens-error" style="display:none;"></div>
             <div class="sens-actions">
@@ -165,8 +139,9 @@
 <script src="assets/app.js?v=13"></script>
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
-     لاستثناء جدول: <table data-xt-off> -->
+     لاستثناء جدول: <table class="ftable" data-xt-off> -->
 <script src="assets/xtable.js?v=11"></script>
 <script src="assets/anicons.js?v=1"></script>
+<script>document.querySelectorAll('.sens-lock-card').forEach(function (card) { card.classList.add('fcard'); });</script>
 </body>
 </html>

@@ -107,54 +107,33 @@ $active_module = 'tasks';
 require_once __DIR__ . '/includes/header.php';
 
 $prioBadge = function($p) {
-    $map = ['normal'=>['عادي','var(--ink-500)','var(--accent-soft)'], 'important'=>['مهم','var(--warn)','var(--warn-soft)'], 'urgent'=>['عاجل','var(--neg)','var(--neg-soft)']];
+    $map = ['normal'=>['عادي',''], 'important'=>['مهم','fchip-warn'], 'urgent'=>['عاجل','fchip-neg']];
     $b = $map[$p] ?? $map['normal'];
-    return '<span style="padding:2px 10px;border-radius:20px;font-size:12px;color:'.$b[1].';background:'.$b[2].';">'.$b[0].'</span>';
+    return '<span class="fchip '.$b[1].'">'.$b[0].'</span>';
 };
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error { background:var(--neg-soft); color:var(--neg); }
-    .t-tabs { display:flex; gap:6px; border-bottom:1.5px solid var(--line); margin-bottom:20px; flex-wrap:wrap; }
-    .t-tab { padding:10px 18px; text-decoration:none; color:var(--ink-500); font-size:14px; border-bottom:2px solid transparent; }
-    .t-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); font-weight:600; }
-    .card { background:var(--surface); border-radius:14px; padding:22px; box-shadow:0 2px 12px rgba(124,111,247,0.05); margin-bottom:18px; }
     .task-item { display:block; padding:14px 16px; border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; text-decoration:none; color:inherit; transition:.15s; }
     .task-item:hover { border-color:var(--accent); background:var(--line-soft); }
     .task-item.pending { border-right:4px solid var(--accent); }
     .task-item.done { opacity:.6; }
-    .ti-title { font-weight:600; color:var(--ink-900); font-size:15px; }
-    .ti-meta { font-size:12px; color:var(--ink-500); margin-top:5px; }
-    .fld { margin-bottom:14px; }
-    .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .fld input, .fld select, .fld textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; box-sizing:border-box; }
-    .fld textarea { min-height:90px; resize:vertical; }
-    .btn-done { background:var(--pos-fill); }
-    .btn-ghost { background:var(--accent-soft); color:var(--accent-text); }
-    .btn-ghost:hover { background:var(--line); color:var(--accent-text); }
-    .scope-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
-    .scope-opt { padding:9px 16px; border:1.5px solid var(--line); border-radius:9px; cursor:pointer; font-size:14px; }
-    .scope-opt.active { border-color:var(--accent-text); background:var(--bg); color:var(--accent-text); font-weight:600; }
+    .task-title { font-weight:600; color:var(--ink-900); font-size:15px; }
+    .task-meta { font-size:12px; color:var(--ink-500); margin-top:5px; }
     .checklist { max-height:260px; overflow-y:auto; border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .checklist label { display:flex; align-items:center; gap:8px; padding:7px 6px; font-size:14px; cursor:pointer; border-radius:6px; }
     .checklist label:hover { background:var(--line-soft); }
-    .checklist input { width:auto; }
     .comment { padding:10px 14px; background:var(--line-soft); border-radius:10px; margin-bottom:8px; }
     .comment .who { font-size:12px; color:var(--accent-text); font-weight:600; margin-bottom:3px; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; }
-    .tgt-chip { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; margin:3px; }
-    .tgt-chip.done { background:var(--pos-soft); color:var(--pos); }
-    .tgt-chip.pending { background:var(--line); color:var(--ink-500); }
 </style>
 
-<?php if ($flash): ?><div class="flash <?= $flashType ?>"><?= e($flash) ?></div><?php endif; ?>
+<?php if ($flash): ?><div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div><?php endif; ?>
 
 <?php if ($openTask): ?>
     <!-- ===== تفاصيل مهمة ===== -->
     <a href="tasks.php" style="color:var(--accent-text);text-decoration:none;font-size:14px;">→ رجوع للمهام</a>
-    <div class="card" style="margin-top:14px;">
+    <div class="fcard" style="margin-top:14px;">
         <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:10px;">
             <div>
                 <h2 style="color:var(--ink-900);margin-bottom:8px;"><?= e($openTask['title']) ?></h2>
@@ -169,10 +148,10 @@ $prioBadge = function($p) {
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="mark_done">
                     <input type="hidden" name="task_id" value="<?= (int)$openTask['id'] ?>">
-                    <button class="btn btn-done"><i class="ti ti-check"></i> علّمها تمت</button>
+                    <button class="btn btn-success"><i class="ti ti-check"></i> علّمها تمت</button>
                 </form>
             <?php elseif ($openTask['my_target_status'] === 'done'): ?>
-                <span class="tgt-chip done">✓ أنجزتها</span>
+                <span class="fchip fchip-pos">✓ أنجزتها</span>
             <?php endif; ?>
         </div>
         <?php if ($openTask['details']): ?>
@@ -181,27 +160,27 @@ $prioBadge = function($p) {
 
         <!-- ===== بيانات طلب النواقص (لو المهمة من الموديول) ===== -->
         <?php if (!empty($openShortage)): $shr = $openShortage['request']; ?>
-            <div style="margin-top:18px;padding:16px;background:rgba(34,197,94,0.06);border:1.5px solid rgba(34,197,94,0.25);border-radius:12px;">
+            <div class="falert falert-pos" style="margin-top:18px;">
                 <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--ink-700);margin-bottom:12px;">
                     <span><i class="ti ti-shopping-cart"></i> <b>الفرع الطالب:</b> <?= e($shr['from_name']) ?></span>
                     <span><b>المطلوب منه:</b> <?= e(($shr['source'] ?? 'branch') === 'purchase' ? 'المشتريات' : ($shr['to_name'] ?? '—')) ?></span>
                     <span><b>الطالب:</b> <?= e($shr['requester'] ?? '—') ?></span>
                 </div>
                 <div style="overflow-x:auto;">
-                    <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+                    <table class="ftable">
                         <thead><tr>
-                            <th style="padding:8px 10px;background:var(--line-soft);text-align:center;">#</th>
-                            <th style="padding:8px 10px;background:var(--line-soft);text-align:center;">الكود</th>
-                            <th style="padding:8px 10px;background:var(--line-soft);text-align:right;">الصنف</th>
-                            <th style="padding:8px 10px;background:var(--line-soft);text-align:center;">الكمية المطلوبة</th>
+                            <th class="num">#</th>
+                            <th class="num">الكود</th>
+                            <th>الصنف</th>
+                            <th class="num">الكمية المطلوبة</th>
                         </tr></thead>
                         <tbody>
                         <?php foreach ($openShortage['lines'] as $i => $ln): ?>
                             <tr>
-                                <td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;"><?= $i+1 ?></td>
-                                <td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-family:monospace;color:var(--ink-500);"><?= e($ln['code']) ?></td>
-                                <td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:right;font-weight:500;"><?= e($ln['item_name'] ?: '—') ?></td>
-                                <td style="padding:8px 10px;border-bottom:1px solid var(--line-soft);text-align:center;font-weight:700;color:var(--pos);"><?= rtrim(rtrim(number_format((float)$ln['qty'], 3, '.', ''), '0'), '.') ?></td>
+                                <td class="num"><?= $i+1 ?></td>
+                                <td class="num"><?= e($ln['code']) ?></td>
+                                <td class="name"><?= e($ln['item_name'] ?: '—') ?></td>
+                                <td class="num" style="font-weight:700;color:var(--pos);"><?= rtrim(rtrim(number_format((float)$ln['qty'], 3, '.', ''), '0'), '.') ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -218,14 +197,14 @@ $prioBadge = function($p) {
             <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line);">
                 <div style="font-size:13px;color:var(--ink-500);margin-bottom:8px;">حالة المستهدفين:</div>
                 <?php foreach ($openTargets as $tg): ?>
-                    <span class="tgt-chip <?= $tg['status'] ?>"><?= e($tg['full_name']) ?> <?= $tg['status']==='done'?'✓':'<i class="ti ti-clock"></i>' ?></span>
+                    <span class="fchip <?= $tg['status'] === 'done' ? 'fchip-pos' : '' ?>"><?= e($tg['full_name']) ?> <?= $tg['status']==='done'?'✓':'<i class="ti ti-clock"></i>' ?></span>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
     </div>
 
     <!-- المرفقات -->
-    <div class="card">
+    <div class="fcard">
         <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;"><i class="ti ti-paperclip"></i> المرفقات (إثبات التنفيذ)</div>
         <?php if (empty($openAttachments)): ?>
             <div class="empty" style="padding:12px;">مفيش مرفقات بعد.</div>
@@ -248,7 +227,7 @@ $prioBadge = function($p) {
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="upload_attachment">
             <input type="hidden" name="task_id" value="<?= (int)$openTask['id'] ?>">
-            <input type="file" name="attachment" accept="image/jpeg,image/png,image/webp,application/pdf" required
+            <input type="file" class="finput" name="attachment" accept="image/jpeg,image/png,image/webp,application/pdf" required
                    style="flex:1;min-width:220px;font-size:13.5px;">
             <button class="btn btn-sm"><i class="ti ti-upload"></i> رفع</button>
         </form>
@@ -256,7 +235,7 @@ $prioBadge = function($p) {
     </div>
 
     <!-- الردود -->
-    <div class="card">
+    <div class="fcard">
         <div style="font-weight:600;color:var(--ink-900);margin-bottom:14px;">الردود والتعليقات</div>
         <?php if (empty($openComments)): ?>
             <div class="empty" style="padding:16px;">مفيش ردود بعد.</div>
@@ -270,32 +249,32 @@ $prioBadge = function($p) {
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_comment">
             <input type="hidden" name="task_id" value="<?= (int)$openTask['id'] ?>">
-            <div class="fld"><textarea name="body" placeholder="اكتب رد..." required></textarea></div>
+            <div class="ffield fld"><textarea class="ftextarea" name="body" placeholder="اكتب رد..." required></textarea></div>
             <button class="btn btn-sm">إرسال الرد</button>
         </form>
     </div>
 
 <?php else: ?>
     <!-- ===== القائمة ===== -->
-    <div class="t-tabs">
-        <a href="?tab=inbox" class="t-tab <?= $tab==='inbox'?'active':'' ?>">الوارد <?= $pendingCount>0?'('.$pendingCount.')':'' ?></a>
-        <a href="?tab=sent" class="t-tab <?= $tab==='sent'?'active':'' ?>">اللي أصدرتها</a>
+    <nav class="ftabs" aria-label="المهام">
+        <a href="?tab=inbox" class="ftab <?= $tab==='inbox'?'is-active':'' ?>">الوارد <?= $pendingCount>0?'('.$pendingCount.')':'' ?></a>
+        <a href="?tab=sent" class="ftab <?= $tab==='sent'?'is-active':'' ?>">اللي أصدرتها</a>
         <?php if (can('tasks_issue')): ?>
-            <a href="tasks_issue.php" class="t-tab">+ إصدار مهمة</a>
+            <a href="tasks_issue.php" class="ftab">+ إصدار مهمة</a>
         <?php endif; ?>
-    </div>
+    </nav>
 
     <?php if ($tab === 'inbox'): ?>
-        <div class="card">
+        <div class="fcard">
             <?php if (empty($inbox)): ?>
                 <div class="empty">مفيش مهام واردة لك.</div>
             <?php else: foreach ($inbox as $t): ?>
                 <a href="?task=<?= (int)$t['id'] ?>" class="task-item <?= $t['my_status'] ?>">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                        <span class="ti-title"><?= e($t['title']) ?></span>
+                        <span class="task-title"><?= e($t['title']) ?></span>
                         <?= $prioBadge($t['priority']) ?>
                     </div>
-                    <div class="ti-meta">
+                    <div class="task-meta">
                         من: <?= e($t['creator'] ?? '—') ?>
                         <?php if ($t['due_date']): ?> · موعد: <?= e($t['due_date']) ?><?php endif; ?>
                         · <?= $t['my_status']==='done' ? '<span style="color:var(--pos);">✓ منجزة</span>' : '<span style="color:var(--accent-text);"><i class="ti ti-clock"></i> مطلوبة</span>' ?>
@@ -305,16 +284,16 @@ $prioBadge = function($p) {
         </div>
 
     <?php elseif ($tab === 'sent'): ?>
-        <div class="card">
+        <div class="fcard">
             <?php if (empty($sent)): ?>
                 <div class="empty">لسه مصدرتش مهام.</div>
             <?php else: foreach ($sent as $t): ?>
                 <a href="?task=<?= (int)$t['id'] ?>" class="task-item">
                     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-                        <span class="ti-title"><?= e($t['title']) ?></span>
+                        <span class="task-title"><?= e($t['title']) ?></span>
                         <?= $prioBadge($t['priority']) ?>
                     </div>
-                    <div class="ti-meta">
+                    <div class="task-meta">
                         أنجزها <?= (int)$t['done'] ?> من <?= (int)$t['total'] ?>
                         <?php if ($t['due_date']): ?> · موعد: <?= e($t['due_date']) ?><?php endif; ?>
                     </div>

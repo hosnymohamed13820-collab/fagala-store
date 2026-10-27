@@ -15,8 +15,8 @@ if (!is_owner()) {
     http_response_code(403);
     echo '<div style="font-family:sans-serif;text-align:center;padding:50px 20px;">'
         . '<h2>غير مصرح لك</h2>'
-        . '<p style="color:#666;">الصفحة دي متاحة لمالك النظام فقط.</p>'
-        . '<a href="dashboard.php" style="color:#1e6fbf;">الرجوع للرئيسية</a>'
+        . '<p>الصفحة دي متاحة لمالك النظام فقط.</p>'
+        . '<a href="dashboard.php">الرجوع للرئيسية</a>'
         . '</div>';
     exit;
 }

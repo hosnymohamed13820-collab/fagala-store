@@ -72,73 +72,13 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/login_fx.css?v=10">
+    <link rel="stylesheet" href="assets/tabler-subset.css">
+    <link rel="stylesheet" href="assets/fagala.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --ink-900: #16233d; --ink-800: #22334f; --ink-700: #3b4e6d;
-            --ink-500: #5c6c85; --ink-400: #5e6e86; --ink-300: #c3ccd8;
-            --accent:       #1e6fbf;
-            --accent-hover: #185a9c;
-            --accent-soft:  #e8f1fb;
-            --accent-ring:  rgba(30,111,191,.20);
-            --accent-text: #1a63ab;
-            --bg:        #f5f6f8;
-            --surface:   #ffffff;
-            --line:      #e3e7ed;
-            --line-soft: #eff2f6;
-            --neg:       #c0332e;
-            --neg-soft:  #fdeceb;
-
-            /* خلفية الكارت وحافته — متغيّرين عشان يقلبوا في الوضع الليلي.
-               الشفافية مقصودة: الكارت عايم فوق التوهجات اللي في body::before. */
-            --card-bg:   rgba(255,255,255,.97);
-            --card-line: rgba(255,255,255,.55);
-
-            color-scheme: light;
-
-            --r-sm: 8px; --r: 10px; --r-lg: 14px;
-        }
-
-        /* الوضع الليلي — القيم دي **منسوخة من assets/fagala.css**.
-           الصفحة دي مابتقراش الملف ده فمحتاجة نسختها الخاصة.
-           🔴 لو غيّرت لون في fagala.css، غيّره هنا معاه أو الصفحتين هيتفرقوا.
-           كل القيم اتفحص تباينها ومعدّية AA. */
-        :root[data-theme="dark"] {
-            --ink-900: #eef2f8;
-            --ink-800: #dbe3ee;
-            --ink-700: #bcc8d8;
-            --ink-500: #8494ac;
-            --ink-400: #8a99b0;
-            --ink-300: #4a5a75;
-
-            --bg:        #0f1826;
-            --surface:   #16202f;
-            --line:      #263243;
-            --line-soft: #1b2635;
-
-            --accent-soft: #14263c;
-            --accent-ring: rgba(122,184,240,.22);
-            --accent-text: #7ab8f0;
-
-            --neg:      #ff8a80;
-            --neg-soft: #3a1a18;
-
-            /* الكارت بيبقى غامق وحافته خط فاتح خفيف بدل الأبيض */
-            --card-bg:   rgba(22,32,47,.97);
-            --card-line: rgba(255,255,255,.09);
-
-            color-scheme: dark;
-        }
-        /* إيقاف الأصفر بتاع autofill */
-        input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
-            -webkit-text-fill-color: var(--ink-800) !important;
-            -webkit-box-shadow: 0 0 0 1000px var(--surface) inset !important;
-            box-shadow: 0 0 0 1000px var(--surface) inset !important;
-            transition: background-color 9999s ease-out 0s;
-        }
         body {
             font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif;
-            background: #101a2e;
+            background: var(--sidebar);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -165,33 +105,17 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
                 linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
             background-size: 54px 54px, 54px 54px;
-            mask-image: radial-gradient(62% 52% at 50% 42%, #000 0%, transparent 100%);
-            -webkit-mask-image: radial-gradient(62% 52% at 50% 42%, #000 0%, transparent 100%);
+            mask-image: radial-gradient(62% 52% at 50% 42%, var(--sidebar) 0%, transparent 100%);
+            -webkit-mask-image: radial-gradient(62% 52% at 50% 42%, var(--sidebar) 0%, transparent 100%);
             pointer-events: none;
         }
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-        .login-card {
+        #loginCard {
             position: relative;
             z-index: 2;
             margin: auto;
-            background: var(--card-bg);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-            border: 1px solid var(--card-line);
-            border-radius: 18px;
-            box-shadow: 0 28px 70px rgba(0,0,0,.42), 0 2px 0 rgba(255,255,255,.5) inset;
             width: 100%;
             max-width: 385px;
-            padding: 36px 30px 30px;
-        }
-        /* شريط ذهبي رفيع أعلى الكارت */
-        .login-card::before {
-            content: '';
-            position: absolute; top: 0; left: 0; right: 0;
-            height: 3px; border-radius: 18px 18px 0 0;
-            background: linear-gradient(90deg,
-                transparent 0%, rgba(214,175,106,.55) 22%,
-                #e2c185 50%, rgba(214,175,106,.55) 78%, transparent 100%);
         }
         .brand {
             text-align: center;
@@ -208,7 +132,6 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             align-items: center;
             justify-content: center;
             font-size: 30px;
-            color: #fff;
             margin-bottom: 14px;
         }
         .brand .logo img { display:block; width:100%; height:100%; object-fit:cover; }
@@ -223,61 +146,15 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             color: var(--ink-500);
             margin-top: 4px;
         }
-        .field { margin-bottom: 18px; }
-        .field label {
-            display: block;
-            font-size: 14px;
-            color: var(--ink-700);
-            margin-bottom: 7px;
-            font-weight: 500;
-        }
-        .field input {
+        .login-submit {
             width: 100%;
-            padding: 12px 14px;
-            border: 1.5px solid var(--line);
-            border-radius: 10px;
-            font-size: 15px;
-            font-family: inherit;
-            transition: border-color .15s, box-shadow .15s;
-            background: var(--surface);
-            color: var(--ink-800);
-        }
-        .field input:focus {
-            outline: none;
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px var(--accent-ring);
-        }
-        .btn-login {
-            width: 100%;
-            padding: 13px;
-            background: linear-gradient(180deg, #3d8ad4 0%, var(--accent) 100%);
-            color: #fff;
-            border: none;
-            box-shadow: 0 6px 16px rgba(30,111,191,.30);
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-            transition: background 0.15s;
             margin-top: 6px;
-        }
-        .btn-login:hover { background: var(--accent-hover); }
-        .btn-login:active { transform: translateY(1px); }
-        .error {
-            background: var(--neg-soft);
-            color: var(--neg);
-            padding: 11px 14px;
-            border-radius: 10px;
-            font-size: 14px;
-            margin-bottom: 18px;
-            text-align: center;
         }
     </style>
 </head>
 <body>
     <div class="lfx" aria-hidden="true"></div>
-    <div class="login-card">
+    <div class="fcard" id="loginCard">
         <div class="brand">
             <div class="logo"><img src="icon-192.png?v=4" alt="" width="58" height="58"></div>
             <h1><?= e($storeName) ?></h1>
@@ -285,28 +162,26 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         </div>
 
         <?php if ($error): ?>
-            <div class="error"><?= e($error) ?></div>
+            <div class="falert falert-neg"><?= e($error) ?></div>
         <?php endif; ?>
 
         <form method="post" autocomplete="off">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-            <div class="field">
+            <div class="ffield field">
                 <label for="username">اسم المستخدم</label>
-                <input type="text" id="username" name="username" required autofocus autocomplete="username"
+                <input type="text" class="finput" id="username" name="username" required autofocus autocomplete="username"
                        value="<?= e($_POST['username'] ?? '') ?>">
             </div>
-            <div class="field">
+            <div class="ffield field">
                 <label for="password">الباسورد</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <input type="password" class="finput" id="password" name="password" required autocomplete="current-password">
             </div>
-            <button type="submit" class="btn-login">دخول</button>
+            <button type="submit" class="btn btn-primary login-submit">دخول</button>
         </form>
 
         <!-- زر تثبيت التطبيق (يظهر لما المتصفح يسمح) -->
-        <button id="installBtn" type="button"
-                style="display:none;width:100%;margin-top:14px;padding:12px;background:var(--surface);color:var(--accent-text);
-                       border:1.5px solid var(--accent);border-radius:10px;font-family:inherit;font-size:15px;
-                       font-weight:600;cursor:pointer;">
+        <button id="installBtn" type="button" class="btn btn-outline"
+                style="display:none;width:100%;margin-top:14px;">
             <i class="ti ti-device-mobile"></i> نزّل التطبيق على جهازك
         </button>
         <p id="iosHint" style="display:none;margin-top:12px;font-size:12px;color:var(--ink-500);text-align:center;line-height:1.7;">

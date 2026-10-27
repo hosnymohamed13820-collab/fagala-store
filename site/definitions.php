@@ -430,22 +430,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
-    .tab {
-        padding:10px 20px; border-radius:10px; text-decoration:none;
-        color:var(--accent-text); background:var(--surface); font-size:14px; font-weight:500;
-        border:1.5px solid transparent;
-    }
-    .tab.active { background:var(--accent); color:#fff; }
-    .tab:not(.active):hover { background:var(--bg); }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:12px 14px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; }
     .badge.active { background:var(--pos-soft); color:var(--pos); }
     .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
@@ -462,43 +447,39 @@ require_once __DIR__ . '/includes/header.php';
     .chk-row { display:flex; align-items:flex-start; gap:9px; padding:9px 11px; margin-top:7px;
         border:1px solid var(--line); border-radius:9px; cursor:pointer; transition:border-color .15s, background .15s; }
     .chk-row:hover { border-color:var(--ink-300); background:var(--line-soft); }
-    .chk-row input { margin-top:3px; width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
+    .chk-row .check-control { margin-top:3px; width:16px; height:16px; flex:0 0 auto; cursor:pointer; }
     .chk-row span { display:flex; flex-direction:column; gap:2px; }
     .chk-row b { font-size:13.5px; color:var(--ink-800); font-weight:600; }
     .chk-row small { font-size:11.5px; color:var(--ink-500); }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select {
-        width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-<div class="tabs">
-    <a href="?tab=branches"   class="tab <?= $tab==='branches'?'active':'' ?>">الفروع</a>
-    <a href="?tab=employees"  class="tab <?= $tab==='employees'?'active':'' ?>">الموظفون</a>
+<nav class="ftabs" aria-label="التعريفات">
+    <a href="?tab=branches"   class="ftab <?= $tab==='branches'?'is-active':'' ?>">الفروع</a>
+    <a href="?tab=employees"  class="ftab <?= $tab==='employees'?'is-active':'' ?>">الموظفون</a>
     <?php if (is_owner()): ?>
-        <a href="users.php?view=roles" class="tab">الأدوار</a>
+        <a href="users.php?view=roles" class="ftab">الأدوار</a>
     <?php endif; ?>
-    <a href="?tab=treasuries" class="tab <?= $tab==='treasuries'?'active':'' ?>">الخزائن</a>
-    <a href="?tab=suppliers"  class="tab <?= $tab==='suppliers'?'active':'' ?>">الموردين</a>
-    <a href="?tab=categories" class="tab <?= $tab==='categories'?'active':'' ?>">تصنيفات المصروفات</a>
-</div>
+    <a href="?tab=treasuries" class="ftab <?= $tab==='treasuries'?'is-active':'' ?>">الخزائن</a>
+    <a href="?tab=suppliers"  class="ftab <?= $tab==='suppliers'?'is-active':'' ?>">الموردين</a>
+    <a href="?tab=categories" class="ftab <?= $tab==='categories'?'is-active':'' ?>">تصنيفات المصروفات</a>
+</nav>
 
 <?php if ($tab === 'branches'): ?>
     <div class="toolbar">
         <span style="color:var(--ink-500);font-size:14px;"><?= count($branches) ?> فرع</span>
         <button class="btn" onclick="openBranch()"><i class="ti ti-plus"></i> إضافة فرع</button>
     </div>
-    <div class="card">
+    <div class="fcard">
         <?php if (empty($branches)): ?>
             <div class="empty">لا توجد فروع بعد. أضف أول فرع.</div>
         <?php else: ?>
-        <table>
+        <table class="ftable">
             <thead><tr><th>الاسم</th><th>العنوان</th><th>التليفون</th><th>الخصائص</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($branches as $b): ?>
@@ -536,10 +517,10 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" id="branchAction" value="add_branch">
                 <input type="hidden" name="id" id="branchId" value="">
-                <div class="form-row"><label for="b_name">اسم الفرع *</label><input type="text" name="name" id="b_name" required></div>
+                <div class="ffield form-row"><label for="b_name">اسم الفرع *</label><input type="text" class="finput" name="name" id="b_name" required></div>
                 <div class="form-row">
                     <label for="b_sto">المخزن في نظام الشركة</label>
-                    <select name="sto_id" id="b_sto">
+                    <select class="fselect" name="sto_id" id="b_sto">
                         <option value="">— مفيش (فرع توزيع بس) —</option>
                         <?php foreach ($storeList as $sid => $sname): ?>
                             <option value="<?= (int)$sid ?>"><?= e($sname) ?></option>
@@ -553,23 +534,23 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="form-row">
                     <label>خصائص الفرع</label>
                     <label class="chk-row">
-                        <input type="checkbox" name="in_receiving" id="b_recv" value="1" checked>
+                        <input type="checkbox" class="check-control" name="in_receiving" id="b_recv" value="1" checked>
                         <span><b>يظهر في الاستلامات</b>
                             <small>عمود توزيع في فواتير الشراء</small></span>
                     </label>
                     <label class="chk-row">
-                        <input type="checkbox" name="has_finance" id="b_fin" value="1" checked>
+                        <input type="checkbox" class="check-control" name="has_finance" id="b_fin" value="1" checked>
                         <span><b>له تعاملات مالية</b>
                             <small>عهدة + كارت في الخزينة + يظهر في الرئيسية</small></span>
                     </label>
                 </div>
-                <div class="form-row"><label for="b_address">العنوان</label><input type="text" name="address" id="b_address"></div>
-                <div class="form-row"><label for="b_phone">التليفون</label><input type="text" name="phone" id="b_phone"></div>
+                <div class="ffield form-row"><label for="b_address">العنوان</label><input type="text" class="finput" name="address" id="b_address"></div>
+                <div class="ffield form-row"><label for="b_phone">التليفون</label><input type="text" class="finput" name="phone" id="b_phone"></div>
 
                 <!-- ===== موقع الفرع ونطاق الحضور ===== -->
                 <div style="border-top:1px solid var(--line);margin:16px 0 12px;padding-top:14px;">
                     <label for="b_lat" style="display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-900);font-weight:600;cursor:pointer;">
-                        <input type="checkbox" name="geofence_enabled" id="b_geoEnabled" value="1" onchange="toggleGeo()" style="width:auto;">
+                        <input type="checkbox" class="check-control" name="geofence_enabled" id="b_geoEnabled" value="1" onchange="toggleGeo()" style="width:auto;">
                         تفعيل نطاق تسجيل الحضور بالـ GPS لهذا الفرع
                     </label>
                     <p style="font-size:12px;color:var(--ink-500);margin-top:6px;">لما يكون مفعّل، الموظف لازم يكون جوه النطاق عشان يبصم (إلا لو مسموحله يبصم من أي مكان). البصمة برّة النطاق بتتسجّل مع تنبيه.</p>
@@ -577,10 +558,10 @@ require_once __DIR__ . '/includes/header.php';
 
                 <div id="geoFields" style="display:none;">
                     <div style="display:flex;gap:10px;">
-                        <div class="form-row" style="flex:1;"><label>خط العرض (Latitude)</label><input type="text" name="latitude" id="b_lat" readonly style="background:var(--accent-soft);"></div>
-                        <div class="form-row" style="flex:1;"><label for="b_lng">خط الطول (Longitude)</label><input type="text" name="longitude" id="b_lng" readonly style="background:var(--accent-soft);"></div>
+                        <div class="ffield form-row" style="flex:1;"><label>خط العرض (Latitude)</label><input type="text" class="finput" name="latitude" id="b_lat" readonly></div>
+                        <div class="ffield form-row" style="flex:1;"><label for="b_lng">خط الطول (Longitude)</label><input type="text" class="finput" name="longitude" id="b_lng" readonly></div>
                     </div>
-                    <div class="form-row"><label for="b_radius">نصف قطر النطاق (متر) — الأنسب 30–100م</label><input type="number" name="geofence_radius" id="b_radius" value="50" min="5" onchange="updateCircle()"></div>
+                    <div class="ffield form-row"><label for="b_radius">نصف قطر النطاق (متر) — الأنسب 30–100م</label><input type="number" class="finput" name="geofence_radius" id="b_radius" value="50" min="5" onchange="updateCircle()"></div>
 
                     <div style="display:flex;gap:8px;margin-bottom:8px;">
                         <button type="button" class="btn btn-sm" onclick="useMyLocation()"><i class="ti ti-current-location"></i> استخدم موقعي الحالي</button>
@@ -602,7 +583,7 @@ require_once __DIR__ . '/includes/header.php';
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <?php elseif ($tab === 'employees'): ?>
-    <div class="card" style="background:var(--warn-soft);border:1.5px solid var(--warn);margin-bottom:14px;">
+    <div class="falert falert-warn" style="margin-bottom:14px;">
         <div style="color:var(--warn);font-size:13px;line-height:1.7;">
             <strong>ملاحظة:</strong> الأفضل إنشاء الموظف من صفحة <strong>المستخدمين</strong> (كل موظف = حساب مستخدم،
             تحدّدله كل حاجة من مكان واحد: الدخول، الصلاحيات، الفرع، المرتب، مواعيد الحضور). الموظفون اللي بتضيفهم هنا
@@ -616,11 +597,11 @@ require_once __DIR__ . '/includes/header.php';
             <button class="btn" onclick="openEmp()"><i class="ti ti-plus"></i> إضافة موظف</button>
         </div>
     </div>
-    <div class="card">
+    <div class="fcard">
         <?php if (empty($employees)): ?>
             <div class="empty">لا يوجد موظفون بعد.</div>
         <?php else: ?>
-        <table>
+        <table class="ftable">
             <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>نوع الحساب</th><th>الراتب</th><th>الساعات المنتظرة</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($employees as $emp): ?>
@@ -675,40 +656,40 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" id="empAction" value="add_employee">
                 <input type="hidden" name="id" id="empId" value="">
-                <div class="form-row"><label for="e_name">الاسم الكامل *</label><input type="text" name="full_name" id="e_name" required></div>
+                <div class="ffield form-row"><label for="e_name">الاسم الكامل *</label><input type="text" class="finput" name="full_name" id="e_name" required></div>
                 <div class="form-row">
                     <label for="e_job">الفرع</label>
-                    <select name="branch_id" id="e_branch">
+                    <select class="fselect" name="branch_id" id="e_branch">
                         <option value="">— بدون —</option>
                         <?php foreach ($activeBranches as $b): ?>
                             <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row"><label>الوظيفة</label><input type="text" name="job_title" id="e_job"></div>
-                <div class="form-row"><label for="e_salary">الراتب الأساسي</label><input type="number" step="0.01" name="base_salary" id="e_salary" value="0"></div>
+                <div class="ffield form-row"><label>الوظيفة</label><input type="text" class="finput" name="job_title" id="e_job"></div>
+                <div class="ffield form-row"><label for="e_salary">الراتب الأساسي</label><input type="number" class="finput" step="0.01" name="base_salary" id="e_salary" value="0"></div>
                 <div class="form-row">
                     <label for="e_salary_mode">نوع حساب المرتب</label>
-                    <select name="salary_mode" id="e_salary_mode" onchange="toggleEmpSalaryMode()">
+                    <select class="fselect" name="salary_mode" id="e_salary_mode" onchange="toggleEmpSalaryMode()">
                         <option value="hours">على الساعات (حضور وبصمة)</option>
                         <option value="fixed">مرتب ثابت (كامل بدون حساب ساعات)</option>
                     </select>
                 </div>
                 <div class="form-row" id="e_exp_hours_row">
                     <label for="e_exp_hours">الساعات المنتظرة في الشهر</label>
-                    <input type="number" step="0.5" min="0" name="expected_monthly_hours" id="e_exp_hours" placeholder="مثلاً 240 أو 300">
+                    <input type="number" class="finput" step="0.5" min="0" name="expected_monthly_hours" id="e_exp_hours" placeholder="مثلاً 240 أو 300">
                     <small style="display:block;color:var(--ink-500);font-size:12px;margin-top:4px;">
                         ٢٤٠ = ٨ ساعات في اليوم · ٣٠٠ = ١٠ ساعات (غير مطلوبة للمرتب الثابت)
                     </small>
                 </div>
-                <div class="form-row"><label for="e_phone">التليفون</label><input type="text" name="phone" id="e_phone"></div>
+                <div class="ffield form-row"><label for="e_phone">التليفون</label><input type="text" class="finput" name="phone" id="e_phone"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                    <div class="form-row"><label for="t_name">الحضور المتوقع</label><input type="time" name="expected_in" id="e_in" value="09:00"></div>
-                    <div class="form-row"><label>الانصراف المتوقع</label><input type="time" name="expected_out" id="e_out" value="17:00"></div>
+                    <div class="ffield form-row"><label for="t_name">الحضور المتوقع</label><input type="time" class="finput" name="expected_in" id="e_in" value="09:00"></div>
+                    <div class="ffield form-row"><label>الانصراف المتوقع</label><input type="time" class="finput" name="expected_out" id="e_out" value="17:00"></div>
                 </div>
                 <div class="form-row">
                     <label>ربط بحساب مستخدم (لتسجيل الحضور)</label>
-                    <select name="user_id" id="e_user">
+                    <select class="fselect" name="user_id" id="e_user">
                         <option value="">— بدون —</option>
                         <?php foreach ($linkUsers as $lu): ?>
                             <option value="<?= (int)$lu['id'] ?>"><?= e($lu['full_name']) ?> (<?= e($lu['username']) ?>)</option>
@@ -728,7 +709,7 @@ require_once __DIR__ . '/includes/header.php';
         <span style="color:var(--ink-500);font-size:14px;"><?= count($treasuries) ?> خزينة</span>
         <button class="btn" onclick="openTre()"><i class="ti ti-plus"></i> إضافة خزينة</button>
     </div>
-    <div class="card">
+    <div class="fcard">
         <?php if (empty($treasuries)): ?>
             <div class="empty">لا توجد خزائن بعد. استورد ملف الخزائن أو أضف خزينة.</div>
         <?php else: ?>
@@ -741,7 +722,7 @@ require_once __DIR__ . '/includes/header.php';
         $closingTreasuryId = central_treasury_by_type('cash'); // تقفيل الكاشير
         $custodyTreasuryId = main_cash_treasury_id();          // إذون عهدة الفروع
         ?>
-        <table>
+        <table class="ftable">
             <thead><tr><th>الاسم</th><th>النوع</th><th>الرصيد</th><th>الحالة</th><th>الإيصالات</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php foreach ($treasuries as $t): ?>
@@ -829,10 +810,10 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" id="treAction" value="add_treasury">
                 <input type="hidden" name="id" id="treId" value="">
-                <div class="form-row"><label>اسم الخزينة *</label><input type="text" name="name" id="t_name" required></div>
+                <div class="ffield form-row"><label>اسم الخزينة *</label><input type="text" class="finput" name="name" id="t_name" required></div>
                 <div class="form-row" id="typeRow">
                     <label>النوع *</label>
-                    <select name="type" id="t_type" onchange="treTypeHint()">
+                    <select class="fselect" name="type" id="t_type" onchange="treTypeHint()">
                         <option value="cash">كاش</option>
                         <option value="visa">فيزا</option>
                         <option value="instapay">إنستا باي</option>
@@ -863,7 +844,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
     </div>
-    <div class="card" style="padding:0;overflow:hidden;">
+    <div class="fcard" style="padding:0;overflow:hidden;">
         <?php if (empty($defSuppliers)): ?>
             <div class="empty">لا يوجد موردين.</div>
         <?php else: ?>
@@ -885,7 +866,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td class="name" style="max-width:none;" title="<?= e($s['name']) ?>"><?= e($s['name']) ?></td>
                         <td>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                <select class="supp-ptype" data-prev="<?= e($s['payment_type'] ?? '') ?>"
+                                <select class="fselect supp-ptype" data-prev="<?= e($s['payment_type'] ?? '') ?>"
                                         style="padding:6px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;background:var(--surface);color:var(--ink-800);">
                                     <option value="" <?= empty($s['payment_type']) ? 'selected' : '' ?>>—</option>
                                     <option value="cash" <?= ($s['payment_type'] ?? '') === 'cash' ? 'selected' : '' ?>>كاش</option>
@@ -909,7 +890,7 @@ require_once __DIR__ . '/includes/header.php';
             <form method="post" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center;">
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" value="import_categories">
-                <input type="file" name="cats_file" accept=".csv,text/csv" required
+                <input type="file" class="finput" name="cats_file" accept=".csv,text/csv" required
                        style="font-size:13px;max-width:200px;">
                 <button type="submit" class="btn btn-ghost btn-sm"><i class="ti ti-upload"></i> استيراد من ملف</button>
             </form>
@@ -917,11 +898,11 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
     <p style="color:var(--ink-500);font-size:12px;margin:-6px 0 14px;">الملف CSV، والعمود الأول فيه أسماء التصنيفات (سطر لكل تصنيف). المكرر والموجود بيتخطّى تلقائيًا.</p>
-    <div class="card">
+    <div class="fcard">
         <?php if (empty($categories)): ?>
             <div class="empty">لا توجد حسابات بعد.</div>
         <?php else: ?>
-        <table>
+        <table class="ftable">
             <thead><tr><th>الاسم</th><th>النوع</th><th>العهدة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php
@@ -969,14 +950,14 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="action" id="catAction" value="add_category">
                 <input type="hidden" name="id" id="catId" value="">
-                <div class="form-row"><label for="c_name">اسم الحساب *</label><input type="text" name="name" id="c_name" required aria-label="اسم الحساب"></div>
+                <div class="ffield form-row"><label for="c_name">اسم الحساب *</label><input type="text" class="finput" name="name" id="c_name" required aria-label="اسم الحساب"></div>
                 <div class="form-row">
                     <label>الحساب الأب (رأس القيد)</label>
                     <?= acctree_field('parent_id', null, '— بدون أب (حساب رئيسي) —', 'all', 'catParent') ?>
                 </div>
                 <div class="form-row">
                     <label for="c_type">النوع</label>
-                    <select name="acc_type" id="c_type">
+                    <select class="fselect" name="acc_type" id="c_type">
                         <option value="expense">مصروف</option>
                         <option value="revenue">إيراد</option>
                         <option value="asset">أصل</option>
@@ -984,7 +965,7 @@ require_once __DIR__ . '/includes/header.php';
                     </select>
                 </div>
                 <div class="form-row" id="custodyRow" style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" name="is_custody" id="acc_cust" value="1">
+                    <input type="checkbox" class="check-control" name="is_custody" id="acc_cust" value="1">
                     <label for="acc_cust" style="margin:0;">يظهر في شاشة العهدة</label>
                 </div>
                 <div id="catWarn" style="display:none;margin-top:10px;padding:9px 11px;border-radius:9px;

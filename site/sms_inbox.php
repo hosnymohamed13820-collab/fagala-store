@@ -163,7 +163,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="content-container">
 
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+    <div class="fpage-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <h2 style="margin:0;font-size:22px;display:flex;align-items:center;gap:8px;">
             <i class="ti ti-device-mobile" style="color:var(--accent-text);"></i> رسايل إنستاباي
         </h2>
@@ -171,20 +171,20 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- (١) كروت الحالة -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:24px;">
-        <div class="card" style="padding:16px;">
+    <div class="fkpis" style="margin-bottom:24px;">
+        <div class="fkpi">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">إجمالي الرسايل</div>
             <div style="font-size:24px;font-weight:700;color:var(--accent-text);"><?= number_format($totalCount) ?></div>
         </div>
-        <div class="card" style="padding:16px;">
+        <div class="fkpi">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">رسايل جديدة (مباشرة)</div>
             <div style="font-size:24px;font-weight:700;color:var(--pos);"><?= number_format($liveCount) ?></div>
         </div>
-        <div class="card" style="padding:16px;">
+        <div class="fkpi">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">رسايل قديمة (سحب)</div>
             <div style="font-size:24px;font-weight:700;color:var(--ink-700);"><?= number_format($backfillCount) ?></div>
         </div>
-        <div class="card" style="padding:16px;">
+        <div class="fkpi">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:6px;">آخر رسالة وصلت</div>
             <div style="font-size:15px;font-weight:600;color:var(--ink-800);direction:ltr;text-align:right;"><?= e($lastReceived) ?></div>
         </div>
@@ -192,7 +192,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (is_owner()): ?>
     <!-- (٢) بيانات ربط التطبيق -->
-    <div class="card" style="padding:18px;margin-bottom:24px;background:var(--surface);">
+    <div class="fcard" style="margin-bottom:24px;">
         <h3 style="margin:0 0 12px 0;font-size:15px;display:flex;align-items:center;gap:6px;">
             <i class="ti ti-device-mobile"></i> إعدادات الربط في تطبيق الأندرويد
         </h3>
@@ -200,8 +200,8 @@ require_once __DIR__ . '/includes/header.php';
             <div>
                 <label style="display:block;font-size:12px;color:var(--ink-500);margin-bottom:6px;">رابط السيرفر (Webhook URL)</label>
                 <div style="display:flex;gap:6px;">
-                    <input type="text" id="hookUrlInp" value="<?= e($hookUrl) ?>" readonly
-                           style="width:100%;direction:ltr;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font-family:monospace;font-size:13px;">
+                    <input type="text" class="finput" id="hookUrlInp" value="<?= e($hookUrl) ?>" readonly
+                           style="direction:ltr;font-variant-numeric:tabular-nums;">
                     <button type="button" class="btn btn-ghost" onclick="copyField('hookUrlInp', 'تم نسخ الرابط')" title="نسخ الرابط">
                         <i class="ti ti-copy"></i>
                     </button>
@@ -210,8 +210,8 @@ require_once __DIR__ . '/includes/header.php';
             <div>
                 <label style="display:block;font-size:12px;color:var(--ink-500);margin-bottom:6px;">توكن الحماية (Secret Token)</label>
                 <div style="display:flex;gap:6px;">
-                    <input type="password" id="hookTokInp" value="<?= e($hookToken) ?>" readonly
-                           style="width:100%;direction:ltr;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font-family:monospace;font-size:13px;">
+                    <input type="password" class="finput" id="hookTokInp" value="<?= e($hookToken) ?>" readonly
+                           style="direction:ltr;font-variant-numeric:tabular-nums;">
                     <button type="button" class="btn btn-ghost" onclick="toggleTokVis()" title="إظهار / إخفاء">
                         <i class="ti ti-eye"></i>
                     </button>
@@ -228,7 +228,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <!-- (٣) كلمات الفلتر -->
-    <div class="card" style="padding:18px;margin-bottom:24px;">
+    <div class="fcard" style="margin-bottom:24px;">
         <h3 style="margin:0 0 6px 0;font-size:15px;display:flex;align-items:center;gap:6px;">
             <i class="ti ti-filter"></i> كلمات فلتر الرسائل (بتتحفظ لوحدها)
         </h3>
@@ -242,9 +242,9 @@ require_once __DIR__ . '/includes/header.php';
                     <label style="font-weight:600;font-size:13px;color:var(--pos);">كلمات التضمين (الرسايل المقبولة)</label>
                     <span class="save-ind" id="ind_include" style="font-size:12px;font-weight:600;"></span>
                 </div>
-                <textarea class="kw-textarea" data-key="sms_include_keywords" rows="7"
+                <textarea class="ftextarea kw-textarea" data-key="sms_include_keywords" rows="7"
                           data-saved="<?= e($includeKw) ?>" onblur="saveKeywords(this)"
-                          style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:var(--r);font-family:inherit;font-size:13px;line-height:1.5;background:var(--bg);"><?= e($includeKw) ?></textarea>
+                          ><?= e($includeKw) ?></textarea>
                 <div style="font-size:11px;color:var(--ink-400);margin-top:4px;">
                     الرسالة اللي فيها أي كلمة من دول في الراسل أو النص بتتبعت للموقع.
                 </div>
@@ -255,9 +255,9 @@ require_once __DIR__ . '/includes/header.php';
                     <label style="font-weight:600;font-size:13px;color:var(--neg);">كلمات الاستبعاد (تمنع الإرسال فوراً)</label>
                     <span class="save-ind" id="ind_exclude" style="font-size:12px;font-weight:600;"></span>
                 </div>
-                <textarea class="kw-textarea" data-key="sms_exclude_keywords" rows="7"
+                <textarea class="ftextarea kw-textarea" data-key="sms_exclude_keywords" rows="7"
                           data-saved="<?= e($excludeKw) ?>" onblur="saveKeywords(this)"
-                          style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:var(--r);font-family:inherit;font-size:13px;line-height:1.5;background:var(--bg);"><?= e($excludeKw) ?></textarea>
+                          ><?= e($excludeKw) ?></textarea>
                 <div style="font-size:11px;color:var(--ink-400);margin-top:4px;">
                     الرسالة اللي فيها أي كلمة من دول (أكواد التحقق وOTP) مابتتبعتش خالص حتى لو فيها كلمة تضمين.
                 </div>
@@ -266,51 +266,51 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- (٤) كروت ملخص الفترة والفلتر وجدول الرسايل -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px;margin-bottom:20px;">
-        <div class="card" style="padding:14px;border-top:3px solid var(--pos);">
+    <div class="fkpis" style="margin-bottom:20px;">
+        <div class="fkpi" style="border-top:3px solid var(--pos);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي الداخل</div>
             <div style="font-size:20px;font-weight:700;color:var(--pos);"><?= number_format($totInAmount, 2) ?> <span style="font-size:13px;font-weight:400;">جم</span></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><?= number_format($totInCount) ?> عملية</div>
         </div>
-        <div class="card" style="padding:14px;border-top:3px solid var(--neg);">
+        <div class="fkpi" style="border-top:3px solid var(--neg);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي الخارج (تحويلات + كارت)</div>
             <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($totOutAmount, 2) ?> <span style="font-size:13px;font-weight:400;">جم</span></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><?= number_format($totOutCount) ?> عملية</div>
         </div>
-        <div class="card" style="padding:14px;border-top:3px solid <?= $netAmount >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
+        <div class="fkpi" style="border-top:3px solid <?= $netAmount >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">الصافي</div>
             <div style="font-size:20px;font-weight:700;color:<?= $netAmount >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
                 <?= ($netAmount < 0 ? '−' : '') . number_format(abs($netAmount), 2) ?> <span style="font-size:13px;font-weight:400;">جم</span>
             </div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">داخل − خارج</div>
         </div>
-        <div class="card" style="padding:14px;border-top:3px solid var(--ink-400);">
+        <div class="fkpi" style="border-top:3px solid var(--ink-400);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">مش معروف</div>
             <div style="font-size:20px;font-weight:700;color:var(--ink-600);"><?= number_format($unknownCount) ?></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">رسائل خارج النمط</div>
         </div>
-        <div class="card" style="padding:14px;border-top:3px solid var(--neg);">
+        <div class="fkpi" style="border-top:3px solid var(--neg);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;"><?= e(SMS_FOREIGN_LABEL) ?> (مش شغل)</div>
             <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($foreignCount) ?></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">برّه الإجماليات · بالأحمر</div>
         </div>
     </div>
 
-    <div class="card" style="padding:18px;">
+    <div class="fcard">
         <!-- شريط الفلتر والبحث والتصدير -->
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-            <form method="GET" action="sms_inbox.php" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0;">
+            <form method="GET" action="sms_inbox.php" class="ffilters">
                 <div>
                     <label style="display:block;font-size:11px;color:var(--ink-500);margin-bottom:4px;">من تاريخ</label>
-                    <input type="date" name="from" value="<?= e($from) ?>" style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                    <input type="date" class="finput" name="from" value="<?= e($from) ?>">
                 </div>
                 <div>
                     <label style="display:block;font-size:11px;color:var(--ink-500);margin-bottom:4px;">إلى تاريخ</label>
-                    <input type="date" name="to" value="<?= e($to) ?>" style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                    <input type="date" class="finput" name="to" value="<?= e($to) ?>">
                 </div>
                 <div>
                     <label style="display:block;font-size:11px;color:var(--ink-500);margin-bottom:4px;">النوع</label>
-                    <select name="kind" style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                    <select class="fselect" name="kind">
                         <option value="all" <?= $kind === 'all' ? 'selected' : '' ?>>الكل</option>
                         <option value="in" <?= $kind === 'in' ? 'selected' : '' ?>>داخل</option>
                         <option value="out" <?= $kind === 'out' ? 'selected' : '' ?>>خارج</option>
@@ -320,7 +320,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div>
                     <label for="smsColorFilter" style="display:block;font-size:11px;color:var(--ink-500);margin-bottom:4px;">اللون</label>
-                    <select id="smsColorFilter" onchange="filterSmsTable()" style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                    <select class="fselect" id="smsColorFilter" onchange="filterSmsTable()">
                         <option value="all">كل الألوان</option><option value="yellow">أصفر</option><option value="green">أخضر</option>
                         <option value="red">أحمر</option><option value="orange">برتقالي</option><option value="none">بلا لون</option>
                     </select>
@@ -333,9 +333,9 @@ require_once __DIR__ . '/includes/header.php';
 
             <div style="position:relative;width:240px;max-width:100%;">
                 <i class="ti ti-search" style="position:absolute;top:9px;right:10px;color:var(--ink-400);"></i>
-                <input type="text" id="smsSearch" placeholder="بحث سريع في النتائج…"
+                <input type="text" class="finput" id="smsSearch" placeholder="بحث سريع في النتائج…"
                        oninput="filterSmsTable()"
-                       style="width:100%;box-sizing:border-box;padding:7px 32px 7px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:13px;background:var(--bg);">
+                       style="padding-inline-start:32px;">
             </div>
         </div>
 
@@ -346,12 +346,12 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php else: ?>
             <div style="overflow-x:auto;">
-                <table id="smsTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+                <table class="ftable" id="smsTable">
                     <thead>
                         <tr style="border-bottom:2px solid var(--line);text-align:right;">
                             <th style="padding:10px 8px;width:140px;">التاريخ والوقت</th>
                             <th style="padding:10px 8px;width:80px;text-align:center;">النوع</th>
-                            <th style="padding:10px 8px;width:100px;text-align:left;">المبلغ</th>
+                            <th class="num" style="width:100px;">المبلغ</th>
                             <th style="padding:10px 8px;">الطرف</th>
                             <th style="padding:10px 8px;width:120px;">الرقم المرجعي</th>
                             <th style="padding:10px 8px;width:130px;text-align:center;">القيد</th>
@@ -365,7 +365,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tbody>
                         <?php foreach ($messages as $m): ?>
                             <?php
-                                $sClass = $m['source'] === 'live' ? 'background:var(--pos-soft);color:var(--pos);' : 'background:var(--ink-100);color:var(--ink-700);';
+                                $sClass = $m['source'] === 'live' ? 'fchip-pos' : '';
                                 $sLabel = $m['source'] === 'live' ? 'جديدة' : 'قديمة';
                             ?>
                             <tr class="sms-row <?= !empty($m['foreign']) ? 'sms-foreign' : '' ?> <?= $m['color'] !== '' ? 'sms-mark-' . e($m['color']) : '' ?>" style="border-bottom:1px solid var(--line);"
@@ -381,17 +381,17 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="padding:10px 8px;white-space:nowrap;text-align:center;">
                                     <?php
                                         if ($m['kind'] === 'in') {
-                                             echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">داخل</span>';
+                                             echo '<span class="fchip fchip-pos">داخل</span>';
                                         } elseif ($m['kind'] === 'out') {
-                                            echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg-soft);color:var(--neg);">خارج</span>';
+                                            echo '<span class="fchip fchip-neg">خارج</span>';
                                         } elseif ($m['kind'] === 'card') {
-                                            echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg-soft);color:var(--neg);">كارت</span>';
+                                            echo '<span class="fchip fchip-neg">كارت</span>';
                                         } else {
-                                            echo '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--ink-100);color:var(--ink-500);">مش معروف</span>';
+                                            echo '<span class="fchip">مش معروف</span>';
                                         }
                                     ?>
                                 </td>
-                                <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:left;">
+                                <td class="num" style="white-space:nowrap;direction:ltr;">
                                     <?php if ($m['amount'] !== null): ?>
                                         <?php $amtColor = $m['kind'] === 'in' ? 'var(--pos)' : ($m['kind'] !== null ? 'var(--neg)' : 'var(--ink-700)'); ?>
                                         <span style="color:<?= $amtColor ?>;font-weight:700;"><?= number_format((float) $m['amount'], 2) ?></span>
@@ -402,7 +402,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="padding:10px 8px;white-space:nowrap;font-weight:500;">
                                     <?= e($m['party'] ?? '—') ?>
                                 </td>
-                                <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:right;font-family:monospace;font-size:12px;">
+                                <td class="num" style="white-space:nowrap;direction:ltr;font-variant-numeric:tabular-nums;font-size:12px;">
                                     <?= e($m['ref'] ?? '—') ?>
                                 </td>
                                 <td style="padding:10px 8px;text-align:center;white-space:nowrap;" id="spCell_<?= (int) $m['id'] ?>">
@@ -410,17 +410,17 @@ require_once __DIR__ . '/includes/header.php';
                                         $sp = $permitsMap[(int) $m['id']] ?? null;
                                         if (!empty($m['foreign']) && !$sp):
                                     ?>
-                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--neg);color:#fff;"
+                                        <span class="fchip fchip-neg"
                                               title="<?= e(SMS_FOREIGN_LABEL) ?> — متسجّلة على نفس الرقم ومالهاش علاقة بالشغل">
                                             مش شغل
                                         </span>
                                     <?php elseif ($sp && $sp['status'] === 'approved'):
                                     ?>
-                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--pos-soft);color:var(--pos);">
+                                        <span class="fchip fchip-pos">
                                             ✓ اتسجّل (إذن #<?= (int) $sp['id'] ?>)
                                         </span>
                                     <?php elseif ($sp && ($sp['status'] === 'pending' || $sp['status'] === 'approving')): ?>
-                                        <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;background:var(--warn-soft);color:var(--warn);">
+                                        <span class="fchip fchip-warn">
                                             مستني المراجعة
                                         </span>
                                     <?php else: ?>
@@ -448,7 +448,7 @@ require_once __DIR__ . '/includes/header.php';
                                     <?= e(mb_strimwidth((string) $m['body'], 0, 75, '…')) ?>
                                 </td>
                                 <td style="padding:10px 8px;">
-                                    <input class="sms-note" type="text" value="<?= e($m['note']) ?>" data-saved="<?= e($m['note']) ?>"
+                                    <input class="finput sms-note" type="text" value="<?= e($m['note']) ?>" data-saved="<?= e($m['note']) ?>"
                                            aria-label="ملاحظة الرسالة <?= (int) $m['id'] ?>" onblur="saveSmsMark(this.closest('tr'))" placeholder="اكتب ملاحظة…">
                                     <span class="sms-save-ind" aria-live="polite"></span>
                                 </td>
@@ -462,7 +462,7 @@ require_once __DIR__ . '/includes/header.php';
                                     </div>
                                 </td>
                                 <td style="padding:10px 8px;text-align:center;white-space:nowrap;">
-                                    <span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;<?= $sClass ?>">
+                                    <span class="fchip <?= $sClass ?>">
                                         <?= e($sLabel) ?>
                                     </span>
                                 </td>
@@ -615,7 +615,7 @@ function saveSmsMark(row, chosenColor) {
 </script>
 
 <style>
-#smsTable .sms-note { width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink-900);font:inherit; }
+#smsTable .sms-note { width:100%;box-sizing:border-box; }
 #smsTable .sms-save-ind { display:block;font-size:11px;color:var(--ink-500); }
 #smsTable tbody tr.sms-foreign:not([class*="sms-mark-"]) { background:var(--neg-soft); }
 #smsTable tbody tr.sms-mark-red { background:var(--neg-soft);box-shadow:inset -4px 0 0 var(--neg); }
@@ -639,12 +639,8 @@ function saveSmsMark(row, chosenColor) {
 .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
 .form-row { margin-bottom:14px; }
 .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-.form-row input, .form-row select, .form-row textarea {
-    width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-    font-size:14px; font-family:inherit; background:var(--line-soft); box-sizing:border-box; }
-.form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
 .modal-actions { display:flex; gap:10px; margin-top:20px; }
-.form-row input.trs-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px;box-sizing:border-box; }
+.form-row .trs-pick-search { width:100%;margin-bottom:8px;box-sizing:border-box; }
 .trs-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;background:var(--surface); }
 .trs-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
 .trs-pick-opt:hover { background:var(--bg); }
@@ -654,9 +650,9 @@ function saveSmsMark(row, chosenColor) {
 <div class="modal-bg" id="spModal">
     <div class="modal">
         <h3 id="spModalTitle" style="display:flex;align-items:center;gap:8px;">
-            <i class="ti ti-receipt"></i> سجّل إذن من الرسالة
+            <i class="ti ti-file-invoice"></i> سجّل إذن من الرسالة
         </h3>
-        <div id="spError" style="display:none;background:var(--neg-soft);color:var(--neg);padding:10px 14px;border-radius:var(--r);font-size:13px;margin-bottom:14px;"></div>
+        <div id="spError" class="falert falert-neg" style="display:none;"></div>
         <form id="spForm" onsubmit="handleSpSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="create_permit">
@@ -665,7 +661,7 @@ function saveSmsMark(row, chosenColor) {
 
             <div class="form-row">
                 <label for="spActionSelect">نوع الإذن</label>
-                <select id="spActionSelect" onchange="spChangeAction(this.value)">
+                <select class="fselect" id="spActionSelect" onchange="spChangeAction(this.value)">
                     <option value="receipt">إذن استلام (نقدية داخلة)</option>
                     <option value="disbursement">إذن صرف (نقدية خارجة)</option>
                 </select>
@@ -674,7 +670,7 @@ function saveSmsMark(row, chosenColor) {
             <!-- نوع العملية -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label for="spOpType">تصنيف العملية</label>
-                <select name="op_type" id="spOpType" onchange="spToggleOpType()">
+                <select class="fselect" name="op_type" id="spOpType" onchange="spToggleOpType()">
                     <option value="normal">عادي</option>
                     <option value="supplier">مورد</option>
                     <option value="advance">سلفة موظف</option>
@@ -684,7 +680,7 @@ function saveSmsMark(row, chosenColor) {
 
                 <!-- مورد -->
                 <div id="spSupplierBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="spSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                    <input type="text" id="spSuppSearch" class="finput trs-pick-search" placeholder="ابحث باسم المورد..."
                            data-picker-search="#spSuppList" data-item=".sp-supp-opt" data-empty="مفيش مورد بالاسم ده"
                            oninput="filterSpSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                     <div id="spSuppList" class="trs-pick-list">
@@ -701,7 +697,7 @@ function saveSmsMark(row, chosenColor) {
 
                 <!-- سلفة أو عهدة موظف -->
                 <div id="spAdvanceBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="spEmpSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                    <input type="text" id="spEmpSearch" class="finput trs-pick-search" placeholder="ابحث باسم الموظف..."
                            oninput="filterSpEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
                     <div id="spEmpList" class="trs-pick-list">
                         <?php foreach ($employees as $emp): ?>
@@ -718,7 +714,7 @@ function saveSmsMark(row, chosenColor) {
                 <!-- عهدة فرع -->
                 <div id="spCustodyBox" style="display:none;margin-top:12px;">
                     <label for="spCustodyBranch">الفرع</label>
-                    <select name="branch_id" id="spCustodyBranch">
+                    <select class="fselect" name="branch_id" id="spCustodyBranch">
                         <option value="">— اختر الفرع —</option>
                         <?php foreach ($branchesForCustody as $b): ?>
                             <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
@@ -729,7 +725,7 @@ function saveSmsMark(row, chosenColor) {
 
             <div class="form-row">
                 <label for="spTreasury">الخزينة</label>
-                <select name="treasury_id" id="spTreasury" required>
+                <select class="fselect" name="treasury_id" id="spTreasury" required>
                     <?php foreach ($allTreasuries as $t): ?>
                         <option value="<?= (int)$t['id'] ?>"
                                 data-type="<?= e($t['type']) ?>"
@@ -748,7 +744,7 @@ function saveSmsMark(row, chosenColor) {
 
             <div class="form-row" id="spCostBranchRow">
                 <label for="spCostBranch">اسم الفرع</label>
-                <select name="cost_branch_id" id="spCostBranch">
+                <select class="fselect" name="cost_branch_id" id="spCostBranch">
                     <option value="">— بدون تحديد —</option>
                     <?php foreach ($costBranches as $cb): ?>
                         <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
@@ -758,23 +754,23 @@ function saveSmsMark(row, chosenColor) {
 
             <div class="form-row">
                 <label for="spAmount">المبلغ</label>
-                <input type="text" inputmode="decimal" data-money name="amount" id="spAmount" required
+                <input type="text" class="finput" inputmode="decimal" data-money name="amount" id="spAmount" required
                        autocomplete="off" placeholder="0" aria-label="المبلغ">
             </div>
 
             <div class="form-row">
                 <label for="spDate">التاريخ</label>
-                <input type="date" name="date" id="spDate" required>
+                <input type="date" class="finput" name="date" id="spDate" required>
             </div>
 
             <div class="form-row">
                 <label for="spDesc">البيان</label>
-                <input type="text" name="description" id="spDesc" placeholder="البيان" aria-label="البيان">
+                <input type="text" class="finput" name="description" id="spDesc" placeholder="البيان" aria-label="البيان">
             </div>
 
             <div class="form-row">
                 <label for="spNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                <textarea name="notes" id="spNotes" rows="2" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                <textarea class="ftextarea" name="notes" id="spNotes" rows="2" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
             </div>
 
             <div class="modal-actions">

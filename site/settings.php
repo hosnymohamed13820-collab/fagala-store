@@ -253,35 +253,10 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .settings-form { max-width:560px; }
-    .form-row { margin-bottom:18px; }
-    .form-row label { display:block; font-size:14px; color:var(--ink-700); margin-bottom:7px; font-weight:500; }
-    .form-row input {
-        width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
-    .form-row select {
-        width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:10px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
-
-    /* الحقول مقفولة افتراضياً — تعديل بالغلط في إعداد زي حساب الإيراد أو
-       مفتاح الإشعارات ممكن يوقّع حاجات، فالقفل هو الوضع الطبيعي. */
     .fld-line { display:flex; gap:8px; align-items:center; }
-    .fld-line input, .fld-line select { flex:1; min-width:0; }
-    .form-row.is-locked input, .form-row.is-locked select {
-        background:var(--line-soft); color:var(--ink-500); cursor:default; }
-    .fld-edit {
-        flex:none; padding:9px 14px; border:1.5px solid var(--line); border-radius:9px;
-        background:var(--surface); color:var(--accent-text); font-family:inherit; font-size:13px;
-        font-weight:600; cursor:pointer; }
-    .fld-edit:hover { background:var(--accent-soft); color:var(--accent-text); }
-    .form-row.is-open .fld-edit { border-color:var(--neg); color:var(--neg); }
-    .form-row.is-open .fld-edit:hover { background:var(--neg-soft); color:var(--neg); }
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { padding: 12px 28px; font-size: 15px; font-weight: 600; }
+    .fld-line > :first-child { flex:1; min-width:0; }
+    .fld-edit { flex:none; }
     .nav-links { margin-bottom:20px; display:flex; gap:10px; flex-wrap:wrap; }
     .nav-link { padding:9px 16px; background:var(--surface); border-radius:9px; text-decoration:none;
         color:var(--accent-text); font-size:14px; }
@@ -289,7 +264,7 @@ require_once __DIR__ . '/includes/header.php';
 
     /* سلايدر نوع bool (مبني على تصميم الوضع الليلي في fagala.css) */
     .toggle-wrap { display:inline-flex; align-items:center; gap:10px; }
-    .toggle-wrap input[type="checkbox"] { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
+    .toggle-wrap .st-checkbox { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
     /* 🔴 الأسماء دي متفردة بقصد. سلايدر الوضع الليلي في fagala.css بيستعمل
        `.tt-track`/`.tt-knob`، وفيه قاعدة `:root[data-theme="dark"] .tt-track`
        بتلوّن أي عنصر بالاسم ده أزرق **من غير أي علاقة بالشيك بوكس**.
@@ -308,10 +283,10 @@ require_once __DIR__ . '/includes/header.php';
         background:var(--surface); box-shadow:var(--shadow-sm);
         transition:transform .2s;
     }
-    .toggle-wrap input[type="checkbox"]:checked + .st-track {
+    .toggle-wrap .st-checkbox:checked + .st-track {
         background:var(--accent); border-color:var(--accent);
     }
-    .toggle-wrap input[type="checkbox"]:checked + .st-track .st-knob {
+    .toggle-wrap .st-checkbox:checked + .st-track .st-knob {
         transform:translateX(-20px);
     }
     .toggle-status { font-size:13px; color:var(--ink-700); user-select:none; }
@@ -332,26 +307,26 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
 <?php if (is_owner()): ?>
-<div class="card" style="margin-bottom:18px;">
+<div class="fcard" style="margin-bottom:18px;">
     <h3 style="margin-top:0;margin-bottom:14px;font-size:16px;color:var(--ink-900);">تغيير الباسورد</h3>
     <form method="post" style="max-width:560px;">
         <input type="hidden" name="action" value="change_password">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-        <div class="form-row">
+        <div class="ffield form-row">
             <label for="fld_current_password">الباسورد الحالي</label>
-            <input type="password" id="fld_current_password" name="current_password" autocomplete="current-password" required>
+            <input type="password" class="finput" id="fld_current_password" name="current_password" autocomplete="current-password" required>
         </div>
-        <div class="form-row">
+        <div class="ffield form-row">
             <label for="fld_new_password">الباسورد الجديد</label>
-            <input type="password" id="fld_new_password" name="new_password" autocomplete="new-password" minlength="8" required>
+            <input type="password" class="finput" id="fld_new_password" name="new_password" autocomplete="new-password" minlength="8" required>
         </div>
-        <div class="form-row">
+        <div class="ffield form-row">
             <label for="fld_new_password2">تأكيد الباسورد الجديد</label>
-            <input type="password" id="fld_new_password2" name="new_password2" autocomplete="new-password" minlength="8" required>
+            <input type="password" class="finput" id="fld_new_password2" name="new_password2" autocomplete="new-password" minlength="8" required>
         </div>
         <button type="submit" class="btn btn-primary">غيّر الباسورد</button>
     </form>
@@ -364,25 +339,25 @@ $dsHour  = (int) setting('daily_summary_hour', '23');
 $dsSel   = array_map('intval', explode(',', (string) setting('daily_summary_users', '')));
 $dsUsers = settings_ds_users($pdo);
 ?>
-<div class="card ds-locked" style="margin-bottom:18px;" id="dailySummaryCard">
+<div class="fcard ds-locked" style="margin-bottom:18px;" id="dailySummaryCard">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
         <h3 style="margin:0;font-size:16px;color:var(--ink-900);">الملخص اليومي</h3>
-        <button type="button" class="fld-edit" id="dsEdit" title="مقفول عشان محدش يغيّر حاجة بالغلط — اضغط عشان تعدّل">تعديل</button>
+        <button type="button" class="btn btn-outline btn-sm fld-edit" id="dsEdit" title="مقفول عشان محدش يغيّر حاجة بالغلط — اضغط عشان تعدّل">تعديل</button>
     </div>
     <div class="fld-hint" style="margin-bottom:14px;">
         إشعار كل ليلة: كل فرع باع كام مقارنة بنفس اليوم الأسبوع اللي فات، والأكتر بيعاً، والأصناف اللي خلصت. أي تغيير هنا بيتحفظ لوحده.
         · <a href="daily_summary.php">شوف ملخص النهاردة</a>
     </div>
-    <div class="form-row">
+    <div class="ffield form-row">
         <div class="toggle-wrap">
-            <input type="checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?> disabled>
+            <input type="checkbox" class="st-checkbox" id="dsOn" <?= $dsOn ? 'checked' : '' ?> disabled>
             <label for="dsOn" class="st-track"><span class="st-knob"></span></label>
             <span class="toggle-status" id="dsOnTxt"><?= $dsOn ? 'شغّال' : 'مقفول' ?></span>
         </div>
     </div>
-    <div class="form-row">
+    <div class="ffield form-row">
         <label for="dsHour">يتبعت الساعة</label>
-        <select id="dsHour" style="max-width:160px;" disabled>
+        <select class="fselect" id="dsHour" style="max-width:160px;" disabled>
             <?php for ($h = 18; $h <= 24; $h++): ?>
                 <option value="<?= $h ?>" <?= $h === $dsHour ? 'selected' : '' ?>><?= $h - 12 ?> بالليل (<?= $h === 24 ? '00' : $h ?>:00)</option>
             <?php endfor; ?>
@@ -404,7 +379,7 @@ $dsUsers = settings_ds_users($pdo);
         .ds-users { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:4px 16px; }
         .ds-u { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:8px; cursor:pointer; min-width:0; }
         .ds-u:hover { background:var(--line-soft); }
-        .ds-u input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent-text); }
+        .ds-u .ds-user { width:16px; height:16px; margin:0; flex:none; accent-color:var(--accent-text); }
         .ds-n { font-size:14px; color:var(--ink-900); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .ds-r { font-size:12px; color:var(--ink-500); flex:none; }
         /* مقفول: بيظهر اللي بيوصلهم بس، ومفيش حاجة تتداس */
@@ -461,16 +436,16 @@ $dsUsers = settings_ds_users($pdo);
 </script>
 <?php endif; ?>
 
-<div class="card">
+<div class="fcard">
     <form method="post" class="settings-form">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <?php foreach ($editable as $key => $meta): ?>
             <?php [$label, $type] = $meta; ?>
-            <div class="form-row<?= $type !== 'bool' ? ' is-locked' : '' ?>">
+            <div class="ffield form-row<?= $type !== 'bool' ? ' is-locked' : '' ?>">
                 <label for="fld_<?= e($key) ?>"><?= e($label) ?></label>
                 <div class="fld-line">
                     <?php if ($type === 'user'): ?>
-                        <select id="fld_<?= e($key) ?>" name="<?= e($key) ?>" disabled>
+                        <select class="fselect" id="fld_<?= e($key) ?>" name="<?= e($key) ?>" disabled>
                             <option value="0">— مفيش (الأونر بس) —</option>
                             <?php foreach ($settingsUsers as $su): ?>
                                 <option value="<?= (int)$su['id'] ?>" <?= (int)($current[$key] ?? 0) === (int)$su['id'] ? 'selected' : '' ?>>
@@ -482,7 +457,7 @@ $dsUsers = settings_ds_users($pdo);
                         <?php $isBoolOn = ($current[$key] ?? '1') === '1'; ?>
                         <div class="toggle-wrap">
                             <input type="hidden" name="<?= e($key) ?>" value="0">
-                            <input type="checkbox"
+                            <input type="checkbox" class="st-checkbox"
                                    id="fld_<?= e($key) ?>"
                                    name="<?= e($key) ?>"
                                    value="1"
@@ -499,7 +474,7 @@ $dsUsers = settings_ds_users($pdo);
                             </span>
                         </div>
                     <?php else: ?>
-                        <input type="<?= e($type) ?>"
+                        <input type="<?= e($type) ?>" class="finput"
                                id="fld_<?= e($key) ?>"
                                <?= $type === 'number' ? 'step="0.01" min="0"' : '' ?>
                                name="<?= e($key) ?>"
@@ -507,7 +482,7 @@ $dsUsers = settings_ds_users($pdo);
                                readonly>
                     <?php endif; ?>
                     <?php if ($type !== 'bool'): ?>
-                        <button type="button" class="fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
+                        <button type="button" class="btn btn-outline btn-sm fld-edit" title="اضغط عشان تعدّل القيمة دي">تعديل</button>
                     <?php endif; ?>
                 </div>
                 <?php if ($type === 'bool'): ?>
@@ -522,7 +497,7 @@ $dsUsers = settings_ds_users($pdo);
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>
-        <button type="submit" class="btn">حفظ الإعدادات</button>
+        <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
     </form>
 </div>
 
@@ -627,7 +602,7 @@ $inWindow = agent_in_window();
 $wMin     = agent_cfg_int('agent_warn_min', 20);
 $aMin     = agent_cfg_int('agent_alert_min', 60);
 ?>
-<div class="card" id="agents">
+<div class="fcard" id="agents">
     <h3 style="font-size:16px;color:var(--ink-900);margin-bottom:4px;">وكلاء المزامنة</h3>
     <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;">
         كل وكيل بيبعت نبضة كل دقيقتين حتى لو مفيش بيع جديد — فالسكوت معناه
@@ -783,7 +758,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
     <?php
         $guardInvoices = settings_guard_invoices($pdo);
     ?>
-    <div class="card" style="margin-top:20px;">
+    <div class="fcard" style="margin-top:20px;">
         <h3 style="margin-bottom:6px;">فك حارس رصيد الإدارة عن فاتورة</h3>
         <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
             السماح بتوزيع فاتورة شراء على الفروع حتى كمية الفاتورة دون التقيد برصيد الإدارة الحالي (حتى لو رصيد الإدارة صفر أو مش واصل).
@@ -801,10 +776,10 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                 <button type="button" onclick="document.getElementById('invGuardModal').classList.remove('open')" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--ink-500);">&times;</button>
             </div>
             <div style="margin-bottom:12px;">
-                <input type="search" id="guardSearchInput" placeholder="بحث برقم الفاتورة أو اسم المورد..." style="width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--surface);color:var(--ink-900);">
+                <input type="search" class="finput" id="guardSearchInput" placeholder="بحث برقم الفاتورة أو اسم المورد...">
             </div>
             <div style="overflow-y:auto;flex:1;max-height:55vh;border:1px solid var(--line);border-radius:10px;">
-                <table style="width:100%;border-collapse:collapse;font-size:13px;" id="guardTable">
+                <table class="ftable" id="guardTable">
                     <thead>
                         <tr style="background:var(--line-soft);text-align:right;position:sticky;top:0;z-index:2;">
                             <th style="padding:10px 12px;border-bottom:1px solid var(--line);">رقم الفاتورة</th>
@@ -836,7 +811,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
                                 style="border-bottom:1px solid var(--line-soft);<?= $isOff ? 'background:var(--warn-soft);' : '' ?>">
                                 <td style="padding:9px 12px;font-weight:600;">
                                     <?= e($gi['invoice_no'] ?: '#' . $gi['id']) ?>
-                                    <span class="guard-badge" style="display:<?= $isOff ? 'inline-block' : 'none' ?>;margin-right:6px;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--warn-fill);color:#fff;">الحارس مفكوك</span>
+                                    <span class="guard-badge" style="display:<?= $isOff ? 'inline-block' : 'none' ?>;margin-right:6px;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--warn-fill);color:var(--surface);">الحارس مفكوك</span>
                                 </td>
                                 <td style="padding:9px 12px;"><?= e($gi['supplier_name']) ?></td>
                                 <td style="padding:9px 12px;color:var(--ink-500);"><?= e($gi['dist_date']) ?></td>
