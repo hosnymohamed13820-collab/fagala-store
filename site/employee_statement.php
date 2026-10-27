@@ -48,13 +48,6 @@ require_once __DIR__ . '/includes/header.php';
         margin: 0 auto;
         padding: 10px 0 30px;
     }
-    .statement-card {
-        background:var(--surface);
-        border-radius: var(--r-lg, 16px);
-        padding: 24px;
-        box-shadow: var(--shadow, 0 2px 12px rgba(124,111,247,0.08));
-        margin-bottom: 20px;
-    }
     .statement-head {
         display: flex;
         justify-content: space-between;
@@ -79,12 +72,9 @@ require_once __DIR__ . '/includes/header.php';
         font-size: 16px;
         font-weight: 700;
     }
-    .msg-card {
-        background:var(--surface);
-        border-radius: var(--r-lg, 16px);
+    .statement-message {
         padding: 40px 24px;
         text-align: center;
-        box-shadow: var(--shadow, 0 2px 12px rgba(124,111,247,0.08));
         max-width: 480px;
         margin: 30px auto;
     }
@@ -104,8 +94,6 @@ require_once __DIR__ . '/includes/header.php';
         color: var(--ink-500);
         line-height: 1.6;
     }
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { font-size: 13px; font-weight: 600; }
     .empty {
         text-align: center;
         padding: 40px 20px;
@@ -116,7 +104,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="statement-wrap">
 <?php if ($notLinked): ?>
-    <div class="msg-card">
+    <div class="statement-message fcard">
         <div class="msg-icon"><i class="ti ti-user-cog"></i></div>
         <div class="msg-title">الحساب غير مربوط بملف موظف</div>
         <div class="msg-desc">
@@ -125,7 +113,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <?php elseif ($isManager && (!$employee || $targetEmpId <= 0)): ?>
-    <div class="msg-card">
+    <div class="statement-message fcard">
         <div class="msg-icon"><i class="ti ti-users"></i></div>
         <div class="msg-title">لم يتم تحديد موظف</div>
         <div class="msg-desc">
@@ -134,7 +122,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 <?php else: ?>
-    <div class="statement-card">
+    <div class="statement-card fcard">
         <div class="statement-head">
             <div>
                 <div class="statement-emp-name"><?= e($employee['full_name']) ?></div>
@@ -150,14 +138,14 @@ require_once __DIR__ . '/includes/header.php';
             <div class="empty">لا توجد حركات مسجلة في كشف الحساب.</div>
         <?php else: ?>
             <div style="overflow-x: auto;">
-                <table>
+                <table class="ftable">
                     <thead>
                         <tr>
                             <th style="width: 100px;">التاريخ</th>
                             <th>البيان</th>
-                            <th style="width: 100px; text-align: left;">عليه</th>
-                            <th style="width: 100px; text-align: left;">له</th>
-                            <th style="width: 140px; text-align: left;">الرصيد</th>
+                            <th class="num" style="width: 100px;">عليه</th>
+                            <th class="num" style="width: 100px;">له</th>
+                            <th class="num" style="width: 140px;">الرصيد</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -181,21 +169,21 @@ require_once __DIR__ . '/includes/header.php';
                                     </div>
                                 <?php endif; ?>
                             </td>
-                            <td style="text-align: left;">
+                            <td class="num">
                                 <?php if ($entry['direction'] === 'debit'): ?>
                                     <span style="color: var(--neg); font-weight: 600;"><?= number_format($entry['amount'], 2) ?></span>
                                 <?php else: ?>
                                     <span style="color: var(--ink-400);">—</span>
                                 <?php endif; ?>
                             </td>
-                            <td style="text-align: left;">
+                            <td class="num">
                                 <?php if ($entry['direction'] === 'credit'): ?>
                                     <span style="color: var(--pos); font-weight: 600;"><?= number_format($entry['amount'], 2) ?></span>
                                 <?php else: ?>
                                     <span style="color: var(--ink-400);">—</span>
                                 <?php endif; ?>
                             </td>
-                            <td style="text-align: left;">
+                            <td class="num">
                                 <span style="color: <?= $rowBal['color'] ?>; font-weight: 600;"><?= e($rowBal['full']) ?></span>
                             </td>
                         </tr>

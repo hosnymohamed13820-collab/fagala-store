@@ -161,11 +161,8 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .att-wrap { max-width:480px; margin:0 auto; }
-    .att-card { background:var(--surface); border-radius:16px; padding:26px; box-shadow:0 2px 12px rgba(124,111,247,0.08); margin-bottom:18px; }
+    .att-panel { margin-bottom:18px; }
     .att-date { text-align:center; color:var(--ink-500); font-size:14px; margin-bottom:6px; }
     .att-name { text-align:center; color:var(--ink-900); font-size:20px; font-weight:700; margin-bottom:22px; }
     .exp-row { display:flex; justify-content:space-around; margin-bottom:18px; }
@@ -181,7 +178,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .worked .l { color:var(--ink-500); font-size:14px; letter-spacing:1px; }
     .worked .v { color:var(--pos); font-size:32px; font-weight:800; }
     .clock-btn { width:100%; padding:18px; border:none; border-radius:14px; font-size:18px;
-        font-weight:700; font-family:inherit; cursor:pointer; color:#fff; margin-bottom:12px;
+        font-weight:700; font-family:inherit; cursor:pointer; color:var(--fill-strong-fg); margin-bottom:12px;
         display:flex; align-items:center; justify-content:center; gap:10px; }
     .btn-in  { background:var(--pos-fill); } .btn-in:hover { background:var(--pos-fill); }
     .btn-out { background:var(--neg-fill); } .btn-out:hover { background:var(--neg-fill); }
@@ -194,33 +191,29 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:420px; padding:26px; }
+    .modal { width:100%; max-width:420px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
-    .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
 <div class="att-wrap">
 <?php if (!$employee): ?>
-    <div class="att-card">
+    <div class="att-panel fcard">
         <div class="no-emp">
             حسابك غير مربوط بموظف.<br>
             تواصل مع الإدارة لربط حسابك ببياناتك في الموارد البشرية.
         </div>
     </div>
 <?php else: ?>
-    <div class="att-card">
+    <div class="att-panel fcard">
         <div class="att-date"><?= e(date('l, j F Y', strtotime($attDate))) ?></div>
         <?php if ($isCarryOver): ?>
-        <div style="background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;
-                    font-size:13px;text-align:center;margin-bottom:10px;">
+        <div class="falert falert-warn">
             <i class="ti ti-clock"></i> وردية أمس لسه مفتوحة — سجّل انصرافك
         </div>
         <?php endif; ?>
@@ -286,15 +279,15 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
 
 <!-- Modal: طلب تصحيح -->
 <div class="modal-bg" id="fixModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>طلب تصحيح حضور</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="request_fix">
-            <div class="form-row"><label>اليوم</label><input type="date" name="req_date" value="<?= $today ?>" required></div>
-            <div class="form-row"><label>وقت الحضور الصحيح</label><input type="time" name="requested_in"></div>
-            <div class="form-row"><label>وقت الانصراف الصحيح</label><input type="time" name="requested_out"></div>
-            <div class="form-row"><label>السبب</label><input type="text" name="reason" placeholder="نسيت أسجّل..." aria-label="السبب"></div>
+            <div class="form-row ffield"><label>اليوم</label><input class="finput" type="date" name="req_date" value="<?= $today ?>" required></div>
+            <div class="form-row ffield"><label>وقت الحضور الصحيح</label><input class="finput" type="time" name="requested_in"></div>
+            <div class="form-row ffield"><label>وقت الانصراف الصحيح</label><input class="finput" type="time" name="requested_out"></div>
+            <div class="form-row ffield"><label>السبب</label><input class="finput" type="text" name="reason" placeholder="نسيت أسجّل..." aria-label="السبب"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">إرسال الطلب</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('fixModal').classList.remove('open')">إلغاء</button>
@@ -459,48 +452,44 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         }
     }
 ?>
-<div class="card" style="background:var(--surface);border-radius:14px;padding:20px;box-shadow:0 2px 10px rgba(124,111,247,0.06);margin-top:18px;">
-    <div style="font-size:16px;color:var(--ink-900);font-weight:600;margin-bottom:14px;">سجل الحضور وملخص الفترة</div>
-    <form method="get" style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">من:</label>
-        <input type="date" name="from" value="<?= e($attFrom) ?>" onchange="formSubmit(this.form)"
-               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
-        <label style="font-size:13px;color:var(--ink-700);font-weight:500;">إلى:</label>
-        <input type="date" name="to" value="<?= e($attTo) ?>" onchange="formSubmit(this.form)"
-               style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
-        <button type="submit" class="btn btn-sm btn-ghost" style="padding:6px 14px;"><i class="ti ti-refresh"></i> تحديث</button>
+<div class="card fcard" style="margin-top:18px;">
+    <div class="fcard-head"><div class="fcard-title">سجل الحضور وملخص الفترة</div></div>
+    <form method="get" class="ffilters">
+        <div class="ffield"><label>من:</label>
+        <input class="finput finput-sm" type="date" name="from" value="<?= e($attFrom) ?>" onchange="formSubmit(this.form)"></div>
+        <div class="ffield"><label>إلى:</label>
+        <input class="finput finput-sm" type="date" name="to" value="<?= e($attTo) ?>" onchange="formSubmit(this.form)"></div>
+        <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;">
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي ساعات العمل</div>
-            <div style="font-size:18px;font-weight:700;color:var(--accent-text);"><?= number_format($periodTotalHours, 2) ?> <span style="font-size:13px;font-weight:500;">ساعة</span></div>
+    <div class="fkpis">
+        <div class="fkpi">
+            <span>إجمالي ساعات العمل</span>
+            <strong style="color:var(--accent-text);"><?= number_format($periodTotalHours, 2) ?> <small>ساعة</small></strong>
         </div>
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام سجّلت فيها حضور وانصراف</div>
-            <div style="font-size:18px;font-weight:700;color:var(--pos);"><?= $completeDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+        <div class="fkpi">
+            <span>أيام سجّلت فيها حضور وانصراف</span>
+            <strong style="color:var(--pos);"><?= $completeDays ?> <small>يوم</small></strong>
         </div>
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+        <div class="fkpi"
              title="دول الأيام اللي نسيت فيها تسجّل دخول أو خروج — اطلب تصحيح من الزرار اللي فوق">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام تسجيلها ناقص</div>
-            <div style="font-size:18px;font-weight:700;color:var(--warn);"><?= $missingDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+            <span>أيام تسجيلها ناقص</span>
+            <strong style="color:var(--warn);"><?= $missingDays ?> <small>يوم</small></strong>
         </div>
-        <div style="background:var(--line-soft);border-radius:10px;padding:12px 14px;text-align:center;"
+        <div class="fkpi"
              title="أيام مالكش فيها تسجيل خالص — لو فيها شغل اطلب تصحيح">
-            <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">أيام مفيش تسجيل خالص</div>
-            <div style="font-size:18px;font-weight:700;color:var(--neg);"><?= $noneDays ?> <span style="font-size:13px;font-weight:500;">يوم</span></div>
+            <span>أيام مفيش تسجيل خالص</span>
+            <strong style="color:var(--neg);"><?= $noneDays ?> <small>يوم</small></strong>
         </div>
     </div>
 
     <?php if (empty($myPeriodAtt)): ?>
         <div style="text-align:center;color:var(--ink-400);padding:24px;">لا يوجد سجل لهذه الفترة.</div>
     <?php else: ?>
-    <div style="overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;">
+    <div class="ftable-wrap">
+    <table class="ftable">
         <thead><tr>
-            <?php foreach (['التاريخ','الحضور','الانصراف','ساعات العمل','الحالة'] as $h): ?>
-                <th style="padding:10px 12px;text-align:right;font-size:13px;color:var(--ink-500);border-bottom:1px solid var(--line);"><?= $h ?></th>
-            <?php endforeach; ?>
+            <th>التاريخ</th><th class="num">الحضور</th><th class="num">الانصراف</th><th class="num">ساعات العمل</th><th>الحالة</th>
         </tr></thead>
         <tbody>
         <?php foreach ($myPeriodAtt as $a): ?>
@@ -526,8 +515,8 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                 }
             ?>
             <tr<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
-                <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= e($a['att_date']) ?></td>
-                <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
+                <td><?= e($a['att_date']) ?></td>
+                <td class="num">
                     <?php if ($rowHasIn): ?>
                         <?= e(substr($a['check_in'],0,5)) ?>
                         <?php if ($inOutside): ?><span title="خارج النطاق (<?= (int)$a['check_in_dist'] ?>م)" style="color:var(--neg);font-size:11px;"><i class="ti ti-alert-triangle"></i></span><?php endif; ?>
@@ -537,7 +526,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                         <?= e('—') ?>
                     <?php endif; ?>
                 </td>
-                <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
+                <td class="num">
                     <?php if ($rowHasOut): ?>
                         <?= e(substr($a['check_out'],0,5)) ?>
                         <?php if ($outOutside): ?><span title="خارج النطاق (<?= (int)$a['check_out_dist'] ?>م)" style="color:var(--neg);font-size:11px;"><i class="ti ti-alert-triangle"></i></span><?php endif; ?>
@@ -547,9 +536,9 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                         <?= e('—') ?>
                     <?php endif; ?>
                 </td>
-                <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);"><?= number_format((float)$a['work_hours'],2) ?></td>
-                <td style="padding:10px 12px;text-align:right;font-size:13px;border-bottom:1px solid var(--line);">
-                    <span style="padding:3px 11px;border-radius:20px;font-size:12px;color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span>
+                <td class="num"><?= number_format((float)$a['work_hours'],2) ?></td>
+                <td>
+                    <span class="fchip" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span>
                 </td>
             </tr>
         <?php endforeach; ?>

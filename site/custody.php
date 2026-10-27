@@ -238,35 +238,22 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .top-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
-    .branch-select select { padding:10px 14px; border:1.5px solid var(--line); border-radius:10px;
-        font-size:14px; font-family:inherit; background:var(--surface); }
     .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:20px; }
-    .stat { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
+    .stat { padding:18px; }
     .stat .label { font-size:13px; color:var(--ink-500); margin-bottom:6px; }
     .stat .value { font-size:24px; font-weight:700; color:var(--ink-900); }
-    .stat.accent { background:var(--accent); color:#fff; }
-    .stat.accent .label { color:rgba(255,255,255,0.85); } .stat.accent .value { color:#fff; }
+    .stat.accent { background:var(--accent); color:var(--fill-strong-fg); }
+    .stat.accent .label { color:var(--fill-strong-fg); opacity:.85; } .stat.accent .value { color:var(--fill-strong-fg); }
     .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
     @media (max-width:820px){ .grid2 { grid-template-columns:1fr; } }
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:10px 12px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
     .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
     .form-inline .fld { flex:1; min-width:120px; }
-    .form-inline label { display:block; font-size:12px; color:var(--ink-500); margin-bottom:4px; }
-    .form-inline input, .form-inline select { width:100%; padding:9px 11px; border:1.5px solid var(--line);
-        border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
     /* جرد الفئات */
-    .denom-table input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
-        font-size:14px; text-align:center; font-family:inherit; }
+    .denom-table .finput { width:90px; }
     .denom-sub { font-weight:600; color:var(--ink-900); }
     .count-result { padding:14px; border-radius:10px; margin-top:14px; font-size:15px; font-weight:600; }
     .count-result.ok { background:var(--pos-soft); color:var(--pos); }
@@ -276,13 +263,10 @@ require_once __DIR__ . '/includes/header.php';
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
-    .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
+    .modal { width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; font-size:18px; }
     .form-row { margin-bottom:14px; }
-    .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select, .form-row textarea { width:100%; padding:10px 12px; border:1.5px solid var(--line);
-        border-radius:9px; font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input.cst-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px; }
+    .form-row .cst-pick-search { margin-bottom:8px; }
     .cst-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px; }
     .cst-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
     .cst-pick-chosen { margin-top:8px;font-size:13px;color:var(--pos);font-weight:600; }
@@ -291,13 +275,11 @@ require_once __DIR__ . '/includes/header.php';
         border-radius:12px; margin-bottom:18px; font-size:14px; line-height:1.65; }
     .status-bar i { font-size:19px; flex-shrink:0; margin-top:1px; }
     .status-bar .sb-sub { display:block; font-size:13px; opacity:0.85; margin-top:2px; }
-    .status-bar.pending  { background:var(--warn-soft); color:var(--warn); }
-    .status-bar.rejected { background:var(--neg-soft);  color:var(--neg); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
@@ -334,7 +316,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="branch-select">
             <form method="get" style="display:inline;">
                 <input type="hidden" name="tab" value="employee">
-                <select name="emp" onchange="formSubmit(this.form)">
+                <select class="fselect" name="emp" onchange="formSubmit(this.form)">
                     <option value="">— اختر الموظف —</option>
                     <?php foreach ($allEmployees as $em): ?>
                         <option value="<?= (int)$em['id'] ?>" <?= $selectedEmpId===(int)$em['id']?'selected':'' ?>>
@@ -348,9 +330,9 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <?php if ($selectedEmpId <= 0): ?>
-        <div class="card"><div class="empty">لا توجد عهدة مسجلة لحسابك حالياً.</div></div>
+        <div class="card fcard"><div class="empty">لا توجد عهدة مسجلة لحسابك حالياً.</div></div>
     <?php elseif (!$empCustody): ?>
-        <div class="card">
+        <div class="card fcard">
             <div class="empty">
                 <?php if (is_owner()): ?>
                     لا توجد عهدة مفتوحة للموظف <?= e($selectedEmpName) ?> حالياً.<br>
@@ -373,7 +355,7 @@ require_once __DIR__ . '/includes/header.php';
             $canEditThisEmpCustody = in_array($empStatus, ['open', 'rejected'], true);
         ?>
         <?php if ($isEmpPending): ?>
-            <div class="status-bar pending">
+            <div class="status-bar falert falert-warn pending">
                 <i class="ti ti-clock"></i>
                 <div>
                     <strong>مقدّمة لمراجعة المحاسب.</strong>
@@ -384,7 +366,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
         <?php elseif ($isEmpRej): ?>
-            <div class="status-bar rejected">
+            <div class="status-bar falert falert-neg rejected">
                 <i class="ti ti-alert-triangle"></i>
                 <div>
                     <strong>المحاسب رفض الإقفال:</strong> <?= e($empCustody['reject_reason'] ?? '—') ?>
@@ -393,16 +375,16 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <div class="stats" style="display:flex;gap:14px;flex-wrap:wrap;">
-            <div class="stat" style="flex:1;min-width:160px;">
+        <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;">
+            <div class="stat fkpi" style="flex:1;min-width:160px;">
                 <div class="label">رصيد أول المدة</div>
                 <div class="value"><?= number_format($empOpening,2) ?></div>
             </div>
-            <div class="stat" style="flex:1;min-width:160px;">
+            <div class="stat fkpi" style="flex:1;min-width:160px;">
                 <div class="label">إجمالي المصروفات</div>
                 <div class="value" style="color:var(--neg);"><?= number_format($empTotalExp,2) ?></div>
             </div>
-            <div class="stat accent" style="flex:1;min-width:160px;">
+            <div class="stat fkpi accent" style="flex:1;min-width:160px;">
                 <div class="label">رصيد آخر المدة (المفروض)</div>
                 <div class="value"><?= number_format($empClosing,2) ?></div>
             </div>
@@ -410,7 +392,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="grid2">
             <!-- المصروفات -->
-            <div class="card">
+            <div class="card fcard">
                 <div class="section-title">اللي اتصرف من العهدة</div>
                 <?php if ($canEditThisEmpCustody): ?>
                 <div style="margin-bottom:16px;">
@@ -420,8 +402,8 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if (empty($empExpenses)): ?>
                     <div class="empty">لا توجد مصروفات بعد.</div>
                 <?php else: ?>
-                <table>
-                    <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+                <table class="ftable">
+                    <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php foreach ($empExpenses as $ex): ?>
                         <tr>
@@ -437,7 +419,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php endif; ?>
                                 <?= e($ex['description']) ?>
                             </td>
-                            <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
+                            <td class="num" style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                             <?php if ($canEditThisEmpCustody): ?>
                             <td>
                                 <?php
@@ -469,18 +451,18 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <!-- إذونات الصرف الواردة -->
-            <div class="card">
+            <div class="card fcard">
                 <div class="section-title">إذونات الصرف الصادرة للموظف</div>
                 <?php if (empty($empOrders)): ?>
                     <div class="empty">لا توجد إذونات في هذه الفترة.</div>
                 <?php else: ?>
-                <table>
-                    <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظات</th></tr></thead>
+                <table class="ftable">
+                    <thead><tr><th>التاريخ</th><th class="num">المبلغ</th><th>ملاحظات</th></tr></thead>
                     <tbody>
                     <?php foreach ($empOrders as $o): ?>
                         <tr>
                             <td><?= e($o['order_date']) ?></td>
-                            <td style="font-weight:500;color:var(--pos);"><?= number_format((float)$o['amount'],2) ?></td>
+                            <td class="num" style="font-weight:500;color:var(--pos);"><?= number_format((float)$o['amount'],2) ?></td>
                             <td><?= e($o['notes'] ?? '—') ?></td>
                         </tr>
                     <?php endforeach; ?>
@@ -491,7 +473,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- محضر جرد الكاش والإقفال لعهدة الموظف -->
-        <div class="card">
+        <div class="card fcard">
             <div class="section-title">محضر جرد عهدة الموظف والإقفال</div>
 
         <?php if ($isEmpPending): ?>
@@ -502,7 +484,7 @@ require_once __DIR__ . '/includes/header.php';
             <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
                 الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
             </p>
-            <table style="max-width:420px;">
+            <table class="ftable" style="max-width:420px;">
                 <tbody>
                     <tr><td>آخر المدة المفروض</td>
                         <td style="font-weight:600;"><?= number_format($empClosing,2) ?></td></tr>
@@ -530,15 +512,15 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="employee_id" value="<?= (int)$selectedEmpId ?>">
                 <input type="hidden" name="counted_cash" id="countedCashEmp" value="0">
 
-                <table class="denom-table" style="max-width:420px;">
-                    <thead><tr><th>الفئة</th><th>العدد</th><th>الإجمالي</th></tr></thead>
+                <table class="denom-table ftable" style="max-width:420px;">
+                    <thead><tr><th class="num">الفئة</th><th class="num">العدد</th><th class="num">الإجمالي</th></tr></thead>
                     <tbody>
                     <?php foreach ($denominations as $d): ?>
                         <tr>
                             <td><?= $d ?> ج.م</td>
-                            <td><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count-emp" data-denom="<?= $d ?>"
+                            <td class="num"><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count-emp finput finput-sm num" data-denom="<?= $d ?>"
                                        value="0" oninput="recalcEmp()"></td>
-                            <td class="denom-sub" id="sub_emp_<?= $d ?>">0.00</td>
+                            <td class="denom-sub num" id="sub_emp_<?= $d ?>">0.00</td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -549,7 +531,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="form-inline" style="margin-top:16px;">
                     <div class="fld" style="max-width:150px;">
                         <label>تاريخ الإقفال</label>
-                        <input type="date" name="date" value="<?= date('Y-m-d') ?>">
+                        <input class="finput finput-sm" type="date" name="date" value="<?= date('Y-m-d') ?>">
                     </div>
                     <button type="submit" class="btn btn-danger">
                         <i class="ti ti-lock"></i> إقفال وإرسال للمراجعة
@@ -565,7 +547,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="branch-select">
         <?php if (empty($u['branch_id']) && $allBranches): ?>
             <form method="get" style="display:inline;">
-                <select name="branch" onchange="formSubmit(this.form)">
+                <select class="fselect" name="branch" onchange="formSubmit(this.form)">
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $branchId===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>
@@ -579,9 +561,9 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
 <?php if (!$branchId): ?>
-    <div class="card"><div class="empty">لا توجد فروع. أضف فرعاً أولاً من التعريفات.</div></div>
+    <div class="card fcard"><div class="empty">لا توجد فروع. أضف فرعاً أولاً من التعريفات.</div></div>
 <?php elseif (!$custody): ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="empty">
             لا توجد عهدة مفتوحة لفرع <?= e($branchName) ?>.<br>
             صرف العهدة بيتم من شاشة الخزينة (زر صرف ← نوع الصرف: عهدة لفرع).
@@ -595,7 +577,7 @@ require_once __DIR__ . '/includes/header.php';
         $closing = $opening - $totalExp;
     ?>
     <?php if ($isPendingReview): ?>
-        <div class="status-bar pending">
+        <div class="status-bar falert falert-warn pending">
             <i class="ti ti-clock"></i>
             <div>
                 <strong>مقدّمة لمراجعة المحاسب.</strong>
@@ -606,7 +588,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
     <?php elseif ($custodyStatus === 'rejected'): ?>
-        <div class="status-bar rejected">
+        <div class="status-bar falert falert-neg rejected">
             <i class="ti ti-alert-triangle"></i>
             <div>
                 <strong>المحاسب رفض الإقفال:</strong> <?= e($custody['reject_reason'] ?? '—') ?>
@@ -615,16 +597,16 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php endif; ?>
 
-    <div class="stats" style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div class="stat" style="flex:1;min-width:160px;">
+    <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div class="stat fkpi" style="flex:1;min-width:160px;">
             <div class="label">رصيد أول المدة</div>
             <div class="value"><?= number_format($opening,2) ?></div>
         </div>
-        <div class="stat" style="flex:1;min-width:160px;">
+        <div class="stat fkpi" style="flex:1;min-width:160px;">
             <div class="label">إجمالي المصروفات</div>
             <div class="value" style="color:var(--neg);"><?= number_format($totalExp,2) ?></div>
         </div>
-        <div class="stat accent" style="flex:1;min-width:160px;">
+        <div class="stat fkpi accent" style="flex:1;min-width:160px;">
             <div class="label">رصيد آخر المدة (المفروض)</div>
             <div class="value"><?= number_format($closing,2) ?></div>
         </div>
@@ -632,7 +614,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="grid2">
         <!-- المصروفات -->
-        <div class="card">
+        <div class="card fcard">
             <div class="section-title">المصروفات</div>
             <?php if ($canEditCustody): ?>
             <div style="margin-bottom:16px;">
@@ -642,8 +624,8 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($expenses)): ?>
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
-            <table>
-                <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th>المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
+            <table class="ftable">
+                <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
                 <?php foreach ($expenses as $ex): ?>
                     <tr>
@@ -652,7 +634,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td><?= e($ex['account_root_name'] ?? '—') ?></td>
                         <td><?= e($ex['account_leaf_name'] ?? '—') ?></td>
                         <td><?= e($ex['description']) ?></td>
-                        <td style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
+                        <td class="num" style="font-weight:500;"><?= money_fmt((float)$ex['amount']) ?></td>
                         <?php if ($canEditCustody): ?>
                         <td>
                             <form method="post" style="margin:0;"
@@ -676,18 +658,18 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- إذونات الصرف الواردة -->
-        <div class="card">
+        <div class="card fcard">
             <div class="section-title">إذونات الصرف الواردة</div>
             <?php if (empty($orders)): ?>
                 <div class="empty">لا توجد إذونات في هذه الفترة.</div>
             <?php else: ?>
-            <table>
-                <thead><tr><th>التاريخ</th><th>المبلغ</th><th>ملاحظات</th></tr></thead>
+            <table class="ftable">
+                <thead><tr><th>التاريخ</th><th class="num">المبلغ</th><th>ملاحظات</th></tr></thead>
                 <tbody>
                 <?php foreach ($orders as $o): ?>
                     <tr>
                         <td><?= e($o['order_date']) ?></td>
-                        <td style="font-weight:500;color:var(--pos);"><?= number_format((float)$o['amount'],2) ?></td>
+                        <td class="num" style="font-weight:500;color:var(--pos);"><?= number_format((float)$o['amount'],2) ?></td>
                         <td><?= e($o['notes'] ?? '—') ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -698,7 +680,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- محضر جرد الكاش والإقفال -->
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">محضر جرد العهدة والإقفال الشهري</div>
 
     <?php if ($isPendingReview): ?>
@@ -709,7 +691,7 @@ require_once __DIR__ . '/includes/header.php';
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
             الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
         </p>
-        <table style="max-width:420px;">
+        <table class="ftable" style="max-width:420px;">
             <tbody>
                 <tr><td>آخر المدة المفروض</td>
                     <td style="font-weight:600;"><?= number_format($closing,2) ?></td></tr>
@@ -736,15 +718,15 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="custody_id" value="<?= (int)$custody['id'] ?>">
             <input type="hidden" name="counted_cash" id="countedCash" value="0">
 
-            <table class="denom-table" style="max-width:420px;">
-                <thead><tr><th>الفئة</th><th>العدد</th><th>الإجمالي</th></tr></thead>
+            <table class="denom-table ftable" style="max-width:420px;">
+                <thead><tr><th class="num">الفئة</th><th class="num">العدد</th><th class="num">الإجمالي</th></tr></thead>
                 <tbody>
                 <?php foreach ($denominations as $d): ?>
                     <tr>
                         <td><?= $d ?> ج.م</td>
-                        <td><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count" data-denom="<?= $d ?>"
+                        <td class="num"><input type="number" aria-label="عدد فئة <?= $d ?> جنيه" min="0" class="denom-count finput finput-sm num" data-denom="<?= $d ?>"
                                    value="0" oninput="recalc()"></td>
-                        <td class="denom-sub" id="sub_<?= $d ?>">0.00</td>
+                        <td class="denom-sub num" id="sub_<?= $d ?>">0.00</td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -756,7 +738,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($branchEmployees): ?>
                 <div class="fld" style="max-width:220px;">
                     <label>الموظف المسؤول (إجباري لو فيه عجز فوق <?= number_format($tolerance,0) ?> ج)</label>
-                    <select name="employee_id">
+                    <select class="fselect" name="employee_id">
                         <option value="">— بدون —</option>
                         <?php foreach ($branchEmployees as $emp): ?>
                             <option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option>
@@ -766,7 +748,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
                 <div class="fld" style="max-width:150px;">
                     <label>تاريخ الإقفال</label>
-                    <input type="date" name="date" value="<?= date('Y-m-d') ?>">
+                    <input class="finput finput-sm" type="date" name="date" value="<?= date('Y-m-d') ?>">
                 </div>
                 <button type="submit" class="btn btn-danger">
                     <i class="ti ti-lock"></i> إقفال وإرسال للمراجعة
@@ -781,14 +763,14 @@ require_once __DIR__ . '/includes/header.php';
 <!-- Modal: إصدار إذن صرف لفرع -->
 <?php if ($canIssue && $canBranchCustody): ?>
 <div class="modal-bg" id="orderModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>إصدار إذن صرف لفرع</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="issue_order">
             <div class="form-row">
                 <label>الفرع</label>
-                <select name="branch_id" required>
+                <select class="fselect" name="branch_id" required>
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $branchId===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>
@@ -796,9 +778,9 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-row"><label>المبلغ (ج.م)</label><input type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label>التاريخ</label><input type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label>ملاحظات</label><input type="text" name="notes" placeholder="ملاحظات الصرف..." aria-label="ملاحظات"></div>
+            <div class="form-row ffield"><label>المبلغ (ج.م)</label><input class="finput num" type="number" step="0.01" min="0.01" name="amount" required aria-label="المبلغ"></div>
+            <div class="form-row ffield"><label>التاريخ</label><input class="finput" type="date" name="date" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-row ffield"><label>ملاحظات</label><input class="finput" type="text" name="notes" placeholder="ملاحظات الصرف..." aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">إصدار الإذن</button>
                 <button type="button" class="btn btn-cancel" onclick="closeModal('orderModal')">إلغاء</button>
@@ -829,7 +811,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 ?>
 <?php if ($showExpenseModal): ?>
 <div class="modal-bg" id="expenseModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>صرف من العهدة</h3>
         <form method="post" id="expenseForm" onsubmit="return handleExpenseSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -841,7 +823,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
                 <!-- نوع الصرف: مصروف / سلفة لموظف / دفعة لمورد (في عهدة الموظف بس) -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                     <label for="cstLineType">نوع الصرف</label>
-                    <select name="line_type" id="cstLineType" onchange="toggleCstLineType()">
+                    <select class="fselect" name="line_type" id="cstLineType" onchange="toggleCstLineType()">
                         <option value="expense">مصروف</option>
                         <option value="advance">سلفة لموظف</option>
                         <option value="supplier">دفعة لمورد</option>
@@ -849,7 +831,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 
                     <!-- سلفة لموظف -->
                     <div id="cstAdvanceBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="cstEmpSearch" class="cst-pick-search" placeholder="ابحث باسم الموظف..."
+                        <input type="text" id="cstEmpSearch" class="cst-pick-search finput" placeholder="ابحث باسم الموظف..."
                                oninput="filterCstEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
                         <div id="cstEmpList" class="cst-pick-list">
                             <?php foreach ($allEmployees as $emp): ?>
@@ -865,7 +847,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 
                     <!-- دفعة لمورد -->
                     <div id="cstSupplierBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="cstSuppSearch" class="cst-pick-search" placeholder="ابحث باسم المورد..."
+                        <input type="text" id="cstSuppSearch" class="cst-pick-search finput" placeholder="ابحث باسم المورد..."
                                data-picker-search="#cstSuppList" data-item=".cst-supp-opt" data-empty="مفيش مورد بالاسم ده"
                                oninput="filterCstSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                         <div id="cstSuppList" class="cst-pick-list">
@@ -886,7 +868,7 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
                 <?php if ($expIsEmp): ?>
                 <div class="form-row">
                     <label for="cstBranch">الفرع اللي اتصرف له</label>
-                    <select name="branch_id" id="cstBranch" required>
+                    <select class="fselect" name="branch_id" id="cstBranch" required>
                         <?php foreach ($allBranches as $b): ?>
                             <option value="<?= (int)$b['id'] ?>" <?= (int)$empCustody['branch_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['name']) ?></option>
                         <?php endforeach; ?>
@@ -900,18 +882,18 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 
                 <div class="form-row">
                     <label for="cstAmount">المبلغ</label>
-                    <input type="text" inputmode="decimal" data-money name="amount" id="cstAmount" required
+                    <input class="finput num" type="text" inputmode="decimal" data-money name="amount" id="cstAmount" required
                            autocomplete="off" placeholder="0" aria-label="المبلغ">
                 </div>
 
                 <div class="form-row">
                     <label for="cstDate">التاريخ</label>
-                    <input type="date" name="date" id="cstDate" value="<?= date('Y-m-d') ?>" required>
+                    <input class="finput" type="date" name="date" id="cstDate" value="<?= date('Y-m-d') ?>" required>
                 </div>
 
                 <div class="form-row">
                     <label for="cstDesc">البيان</label>
-                    <input type="text" name="description" id="cstDesc" required aria-label="البيان" placeholder="سبب الصرف">
+                    <input class="finput" type="text" name="description" id="cstDesc" required aria-label="البيان" placeholder="سبب الصرف">
                 </div>
 
 

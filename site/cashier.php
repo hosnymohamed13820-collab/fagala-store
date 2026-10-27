@@ -396,46 +396,27 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
+    .card { margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .grid-top { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
     @media (max-width:760px){ .grid-top { grid-template-columns:1fr; } }
-    .fld label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .fld input, .fld select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .denom-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
     .denom-cell { background:var(--line-soft); border:1.5px solid var(--line); border-radius:10px; padding:10px; }
     .denom-cell .dlabel { font-size:13px; color:var(--ink-500); margin-bottom:5px; }
-    .denom-cell input { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:7px;
-        font-size:14px; text-align:center; font-family:inherit; }
     .denom-cell .dsub { font-size:12px; color:var(--accent-text); margin-top:4px; font-weight:600; }
     .pay-method { margin-bottom:16px; }
     .pay-method h4 { font-size:14px; color:var(--ink-700); margin-bottom:8px; }
     .pay-rows { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
     .pay-row { display:flex; gap:6px; }
-    .pay-row input.ref { flex:1.4; padding:7px 9px; border:1.5px solid var(--line); border-radius:7px; font-size:13px; font-family:inherit; }
-    .pay-row input.amt { flex:1; padding:7px 9px; border:1.5px solid var(--line); border-radius:7px; font-size:13px; text-align:center; font-family:inherit; }
+    .pay-row .ref { flex:1.4; }
+    .pay-row .amt { flex:1; }
     .totals-bar { display:flex; gap:18px; flex-wrap:wrap; padding:14px; background:var(--bg); border-radius:10px; margin:14px 0; }
     .total-item { font-size:14px; }
     .total-item .tl { color:var(--ink-500); font-size:12px; } .total-item .tv { color:var(--ink-900); font-weight:700; font-size:17px; }
     .diff-pos { color:var(--pos); } .diff-neg { color:var(--neg); }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:10px 12px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
     .badge { display:inline-block; padding:3px 11px; border-radius:20px; font-size:12px; font-weight:500; }
     .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .reject-reason { background:var(--neg-soft); color:var(--neg); padding:8px 12px; border-radius:8px; font-size:13px; margin-top:4px; }
-    /* تبويبات التقفيل */
-    .ct-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 16px; border-bottom:2px solid var(--line); }
-    .ct-tab { padding:9px 18px; border:none; background:transparent; color:var(--ink-500); font-family:inherit;
-        font-size:14px; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; font-weight:600; }
-    .ct-tab.active { color:var(--accent-text); border-bottom-color:var(--accent-text); }
-    .ct-tab:hover:not(.active) { color:var(--accent-text); }
     .ct-pane { display:none; }
     .ct-pane.active { display:block; }
     /* 🔴 table-layout:fixed مش رفاهية — من غيرها المتصفح بيسأل كل <input>
@@ -453,7 +434,7 @@ require_once __DIR__ . '/includes/header.php';
        السيريال مالوش عرض — بياخد الباقي لوحده. */
     .pay-table td:last-child, .pay-table th:last-child { width:110px; }
     .pay-table th { padding:4px 6px 8px; text-align:right; font-size:12px; color:var(--ink-500); font-weight:600; border:none; }
-    .pay-table input { width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; box-sizing:border-box; }
+    .pay-table .finput { width:100%; box-sizing:border-box; }
     .totals-row td { font-weight:700; background:var(--accent-soft); color:var(--ink-900); }
     .grid-3 { grid-template-columns:1fr 1fr 1fr; }
     @media (max-width:760px){ .grid-3 { grid-template-columns:1fr; } }
@@ -474,32 +455,30 @@ require_once __DIR__ . '/includes/header.php';
     /* إصلاح العرض على الموبايل: منع المحتوى من تجاوز عرض الشاشة */
     .shift-modal-box { overflow-x:hidden; }
     .shift-modal-body { max-width:100%; }
-    .shift-modal-body input, .shift-modal-body select { max-width:100%; box-sizing:border-box; }
-    .pay-table input { width:100%; box-sizing:border-box; min-width:0; }
+    .shift-modal-body .finput, .shift-modal-body .fselect { max-width:100%; box-sizing:border-box; }
+    .pay-table .finput { min-width:0; }
     @media (max-width:600px){
         .shift-modal { padding:12px 6px; }
         .shift-modal-body { padding:14px 12px; }
         .shift-modal-head { padding:14px 12px; }
-        .ct-tabs { flex-wrap:wrap; gap:4px; }
-        .ct-tab { font-size:13px; padding:7px 10px; }
         .side-summary { margin-top:14px; }
         .cash-total-box, .side-summary .sum-detail { padding:12px; }
-        .denom-line input { width:70px; }
+        .denom-line .denom-input { width:70px; }
         /* الشاشة ضيقة — نضيّق المبلغ شوية عشان السيريال ياخد مساحة مقروءة */
         .pay-table td:last-child, .pay-table th:last-child { width:88px; }
-        .pay-table input { padding:7px 8px; font-size:13px; }
+        .pay-table .finput { padding:7px 8px; font-size:13px; }
     }
     /* بطاقات ملخص اليوم */
-    .stat-cards { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
-    @media (max-width:900px){ .stat-cards { grid-template-columns:repeat(3,1fr); } }
-    @media (max-width:520px){ .stat-cards { grid-template-columns:repeat(2,1fr); } }
-    .stat-card { background:var(--surface); border-radius:12px; padding:14px 12px; text-align:center; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
-    .stat-card .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
-    .stat-card .value { font-size:17px; font-weight:700; color:var(--accent-text); }
+    .cashier-kpis { grid-template-columns:repeat(6,1fr); }
+    @media (max-width:900px){ .cashier-kpis { grid-template-columns:repeat(3,1fr); } }
+    @media (max-width:520px){ .cashier-kpis { grid-template-columns:repeat(2,1fr); } }
+    .cashier-kpi { text-align:center; }
+    .cashier-kpi .label { font-size:12px; color:var(--ink-500); margin-bottom:6px; }
+    .cashier-kpi .value { font-size:17px; font-weight:700; color:var(--accent-text); }
     /* text-align:center — قاعدة .diff-pos/.diff-neg العامة في fagala.css (بريف ٢١) بتحط
        text-align:right عشان علامة السالب، فالرقم كان بيطلع يمين الكارت مش في نصه. */
-    .stat-card .value.diff-pos { color:var(--pos); text-align:center; } .stat-card .value.diff-neg { color:var(--neg); text-align:center; }
-    .stat-card .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
+    .cashier-kpi .value.diff-pos { color:var(--pos); text-align:center; } .cashier-kpi .value.diff-neg { color:var(--neg); text-align:center; }
+    .cashier-kpi .sub { font-size:11px; color:var(--ink-400); margin-top:2px; }
     /* تخطيط تاب الدفع: جدول + ملخص جانبي */
     .pay-with-summary { display:grid; grid-template-columns:1fr 280px; gap:18px; align-items:start; }
     .pay-with-summary .pay-method { min-width:0; }
@@ -516,9 +495,7 @@ require_once __DIR__ . '/includes/header.php';
     @media (max-width:640px){ .cash-layout { grid-template-columns:1fr; } }
     .denom-line { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
     .denom-line .dn { font-size:13px; color:var(--ink-500); min-width:62px; }
-    .denom-line input { width:90px; padding:7px 9px; border:1.5px solid var(--line); border-radius:8px;
-        text-align:center; font-family:inherit; font-size:14px; background:var(--line-soft); }
-    .denom-line input:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
+    .denom-line .denom-input { width:90px; }
     .denom-line .mul { font-size:13px; color:var(--ink-400); }
     .denom-line .sub { font-size:13px; font-weight:600; min-width:70px; text-align:left; color:var(--accent-text); }
     .cash-total-box { background:var(--bg); border-radius:12px; padding:18px; height:fit-content; }
@@ -547,7 +524,7 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
 <!-- زر فتح التقفيل -->
@@ -561,32 +538,21 @@ require_once __DIR__ . '/includes/header.php';
      زراير الفروع — للأونر بس.
      الموظف مالوش فلترة: بيشوف فرعه (أو الفرع اللي قفل عليه النهارده).
      ───────────────────────────────────────────────────────────────────── -->
-<div class="branch-tabs">
+<div class="ftabs" style="margin-bottom:14px;">
     <a href="?"
-       class="btab <?= $filterBranch === 0 ? 'active' : '' ?>">كل الفروع</a>
+       class="ftab <?= $filterBranch === 0 ? 'is-active' : '' ?>">كل الفروع</a>
     <?php foreach ($branchTabs as $bt): ?>
         <a href="?branch=<?= (int)$bt['id'] ?>"
-           class="btab <?= $filterBranch === (int)$bt['id'] ? 'active' : '' ?>">
+           class="ftab <?= $filterBranch === (int)$bt['id'] ? 'is-active' : '' ?>">
             <?= e($bt['name']) ?>
         </a>
     <?php endforeach; ?>
 </div>
-<style>
-  .branch-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  .branch-tabs .btab {
-      padding:7px 16px; border-radius:9px; background:var(--surface); color:var(--accent-text);
-      text-decoration:none; font-size:14px; border:1.5px solid var(--line);
-      transition:.15s;
-  }
-  .branch-tabs .btab:hover  { border-color:var(--accent); }
-  .branch-tabs .btab.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
-</style>
 <?php endif; ?>
 
 <?php if (empty($allowedBranches)): ?>
 <!-- المستخدم مش مربوط بفرع ومعملش أي تقفيل قبل كده -->
-<div style="background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:14px 18px;
-            margin-bottom:16px;font-size:14px;">
+<div class="falert falert-warn">
     مش مربوط بأي فرع. اضغط «إضافة تقفيل»، اختار الفرع، وابعت للمراجعة —
     وبعدها هتشوف بيانات الفرع ده هنا.
 </div>
@@ -594,33 +560,33 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · الفرق.
          كارت «الفيزا + الإنستا» = الوسائل غير النقدية، الكاش مش داخل فيه. */ ?>
-<div class="stat-cards">
-    <div class="stat-card">
+<div class="cashier-kpis fkpis">
+    <div class="cashier-kpi fkpi">
         <div class="label">سيستم اليوم</div>
         <div class="value"><?= number_format($sumSys,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
-    <div class="stat-card">
+    <div class="cashier-kpi fkpi">
         <div class="label">كاش اليوم</div>
         <div class="value"><?= number_format($sumCash,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
-    <div class="stat-card">
+    <div class="cashier-kpi fkpi">
         <div class="label">فيزا اليوم</div>
         <div class="value"><?= number_format($sumVisa,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
-    <div class="stat-card">
+    <div class="cashier-kpi fkpi">
         <div class="label">إنستا اليوم</div>
         <div class="value"><?= number_format($sumInsta,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
-    <div class="stat-card">
+    <div class="cashier-kpi fkpi">
         <div class="label">الفيزا + الإنستا</div>
         <div class="value"><?= number_format($sumVI,2) ?></div>
         <div class="sub">ج.م</div>
     </div>
-    <div class="stat-card">
+    <div class="cashier-kpi fkpi">
         <div class="label">الفرق المجمع</div>
         <div class="value <?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($sumDiff,2) ?></div>
         <div class="sub">ج.م</div>
@@ -629,7 +595,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- نموذج التقفيل (بوب أب) -->
 <div class="shift-modal" id="shiftModal">
-  <div class="shift-modal-box">
+  <div class="shift-modal-box fcard">
     <div class="shift-modal-head">
         <span class="section-title" id="shiftModalTitle" style="margin:0;">تقفيل وردية جديدة</span>
         <button type="button" class="modal-x" onclick="closeShiftModal()">&times;</button>
@@ -644,15 +610,15 @@ require_once __DIR__ . '/includes/header.php';
         <div class="grid-top grid-4">
             <div class="fld">
                 <label for="cashierName">القائم بالتقفيل</label>
-                <input type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل" style="background:var(--accent-soft);color:var(--ink-900);">
+                <input class="finput" type="text" id="cashierName" value="<?= e($u['full_name'] ?? '') ?>" data-self="<?= e($u['full_name'] ?? '') ?>" readonly aria-label="القائم بالتقفيل">
             </div>
             <div class="fld">
                 <label for="shiftName">رقم الوردية</label>
-                <input type="number" min="1" step="1" name="shift_name" id="shiftName" placeholder="مثال: 1" required>
+                <input class="finput num" type="number" min="1" step="1" name="shift_name" id="shiftName" placeholder="مثال: 1" required>
             </div>
             <div class="fld">
                 <label for="shiftBranch">الفرع <?= empty($u['branch_id']) ? '' : '(فرعك)' ?></label>
-                <select name="branch_id" id="shiftBranch" required>
+                <select class="fselect" name="branch_id" id="shiftBranch" required>
                     <?php foreach ($allBranches as $b): ?>
                         <option value="<?= (int)$b['id'] ?>" <?= $defaultBranch===(int)$b['id']?'selected':'' ?>>
                             <?= e($b['name']) ?>
@@ -662,17 +628,17 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="fld">
                 <label for="shiftDate">تاريخ اليوم</label>
-                <input type="date" name="business_date" id="shiftDate" value="<?= e($bizDateStr) ?>" required>
+                <input class="finput" type="date" name="business_date" id="shiftDate" value="<?= e($bizDateStr) ?>" required>
             </div>
         </div>
         <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
 
         <!-- تبويبات التقفيل -->
-        <div class="ct-tabs">
-            <button type="button" class="ct-tab active" data-pane="pane_cash" onclick="ctTab(this)">كاش</button>
-            <button type="button" class="ct-tab" data-pane="pane_visa" onclick="ctTab(this)">فيزا</button>
-            <button type="button" class="ct-tab" data-pane="pane_instapay" onclick="ctTab(this)">إنستا باي</button>
-            <button type="button" class="ct-tab" data-pane="pane_summary" onclick="calc();ctTab(this)">الملخص</button>
+        <div class="ct-tabs ftabs">
+            <button type="button" class="ct-tab ftab active" data-pane="pane_cash" onclick="ctTab(this)">كاش</button>
+            <button type="button" class="ct-tab ftab" data-pane="pane_visa" onclick="ctTab(this)">فيزا</button>
+            <button type="button" class="ct-tab ftab" data-pane="pane_instapay" onclick="ctTab(this)">إنستا باي</button>
+            <button type="button" class="ct-tab ftab" data-pane="pane_summary" onclick="calc();ctTab(this)">الملخص</button>
         </div>
 
         <!-- كاش -->
@@ -684,7 +650,7 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="denom-line">
                             <span class="dn"><?= $d ?> ج.م</span>
                             <input type="number" min="0" name="denom[<?= $d ?>]" value="" aria-label="عدد فئة <?= $d ?>"
-                                   placeholder="0" data-denom="<?= $d ?>" class="denom-input" oninput="calc()">
+                                   placeholder="0" data-denom="<?= $d ?>" class="denom-input finput num finput-sm" oninput="calc()">
                             <span class="mul">×</span>
                             <span class="sub" id="dsub_<?= $d ?>">0.00</span>
                         </div>
@@ -704,20 +670,20 @@ require_once __DIR__ . '/includes/header.php';
             <div class="pay-with-summary">
                 <div class="pay-method">
                     <h4><?= e($mLabel) ?></h4>
-                    <table class="repeatable pay-table">
+                    <table class="repeatable pay-table ftable">
                         <thead>
                             <tr>
                                 <th style="width:34px;">#</th>
                                 <th>رقم السيريال</th>
-                                <th>المبلغ</th>
+                                <th class="num">المبلغ</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php for ($i=1; $i<=$rowsPerMethod; $i++): ?>
                                 <tr>
                                     <td style="color:var(--ink-500);font-size:13px;text-align:center;"><?= $i ?></td>
-                                    <td><input type="text" aria-label="رقم مرجعي" class="ref" name="<?= $mk ?>_ref[<?= $i ?>]" placeholder="رقم السيريال"></td>
-                                    <td><input type="number" aria-label="المبلغ" step="0.01" min="0" class="amt <?= $mk ?>-amt"
+                                    <td><input type="text" aria-label="رقم مرجعي" class="ref finput finput-sm" name="<?= $mk ?>_ref[<?= $i ?>]" placeholder="رقم السيريال"></td>
+                                    <td class="num"><input type="number" aria-label="المبلغ" step="0.01" min="0" class="amt <?= $mk ?>-amt finput finput-sm num"
                                            name="<?= $mk ?>[<?= $i ?>]" placeholder="0" oninput="calc()"></td>
                                 </tr>
                             <?php endfor; ?>
@@ -728,7 +694,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="side-summary">
                     <div class="sum-detail">
                         <div class="sdt">تفاصيل التقفيل</div>
-                        <table>
+                        <table class="ftable">
                             <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
                             <tr><td class="k">كاش</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
                             <tr><td class="k">فيزا</td><td class="v"><span class="side_visa">0.00</span> ج.م</td></tr>
@@ -746,13 +712,13 @@ require_once __DIR__ . '/includes/header.php';
             <div class="grid-top">
                 <div class="fld">
                     <label for="systemTotal">إجمالي السيستم</label>
-                    <input type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
+                    <input class="finput num" type="number" step="0.01" min="0.01" name="system_total" id="systemTotal" value="" placeholder="0.00" oninput="calc()" required>
                 </div>
             </div>
             <div class="sum-layout">
                 <div class="sum-detail">
                     <div class="sdt">تفاصيل التقفيل</div>
-                    <table>
+                    <table class="ftable">
                         <tr><td class="k">مبيعات السيستم</td><td class="v"><span id="s_system">0.00</span> ج.م</td></tr>
                         <tr><td class="k">كاش</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
                         <tr><td class="k">فيزا</td><td class="v"><span id="s_visa">0.00</span> ج.م</td></tr>
@@ -780,7 +746,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- كارت مطلوب ردك لمشاكل تسلسل الورديات -->
 <?php if (!empty($mySeqIssues)): ?>
-<div class="card" style="border-right:4px solid var(--warn);">
+<div class="card fcard" style="border-right:4px solid var(--warn);">
     <div class="section-title" style="color:var(--warn);"><i class="ti ti-alert-triangle"></i> مطلوب ردك على مشاكل تسلسل الورديات</div>
     <?php foreach ($mySeqIssues as $iss):
         $desc = $iss['kind'] === 'duplicate'
@@ -799,9 +765,9 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="action" value="seq_reply">
                 <input type="hidden" name="issue_id" value="<?= (int)$iss['id'] ?>">
                 <div style="margin-bottom:8px;">
-                    <textarea name="reply" required rows="2" placeholder="اكتب ردك وتوضيحك هنا..." style="width:100%;padding:8px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;"></textarea>
+                    <textarea class="ftextarea" name="reply" required rows="2" placeholder="اكتب ردك وتوضيحك هنا..."></textarea>
                 </div>
-                <button type="submit" class="btn btn-sm" style="background:var(--accent);color:#fff;border:none;border-radius:7px;padding:6px 14px;cursor:pointer;">ابعت الرد</button>
+                <button type="submit" class="btn btn-sm btn-primary">ابعت الرد</button>
             </form>
         </div>
     <?php endforeach; ?>
@@ -810,10 +776,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- تقفيلاتي المرفوضة -->
 <?php if (!empty($myRejected)): ?>
-<div class="card">
+<div class="card fcard">
     <div class="section-title">تقفيلاتي المرفوضة (اضغط تعديل لإعادة الإرسال)</div>
-    <table>
-        <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th>المحصّل</th><th>الفرق</th><th>سبب الرفض</th><th>إجراء</th></tr></thead>
+    <table class="ftable">
+        <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th class="num">المحصّل</th><th class="num">الفرق</th><th>سبب الرفض</th><th>إجراء</th></tr></thead>
         <tbody>
         <?php foreach ($myRejected as $s): ?>
             <?php
@@ -832,12 +798,12 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endif; ?>
                 </td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td><?= number_format($collected,2) ?></td>
-                <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
+                <td class="num"><?= number_format($collected,2) ?></td>
+                <td class="num <?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
                 <td><span class="reject-reason"><?= e($s['reject_reason'] ?? '—') ?></span></td>
                 <td>
                     <?php if ($isExpired): ?>
-                        <span class="badge" style="color:var(--neg);background:var(--neg-soft);">عدّت المهلة</span>
+                        <span class="badge fchip fchip-neg">عدّت المهلة</span>
                     <?php else: ?>
                         <button class="btn btn-sm" onclick='editShift(<?= (int)$s['id'] ?>)'>تعديل</button>
                         <?php if (isset($s['hours_left']) && $s['hours_left'] !== null): ?>
@@ -853,16 +819,16 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <!-- تقفيلات اليوم -->
-<div class="card">
+<div class="card fcard">
     <div class="section-title">تقفيلات اليوم (<?= e($bizDateStr) ?>)</div>
     <?php if (empty($todayShifts)): ?>
         <div class="empty">لا توجد تقفيلات اليوم بعد.</div>
     <?php else: ?>
-    <table>
+    <table class="ftable">
         <thead><tr>
-            <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th>السيستم</th>
-            <th>كاش</th><th>فيزا</th><th>إنستا</th>
-            <th>المحصّل</th><th>الفرق</th><th>الحالة</th><th>الوقت</th><th>إجراءات</th>
+            <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th class="num">السيستم</th>
+            <th class="num">كاش</th><th class="num">فيزا</th><th class="num">إنستا</th>
+            <th class="num">المحصّل</th><th class="num">الفرق</th><th>الحالة</th><th>الوقت</th><th>إجراءات</th>
         </tr></thead>
         <tbody>
         <?php
@@ -882,13 +848,13 @@ require_once __DIR__ . '/includes/header.php';
                 </td>
                 <td><?= e($s['cashier_name']) ?></td>
                 <td><?= e($s['branch_name']) ?></td>
-                <td><?= number_format($sys,2) ?></td>
-                <td><?= number_format($cash,2) ?></td>
-                <td><?= number_format($visa,2) ?></td>
-                <td><?= number_format($insta,2) ?></td>
-                <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
-                <td class="<?= $diff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($diff,2) ?></td>
-                <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
+                <td class="num"><?= number_format($sys,2) ?></td>
+                <td class="num"><?= number_format($cash,2) ?></td>
+                <td class="num"><?= number_format($visa,2) ?></td>
+                <td class="num"><?= number_format($insta,2) ?></td>
+                <td class="num" style="font-weight:600;"><?= number_format($collected,2) ?></td>
+                <td class="num <?= $diff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($diff,2) ?></td>
+                <td><span class="badge fchip" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
                 <td>
                     <?php if (in_array($s['status'], ['submitted','resubmitted'], true) && (is_owner() || (int)$s['user_id'] === $uid)): ?>
@@ -930,9 +896,9 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- الأرشيف: تقفيلات سابقة (المعتمدة اختفت، المرفوضة تظهر) -->
 <?php if (!empty($archiveShifts)): ?>
-<div class="card">
+<div class="card fcard">
     <div class="section-title">الأرشيف (تقفيلات سابقة)</div>
-    <table>
+    <table class="ftable">
         <thead><tr>
             <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th>السيستم</th>
             <th>كاش</th><th>فيزا</th><th>إنستا</th>
@@ -963,7 +929,7 @@ require_once __DIR__ . '/includes/header.php';
                 <td><?= number_format($insta,2) ?></td>
                 <td style="font-weight:600;"><?= number_format($collected,2) ?></td>
                 <td class="<?= $s['difference']>=0?'diff-pos':'diff-neg' ?>"><?= number_format((float)$s['difference'],2) ?></td>
-                <td><span class="badge" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
+                <td><span class="badge fchip" style="color:<?= $sl[1] ?>;background:<?= $sl[2] ?>;"><?= e($sl[0]) ?></span></td>
                 <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($s['created_at']))) ?></td>
                 <?php if (is_owner()): ?>
                 <td>

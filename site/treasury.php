@@ -344,11 +344,8 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
     .summary-bar {
-        background:linear-gradient(135deg,var(--accent),var(--accent-hover)); color:#fff;
+        background:linear-gradient(135deg,var(--accent),var(--accent-hover)); color:var(--fill-strong-fg);
         border-radius:14px; padding:20px 24px; margin-bottom:20px;
         display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;
     }
@@ -357,9 +354,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .summary-bar .actions { display:flex; gap:8px; flex-wrap:wrap; }
     .btn-white { background:rgba(255,255,255,0.18); }
     .btn-white:hover { background:rgba(255,255,255,0.28); }
-    .summary-bar .sens-eye { color: #fff; border-color: rgba(255,255,255,.4); }
+    .summary-bar .sens-eye { color:var(--fill-strong-fg); border-color:rgba(255,255,255,.4); }
     .summary-bar .sens-eye .sens-eye-sub { color: rgba(255,255,255,.75); }
-    .summary-bar .sens-eye:hover { background: rgba(255,255,255,0.18); border-color: #fff; color: #fff; }
+    .summary-bar .sens-eye:hover { background:rgba(255,255,255,0.18); border-color:var(--fill-strong-fg); color:var(--fill-strong-fg); }
     /* خزينة الكاش الفعلي — نفس كارت الداشبورد س 161-168 */
     .tre-box { background:var(--surface); border-radius:14px; padding:18px; box-shadow:0 2px 10px rgba(124,111,247,0.06); }
     .tre-box .tre-top { display:flex; align-items:center; gap:8px; color:var(--ink-500); font-size:13px; margin-bottom:10px; }
@@ -376,47 +373,36 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .tre-box.realcash .tre-val { font-size:30px; }
     /* 🔴 الكارت ده كان أخضر مهما كانت القيمة — «خزينة الكاش الفعلي -82,131»
            في إطار أخضر. اللون لازم يتبع الإشارة وإلا بيبقى بلا معنى.
-           و`#fff` كان مثبّت فالجراديانت كان بيبيّض في الوضع الليلي. */
+           واللون الأبيض الثابت كان بيبيّض الجراديانت في الوضع الليلي. */
     .tre-box.realcash.neg {
         border-color:var(--neg);
         background:linear-gradient(135deg,var(--neg-soft) 0%,var(--surface) 70%);
     }
     .tre-box.realcash.neg .tre-top { color:var(--neg); }
     .treasuries-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:24px; }
-    .treasury-card {
-        background:var(--surface); border-radius:14px; padding:18px; cursor:pointer;
+    .treasury-tile {
+        padding:18px; cursor:pointer;
         border:2px solid transparent; transition:border-color .15s, transform .1s;
-        box-shadow:0 2px 10px rgba(124,111,247,0.06); text-decoration:none; display:block;
+        text-decoration:none; display:block;
     }
-    .treasury-card:hover { transform:translateY(-2px); }
-    .treasury-card.selected { border-color:var(--accent-text); }
-    .treasury-card .tc-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-    .treasury-card .tc-icon {
+    .treasury-tile:hover { transform:translateY(-2px); }
+    .treasury-tile.selected { border-color:var(--accent-text); }
+    .treasury-tile .tc-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .treasury-tile .tc-icon {
         width:40px; height:40px; background:var(--bg); border-radius:10px;
         display:flex; align-items:center; justify-content:center; color:var(--accent-text); font-size:21px;
     }
-    .treasury-card .tc-name { font-size:15px; font-weight:600; color:var(--ink-900); }
-    .treasury-card .tc-type { font-size:12px; color:var(--ink-500); }
-    .treasury-card .tc-balance { font-size:22px; font-weight:700; color:var(--ink-800); }
-    .treasury-card .tc-balance.neg { color:var(--neg); }
-    .treasury-card .tc-cur { font-size:13px; color:var(--ink-500); font-weight:400; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
-    th { color:var(--ink-500); font-weight:600; font-size:13px; }
-    td { color:var(--ink-800); }
+    .treasury-tile .tc-name { font-size:15px; font-weight:600; color:var(--ink-900); }
+    .treasury-tile .tc-type { font-size:12px; color:var(--ink-500); }
+    .treasury-tile .tc-balance { font-size:22px; font-weight:700; color:var(--ink-800); }
+    .treasury-tile .tc-balance.neg { color:var(--neg); }
+    .treasury-tile .tc-cur { font-size:13px; color:var(--ink-500); font-weight:400; }
     .amt-debit  { color:var(--neg); font-weight:500; }
     .amt-credit { color:var(--pos); font-weight:500; }
     .empty { text-align:center; color:var(--ink-400); padding:30px; font-size:14px; }
     .section-title { font-size:17px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     /* شريط الفلتر وكروت الإجماليات لكشف الحساب */
-    .filter-bar { background:var(--line-soft); border-radius:12px; padding:12px 16px; margin-bottom:16px;
-        display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .filter-bar label { font-size:13px; color:var(--ink-700); font-weight:500; }
-    .filter-bar input[type="date"] { padding:8px 12px; border:1.5px solid var(--line); border-radius:8px; font-family:inherit; font-size:13px; background:var(--surface); }
-    .filter-bar input[type="date"]:focus { outline:none; border-color:var(--accent-text); }
     .btn-filter { padding:8px 16px; font-size:13px; }
-    .sum-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:16px; }
-    .sum-card { background:var(--line-soft); border:1.5px solid var(--line); border-radius:12px; padding:12px 16px; }
     .sc-label { font-size:12px; color:var(--ink-500); margin-bottom:5px; }
     .sc-value { font-size:19px; font-weight:700; color:var(--ink-900); direction:ltr; text-align:right; }
     .sc-cur { font-size:13px; font-weight:400; color:var(--ink-500); }
@@ -427,11 +413,6 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:18px; font-size:18px; }
     .form-row { margin-bottom:14px; }
-    .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; font-weight:500; }
-    .form-row input, .form-row select, .form-row textarea {
-        width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px;
-        font-size:14px; font-family:inherit; background:var(--line-soft); }
-    .form-row input:focus, .form-row select:focus { outline:none; border-color:var(--accent-text); background:var(--surface); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     /* عمود الملاحظات: النص الطويل بيتقص و tooltip بالنص الكامل.
        التصدير بياخد النص كامل من الداتا مش من الخلية. */
@@ -456,7 +437,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 
     /* كلاسات بدل style="" المتكرر — بريف ٤٥. القيم منقولة بالحرف، متغيّرهاش. */
     .trs-dash { color:var(--ink-400); }
-    .form-row input.trs-pick-search { width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-bottom:8px; }
+    .form-row .trs-pick-search { margin-bottom:8px; }
     .trs-pick-list { max-height:160px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px; }
     .trs-pick-opt { padding:9px 12px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line-soft); }
     .trs-pick-chosen { margin-top:8px;font-size:13px;color:var(--pos);font-weight:600; }
@@ -464,7 +445,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 </style>
 
 <?php if ($flash): ?>
-    <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
+    <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
 <div class="summary-bar">
@@ -491,7 +472,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 <div class="treasuries-grid">
     <?php foreach ($treasuries as $t): ?>
         <a href="?treasury=<?= (int)$t['id'] ?>&from=<?= e($stFrom) ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>"
-           class="treasury-card <?= (!$isAllStatement && $selectedTreasury && (int)$selectedTreasury['id'] === (int)$t['id']) ? 'selected' : '' ?>">
+           class="treasury-tile fcard <?= (!$isAllStatement && $selectedTreasury && (int)$selectedTreasury['id'] === (int)$t['id']) ? 'selected' : '' ?>">
             <div class="tc-top">
                 <div class="tc-icon"><i class="ti <?= e($typeIcons[$t['type']] ?? 'ti-cash') ?>"></i></div>
                 <div>
@@ -507,33 +488,33 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
 </div>
 
 <?php if ($isAllStatement): ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">
             كشف حساب مجمّع — كل الخزائن
             <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
             <a href="treasury.php" class="btn btn-sm" style="float:left;font-size:13px;padding:5px 12px;text-decoration:none;">عرض الخزائن</a>
         </div>
 
-        <form method="get" class="filter-bar">
+        <form method="get" class="filter-bar ffilters">
             <input type="hidden" name="treasury" value="all">
-            <label for="stAllFrom">من</label>
-            <input type="date" name="from" id="stAllFrom" value="<?= e($stFrom) ?>">
-            <label for="stAllTo">إلى</label>
-            <input type="date" name="to" id="stAllTo" value="<?= e($stTo) ?>">
+            <div class="ffield"><label for="stAllFrom">من</label>
+            <input class="finput finput-sm" type="date" name="from" id="stAllFrom" value="<?= e($stFrom) ?>"></div>
+            <div class="ffield"><label for="stAllTo">إلى</label>
+            <input class="finput finput-sm" type="date" name="to" id="stAllTo" value="<?= e($stTo) ?>"></div>
             <label><input type="checkbox" name="show_cancelled" value="1" <?= $showCancelled ? 'checked' : '' ?>> إظهار الملغي</label>
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
-        <div class="sum-cards st-cards">
-            <div class="sum-card">
+        <div class="fkpis st-cards">
+            <div class="fkpi">
                 <div class="sc-label">إجمالي المدين</div>
                 <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
-            <div class="sum-card">
+            <div class="fkpi">
                 <div class="sc-label">إجمالي الدائن</div>
                 <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
-            <div class="sum-card">
+            <div class="fkpi">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
                 <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
@@ -553,9 +534,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <div class="empty">لا توجد حركات بعد.</div>
         <?php else: ?>
         <div class="stmt-scroll">
-        <table>
+        <table class="ftable">
             <thead><tr>
-                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
@@ -576,9 +557,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= $row['person_name'] !== '—' ? e($row['person_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td class="trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
+                        <td class="num"><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td class="num"><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td class="num trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($row['treasury_name'] ?? '')) ?></td>
@@ -590,33 +571,33 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <?php endif; ?>
     </div>
 <?php elseif ($selectedTreasury): ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">
             كشف حساب: <?= e($selectedTreasury['name']) ?>
             <span style="font-size:13px;color:var(--ink-500);font-weight:400;">(كل حركات الفترة)</span>
         </div>
 
-        <form method="get" class="filter-bar">
+        <form method="get" class="filter-bar ffilters">
             <input type="hidden" name="treasury" value="<?= (int)$selectedTreasury['id'] ?>">
-            <label for="stOneFrom">من</label>
-            <input type="date" name="from" id="stOneFrom" value="<?= e($stFrom) ?>">
-            <label for="stOneTo">إلى</label>
-            <input type="date" name="to" id="stOneTo" value="<?= e($stTo) ?>">
+            <div class="ffield"><label for="stOneFrom">من</label>
+            <input class="finput finput-sm" type="date" name="from" id="stOneFrom" value="<?= e($stFrom) ?>"></div>
+            <div class="ffield"><label for="stOneTo">إلى</label>
+            <input class="finput finput-sm" type="date" name="to" id="stOneTo" value="<?= e($stTo) ?>"></div>
             <label><input type="checkbox" name="show_cancelled" value="1" <?= $showCancelled ? 'checked' : '' ?>> إظهار الملغي</label>
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
             <a href="?treasury=<?= (int)$selectedTreasury['id'] ?><?= $hasFrom ? '&from=' . e($stFrom) : '' ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>&export=xlsx" class="btn btn-ghost">تصدير إكسيل</a>
         </form>
 
-        <div class="sum-cards st-cards">
-            <div class="sum-card">
+        <div class="fkpis st-cards">
+            <div class="fkpi">
                 <div class="sc-label">إجمالي المدين</div>
                 <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
-            <div class="sum-card">
+            <div class="fkpi">
                 <div class="sc-label">إجمالي الدائن</div>
                 <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
-            <div class="sum-card">
+            <div class="fkpi">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
                 <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
             </div>
@@ -642,10 +623,10 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <?php if (empty($statement) && $priorBalance === null): ?>
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
-        <table>
+        <table class="ftable">
             <thead>
                 <tr>
-                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
                 </tr>
             </thead>
             <tbody>
@@ -673,9 +654,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-code"><?= je_code_cell($row) ?></td>
                         <td><?= $row['person_name'] !== '—' ? e($row['person_name']) : '<span class="trs-dash">—</span>' ?></td>
                         <td><?= !empty($row['cost_branch_name']) ? e($row['cost_branch_name']) : '<span class="trs-dash">—</span>' ?></td>
-                        <td><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
-                        <td><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
-                        <td class="trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
+                        <td class="num"><?= $row['debit'] > 0 ? '<span class="amt-debit">'.money_fmt_table((float)$row['debit']).'</span>' : '—' ?></td>
+                        <td class="num"><?= $row['credit'] > 0 ? '<span class="amt-credit">'.money_fmt_table((float)$row['credit']).'</span>' : '—' ?></td>
+                        <td class="num trs-fw5"><?= ltr_out(money_fmt_table((float)$row['running_balance'])) ?></td>
                         <td style="color:var(--ink-500);font-size:13px;"><?= e($row['by_name'] ?? '—') ?></td>
                         <td style="color:var(--ink-400);font-size:12px;white-space:nowrap;"><?= e(date('H:i', strtotime($row['created_at']))) ?></td>
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
@@ -683,9 +664,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 <?php endforeach; ?>
                 <tr data-xt-ignore style="background:var(--line-soft);font-weight:700;">
                     <td colspan="7">الإجماليات</td>
-                    <td><?= ltr_out(money_fmt_table($totalDebit)) ?></td>
-                    <td><?= ltr_out(money_fmt_table($totalCredit)) ?></td>
-                    <td class="trs-fw5"><?= ltr_out(money_fmt_table($lastBalance)) ?></td>
+                    <td class="num"><?= ltr_out(money_fmt_table($totalDebit)) ?></td>
+                    <td class="num"><?= ltr_out(money_fmt_table($totalCredit)) ?></td>
+                    <td class="num trs-fw5"><?= ltr_out(money_fmt_table($lastBalance)) ?></td>
                     <td colspan="3">—</td>
                 </tr>
             </tbody>
@@ -693,7 +674,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <?php endif; ?>
     </div>
 <?php else: ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="empty">اختر خزينة من الأعلى لعرض كشف حسابها، أو اضغط "كشف حساب مجمّع".</div>
     </div>
 <?php endif; ?>
@@ -725,7 +706,7 @@ $today = date('Y-m-d');
 ?>
 
 <div class="modal-bg" id="receiptModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>استلام نقدية</h3>
         <form method="post" id="receiptForm" onsubmit="return handleReceiptSubmit(event)" data-busy="جاري الحفظ...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -733,14 +714,14 @@ $today = date('Y-m-d');
             <!-- نوع الاستلام: عادي / مورد / رد سلفة / استلام عهدة -->
             <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                 <label for="receiptType">نوع الاستلام</label>
-                <select name="op_type" id="receiptType" onchange="toggleReceiptType()">
+                <select class="fselect" name="op_type" id="receiptType" onchange="toggleReceiptType()">
                     <option value="normal">استلام عادي</option>
                     <option value="supplier">استلام من مورد</option>
                     <option value="advance">رد سلفة من موظف</option>
                     <option value="custody">استلام عهدة من فرع</option>
                 </select>
                 <div id="recSupplierBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="recSuppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                    <input type="text" id="recSuppSearch" class="trs-pick-search finput" placeholder="ابحث باسم المورد..."
                            data-picker-search="#recSuppList" data-item=".rec-supp-opt" data-empty="مفيش مورد بالاسم ده"
                            oninput="filterRecSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                     <div id="recSuppList" class="trs-pick-list">
@@ -755,7 +736,7 @@ $today = date('Y-m-d');
                     <div id="recSuppChosen" class="trs-pick-chosen"></div>
                 </div>
                 <div id="recAdvanceBox" style="display:none;margin-top:12px;">
-                    <input type="text" id="recEmpSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                    <input type="text" id="recEmpSearch" class="trs-pick-search finput" placeholder="ابحث باسم الموظف..."
                            oninput="filterRecEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
                     <div id="recEmpList" class="trs-pick-list">
                         <?php foreach ($employees as $emp): ?>
@@ -770,7 +751,7 @@ $today = date('Y-m-d');
                 </div>
                 <div id="recCustodyBox" style="display:none;margin-top:12px;">
                     <label for="recCustodyBranch">الفرع</label>
-                    <select name="branch_id" id="recCustodyBranch">
+                    <select class="fselect" name="branch_id" id="recCustodyBranch">
                         <option value="">— اختر الفرع —</option>
                         <?php foreach ($branchesForCustody as $b): ?>
                             <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
@@ -781,27 +762,27 @@ $today = date('Y-m-d');
             </div>
 
 
-            <div class="form-row"><label for="rcTreasury">الخزينة</label><select name="treasury_id" id="rcTreasury" required><?= $receiptOpts ?></select></div>
+            <div class="form-row ffield"><label for="rcTreasury">الخزينة</label><select class="fselect" name="treasury_id" id="rcTreasury" required><?= $receiptOpts ?></select></div>
             <div class="form-row" id="receiptAccountRow">
                 <label>القيد</label>
                 <?= acctree_field('entry_code_id') ?>
             </div>
             <div class="form-row cost-branch-row" id="receiptCostBranchRow">
                 <label for="rcCostBranch">اسم الفرع</label>
-                <select name="cost_branch_id" id="rcCostBranch">
+                <select class="fselect" name="cost_branch_id" id="rcCostBranch">
                     <option value="">— بدون تحديد —</option>
                     <?php foreach ($costBranches as $cb): ?>
                         <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-row"><label for="rcAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="rcAmount" required
+            <div class="form-row ffield"><label for="rcAmount">المبلغ</label><input class="finput num" type="text" inputmode="decimal" data-money name="amount" id="rcAmount" required
                    autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-            <div class="form-row"><label for="rcDate">التاريخ</label><input type="date" name="date" id="rcDate" value="<?= $today ?>" required></div>
-            <div class="form-row"><label for="rcDesc">البيان</label><input type="text" name="description" id="rcDesc" placeholder="سبب الاستلام" aria-label="البيان"></div>
+            <div class="form-row ffield"><label for="rcDate">التاريخ</label><input class="finput" type="date" name="date" id="rcDate" value="<?= $today ?>" required></div>
+            <div class="form-row ffield"><label for="rcDesc">البيان</label><input class="finput" type="text" name="description" id="rcDesc" placeholder="سبب الاستلام" aria-label="البيان"></div>
             <div class="form-row" id="receiptNotesRow">
                 <label for="rcNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                <textarea name="notes" id="rcNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                <textarea class="ftextarea" name="notes" id="rcNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
             </div>
 
             <div class="modal-actions">
@@ -813,7 +794,7 @@ $today = date('Y-m-d');
 </div>
 
 <div class="modal-bg" id="disburseModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>صرف نقدية</h3>
         <form method="post" id="disburseForm" onsubmit="return handleDisburseSubmit(event)">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -842,7 +823,7 @@ $today = date('Y-m-d');
                 <!-- نوع الصرف: عادي / مورد / سلفة موظف / عهدة فرع -->
                 <div class="form-row" style="background:var(--line-soft);padding:12px;border-radius:10px;border:1.5px solid var(--line);">
                     <label for="disburseType">نوع الصرف</label>
-                    <select name="op_type" id="disburseType" onchange="toggleDisburseType()">
+                    <select class="fselect" name="op_type" id="disburseType" onchange="toggleDisburseType()">
                         <option value="normal">صرف عادي</option>
                         <option value="supplier">صرف لمورد</option>
                         <option value="advance">سلفة لموظف</option>
@@ -852,7 +833,7 @@ $today = date('Y-m-d');
 
                     <!-- صرف لمورد -->
                     <div id="supplierBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="suppSearch" class="trs-pick-search" placeholder="ابحث باسم المورد..."
+                        <input type="text" id="suppSearch" class="trs-pick-search finput" placeholder="ابحث باسم المورد..."
                                data-picker-search="#suppList" data-item=".supp-opt" data-empty="مفيش مورد بالاسم ده"
                                oninput="filterSupps()" autocomplete="off" aria-label="ابحث باسم المورد...">
                         <div id="suppList" class="trs-pick-list">
@@ -869,7 +850,7 @@ $today = date('Y-m-d');
 
                     <!-- سلفة موظف -->
                     <div id="advanceBox" style="display:none;margin-top:12px;">
-                        <input type="text" id="empSearch" class="trs-pick-search" placeholder="ابحث باسم الموظف..."
+                        <input type="text" id="empSearch" class="trs-pick-search finput" placeholder="ابحث باسم الموظف..."
                                oninput="filterEmps()" autocomplete="off" aria-label="ابحث باسم الموظف...">
                         <div id="empList" class="trs-pick-list">
                             <?php foreach ($employees as $emp): ?>
@@ -886,7 +867,7 @@ $today = date('Y-m-d');
                     <!-- عهدة فرع -->
                     <div id="custodyBox" style="display:none;margin-top:12px;">
                         <label for="custodyBranch">الفرع</label>
-                        <select name="branch_id" id="custodyBranch">
+                        <select class="fselect" name="branch_id" id="custodyBranch">
                             <option value="">— اختر الفرع —</option>
                             <?php foreach ($branchesForCustody as $b): ?>
                                 <option value="<?= (int)$b['id'] ?>"><?= e($b['name']) ?></option>
@@ -901,7 +882,7 @@ $today = date('Y-m-d');
 
                 <div class="form-row">
                     <label for="dsTreasury">الخزينة</label>
-                    <select name="treasury_id" id="dsTreasury" required>
+                    <select class="fselect" name="treasury_id" id="dsTreasury" required>
                         <?php foreach ($disbTreasuries as $t): ?>
                             <option value="<?= (int)$t['id'] ?>"
                                     <?= $defaultDisb === (int)$t['id'] ? 'selected' : '' ?>>
@@ -916,20 +897,20 @@ $today = date('Y-m-d');
                 </div>
                 <div class="form-row cost-branch-row" id="disburseCostBranchRow">
                     <label for="dsCostBranch">اسم الفرع</label>
-                    <select name="cost_branch_id" id="dsCostBranch">
+                    <select class="fselect" name="cost_branch_id" id="dsCostBranch">
                         <option value="">— بدون تحديد —</option>
                         <?php foreach ($costBranches as $cb): ?>
                             <option value="<?= (int)$cb['id'] ?>"><?= e($cb['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="form-row"><label for="dsAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="dsAmount" required
+                <div class="form-row ffield"><label for="dsAmount">المبلغ</label><input class="finput num" type="text" inputmode="decimal" data-money name="amount" id="dsAmount" required
                        autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-                <div class="form-row"><label for="dsDate">التاريخ</label><input type="date" name="date" id="dsDate" value="<?= $today ?>" required></div>
-                <div class="form-row"><label for="dsDesc">البيان</label><input type="text" name="description" id="dsDesc" placeholder="سبب الصرف" aria-label="البيان"></div>
+                <div class="form-row ffield"><label for="dsDate">التاريخ</label><input class="finput" type="date" name="date" id="dsDate" value="<?= $today ?>" required></div>
+                <div class="form-row ffield"><label for="dsDesc">البيان</label><input class="finput" type="text" name="description" id="dsDesc" placeholder="سبب الصرف" aria-label="البيان"></div>
                 <div class="form-row" id="disburseNotesRow">
                     <label for="dsNotes">ملاحظات <span style="color:var(--ink-400);font-weight:400;">(اختياري)</span></label>
-                    <textarea name="notes" id="dsNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+                    <textarea class="ftextarea" name="notes" id="dsNotes" rows="3" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
                 </div>
 
                 <div class="modal-actions">
@@ -955,17 +936,17 @@ $today = date('Y-m-d');
 </div>
 
 <div class="modal-bg" id="transferModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تحويل بين خزينتين</h3>
         <form method="post" id="transferForm" onsubmit="return handleTransferSubmit(event)" data-busy="جاري التحويل...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="transfer">
-            <div class="form-row"><label for="trFrom">من خزينة</label><select name="from_treasury_id" id="trFrom" required><?= $transferOpts ?></select></div>
-            <div class="form-row"><label for="trTo">إلى خزينة</label><select name="to_treasury_id" id="trTo" required><?= $transferOpts ?></select></div>
-            <div class="form-row"><label for="trAmount">المبلغ</label><input type="text" inputmode="decimal" data-money name="amount" id="trAmount" required
+            <div class="form-row ffield"><label for="trFrom">من خزينة</label><select class="fselect" name="from_treasury_id" id="trFrom" required><?= $transferOpts ?></select></div>
+            <div class="form-row ffield"><label for="trTo">إلى خزينة</label><select class="fselect" name="to_treasury_id" id="trTo" required><?= $transferOpts ?></select></div>
+            <div class="form-row ffield"><label for="trAmount">المبلغ</label><input class="finput num" type="text" inputmode="decimal" data-money name="amount" id="trAmount" required
                    autocomplete="off" placeholder="0" aria-label="المبلغ"></div>
-            <div class="form-row"><label for="trDate">التاريخ</label><input type="date" name="date" id="trDate" value="<?= $today ?>" required></div>
-            <div class="form-row"><label for="trNotes">ملاحظات</label><input type="text" name="notes" id="trNotes" aria-label="ملاحظات"></div>
+            <div class="form-row ffield"><label for="trDate">التاريخ</label><input class="finput" type="date" name="date" id="trDate" value="<?= $today ?>" required></div>
+            <div class="form-row ffield"><label for="trNotes">ملاحظات</label><input class="finput" type="text" name="notes" id="trNotes" aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">تنفيذ التحويل</button>
                 <button type="button" class="btn btn-cancel" onclick="closeModal('transferModal')">إلغاء</button>
@@ -978,7 +959,7 @@ $today = date('Y-m-d');
      مش <form> عن قصد — الحفظ بيتم بـ fetch والصف بيتحدّث في مكانه،
      من غير أي ريفريش للصفحة (الفلاتر ومكان الاسكرول بيفضلوا زي ما هما). -->
 <div class="modal-bg" id="jeModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تعديل القيد</h3>
 
         <div class="je-locked">
@@ -989,7 +970,7 @@ $today = date('Y-m-d');
         <?php if ($canEditEntry): ?>
         <div class="form-row" style="margin-top:14px;">
             <label for="jeDate">التاريخ</label>
-            <input type="date" id="jeDate" aria-label="التاريخ">
+            <input class="finput" type="date" id="jeDate" aria-label="التاريخ">
             <div id="jeDateHint" style="display:none;font-size:12px;color:var(--ink-500);margin-top:4px;">
                 تاريخ القيد ده جاي من الموديول بتاعه (وردية / عهدة / راتب / تحويل / فاتورة مورد) ويتعدّل من هناك.
             </div>
@@ -1000,16 +981,16 @@ $today = date('Y-m-d');
         </div>
         <div class="form-row">
             <label for="jeDesc">البيان</label>
-            <input type="text" id="jeDesc" maxlength="255" aria-label="البيان">
+            <input class="finput" type="text" id="jeDesc" maxlength="255" aria-label="البيان">
         </div>
         <?php endif; ?>
 
         <div class="form-row"<?= $canEditEntry ? '' : ' style="margin-top:14px;"' ?>>
             <label for="jeNotes">ملاحظات</label>
-            <textarea id="jeNotes" rows="5" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
+            <textarea class="ftextarea" id="jeNotes" rows="5" placeholder="شرح تفصيلي للعملية…" aria-label="ملاحظات"></textarea>
         </div>
 
-        <div id="jeError" class="flash error" style="display:none;margin-bottom:0;"></div>
+        <div id="jeError" class="falert falert-neg" style="display:none;margin-bottom:0;"></div>
 
         <div class="modal-actions">
             <button type="button" class="btn" id="jeSaveBtn" onclick="jeSave()">

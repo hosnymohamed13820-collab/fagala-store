@@ -46,13 +46,6 @@ if (!sens_unlocked()) {
         margin: 0 auto;
         padding: 10px 0 30px;
     }
-    .salary-card {
-        background:var(--surface);
-        border-radius: var(--r-lg, 16px);
-        padding: 24px;
-        box-shadow: var(--shadow, 0 2px 12px rgba(124,111,247,0.08));
-        margin-bottom: 20px;
-    }
     .salary-head {
         text-align: center;
         margin-bottom: 20px;
@@ -148,12 +141,9 @@ if (!sens_unlocked()) {
         color: var(--pos);
         letter-spacing: 0.5px;
     }
-    .msg-card {
-        background:var(--surface);
-        border-radius: var(--r-lg, 16px);
+    .salary-message {
         padding: 40px 24px;
         text-align: center;
-        box-shadow: var(--shadow, 0 2px 12px rgba(124,111,247,0.08));
         max-width: 480px;
         margin: 30px auto;
     }
@@ -173,13 +163,11 @@ if (!sens_unlocked()) {
         color: var(--ink-500);
         line-height: 1.6;
     }
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { font-size: 13px; font-weight: 600; }
 </style>
 
 <div class="salary-wrap">
 <?php if ($notLinked): ?>
-    <div class="msg-card">
+    <div class="salary-message fcard">
         <div class="msg-icon"><i class="ti ti-user-cog"></i></div>
         <div class="msg-title">الحساب غير مربوط بملف موظف</div>
         <div class="msg-desc">
@@ -188,7 +176,7 @@ if (!sens_unlocked()) {
         </div>
     </div>
 <?php elseif ($isManager && (!$employee || $targetEmpId <= 0)): ?>
-    <div class="msg-card">
+    <div class="salary-message fcard">
         <div class="msg-icon"><i class="ti ti-users"></i></div>
         <div class="msg-title">لم يتم تحديد موظف</div>
         <div class="msg-desc">
@@ -197,7 +185,7 @@ if (!sens_unlocked()) {
         </div>
     </div>
 <?php elseif ($expiredOrNoSalary || !$showDetails): ?>
-    <div class="msg-card">
+    <div class="salary-message fcard">
         <div class="msg-icon"><i class="ti ti-wallet"></i></div>
         <div class="msg-title">شكراً لك</div>
         <div class="msg-desc">
@@ -230,7 +218,7 @@ if (!sens_unlocked()) {
     // الاستحقاق قبل الخصم
     $grossSalary = $netSalary - $bonuses + $advances + $penalties + $deficits + $cashierDef;
 ?>
-    <div class="salary-card">
+    <div class="salary-card fcard">
         <div class="salary-head">
             <div class="salary-emp-name"><?= e($employee['full_name']) ?></div>
             <div class="salary-month-badge">
