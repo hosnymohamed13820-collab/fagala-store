@@ -246,7 +246,7 @@ document.addEventListener('DOMContentLoaded', function () {
             alertBox.innerHTML = '';
             return;
         }
-        alertBox.innerHTML = ui.alert(kind, ui.esc(message));
+        alertBox.innerHTML = ui.alert(kind, message);
     }
 
     function clearAlert() {

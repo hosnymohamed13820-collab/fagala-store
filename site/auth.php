@@ -148,8 +148,7 @@ function all_modules(): array
         'item_master'   => ['label' => 'كارت الصنف',       'icon' => 'ti-package',           'url' => 'item_master.php'],
         'sale_prices'   => ['label' => 'أسعار البيع',       'icon' => 'ti-cash',              'url' => 'item_prices.php'],
         'customers'     => ['label' => 'العملاء',          'icon' => 'ti-users',             'url' => 'customers.php'],
-        // شاشة البيع نفسها في بريف ٢٤١؛ لحد وقتها رابط الموديول يفتح إدارة الأجهزة.
-        'pos'           => ['label' => 'نقطة البيع',       'icon' => 'ti-device-desktop',    'url' => 'pos_devices.php'],
+        'pos'           => ['label' => 'نقطة البيع',       'icon' => 'ti-device-desktop',    'url' => 'pos.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
