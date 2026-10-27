@@ -6,9 +6,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_module_access('pos');
-if (!can('pos:sell') && !is_real_owner()) {
+if (!can('pos:sell') && !can('pos:return_ref') && !can('pos:return_general') && !is_real_owner()) {
     http_response_code(403);
-    exit('مالكش صلاحية البيع في نقطة البيع.');
+    exit('مالكش صلاحية في نقطة البيع.');
 }
 
 $page_title = 'نقطة البيع';
@@ -235,6 +235,9 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <main class="content-container" id="posContainer"
+      data-can-sell="<?= (can('pos:sell') || is_real_owner()) ? '1' : '0' ?>"
+      data-can-return-ref="<?= (can('pos:return_ref') || is_real_owner()) ? '1' : '0' ?>"
+      data-can-return-general="<?= (can('pos:return_general') || is_real_owner()) ? '1' : '0' ?>"
       data-can-drawer="<?= (can('pos:drawer') || is_real_owner()) ? '1' : '0' ?>"
       data-can-held-cancel="<?= (can('pos:held_cancel') || is_real_owner()) ? '1' : '0' ?>"
       data-can-devices="<?= (can('pos:devices') || is_real_owner()) ? '1' : '0' ?>">
@@ -271,96 +274,394 @@ require_once __DIR__ . '/includes/header.php';
 
     <div id="posAlert"></div>
 
-    <div class="pos-layout" id="posMainLayout">
-        <!-- عمود السلة والمسح -->
-        <div class="pos-cart-panel">
-            <div class="pos-scan-box">
-                <div class="pos-scan-input-wrap">
-                    <input type="text" class="finput" id="posScanInput"
-                           placeholder="امسح الباركود أو اكتب كود/اسم الصنف (F2)..."
-                           autocomplete="off" autofocus>
-                    <div id="posSearchResults" class="pos-search-dropdown" style="display:none;"></div>
+    <!-- تابات أوضاع نقطة البيع -->
+    <div class="ftabs" id="posModeTabs" style="margin-bottom: var(--sp-2);">
+        <button type="button" class="ftab is-active" data-mode="sale" id="posTabSale">
+            <i class="ti ti-shopping-cart"></i> بيع (F1)
+        </button>
+        <button type="button" class="ftab" data-mode="return" id="posTabReturn">
+            <i class="ti ti-arrow-back-up"></i> مرتجع (F6)
+        </button>
+        <?php if (can('pos:return_general') || is_real_owner()): ?>
+        <button type="button" class="ftab" data-mode="return_general" id="posTabReturnGeneral">
+            <i class="ti ti-arrow-down-left"></i> مرتجع عام
+        </button>
+        <?php endif; ?>
+        <button type="button" class="ftab" data-mode="exchange" id="posTabExchange">
+            <i class="ti ti-transfer"></i> استبدال
+        </button>
+    </div>
+
+    <!-- وضع البيع (الافتراضي) -->
+    <div id="posViewSale">
+        <div class="pos-layout" id="posMainLayout">
+            <!-- عمود السلة والمسح -->
+            <div class="pos-cart-panel">
+                <div class="pos-scan-box">
+                    <div class="pos-scan-input-wrap">
+                        <input type="text" class="finput" id="posScanInput"
+                               placeholder="امسح الباركود أو اكتب كود/اسم الصنف (F2)..."
+                               autocomplete="off" autofocus>
+                        <div id="posSearchResults" class="pos-search-dropdown" style="display:none;"></div>
+                    </div>
+                    <button type="button" class="btn btn-outline" id="posBtnCamera" title="مسح بالكاميرا">
+                        <i class="ti ti-camera"></i>
+                    </button>
                 </div>
-                <button type="button" class="btn btn-outline" id="posBtnCamera" title="مسح بالكاميرا">
-                    <i class="ti ti-camera"></i>
+
+                <div id="posCustomerBar" style="display:none;">
+                    <span class="pos-customer-badge">
+                        <i class="ti ti-user-check"></i>
+                        <strong id="posCustomerName">عميل نقدي</strong>
+                        <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل" style="padding:0 4px; min-width:auto;">
+                            <i class="ti ti-x"></i>
+                        </button>
+                    </span>
+                </div>
+
+                <div class="ftable-wrap pos-cart-table-wrap">
+                    <table class="ftable" id="posCartTable">
+                        <thead>
+                            <tr>
+                                <th>الكود</th>
+                                <th>الاسم</th>
+                                <th>الوحدة</th>
+                                <th class="num">الكمية</th>
+                                <th class="num">السعر</th>
+                                <th class="num">الخصم</th>
+                                <th class="num">الصافي</th>
+                                <th class="num" style="color:var(--ink-500);">رصيد</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="posCartBody"></tbody>
+                    </table>
+                </div>
+                <div id="posCartEmpty"></div>
+            </div>
+
+            <!-- عمود الإجماليات والدفع -->
+            <div class="pos-totals-panel">
+                <div class="fcard">
+                    <div class="pos-net-box">
+                        <div class="pos-net-title">الصافي المطلوب</div>
+                        <div class="pos-net-val">
+                            <span id="posNetDisplay">0.00</span>
+                            <span class="pos-net-currency">ج.م</span>
+                        </div>
+                    </div>
+
+                    <div class="pos-summary-list">
+                        <div class="pos-summary-row">
+                            <span class="pos-label">الإجمالي</span>
+                            <span class="pos-val" id="posGrossDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">خصم السطور</span>
+                            <span class="pos-val" id="posLineDiscDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">خصم الفاتورة</span>
+                            <span class="pos-val" id="posInvDiscDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">إجمالي الخصم</span>
+                            <span class="pos-val" id="posTotalDiscDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">عدد الأصناف / القطع</span>
+                            <span class="pos-val"><span id="posLinesCount">0</span> / <span id="posPiecesCount">0</span></span>
+                        </div>
+                    </div>
+
+                    <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
+                        <button type="button" class="btn btn-primary" id="posBtnPay" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                            <i class="ti ti-cash"></i> دفع وإنهاء (F10)
+                        </button>
+                        <div style="display:flex; gap:var(--sp-2); width:100%;">
+                            <button type="button" class="btn btn-outline" id="posBtnInvoiceDiscount" style="flex:1; justify-content:center;">
+                                <i class="ti ti-discount-2"></i> خصم فاتورة (F4)
+                            </button>
+                            <button type="button" class="btn btn-ghost" id="posBtnClearCart" style="color:var(--neg);" title="تفريغ السلة">
+                                <i class="ti ti-trash"></i> مسح
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- وضع المرتجع على فاتورة (F6) -->
+    <div id="posViewReturn" style="display:none;">
+        <div class="fcard" style="padding:var(--sp-2); margin-bottom:var(--sp-2);">
+            <div style="display:flex; gap:var(--sp-2); align-items:center;">
+                <input type="text" class="finput" id="posReturnSearchInput"
+                       placeholder="اكتب أو امسح رقم الإيصال الأصلي (مثال: 1/B238T/2026/1) أو رقم الفاتورة..."
+                       autocomplete="off" style="flex:1;">
+                <button type="button" class="btn btn-primary" id="posBtnReturnSearch">
+                    <i class="ti ti-search"></i> بحث
                 </button>
             </div>
-
-            <div id="posCustomerBar" style="display:none;">
-                <span class="pos-customer-badge">
-                    <i class="ti ti-user-check"></i>
-                    <strong id="posCustomerName">عميل نقدي</strong>
-                    <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل" style="padding:0 4px; min-width:auto;">
-                        <i class="ti ti-x"></i>
-                    </button>
-                </span>
-            </div>
-
-            <div class="ftable-wrap pos-cart-table-wrap">
-                <table class="ftable" id="posCartTable">
-                    <thead>
-                        <tr>
-                            <th>الكود</th>
-                            <th>الاسم</th>
-                            <th>الوحدة</th>
-                            <th class="num">الكمية</th>
-                            <th class="num">السعر</th>
-                            <th class="num">الخصم</th>
-                            <th class="num">الصافي</th>
-                            <th class="num" style="color:var(--ink-500);">رصيد</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody id="posCartBody"></tbody>
-                </table>
-            </div>
-            <div id="posCartEmpty"></div>
         </div>
 
-        <!-- عمود الإجماليات والدفع -->
-        <div class="pos-totals-panel">
-            <div class="fcard">
-                <div class="pos-net-box">
-                    <div class="pos-net-title">الصافي المطلوب</div>
-                    <div class="pos-net-val">
-                        <span id="posNetDisplay">0.00</span>
-                        <span class="pos-net-currency">ج.م</span>
+        <div id="posReturnDocInfoBox" style="display:none; margin-bottom:var(--sp-2);">
+            <div class="fcard" style="padding:var(--sp-2);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--sp-2);">
+                    <div style="display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;">
+                        <span class="fchip fchip-info" id="posReturnDocReceipt">إيصال: --</span>
+                        <span class="fchip fchip-mute" id="posReturnDocDate">تاريخ: --</span>
+                        <span class="fchip fchip-mute" id="posReturnDocCashier">كاشير: --</span>
+                        <span class="fchip fchip-mute" id="posReturnDocCustomer" style="display:none;">عميل: --</span>
+                        <span id="posReturnLateBadge" class="fchip fchip-warn" style="display:none;">
+                            <i class="ti ti-alert-triangle"></i> أقدم من ١٤ يوم (يحتاج اعتماد مشرف)
+                        </span>
+                    </div>
+                    <div>
+                        <span class="pos-label">صافي الفاتورة الأصلية: </span>
+                        <strong id="posReturnDocNet" class="pos-val">0.00</strong> ج.م
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="pos-summary-list">
-                    <div class="pos-summary-row">
-                        <span class="pos-label">الإجمالي</span>
-                        <span class="pos-val" id="posGrossDisplay">0.00</span>
-                    </div>
-                    <div class="pos-summary-row">
-                        <span class="pos-label">خصم السطور</span>
-                        <span class="pos-val" id="posLineDiscDisplay">0.00</span>
-                    </div>
-                    <div class="pos-summary-row">
-                        <span class="pos-label">خصم الفاتورة</span>
-                        <span class="pos-val" id="posInvDiscDisplay">0.00</span>
-                    </div>
-                    <div class="pos-summary-row">
-                        <span class="pos-label">إجمالي الخصم</span>
-                        <span class="pos-val" id="posTotalDiscDisplay">0.00</span>
-                    </div>
-                    <div class="pos-summary-row">
-                        <span class="pos-label">عدد الأصناف / القطع</span>
-                        <span class="pos-val"><span id="posLinesCount">0</span> / <span id="posPiecesCount">0</span></span>
-                    </div>
+        <div class="pos-layout" id="posReturnLayout" style="display:none;">
+            <div class="pos-cart-panel">
+                <div class="ftable-wrap pos-cart-table-wrap">
+                    <table class="ftable" id="posReturnLinesTable">
+                        <thead>
+                            <tr>
+                                <th>الكود</th>
+                                <th>الاسم</th>
+                                <th>الوحدة</th>
+                                <th class="num">المباع</th>
+                                <th class="num">مردود</th>
+                                <th class="num">المتاح</th>
+                                <th class="num" style="width:90px;">المرتجع</th>
+                                <th class="num">سعر القطعة</th>
+                                <th class="num">الصافي</th>
+                            </tr>
+                        </thead>
+                        <tbody id="posReturnLinesBody"></tbody>
+                    </table>
                 </div>
+            </div>
 
-                <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                    <button type="button" class="btn btn-primary" id="posBtnPay" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
-                        <i class="ti ti-cash"></i> دفع وإنهاء (F10)
-                    </button>
-                    <div style="display:flex; gap:var(--sp-2); width:100%;">
-                        <button type="button" class="btn btn-outline" id="posBtnInvoiceDiscount" style="flex:1; justify-content:center;">
-                            <i class="ti ti-discount-2"></i> خصم فاتورة (F4)
+            <div class="pos-totals-panel">
+                <div class="fcard">
+                    <div class="pos-net-box">
+                        <div class="pos-net-title">صافي المرتجع المسترد</div>
+                        <div class="pos-net-val">
+                            <span id="posReturnNetDisplay">0.00</span>
+                            <span class="pos-net-currency">ج.م</span>
+                        </div>
+                    </div>
+
+                    <div class="pos-summary-list">
+                        <div class="pos-summary-row">
+                            <span class="pos-label">إجمالي البنود المرتجعة</span>
+                            <span class="pos-val" id="posReturnGrossDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">خصم البنود المردودة</span>
+                            <span class="pos-val" id="posReturnDiscDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">طرق الدفع الأصلية</span>
+                            <div class="pos-val" id="posReturnOrigPaymentsSummary" style="font-size:var(--fs-xs); color:var(--text-muted); text-align:left;">--</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:var(--sp-2);">
+                        <div class="pos-label" style="margin-bottom:4px; font-weight:600;">طريقة رد المبلغ:</div>
+                        <div id="posReturnPaymentRows"></div>
+                    </div>
+
+                    <div id="posReturnOverrideBox" class="falert falert-warn" style="display:none; margin-top:var(--sp-2); font-size:var(--fs-xs);">
+                        <i class="ti ti-alert-triangle"></i> طريقة الرد تختلف عن الفاتورة الأصلية. يلزم اعتماد مشرف.
+                        <div class="ffield" style="margin-top:4px;">
+                            <input type="text" class="finput" id="posReturnOverrideReason" placeholder="سبب تغيير طريقة الرد..." style="font-size:var(--fs-xs);">
+                        </div>
+                    </div>
+
+                    <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmReturn" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                            <i class="ti ti-check"></i> إنهاء المرتجع
                         </button>
-                        <button type="button" class="btn btn-ghost" id="posBtnClearCart" style="color:var(--neg);" title="تفريغ السلة">
-                            <i class="ti ti-trash"></i> مسح
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- وضع المرتجع العام -->
+    <div id="posViewReturnGeneral" style="display:none;">
+        <div class="pos-layout">
+            <div class="pos-cart-panel">
+                <div class="fcard" style="padding:var(--sp-2); margin-bottom:var(--sp-2);">
+                    <div class="ffield">
+                        <label class="flabel" for="posGenReturnReason">سبب المرتجع العام (إجباري):</label>
+                        <input type="text" class="finput" id="posGenReturnReason"
+                               placeholder="اكتب سبب المرتجع العام بالتفصيل..." autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="pos-scan-box">
+                    <div class="pos-scan-input-wrap">
+                        <input type="text" class="finput" id="posGenScanInput"
+                               placeholder="امسح الباركود أو اكتب كود/اسم الصنف لإضافته للمرتجع..."
+                               autocomplete="off">
+                        <div id="posGenSearchResults" class="pos-search-dropdown" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="ftable-wrap pos-cart-table-wrap">
+                    <table class="ftable" id="posGenCartTable">
+                        <thead>
+                            <tr>
+                                <th>الكود</th>
+                                <th>الاسم</th>
+                                <th>الوحدة</th>
+                                <th class="num">الكمية</th>
+                                <th class="num">سعر الوحدة</th>
+                                <th class="num">الصافي</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="posGenCartBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="pos-totals-panel">
+                <div class="fcard">
+                    <div class="pos-net-box">
+                        <div class="pos-net-title">صافي المرتجع العام</div>
+                        <div class="pos-net-val">
+                            <span id="posGenNetDisplay">0.00</span>
+                            <span class="pos-net-currency">ج.م</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:var(--sp-2);">
+                        <div class="pos-label" style="margin-bottom:4px; font-weight:600;">طريقة رد المبلغ:</div>
+                        <div id="posGenPaymentRows"></div>
+                    </div>
+
+                    <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmGenReturn" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                            <i class="ti ti-check"></i> إنهاء المرتجع العام
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- وضع الاستبدال -->
+    <div id="posViewExchange" style="display:none;">
+        <div class="pos-layout">
+            <div class="pos-cart-panel" style="gap:var(--sp-3);">
+                <!-- جزء المرتجع من فاتورة -->
+                <div class="fcard" style="padding:var(--sp-2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
+                        <strong style="color:var(--warn);"><i class="ti ti-arrow-back-up"></i> ١. المرتجع من فاتورة سابقة</strong>
+                        <span id="posExchReturnSubtotalChip" class="fchip fchip-warn">صافي المرتجع: 0.00 ج.م</span>
+                    </div>
+                    <div class="pos-scan-box" style="margin-bottom:var(--sp-2);">
+                        <div class="pos-scan-input-wrap">
+                            <input type="text" class="finput" id="posExchReceiptInput"
+                                   placeholder="رقم إيصال الفاتورة الأصلية...">
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" id="posBtnExchSearchDoc">
+                            <i class="ti ti-search"></i> بحث
+                        </button>
+                    </div>
+                    <div id="posExchReturnDocInfo" style="display:none; margin-bottom:var(--sp-2); font-size:var(--fs-xs);">
+                        <span class="fchip fchip-mute" id="posExchDocReceiptBadge">--</span>
+                        <span class="fchip fchip-mute" id="posExchDocDateBadge">--</span>
+                    </div>
+                    <div class="ftable-wrap" style="max-height:200px; overflow-y:auto;">
+                        <table class="ftable" id="posExchReturnLinesTable">
+                            <thead>
+                                <tr>
+                                    <th>الكود</th>
+                                    <th>الاسم</th>
+                                    <th class="num">المتاح</th>
+                                    <th class="num" style="width:80px;">المرتجع</th>
+                                    <th class="num">سعر القطعة</th>
+                                    <th class="num">الصافي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="posExchReturnLinesBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- جزء سلة البيع الجديدة -->
+                <div class="fcard" style="padding:var(--sp-2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
+                        <strong style="color:var(--accent);"><i class="ti ti-shopping-cart"></i> ٢. سلة البيع الجديدة</strong>
+                        <span id="posExchSaleSubtotalChip" class="fchip fchip-info">صافي البيع: 0.00 ج.م</span>
+                    </div>
+                    <div class="pos-scan-box" style="margin-bottom:var(--sp-2);">
+                        <div class="pos-scan-input-wrap">
+                            <input type="text" class="finput" id="posExchScanInput"
+                                   placeholder="امسح أو ابحث عن صنف لإضافته للبيع الجديد...">
+                            <div id="posExchSearchResults" class="pos-search-dropdown" style="display:none;"></div>
+                        </div>
+                    </div>
+                    <div class="ftable-wrap" style="max-height:220px; overflow-y:auto;">
+                        <table class="ftable" id="posExchSaleTable">
+                            <thead>
+                                <tr>
+                                    <th>الكود</th>
+                                    <th>الاسم</th>
+                                    <th>الوحدة</th>
+                                    <th class="num">الكمية</th>
+                                    <th class="num">السعر</th>
+                                    <th class="num">الصافي</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="posExchSaleBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ملخص الاستبدال والفرق والدفع -->
+            <div class="pos-totals-panel">
+                <div class="fcard">
+                    <div class="pos-net-box">
+                        <div class="pos-net-title" id="posExchDiffTitle">الفرق المطلوب</div>
+                        <div class="pos-net-val">
+                            <span id="posExchDiffDisplay">0.00</span>
+                            <span class="pos-net-currency">ج.م</span>
+                        </div>
+                        <div id="posExchDiffStatus" class="fchip fchip-mute" style="margin-top:4px;">مفيش فرق</div>
+                    </div>
+
+                    <div class="pos-summary-list">
+                        <div class="pos-summary-row">
+                            <span class="pos-label">صافي البيع الجديد</span>
+                            <span class="pos-val" id="posExchSaleNetDisplay">0.00</span>
+                        </div>
+                        <div class="pos-summary-row">
+                            <span class="pos-label">صافي المرتجع</span>
+                            <span class="pos-val" id="posExchRetNetDisplay">0.00</span>
+                        </div>
+                    </div>
+
+                    <!-- دفعات الفرق -->
+                    <div id="posExchPaymentsWrap" style="margin-top:var(--sp-2); display:none;">
+                        <div class="pos-label" id="posExchPaymentLabel" style="margin-bottom:4px; font-weight:600;">دفع الفرق:</div>
+                        <div id="posExchPaymentRows"></div>
+                    </div>
+
+                    <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmExchange" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                            <i class="ti ti-check"></i> إنهاء الاستبدال
                         </button>
                     </div>
                 </div>
@@ -370,8 +671,10 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- شريط الاختصارات بالأسفل -->
     <div class="pos-shortcuts-bar">
+        <span><span class="pos-shortcut-key">F1</span> بيع</span>
         <span><span class="pos-shortcut-key">F2</span> بحث / مسح</span>
-        <span><span class="pos-shortcut-key">F4</span> خصم فاتورة</span>
+        <span><span class="pos-shortcut-key">F4</span> خصم</span>
+        <span><span class="pos-shortcut-key">F6</span> مرتجع</span>
         <span><span class="pos-shortcut-key">F8</span> تعليق</span>
         <span><span class="pos-shortcut-key">F9</span> المعلّق</span>
         <span><span class="pos-shortcut-key">F10</span> دفع</span>
@@ -495,7 +798,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- نافذة اعتماد المشرف للخصم الزائد -->
     <div class="fg-dlg-bg" id="posModalSupervisor" style="display:none;" role="dialog" aria-modal="true">
         <div class="fg-dlg" style="width: min(92vw, 440px);">
-            <h3 class="fg-dlg-title"><i class="ti ti-lock"></i> اعتماد مشرف للخصم</h3>
+            <h3 class="fg-dlg-title" id="posSupervisorTitle"><i class="ti ti-lock"></i> اعتماد مشرف</h3>
             <div class="falert falert-warn" id="posSupervisorWarning">
                 الخصم الإجمالي يتجاوز سقف الكاشير. مطلوب اعتماد مدير أو مشرف.
             </div>
@@ -1507,21 +1810,41 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ==========================================
-    // اعتماد المشرف (سقف الخصم)
+    // اعتماد المشرف (سقف الخصم · مرتجع متأخر · طريقة رد)
     // ==========================================
     const modalSupervisor = document.getElementById('posModalSupervisor');
     const superUser = document.getElementById('posSuperUser');
     const superPass = document.getElementById('posSuperPass');
     const supervisorAlert = document.getElementById('posSupervisorAlert');
-    let pendingDiscountPct = 0;
+    let pendingApproval = {
+        type: 'discount',
+        value: 0,
+        onSuccess: null
+    };
 
-    function promptSupervisorApproval(pct) {
-        pendingDiscountPct = pct;
+    function promptSupervisorApproval(opts) {
+        if (typeof opts === 'number') {
+            opts = {
+                type: 'discount',
+                value: opts,
+                title: 'اعتماد مشرف للخصم',
+                warning: 'نسبة الخصم (' + opts + '%) أكبر من سقف الكاشير المعتمد. مطلوب اعتماد مشرف أو مالك.',
+                onSuccess: function (tok) {
+                    approvalToken = tok;
+                    openPaymentModal();
+                }
+            };
+        }
+        pendingApproval = {
+            type: opts.type || 'discount',
+            value: opts.value || 0,
+            onSuccess: opts.onSuccess || null
+        };
         supervisorAlert.innerHTML = '';
         superUser.value = '';
         superPass.value = '';
-        document.getElementById('posSupervisorWarning').textContent =
-            'نسبة الخصم (' + pct + '%) أكبر من سقف الكاشير المعتمد. مطلوب اعتماد مشرف أو مالك.';
+        document.getElementById('posSupervisorTitle').innerHTML = '<i class="ti ti-lock"></i> ' + (opts.title || 'اعتماد مشرف');
+        document.getElementById('posSupervisorWarning').textContent = opts.warning || 'مطلوب اعتماد مشرف أو مالك.';
         openModal(modalSupervisor);
         setTimeout(function () { superUser.focus(); }, 100);
     }
@@ -1543,17 +1866,19 @@ document.addEventListener('DOMContentLoaded', function () {
             method: 'POST',
             body: {
                 device_uuid: deviceUuid,
-                approval_type: 'discount',
-                value: pendingDiscountPct,
+                approval_type: pendingApproval.type,
+                value: pendingApproval.value,
                 username: u,
                 password: p
             }
         })
         .then(function (res) {
-            approvalToken = res.data ? res.data.approval_token : null;
+            const tok = res.data ? res.data.approval_token : null;
             closeModal(modalSupervisor);
-            showAlert('pos', 'تم اعتماد الخصم بواسطة: ' + (res.data ? res.data.approved_by : 'المشرف'));
-            openPaymentModal();
+            showAlert('pos', 'تم اعتماد المشرف بنجاح');
+            if (typeof pendingApproval.onSuccess === 'function') {
+                pendingApproval.onSuccess(tok);
+            }
         })
         .catch(function (err) {
             supervisorAlert.innerHTML = ui.alert('neg', err.message || 'فشل اعتماد المشرف.');
@@ -1917,7 +2242,919 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ==========================================
-    // اختصارات الكيبورد العامة (F2, F4, F8, F9, F10, Esc, Del, +, -)
+    // إدارة الأوضاع (بيع · مرتجع · مرتجع عام · استبدال)
+    // ==========================================
+    let currentMode = 'sale';
+    const viewSale = document.getElementById('posViewSale');
+    const viewReturn = document.getElementById('posViewReturn');
+    const viewReturnGeneral = document.getElementById('posViewReturnGeneral');
+    const viewExchange = document.getElementById('posViewExchange');
+    const modeTabs = document.getElementById('posModeTabs');
+
+    function switchMode(mode) {
+        currentMode = mode;
+        if (modeTabs) {
+            modeTabs.querySelectorAll('.ftab').forEach(function (tab) {
+                tab.classList.toggle('is-active', tab.getAttribute('data-mode') === mode);
+            });
+        }
+        if (viewSale) viewSale.style.display = (mode === 'sale') ? 'block' : 'none';
+        if (viewReturn) viewReturn.style.display = (mode === 'return') ? 'block' : 'none';
+        if (viewReturnGeneral) viewReturnGeneral.style.display = (mode === 'return_general') ? 'block' : 'none';
+        if (viewExchange) viewExchange.style.display = (mode === 'exchange') ? 'block' : 'none';
+
+        if (mode === 'sale') {
+            refocusScan();
+        } else if (mode === 'return') {
+            const rInput = document.getElementById('posReturnSearchInput');
+            if (rInput) setTimeout(function () { rInput.focus(); }, 100);
+        } else if (mode === 'return_general') {
+            const gInput = document.getElementById('posGenReturnReason');
+            if (gInput) setTimeout(function () { gInput.focus(); }, 100);
+        } else if (mode === 'exchange') {
+            const eInput = document.getElementById('posExchReceiptInput');
+            if (eInput) setTimeout(function () { eInput.focus(); }, 100);
+        }
+    }
+
+    if (modeTabs) {
+        modeTabs.addEventListener('click', function (e) {
+            const tab = e.target.closest('.ftab');
+            if (tab) {
+                const m = tab.getAttribute('data-mode');
+                if (m) switchMode(m);
+            }
+        });
+    }
+
+    // ==========================================
+    // منطق المرتجع على فاتورة (Return Ref)
+    // ==========================================
+    let returnDoc = null;
+    let returnLines = [];
+    let returnTotals = { gross: 0, line_discount: 0, net: 0 };
+    let lateApprovalToken = null;
+    let methodApprovalToken = null;
+
+    const returnSearchInput = document.getElementById('posReturnSearchInput');
+    const btnReturnSearch = document.getElementById('posBtnReturnSearch');
+    const returnDocInfoBox = document.getElementById('posReturnDocInfoBox');
+    const returnLayout = document.getElementById('posReturnLayout');
+    const returnLinesBody = document.getElementById('posReturnLinesBody');
+    const returnNetDisplay = document.getElementById('posReturnNetDisplay');
+    const returnGrossDisplay = document.getElementById('posReturnGrossDisplay');
+    const returnDiscDisplay = document.getElementById('posReturnDiscDisplay');
+    const returnOrigPaymentsSummary = document.getElementById('posReturnOrigPaymentsSummary');
+    const returnPaymentRowsContainer = document.getElementById('posReturnPaymentRows');
+    const returnOverrideBox = document.getElementById('posReturnOverrideBox');
+    const returnOverrideReason = document.getElementById('posReturnOverrideReason');
+    const btnConfirmReturn = document.getElementById('posBtnConfirmReturn');
+
+    function searchReturnDoc(val) {
+        val = (val || '').trim();
+        if (!val) {
+            showAlert('warn', 'اكتب رقم الإيصال أو الفاتورة.');
+            return;
+        }
+        btnReturnSearch.disabled = true;
+        showAlert('', '');
+
+        window.apiFetch('pos_api.php?part=doc_find&device_uuid=' + encodeURIComponent(deviceUuid) + '&receipt_no=' + encodeURIComponent(val))
+            .then(function (res) {
+                if (!res.data || !res.data.doc) {
+                    showAlert('warn', 'الفاتورة مش موجودة.');
+                    return;
+                }
+                loadReturnDoc(res.data);
+            })
+            .catch(function (err) {
+                showAlert('neg', err.message || 'تعذر جلب الفاتورة.');
+                if (returnDocInfoBox) returnDocInfoBox.style.display = 'none';
+                if (returnLayout) returnLayout.style.display = 'none';
+            })
+            .finally(function () {
+                btnReturnSearch.disabled = false;
+            });
+    }
+
+    function loadReturnDoc(data) {
+        returnDoc = data.doc;
+        returnLines = (data.lines || []).map(function (l) {
+            return Object.assign({}, l, { return_qty: 0, return_net: 0 });
+        });
+        lateApprovalToken = null;
+        methodApprovalToken = null;
+
+        document.getElementById('posReturnDocReceipt').textContent = 'إيصال: ' + returnDoc.receipt_no;
+        document.getElementById('posReturnDocDate').textContent = 'تاريخ: ' + returnDoc.completed_at;
+        document.getElementById('posReturnDocCashier').textContent = 'كاشير: ' + (returnDoc.cashier_name || '--');
+        const custEl = document.getElementById('posReturnDocCustomer');
+        if (returnDoc.customer_name) {
+            custEl.textContent = 'عميل: ' + returnDoc.customer_name;
+            custEl.style.display = 'inline-flex';
+        } else {
+            custEl.style.display = 'none';
+        }
+
+        const lateBadge = document.getElementById('posReturnLateBadge');
+        if (returnDoc.is_late) {
+            lateBadge.textContent = 'أقدم من ' + returnDoc.pos_return_days + ' يوم (' + returnDoc.days_since + ' يوم) — محتاج اعتماد مشرف';
+            lateBadge.style.display = 'inline-flex';
+        } else {
+            lateBadge.style.display = 'none';
+        }
+
+        document.getElementById('posReturnDocNet').textContent = Number(returnDoc.net).toFixed(2);
+
+        const origSummary = [];
+        for (const m in data.payments) {
+            const p = data.payments[m];
+            const mLabel = m === 'cash' ? 'كاش' : (m === 'visa' ? 'فيزا' : 'إنستا باي');
+            origSummary.push(mLabel + ': ' + Number(p.original_amount).toFixed(2) + ' (متاح: ' + Number(p.available_refund).toFixed(2) + ')');
+        }
+        returnOrigPaymentsSummary.textContent = origSummary.join(' · ') || 'لا توجد دفعات مسجلة';
+
+        returnDocInfoBox.style.display = 'block';
+        returnLayout.style.display = 'grid';
+        renderReturnLines();
+        computeReturnTotals();
+    }
+
+    function renderReturnLines() {
+        returnLinesBody.innerHTML = returnLines.map(function (l, idx) {
+            const isAvail = l.available_qty > 0;
+            return '<tr>' +
+                '<td><code>' + ui.esc(l.code) + '</code></td>' +
+                '<td><span class="pos-item-name" title="' + ui.esc(l.item_name) + '">' + ui.esc(l.item_name) + '</span></td>' +
+                '<td>' + ui.esc(l.unit_name) + '</td>' +
+                '<td class="num">' + l.qty + '</td>' +
+                '<td class="num">' + l.returned_qty + '</td>' +
+                '<td class="num"><strong>' + l.available_qty + '</strong></td>' +
+                '<td class="num">' +
+                    (isAvail ? '<input type="number" class="finput pos-qty-input" data-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
+                '</td>' +
+                '<td class="num">' + Number(l.unit_net).toFixed(2) + '</td>' +
+                '<td class="num"><strong id="posRetLineNet_' + idx + '">' + Number(l.return_net).toFixed(2) + '</strong></td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    returnLinesBody.addEventListener('input', function (e) {
+        const inp = e.target.closest('input[data-ret-idx]');
+        if (!inp) return;
+        const idx = parseInt(inp.getAttribute('data-ret-idx'), 10);
+        let val = parseFloat(inp.value) || 0;
+        if (val < 0) val = 0;
+        if (val > returnLines[idx].available_qty) {
+            val = returnLines[idx].available_qty;
+            inp.value = val;
+        }
+        returnLines[idx].return_qty = val;
+        computeReturnTotals();
+    });
+
+    function computeReturnTotals() {
+        let totalGross = 0;
+        let totalNet = 0;
+
+        returnLines.forEach(function (l, idx) {
+            const rq = Number(l.return_qty) || 0;
+            if (rq <= 0) {
+                l.return_net = 0;
+            } else if (Math.abs(rq - l.available_qty) < 0.0001 && Math.abs((Number(l.returned_qty) + rq) - Number(l.qty)) < 0.0001) {
+                l.return_net = Math.round((Number(l.final_line_net) - Number(l.returned_net)) * 100) / 100;
+            } else {
+                l.return_net = Math.round(rq * Number(l.unit_net) * 100) / 100;
+            }
+            const el = document.getElementById('posRetLineNet_' + idx);
+            if (el) el.textContent = Number(l.return_net).toFixed(2);
+
+            const gross = Math.round(rq * Number(l.unit_price) * 100) / 100;
+            totalGross = Math.round((totalGross + gross) * 100) / 100;
+            totalNet = Math.round((totalNet + l.return_net) * 100) / 100;
+        });
+
+        returnTotals.gross = totalGross;
+        returnTotals.line_discount = Math.round((totalGross - totalNet) * 100) / 100;
+        returnTotals.net = totalNet;
+
+        returnNetDisplay.textContent = totalNet.toFixed(2);
+        returnGrossDisplay.textContent = totalGross.toFixed(2);
+        returnDiscDisplay.textContent = returnTotals.line_discount.toFixed(2);
+
+        updateReturnPayments(totalNet);
+        btnConfirmReturn.disabled = (totalNet <= 0);
+    }
+
+    function updateReturnPayments(net) {
+        if (!returnDoc) return;
+        if (net <= 0) {
+            returnPaymentRowsContainer.innerHTML = '';
+            returnOverrideBox.style.display = 'none';
+            return;
+        }
+
+        returnPaymentRowsContainer.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
+            '<select class="fselect" id="posReturnPaymentMethod" style="flex:1;">' +
+                '<option value="cash" selected>كاش</option>' +
+                '<option value="visa">فيزا</option>' +
+                '<option value="instapay">إنستا باي</option>' +
+            '</select>' +
+            '<input type="number" class="finput" id="posReturnPaymentAmount" value="' + net.toFixed(2) + '" step="0.01" style="width:110px;" readonly>' +
+        '</div>';
+
+        const methodSelect = document.getElementById('posReturnPaymentMethod');
+        if (methodSelect) {
+            methodSelect.addEventListener('change', function () {
+                checkReturnMethodOverride();
+            });
+        }
+        checkReturnMethodOverride();
+    }
+
+    function checkReturnMethodOverride() {
+        if (!returnDoc) return;
+        returnOverrideBox.style.display = 'block';
+    }
+
+    if (btnReturnSearch) {
+        btnReturnSearch.addEventListener('click', function () {
+            searchReturnDoc(returnSearchInput.value);
+        });
+    }
+    if (returnSearchInput) {
+        returnSearchInput.addEventListener('keydown', function (e) {
+            if (isEnter(e)) {
+                e.preventDefault();
+                searchReturnDoc(returnSearchInput.value);
+            }
+        });
+    }
+
+    if (btnConfirmReturn) {
+        btnConfirmReturn.addEventListener('click', function () {
+            if (returnTotals.net <= 0) return;
+            const chosenLines = returnLines.filter(function (l) { return Number(l.return_qty) > 0; }).map(function (l) {
+                return { ref_line_id: l.id, qty: Number(l.return_qty) };
+            });
+            if (chosenLines.length === 0) {
+                showAlert('warn', 'حدد كمية صنف واحد على الأقل للمرتجع.');
+                return;
+            }
+
+            const methodSelect = document.getElementById('posReturnPaymentMethod');
+            const payMethod = methodSelect ? methodSelect.value : 'cash';
+            const payments = [{ method: payMethod, amount: returnTotals.net }];
+
+            function executeReturn() {
+                btnConfirmReturn.disabled = true;
+                const clientUuid = crypto.randomUUID();
+                window.apiFetch('pos_api.php?part=return_ref', {
+                    method: 'POST',
+                    body: {
+                        device_uuid: deviceUuid,
+                        client_uuid: clientUuid,
+                        doc_id: returnDoc.id,
+                        lines: chosenLines,
+                        payments: payments,
+                        approval_token: lateApprovalToken || methodApprovalToken,
+                        late_approval_token: lateApprovalToken,
+                        method_approval_token: methodApprovalToken,
+                        method_override_reason: returnOverrideReason ? returnOverrideReason.value.trim() : '',
+                        customer_id: returnDoc.customer_id
+                    }
+                })
+                .then(function (res) {
+                    showAlert('pos', 'تم حفظ المرتجع بنجاح! رقم الإيصال: ' + res.data.receipt_no + ' · صافي المرتجع: ' + Number(res.data.net).toFixed(2) + ' ج.م');
+                    returnDocInfoBox.style.display = 'none';
+                    returnLayout.style.display = 'none';
+                    returnDoc = null;
+                    returnLines = [];
+                    if (returnSearchInput) returnSearchInput.value = '';
+                })
+                .catch(function (err) {
+                    if (err.message && err.message.indexOf('١٤ يوم') !== -1) {
+                        promptSupervisorApproval({
+                            type: 'return_late',
+                            value: returnDoc.days_since || 15,
+                            title: 'اعتماد مرتجع متأخر',
+                            warning: err.message,
+                            onSuccess: function (tok) {
+                                lateApprovalToken = tok;
+                                executeReturn();
+                            }
+                        });
+                    } else if (err.message && (err.message.indexOf('طريقة الرد') !== -1 || err.http === 403)) {
+                        promptSupervisorApproval({
+                            type: 'return_method',
+                            value: returnTotals.net,
+                            title: 'اعتماد تغيير طريقة الرد',
+                            warning: err.message || 'طريقة الرد تختلف عن الفاتورة الأصلية. يلزم اعتماد مشرف.',
+                            onSuccess: function (tok) {
+                                methodApprovalToken = tok;
+                                executeReturn();
+                            }
+                        });
+                    } else {
+                        showAlert('neg', err.message || 'تعذر إتمام المرتجع.');
+                    }
+                })
+                .finally(function () {
+                    btnConfirmReturn.disabled = false;
+                });
+            }
+
+            executeReturn();
+        });
+    }
+
+    // ==========================================
+    // منطق المرتجع العام (Return General)
+    // ==========================================
+    let genCart = [];
+    let genTotals = { net: 0 };
+    const genReasonInput = document.getElementById('posGenReturnReason');
+    const genScanInput = document.getElementById('posGenScanInput');
+    const genSearchResults = document.getElementById('posGenSearchResults');
+    const genCartBody = document.getElementById('posGenCartBody');
+    const genNetDisplay = document.getElementById('posGenNetDisplay');
+    const genPaymentRows = document.getElementById('posGenPaymentRows');
+    const btnConfirmGenReturn = document.getElementById('posBtnConfirmGenReturn');
+
+    let genSearchTimer = null;
+    if (genScanInput) {
+        genScanInput.addEventListener('input', function () {
+            clearTimeout(genSearchTimer);
+            const val = this.value.trim();
+            if (!val) {
+                genSearchResults.style.display = 'none';
+                return;
+            }
+            genSearchTimer = setTimeout(function () {
+                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
+                    .then(function (res) {
+                        const items = res.data && res.data.items ? res.data.items : [];
+                        if (items.length === 0) {
+                            genSearchResults.innerHTML = '<div style="padding:var(--sp-2); color:var(--text-muted); font-size:var(--fs-sm);">مفيش نتائج</div>';
+                            genSearchResults.style.display = 'block';
+                            return;
+                        }
+                        genSearchResults.innerHTML = items.map(function (it, i) {
+                            const codeObj = it.codes && it.codes[0] ? it.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
+                            return '<div class="pos-search-item" data-gen-item-idx="' + i + '">' +
+                                '<div><strong>' + ui.esc(it.name) + '</strong><br><small style="color:var(--text-muted);">كود: ' + ui.esc(codeObj.code) + '</small></div>' +
+                                '<div style="text-align:left; font-weight:600;">' + Number(codeObj.price || 0).toFixed(2) + ' ج.م</div>' +
+                            '</div>';
+                        }).join('');
+                        genSearchResults.style.display = 'block';
+                        genSearchResults._items = items;
+                    })
+                    .catch(function () {});
+            }, 250);
+        });
+
+        genScanInput.addEventListener('keydown', function (e) {
+            if (isEnter(e)) {
+                e.preventDefault();
+                const val = this.value.trim();
+                if (!val) return;
+                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&code=' + encodeURIComponent(val))
+                    .then(function (res) {
+                        const items = res.data && res.data.items ? res.data.items : [];
+                        if (items.length > 0) {
+                            addGenCartItem(items[0]);
+                            genScanInput.value = '';
+                            genSearchResults.style.display = 'none';
+                        }
+                    })
+                    .catch(function () {});
+            }
+        });
+    }
+
+    if (genSearchResults) {
+        genSearchResults.addEventListener('click', function (e) {
+            const el = e.target.closest('[data-gen-item-idx]');
+            if (!el) return;
+            const idx = parseInt(el.getAttribute('data-gen-item-idx'), 10);
+            const items = genSearchResults._items || [];
+            if (items[idx]) {
+                addGenCartItem(items[idx]);
+                genScanInput.value = '';
+                genSearchResults.style.display = 'none';
+            }
+        });
+    }
+
+    function addGenCartItem(item) {
+        const c = item.codes && item.codes[0] ? item.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
+        const existing = genCart.find(function (x) { return x.code === c.code; });
+        if (existing) {
+            existing.qty = Math.round((existing.qty + 1) * 1000) / 1000;
+        } else {
+            genCart.push({
+                item_id: item.item_id,
+                name: item.name,
+                code: c.code,
+                unit_name: c.unit_name || 'قطعة',
+                qty: 1,
+                unit_price: Number(c.price || 0)
+            });
+        }
+        renderGenCart();
+    }
+
+    function renderGenCart() {
+        if (!genCartBody) return;
+        let total = 0;
+        genCartBody.innerHTML = genCart.map(function (it, idx) {
+            const lineNet = Math.round(it.qty * it.unit_price * 100) / 100;
+            total = Math.round((total + lineNet) * 100) / 100;
+            return '<tr>' +
+                '<td><code>' + ui.esc(it.code) + '</code></td>' +
+                '<td><span class="pos-item-name" title="' + ui.esc(it.name) + '">' + ui.esc(it.name) + '</span></td>' +
+                '<td>' + ui.esc(it.unit_name) + '</td>' +
+                '<td class="num"><input type="number" class="finput pos-qty-input" data-gencart-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
+                '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
+                '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
+                '<td><button type="button" class="btn btn-sm btn-ghost" data-gen-del="' + idx + '" style="color:var(--neg);" title="حذف"><i class="ti ti-trash"></i></button></td>' +
+            '</tr>';
+        }).join('');
+
+        genTotals.net = total;
+        if (genNetDisplay) genNetDisplay.textContent = total.toFixed(2);
+
+        if (genPaymentRows) {
+            genPaymentRows.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
+                '<select class="fselect" id="posGenMethodSelect" style="flex:1;">' +
+                    '<option value="cash" selected>كاش</option>' +
+                    '<option value="visa">فيزا</option>' +
+                    '<option value="instapay">إنستا باي</option>' +
+                '</select>' +
+                '<input type="number" class="finput" value="' + total.toFixed(2) + '" step="0.01" style="width:110px;" readonly>' +
+            '</div>';
+        }
+
+        if (btnConfirmGenReturn) {
+            btnConfirmGenReturn.disabled = (total <= 0);
+        }
+    }
+
+    if (genCartBody) {
+        genCartBody.addEventListener('input', function (e) {
+            const inp = e.target.closest('input[data-gencart-idx]');
+            if (!inp) return;
+            const idx = parseInt(inp.getAttribute('data-gencart-idx'), 10);
+            let val = parseFloat(inp.value) || 1;
+            if (val <= 0) val = 1;
+            genCart[idx].qty = val;
+            renderGenCart();
+        });
+
+        genCartBody.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-gen-del]');
+            if (!btn) return;
+            const idx = parseInt(btn.getAttribute('data-gen-del'), 10);
+            genCart.splice(idx, 1);
+            renderGenCart();
+        });
+    }
+
+    if (btnConfirmGenReturn) {
+        btnConfirmGenReturn.addEventListener('click', function () {
+            const reason = genReasonInput ? genReasonInput.value.trim() : '';
+            if (!reason) {
+                showAlert('warn', 'سبب المرتجع العام إجباري.');
+                if (genReasonInput) genReasonInput.focus();
+                return;
+            }
+            if (genCart.length === 0 || genTotals.net <= 0) {
+                showAlert('warn', 'سلة المرتجع العام فاضية.');
+                return;
+            }
+
+            const methodEl = document.getElementById('posGenMethodSelect');
+            const method = methodEl ? methodEl.value : 'cash';
+            const payments = [{ method: method, amount: genTotals.net }];
+
+            this.disabled = true;
+            const clientUuid = crypto.randomUUID();
+            window.apiFetch('pos_api.php?part=return_general', {
+                method: 'POST',
+                body: {
+                    device_uuid: deviceUuid,
+                    client_uuid: clientUuid,
+                    reason: reason,
+                    lines: genCart.map(function (c) { return { code: c.code, qty: c.qty }; }),
+                    payments: payments
+                }
+            })
+            .then(function (res) {
+                showAlert('pos', 'تم تسجيل المرتجع العام بنجاح! رقم الإيصال: ' + res.data.receipt_no + ' · الصافي: ' + Number(res.data.net).toFixed(2) + ' ج.م');
+                genCart = [];
+                if (genReasonInput) genReasonInput.value = '';
+                renderGenCart();
+            })
+            .catch(function (err) {
+                showAlert('neg', err.message || 'تعذر إتمام المرتجع العام.');
+            })
+            .finally(function () {
+                btnConfirmGenReturn.disabled = false;
+            });
+        });
+    }
+
+    // ==========================================
+    // منطق الاستبدال (Exchange)
+    // ==========================================
+    let exchReturnDoc = null;
+    let exchReturnLines = [];
+    let exchSaleCart = [];
+    let exchTotals = { returnNet: 0, saleNet: 0, diff: 0 };
+    let exchLateToken = null;
+    let exchMethodToken = null;
+
+    const exchReceiptInput = document.getElementById('posExchReceiptInput');
+    const btnExchSearchDoc = document.getElementById('posBtnExchSearchDoc');
+    const exchReturnLinesBody = document.getElementById('posExchReturnLinesBody');
+    const exchReturnSubtotalChip = document.getElementById('posExchReturnSubtotalChip');
+    const exchDocInfo = document.getElementById('posExchReturnDocInfo');
+
+    const exchScanInput = document.getElementById('posExchScanInput');
+    const exchSearchResults = document.getElementById('posExchSearchResults');
+    const exchSaleBody = document.getElementById('posExchSaleBody');
+    const exchSaleSubtotalChip = document.getElementById('posExchSaleSubtotalChip');
+
+    const exchDiffTitle = document.getElementById('posExchDiffTitle');
+    const exchDiffDisplay = document.getElementById('posExchDiffDisplay');
+    const exchDiffStatus = document.getElementById('posExchDiffStatus');
+    const exchSaleNetDisplay = document.getElementById('posExchSaleNetDisplay');
+    const exchRetNetDisplay = document.getElementById('posExchRetNetDisplay');
+    const exchPaymentsWrap = document.getElementById('posExchPaymentsWrap');
+    const exchPaymentLabel = document.getElementById('posExchPaymentLabel');
+    const exchPaymentRows = document.getElementById('posExchPaymentRows');
+    const btnConfirmExchange = document.getElementById('posBtnConfirmExchange');
+
+    function searchExchDoc(val) {
+        val = (val || '').trim();
+        if (!val) {
+            showAlert('warn', 'اكتب رقم الإيصال للمرتجع.');
+            return;
+        }
+        btnExchSearchDoc.disabled = true;
+        window.apiFetch('pos_api.php?part=doc_find&device_uuid=' + encodeURIComponent(deviceUuid) + '&receipt_no=' + encodeURIComponent(val))
+            .then(function (res) {
+                if (!res.data || !res.data.doc) {
+                    showAlert('warn', 'الفاتورة مش موجودة.');
+                    return;
+                }
+                exchReturnDoc = res.data.doc;
+                exchReturnLines = (res.data.lines || []).map(function (l) {
+                    return Object.assign({}, l, { return_qty: 0, return_net: 0 });
+                });
+                exchLateToken = null;
+                document.getElementById('posExchDocReceiptBadge').textContent = 'إيصال: ' + exchReturnDoc.receipt_no;
+                document.getElementById('posExchDocDateBadge').textContent = 'تاريخ: ' + exchReturnDoc.completed_at;
+                exchDocInfo.style.display = 'block';
+                renderExchReturnLines();
+                computeExchangeTotals();
+            })
+            .catch(function (err) {
+                showAlert('neg', err.message || 'تعذر جلب الفاتورة.');
+            })
+            .finally(function () {
+                btnExchSearchDoc.disabled = false;
+            });
+    }
+
+    if (btnExchSearchDoc) {
+        btnExchSearchDoc.addEventListener('click', function () {
+            searchExchDoc(exchReceiptInput.value);
+        });
+    }
+    if (exchReceiptInput) {
+        exchReceiptInput.addEventListener('keydown', function (e) {
+            if (isEnter(e)) {
+                e.preventDefault();
+                searchExchDoc(exchReceiptInput.value);
+            }
+        });
+    }
+
+    function renderExchReturnLines() {
+        if (!exchReturnLinesBody) return;
+        exchReturnLinesBody.innerHTML = exchReturnLines.map(function (l, idx) {
+            const isAvail = l.available_qty > 0;
+            return '<tr>' +
+                '<td><code>' + ui.esc(l.code) + '</code></td>' +
+                '<td><span class="pos-item-name" title="' + ui.esc(l.item_name) + '">' + ui.esc(l.item_name) + '</span></td>' +
+                '<td class="num"><strong>' + l.available_qty + '</strong></td>' +
+                '<td class="num">' +
+                    (isAvail ? '<input type="number" class="finput pos-qty-input" data-exch-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
+                '</td>' +
+                '<td class="num">' + Number(l.unit_net).toFixed(2) + '</td>' +
+                '<td class="num"><strong id="posExchRetLineNet_' + idx + '">' + Number(l.return_net).toFixed(2) + '</strong></td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    if (exchReturnLinesBody) {
+        exchReturnLinesBody.addEventListener('input', function (e) {
+            const inp = e.target.closest('input[data-exch-ret-idx]');
+            if (!inp) return;
+            const idx = parseInt(inp.getAttribute('data-exch-ret-idx'), 10);
+            let val = parseFloat(inp.value) || 0;
+            if (val < 0) val = 0;
+            if (val > exchReturnLines[idx].available_qty) {
+                val = exchReturnLines[idx].available_qty;
+                inp.value = val;
+            }
+            exchReturnLines[idx].return_qty = val;
+            computeExchangeTotals();
+        });
+    }
+
+    let exchSearchTimer = null;
+    if (exchScanInput) {
+        exchScanInput.addEventListener('input', function () {
+            clearTimeout(exchSearchTimer);
+            const val = this.value.trim();
+            if (!val) {
+                exchSearchResults.style.display = 'none';
+                return;
+            }
+            exchSearchTimer = setTimeout(function () {
+                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
+                    .then(function (res) {
+                        const items = res.data && res.data.items ? res.data.items : [];
+                        if (items.length === 0) {
+                            exchSearchResults.innerHTML = '<div style="padding:var(--sp-2); color:var(--text-muted); font-size:var(--fs-sm);">مفيش نتائج</div>';
+                            exchSearchResults.style.display = 'block';
+                            return;
+                        }
+                        exchSearchResults.innerHTML = items.map(function (it, i) {
+                            const codeObj = it.codes && it.codes[0] ? it.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
+                            return '<div class="pos-search-item" data-exch-item-idx="' + i + '">' +
+                                '<div><strong>' + ui.esc(it.name) + '</strong><br><small style="color:var(--text-muted);">كود: ' + ui.esc(codeObj.code) + '</small></div>' +
+                                '<div style="text-align:left; font-weight:600;">' + Number(codeObj.price || 0).toFixed(2) + ' ج.م</div>' +
+                            '</div>';
+                        }).join('');
+                        exchSearchResults.style.display = 'block';
+                        exchSearchResults._items = items;
+                    })
+                    .catch(function () {});
+            }, 250);
+        });
+
+        exchScanInput.addEventListener('keydown', function (e) {
+            if (isEnter(e)) {
+                e.preventDefault();
+                const val = this.value.trim();
+                if (!val) return;
+                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&code=' + encodeURIComponent(val))
+                    .then(function (res) {
+                        const items = res.data && res.data.items ? res.data.items : [];
+                        if (items.length > 0) {
+                            addExchSaleItem(items[0]);
+                            exchScanInput.value = '';
+                            exchSearchResults.style.display = 'none';
+                        }
+                    })
+                    .catch(function () {});
+            }
+        });
+    }
+
+    if (exchSearchResults) {
+        exchSearchResults.addEventListener('click', function (e) {
+            const el = e.target.closest('[data-exch-item-idx]');
+            if (!el) return;
+            const idx = parseInt(el.getAttribute('data-exch-item-idx'), 10);
+            const items = exchSearchResults._items || [];
+            if (items[idx]) {
+                addExchSaleItem(items[idx]);
+                exchScanInput.value = '';
+                exchSearchResults.style.display = 'none';
+            }
+        });
+    }
+
+    function addExchSaleItem(item) {
+        const c = item.codes && item.codes[0] ? item.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
+        const existing = exchSaleCart.find(function (x) { return x.code === c.code; });
+        if (existing) {
+            existing.qty = Math.round((existing.qty + 1) * 1000) / 1000;
+        } else {
+            exchSaleCart.push({
+                item_id: item.item_id,
+                name: item.name,
+                code: c.code,
+                unit_name: c.unit_name || 'قطعة',
+                qty: 1,
+                unit_price: Number(c.price || 0)
+            });
+        }
+        renderExchSaleCart();
+        computeExchangeTotals();
+    }
+
+    function renderExchSaleCart() {
+        if (!exchSaleBody) return;
+        let total = 0;
+        exchSaleBody.innerHTML = exchSaleCart.map(function (it, idx) {
+            const lineNet = Math.round(it.qty * it.unit_price * 100) / 100;
+            total = Math.round((total + lineNet) * 100) / 100;
+            return '<tr>' +
+                '<td><code>' + ui.esc(it.code) + '</code></td>' +
+                '<td><span class="pos-item-name" title="' + ui.esc(it.name) + '">' + ui.esc(it.name) + '</span></td>' +
+                '<td>' + ui.esc(it.unit_name) + '</td>' +
+                '<td class="num"><input type="number" class="finput pos-qty-input" data-exchsale-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
+                '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
+                '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
+                '<td><button type="button" class="btn btn-sm btn-ghost" data-exch-del="' + idx + '" style="color:var(--neg);" title="حذف"><i class="ti ti-trash"></i></button></td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    if (exchSaleBody) {
+        exchSaleBody.addEventListener('input', function (e) {
+            const inp = e.target.closest('input[data-exchsale-idx]');
+            if (!inp) return;
+            const idx = parseInt(inp.getAttribute('data-exchsale-idx'), 10);
+            let val = parseFloat(inp.value) || 1;
+            if (val <= 0) val = 1;
+            exchSaleCart[idx].qty = val;
+            renderExchSaleCart();
+            computeExchangeTotals();
+        });
+
+        exchSaleBody.addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-exch-del]');
+            if (!btn) return;
+            const idx = parseInt(btn.getAttribute('data-exch-del'), 10);
+            exchSaleCart.splice(idx, 1);
+            renderExchSaleCart();
+            computeExchangeTotals();
+        });
+    }
+
+    function computeExchangeTotals() {
+        let retNet = 0;
+        exchReturnLines.forEach(function (l, idx) {
+            const rq = Number(l.return_qty) || 0;
+            if (rq <= 0) {
+                l.return_net = 0;
+            } else if (Math.abs(rq - l.available_qty) < 0.0001 && Math.abs((Number(l.returned_qty) + rq) - Number(l.qty)) < 0.0001) {
+                l.return_net = Math.round((Number(l.final_line_net) - Number(l.returned_net)) * 100) / 100;
+            } else {
+                l.return_net = Math.round(rq * Number(l.unit_net) * 100) / 100;
+            }
+            const el = document.getElementById('posExchRetLineNet_' + idx);
+            if (el) el.textContent = Number(l.return_net).toFixed(2);
+            retNet = Math.round((retNet + l.return_net) * 100) / 100;
+        });
+
+        let saleNet = 0;
+        exchSaleCart.forEach(function (it) {
+            saleNet = Math.round((saleNet + (it.qty * it.unit_price)) * 100) / 100;
+        });
+
+        exchTotals.returnNet = retNet;
+        exchTotals.saleNet = saleNet;
+        const diff = Math.round((saleNet - retNet) * 100) / 100;
+        exchTotals.diff = diff;
+
+        if (exchReturnSubtotalChip) exchReturnSubtotalChip.textContent = 'صافي المرتجع: ' + retNet.toFixed(2) + ' ج.م';
+        if (exchSaleSubtotalChip) exchSaleSubtotalChip.textContent = 'صافي البيع: ' + saleNet.toFixed(2) + ' ج.م';
+        if (exchSaleNetDisplay) exchSaleNetDisplay.textContent = saleNet.toFixed(2);
+        if (exchRetNetDisplay) exchRetNetDisplay.textContent = retNet.toFixed(2);
+        if (exchDiffDisplay) exchDiffDisplay.textContent = Math.abs(diff).toFixed(2);
+
+        if (diff > 0) {
+            exchDiffTitle.textContent = 'المتبقي على العميل';
+            exchDiffStatus.textContent = 'العميل يدفع الفرق';
+            exchDiffStatus.className = 'fchip fchip-warn';
+            exchPaymentsWrap.style.display = 'block';
+            exchPaymentLabel.textContent = 'طريقة دفع الفرق:';
+            renderExchPaymentRows('pay', diff);
+        } else if (diff < 0) {
+            exchDiffTitle.textContent = 'المسترد للعميل';
+            exchDiffStatus.textContent = 'يرجع للعميل الفرق';
+            exchDiffStatus.className = 'fchip fchip-pos';
+            exchPaymentsWrap.style.display = 'block';
+            exchPaymentLabel.textContent = 'طريقة رد الفرق:';
+            renderExchPaymentRows('refund', Math.abs(diff));
+        } else {
+            exchDiffTitle.textContent = 'الفرق';
+            exchDiffStatus.textContent = 'مفيش فرق';
+            exchDiffStatus.className = 'fchip fchip-mute';
+            exchPaymentsWrap.style.display = 'none';
+        }
+
+        btnConfirmExchange.disabled = !(retNet > 0 && saleNet > 0);
+    }
+
+    function renderExchPaymentRows(kind, amt) {
+        if (!exchPaymentRows) return;
+        exchPaymentRows.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
+            '<select class="fselect" id="posExchPaymentMethod" style="flex:1;">' +
+                '<option value="cash" selected>كاش</option>' +
+                '<option value="visa">فيزا</option>' +
+                '<option value="instapay">إنستا باي</option>' +
+            '</select>' +
+            '<input type="number" class="finput" id="posExchPaymentAmount" value="' + amt.toFixed(2) + '" step="0.01" style="width:110px;" readonly>' +
+        '</div>';
+    }
+
+    if (btnConfirmExchange) {
+        btnConfirmExchange.addEventListener('click', function () {
+            if (exchTotals.returnNet <= 0 || exchTotals.saleNet <= 0) return;
+            const chosenRetLines = exchReturnLines.filter(function (l) { return Number(l.return_qty) > 0; }).map(function (l) {
+                return { ref_line_id: l.id, qty: Number(l.return_qty) };
+            });
+            if (chosenRetLines.length === 0) {
+                showAlert('warn', 'حدد بنود المرتجع للاستبدال.');
+                return;
+            }
+            if (exchSaleCart.length === 0) {
+                showAlert('warn', 'سلة البيع للاستبدال فاضية.');
+                return;
+            }
+
+            const methodEl = document.getElementById('posExchPaymentMethod');
+            const method = methodEl ? methodEl.value : 'cash';
+            const payments = (exchTotals.diff !== 0) ? [{ method: method, amount: Math.abs(exchTotals.diff) }] : [];
+
+            function executeExchange() {
+                btnConfirmExchange.disabled = true;
+                const clientUuid = crypto.randomUUID();
+                window.apiFetch('pos_api.php?part=exchange', {
+                    method: 'POST',
+                    body: {
+                        device_uuid: deviceUuid,
+                        client_uuid: clientUuid,
+                        customer_id: exchReturnDoc ? exchReturnDoc.customer_id : null,
+                        return: {
+                            doc_id: exchReturnDoc.id,
+                            lines: chosenRetLines,
+                            approval_token: exchLateToken
+                        },
+                        sale: {
+                            lines: exchSaleCart.map(function (c) { return { code: c.code, qty: c.qty, line_discount: 0 }; })
+                        },
+                        payments: payments,
+                        method_approval_token: exchMethodToken
+                    }
+                })
+                .then(function (res) {
+                    showAlert('pos', 'تم الاستبدال بنجاح! إيصال المرتجع: ' + res.data.return_receipt_no + ' · إيصال البيع: ' + res.data.sale_receipt_no);
+                    exchReturnDoc = null;
+                    exchReturnLines = [];
+                    exchSaleCart = [];
+                    if (exchReceiptInput) exchReceiptInput.value = '';
+                    if (exchDocInfo) exchDocInfo.style.display = 'none';
+                    renderExchReturnLines();
+                    renderExchSaleCart();
+                    computeExchangeTotals();
+                })
+                .catch(function (err) {
+                    if (err.message && err.message.indexOf('١٤ يوم') !== -1) {
+                        promptSupervisorApproval({
+                            type: 'return_late',
+                            value: exchReturnDoc.days_since || 15,
+                            title: 'اعتماد مرتجع متأخر للاستبدال',
+                            warning: err.message,
+                            onSuccess: function (tok) {
+                                exchLateToken = tok;
+                                executeExchange();
+                            }
+                        });
+                    } else if (err.message && (err.message.indexOf('طريقة الرد') !== -1 || err.http === 403)) {
+                        promptSupervisorApproval({
+                            type: 'return_method',
+                            value: Math.abs(exchTotals.diff),
+                            title: 'اعتماد طريقة رد الفرق للاستبدال',
+                            warning: err.message,
+                            onSuccess: function (tok) {
+                                exchMethodToken = tok;
+                                executeExchange();
+                            }
+                        });
+                    } else {
+                        showAlert('neg', err.message || 'تعذر إتمام الاستبدال.');
+                    }
+                })
+                .finally(function () {
+                    btnConfirmExchange.disabled = false;
+                });
+            }
+
+            executeExchange();
+        });
+    }
+
+    // ==========================================
+    // اختصارات الكيبورد العامة (F1, F2, F4, F6, F8, F9, F10, Esc, Del, +, -)
     // ==========================================
     document.addEventListener('keydown', function (e) {
         // لو المستخدم بيكتب في خانة نص جوه نافذة، نتجاهل بعض الاختصارات
@@ -1925,7 +3162,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const isTyping = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
         const openDlg = document.querySelector('.fg-dlg-bg[style*="display: flex"]');
 
-        if (e.key === 'F2') {
+        if (e.key === 'F1') {
+            e.preventDefault();
+            switchMode('sale');
+        } else if (e.key === 'F6') {
+            e.preventDefault();
+            switchMode('return');
+        } else if (e.key === 'F2') {
             e.preventDefault();
             refocusScan();
         } else if (e.key === 'F4') {

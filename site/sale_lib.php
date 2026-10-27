@@ -68,6 +68,22 @@ function sale_require_branch(PDO $pdo, int $branchId, array $user): void
     }
 }
 
+/** التحقق من وجود العميل وأنه نشط، بدون قيد فرع. */
+function sale_require_customer(PDO $pdo, mixed $customerId): ?int
+{
+    if ($customerId === null || $customerId === '' || (int) $customerId <= 0) {
+        return null;
+    }
+    $id = (int) $customerId;
+    $stmt = $pdo->prepare('SELECT id, is_active FROM customers WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row || empty($row['is_active'])) {
+        throw new SaleApiException('العميل ده مش موجود أو موقوف.', 422, 'bad_request');
+    }
+    return $id;
+}
+
 /** يجيب الجهاز ويتأكد إنه نشط وفي نطاق المستخدم. */
 function sale_device(PDO $pdo, string $uuid, array $user, bool $lock = false): array
 {
@@ -816,9 +832,7 @@ function sale_finalize(PDO $pdo, array $input, array $user): array
 
         // حجز المسلسل ورقم الإيصال جوه نفس المعاملة.
         $receiptNo = sale_next_receipt($pdo, $device);
-        $customerId = isset($input['customer_id']) && (int) $input['customer_id'] > 0
-            ? (int) $input['customer_id']
-            : null;
+        $customerId = sale_require_customer($pdo, $input['customer_id'] ?? null);
 
         // تحديث رأس المعلقة أو إنشاء رأس بيع جديد.
         if ($heldDoc) {
@@ -1049,9 +1063,7 @@ function sale_hold(PDO $pdo, array $input, array $user): array
         } catch (InvalidArgumentException $e) {
             throw new SaleApiException($e->getMessage());
         }
-        $customerId = isset($input['customer_id']) && (int) $input['customer_id'] > 0
-            ? (int) $input['customer_id']
-            : null;
+        $customerId = sale_require_customer($pdo, $input['customer_id'] ?? null);
         $stmt = $pdo->prepare(
             "INSERT INTO sale_docs
                 (doc_kind, status, branch_id, device_id, session_id, cashier_id,
@@ -1272,7 +1284,7 @@ function sale_held_cancel(
     }
 }
 
-/** التحقق من المشرف وإصدار توكن اعتماد خصم لمدة خمس دقايق. */
+/** التحقق من المشرف وإصدار توكن اعتماد خصم أو مرتجع لمدة خمس دقايق. */
 function sale_approve(PDO $pdo, array $input, array $user): array
 {
     $device = sale_device($pdo, (string) ($input['device_uuid'] ?? ''), $user);
@@ -1280,18 +1292,23 @@ function sale_approve(PDO $pdo, array $input, array $user): array
     $value = (float) ($input['value'] ?? 0);
     $username = trim((string) ($input['username'] ?? ''));
     $password = (string) ($input['password'] ?? '');
-    if (
-        $approvalType !== 'discount'
-        || !is_finite($value)
-        || $value < 0
-        || $value > 100
-    ) {
+
+    $allowedTypes = ['discount', 'return_late', 'return_method'];
+    if (!in_array($approvalType, $allowedTypes, true) || !is_finite($value) || $value < 0) {
         throw new SaleApiException('نوع الاعتماد أو قيمته مش صحيح.');
     }
+    if ($approvalType === 'discount' && $value > 100) {
+        throw new SaleApiException('نوع الاعتماد أو قيمته مش صحيح.');
+    }
+
     $stmt = $pdo->prepare(
         "SELECT u.id, u.password_hash, u.is_active, r.is_owner,
                 MAX(CASE WHEN up.module_key IN ('pos','pos:discount_override')
-                         THEN 1 ELSE 0 END) has_perm
+                         THEN 1 ELSE 0 END) can_discount,
+                MAX(CASE WHEN up.module_key IN ('pos','pos:return_general')
+                         THEN 1 ELSE 0 END) can_late,
+                MAX(CASE WHEN up.module_key IN ('pos','pos:return_method_override')
+                         THEN 1 ELSE 0 END) can_method
            FROM users u
            JOIN roles r ON r.id=u.role_id
            LEFT JOIN user_permissions up ON up.user_id=u.id
@@ -1300,10 +1317,24 @@ function sale_approve(PDO $pdo, array $input, array $user): array
     );
     $stmt->execute([$username]);
     $supervisor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $hasPerm = false;
+    if ($supervisor) {
+        if (!empty($supervisor['is_owner'])) {
+            $hasPerm = true;
+        } elseif ($approvalType === 'discount' && !empty($supervisor['can_discount'])) {
+            $hasPerm = true;
+        } elseif ($approvalType === 'return_late' && !empty($supervisor['can_late'])) {
+            $hasPerm = true;
+        } elseif ($approvalType === 'return_method' && !empty($supervisor['can_method'])) {
+            $hasPerm = true;
+        }
+    }
+
     $valid = $supervisor
         && !empty($supervisor['is_active'])
         && password_verify($password, (string) $supervisor['password_hash'])
-        && (!empty($supervisor['is_owner']) || !empty($supervisor['has_perm']));
+        && $hasPerm;
     $session = sale_open_session($pdo, (int) $device['id']);
     if (!$valid) {
         sale_events_insert($pdo, [[
@@ -1452,4 +1483,1348 @@ function sale_cart_event(PDO $pdo, array $input, array $user): void
         'payload' => $payload,
         'approved_by' => null,
     ]]);
+}
+
+/** البحث عن توكن اعتماد نشط للجهاز ونوعه وقفله بـ FOR UPDATE. */
+function sale_lookup_token(PDO $pdo, int $deviceId, string $type, string $token): ?array
+{
+    $token = trim($token);
+    if ($token === '') {
+        return null;
+    }
+    $stmt = $pdo->prepare(
+        "SELECT id, approved_by, approved_value
+           FROM sale_approval_tokens
+          WHERE token_hash = ? AND device_id = ? AND approval_type = ?
+            AND used_at IS NULL AND expires_at >= NOW()
+          LIMIT 1 FOR UPDATE"
+    );
+    $stmt->execute([hash('sha256', $token), $deviceId, $type]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+/** تعليم توكن الاعتماد كمستهلك. */
+function sale_consume_token(PDO $pdo, int $tokenId, int $docId): void
+{
+    $pdo->prepare(
+        'UPDATE sale_approval_tokens
+            SET used_at = NOW(), used_doc_id = ?
+          WHERE id = ? AND used_at IS NULL'
+    )->execute([$docId, $tokenId]);
+}
+
+/** البحث عن فاتورة بيع للمرتجع وحساب المتاح والمردود وطرق الدفع. */
+function sale_doc_find(PDO $pdo, array $input, array $user): array
+{
+    $deviceUuid = (string) ($input['device_uuid'] ?? '');
+    $device = sale_device($pdo, $deviceUuid, $user);
+
+    $docId = (int) ($input['doc_id'] ?? 0);
+    $receiptNo = trim((string) ($input['receipt_no'] ?? ($input['q'] ?? '')));
+
+    if ($docId <= 0 && $receiptNo === '') {
+        throw new SaleApiException('اكتب رقم الإيصال أو رقم الفاتورة.');
+    }
+
+    if ($docId > 0) {
+        $stmt = $pdo->prepare('SELECT * FROM sale_docs WHERE id = ?');
+        $stmt->execute([$docId]);
+    } else {
+        $stmt = $pdo->prepare('SELECT * FROM sale_docs WHERE receipt_no = ? OR id = ?');
+        $stmt->execute([$receiptNo, is_numeric($receiptNo) ? (int) $receiptNo : 0]);
+    }
+    $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$doc) {
+        throw new SaleApiException('الفاتورة مش موجودة.', 404, 'not_found');
+    }
+    if ($doc['doc_kind'] !== 'sale' || $doc['status'] !== 'completed') {
+        throw new SaleApiException('الفاتورة مش فاتورة بيع مكتملة.', 409, 'locked');
+    }
+    if ((int) $doc['branch_id'] !== (int) $device['branch_id']) {
+        throw new SaleApiException('الفاتورة دي من فرع تاني — المرتجع من نفس الفرع بس.', 409, 'locked');
+    }
+
+    $completedAt = new DateTime($doc['completed_at']);
+    $now = new DateTime();
+    $diffDays = (int) $now->diff($completedAt)->days;
+
+    $posReturnDays = 14;
+    $daysSetting = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'pos_return_days'")->fetchColumn();
+    if ($daysSetting !== false && is_numeric($daysSetting)) {
+        $posReturnDays = max(0, (int) $daysSetting);
+    }
+    $isLate = $diffDays > $posReturnDays;
+
+    $cashierName = (string) ($pdo->query('SELECT full_name FROM users WHERE id = ' . (int) $doc['cashier_id'])->fetchColumn() ?: '');
+    $customerName = '';
+    if (!empty($doc['customer_id'])) {
+        $customerName = (string) ($pdo->query('SELECT name FROM customers WHERE id = ' . (int) $doc['customer_id'])->fetchColumn() ?: '');
+    }
+
+    $linesStmt = $pdo->prepare(
+        "SELECT sl.id, sl.doc_id, sl.line_no, sl.item_id, sl.code, sl.unit_name,
+                sl.unit_factor, sl.qty, sl.qty_pieces, sl.unit_price, sl.line_discount,
+                sl.net, sl.unit_cost,
+                COALESCE((SELECT name FROM hq_codes WHERE code = sl.code LIMIT 1),
+                         (SELECT name1 FROM item_master_codes WHERE code = sl.code LIMIT 1),
+                         sl.code) AS item_name,
+                COALESCE(
+                    (SELECT SUM(rl.qty)
+                       FROM sale_lines rl
+                       JOIN sale_docs rd ON rd.id = rl.doc_id
+                      WHERE rl.ref_line_id = sl.id AND rd.doc_kind = 'return' AND rd.status = 'completed'),
+                    0
+                ) AS returned_qty,
+                COALESCE(
+                    (SELECT SUM(rl.net)
+                       FROM sale_lines rl
+                       JOIN sale_docs rd ON rd.id = rl.doc_id
+                      WHERE rl.ref_line_id = sl.id AND rd.doc_kind = 'return' AND rd.status = 'completed'),
+                    0
+                ) AS returned_net
+           FROM sale_lines sl
+          WHERE sl.doc_id = ?
+          ORDER BY sl.line_no"
+    );
+    $linesStmt->execute([(int) $doc['id']]);
+    $rawLines = $linesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $afterLineDiscountsTotal = round((float) $doc['gross'] - (float) $doc['line_discount'], 2);
+    $invDiscTotal = (float) $doc['invoice_discount'];
+
+    $linesData = [];
+    $accumInvDisc = 0.0;
+    $totalCount = count($rawLines);
+
+    foreach ($rawLines as $idx => $line) {
+        $lineNet = (float) $line['net'];
+        $lineQty = (float) $line['qty'];
+        $retQty = (float) $line['returned_qty'];
+        $retNet = (float) $line['returned_net'];
+        $availQty = max(0.0, round($lineQty - $retQty, 3));
+
+        if ($idx === $totalCount - 1) {
+            $lineInvDisc = round($invDiscTotal - $accumInvDisc, 2);
+        } elseif ($afterLineDiscountsTotal > 0) {
+            $lineInvDisc = round($invDiscTotal * ($lineNet / $afterLineDiscountsTotal), 2);
+            $accumInvDisc = round($accumInvDisc + $lineInvDisc, 2);
+        } else {
+            $lineInvDisc = 0.0;
+        }
+
+        $finalLineNet = round($lineNet - $lineInvDisc, 2);
+        $unitNet = $lineQty > 0 ? round($finalLineNet / $lineQty, 4) : 0.0;
+
+        $linesData[] = [
+            'id' => (int) $line['id'],
+            'line_no' => (int) $line['line_no'],
+            'item_id' => (int) $line['item_id'],
+            'item_name' => $line['item_name'],
+            'code' => $line['code'],
+            'unit_name' => $line['unit_name'],
+            'unit_factor' => (float) $line['unit_factor'],
+            'qty' => $lineQty,
+            'unit_price' => (float) $line['unit_price'],
+            'line_discount' => (float) $line['line_discount'],
+            'invoice_discount_share' => $lineInvDisc,
+            'final_line_net' => $finalLineNet,
+            'unit_net' => $unitNet,
+            'returned_qty' => $retQty,
+            'returned_net' => $retNet,
+            'available_qty' => $availQty,
+            'unit_cost' => $line['unit_cost'] !== null ? (float) $line['unit_cost'] : null,
+        ];
+    }
+
+    $origPaymentsStmt = $pdo->prepare(
+        'SELECT method, SUM(amount) AS amount
+           FROM sale_payments
+          WHERE doc_id = ?
+          GROUP BY method'
+    );
+    $origPaymentsStmt->execute([(int) $doc['id']]);
+    $origPayments = $origPaymentsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $refPaymentsStmt = $pdo->prepare(
+        "SELECT rp.method, SUM(rp.amount) AS amount
+           FROM sale_payments rp
+           JOIN sale_docs rd ON rd.id = rp.doc_id
+          WHERE rd.ref_doc_id = ? AND rd.doc_kind = 'return' AND rd.status = 'completed'
+          GROUP BY rp.method"
+    );
+    $refPaymentsStmt->execute([(int) $doc['id']]);
+    $refPayments = $refPaymentsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $paymentsData = [];
+    foreach (['cash', 'visa', 'instapay'] as $m) {
+        $orig = (float) ($origPayments[$m] ?? 0);
+        $refunded = (float) ($refPayments[$m] ?? 0);
+        $avail = max(0.0, round($orig - $refunded, 2));
+        if ($orig > 0 || $refunded > 0) {
+            $paymentsData[$m] = [
+                'method' => $m,
+                'original_amount' => $orig,
+                'refunded_amount' => $refunded,
+                'available_refund' => $avail,
+            ];
+        }
+    }
+
+    return [
+        'doc' => [
+            'id' => (int) $doc['id'],
+            'receipt_no' => (string) $doc['receipt_no'],
+            'completed_at' => $doc['completed_at'],
+            'days_since' => $diffDays,
+            'is_late' => $isLate,
+            'pos_return_days' => $posReturnDays,
+            'gross' => (float) $doc['gross'],
+            'line_discount' => (float) $doc['line_discount'],
+            'invoice_discount' => (float) $doc['invoice_discount'],
+            'net' => (float) $doc['net'],
+            'paid' => (float) $doc['paid'],
+            'customer_id' => $doc['customer_id'] !== null ? (int) $doc['customer_id'] : null,
+            'customer_name' => $customerName,
+            'cashier_name' => $cashierName,
+        ],
+        'lines' => $linesData,
+        'payments' => $paymentsData,
+    ];
+}
+
+/**
+ * حساب صافي مرتجع السطور وتوزيع الخصومات بدقة القرش.
+ * @return array{lines: array, total_gross: float, total_net: float, is_full_return: bool}
+ */
+function sale_calculate_return_lines(
+    array $origDoc,
+    array $origLinesById,
+    array $prevReturnsByLineId,
+    array $requestedLines
+): array {
+    if (!$requestedLines) {
+        throw new SaleApiException('لازم تختار صنف واحد على الأقل للمرتجع.');
+    }
+
+    $afterLineDiscountsTotal = round((float) $origDoc['gross'] - (float) $origDoc['line_discount'], 2);
+    $invDiscTotal = (float) $origDoc['invoice_discount'];
+    $totalCount = count($origLinesById);
+
+    $origLinesFinalNet = [];
+    $accumInvDisc = 0.0;
+    $idx = 0;
+    foreach ($origLinesById as $lineId => $origLine) {
+        $lineNet = (float) $origLine['net'];
+        if ($idx === $totalCount - 1) {
+            $lineInvDisc = round($invDiscTotal - $accumInvDisc, 2);
+        } elseif ($afterLineDiscountsTotal > 0) {
+            $lineInvDisc = round($invDiscTotal * ($lineNet / $afterLineDiscountsTotal), 2);
+            $accumInvDisc = round($accumInvDisc + $lineInvDisc, 2);
+        } else {
+            $lineInvDisc = 0.0;
+        }
+        $origLinesFinalNet[$lineId] = round($lineNet - $lineInvDisc, 2);
+        $idx++;
+    }
+
+    $returnLines = [];
+    $totalGross = 0.0;
+    $totalNet = 0.0;
+    $requestedByRef = [];
+
+    foreach ($requestedLines as $req) {
+        $refLineId = (int) ($req['ref_line_id'] ?? 0);
+        $qty = round((float) ($req['qty'] ?? 0), 3);
+        if ($refLineId <= 0 || !isset($origLinesById[$refLineId])) {
+            throw new SaleApiException('السطر المرتجع مش موجود في الفاتورة الأصلية.');
+        }
+        if ($qty <= 0) {
+            continue;
+        }
+        if (isset($requestedByRef[$refLineId])) {
+            throw new SaleApiException('السطر مكرر في طلب المرتجع.');
+        }
+        $requestedByRef[$refLineId] = $qty;
+
+        $origLine = $origLinesById[$refLineId];
+        $origQty = (float) $origLine['qty'];
+        $prevQty = (float) ($prevReturnsByLineId[$refLineId]['qty'] ?? 0);
+        $prevNet = (float) ($prevReturnsByLineId[$refLineId]['net'] ?? 0);
+        $availQty = round($origQty - $prevQty, 3);
+
+        if ($qty > $availQty + 0.0001) {
+            throw new SaleApiException(
+                'الكمية المرتجعة أكبر من المتاح للصنف ' . $origLine['code'] . '.',
+                409,
+                'locked'
+            );
+        }
+
+        $finalLineNet = $origLinesFinalNet[$refLineId];
+        $isFinalPiece = abs(($prevQty + $qty) - $origQty) < 0.0001;
+
+        if ($isFinalPiece) {
+            $lineNetRefund = round($finalLineNet - $prevNet, 2);
+        } else {
+            $unitNetRefund = $finalLineNet / $origQty;
+            $lineNetRefund = round($qty * $unitNetRefund, 2);
+        }
+
+        $lineGross = round($qty * (float) $origLine['unit_price'], 2);
+        $lineDiscount = round($lineGross - $lineNetRefund, 2);
+
+        $returnLines[] = [
+            'ref_line_id' => $refLineId,
+            'item_id' => (int) $origLine['item_id'],
+            'code' => $origLine['code'],
+            'unit_name' => $origLine['unit_name'],
+            'unit_factor' => (float) $origLine['unit_factor'],
+            'qty' => $qty,
+            'qty_pieces' => round($qty * (float) $origLine['unit_factor'], 3),
+            'unit_price' => (float) $origLine['unit_price'],
+            'gross' => $lineGross,
+            'line_discount' => $lineDiscount,
+            'net' => $lineNetRefund,
+            'unit_cost' => $origLine['unit_cost'] !== null ? (float) $origLine['unit_cost'] : null,
+        ];
+
+        $totalGross = round($totalGross + $lineGross, 2);
+        $totalNet = round($totalNet + $lineNetRefund, 2);
+    }
+
+    if (!$returnLines) {
+        throw new SaleApiException('لازم تحدد كمية أكبر من صفر لصنف واحد على الأقل.');
+    }
+
+    $isFullReturn = true;
+    foreach ($origLinesById as $lid => $oline) {
+        $totalSoFar = (float) ($prevReturnsByLineId[$lid]['qty'] ?? 0) + (float) ($requestedByRef[$lid] ?? 0);
+        if (abs($totalSoFar - (float) $oline['qty']) > 0.0001) {
+            $isFullReturn = false;
+            break;
+        }
+    }
+
+    if ($isFullReturn) {
+        $prevTotalRefundedNet = 0.0;
+        foreach ($prevReturnsByLineId as $pr) {
+            $prevTotalRefundedNet = round($prevTotalRefundedNet + (float) ($pr['net'] ?? 0), 2);
+        }
+        $remainingExpectedNet = round((float) $origDoc['net'] - $prevTotalRefundedNet, 2);
+        if (abs($totalNet - $remainingExpectedNet) > 0.0001) {
+            $diff = round($remainingExpectedNet - $totalNet, 2);
+            $lastIdx = count($returnLines) - 1;
+            $returnLines[$lastIdx]['net'] = round($returnLines[$lastIdx]['net'] + $diff, 2);
+            $returnLines[$lastIdx]['line_discount'] = round($returnLines[$lastIdx]['gross'] - $returnLines[$lastIdx]['net'], 2);
+            $totalNet = $remainingExpectedNet;
+        }
+    }
+
+    return [
+        'lines' => $returnLines,
+        'total_gross' => $totalGross,
+        'total_net' => $totalNet,
+        'is_full_return' => $isFullReturn,
+    ];
+}
+
+/**
+ * التحقق من طرق ومبالغ رد المرتجع وما إذا كانت تتطلب اعتماد مشرف.
+ * @return array{payments: array, sum: float, override_needed: bool}
+ */
+function sale_validate_return_payments(
+    array $origPayments,
+    array $prevRefunds,
+    array $inputPayments,
+    float $totalReturnNet
+): array {
+    if (!$inputPayments) {
+        throw new SaleApiException('لازم تحدد طريقة رد المرتجع.');
+    }
+
+    $paymentSum = 0.0;
+    $methodOverrideNeeded = false;
+    $cleanPayments = [];
+
+    foreach ($inputPayments as $p) {
+        $m = (string) ($p['method'] ?? '');
+        $amt = round((float) ($p['amount'] ?? 0), 2);
+        if (!in_array($m, ['cash', 'visa', 'instapay'], true)) {
+            throw new SaleApiException('طريقة الرد مش مدعومة.');
+        }
+        if ($amt <= 0) {
+            throw new SaleApiException('قيمة الرد لازم تبقى أكبر من صفر.');
+        }
+        $origPaidForMethod = (float) ($origPayments[$m] ?? 0);
+        $prevRefundedForMethod = (float) ($prevRefunds[$m] ?? 0);
+        $availForMethod = max(0.0, round($origPaidForMethod - $prevRefundedForMethod, 2));
+
+        if ($amt > $availForMethod + 0.0001) {
+            $methodOverrideNeeded = true;
+        }
+
+        $paymentSum = round($paymentSum + $amt, 2);
+        $cleanPayments[] = [
+            'method' => $m,
+            'amount' => $amt,
+            'reference' => trim((string) ($p['reference'] ?? '')) ?: null,
+        ];
+    }
+
+    if (abs($paymentSum - $totalReturnNet) > 0.0001) {
+        throw new SaleApiException('مجموع مبالغ الرد لازم يساوي صافي المرتجع بالظبط (' . $totalReturnNet . ' ج.م).');
+    }
+
+    return [
+        'payments' => $cleanPayments,
+        'sum' => $paymentSum,
+        'override_needed' => $methodOverrideNeeded,
+    ];
+}
+
+/** تنفيذ مرتجع على فاتورة بيع مكتملة في transaction واحدة. */
+function sale_return_ref(PDO $pdo, array $input, array $user): array
+{
+    $clientUuid = trim((string) ($input['client_uuid'] ?? ''));
+    if ($clientUuid === '' || mb_strlen($clientUuid) > 64) {
+        throw new SaleApiException('معرّف عملية المرتجع مطلوب وبحد أقصى ٦٤ خانة.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $device = sale_device($pdo, (string) ($input['device_uuid'] ?? ''), $user, true);
+        $deviceId = (int) $device['id'];
+
+        $existingDoc = sale_existing_by_client($pdo, $deviceId, $clientUuid);
+        if ($existingDoc && $existingDoc['status'] === 'completed') {
+            $res = sale_doc_result($existingDoc);
+            $pdo->commit();
+            return $res;
+        }
+        if ($existingDoc) {
+            throw new SaleApiException('معرّف العملية مستخدم قبل كده.', 409, 'duplicate');
+        }
+
+        $session = sale_open_session($pdo, $deviceId, true);
+        if (!$session) {
+            throw new SaleApiException('افتح وردية على الجهاز الأول.', 409, 'locked');
+        }
+        if (!sale_branch_ready((int) $device['branch_id'])) {
+            throw new SaleApiException('الفرع لسه على True — المرتجع من نقطة البيع الجديدة مقفول.', 409, 'locked');
+        }
+
+        $origDocId = (int) ($input['doc_id'] ?? 0);
+        if ($origDocId <= 0) {
+            throw new SaleApiException('معرّف الفاتورة الأصلية مطلوب.');
+        }
+
+        $origStmt = $pdo->prepare("SELECT * FROM sale_docs WHERE id = ? AND doc_kind = 'sale' FOR UPDATE");
+        $origStmt->execute([$origDocId]);
+        $origDoc = $origStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$origDoc || $origDoc['status'] !== 'completed') {
+            throw new SaleApiException('الفاتورة الأصلية مش موجودة أو مش مكتملة.', 409, 'locked');
+        }
+        if ((int) $origDoc['branch_id'] !== (int) $device['branch_id']) {
+            throw new SaleApiException('الفاتورة دي من فرع تاني — المرتجع من نفس الفرع بس.', 409, 'locked');
+        }
+
+        $completedAt = new DateTime($origDoc['completed_at']);
+        $diffDays = (int) (new DateTime())->diff($completedAt)->days;
+        $posReturnDays = 14;
+        $daysSetting = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'pos_return_days'")->fetchColumn();
+        if ($daysSetting !== false && is_numeric($daysSetting)) {
+            $posReturnDays = max(0, (int) $daysSetting);
+        }
+
+        $lateApproval = null;
+        if ($diffDays > $posReturnDays) {
+            $tokenStr = (string) ($input['approval_token'] ?? ($input['late_approval_token'] ?? ''));
+            $lateApproval = sale_lookup_token($pdo, $deviceId, 'return_late', $tokenStr);
+            if (!$lateApproval) {
+                throw new SaleApiException(
+                    'الفاتورة أقدم من ' . $posReturnDays . ' يوم — محتاجة اعتماد مشرف.',
+                    409,
+                    'locked'
+                );
+            }
+        }
+
+        $origLinesStmt = $pdo->prepare('SELECT * FROM sale_lines WHERE doc_id = ? ORDER BY line_no FOR UPDATE');
+        $origLinesStmt->execute([$origDocId]);
+        $origLinesById = [];
+        foreach ($origLinesStmt->fetchAll(PDO::FETCH_ASSOC) as $ol) {
+            $origLinesById[(int) $ol['id']] = $ol;
+        }
+
+        $prevReturnsStmt = $pdo->prepare(
+            "SELECT rl.ref_line_id, SUM(rl.qty) AS qty, SUM(rl.net) AS net
+               FROM sale_lines rl
+               JOIN sale_docs rd ON rd.id = rl.doc_id
+              WHERE rd.ref_doc_id = ? AND rd.doc_kind = 'return' AND rd.status = 'completed'
+              GROUP BY rl.ref_line_id
+                FOR UPDATE"
+        );
+        $prevReturnsStmt->execute([$origDocId]);
+        $prevReturnsByLineId = [];
+        foreach ($prevReturnsStmt->fetchAll(PDO::FETCH_ASSOC) as $pr) {
+            $prevReturnsByLineId[(int) $pr['ref_line_id']] = $pr;
+        }
+
+        $calc = sale_calculate_return_lines($origDoc, $origLinesById, $prevReturnsByLineId, (array) ($input['lines'] ?? []));
+        $returnLines = $calc['lines'];
+        $totalReturnNet = $calc['total_net'];
+        $totalReturnGross = $calc['total_gross'];
+
+        $origPayStmt = $pdo->prepare('SELECT method, SUM(amount) AS amount FROM sale_payments WHERE doc_id = ? GROUP BY method');
+        $origPayStmt->execute([$origDocId]);
+        $origPayments = $origPayStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        $prevRefundsStmt = $pdo->prepare(
+            "SELECT rp.method, SUM(rp.amount) AS amount
+               FROM sale_payments rp
+               JOIN sale_docs rd ON rd.id = rp.doc_id
+              WHERE rd.ref_doc_id = ? AND rd.doc_kind = 'return' AND rd.status = 'completed'
+              GROUP BY rp.method
+                FOR UPDATE"
+        );
+        $prevRefundsStmt->execute([$origDocId]);
+        $prevRefunds = $prevRefundsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        $payValidation = sale_validate_return_payments(
+            $origPayments,
+            $prevRefunds,
+            (array) ($input['payments'] ?? []),
+            $totalReturnNet
+        );
+        $cleanPayments = $payValidation['payments'];
+        $methodOverrideNeeded = $payValidation['override_needed'];
+
+        $methodApproval = null;
+        $methodOverrideReason = trim((string) ($input['method_override_reason'] ?? ($input['reason'] ?? '')));
+        if ($methodOverrideNeeded) {
+            $tokenStr = (string) ($input['approval_token'] ?? ($input['method_approval_token'] ?? ''));
+            $methodApproval = sale_lookup_token($pdo, $deviceId, 'return_method', $tokenStr);
+            if (!$methodApproval) {
+                throw new SaleApiException(
+                    'طريقة الرد مختلفة عن الفاتورة الأصلية — محتاجة اعتماد مشرف.',
+                    403,
+                    'forbidden'
+                );
+            }
+        }
+
+        $receiptNo = sale_next_receipt($pdo, $device);
+        $customerId = sale_require_customer($pdo, $input['customer_id'] ?? $origDoc['customer_id']);
+
+        $docStmt = $pdo->prepare(
+            "INSERT INTO sale_docs
+                (doc_kind, status, branch_id, device_id, session_id, cashier_id,
+                 customer_id, client_uuid, receipt_no, ref_doc_id, gross, line_discount,
+                 invoice_discount, net, paid, change_due, completed_at)
+             VALUES ('return', 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())"
+        );
+        // المبالغ موجبة والنوع doc_kind='return' بيحدد الاتجاه
+        $docStmt->execute([
+            (int) $device['branch_id'],
+            $deviceId,
+            (int) $session['id'],
+            (int) $user['id'],
+            $customerId,
+            $clientUuid,
+            $receiptNo,
+            $origDocId,
+            $totalReturnGross,
+            round($totalReturnGross - $totalReturnNet, 2),
+            0.00,
+            $totalReturnNet,
+            $totalReturnNet,
+        ]);
+        $returnDocId = (int) $pdo->lastInsertId();
+
+        $lineValGroups = [];
+        $lineParams = [];
+        foreach ($returnLines as $lidx => $rl) {
+            $lineValGroups[] = '(?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())';
+            array_push(
+                $lineParams,
+                $returnDocId,
+                $lidx + 1,
+                (int) $rl['item_id'],
+                $rl['code'],
+                $rl['unit_name'],
+                $rl['unit_factor'],
+                $rl['qty'],
+                $rl['qty_pieces'],
+                $rl['unit_price'],
+                $rl['line_discount'],
+                $rl['net'],
+                $rl['unit_cost'],
+                $rl['ref_line_id']
+            );
+        }
+        $pdo->prepare(
+            'INSERT INTO sale_lines
+                (doc_id, line_no, item_id, code, unit_name, unit_factor, qty, qty_pieces,
+                 unit_price, line_discount, net, unit_cost, ref_line_id, created_at)
+             VALUES ' . implode(',', $lineValGroups)
+        )->execute($lineParams);
+
+        sale_payments_insert($pdo, $returnDocId, $cleanPayments);
+
+        $stockLines = [];
+        foreach ($returnLines as $rl) {
+            $stockLines[] = [
+                'item_id' => (int) $rl['item_id'],
+                'code' => $rl['code'],
+                'unit_factor' => (float) $rl['unit_factor'],
+                'qty_units' => (float) $rl['qty'],
+                'unit_cost' => $rl['unit_cost'],
+            ];
+        }
+        $stockDocId = stock_doc_create(
+            $pdo,
+            'sale_return',
+            [
+                'branch_id' => (int) $device['branch_id'],
+                'doc_date' => date('Y-m-d'),
+                'ref_text' => $receiptNo,
+                'notes' => 'مرتجع نقطة البيع #' . $returnDocId . ' على الفاتورة ' . $origDoc['receipt_no'],
+            ],
+            $stockLines,
+            (int) $user['id']
+        );
+        stock_post($pdo, $stockDocId, (int) $user['id']);
+        $pdo->prepare('UPDATE sale_docs SET stock_doc_id=? WHERE id=?')->execute([$stockDocId, $returnDocId]);
+
+        if ($lateApproval) {
+            sale_consume_token($pdo, (int) $lateApproval['id'], $returnDocId);
+        }
+        if ($methodApproval) {
+            sale_consume_token($pdo, (int) $methodApproval['id'], $returnDocId);
+        }
+
+        $events = [[
+            'branch_id' => (int) $device['branch_id'],
+            'device_id' => $deviceId,
+            'session_id' => (int) $session['id'],
+            'user_id' => (int) $user['id'],
+            'doc_id' => $returnDocId,
+            'event_type' => 'return_completed',
+            'payload' => [
+                'receipt_no' => $receiptNo,
+                'ref_doc_id' => $origDocId,
+                'ref_receipt_no' => $origDoc['receipt_no'],
+                'net' => $totalReturnNet,
+                'lines_count' => count($returnLines),
+            ],
+            'approved_by' => $lateApproval['approved_by'] ?? ($methodApproval['approved_by'] ?? null),
+        ]];
+
+        $cashRefunded = 0.0;
+        foreach ($cleanPayments as $cp) {
+            if ($cp['method'] === 'cash') {
+                $cashRefunded += $cp['amount'];
+            }
+        }
+        if ($cashRefunded > 0) {
+            $events[] = [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $returnDocId,
+                'event_type' => 'drawer_open',
+                'payload' => ['reason' => 'cash_return', 'amount' => $cashRefunded],
+                'approved_by' => null,
+            ];
+        }
+
+        if ($methodApproval) {
+            $events[] = [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $returnDocId,
+                'event_type' => 'return_method_override',
+                'payload' => [
+                    'reason' => $methodOverrideReason ?: 'تغيير طريقة رد المرتجع',
+                    'payments' => $cleanPayments,
+                ],
+                'approved_by' => (int) $methodApproval['approved_by'],
+            ];
+        }
+
+        sale_events_insert($pdo, $events);
+        $pdo->commit();
+
+        return [
+            'doc_id' => $returnDocId,
+            'receipt_no' => $receiptNo,
+            'gross' => $totalReturnGross,
+            'line_discount' => round($totalReturnGross - $totalReturnNet, 2),
+            'invoice_discount' => 0.00,
+            'net' => $totalReturnNet,
+            'paid' => $totalReturnNet,
+            'change_due' => 0.00,
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($e instanceof PDOException && (int) ($e->errorInfo[1] ?? 0) === 1062) {
+            throw new SaleApiException('عملية المرتجع دي اتسجلت قبل كده.', 409, 'duplicate');
+        }
+        throw $e;
+    }
+}
+
+/** مرتجع عام بدون فاتورة أصلية (بصلاحية pos:return_general وسبب إجباري). */
+function sale_return_general(PDO $pdo, array $input, array $user): array
+{
+    if (!can('pos:return_general') && !is_real_owner()) {
+        throw new SaleApiException('مالكش صلاحية المرتجع العام.', 403, 'forbidden');
+    }
+
+    $reason = trim((string) ($input['reason'] ?? ''));
+    if ($reason === '') {
+        throw new SaleApiException('سبب المرتجع العام إجباري.');
+    }
+
+    $clientUuid = trim((string) ($input['client_uuid'] ?? ''));
+    if ($clientUuid === '' || mb_strlen($clientUuid) > 64) {
+        throw new SaleApiException('معرّف عملية المرتجع مطلوب وبحد أقصى ٦٤ خانة.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $device = sale_device($pdo, (string) ($input['device_uuid'] ?? ''), $user, true);
+        $deviceId = (int) $device['id'];
+
+        $existingDoc = sale_existing_by_client($pdo, $deviceId, $clientUuid);
+        if ($existingDoc && $existingDoc['status'] === 'completed') {
+            $res = sale_doc_result($existingDoc);
+            $pdo->commit();
+            return $res;
+        }
+        if ($existingDoc) {
+            throw new SaleApiException('معرّف العملية مستخدم قبل كده.', 409, 'duplicate');
+        }
+
+        $session = sale_open_session($pdo, $deviceId, true);
+        if (!$session) {
+            throw new SaleApiException('افتح وردية على الجهاز الأول.', 409, 'locked');
+        }
+        if (!sale_branch_ready((int) $device['branch_id'])) {
+            throw new SaleApiException('الفرع لسه على True — المرتجع من نقطة البيع الجديدة مقفول.', 409, 'locked');
+        }
+
+        $resolvedLines = sale_resolve_lines($pdo, (array) ($input['lines'] ?? []));
+
+        $totalNet = 0.0;
+        $returnLines = [];
+        foreach ($resolvedLines as $line) {
+            $qty = (float) $line['qty'];
+            $unitPrice = (float) $line['unit_price'];
+            $lineGross = round($qty * $unitPrice, 2);
+            $returnLines[] = array_merge($line, [
+                'gross' => $lineGross,
+                'line_discount' => 0.00,
+                'net' => $lineGross,
+                'unit_cost' => null,
+            ]);
+            $totalNet = round($totalNet + $lineGross, 2);
+        }
+
+        $inputPayments = (array) ($input['payments'] ?? []);
+        if (!$inputPayments) {
+            throw new SaleApiException('لازم تسجل طريقة رد المرتجع.');
+        }
+        $paymentSum = 0.0;
+        $cashRefunded = 0.0;
+        $cleanPayments = [];
+        foreach ($inputPayments as $p) {
+            $m = (string) ($p['method'] ?? '');
+            $amt = round((float) ($p['amount'] ?? 0), 2);
+            if (!in_array($m, ['cash', 'visa', 'instapay'], true)) {
+                throw new SaleApiException('طريقة الرد مش مدعومة.');
+            }
+            if ($amt <= 0) {
+                throw new SaleApiException('قيمة الرد لازم تبقى أكبر من صفر.');
+            }
+            if ($m === 'cash') {
+                $cashRefunded += $amt;
+            }
+            $paymentSum = round($paymentSum + $amt, 2);
+            $cleanPayments[] = [
+                'method' => $m,
+                'amount' => $amt,
+                'reference' => trim((string) ($p['reference'] ?? '')) ?: null,
+            ];
+        }
+
+        if (abs($paymentSum - $totalNet) > 0.0001) {
+            throw new SaleApiException('مجموع مبالغ الرد لازم يساوي صافي المرتجع بالظبط (' . $totalNet . ' ج.م).');
+        }
+
+        $receiptNo = sale_next_receipt($pdo, $device);
+        $customerId = sale_require_customer($pdo, $input['customer_id'] ?? null);
+
+        $docStmt = $pdo->prepare(
+            "INSERT INTO sale_docs
+                (doc_kind, status, branch_id, device_id, session_id, cashier_id,
+                 customer_id, client_uuid, receipt_no, ref_doc_id, gross, line_discount,
+                 invoice_discount, net, paid, change_due, completed_at)
+             VALUES ('return','completed',?,?,?,?,?,?,?,NULL,?,0,0,?,?,0,NOW())"
+        );
+        $docStmt->execute([
+            (int) $device['branch_id'],
+            $deviceId,
+            (int) $session['id'],
+            (int) $user['id'],
+            $customerId,
+            $clientUuid,
+            $receiptNo,
+            $totalNet,
+            $totalNet,
+            $totalNet,
+        ]);
+        $returnDocId = (int) $pdo->lastInsertId();
+
+        $lineValGroups = [];
+        $lineParams = [];
+        foreach ($returnLines as $lidx => $rl) {
+            $lineValGroups[] = '(?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NOW())';
+            array_push(
+                $lineParams,
+                $returnDocId,
+                $lidx + 1,
+                (int) $rl['item_id'],
+                $rl['code'],
+                $rl['unit_name'],
+                $rl['unit_factor'],
+                $rl['qty'],
+                $rl['qty_pieces'],
+                $rl['unit_price'],
+                0.00,
+                $rl['net']
+            );
+        }
+        $pdo->prepare(
+            'INSERT INTO sale_lines
+                (doc_id, line_no, item_id, code, unit_name, unit_factor, qty, qty_pieces,
+                 unit_price, line_discount, net, unit_cost, ref_line_id, created_at)
+             VALUES ' . implode(',', $lineValGroups)
+        )->execute($lineParams);
+
+        sale_payments_insert($pdo, $returnDocId, $cleanPayments);
+
+        $stockLines = [];
+        foreach ($returnLines as $rl) {
+            $stockLines[] = [
+                'item_id' => (int) $rl['item_id'],
+                'code' => $rl['code'],
+                'unit_factor' => (float) $rl['unit_factor'],
+                'qty_units' => (float) $rl['qty'],
+                'unit_cost' => null,
+            ];
+        }
+        $stockDocId = stock_doc_create(
+            $pdo,
+            'sale_return',
+            [
+                'branch_id' => (int) $device['branch_id'],
+                'doc_date' => date('Y-m-d'),
+                'ref_text' => $receiptNo,
+                'notes' => 'مرتجع عام نقطة البيع #' . $returnDocId,
+            ],
+            $stockLines,
+            (int) $user['id']
+        );
+        stock_post($pdo, $stockDocId, (int) $user['id']);
+        $pdo->prepare('UPDATE sale_docs SET stock_doc_id=? WHERE id=?')->execute([$stockDocId, $returnDocId]);
+
+        $pdo->prepare(
+            'UPDATE sale_lines sl
+               JOIN stock_doc_lines sdl ON sdl.doc_id=? AND sdl.line_no=sl.line_no
+               JOIN stock_moves sm ON sm.doc_id=? AND sm.doc_line_id=sdl.id
+                SET sl.unit_cost=sm.unit_cost
+              WHERE sl.doc_id=?'
+        )->execute([$stockDocId, $stockDocId, $returnDocId]);
+
+        $events = [[
+            'branch_id' => (int) $device['branch_id'],
+            'device_id' => $deviceId,
+            'session_id' => (int) $session['id'],
+            'user_id' => (int) $user['id'],
+            'doc_id' => $returnDocId,
+            'event_type' => 'return_general',
+            'payload' => [
+                'reason' => mb_substr($reason, 0, 500),
+                'receipt_no' => $receiptNo,
+                'net' => $totalNet,
+                'lines_count' => count($returnLines),
+            ],
+            'approved_by' => null,
+        ]];
+        if ($cashRefunded > 0) {
+            $events[] = [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $returnDocId,
+                'event_type' => 'drawer_open',
+                'payload' => ['reason' => 'cash_return', 'amount' => $cashRefunded],
+                'approved_by' => null,
+            ];
+        }
+        sale_events_insert($pdo, $events);
+
+        $pdo->commit();
+        return [
+            'doc_id' => $returnDocId,
+            'receipt_no' => $receiptNo,
+            'gross' => $totalNet,
+            'line_discount' => 0.00,
+            'invoice_discount' => 0.00,
+            'net' => $totalNet,
+            'paid' => $totalNet,
+            'change_due' => 0.00,
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($e instanceof PDOException && (int) ($e->errorInfo[1] ?? 0) === 1062) {
+            throw new SaleApiException('عملية المرتجع العام دي اتسجلت قبل كده.', 409, 'duplicate');
+        }
+        throw $e;
+    }
+}
+
+/** عملية الاستبدال: مرتجع على فاتورة + بيع جديد في transaction واحدة مربوطين ببعض. */
+function sale_exchange(PDO $pdo, array $input, array $user): array
+{
+    $clientUuid = trim((string) ($input['client_uuid'] ?? ''));
+    if ($clientUuid === '' || mb_strlen($clientUuid) > 64) {
+        throw new SaleApiException('معرّف عملية الاستبدال مطلوب وبحد أقصى ٦٤ خانة.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $device = sale_device($pdo, (string) ($input['device_uuid'] ?? ''), $user, true);
+        $deviceId = (int) $device['id'];
+
+        $existingDoc = sale_existing_by_client($pdo, $deviceId, $clientUuid);
+        if ($existingDoc && $existingDoc['status'] === 'completed') {
+            $returnDoc = null;
+            if ($existingDoc['ref_doc_id'] > 0) {
+                $retStmt = $pdo->prepare('SELECT * FROM sale_docs WHERE id = ?');
+                $retStmt->execute([(int) $existingDoc['ref_doc_id']]);
+                $returnDoc = $retStmt->fetch(PDO::FETCH_ASSOC);
+            }
+            $diff = round((float) $existingDoc['net'] - (float) ($returnDoc['net'] ?? 0), 2);
+            $res = [
+                'sale_doc_id' => (int) $existingDoc['id'],
+                'sale_receipt_no' => (string) $existingDoc['receipt_no'],
+                'sale_net' => (float) $existingDoc['net'],
+                'return_doc_id' => $returnDoc ? (int) $returnDoc['id'] : null,
+                'return_receipt_no' => $returnDoc ? (string) $returnDoc['receipt_no'] : null,
+                'return_net' => $returnDoc ? (float) $returnDoc['net'] : 0.0,
+                'difference' => $diff,
+                'change_due' => (float) $existingDoc['change_due'],
+            ];
+            $pdo->commit();
+            return $res;
+        }
+        if ($existingDoc) {
+            throw new SaleApiException('معرّف العملية مستخدم قبل كده.', 409, 'duplicate');
+        }
+
+        $session = sale_open_session($pdo, $deviceId, true);
+        if (!$session) {
+            throw new SaleApiException('افتح وردية على الجهاز الأول.', 409, 'locked');
+        }
+        if (!sale_branch_ready((int) $device['branch_id'])) {
+            throw new SaleApiException('الفرع لسه على True — الاستبدال من نقطة البيع الجديدة مقفول.', 409, 'locked');
+        }
+
+        $returnInput = (array) ($input['return'] ?? []);
+        $saleInput = (array) ($input['sale'] ?? []);
+
+        $origDocId = (int) ($returnInput['doc_id'] ?? 0);
+        if ($origDocId <= 0) {
+            throw new SaleApiException('معرّف الفاتورة الأصلية للمرتجع مطلوب.');
+        }
+
+        $origStmt = $pdo->prepare("SELECT * FROM sale_docs WHERE id = ? AND doc_kind = 'sale' FOR UPDATE");
+        $origStmt->execute([$origDocId]);
+        $origDoc = $origStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$origDoc || $origDoc['status'] !== 'completed') {
+            throw new SaleApiException('الفاتورة الأصلية للمرتجع مش موجودة أو مش مكتملة.', 409, 'locked');
+        }
+        if ((int) $origDoc['branch_id'] !== (int) $device['branch_id']) {
+            throw new SaleApiException('الفاتورة دي من فرع تاني — الاستبدال من نفس الفرع بس.', 409, 'locked');
+        }
+
+        $completedAt = new DateTime($origDoc['completed_at']);
+        $diffDays = (int) (new DateTime())->diff($completedAt)->days;
+        $posReturnDays = 14;
+        $daysSetting = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'pos_return_days'")->fetchColumn();
+        if ($daysSetting !== false && is_numeric($daysSetting)) {
+            $posReturnDays = max(0, (int) $daysSetting);
+        }
+
+        $lateApproval = null;
+        if ($diffDays > $posReturnDays) {
+            $tokenStr = (string) ($returnInput['approval_token'] ?? ($input['late_approval_token'] ?? ''));
+            $lateApproval = sale_lookup_token($pdo, $deviceId, 'return_late', $tokenStr);
+            if (!$lateApproval) {
+                throw new SaleApiException(
+                    'الفاتورة أقدم من ' . $posReturnDays . ' يوم — محتاجة اعتماد مشرف.',
+                    409,
+                    'locked'
+                );
+            }
+        }
+
+        $origLinesStmt = $pdo->prepare('SELECT * FROM sale_lines WHERE doc_id = ? ORDER BY line_no FOR UPDATE');
+        $origLinesStmt->execute([$origDocId]);
+        $origLinesById = [];
+        foreach ($origLinesStmt->fetchAll(PDO::FETCH_ASSOC) as $ol) {
+            $origLinesById[(int) $ol['id']] = $ol;
+        }
+
+        $prevReturnsStmt = $pdo->prepare(
+            "SELECT rl.ref_line_id, SUM(rl.qty) AS qty, SUM(rl.net) AS net
+               FROM sale_lines rl
+               JOIN sale_docs rd ON rd.id = rl.doc_id
+              WHERE rd.ref_doc_id = ? AND rd.doc_kind = 'return' AND rd.status = 'completed'
+              GROUP BY rl.ref_line_id
+                FOR UPDATE"
+        );
+        $prevReturnsStmt->execute([$origDocId]);
+        $prevReturnsByLineId = [];
+        foreach ($prevReturnsStmt->fetchAll(PDO::FETCH_ASSOC) as $pr) {
+            $prevReturnsByLineId[(int) $pr['ref_line_id']] = $pr;
+        }
+
+        $returnCalc = sale_calculate_return_lines($origDoc, $origLinesById, $prevReturnsByLineId, (array) ($returnInput['lines'] ?? []));
+        $returnLines = $returnCalc['lines'];
+        $returnNet = $returnCalc['total_net'];
+        $returnGross = $returnCalc['total_gross'];
+
+        $saleLinesInput = (array) ($saleInput['lines'] ?? []);
+        if (!$saleLinesInput) {
+            throw new SaleApiException('سلة البيع في الاستبدال فاضية.');
+        }
+        $resolvedSaleLines = sale_resolve_lines($pdo, $saleLinesInput);
+        try {
+            $saleCalc = sale_compute($resolvedSaleLines, $saleInput['invoice_discount'] ?? 0);
+        } catch (InvalidArgumentException $e) {
+            throw new SaleApiException($e->getMessage());
+        }
+        $saleNet = (float) $saleCalc['net'];
+
+        $capStmt = $pdo->prepare('SELECT discount_cap_pct FROM users WHERE id=?');
+        $capStmt->execute([(int) $user['id']]);
+        $saleApproval = sale_discount_approval(
+            $pdo,
+            $deviceId,
+            (float) $saleCalc['discount_pct'],
+            round((float) ($capStmt->fetchColumn() ?: 0), 2),
+            (string) ($saleInput['approval_token'] ?? '')
+        );
+
+        $diff = round($saleNet - $returnNet, 2);
+        $paymentsInput = (array) ($input['payments'] ?? ($saleInput['payments'] ?? []));
+        $cleanPayments = [];
+        $paidDiff = 0.0;
+        $changeDue = 0.0;
+        $cashAmount = 0.0;
+        $methodApproval = null;
+        $methodOverrideReason = '';
+
+        if ($diff > 0) {
+            $maxPayments = max(1, (int) ($pdo->query("SELECT setting_value FROM settings WHERE setting_key='pos_max_payments'")->fetchColumn() ?: 3));
+            try {
+                $payValidation = sale_validate_payments($paymentsInput, $diff, $maxPayments);
+            } catch (InvalidArgumentException $e) {
+                throw new SaleApiException($e->getMessage());
+            }
+            $cleanPayments = $payValidation['payments'];
+            $paidDiff = $payValidation['paid'];
+            $changeDue = $payValidation['change_due'];
+            $cashAmount = $payValidation['cash'];
+        } elseif ($diff < 0) {
+            $refundNeeded = abs($diff);
+            $origPayStmt = $pdo->prepare('SELECT method, SUM(amount) AS amount FROM sale_payments WHERE doc_id = ? GROUP BY method');
+            $origPayStmt->execute([$origDocId]);
+            $origPayments = $origPayStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            $prevRefundsStmt = $pdo->prepare(
+                "SELECT rp.method, SUM(rp.amount) AS amount
+                   FROM sale_payments rp
+                   JOIN sale_docs rd ON rd.id = rp.doc_id
+                  WHERE rd.ref_doc_id = ? AND rd.doc_kind = 'return' AND rd.status = 'completed'
+                  GROUP BY rp.method
+                    FOR UPDATE"
+            );
+            $prevRefundsStmt->execute([$origDocId]);
+            $prevRefunds = $prevRefundsStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            $payValidation = sale_validate_return_payments($origPayments, $prevRefunds, $paymentsInput, $refundNeeded);
+            $cleanPayments = $payValidation['payments'];
+            $methodOverrideNeeded = $payValidation['override_needed'];
+
+            foreach ($cleanPayments as $cp) {
+                if ($cp['method'] === 'cash') {
+                    $cashAmount += $cp['amount'];
+                }
+            }
+
+            if ($methodOverrideNeeded) {
+                $tokenStr = (string) ($input['method_approval_token'] ?? ($input['approval_token'] ?? ''));
+                $methodApproval = sale_lookup_token($pdo, $deviceId, 'return_method', $tokenStr);
+                if (!$methodApproval) {
+                    throw new SaleApiException('طريقة رد الفرق مختلفة عن الفاتورة الأصلية — محتاجة اعتماد مشرف.', 403, 'forbidden');
+                }
+                $methodOverrideReason = trim((string) ($input['method_override_reason'] ?? ($input['reason'] ?? '')));
+            }
+        } else {
+            $cleanPayments = [];
+        }
+
+        $customerId = sale_require_customer($pdo, $input['customer_id'] ?? $origDoc['customer_id']);
+
+        $returnReceiptNo = sale_next_receipt($pdo, $device);
+        $saleReceiptNo = sale_next_receipt($pdo, $device);
+
+        $returnClientUuid = 'ret:' . mb_substr($clientUuid, 0, 60);
+        $retDocStmt = $pdo->prepare(
+            "INSERT INTO sale_docs
+                (doc_kind, status, branch_id, device_id, session_id, cashier_id,
+                 customer_id, client_uuid, receipt_no, ref_doc_id, gross, line_discount,
+                 invoice_discount, net, paid, change_due, completed_at)
+             VALUES ('return', 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())"
+        );
+        $retDocStmt->execute([
+            (int) $device['branch_id'],
+            $deviceId,
+            (int) $session['id'],
+            (int) $user['id'],
+            $customerId,
+            $returnClientUuid,
+            $returnReceiptNo,
+            $origDocId,
+            $returnGross,
+            round($returnGross - $returnNet, 2),
+            0.00,
+            $returnNet,
+            $returnNet,
+        ]);
+        $returnDocId = (int) $pdo->lastInsertId();
+
+        $retLineGroups = [];
+        $retLineParams = [];
+        foreach ($returnLines as $lidx => $rl) {
+            $retLineGroups[] = '(?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())';
+            array_push(
+                $retLineParams,
+                $returnDocId,
+                $lidx + 1,
+                (int) $rl['item_id'],
+                $rl['code'],
+                $rl['unit_name'],
+                $rl['unit_factor'],
+                $rl['qty'],
+                $rl['qty_pieces'],
+                $rl['unit_price'],
+                $rl['line_discount'],
+                $rl['net'],
+                $rl['unit_cost'],
+                $rl['ref_line_id']
+            );
+        }
+        $pdo->prepare(
+            'INSERT INTO sale_lines
+                (doc_id, line_no, item_id, code, unit_name, unit_factor, qty, qty_pieces,
+                 unit_price, line_discount, net, unit_cost, ref_line_id, created_at)
+             VALUES ' . implode(',', $retLineGroups)
+        )->execute($retLineParams);
+
+        if ($diff < 0 && $cleanPayments) {
+            sale_payments_insert($pdo, $returnDocId, $cleanPayments);
+        }
+
+        $saleDocStmt = $pdo->prepare(
+            "INSERT INTO sale_docs
+                (doc_kind, status, branch_id, device_id, session_id, cashier_id,
+                 customer_id, client_uuid, receipt_no, ref_doc_id, gross, line_discount,
+                 invoice_discount, net, paid, change_due, discount_approved_by, completed_at)
+             VALUES ('sale','completed',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())"
+        );
+        $saleDocStmt->execute([
+            (int) $device['branch_id'],
+            $deviceId,
+            (int) $session['id'],
+            (int) $user['id'],
+            $customerId,
+            $clientUuid,
+            $saleReceiptNo,
+            $returnDocId,
+            $saleCalc['gross'],
+            $saleCalc['line_discount'],
+            $saleCalc['invoice_discount'],
+            $saleNet,
+            round($returnNet + ($diff > 0 ? $paidDiff : 0), 2),
+            $changeDue,
+            $saleApproval['approved_by'],
+        ]);
+        $saleDocId = (int) $pdo->lastInsertId();
+
+        sale_lines_insert($pdo, $saleDocId, $saleCalc['lines']);
+
+        if ($diff > 0 && $cleanPayments) {
+            sale_payments_insert($pdo, $saleDocId, $cleanPayments);
+        }
+
+        $retStockLines = [];
+        foreach ($returnLines as $rl) {
+            $retStockLines[] = [
+                'item_id' => (int) $rl['item_id'],
+                'code' => $rl['code'],
+                'unit_factor' => (float) $rl['unit_factor'],
+                'qty_units' => (float) $rl['qty'],
+                'unit_cost' => $rl['unit_cost'],
+            ];
+        }
+        $retStockDocId = stock_doc_create(
+            $pdo,
+            'sale_return',
+            [
+                'branch_id' => (int) $device['branch_id'],
+                'doc_date' => date('Y-m-d'),
+                'ref_text' => $returnReceiptNo,
+                'notes' => 'مرتجع استبدال #' . $returnDocId,
+            ],
+            $retStockLines,
+            (int) $user['id']
+        );
+        stock_post($pdo, $retStockDocId, (int) $user['id']);
+        $pdo->prepare('UPDATE sale_docs SET stock_doc_id=? WHERE id=?')->execute([$retStockDocId, $returnDocId]);
+
+        $saleStockLines = [];
+        foreach ($saleCalc['lines'] as $sl) {
+            $saleStockLines[] = [
+                'item_id' => (int) $sl['item_id'],
+                'code' => $sl['code'],
+                'unit_factor' => (float) $sl['unit_factor'],
+                'qty_units' => (float) $sl['qty'],
+                'unit_cost' => null,
+            ];
+        }
+        $saleStockDocId = stock_doc_create(
+            $pdo,
+            'sale',
+            [
+                'branch_id' => (int) $device['branch_id'],
+                'doc_date' => date('Y-m-d'),
+                'ref_text' => $saleReceiptNo,
+                'notes' => 'بيع استبدال #' . $saleDocId,
+            ],
+            $saleStockLines,
+            (int) $user['id']
+        );
+        stock_post($pdo, $saleStockDocId, (int) $user['id']);
+        $pdo->prepare('UPDATE sale_docs SET stock_doc_id=? WHERE id=?')->execute([$saleStockDocId, $saleDocId]);
+
+        $pdo->prepare(
+            'UPDATE sale_lines sl
+               JOIN stock_doc_lines sdl ON sdl.doc_id=? AND sdl.line_no=sl.line_no
+               JOIN stock_moves sm ON sm.doc_id=? AND sm.doc_line_id=sdl.id
+                SET sl.unit_cost=sm.unit_cost
+              WHERE sl.doc_id=?'
+        )->execute([$saleStockDocId, $saleStockDocId, $saleDocId]);
+
+        if ($lateApproval) {
+            sale_consume_token($pdo, (int) $lateApproval['id'], $returnDocId);
+        }
+        if ($methodApproval) {
+            sale_consume_token($pdo, (int) $methodApproval['id'], $returnDocId);
+        }
+        if ($saleApproval['approval_id'] !== null) {
+            sale_consume_token($pdo, (int) $saleApproval['approval_id'], $saleDocId);
+        }
+
+        $events = [
+            [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $returnDocId,
+                'event_type' => 'exchange_completed',
+                'payload' => [
+                    'return_doc_id' => $returnDocId,
+                    'sale_doc_id' => $saleDocId,
+                    'return_receipt_no' => $returnReceiptNo,
+                    'sale_receipt_no' => $saleReceiptNo,
+                    'return_net' => $returnNet,
+                    'sale_net' => $saleNet,
+                    'difference' => $diff,
+                ],
+                'approved_by' => $lateApproval['approved_by'] ?? ($methodApproval['approved_by'] ?? $saleApproval['approved_by']),
+            ],
+        ];
+
+        if ($diff > 0 && $cashAmount > 0) {
+            $events[] = [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $saleDocId,
+                'event_type' => 'drawer_open',
+                'payload' => ['reason' => 'cash_sale', 'amount' => $cashAmount],
+                'approved_by' => null,
+            ];
+        } elseif ($diff < 0 && $cashAmount > 0) {
+            $events[] = [
+                'branch_id' => (int) $device['branch_id'],
+                'device_id' => $deviceId,
+                'session_id' => (int) $session['id'],
+                'user_id' => (int) $user['id'],
+                'doc_id' => $returnDocId,
+                'event_type' => 'drawer_open',
+                'payload' => ['reason' => 'cash_return', 'amount' => $cashAmount],
+                'approved_by' => null,
+            ];
+        }
+
+        sale_events_insert($pdo, $events);
+        $pdo->commit();
+
+        return [
+            'return_doc_id' => $returnDocId,
+            'return_receipt_no' => $returnReceiptNo,
+            'return_net' => $returnNet,
+            'sale_doc_id' => $saleDocId,
+            'sale_receipt_no' => $saleReceiptNo,
+            'sale_net' => $saleNet,
+            'difference' => $diff,
+            'change_due' => $changeDue,
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        if ($e instanceof PDOException && (int) ($e->errorInfo[1] ?? 0) === 1062) {
+            throw new SaleApiException('عملية الاستبدال دي اتسجلت قبل كده.', 409, 'duplicate');
+        }
+        throw $e;
+    }
 }

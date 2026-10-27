@@ -23,6 +23,11 @@ $contracts = [
     'approve'      => ['POST', 'pos:sell'],
     'drawer_open'  => ['POST', 'pos:drawer'],
     'cart_event'   => ['POST', 'pos:sell'],
+    // بريف ٢٤٢: المرتجع والاستبدال
+    'doc_find'       => ['GET',  'pos:return_ref'],
+    'return_ref'     => ['POST', 'pos:return_ref'],
+    'return_general' => ['POST', 'pos:return_general'],
+    'exchange'       => ['POST', ['pos:return_ref', 'pos:sell']],
 ];
 if (!isset($contracts[$part])) {
     api_fail('جزء غير معروف', 400, 'bad_request');
@@ -30,12 +35,18 @@ if (!isset($contracts[$part])) {
 [$method, $permission] = $contracts[$part];
 api_method($method);
 if ($permission !== null) {
-    api_require($permission);
+    if (is_array($permission)) {
+        foreach ($permission as $perm) {
+            api_require($perm);
+        }
+    } else {
+        api_require($permission);
+    }
 }
 if ($method === 'POST') {
     api_csrf();
 }
-if (in_array($part, ['session_open', 'finalize', 'hold'], true)) {
+if (in_array($part, ['session_open', 'finalize', 'hold', 'return_ref', 'return_general', 'exchange'], true)) {
     api_idempotent();
 }
 
@@ -101,6 +112,14 @@ try {
         case 'cart_event':
             sale_cart_event($pdo, $in, $user);
             api_ok(['recorded' => true]);
+        case 'doc_find':
+            api_ok(sale_doc_find($pdo, $in, $user));
+        case 'return_ref':
+            api_ok(sale_return_ref($pdo, $in, $user));
+        case 'return_general':
+            api_ok(sale_return_general($pdo, $in, $user));
+        case 'exchange':
+            api_ok(sale_exchange($pdo, $in, $user));
     }
 } catch (SaleApiException $e) {
     api_fail($e->getMessage(), $e->http, $e->apiCode);
