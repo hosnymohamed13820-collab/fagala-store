@@ -71,13 +71,14 @@ if (($_GET['action'] ?? '') === 'print') {
     <head>
         <meta charset="utf-8">
         <title>إذن تحويل بضاعة <?= e($docNoLabel) ?></title>
+        <link rel="stylesheet" href="assets/fagala.css">
         <style>
             @page { size: A4 portrait; margin: 15mm; }
             body {
-                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+                font-family: inherit;
                 direction: rtl;
-                color: #000;
-                background: #fff;
+                color: var(--text);
+                background: var(--surface);
                 margin: 0;
                 padding: 15px;
                 font-size: 13px;
@@ -85,12 +86,12 @@ if (($_GET['action'] ?? '') === 'print') {
             }
             .print-header {
                 text-align: center;
-                border-bottom: 2px solid #000;
+                border-bottom: 2px solid var(--text);
                 padding-bottom: 10px;
                 margin-bottom: 15px;
             }
             .print-header h1 { margin: 0 0 5px 0; font-size: 20px; }
-            .print-header h2 { margin: 0; font-size: 15px; font-weight: normal; color: #444; }
+            .print-header h2 { margin: 0; font-size: 15px; font-weight: normal; color: var(--ink-700); }
             .meta-grid {
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
@@ -98,7 +99,7 @@ if (($_GET['action'] ?? '') === 'print') {
                 margin-bottom: 15px;
                 font-size: 13px;
             }
-            .meta-item { display: flex; justify-content: space-between; border-bottom: 1px dotted #ccc; padding: 3px 0; }
+            .meta-item { display: flex; justify-content: space-between; border-bottom: 1px dotted var(--line); padding: 3px 0; }
             .meta-label { font-weight: bold; }
             table.items-table {
                 width: 100%;
@@ -106,11 +107,11 @@ if (($_GET['action'] ?? '') === 'print') {
                 margin-bottom: 20px;
             }
             table.items-table th, table.items-table td {
-                border: 1px solid #333;
+                border: 1px solid var(--line);
                 padding: 6px 8px;
                 font-size: 12px;
             }
-            table.items-table th { background: #f0f0f0; text-align: right; }
+            table.items-table th { background: var(--bg); text-align: right; }
             table.items-table td.num, table.items-table th.num { text-align: left; font-variant-numeric: tabular-nums; }
             .signatures {
                 margin-top: 30px;
@@ -119,19 +120,16 @@ if (($_GET['action'] ?? '') === 'print') {
                 text-align: center;
                 gap: 15px;
             }
-            .sig-box { border-top: 1px solid #000; padding-top: 5px; min-height: 50px; font-weight: bold; }
+            .sig-box { border-top: 1px solid var(--text); padding-top: 5px; min-height: 50px; font-weight: bold; }
             .no-print {
                 margin-bottom: 15px;
                 padding: 10px;
-                background: #eef2ff;
-                border: 1px solid #c7d2fe;
+                background: var(--surface-soft);
+                border: 1px solid var(--line-soft);
                 border-radius: 8px;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-            }
-            .btn-print {
-                background: #2563eb; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold;
             }
             @media print {
                 .no-print { display: none !important; }
@@ -142,7 +140,7 @@ if (($_GET['action'] ?? '') === 'print') {
     <body>
         <div class="no-print">
             <span>معاينة طباعة إذن تحويل المخزن</span>
-            <button class="btn-print" onclick="window.print()">طباعة الإذن</button>
+            <button class="btn btn-primary" onclick="window.print()">طباعة الإذن</button>
         </div>
 
         <div class="print-header">
@@ -160,12 +158,12 @@ if (($_GET['action'] ?? '') === 'print') {
         </div>
 
         <?php if (!empty($doc['notes'])): ?>
-            <div style="margin-bottom:12px;font-size:12px;color:#333;">
+            <div style="margin-bottom:12px;font-size:12px;color:var(--ink-700);">
                 <strong>ملاحظات:</strong> <?= e($doc['notes']) ?>
             </div>
         <?php endif; ?>
 
-        <table class="items-table">
+        <table class="ftable items-table">
             <thead>
                 <tr>
                     <th style="width:30px;">#</th>
@@ -195,7 +193,7 @@ if (($_GET['action'] ?? '') === 'print') {
                 <?php endforeach; ?>
             </tbody>
             <tfoot>
-                <tr style="font-weight:bold;background:#f9f9f9;">
+                <tr style="font-weight:bold;background:var(--bg);">
                     <td colspan="5" style="text-align:right;">الإجمالي</td>
                     <td class="num"><?= number_format($totPieces, 3) ?></td>
                     <td></td>
@@ -252,63 +250,6 @@ require_once __DIR__ . '/includes/header.php';
     padding: 10px 0;
     box-sizing: border-box;
 }
-.transfers-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-.transfers-tabs {
-    display: flex;
-    gap: 8px;
-    border-bottom: 2px solid var(--line);
-    margin-bottom: 16px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 4px;
-}
-.tab-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    border-radius: 8px 8px 0 0;
-    color: var(--ink-500);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 13.5px;
-    white-space: nowrap;
-    border-bottom: 3px solid transparent;
-    transition: all 0.2s ease;
-}
-.tab-link:hover {
-    color: var(--text);
-    background: var(--line-soft);
-}
-.tab-link.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
-    background: var(--surface);
-}
-.badge-count {
-    display: inline-block;
-    padding: 2px 6px;
-    font-size: 11px;
-    font-weight: bold;
-    border-radius: 10px;
-    background: var(--neg);
-    color: #fff;
-}
-.ftable-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    width: 100%;
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: var(--surface);
-}
 .scanner-box {
     background: var(--bg);
     border: 1.5px dashed var(--line);
@@ -326,16 +267,14 @@ require_once __DIR__ . '/includes/header.php';
     justify-content: center;
     padding: 10px;
 }
-.modal-card {
-    background: var(--surface);
-    border-radius: 14px;
+.modal-overlay > .fcard {
     max-width: 820px;
     width: 100%;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 12px 35px rgba(0,0,0,0.3);
     overflow: hidden;
+    padding: 0;
 }
 .modal-header {
     padding: 14px 18px;
@@ -360,8 +299,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 @media (max-width: 600px) {
     .meta-grid { grid-template-columns: 1fr; }
-    .transfers-header { flex-direction: column; align-items: stretch; }
-    .btn { width: 100%; justify-content: center; margin-bottom: 6px; }
+    .transfers-container .btn { width: 100%; justify-content: center; margin-bottom: 6px; }
 }
 </style>
 
@@ -369,23 +307,23 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- رسالة قفل المخزن إن وجد -->
     <?php if (!$stockEnabled): ?>
-        <div class="alert alert-warning" style="margin-bottom:16px;">
+        <div class="falert falert-warn" style="margin-bottom:16px;">
             <i class="ti ti-alert-triangle"></i>
             المخزن على الموقع مقفول حالياً بإعداد النظام (erp_stock_enabled = 0). يمكنك الاستعراض والاطلاع، لكن عمليات الإنشاء والإرسال والاستلام معطلة.
         </div>
     <?php endif; ?>
 
-    <div class="transfers-header">
+    <div class="fpage-head" style="margin-bottom:16px;">
         <div>
-            <h2 style="margin:0 0 4px 0;font-size:20px;display:flex;align-items:center;gap:8px;">
+            <h1 class="fpage-title" style="margin:0 0 4px 0;font-size:20px;display:flex;align-items:center;gap:8px;">
                 <i class="ti ti-transfer"></i> التحويلات بين المخازن
-            </h2>
-            <div style="font-size:12.5px;color:var(--ink-500);">
+            </h1>
+            <div class="fpage-sub">
                 مستند واحد بمراحل لنقل البضاعة وضبط الفروقات تلقائياً بدون تسجيل مرتين
             </div>
         </div>
 
-        <div>
+        <div class="fpage-actions">
             <?php if ($isOwner || can('transfers:create')): ?>
                 <button type="button" class="btn btn-primary" onclick="openNewTransferModal()">
                     <i class="ti ti-plus"></i> طلب تحويل جديد
@@ -395,32 +333,32 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- التابات -->
-    <div class="transfers-tabs">
-        <a href="?tab=out" class="tab-link <?= $tab === 'out' ? 'active' : '' ?>">
+    <nav class="ftabs" style="margin-bottom:16px;" aria-label="أقسام التحويلات">
+        <a href="?tab=out" class="ftab <?= $tab === 'out' ? 'is-active' : '' ?>">
             <i class="ti ti-arrow-up-right"></i> الصادر
         </a>
-        <a href="?tab=in" class="tab-link <?= $tab === 'in' ? 'active' : '' ?>">
+        <a href="?tab=in" class="ftab <?= $tab === 'in' ? 'is-active' : '' ?>">
             <i class="ti ti-arrow-down-left"></i> الوارد
         </a>
-        <a href="?tab=diffs" class="tab-link <?= $tab === 'diffs' ? 'active' : '' ?>">
+        <a href="?tab=diffs" class="ftab <?= $tab === 'diffs' ? 'is-active' : '' ?>">
             <i class="ti ti-alert-triangle"></i> فروق مفتوحة
             <?php if ($openDiffsCount > 0): ?>
-                <span class="badge-count"><?= $openDiffsCount ?></span>
+                <span class="fchip fchip-neg"><?= $openDiffsCount ?></span>
             <?php endif; ?>
         </a>
-        <a href="?tab=archive" class="tab-link <?= $tab === 'archive' ? 'active' : '' ?>">
+        <a href="?tab=archive" class="ftab <?= $tab === 'archive' ? 'is-active' : '' ?>">
             <i class="ti ti-inbox"></i> الأرشيف
         </a>
-    </div>
+    </nav>
 
     <!-- فلتر البحث السريع -->
-    <form method="get" class="card" style="padding:12px;margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <form method="get" class="ffilters" style="margin-bottom:16px;">
         <input type="hidden" name="tab" value="<?= e($tab) ?>">
 
         <?php if ($isOwner): ?>
-            <div style="display:flex;align-items:center;gap:6px;">
-                <label style="font-size:13px;font-weight:600;">الفرع:</label>
-                <select name="branch_id" style="padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;">
+            <div class="ffield">
+                <label class="flabel">الفرع:</label>
+                <select name="branch_id" class="fselect">
                     <option value="">كل المخازن</option>
                     <?php foreach ($supportedBranches as $sb): ?>
                         <option value="<?= $sb['id'] ?>" <?= (!empty($_GET['branch_id']) && (int)$_GET['branch_id'] === $sb['id']) ? 'selected' : '' ?>><?= e($sb['name']) ?></option>
@@ -429,14 +367,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <div style="display:flex;align-items:center;gap:6px;">
-            <label style="font-size:13px;font-weight:600;">من:</label>
-            <input type="date" name="from" value="<?= e($_GET['from'] ?? '') ?>" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;">
+        <div class="ffield">
+            <label class="flabel">من:</label>
+            <input type="date" name="from" value="<?= e($_GET['from'] ?? '') ?>" class="finput">
         </div>
 
-        <div style="display:flex;align-items:center;gap:6px;">
-            <label style="font-size:13px;font-weight:600;">إلى:</label>
-            <input type="date" name="to" value="<?= e($_GET['to'] ?? '') ?>" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;">
+        <div class="ffield">
+            <label class="flabel">إلى:</label>
+            <input type="date" name="to" value="<?= e($_GET['to'] ?? '') ?>" class="finput">
         </div>
 
         <button type="submit" class="btn btn-sm btn-secondary"><i class="ti ti-filter"></i> تصفية</button>
@@ -449,7 +387,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if ($tab === 'diffs'): ?>
         <!-- جدول الفروقات المفتوحة (الزيادات المعلقة) -->
         <?php if (empty($openDiffsList)): ?>
-            <div class="card" style="padding:30px;text-align:center;color:var(--ink-500);">
+            <div class="fcard" style="padding:30px;text-align:center;color:var(--ink-500);margin-bottom:16px;">
                 <i class="ti ti-check" style="font-size:32px;color:var(--pos);display:block;margin-bottom:8px;"></i>
                 لا توجد فروق زيادة معلقة حالياً. جميع التحويلات مغلقة أو لا تحتوي على زيادات.
             </div>
@@ -481,7 +419,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td class="num" style="color:var(--pos);font-weight:700;"><?= number_format((float)$df['qty'], 3) ?></td>
                                 <td>
                                     <?php if (transfers_can_resolve()): ?>
-                                        <select id="diff_source_<?= (int)$df['id'] ?>" style="padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;">
+                                        <select id="diff_source_<?= (int)$df['id'] ?>" class="fselect" style="min-width:160px;">
                                             <option value="">-- اختر المخزن المصدر --</option>
                                             <?php foreach ($supportedBranches as $sb):
                                                 if ($sb['id'] === (int)$df['counter_branch_id']) continue; // المستلم مايبقاش مصدر زيادة نفسه
@@ -512,7 +450,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php else: ?>
         <!-- جدول التحويلات (صادر، وارد، أرشيف) -->
         <?php if (empty($docs)): ?>
-            <div class="card" style="padding:30px;text-align:center;color:var(--ink-500);">
+            <div class="fcard" style="padding:30px;text-align:center;color:var(--ink-500);">
                 لا توجد تحويلات في هذا القسم.
             </div>
         <?php else: ?>
@@ -610,7 +548,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- مودال طلب تحويل جديد -->
 <div id="newTransferModal" class="modal-overlay">
-    <div class="modal-card">
+    <div class="fcard modal-card">
         <div class="modal-header">
             <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:6px;">
                 <i class="ti ti-plus"></i> طلب تحويل جديد
@@ -622,20 +560,20 @@ require_once __DIR__ . '/includes/header.php';
                 <div>
                     <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">المخزن الراسل:</label>
                     <?php if ($isOwner): ?>
-                        <select id="new_from_branch" onchange="onSenderBranchChanged()" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;">
+                        <select id="new_from_branch" class="fselect" onchange="onSenderBranchChanged()" style="width:100%;">
                             <?php foreach ($supportedBranches as $sb): ?>
                                 <option value="<?= $sb['id'] ?>"><?= e($sb['name']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     <?php else: ?>
                         <input type="hidden" id="new_from_branch" value="<?= (int)$userBranchId ?>">
-                        <input type="text" readonly value="<?= e($branchNamesMap[$userBranchId] ?? ('مخزن ' . $userBranchId)) ?>" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);font-family:inherit;">
+                        <input type="text" readonly class="finput" value="<?= e($branchNamesMap[$userBranchId] ?? ('مخزن ' . $userBranchId)) ?>" style="width:100%;">
                     <?php endif; ?>
                 </div>
 
                 <div>
                     <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">المخزن المستلم:</label>
-                    <select id="new_to_branch" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);font-family:inherit;">
+                    <select id="new_to_branch" class="fselect" style="width:100%;">
                         <?php foreach ($supportedBranches as $sb):
                             if (!$isOwner && $sb['id'] === $userBranchId) continue;
                         ?>
@@ -651,7 +589,7 @@ require_once __DIR__ . '/includes/header.php';
                     <i class="ti ti-scan"></i> مسح باركود الصنف (أو كتابة الكود):
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <input type="text" id="scan_code_input" placeholder="امسح الباركود أو اكتب الكود ثم اضغط Enter..." style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid var(--line);border-radius:6px;font-family:inherit;font-size:14px;" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupAndAddCode();}">
+                    <input type="text" id="scan_code_input" class="finput" placeholder="امسح الباركود أو اكتب الكود ثم اضغط Enter..." style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupAndAddCode();}">
                     <button type="button" class="btn btn-secondary" onclick="lookupAndAddCode()"><i class="ti ti-search"></i> بحث وإضافة</button>
                 </div>
                 <div id="scan_msg" style="font-size:12px;color:var(--neg);margin-top:6px;display:none;"></div>
@@ -682,7 +620,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <div style="margin-top:14px;">
                 <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">ملاحظات الإذن:</label>
-                <textarea id="new_transfer_notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;font-family:inherit;box-sizing:border-box;" placeholder="أي ملاحظات تخص الشحنة أو سبب التحويل..."></textarea>
+                <textarea id="new_transfer_notes" class="ftextarea" rows="2" style="width:100%;box-sizing:border-box;" placeholder="أي ملاحظات تخص الشحنة أو سبب التحويل..."></textarea>
             </div>
         </div>
         <div class="modal-footer">
@@ -694,7 +632,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- مودال تفاصيل التحويل / الإرسال / التجهيز -->
 <div id="viewTransferModal" class="modal-overlay">
-    <div class="modal-card">
+    <div class="fcard modal-card">
         <div class="modal-header">
             <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:6px;" id="view_modal_title">
                 <i class="ti ti-file-invoice"></i> تفاصيل التحويل
@@ -712,7 +650,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- مودال العد والاستلام -->
 <div id="receiveModal" class="modal-overlay">
-    <div class="modal-card">
+    <div class="fcard modal-card">
         <div class="modal-header">
             <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:6px;" id="receive_modal_title">
                 <i class="ti ti-check"></i> عد واستلام الشحنة
@@ -890,12 +828,12 @@ function renderLinesTable() {
                 <td>${esc(l.name || 'صنف ' + l.item_id)}</td>
                 <td class="num" style="color:var(--ink-500);">${esc(l.balance)}</td>
                 <td class="num">
-                    <input type="number" step="any" min="0" value="${esc(l.qty_units)}" oninput="updateLineQty(${idx}, this.value)" style="width:75px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;text-align:left;font-family:inherit;">
+                    <input type="number" step="any" min="0" value="${esc(l.qty_units)}" oninput="updateLineQty(${idx}, this.value)" class="finput finput-sm" style="width:75px;text-align:left;">
                 </td>
                 <td class="num">${esc(l.unit_factor)}</td>
                 <td class="num" id="line_pieces_${idx}" style="font-weight:bold;">${l.qty_pieces.toFixed(3)}</td>
                 <td>
-                    <input type="text" value="${esc(l.notes)}" placeholder="ملاحظة..." oninput="updateLineNotes(${idx}, this.value)" style="width:100%;padding:4px;border:1px solid var(--line);border-radius:4px;font-family:inherit;font-size:12px;">
+                    <input type="text" value="${esc(l.notes)}" placeholder="ملاحظة..." oninput="updateLineNotes(${idx}, this.value)" class="finput finput-sm" style="width:100%;">
                 </td>
                 <td style="text-align:center;">
                     <button type="button" onclick="removeLine(${idx})" style="background:none;border:none;color:var(--neg);cursor:pointer;font-size:16px;">&times;</button>
@@ -1121,7 +1059,8 @@ async function openReceiveModal(docId) {
                         <input type="number" step="any" min="0" value="${counted}" id="rx_input_${l.id}"
                                onblur="saveCount(${l.id})"
                                oninput="calcDiff(${l.id})"
-                               style="width:90px;padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;text-align:left;font-family:inherit;font-weight:bold;">
+                               class="finput finput-sm"
+                               style="width:90px;text-align:left;font-weight:bold;">
                     </td>
                     <td class="num" id="rx_diff_${l.id}" style="font-weight:bold;">—</td>
                     <td style="text-align:center;" id="rx_status_${l.id}">
@@ -1135,7 +1074,7 @@ async function openReceiveModal(docId) {
         lines.forEach(l => calcDiff(l.id));
 
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" class="alert alert-danger">${esc(e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6"><div class="falert falert-neg">${esc(e.message)}</div></td></tr>`;
     }
 }
 

@@ -104,55 +104,14 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-.prob-card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 16px 20px;
-    margin-bottom: 16px;
-    box-shadow: var(--shadow-sm);
-}
-.prob-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    background: var(--surface);
-}
-.prob-table th, .prob-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--line-soft);
-    text-align: right;
-    vertical-align: middle;
-}
-.prob-table th {
-    background: var(--line-soft);
-    color: var(--ink-700);
-    font-weight: 600;
-}
-.undist-note-input {
-    width: 100%;
-    min-width: 100px;
-    padding: 5px 8px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-sm);
-    font-size: 12.5px;
-    background: var(--surface);
-    color: var(--text);
-    box-sizing: border-box;
-    font-family: inherit;
-}
-.undist-note-input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-soft);
-}
+/* الشكل كله من المكتبة الموحّدة — اللي هنا النوافذ المنبثقة وأعمدة الجدول بس */
 .save-ind {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 16px;
     margin-right: 4px;
-    font-size: 13px;
+    font-size: var(--fs-base);
 }
 .filter-btn-group {
     display: flex;
@@ -160,27 +119,6 @@ require_once __DIR__ . '/includes/header.php';
     gap: 8px;
     margin-bottom: 12px;
     flex-wrap: wrap;
-}
-.filter-pill {
-    padding: 6px 14px;
-    border-radius: var(--r);
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--text);
-    cursor: pointer;
-    font-size: 12.5px;
-    font-weight: 600;
-    font-family: inherit;
-    transition: all 0.15s;
-}
-.filter-pill:hover {
-    border-color: var(--accent);
-    color: var(--accent-text);
-}
-.filter-pill.active {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
 }
 .inv-pill-btn {
     padding: 1px 6px;
@@ -208,7 +146,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 .modal {
     background: var(--surface);
-    border-radius: var(--r);
+    border-radius: var(--r-lg);
     width: 100%;
     padding: 20px;
     box-shadow: var(--shadow);
@@ -219,32 +157,32 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="content-container">
 
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-        <h2 style="font-size:18px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;">
-            <i class="ti ti-package-export"></i> الأصناف غير الموزّعة
-        </h2>
+    <div class="fpage-head">
+        <div>
+            <h1 class="fpage-title"><i class="ti ti-package-export"></i> الأصناف غير الموزّعة</h1>
+        </div>
     </div>
 
     <!-- شريط اختيار وتحديد الفترة -->
-    <div class="prob-card">
-        <form id="periodForm" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-                <label style="font-size:12px;font-weight:600;color:var(--ink-700);">من</label>
-                <input type="date" id="dateFrom" name="from" value="<?= htmlspecialchars($defaultFrom) ?>" required style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font-family:inherit;font-size:13px;background:var(--surface);color:var(--text);">
+    <section class="fcard">
+        <form id="periodForm" class="ffilters">
+            <div class="ffield">
+                <label for="dateFrom">من</label>
+                <input class="finput" type="date" id="dateFrom" name="from" value="<?= e($defaultFrom) ?>" required>
             </div>
-            <div style="display:flex;flex-direction:column;gap:4px;">
-                <label style="font-size:12px;font-weight:600;color:var(--ink-700);">إلى</label>
-                <input type="date" id="dateTo" name="to" value="<?= htmlspecialchars($defaultTo) ?>" required style="padding:6px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font-family:inherit;font-size:13px;background:var(--surface);color:var(--text);">
+            <div class="ffield">
+                <label for="dateTo">إلى</label>
+                <input class="finput" type="date" id="dateTo" name="to" value="<?= e($defaultTo) ?>" required>
             </div>
             <button type="submit" class="btn btn-primary" id="btnSubmitPeriod">
                 <i class="ti ti-eye"></i> عرض
             </button>
         </form>
-    </div>
+    </section>
 
 <?php if (!$hasState): ?>
     <!-- رسالة عند عدم حفظ أي فترة مسبقاً (ممنوع إظهار أي جدول هنا) -->
-    <div class="prob-card" style="text-align:center;padding:48px 20px;color:var(--ink-500);font-size:15px;">
+    <div class="fcard" style="text-align:center;padding:48px 20px;color:var(--ink-500);font-size:15px;">
         <i class="ti ti-calendar" style="font-size:32px;display:block;margin-bottom:10px;color:var(--ink-400);"></i>
         اختار الفترة ودوس عرض
     </div>
@@ -259,14 +197,14 @@ require_once __DIR__ . '/includes/header.php';
     <!-- شريط الفلترة والعدّاد فوق الجدول -->
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div class="filter-btn-group" style="margin-bottom:0;">
-            <button type="button" class="filter-pill" id="toggleDistributedBtn" onclick="toggleFilter('hideDistributed')">
+            <button type="button" class="ftab" id="toggleDistributedBtn" onclick="toggleFilter('hideDistributed')">
                 اخفي اللي اتوزّع (<?= $zeroDiffCount ?>)
             </button>
-            <button type="button" class="filter-pill" id="toggleMismatchBtn" onclick="toggleFilter('onlyMismatch')">
+            <button type="button" class="ftab" id="toggleMismatchBtn" onclick="toggleFilter('onlyMismatch')">
                 الرصيد مش مساوي (<?= $mismatchCount ?>)
             </button>
             <?php if (!empty($purchaseInvoices)): ?>
-            <button type="button" class="filter-pill" id="invListBtn" onclick="openInvListModal()">
+            <button type="button" class="ftab" id="invListBtn" onclick="openInvListModal()">
                 <i class="ti ti-file-invoice"></i> <span id="invListBtnLbl">إجمالي الفواتير (<?= count($purchaseInvoices) ?>)</span>
             </button>
             <?php endif; ?>
@@ -277,17 +215,16 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- جدول الأصناف -->
-    <div class="prob-card" style="padding:0;overflow:hidden;">
-        <div style="overflow-x:auto;">
-            <table class="prob-table" id="undistTable">
+    <div class="ftable-wrap">
+            <table class="ftable" id="undistTable">
                 <thead>
                     <tr>
                         <th>اسم الصنف</th>
-                        <th style="width:75px;text-align:center;">المشترى</th>
-                        <th style="width:85px;text-align:center;">مردود للمورد</th>
-                        <th style="width:95px;text-align:center;">موزّع على الفروع</th>
-                        <th style="width:75px;text-align:center;">الفرق</th>
-                        <th style="width:90px;text-align:center;">رصيد الإدارة</th>
+                        <th class="num" style="width:75px;">المشترى</th>
+                        <th class="num" style="width:85px;">مردود للمورد</th>
+                        <th class="num" style="width:95px;">موزّع على الفروع</th>
+                        <th class="num" style="width:75px;">الفرق</th>
+                        <th class="num" style="width:90px;">رصيد الإدارة</th>
                         <th style="width:140px;" data-xt-skip>ملاحظات</th>
                         <th style="width:110px;" data-xt-skip>فواتير الشراء</th>
                         <th style="width:220px;" data-xt-skip>فواتير المردود</th>
@@ -296,7 +233,7 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                 <?php if (empty($items)): ?>
                     <tr>
-                        <td colspan="9" style="text-align:center;padding:32px;color:var(--ink-500);">
+                        <td colspan="9" class="fg-empty">
                             مفيش فواتير شراء أو مردود للإدارة في الفترة دي.
                         </td>
                     </tr>
@@ -319,13 +256,13 @@ require_once __DIR__ . '/includes/header.php';
                             </div>
                             <?php endif; ?>
                         </td>
-                        <td style="text-align:center;"><?= ($it['qty_purchased'] + 0) ?></td>
-                        <td style="text-align:center;"><?= ($it['qty_ret_vendor'] + 0) ?></td>
-                        <td style="text-align:center;"><?= ($it['qty_dist_branch'] + 0) ?></td>
-                        <td style="text-align:center;font-weight:bold;color:<?= $diffColor ?>;">
+                        <td class="num"><?= ($it['qty_purchased'] + 0) ?></td>
+                        <td class="num"><?= ($it['qty_ret_vendor'] + 0) ?></td>
+                        <td class="num"><?= ($it['qty_dist_branch'] + 0) ?></td>
+                        <td class="num" style="font-weight:bold;color:<?= $diffColor ?>;">
                             <?= ($diffVal + 0) ?>
                         </td>
-                        <td style="text-align:center;">
+                        <td class="num">
                         <?php if ($it['item_id'] === null): ?>
                             <span style="color:var(--ink-400);">—</span>
                         <?php elseif ($it['is_shared']): ?>
@@ -348,7 +285,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td>
                             <div style="display:flex;align-items:center;">
                                 <input type="text"
-                                       class="undist-note-input"
+                                       class="finput finput-sm"
                                        value="<?= htmlspecialchars($it['note']) ?>"
                                        data-saved="<?= htmlspecialchars($it['note']) ?>"
                                        title="<?= htmlspecialchars($it['note']) ?>"
@@ -395,7 +332,6 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endif; ?>
                 </tbody>
             </table>
-        </div>
     </div>
 
     <!-- نافذة تفاصيل الفاتورة -->
@@ -417,14 +353,14 @@ require_once __DIR__ . '/includes/header.php';
                 <div><strong>التاريخ:</strong> <span id="modalDate">-</span></div>
             </div>
             <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);" id="modalTableWrap">
-                <table class="prob-table" style="margin-top:0;">
+                <table class="ftable" style="margin-top:0;">
                     <thead style="position:sticky;top:0;z-index:2;">
                         <tr>
-                            <th style="width:45px;text-align:center;">#</th>
+                            <th class="num" style="width:45px;">#</th>
                             <th style="width:130px;">كود الصنف</th>
                             <th>اسم الصنف</th>
-                            <th style="width:75px;text-align:center;">الكمية</th>
-                            <th style="width:85px;text-align:center;">السعر</th>
+                            <th class="num" style="width:75px;">الكمية</th>
+                            <th class="num" style="width:85px;">السعر</th>
                         </tr>
                     </thead>
                     <tbody id="modalLinesBody">
@@ -452,13 +388,13 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
             </div>
             <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);">
-                <table class="prob-table" style="margin-top:0;">
+                <table class="ftable" style="margin-top:0;">
                     <thead style="position:sticky;top:0;z-index:2;">
                         <tr>
                             <th style="width:110px;">رقم الفاتورة</th>
                             <th>المورد</th>
-                            <th style="width:105px;text-align:center;">التاريخ</th>
-                            <th style="width:90px;text-align:center;">عدد الأصناف</th>
+                            <th class="num" style="width:105px;">التاريخ</th>
+                            <th class="num" style="width:90px;">عدد الأصناف</th>
                         </tr>
                     </thead>
                     <tbody id="invListBody">
@@ -477,8 +413,8 @@ require_once __DIR__ . '/includes/header.php';
                                 <i class="ti ti-file-invoice"></i> <?= htmlspecialchars($pi['doc_no']) ?>
                             </td>
                             <td><?= htmlspecialchars($pi['supplier_name'] !== '' ? $pi['supplier_name'] : '—') ?></td>
-                            <td style="text-align:center;"><?= htmlspecialchars(substr($pi['invoice_date'], 0, 10)) ?></td>
-                            <td style="text-align:center;font-weight:700;"><?= (int) $pi['count'] ?></td>
+                            <td class="num"><?= htmlspecialchars(substr($pi['invoice_date'], 0, 10)) ?></td>
+                            <td class="num" style="font-weight:700;"><?= (int) $pi['count'] ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>

@@ -96,11 +96,12 @@ if ($error !== '') {
     echo '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
         . '<title>تعذّرت الطباعة</title>'
-        . '<style>body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:#fff;color:#000;'
+        . '<link rel="stylesheet" href="assets/fagala.css">'
+        . '<style>body{font-family:inherit;background:var(--surface);color:var(--text);'
         . 'text-align:center;padding:60px 18px;margin:0;}'
         . 'h2{font-size:20px;margin:0 0 10px;}p{font-size:15px;margin:0 0 22px;}'
-        . 'a{display:inline-block;border:1.5px solid #000;border-radius:8px;padding:9px 20px;'
-        . 'color:#000;text-decoration:none;font-weight:600;}</style></head><body>'
+        . 'a{display:inline-block;border:1.5px solid var(--line);border-radius:8px;padding:9px 20px;'
+        . 'color:var(--text);text-decoration:none;font-weight:600;}</style></head><body>'
         . '<h2>تعذّرت الطباعة</h2><p>' . e($error) . '</p>'
         . '<a href="labels.php">رجوع لليبلز</a></body></html>';
     exit;
@@ -114,28 +115,29 @@ $chunks = array_chunk($labels, $cols);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ليبلز — <?= count($labels) ?> ليبل</title>
+<link rel="stylesheet" href="assets/fagala.css">
 <style>
     /* 🔴 المقاس بالمليمتر: ده اللي بيخلي الطابعة الحرارية تطبع بمقاسها الحقيقي */
     @page { size: <?= $sheetW ?>mm <?= $h ?>mm; margin: 0; }
 
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-    body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; }
+    html, body { margin: 0; padding: 0; background: var(--surface); color: var(--text); }
+    body { font-family: inherit; }
 
     .bar {
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        flex-wrap: wrap; padding: 10px 14px; border-bottom: 2px solid #000;
-        background: #fff; position: sticky; top: 0; z-index: 10;
+        flex-wrap: wrap; padding: 10px 14px; border-bottom: 2px solid var(--text);
+        background: var(--surface); position: sticky; top: 0; z-index: 10;
     }
     .bar .ttl { font-size: 15px; font-weight: 700; }
     .bar .sub { font-size: 12px; }
     .bar .acts { display: flex; gap: 8px; align-items: center; }
     .bar button, .bar a {
         font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
-        border: 1.5px solid #000; border-radius: 8px; padding: 8px 18px;
-        background: #000; color: #fff; text-decoration: none;
+        border: 1.5px solid var(--text); border-radius: 8px; padding: 8px 18px;
+        background: var(--fill-strong); color: var(--fill-strong-fg); text-decoration: none;
     }
-    .bar a { background: #fff; color: #000; }
+    .bar a { background: var(--surface); color: var(--text); }
     .bar .warn { font-size: 12px; font-weight: 700; }
 
     .sheet { padding: 10px 0 30px; }
@@ -143,7 +145,7 @@ $chunks = array_chunk($labels, $cols);
 
     .lbl {
         display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-        overflow: hidden; background: #fff; color: #000; text-align: center;
+        overflow: hidden; background: var(--surface); color: var(--text); text-align: center;
         font-weight: 700; line-height: 1.05;
     }
     .lbl .shop { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -161,8 +163,8 @@ $chunks = array_chunk($labels, $cols);
                font-weight: 600; max-width: 100%; overflow: hidden; white-space: nowrap; }
 
     @media screen {
-        body { background: #fff; }
-        .lbl { outline: 1px dashed #000; }
+        body { background: var(--surface); }
+        .lbl { outline: 1px dashed var(--line); }
         .sheet { max-width: 100%; overflow-x: auto; }
     }
 

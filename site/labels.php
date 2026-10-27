@@ -22,41 +22,27 @@ $active_module = 'labels';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* الصفحة دي مالهاش كلاس .btn خاص — الموحّد في fagala.css (بريف ٤٣) */
+    /* الشكل كله من المكتبة الموحّدة — اللي هنا شبكة الإعدادات وأعمدة الجدول بس */
     .lbx-settings {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-        gap: 10px;
+        gap: var(--sp-3);
         align-items: end;
-        padding: 12px;
+        padding: var(--sp-3);
         border: 1px solid var(--line);
         border-radius: var(--r-md);
         background: var(--bg);
         margin-bottom: 14px;
     }
-    .lbx-fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-    .lbx-fld > span { font-size: var(--fs-xs); color: var(--ink-600); font-weight: 600; }
-    .lbx-fld input[type=number], .lbx-fld input[type=text] {
-        width: 100%; padding: 7px 10px; border: 1.5px solid var(--line);
-        border-radius: var(--r-sm); background: var(--surface); color: var(--text);
-        font-family: inherit; font-size: var(--fs-sm);
-    }
-    .lbx-fld input:focus { outline: none; border-color: var(--accent); }
-    .lbx-fld input:disabled { opacity: 0.65; cursor: not-allowed; }
-    .lbx-fld.lbx-wide { grid-column: span 2; }
+    .lbx-wide { grid-column: span 2; }
     .lbx-chk { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm);
                color: var(--ink-700); font-weight: 600; padding-bottom: 8px; }
-    .lbx-chk input { width: 17px; height: 17px; accent-color: var(--accent); }
+    .lbx-chk-box { width: 17px; height: 17px; accent-color: var(--accent); }
     .lbx-set-status { font-size: var(--fs-xs); color: var(--ink-500); align-self: center; }
 
     .lbx-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 6px;
                flex-wrap: wrap; position: relative; }
-    .lbx-bar input.main {
-        flex: 1; min-width: 200px; padding: 11px 14px; border: 1.5px solid var(--line);
-        border-radius: var(--r-md); background: var(--surface); color: var(--text);
-        font-size: var(--fs-md); font-family: inherit;
-    }
-    .lbx-bar input.main:focus { outline: none; border-color: var(--accent-text); }
+    .lbx-bar .finput { flex: 1; min-width: 200px; }
     .lbx-sug {
         position: absolute; top: 100%; right: 0; left: 0; z-index: var(--z-dropdown);
         background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
@@ -82,11 +68,7 @@ require_once __DIR__ . '/includes/header.php';
 
     .lbx-code { direction: ltr; unicode-bidi: embed; font-variant-numeric: tabular-nums;
                 color: var(--ink-600); white-space: nowrap; }
-    .lbx-copies { width: 76px; padding: 6px 8px; border: 1.5px solid var(--line);
-                  border-radius: var(--r-sm); background: var(--surface); color: var(--text);
-                  font-family: inherit; font-size: var(--fs-sm); text-align: center;
-                  font-variant-numeric: tabular-nums; }
-    .lbx-copies:focus { outline: none; border-color: var(--accent); }
+    .lbx-copies { width: 76px; }
     .lbx-del { background: none; border: none; color: var(--neg); cursor: pointer;
                font-size: 17px; line-height: 1; padding: 4px 6px; font-family: inherit; }
     .lbx-del:hover { color: var(--neg); opacity: 0.7; }
@@ -96,42 +78,43 @@ require_once __DIR__ . '/includes/header.php';
     .lbx-total { font-size: var(--fs-sm); color: var(--ink-600); font-weight: 600; }
     .lbx-total b { color: var(--text); font-variant-numeric: tabular-nums; }
     .lbx-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .lbx-empty { text-align: center; color: var(--ink-400); padding: 34px 16px; font-size: var(--fs-md); }
     .lbx-hint { font-size: var(--fs-xs); color: var(--ink-500); margin: -6px 0 12px; }
     @media (max-width: 520px) {
-        .lbx-fld.lbx-wide { grid-column: span 2; }
+        .lbx-wide { grid-column: span 2; }
         .lbx-actions { width: 100%; }
         .lbx-actions .btn { flex: 1; justify-content: center; }
     }
 </style>
 
-<div class="card">
-    <div class="section-title"><i class="ti ti-printer"></i> طباعة ليبلز الباركود والسعر</div>
+<section class="fcard">
+    <div class="fcard-head">
+        <h2 class="fcard-title"><i class="ti ti-printer"></i> طباعة ليبلز الباركود والسعر</h2>
+    </div>
 
     <!-- ===== إعدادات الليبل (بتتحفظ في settings للمالك) ===== -->
     <div class="lbx-settings">
-        <label class="lbx-fld">
-            <span>عرض الليبل (مم)</span>
-            <input type="number" id="setW" min="20" max="120" step="0.5" value="<?= e((string) $lb['w_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
-        </label>
-        <label class="lbx-fld">
-            <span>ارتفاع الليبل (مم)</span>
-            <input type="number" id="setH" min="10" max="80" step="0.5" value="<?= e((string) $lb['h_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
-        </label>
-        <label class="lbx-fld">
-            <span>عدد الأعمدة</span>
-            <input type="number" id="setCols" min="1" max="5" step="1" value="<?= (int) $lb['cols'] ?>" <?= $isOwner ? '' : 'disabled' ?>>
-        </label>
-        <label class="lbx-fld">
-            <span>المسافة بين الليبلز (مم)</span>
-            <input type="number" id="setGap" min="0" max="10" step="0.5" value="<?= e((string) $lb['gap_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
-        </label>
-        <label class="lbx-fld lbx-wide">
-            <span>اسم المحل في الليبل</span>
-            <input type="text" id="setShop" maxlength="40" value="<?= e($lb['shop_name']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
-        </label>
+        <div class="ffield">
+            <label for="setW">عرض الليبل (مم)</label>
+            <input class="finput finput-sm num" type="number" id="setW" min="20" max="120" step="0.5" value="<?= e((string) $lb['w_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
+        <div class="ffield">
+            <label for="setH">ارتفاع الليبل (مم)</label>
+            <input class="finput finput-sm num" type="number" id="setH" min="10" max="80" step="0.5" value="<?= e((string) $lb['h_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
+        <div class="ffield">
+            <label for="setCols">عدد الأعمدة</label>
+            <input class="finput finput-sm num" type="number" id="setCols" min="1" max="5" step="1" value="<?= (int) $lb['cols'] ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
+        <div class="ffield">
+            <label for="setGap">المسافة بين الليبلز (مم)</label>
+            <input class="finput finput-sm num" type="number" id="setGap" min="0" max="10" step="0.5" value="<?= e((string) $lb['gap_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
+        <div class="ffield lbx-wide">
+            <label for="setShop">اسم المحل في الليبل</label>
+            <input class="finput finput-sm" type="text" id="setShop" maxlength="40" value="<?= e($lb['shop_name']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
         <label class="lbx-chk">
-            <input type="checkbox" id="setPrice" <?= $lb['show_price'] ? 'checked' : '' ?> <?= $isOwner ? '' : 'disabled' ?>>
+            <input class="lbx-chk-box" type="checkbox" id="setPrice" <?= $lb['show_price'] ? 'checked' : '' ?> <?= $isOwner ? '' : 'disabled' ?>>
             اطبع السعر
         </label>
         <span class="lbx-set-status" id="setStatus"></span>
@@ -142,7 +125,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- ===== البحث والسكانر ===== -->
     <div class="lbx-bar">
-        <input type="text" class="main" id="q" autocomplete="off"
+        <input type="text" class="finput" id="q" autocomplete="off"
                placeholder="امسح باركود، أو اكتب كود/اسم الصنف…"
                enterkeyhint="search"
                oninput="lbxType()"
@@ -188,7 +171,7 @@ require_once __DIR__ . '/includes/header.php';
             </button>
         </span>
     </div>
-</div>
+</section>
 
 <script src="assets/barcode_scanner.js?v=9"></script>
 <script>
@@ -322,7 +305,7 @@ function lbxPush(row) {
 function lbxRender() {
     const body = document.getElementById('body');
     if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="6" class="lbx-empty">' +
+        body.innerHTML = '<tr><td colspan="6" class="fg-empty">' +
             'امسح باركود، أو اكتب اسم صنف واختاره من القايمة — وكل صنف بتحدد له كام ليبل.' +
             '</td></tr>';
     } else {
@@ -338,7 +321,7 @@ function lbxRender() {
                 '<td class="lbx-code">' + lbxEsc(r.code) + '</td>' +
                 '<td class="name" title="' + lbxEsc(r.name) + '">' + chip + lbxEsc(r.name) + '</td>' +
                 '<td class="num">' + lbxMoney(r.price) + '</td>' +
-                '<td class="num"><input type="number" class="lbx-copies" data-copy="' + i + '"' +
+                '<td class="num"><input type="number" class="finput finput-sm num lbx-copies" data-copy="' + i + '"' +
                     ' min="1" max="' + LBX.max + '" step="1" value="' + r.copies + '"' +
                     ' aria-label="عدد ليبلز ' + lbxEsc(r.name) + '"></td>' +
                 '<td><button type="button" class="lbx-del" data-del="' + i + '" title="شيل" aria-label="شيل">' +

@@ -179,38 +179,7 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-.btn { padding: 8px 16px; font-size: 13.5px; font-weight: 600; border: 1px solid transparent; }
-/* لازم يفضل هنا: .btn اللي فوقه بييجي بعد fagala.css فبيغلب .btn-sm بتاعها */
-.btn-sm {
-    padding: 4px 10px;
-    font-size: 12px;
-}
-/* الإطار: .btn اللي فوق بيحط border transparent فبيغلب إطار الزرار المخطّط اللي في fagala.css */
-.btn.btn-outline { border-color: var(--line); }
-.status-pill {
-    display: inline-block;
-    padding: 3px 8px;
-    border-radius: var(--r-sm);
-    font-size: 11.5px;
-    font-weight: 600;
-}
-.pill-sent { background: var(--ink-200); color: var(--ink-700); }
-.pill-receiving { background: var(--warn-soft); color: var(--warn); }
-.pill-received { background: var(--pos-soft); color: var(--pos); }
-.pill-approved { background: var(--pos-fill); color: #fff; }
-
-.receiving-card {
-    margin-bottom: 14px;
-}
-.clickable-card {
-    cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
-}
-.clickable-card:hover {
-    border-color: var(--accent);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.07);
-}
+/* الشكل كله من المكتبة الموحّدة — اللي هنا كروت الاستلام وشبكة المسح بس */
 .rc-header {
     display: flex;
     justify-content: space-between;
@@ -234,7 +203,7 @@ require_once __DIR__ . '/includes/header.php';
     border-radius: var(--r-sm);
     text-decoration: none;
     color: var(--text);
-    font-size: 13px;
+    font-size: var(--fs-base);
     transition: all 0.15s ease;
 }
 .branch-link-btn:hover {
@@ -242,61 +211,18 @@ require_once __DIR__ . '/includes/header.php';
     background: var(--accent-soft);
     color: var(--accent-text);
 }
-.rc-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 13px;
-}
-.rc-table th, .rc-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--line-soft);
-    text-align: right;
-    vertical-align: middle;
-}
-.rc-table th {
-    background: var(--line-soft);
-    color: var(--ink-700);
-    font-weight: 600;
-}
-.scan-box-wrap {
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: var(--r);
-    padding: 16px;
-    margin-bottom: 16px;
-}
 /* ==================================================================
    الموبايل: زرار الكاميرا كان بيطلع برّه مربع المسح.
    السبب: الـinput جوه flex عنده min-width:auto — مابيصغّرش عن عرضه
    الافتراضي، فالزرار بيتزقّ لبرّه الحدود بدل ما الخانة تصغّر.
    الحل: (١) نسمح للخانات تصغّر، (٢) على الموبايل كل خانة تاخد سطر.
-   الـ!important ضروري لأن الأبعاد متكتوبة inline في الـHTML.
    ================================================================== */
-#barcodeScanForm input { min-width: 0; }
+#barcodeScanForm .finput { min-width: 0; }
 
 @media (max-width: 560px) {
     #barcodeScanForm > div { flex: 1 1 100% !important; min-width: 0 !important; }
     #barcodeScanForm #qtyInput { width: 100% !important; }
     #barcodeScanForm #addBtn  { width: 100%; }
-}
-.scan-alert {
-    padding: 10px 14px;
-    border-radius: var(--r-sm);
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    display: none;
-}
-.scan-alert-error {
-    background: var(--neg-soft);
-    color: var(--neg);
-    border: 1px solid var(--neg);
-}
-.scan-alert-success {
-    background: var(--pos-soft);
-    color: var(--pos);
-    border: 1px solid var(--pos);
 }
 </style>
 
@@ -306,11 +232,15 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ===================================================================== -->
     <!--  عرض قايمة الهيدرز (فواتير / مجموعات للاستلام)                       -->
     <!-- ===================================================================== -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-package"></i> استلام الفواتير في الفروع</h2>
+    <div class="fpage-head">
+        <div>
+            <h1 class="fpage-title"><i class="ti ti-package"></i> استلام الفواتير في الفروع</h1>
+        </div>
+        <div class="fpage-actions">
         <?php if ($isOwner || $isSupervisor || can('receiving:diffs') || $userBranchId !== null): ?>
             <a href="receiving_diffs.php" class="btn btn-outline"><i class="ti ti-chart-bar"></i> صفحة الفروقات الشاملة</a>
         <?php endif; ?>
+        </div>
     </div>
 
     <?php
@@ -347,22 +277,19 @@ require_once __DIR__ . '/includes/header.php';
     <?php /* الخانة مالهاش لزمة لو مفيش استلامات أصلاً — كانت بتطلع
              فوق رسالة «مفيش استلامات» وتبقى ضوضاء. */ ?>
     <?php if (!empty($allReceipts)): ?>
-    <div class="card" style="padding:12px 14px;margin-bottom:14px;">
-        <input type="text" id="recvSearch" autocomplete="off" inputmode="search"
+    <div class="fcard" style="padding:12px 14px;margin-bottom:14px;">
+        <input class="finput" type="text" id="recvSearch" autocomplete="off" inputmode="search"
                aria-label="بحث في الاستلامات"
                placeholder="ابحث برقم الفاتورة أو اسم المجموعة…"
-               oninput="recvFilter()" onkeydown="if(event.key==='Enter')event.preventDefault();"
-               style="width:100%;padding:10px 12px;border:1px solid var(--line);
-                      border-radius:var(--r);font-size:14px;">
-        <div id="recvEmpty" style="display:none;color:var(--ink-500);
-                                   font-size:13px;padding:10px 2px;">مفيش نتائج</div>
+               oninput="recvFilter()" onkeydown="if(event.key==='Enter')event.preventDefault();">
+        <div id="recvEmpty" class="fg-empty" style="display:none;">مفيش نتائج</div>
     </div>
     <?php endif; ?>
 
     <?php
     if (empty($allReceipts)):
     ?>
-        <div class="card receiving-card" style="text-align:center;padding:36px 20px;color:var(--ink-500);">
+        <div class="fcard" style="text-align:center;padding:36px 20px;color:var(--ink-500);">
             <i class="ti ti-inbox" style="font-size:36px;display:block;margin-bottom:8px;"></i>
             لا توجد فواتير أو بضائع جاهزة للاستلام حالياً.
         </div>
@@ -390,7 +317,7 @@ require_once __DIR__ . '/includes/header.php';
                 }
             }
     ?>
-        <div class="card receiving-card clickable-card"
+        <div class="fcard receiving-card clickable-card" style="cursor:pointer;margin-bottom:14px;"
              data-s="<?= e(mb_strtolower($hdr['title'])) ?>"
              data-url="<?= e($cardTargetUrl) ?>">
             <div class="rc-header">
@@ -419,7 +346,13 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="rc-branches">
                 <?php foreach ($hdr['branches'] as $br):
-                    $pillClass = 'pill-' . $br['status'];
+                    $chipClass = match($br['status']) {
+                        'sent'      => 'fchip-mute',
+                        'receiving' => 'fchip-warn',
+                        'received'  => 'fchip-pos',
+                        'approved'  => 'fchip-pos',
+                        default     => 'fchip-mute'
+                    };
                     $statusText = match($br['status']) {
                         'sent'      => 'أُرسلت (جاهزة)',
                         'receiving' => 'يتم الاستلام',
@@ -431,7 +364,7 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                     <a href="<?= e($rLink) ?>" class="branch-link-btn">
                         <b><?= e($br['branch_name']) ?></b>
-                        <span class="status-pill <?= $pillClass ?>"><?= e($statusText) ?></span>
+                        <span class="fchip <?= $chipClass ?>"><?= e($statusText) ?></span>
                     </a>
                 <?php endforeach; ?>
             </div>
@@ -498,7 +431,7 @@ require_once __DIR__ . '/includes/header.php';
     $receipt = receipt_get($pdo, $receiptId);
     if (!$receipt):
 ?>
-        <div class="card receiving-card" style="text-align:center;color:var(--neg);padding:24px;">
+        <div class="fcard" style="text-align:center;color:var(--neg);padding:24px;margin-bottom:14px;">
             <i class="ti ti-alert-triangle"></i> سجل الاستلام المطلوب غير موجود.
             <div style="margin-top:12px;"><a href="receiving.php" class="btn btn-ghost btn-sm">← رجوع للقائمة</a></div>
         </div>
@@ -510,7 +443,7 @@ require_once __DIR__ . '/includes/header.php';
     // حماية الأمان (الحالة 205): موظف الفرع يفتح استلام فرع آخر ← رفض فوري وممنوع ظهور أي كميات
     if (!$canManageAll && $userBranchId !== null && (int)$receipt['branch_id'] !== $userBranchId):
 ?>
-        <div class="card receiving-card" style="text-align:center;color:var(--neg);padding:36px 20px;">
+        <div class="fcard" style="text-align:center;color:var(--neg);padding:36px 20px;margin-bottom:14px;">
             <i class="ti ti-ban" style="font-size:36px;display:block;margin-bottom:8px;"></i>
             <b style="font-size:16px;">غير مصرح لك بالوصول لاستلام فرع آخر.</b>
             <div style="margin-top:16px;"><a href="receiving.php" class="btn btn-ghost btn-sm">← الرجوع لاستلامات فرعك</a></div>
@@ -535,7 +468,13 @@ require_once __DIR__ . '/includes/header.php';
                 <h2 style="font-size:18px;font-weight:bold;margin:0;">
                     <i class="ti ti-package"></i> استلام فرع: <?= e($receipt['branch_name']) ?>
                 </h2>
-                <span class="status-pill pill-<?= $status ?>">
+                <span class="fchip <?= match($status) {
+                    'sent'      => 'fchip-mute',
+                    'receiving' => 'fchip-warn',
+                    'received'  => 'fchip-pos',
+                    'approved'  => 'fchip-pos',
+                    default     => 'fchip-mute'
+                } ?>">
                     <?= match($status) {
                         'sent'      => 'أُرسلت (جاهزة للبدء)',
                         'receiving' => 'يتم الاستلام بالكاميرا',
@@ -562,14 +501,14 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- التنبيهات -->
-    <div id="scanAlertMsg" class="scan-alert"></div>
+    <div id="scanAlertMsg" class="falert" style="display:none;"></div>
 
     <?php
     if (!empty($receipt['reject_reason']) && $status === 'receiving'):
         // اسم اللي رفض المحضر جاي من receiving_detail_data() (بريف ١٥٢)
         $rejecterName = $detail['rejecter_name'];
     ?>
-        <div class="card receiving-card" style="border: 2px solid var(--neg); background: var(--neg-soft); color: var(--neg); padding: 14px 18px; margin-bottom: 16px;">
+        <div class="falert falert-neg" style="margin-bottom: 16px;">
             <div style="font-weight: bold; font-size: 15px; margin-bottom: 6px; display:flex; align-items:center; gap:8px;">
                 <i class="ti ti-alert-triangle" style="font-size:20px;"></i>
                 تم رفض الاستلام السابق بواسطة <?= e($rejecterName) ?> بتاريخ <?= date('Y-m-d H:i', strtotime($receipt['rejected_at'])) ?>
@@ -587,7 +526,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- ================================================================= -->
         <!--  المرحلة 1 (الحالة sent): جدول كود واسم الصنف وبس. بدون كميات ولا أسعار.  -->
         <!-- ================================================================= -->
-        <div class="card receiving-card">
+        <div class="fcard receiving-card" style="margin-bottom:14px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <div>
                     <b>قائمة الأصناف المتوقعة للفرع</b>
@@ -598,10 +537,10 @@ require_once __DIR__ . '/includes/header.php';
                 </button>
             </div>
 
-            <table class="rc-table">
+            <div class="ftable-wrap"><table class="ftable">
                 <thead>
                     <tr>
-                        <th style="width:50px;">#</th>
+                        <th class="num" style="width:50px;">#</th>
                         <th style="width:180px;">كود الصنف</th>
                         <th>اسم الصنف</th>
                     </tr>
@@ -609,20 +548,20 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody>
                     <?php $i = 1; foreach ($items as $it): ?>
                         <tr>
-                            <td><?= $i++ ?></td>
+                            <td class="num"><?= $i++ ?></td>
                             <td><code><?= e($it['item_code']) ?></code></td>
-                            <td><?= e($it['item_name']) ?></td>
+                            <td class="name"><?= e($it['item_name']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
-            </table>
+            </table></div>
         </div>
 
     <?php elseif ($status === 'receiving' && !$showDiffView): ?>
         <!-- ================================================================= -->
         <!--  المرحلة 2 (الحالة receiving): شاشة المسح بالكاميرا أو الإدخال اليدوي -->
         <!-- ================================================================= -->
-        <div class="scan-box-wrap">
+        <div class="fcard" style="margin-bottom:16px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                 <h3 style="margin:0;font-size:15px;"><i class="ti ti-scan"></i> مسح باركود الأصناف</h3>
                 <a href="receiving.php?r=<?= $receiptId ?>&diff=1" class="btn btn-success">
@@ -631,69 +570,66 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <form id="barcodeScanForm" onsubmit="return handleManualScan(event);" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-                <div style="flex:1.5;min-width:180px;">
-                    <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">كود الصنف / الباركود</label>
+                <div class="ffield" style="flex:1.5;min-width:180px;">
+                    <label for="codeInput">كود الصنف / الباركود</label>
                     <div style="display:flex;gap:6px;">
-                        <input type="text" id="codeInput" name="code" required autofocus autocomplete="off"
+                        <input class="finput" type="text" id="codeInput" name="code" required autofocus autocomplete="off"
                                placeholder="امسح أو اكتب الكود..."
-                               oninput="liveLookup(this.value)"
-                               style="flex:1;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;">
-                        <button type="button" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
-                                style="background:var(--accent);color:#fff;border:none;border-radius:var(--r);padding:0 14px;cursor:pointer;font-size:18px;">
-                            <i class="ti ti-camera"></i>
+                               oninput="liveLookup(this.value)">
+                        <button type="button" class="btn btn-primary" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
+                                style="padding:0 14px;">
+                            <i class="ti ti-camera" style="font-size:18px;"></i>
                         </button>
                     </div>
                 </div>
 
-                <div style="flex:2.5;min-width:220px;">
-                    <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">اسم الصنف</label>
-                    <input type="text" id="codeName" readonly placeholder="هيظهر بعد الكود..."
-                           style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;background:var(--surface);color:var(--text);cursor:default;">
+                <div class="ffield" style="flex:2.5;min-width:220px;">
+                    <label for="codeName">اسم الصنف</label>
+                    <input class="finput" type="text" id="codeName" readonly placeholder="هيظهر بعد الكود...">
                 </div>
 
-                <div style="width:100px;">
-                    <label style="display:block;font-size:12px;color:var(--ink-600);margin-bottom:4px;">الكمية</label>
-                    <input type="number" id="qtyInput" name="qty" step="1" min="1" value="1"
-                           style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);font-size:14px;text-align:center;">
+                <div class="ffield" style="width:100px;">
+                    <label for="qtyInput">الكمية</label>
+                    <input class="finput num" type="number" id="qtyInput" name="qty" step="1" min="1" value="1">
                 </div>
 
                 <div>
-                    <button type="submit" id="addBtn" class="btn" style="height:38px;"><i class="ti ti-plus"></i> إضافة</button>
+                    <button type="submit" id="addBtn" class="btn"><i class="ti ti-plus"></i> إضافة</button>
                 </div>
             </form>
         </div>
 
         <!-- آخر الأصناف الممسوحة -->
-        <div class="card receiving-card">
+        <div class="fcard receiving-card" style="margin-bottom:14px;">
             <h4 style="margin:0 0 10px 0;font-size:14px;">آخر الأصناف الممسوحة</h4>
             <div id="lastScannedListContainer">
                 <?php $scannedHistory = $detail['last_scanned']; ?>
-                <table class="rc-table" id="lastScannedTable">
+                <div class="ftable-wrap"><table class="ftable" id="lastScannedTable">
                     <thead>
                         <tr>
                             <th>كود الصنف</th>
                             <th>اسم الصنف</th>
-                            <th style="width:130px;">الكمية المستلمة</th>
+                            <th class="num" style="width:130px;">الكمية المستلمة</th>
                         </tr>
                     </thead>
                     <tbody id="lastScannedTbody">
                         <?php if (empty($scannedHistory)): ?>
-                            <tr id="emptyScanRow"><td colspan="3" style="text-align:center;color:var(--ink-400);">لم يتم مسح أي صنف حتى الآن.</td></tr>
+                            <tr id="emptyScanRow"><td colspan="3" class="fg-empty">لم يتم مسح أي صنف حتى الآن.</td></tr>
                         <?php else: foreach ($scannedHistory as $sh): ?>
                             <tr>
                                 <td><code><?= e($sh['item_code']) ?></code></td>
-                                <td><?= e($sh['item_name']) ?></td>
-                                <td>
+                                <td class="name"><?= e($sh['item_name']) ?></td>
+                                <td class="num">
                                     <div style="display:inline-flex;align-items:center;gap:6px;">
                                         <input type="number" step="1" min="0"
-                                               class="rc-qty-edit-input"
+                                               class="finput finput-sm num rc-qty-edit-input"
                                                data-code="<?= e($sh['item_code']) ?>"
                                                value="<?= (float)$sh['scanned_qty'] ?>"
                                                title="اضغط للتعديل، ويتم الحفظ تلقائياً"
                                                onfocus="this.select()"
                                                onchange="saveQtyEdit(this)"
                                                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-                                               style="width:75px;padding:3px 6px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);">
+                                               style="width:75px;font-weight:700;">
                                         <span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>
                                     </div>
                                 </td>
@@ -708,7 +644,7 @@ require_once __DIR__ . '/includes/header.php';
         <!-- ================================================================= -->
         <!--  المرحلة 3 و 4: شاشة الفروقات الخاصة بالفرع بعد الانتهاء من المسح  -->
         <!-- ================================================================= -->
-        <div class="card receiving-card">
+        <div class="fcard receiving-card" style="margin-bottom:14px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
                 <div>
                     <h3 style="margin:0;font-size:16px;">جدول مطابقة وفروقات الفرع</h3>
@@ -736,14 +672,14 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <table class="rc-table" id="diffsTable">
+            <div class="ftable-wrap"><table class="ftable" id="diffsTable">
                 <thead>
                     <tr>
                         <th style="width:160px;">كود الصنف</th>
                         <th>اسم الصنف</th>
-                        <th style="width:110px;">الموزّع</th>
-                        <th style="width:130px;">المستلم</th>
-                        <th style="width:130px;">الفرق</th>
+                        <th class="num" style="width:110px;">الموزّع</th>
+                        <th class="num" style="width:130px;">المستلم</th>
+                        <th class="num" style="width:130px;">الفرق</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -760,27 +696,27 @@ require_once __DIR__ . '/includes/header.php';
                     ?>
                         <tr data-item-code="<?= e($it['item_code']) ?>" data-dist="<?= $distQ ?>">
                             <td><code><?= e($it['item_code']) ?></code></td>
-                            <td><?= e($it['item_name']) ?></td>
-                            <td><span class="dist-val"><?= $distQ ?></span></td>
-                            <td>
+                            <td class="name"><?= e($it['item_name']) ?></td>
+                            <td class="num"><span class="dist-val"><?= $distQ ?></span></td>
+                            <td class="num">
                                 <?php if ($canEditQty): ?>
                                     <div style="display:inline-flex;align-items:center;gap:6px;">
-                                        <input type="number" step="1" min="0" 
-                                               class="rc-qty-edit-input"
+                                        <input type="number" step="1" min="0"
+                                               class="finput finput-sm num rc-qty-edit-input"
                                                data-code="<?= e($it['item_code']) ?>"
                                                value="<?= $scanQ ?>"
                                                title="اضغط للتعديل، ويتم الحفظ تلقائياً"
                                                onfocus="this.select()"
                                                onchange="saveQtyEdit(this)"
                                                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
-                                               style="width:75px;padding:4px 8px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:14px;font-family:inherit;background:var(--surface);color:var(--text);">
+                                               style="width:75px;font-weight:700;">
                                         <span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>
                                     </div>
                                 <?php else: ?>
                                     <b><?= $scanQ ?></b>
                                 <?php endif; ?>
                             </td>
-                            <td class="diff-val-cell">
+                            <td class="num diff-val-cell">
                                 <?php if ($diff == 0): ?>
                                     <span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span>
                                 <?php elseif ($diff > 0): ?>
@@ -794,10 +730,10 @@ require_once __DIR__ . '/includes/header.php';
                 </tbody>
                 <tfoot>
                     <tr style="background:var(--bg);font-weight:bold;border-top:2px solid var(--line);">
-                        <td colspan="2" style="text-align:right;">الإجمالي:</td>
-                        <td id="totalDistCell"><?= $totalDist ?></td>
-                        <td id="totalScanCell"><?= $totalScan ?></td>
-                        <td id="totalDiffCell">
+                        <td colspan="2">الإجمالي:</td>
+                        <td class="num" id="totalDistCell"><?= $totalDist ?></td>
+                        <td class="num" id="totalScanCell"><?= $totalScan ?></td>
+                        <td class="num" id="totalDiffCell">
                             <?php $totDiff = $totalDist - $totalScan; ?>
                             <?php if ($totDiff == 0): ?>
                                 <span style="color:var(--pos);">0 <i class="ti ti-check"></i></span>
@@ -809,7 +745,7 @@ require_once __DIR__ . '/includes/header.php';
                         </td>
                     </tr>
                 </tfoot>
-            </table>
+            </table></div>
         </div>
     <?php endif; ?>
 
@@ -823,8 +759,7 @@ require_once __DIR__ . '/includes/header.php';
                 سيتم إعادة فتح الاستلام لموظف الفرع ليتمكن من تصحيح الأخطاء، وسيصل إشعار للفرع بسبب الرفض والتوجيهات.
             </p>
             <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;">سبب الرفض والتوجيهات:</label>
-            <textarea id="rejectReasonInput" rows="3" placeholder="اكتب سبب الرفض هنا بالتفصيل (مثل: عجز ٥ قطع في صنف كذا، أو مسح صنف خطأ)..."
-                      style="width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r);font-family:inherit;font-size:13.5px;box-sizing:border-box;resize:vertical;"></textarea>
+            <textarea class="ftextarea" id="rejectReasonInput" rows="3" placeholder="اكتب سبب الرفض هنا بالتفصيل (مثل: عجز ٥ قطع في صنف كذا، أو مسح صنف خطأ)..."></textarea>
             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
                 <button type="button" class="btn btn-ghost" onclick="closeRejectModal()">إلغاء</button>
                 <button type="button" class="btn btn-danger" onclick="submitRejectReceipt()">تأكيد الرفض والإرسال</button>
@@ -849,7 +784,7 @@ function showAlert(msg, isError) {
         return;
     }
     box.textContent = msg;
-    box.className = isError ? 'scan-alert scan-alert-error' : 'scan-alert scan-alert-success';
+    box.className = isError ? 'falert falert-neg' : 'falert falert-pos';
     box.style.display = 'block';
     if (!isError) {
         setTimeout(function(){ box.style.display = 'none'; }, 4000);

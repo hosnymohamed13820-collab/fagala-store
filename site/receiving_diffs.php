@@ -60,66 +60,26 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-/* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-.btn { padding: 8px 16px; font-size: 13px; font-weight: 600; border: 1px solid transparent; }
-/* لازم يفضل هنا: .btn اللي فوقه بييجي بعد fagala.css فبيغلب .btn-sm بتاعها */
-.btn-sm {
-    padding: 4px 10px;
-    font-size: 12px;
-}
-.diff-card {
-    margin-bottom: 16px;
-}
-.diff-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 13px;
-}
-.diff-table th, .diff-table td {
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--line-soft);
-    text-align: center;
-    vertical-align: middle;
-}
-.diff-table th {
-    background: var(--line-soft);
-    color: var(--ink-700);
-    font-weight: 600;
-}
-.diff-table th.th-item {
-    text-align: right;
-}
-.diff-table td.td-item {
-    text-align: right;
-}
-.pill-yet {
-    display: inline-block;
-    padding: 2px 7px;
-    background: var(--ink-200);
-    color: var(--ink-600);
-    border-radius: var(--r-sm);
-    font-size: 11.5px;
-    font-weight: 500;
-}
+/* الشكل كله من المكتبة الموحّدة — اللي هنا أعمدة الجدول بس */
+.ftable .total-col { background: var(--line-soft); font-weight: 700; }
 </style>
 
 <div class="content-container">
 
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div class="fpage-head">
         <div>
-            <h2 style="font-size:20px;font-weight:bold;margin:0;"><i class="ti ti-chart-bar"></i> صفحة فروقات الاستلام بين الفروع</h2>
-            <span style="font-size:12.5px;color:var(--ink-400);">مقارنة الكميات الموزعة بما تم مسحه واستلامه فعلياً في كل فرع.</span>
+            <h1 class="fpage-title"><i class="ti ti-chart-bar"></i> صفحة فروقات الاستلام بين الفروع</h1>
+            <p class="fpage-sub">مقارنة الكميات الموزعة بما تم مسحه واستلامه فعلياً في كل فرع.</p>
         </div>
-        <div>
+        <div class="fpage-actions">
             <a href="receiving.php" class="btn btn-ghost btn-sm">← الرجوع لشاشة الاستلام</a>
         </div>
     </div>
 
     <?php if ($groupId <= 0 && $distId <= 0): ?>
         <!-- قايمة لاختيار الفاتورة أو المجموعة -->
-        <div class="card diff-card">
-            <h3 style="font-size:15px;margin-top:0;">اختر فاتورة أو مجموعة لعرض فروقاتها:</h3>
+        <div class="fcard" style="margin-bottom:16px;">
+            <h3 class="fcard-title" style="margin-top:0;">اختر فاتورة أو مجموعة لعرض فروقاتها:</h3>
             <?php if (empty($availableList)): ?>
                 <p style="color:var(--ink-400);margin:14px 0;">لا توجد فواتير أو مجموعات مفتوح لها استلام حالياً.</p>
             <?php else: ?>
@@ -131,7 +91,7 @@ require_once __DIR__ . '/includes/header.php';
                             ? ($av['group_name'] ? ('مجموعة فواتير #' . $av['group_id'] . ' — ' . $av['group_name']) : ('مجموعة فواتير #' . $av['group_id']))
                             : ('فاتورة مفردة #' . ($av['invoice_no'] ?: $av['distribution_id']));
                     ?>
-                        <a href="<?= e($link) ?>" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);text-decoration:none;color:var(--text);"
+                        <a href="<?= e($link) ?>" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-md);text-decoration:none;color:var(--text);"
                            onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--line)'">
                             <span><b><?= e($title) ?></b> (<?= (int)$av['branches_count'] ?> فروع)</span>
                             <span style="font-size:12px;color:var(--ink-400);"><?= date('Y-m-d H:i', strtotime($av['last_date'])) ?> ←</span>
@@ -143,47 +103,50 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php else: ?>
 
-        <div class="card diff-card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                <h3 style="margin:0;font-size:16px;">
+        <div class="fcard" style="margin-bottom:16px;">
+            <div class="fcard-head">
+                <h3 class="fcard-title">
                     <?= e($title) ?>
                 </h3>
-                <a href="receiving_diffs.php" class="btn btn-ghost btn-sm">اختيار فاتورة أخرى</a>
+                <div class="fcard-actions">
+                    <a href="receiving_diffs.php" class="btn btn-ghost btn-sm">اختيار فاتورة أخرى</a>
+                </div>
             </div>
 
             <?php if (empty($itemsMap)): ?>
-                <p style="color:var(--ink-400);text-align:center;padding:24px 0;">لا توجد أصناف موزعة في هذا السياق.</p>
+                <div class="fg-empty"><i class="ti ti-inbox"></i><span>لا توجد أصناف موزعة في هذا السياق.</span></div>
             <?php else: ?>
                 <?php /* 🔴 ألوان المفتاح لازم تطابق اللي الجدول بيرسمه (السطور ٣٤٧-٣٥٣):
                          الكود بيحسب $diff = الموزّع − الممسوح، وبعدين **بيقلب الإشارة**
                          وهو بيطبع: الموزّع أكبر ← بيطلع «-» بـ--neg، الممسوح أكبر ←
                          «+» بـ--accent-text (مش --pos). لو غيّرت لون هنا، غيّره هناك. */ ?>
-                <div class="card" style="padding:10px 14px;margin-bottom:12px;
+                <div class="fcard" style="padding:10px 14px;margin-bottom:12px;
                                          font-size:13px;color:var(--ink-500);
                                          display:flex;gap:18px;flex-wrap:wrap;">
-                    <span><span class="pill-yet">لسه</span> الفرع لسه ما استلمش — مش فرق</span>
+                    <span><span class="fchip fchip-mute">لسه</span> الفرع لسه ما استلمش — مش فرق</span>
                     <span><b>—</b> مفيش قيمة للخانة دي</span>
                     <span><b style="color:var(--neg);">بالسالب</b> ناقص عن المطلوب</span>
                     <span><b style="color:var(--accent-text);">بالموجب</b> زيادة عن المطلوب</span>
                 </div>
-                <table class="diff-table">
+                <div class="ftable-wrap">
+                    <table class="ftable">
                         <thead>
                             <tr>
-                                <th class="th-item" style="width:140px;">كود الصنف</th>
-                                <th class="th-item" style="min-width:200px;">اسم الصنف</th>
+                                <th style="width:140px;">كود الصنف</th>
+                                <th style="min-width:200px;">اسم الصنف</th>
                                 <?php foreach ($branches as $br): ?>
-                                    <th style="min-width:90px;">
+                                    <th class="num" style="min-width:90px;">
                                         <?= e($br['name']) ?>
                                     </th>
                                 <?php endforeach; ?>
-                                <th style="min-width:100px;text-align:center;background:var(--line-soft);">الإجمالي</th>
+                                <th class="num total-col" style="min-width:100px;">الإجمالي</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($itemsMap as $it): ?>
                                 <tr>
-                                    <td class="td-item"><code><?= e($it['item_code']) ?></code></td>
-                                    <td class="td-item"><?= e($it['item_name']) ?></td>
+                                    <td><code><?= e($it['item_code']) ?></code></td>
+                                    <td class="name"><?= e($it['item_name']) ?></td>
                                     <?php
                                     $rowTotalDist = 0.0;
                                     $rowTotalScan = 0.0;
@@ -200,7 +163,7 @@ require_once __DIR__ . '/includes/header.php';
 
                                         // إذا الصنف لم يوزع للفرع أصلاً
                                         if ($distQ <= 0) {
-                                            echo '<td style="color:var(--ink-400);">—</td>';
+                                            echo '<td class="num" style="color:var(--ink-400);">—</td>';
                                             continue;
                                         }
 
@@ -210,28 +173,28 @@ require_once __DIR__ . '/includes/header.php';
                                         // الشرط الصارم: الفرع الذي لسه ما استلمش (sent أو receiving) يُكتب «لسه»
                                         if (!$rc || in_array($status, ['sent', 'receiving'], true)) {
                                             $allDone = false;
-                                            echo '<td><span class="pill-yet">لسه</span></td>';
+                                            echo '<td class="num"><span class="fchip fchip-mute">لسه</span></td>';
                                         } else {
                                             $anyDone = true;
                                             $rowTotalScan += $scanQ;
                                             // الحالة received أو approved ← حساب الفرق الفعلي
                                             $diff = $distQ - $scanQ;
                                             if ($diff == 0) {
-                                                echo '<td><span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span></td>';
+                                                echo '<td class="num"><span style="color:var(--pos);font-weight:bold;">0 <i class="ti ti-check"></i></span></td>';
                                             } elseif ($diff > 0) {
-                                                echo '<td><span style="color:var(--neg);font-weight:bold;">-' . $diff . '</span></td>';
+                                                echo '<td class="num"><span style="color:var(--neg);font-weight:bold;">-' . $diff . '</span></td>';
                                             } else {
-                                                echo '<td><span style="color:var(--accent-text);font-weight:bold;">+' . abs($diff) . '</span></td>';
+                                                echo '<td class="num"><span style="color:var(--accent-text);font-weight:bold;">+' . abs($diff) . '</span></td>';
                                             }
                                         }
                                     endforeach;
 
                                     // خلية الإجمالي للصنف
-                                    echo '<td style="font-weight:bold;background:var(--line-soft);text-align:center;">';
+                                    echo '<td class="num total-col">';
                                     if (!$anyDistributed) {
                                         echo '<span style="color:var(--ink-400);">—</span>';
                                     } elseif (!$anyDone) {
-                                        echo '<span class="pill-yet">لسه</span>';
+                                        echo '<span class="fchip fchip-mute">لسه</span>';
                                     } else {
                                         $totalDiff = $rowTotalDist - $rowTotalScan;
                                         if ($allDone) {
@@ -258,6 +221,7 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
             <?php endif; ?>
         </div>
 

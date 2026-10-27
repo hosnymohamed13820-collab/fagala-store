@@ -398,11 +398,6 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .flash { padding:12px 16px; border-radius:10px; margin-bottom:18px; font-size:14px; }
-    .flash.success { background:var(--pos-soft); color:var(--pos); }
-    .flash.error   { background:var(--neg-soft); color:var(--neg); }
-    .flash.merged  { background:var(--warn-soft); color:var(--warn); }
-    .card { background:var(--surface); border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(124,111,247,0.06); margin-bottom:18px; }
     .section-title { font-size:16px; color:var(--ink-900); font-weight:600; margin-bottom:14px; }
     .session-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
     .session-status { font-size:14px; }
@@ -410,29 +405,23 @@ require_once __DIR__ . '/includes/header.php';
     .dot.on { background:var(--pos-fill); } .dot.off { background:var(--ink-300); }
     .hdr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-bottom:8px; }
     .hdr-item .l { font-size:12px; color:var(--ink-500); } .hdr-item .v { font-size:15px; color:var(--ink-900); font-weight:600; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { padding:10px 12px; text-align:right; font-size:13px; border-bottom:1px solid var(--line); white-space:nowrap; }
-    th { color:var(--ink-500); font-weight:600; }
-    td { color:var(--ink-800); }
     .diff-neg { color:var(--neg); font-weight:600; } .diff-pos { color:var(--pos); font-weight:600; } .diff-zero { color:var(--ink-500); }
     .empty { text-align:center; color:var(--ink-400); padding:24px; font-size:14px; }
     .form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px; }
     .form-inline .fld { display:flex; flex-direction:column; gap:4px; }
     .form-inline label { font-size:12px; color:var(--ink-500); }
-    .form-inline input, .form-inline select { padding:9px 11px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45); z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
     .modal { background:var(--surface); border-radius:16px; width:100%; max-width:440px; padding:26px; }
     .modal h3 { color:var(--ink-900); margin-bottom:16px; }
     .form-row { margin-bottom:14px; }
     .form-row label { display:block; font-size:13px; color:var(--ink-700); margin-bottom:6px; }
-    .form-row input, .form-row select { width:100%; padding:10px 12px; border:1.5px solid var(--line); border-radius:9px; font-family:inherit; font-size:14px; background:var(--line-soft); }
     .modal-actions { display:flex; gap:10px; margin-top:20px; }
     .sheet-link { color:var(--accent-text); font-weight:600; text-decoration:none; }
     /* شجرة الأقسام */
     .status-chip { padding:6px 14px; border:1.5px solid var(--line); background:var(--surface); border-radius:20px; cursor:pointer; font-family:inherit; font-size:13px; color:var(--ink-500); }
     .status-chip:hover { border-color:var(--accent); }
-    .status-chip.active { background:var(--accent); color:#fff; border-color:var(--accent-text); font-weight:600; }
+    .status-chip.active { background:var(--accent); color:var(--surface); border-color:var(--accent-text); font-weight:600; }
     .tree-section { border:1.5px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
     .tree-head { display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer; background:var(--line-soft); user-select:none; }
     .tree-head:hover { background:var(--accent-soft); }
@@ -444,16 +433,14 @@ require_once __DIR__ . '/includes/header.php';
     .tree-section.open .tree-body { display:block; }
     .sheet-link:hover { text-decoration:underline; }
     .sheet-row:hover { background:var(--accent-soft); }
-</style>
-<style>
     /* رسالة عائمة تحت — متحركش الصفحة فوق (مهم للجرد على الموبايل) */
     .stk-toast {
         position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
         z-index: var(--z-toast); padding: 12px 22px; border-radius: 10px; font-size: 14px; font-weight: 500;
         box-shadow: 0 6px 24px rgba(0,0,0,0.18); max-width: 90%; text-align: center;
         animation: toastIn 0.25s ease; }
-    .stk-toast.success { background:var(--pos-fill); color: #fff; }
-    .stk-toast.error { background:var(--neg-fill); color: #fff; }
+    .stk-toast.success { background:var(--pos-fill); color: var(--fill-strong-fg); }
+    .stk-toast.error { background:var(--neg-fill); color: var(--fill-strong-fg); }
     @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
 </style>
 
@@ -468,7 +455,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <!-- شريط الجلسة -->
-<div class="card">
+<div class="fcard" style="margin-bottom:18px;">
     <div class="session-bar">
         <div class="session-status">
             حالة الجرد:
@@ -525,7 +512,7 @@ require_once __DIR__ . '/includes/header.php';
             </form>
         <?php endif; ?>
     </div>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="hdr-grid">
             <div class="hdr-item"><div class="l">رقم المحضر</div><div class="v">#<?= (int)$openSheet['sheet_no'] ?></div></div>
             <div class="hdr-item"><div class="l">المكان</div><div class="v"><?= e($openSheet['place_note'] ?: ($openSheet['branch_name'] ?? '—')) ?></div></div>
@@ -537,7 +524,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <?php if ($owner && $openSheet['status'] !== 'done'): ?>
-    <div class="card" style="background:var(--line-soft);">
+    <div class="fcard" style="background:var(--line-soft);margin-bottom:18px;">
         <div class="section-title" style="font-size:14px;"><i class="ti ti-user-cog"></i> تغيير المسؤولين (للأونر)</div>
         <p style="color:var(--ink-500);font-size:12px;margin-bottom:10px;">لو حد مشي في نص الشغل، تقدر تحوّل المحضر ليوزر تاني يكمّل.</p>
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -547,7 +534,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="field" value="counted_by">
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
                 <div class="fld"><label for="nameSearch" style="font-size:12px;color:var(--ink-500);">القائم بالجرد</label>
-                    <select name="user_id" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+                    <select name="user_id" class="fselect" style="padding:7px 10px;">
                         <?php foreach ($allUsers as $au): ?>
                             <option value="<?= (int)$au['id'] ?>" <?= (int)$au['id']===(int)$openSheet['counted_by']?'selected':'' ?>><?= e($au['full_name']) ?></option>
                         <?php endforeach; ?>
@@ -561,7 +548,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="field" value="reviewed_by">
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
                 <div class="fld"><label style="font-size:12px;color:var(--ink-500);">المراجع</label>
-                    <select name="user_id" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+                    <select name="user_id" class="fselect" style="padding:7px 10px;">
                         <option value="">— بدون —</option>
                         <?php foreach ($allUsers as $au): ?>
                             <option value="<?= (int)$au['id'] ?>" <?= (int)$au['id']===(int)$openSheet['reviewed_by']?'selected':'' ?>><?= e($au['full_name']) ?></option>
@@ -576,18 +563,18 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
                 <div class="fld"><label style="font-size:12px;color:var(--ink-500);">المكان</label>
                     <?php if (!empty($stkPlaces)): ?>
-                        <select name="place_note" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+                        <select name="place_note" class="fselect" style="padding:7px 10px;">
                             <?php foreach ($stkPlaces as $plName): ?>
                                 <option value="<?= e($plName) ?>" <?= $plName===$openSheet['place_note']?'selected':'' ?>><?= e($plName) ?></option>
                             <?php endforeach; ?>
                             <option value="__custom__">— مكان آخر (اكتبه) —</option>
                         </select>
-                        <input type="text" name="place_custom" placeholder="لو اخترت مكان آخر" aria-label="مكان آخر"
-                               style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;margin-top:4px;">
+                        <input type="text" name="place_custom" class="finput" placeholder="لو اخترت مكان آخر" aria-label="مكان آخر"
+                               style="padding:7px 10px;margin-top:4px;">
                     <?php else: ?>
-                        <input type="text" name="place_note" value="<?= e($openSheet['place_note'] ?? '') ?>" required
+                        <input type="text" name="place_note" class="finput" value="<?= e($openSheet['place_note'] ?? '') ?>" required
                                aria-label="ملاحظة المكان"
-                               style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+                               style="padding:7px 10px;">
                     <?php endif; ?>
                 </div>
                 <button class="btn btn-sm">تغيير المكان</button>
@@ -597,14 +584,14 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <?php if ($session && $openSheet['status']==='open' && $canEdit): ?>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">إضافة صنف</div>
         <!-- بحث بالاسم -->
         <div style="position:relative;margin-bottom:14px;">
             <label style="font-size:12px;color:var(--ink-500);">بحث بالاسم (لو مش عارف الكود)</label>
-            <input type="text" id="nameSearch" autocomplete="off" placeholder="اكتب جزء من اسم الصنف..." aria-label="بحث باسم الصنف"
+            <input type="text" id="nameSearch" class="finput" autocomplete="off" placeholder="اكتب جزء من اسم الصنف..." aria-label="بحث باسم الصنف"
                    oninput="searchByName(this.value)"
-                   style="width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);">
+                   style="width:100%;padding:9px 11px;">
             <div id="searchResults" style="display:none;position:absolute;z-index:50;background:var(--surface);border:1.5px solid var(--line);
                  border-radius:9px;width:100%;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,0.1);margin-top:4px;"></div>
         </div>
@@ -614,17 +601,17 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
             <div class="fld"><label for="codeName">كود الصنف</label>
                 <div style="display:flex;gap:6px;">
-                    <input type="text" name="code" id="codeInput" maxlength="14" required autofocus autocomplete="off"
+                    <input type="text" name="code" id="codeInput" class="finput" maxlength="14" required autofocus autocomplete="off"
                            style="width:160px;" oninput="lookupName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('codeInput')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
+                            class="btn btn-primary" style="padding:0 14px;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
-                <input type="text" id="codeName" readonly placeholder="هيظهر بعد الكود..." aria-label="اسم الصنف"
-                       style="background:var(--accent-soft);color:var(--ink-900);border:1.5px solid var(--line);cursor:default;">
+                <input type="text" id="codeName" class="finput" readonly placeholder="هيظهر بعد الكود..." aria-label="اسم الصنف"
+                       style="background:var(--accent-soft);color:var(--ink-900);cursor:default;">
             </div>
-            <div class="fld"><label for="qtyInput">كمية الجرد</label><input type="number" step="0.001" min="0" name="qty" id="qtyInput" required></div>
+            <div class="fld"><label for="qtyInput">كمية الجرد</label><input type="number" step="0.001" min="0" name="qty" id="qtyInput" class="finput" required></div>
             <button type="submit" class="btn">إضافة</button>
         </form>
         <script>
@@ -790,7 +777,7 @@ require_once __DIR__ . '/includes/header.php';
             ov.innerHTML = '<div style="background:var(--surface);border-radius:14px;padding:24px;max-width:380px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);">'
                 + '<h3 style="color:var(--neg);font-size:17px;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> ' + title + '</h3>'
                 + '<p style="color:var(--ink-600);font-size:14px;line-height:1.8;">' + html + '</p>'
-                + '<button style="margin-top:16px;padding:9px 28px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:14px;">تمام</button></div>';
+                + '<button class="btn btn-primary" style="margin-top:16px;padding:9px 28px;">تمام</button></div>';
             ov.querySelector('button').onclick = function(){ ov.remove(); var ci=document.getElementById('codeInput'); if(ci) ci.focus(); };
             document.body.appendChild(ov);
         }
@@ -803,7 +790,7 @@ require_once __DIR__ . '/includes/header.php';
             && ((int)$u['id'] !== (int)$openSheet['counted_by'] || $owner);
     ?>
     <?php if ($canReview || $canStartReview): ?>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <?php if ($canStartReview): ?>
                 <form method="post" style="display:inline;">
@@ -855,7 +842,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if ($comparison !== null && !$showCompare): ?>
     <!-- مرحلة الإدخال: المراجع بيدخل أصنافه (من غير مقارنة) -->
     <?php if ($canReview && $openSheet['status']==='reviewing'): ?>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">إدخال جرد المراجع</div>
         <p style="color:var(--ink-500);font-size:12px;margin-bottom:10px;">
             اعمل جردك بنفسك: اضرب كل صنف بكوده وكميته. لما تخلص، اضغط <strong>"تمت المراجعة"</strong> فوق عشان تشوف الفروقات.
@@ -866,17 +853,17 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
             <div class="fld"><label for="revCodeName">كود الصنف</label>
                 <div style="display:flex;gap:6px;">
-                    <input type="text" name="code" id="revCode" maxlength="14" required autocomplete="off"
+                    <input type="text" name="code" id="revCode" class="finput" maxlength="14" required autocomplete="off"
                            placeholder="اضرب أو اكتب الكود" style="width:160px;" oninput="lookupRevName(this.value)" aria-label="كود الصنف">
                     <button type="button" onclick="openBarcodeScanner('revCode')" title="مسح بالكاميرا"
-                            style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 14px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
+                            class="btn btn-primary" style="padding:0 14px;font-size:18px;"><i class="ti ti-camera"></i></button>
                 </div>
             </div>
             <div class="fld" style="flex:2;"><label>اسم الصنف</label>
-                <input type="text" id="revCodeName" readonly placeholder="هيظهر بعد الكود..."
-                       style="background:var(--accent-soft);color:var(--ink-900);border:1.5px solid var(--line);cursor:default;">
+                <input type="text" id="revCodeName" class="finput" readonly placeholder="هيظهر بعد الكود..."
+                       style="background:var(--accent-soft);color:var(--ink-900);cursor:default;">
             </div>
-            <div class="fld"><label for="revQty">كمية المراجع (بوحدة الكود)</label><input type="number" step="0.001" min="0" name="review_qty" id="revQty" required></div>
+            <div class="fld"><label for="revQty">كمية المراجع (بوحدة الكود)</label><input type="number" step="0.001" min="0" name="review_qty" id="revQty" class="finput" required></div>
             <button class="btn">حفظ</button>
         </form>
         <script>
@@ -941,12 +928,13 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <!-- جدول أصناف المراجع اللي دخّلها (قابل للتعديل والحذف) -->
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">الأصناف اللي دخّلتها (<?= count(array_filter($comparison['lines'], fn($c)=>!empty($c['_reviewed']))) ?>)</div>
         <p style="color:var(--ink-500);font-size:12px;margin-bottom:10px;">لو كتبت كمية غلط، عدّلها في الخانة واضغط Enter (تتحفظ فوراً)، أو احذف الصنف.</p>
-        <input type="text" id="revInSearch" placeholder="ابحث..." onkeyup="filterTable('revInSearch','revInTable')"
-               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث...">
-        <table id="revInTable">
+        <input type="text" id="revInSearch" class="finput" placeholder="ابحث..." onkeyup="filterTable('revInSearch','revInTable')"
+               style="width:100%;margin-bottom:12px;" aria-label="ابحث...">
+        <div class="ftable-wrap">
+        <table class="ftable" id="revInTable">
             <thead><tr><th>الكود</th><th>اسم الصنف</th><th>كمية المراجع</th><th>حذف</th></tr></thead>
             <tbody>
             <?php foreach ($comparison['lines'] as $cl): if (empty($cl['_reviewed'])) continue; ?>
@@ -956,23 +944,23 @@ require_once __DIR__ . '/includes/header.php';
                     <td>
                         <?php if ($canReview && $openSheet['status']==='reviewing'): ?>
                             <input type="number" aria-label="الكمية بالمراجعة" step="0.001" min="0" value="<?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?>"
-                                   data-line="<?= (int)$cl['id'] ?>"
+                                   data-line="<?= (int)$cl['id'] ?>" class="finput finput-sm"
                                    enterkeyhint="done" onkeydown="if(isEnterKey(event)){event.preventDefault();saveReviewQty(this);}"
-                                   style="width:90px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;color:var(--accent-text);">
+                                   style="width:90px;font-weight:700;color:var(--accent-text);">
                         <?php else: ?>
                             <span style="font-weight:700;color:var(--accent-text);"><?= rtrim(rtrim(number_format((float)$cl['_review'],3),'0'),'.') ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?php if ($canReview && $openSheet['status']==='reviewing'): ?>
-                            <button type="button" onclick="deleteRevLine(<?= (int)$cl['id'] ?>, <?= (int)$openSheet['id'] ?>)"
-                                    style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12px;">حذف</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="deleteRevLine(<?= (int)$cl['id'] ?>, <?= (int)$openSheet['id'] ?>)">حذف</button>
                         <?php else: ?>—<?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php if ($canReview && $openSheet['status']==='reviewing'): ?>
         <script>
             // تعديل كمية المراجع بـ Enter (يحفظ فوراً)
@@ -1014,7 +1002,7 @@ require_once __DIR__ . '/includes/header.php';
         $diffLines = array_filter($comparison['lines'], fn($c) => ($c['_state'] ?? '') !== 'equal');
         $isReviewing = $canReview && $openSheet['status']==='reviewing';
     ?>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">
             مقارنة المراجعة — الأصناف المفرّقة بس (<?= count($diffLines) ?>)
             <?php if (empty($diffLines)): ?>
@@ -1029,15 +1017,16 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($diffLines)): ?>
             <div class="empty" style="color:var(--pos);">مفيش أي فروقات — كل أصناف المراجع مطابقة للجرد الأصلي. <i class="ti ti-confetti"></i></div>
         <?php endif; ?>
-        <input type="text" id="reviewSearch" placeholder="ابحث في الأصناف المفرّقة..."
+        <input type="text" id="reviewSearch" class="finput" placeholder="ابحث في الأصناف المفرّقة..."
                onkeyup="filterTable('reviewSearch','reviewTable')"
-               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);<?= empty($diffLines)?'display:none;':'' ?>" aria-label="ابحث في الأصناف المفرّقة">
+               style="width:100%;margin-bottom:12px;<?= empty($diffLines)?'display:none;':'' ?>" aria-label="ابحث في الأصناف المفرّقة">
         <!-- form الحفظ الجماعي (زر تم الانتهاء بيستخدمه) -->
         <form method="post" id="finalForm" data-confirm="حفظ كل التعديلات وإنهاء المحضر؟">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="set_final_bulk">
             <input type="hidden" name="sheet_id" value="<?= (int)$openSheet['id'] ?>">
-            <table id="reviewTable">
+            <div class="ftable-wrap">
+            <table class="ftable" id="reviewTable">
                 <thead><tr>
                     <th>الكود</th><th>اسم الصنف</th><th>الجرد الأصلي</th><th>جرد المراجع</th>
                     <th>النهائية</th><?php if ($isReviewing): ?><th>حذف</th><?php endif; ?>
@@ -1056,22 +1045,22 @@ require_once __DIR__ . '/includes/header.php';
                         <td>
                             <?php if ($isReviewing): ?>
                                 <input type="number" step="0.001" name="final[<?= (int)$cl['id'] ?>]" value="<?= $final ?>" aria-label="الكمية النهائية"
-                                       data-line="<?= (int)$cl['id'] ?>" enterkeyhint="done" onkeydown="if(isEnterKey(event)){event.preventDefault();saveFinalOne(this);}"
-                                       style="width:100px;padding:5px 7px;border:1.5px solid var(--line);border-radius:7px;font-family:inherit;font-weight:700;">
+                                       data-line="<?= (int)$cl['id'] ?>" class="finput finput-sm" enterkeyhint="done" onkeydown="if(isEnterKey(event)){event.preventDefault();saveFinalOne(this);}"
+                                       style="width:100px;font-weight:700;">
                             <?php else: ?>
                                 <span style="font-weight:700;"><?= rtrim(rtrim(number_format($final,3),'0'),'.') ?></span>
                             <?php endif; ?>
                         </td>
                         <?php if ($isReviewing): ?>
                         <td>
-                            <button type="button" onclick="deleteLineReview(<?= (int)$cl['id'] ?>, <?= (int)$openSheet['id'] ?>)"
-                                    style="background:var(--neg-soft);color:var(--neg);border:none;border-radius:7px;padding:6px 9px;cursor:pointer;font-family:inherit;font-size:13px;">حذف</button>
+                            <button type="button" class="btn btn-sm btn-danger" onclick="deleteLineReview(<?= (int)$cl['id'] ?>, <?= (int)$openSheet['id'] ?>)">حذف</button>
                         </td>
                         <?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         </form>
         <?php if ($isReviewing): ?>
         <script>
@@ -1110,18 +1099,18 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 
     <!-- أداة الأكواد المربوطة داخل المحضر (متاحة للجارد والمراجع) -->
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title" style="cursor:pointer;" onclick="var b=document.getElementById('linkedBoxInner');b.style.display=b.style.display==='none'?'block':'none';">
             <i class="ti ti-link"></i> معرفة الأكواد المربوطة (اضغط للفتح/الإغلاق)
         </div>
         <div id="linkedBoxInner" style="display:none;">
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                <input type="text" id="linkedCodeInput2" autocomplete="off"
+                <input type="text" id="linkedCodeInput2" class="finput" autocomplete="off"
                        placeholder="اضرب أو اكتب الكود ودوس Enter..."
                        enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked('linkedCodeInput2','linkedResult2');}"
-                       style="flex:1;min-width:200px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
+                       style="flex:1;min-width:200px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
                 <button type="button" onclick="openBarcodeScanner('linkedCodeInput2')" title="مسح بالكاميرا"
-                        style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
+                        class="btn btn-primary" style="padding:0 16px;font-size:18px;"><i class="ti ti-camera"></i></button>
                 <button type="button" class="btn" onclick="lookupLinked('linkedCodeInput2','linkedResult2')"><i class="ti ti-link"></i> عرض</button>
             </div>
             <div id="linkedResult2" style="margin-top:14px;"></div>
@@ -1130,15 +1119,16 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (!$reviewMode): ?>
 
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">أصناف المحضر</div>
         <?php if (empty($lines)): ?>
             <div class="empty">لا توجد أصناف بعد. اضرب كود الصنف وأدخل الكمية.</div>
         <?php else: ?>
-        <input type="text" id="jardSearch" placeholder="ابحث في أصناف المحضر (بالكود أو الاسم)..."
+        <input type="text" id="jardSearch" class="finput" placeholder="ابحث في أصناف المحضر (بالكود أو الاسم)..."
                onkeyup="filterTable('jardSearch','jardTable')"
-               style="width:100%;padding:10px 14px;margin-bottom:12px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث في أصناف المحضر (بالكود أو الاسم)...">
-        <table id="jardTable">
+               style="width:100%;margin-bottom:12px;" aria-label="ابحث في أصناف المحضر (بالكود أو الاسم)...">
+        <div class="ftable-wrap">
+        <table class="ftable" id="jardTable">
             <thead><tr>
                 <th>الكود</th><th>اسم الصنف</th><th>الوحدة</th><th>كمية الجرد (بوحدة الكود)</th>
                 <th>الإجمالي بالأساسي</th><th>رصيد السيستم</th><th>الفرق</th>
@@ -1205,15 +1195,15 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php else: ?>
     <!-- أداة: الأكواد المربوطة ببعض (استعلام مستقل عن الجرد) -->
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title"><i class="ti ti-link"></i> الأكواد المربوطة (اضرب كود يطلعلك كل الأكواد المربوطة بيه)</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <input type="text" id="linkedCodeInput" autocomplete="off"
+            <input type="text" id="linkedCodeInput" class="finput" autocomplete="off"
                    placeholder="اضرب أو اكتب الكود ودوس Enter..."
                    enterkeyhint="search" onkeydown="if(isEnterKey(event)){event.preventDefault();lookupLinked();}"
-                   style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
+                   style="flex:1;min-width:220px;" aria-label="اضرب أو اكتب الكود ودوس Enter...">
             <button type="button" onclick="openBarcodeScanner('linkedCodeInput')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
+                    class="btn btn-primary" style="padding:0 16px;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button type="button" class="btn" onclick="lookupLinked()"><i class="ti ti-link"></i> عرض المربوط</button>
         </div>
         <div id="linkedResult" style="margin-top:14px;"></div>
@@ -1221,14 +1211,14 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- بحث عن صنف في كل المحاضر -->
     <?php if ($session): ?>
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title">بحث عن صنف في كل المحاضر (بالكود)</div>
         <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;">
-            <input type="text" name="q" id="sheetItemSearch" value="<?= e($searchTerm) ?>" autofocus autocomplete="off" aria-label="بحث في الأصناف"
+            <input type="text" name="q" id="sheetItemSearch" class="finput" value="<?= e($searchTerm) ?>" autofocus autocomplete="off" aria-label="بحث في الأصناف"
                    placeholder="اضرب أو اكتب كود الصنف بالظبط..."
-                   style="flex:1;min-width:220px;padding:10px 14px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;">
+                   style="flex:1;min-width:220px;">
             <button type="button" onclick="openBarcodeScanner('sheetItemSearch')" title="مسح بالكاميرا"
-                    style="background:var(--accent);color:#fff;border:none;border-radius:9px;padding:0 16px;cursor:pointer;font-size:18px;"><i class="ti ti-camera"></i></button>
+                    class="btn btn-primary" style="padding:0 16px;font-size:18px;"><i class="ti ti-camera"></i></button>
             <button class="btn"><i class="ti ti-search"></i> بحث</button>
             <?php if ($searchTerm !== ''): ?>
                 <a href="stocktake.php" class="btn btn-ghost" style="text-decoration:none;">مسح</a>
@@ -1240,7 +1230,8 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty" style="margin-top:14px;">مفيش نتائج لـ "<?= e($searchTerm) ?>" في أي محضر.</div>
             <?php else: ?>
             <p style="color:var(--ink-500);font-size:13px;margin:12px 0;"><?= count($searchResults) ?> نتيجة (الصنف لو اتجرد في أكتر من محضر بيظهر متكرر):</p>
-            <table style="margin-top:6px;">
+            <div class="ftable-wrap">
+            <table class="ftable" style="margin-top:6px;">
                 <thead><tr>
                     <th>الكود</th><th>اسم الصنف</th><th>الوحدة</th>
                     <th>الكمية (نهائية/مراجع/جرد)</th><th>المحضر</th><th>القائم بالجرد</th><th>حالة المحضر</th>
@@ -1266,13 +1257,14 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
             <?php endif; ?>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 
     <!-- قائمة المحاضر -->
-    <div class="card">
+    <div class="fcard" style="margin-bottom:18px;">
         <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
             <span>محاضر الجرد <?= $session ? '' : '(الجلسة متوقفة)' ?></span>
             <?php
@@ -1289,9 +1281,9 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($sheets)): ?>
             <div class="empty"><?= $session ? 'لا توجد محاضر بعد. اضغط "إضافة محضر جرد".' : 'مفيش جلسة جرد نشطة.' ?></div>
         <?php else: ?>
-        <input type="text" id="sheetsFilter" placeholder="ابحث برقم المحضر / اسم الجارد / المراجع / المكان..."
+        <input type="text" id="sheetsFilter" class="finput" placeholder="ابحث برقم المحضر / اسم الجارد / المراجع / المكان..."
                onkeyup="filterSheets()"
-               style="width:100%;padding:11px 14px;margin-bottom:10px;border:1.5px solid var(--line);border-radius:9px;font-family:inherit;font-size:14px;background:var(--line-soft);" aria-label="ابحث برقم المحضر / اسم الجارد / المراجع / المكان...">
+               style="width:100%;margin-bottom:10px;" aria-label="ابحث برقم المحضر / اسم الجارد / المراجع / المكان...">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
             <span style="font-size:13px;color:var(--ink-500);">الحالة:</span>
             <button type="button" class="status-chip active" data-status="" onclick="filterByStatus(this)">الكل</button>
@@ -1313,7 +1305,8 @@ require_once __DIR__ . '/includes/header.php';
                     <span class="tree-count"><?= count($groupSheets) ?> محضر<?= $secDone>0 ? ' · '.$secDone.' منتهي' : '' ?></span>
                 </div>
                 <div class="tree-body">
-                    <table>
+                    <div class="ftable-wrap">
+                    <table class="ftable">
                         <thead><tr><th>رقم المحضر</th><th>المكان</th><th>القائم بالجرد</th><th>المراجع</th><th>الأصناف</th><th>الحالة</th><th>التاريخ</th><th>تقرير</th><?php if ($owner): ?><th>حذف</th><?php endif; ?></tr></thead>
                         <tbody>
                         <?php foreach ($groupSheets as $sh): ?>
@@ -1351,6 +1344,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endforeach; ?>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -1647,7 +1641,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<span style="font-weight:600;color:var(--ink-900);">' + escapeHtml(d.name || '—') + '</span>'
                     + '<span style="color:var(--ink-400);font-size:12px;"> — ' + d.codes.length + ' كود مربوط</span></div>';
                 html += '<div style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;">'
-                    + '<table style="width:100%;border-collapse:collapse;">'
+                    + '<table class="ftable" style="width:100%;border-collapse:collapse;">'
                     + '<thead style="position:sticky;top:0;background:var(--line-soft);z-index:1;"><tr>'
                     + '<th style="padding:8px 10px;text-align:right;font-size:13px;color:var(--ink-500);border-bottom:1px solid var(--line);">الكود</th>'
                     + '<th style="padding:8px 10px;text-align:right;font-size:13px;color:var(--ink-500);border-bottom:1px solid var(--line);">الوحدة</th>'

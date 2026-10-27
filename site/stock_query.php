@@ -31,75 +31,60 @@ $active_module = 'reports';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-    /* override محلي (بريف ٤٣): الزرار الموحّد في fagala.css، والصفحة دي مختلفة في دول بس */
-    .btn { white-space: nowrap; }
-    .btn i { font-size:16px; }
-
+    /* الشكل كله من المكتبة الموحّدة — اللي هنا تخطيط الصفحة وأعمدة الجدول بس */
     .sq-bar { display:flex; gap:10px; align-items:center; margin-bottom:12px; position:relative;
               flex-wrap:wrap; }
-    .sq-bar input.main { flex:1; min-width:260px; padding:12px 16px; border:1.5px solid var(--line);
-                         border-radius:10px; font-size:15px; font-family:inherit; }
-    .sq-bar input.main:focus { outline:none; border-color:var(--accent-text); }
+    .sq-bar .finput { flex:1; min-width:260px; }
     /* نتائج البحث المنسدلة */
     .sq-sug { position:absolute; top:100%; right:0; left:0; background:var(--surface); z-index:50;
-              border:1px solid var(--line); border-radius:10px; margin-top:4px; max-height:320px;
-              overflow-y:auto; box-shadow:0 8px 24px rgba(30,27,75,0.12); display:none; }
+              border:1px solid var(--line); border-radius:var(--r-md); margin-top:4px; max-height:320px;
+              overflow-y:auto; box-shadow:var(--shadow); display:none; }
     .sq-sug.show { display:block; }
     .sq-sug-item { padding:10px 14px; cursor:pointer; display:flex; justify-content:space-between;
-                   gap:10px; border-bottom:1px solid var(--line-soft); font-size:14px; }
+                   gap:10px; border-bottom:1px solid var(--line-soft); font-size:var(--fs-md); }
     .sq-sug-item:hover { background:var(--accent-soft); }
-    .sq-sug-item .sug-code { font-family:monospace; color:var(--ink-500); font-size:12px; }
+    .sq-sug-item .sug-code { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:var(--fs-xs); }
     .sq-sug-item .sug-bal { font-weight:700; color:var(--pos); white-space:nowrap; }
 
-    .sq-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:16px 0;
+    .sq-filters { display:flex; flex-wrap:wrap; gap:var(--sp-2); align-items:center; margin:16px 0;
                   padding:14px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
-    .sq-filter { padding:9px 18px; border:1.5px solid var(--line); border-radius:22px; cursor:pointer;
-                 background:var(--surface); color:var(--ink-700,var(--accent-text)); font-size:13.5px; font-weight:600;
-                 user-select:none; transition:all 0.15s; }
-    .sq-filter:hover { border-color:var(--accent-text); color:var(--accent-text); }
-    .sq-filter.active { background:var(--accent); color:#fff; border-color:var(--accent-text); }
     .sq-sub { display:none; align-items:center; gap:6px; }
     .sq-sub.show { display:inline-flex; }
-    .sq-sub select, .sq-sub input { padding:8px 12px; border:1.5px solid var(--line); border-radius:9px;
-                                     font-size:13.5px; font-family:inherit; }
-    .sq-sub input { width:90px; }
+    .sq-sub .fselect { width:auto; }
+    .sq-sub .finput { width:90px; }
 
-    .sq-table { width:100%; border-collapse:collapse; }
-    .sq-table th, .sq-table td { padding:10px 12px; border-bottom:1px solid var(--line-soft);
-                                  text-align:center; font-size:13px; white-space:nowrap; }
-    .sq-table th { background:var(--line-soft); color:var(--accent-text); font-weight:600; }
-    .sq-table th.admin, .sq-table td.admin { background:var(--accent-soft); font-weight:700; }
-    .sq-table .name-cell { text-align:right; font-weight:500; white-space:normal; min-width:200px; }
-    .sq-table .code-cell { font-family:monospace; color:var(--ink-500); font-size:12px; }
-    .sq-table .zero { color:var(--ink-400); }
-    .sq-table .pos { color:var(--pos); font-weight:600; }
-    .sq-table tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
-    .sq-table tbody tr:hover td { background:rgba(124,111,247,0.04); }
-    .sq-table td .rm { color:var(--neg); cursor:pointer; opacity:0.5; }
-    .sq-table td .rm:hover { opacity:1; }
+    /* أعمدة الجدول اللي مش في المكتبة */
+    .ftable .admin { background:var(--accent-soft); font-weight:700; }
+    .ftable .code-cell { font-variant-numeric:tabular-nums; color:var(--ink-500); font-size:var(--fs-xs); }
+    .ftable .zero { color:var(--ink-400); }
+    .ftable .pos { color:var(--pos); font-weight:600; }
+    .ftable tr.totals td { background:var(--line-soft); font-weight:700; border-top:2px solid var(--line); }
+    .ftable td .rm { color:var(--neg); cursor:pointer; opacity:0.5; }
+    .ftable td .rm:hover { opacity:1; }
 
-    .sq-status { font-size:13px; min-height:20px; margin-bottom:10px; }
-    .sq-empty { text-align:center; color:var(--ink-400); padding:40px 20px; font-size:15px; }
+    .sq-status { font-size:var(--fs-base); min-height:20px; margin-bottom:10px; }
     .sq-meta { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;
                gap:12px; margin-bottom:12px; }
     .sq-meta .tools { display:flex; gap:10px; }
 </style>
 
-<div class="card">
-    <div class="section-title"><i class="ti ti-package"></i> استعلام أرصدة الأصناف</div>
+<section class="fcard">
+    <div class="fcard-head">
+        <h2 class="fcard-title"><i class="ti ti-package"></i> استعلام أرصدة الأصناف</h2>
+    </div>
 
     <!-- بار البحث: كود أو اسم + كاميرا + إضافة -->
     <div class="sq-bar">
-        <input type="text" class="main" id="q" autocomplete="off"
+        <input type="text" class="finput" id="q" autocomplete="off"
                placeholder="امسح باركود، أو اكتب كود/اسم الصنف…"
                enterkeyhint="search"
                oninput="onType()"
                onkeydown="if(isEnterKey(event)){event.preventDefault();addByCode();}">
-        <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);padding:11px 16px;"
+        <button type="button" class="btn btn-primary" style="padding:11px 16px;"
                 onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
             <i class="ti ti-camera" style="font-size:18px;"></i>
         </button>
-        <button type="button" class="btn" style="background:var(--accent);" onclick="addByCode()">
+        <button type="button" class="btn btn-primary" onclick="addByCode()">
             <i class="ti ti-plus"></i> إضافة
         </button>
         <div class="sq-sug" id="sug"></div>
@@ -108,45 +93,45 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- الفلاتر: ظاهرة على طول -->
     <div class="sq-filters">
-        <span class="sq-filter active" data-f="none" onclick="setFilter(this)">المضاف</span>
-        <span class="sq-filter" data-f="has_stock" onclick="setFilter(this)">عندها رصيد</span>
+        <span class="ftab sq-filter is-active" data-f="none" onclick="setFilter(this)">المضاف</span>
+        <span class="ftab sq-filter" data-f="has_stock" onclick="setFilter(this)">عندها رصيد</span>
         <span class="sq-sub" id="subBranch">
-            <select id="branchPick" onchange="runFilter()">
+            <select class="fselect" id="branchPick" onchange="runFilter()">
                 <option value="0">في كل المخازن</option>
                 <?php foreach ($branches as $b): ?>
                     <option value="<?= (int)$b['sto_id'] ?>"><?= e($b['is_admin']?'الإدارة':$b['name']) ?></option>
                 <?php endforeach; ?>
             </select>
         </span>
-        <span class="sq-filter" data-f="admin_only" onclick="setFilter(this)">في الإدارة فقط</span>
-        <span class="sq-filter" data-f="zero" onclick="setFilter(this)">رصيد صفر</span>
-        <span class="sq-filter" data-f="below" onclick="setFilter(this)">أقل من</span>
+        <span class="ftab sq-filter" data-f="admin_only" onclick="setFilter(this)">في الإدارة فقط</span>
+        <span class="ftab sq-filter" data-f="zero" onclick="setFilter(this)">رصيد صفر</span>
+        <span class="ftab sq-filter" data-f="below" onclick="setFilter(this)">أقل من</span>
         <span class="sq-sub" id="subBelow">
-            <input type="number" id="belowVal" value="5" min="0" onchange="runFilter()">
+            <input type="number" class="finput num" id="belowVal" value="5" min="0" onchange="runFilter()">
         </span>
     </div>
 
     <div class="sq-meta">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
         <span class="tools">
-            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);" onclick="exportCsv()">
+            <button type="button" class="btn btn-secondary" onclick="exportCsv()">
                 <i class="ti ti-download"></i> تصدير
             </button>
-            <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
+            <button type="button" class="btn btn-danger" onclick="clearAll()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
         </span>
     </div>
 
-    <div style="overflow-x:auto;">
-        <table class="sq-table" id="tbl">
+    <div class="ftable-wrap">
+        <table class="ftable" id="tbl">
             <thead>
                 <tr>
-                    <th style="width:34px;">#</th>
+                    <th class="num" style="width:34px;">#</th>
                     <th>الكود</th>
-                    <th class="name-cell">اسم الصنف</th>
+                    <th>اسم الصنف</th>
                     <?php foreach ($branches as $b): ?>
-                        <th class="<?= $b['is_admin']?'admin':'' ?>"><?= e($b['is_admin']?'الإدارة':$b['name']) ?></th>
+                        <th class="num <?= $b['is_admin']?'admin':'' ?>"><?= e($b['is_admin']?'الإدارة':$b['name']) ?></th>
                     <?php endforeach; ?>
                     <th style="width:34px;"></th>
                 </tr>
@@ -154,7 +139,7 @@ require_once __DIR__ . '/includes/header.php';
             <tbody id="body"></tbody>
         </table>
     </div>
-</div>
+</section>
 
 <script src="assets/barcode_scanner.js?v=9"></script>
 <script>
@@ -311,7 +296,7 @@ require_once __DIR__ . '/includes/header.php';
         shown = list;
         const body = document.getElementById('body');
         if (!shown.length) {
-            body.innerHTML = '<tr><td colspan="' + NCOLS + '" class="sq-empty">' +
+            body.innerHTML = '<tr><td colspan="' + NCOLS + '" class="fg-empty">' +
                 (mode === 'none'
                     ? 'امسح باركود أو اكتب اسم صنف، أو اختار فلتر عشان تشوف الأصناف'
                     : 'مفيش أصناف مطابقة للفلتر') + '</td></tr>';
@@ -322,18 +307,18 @@ require_once __DIR__ . '/includes/header.php';
         let html = '';
         shown.forEach((r, i) => {
             const bal = r.balances || {};
-            html += '<tr><td>' + (i+1) + '</td>' +
+            html += '<tr><td class="num">' + (i+1) + '</td>' +
                     '<td class="code-cell">' + esc(r.code) + '</td>' +
-                    '<td class="name-cell">' + esc(r.name) + '</td>';
+                    '<td class="name">' + esc(r.name) + '</td>';
             BRANCHES.forEach(b => {
                 const q = +(bal[b.sto_id] || 0);
                 tot[b.sto_id] += q;
-                html += '<td class="' + (b.is_admin?'admin ':'') + (q>0.0001?'pos':'zero') + '">' + fmt(q) + '</td>';
+                html += '<td class="num ' + (b.is_admin?'admin ':'') + (q>0.0001?'pos':'zero') + '">' + fmt(q) + '</td>';
             });
             html += '<td><span class="rm" title="شيل" onclick="removeRow(\'' + esc(r.code) + '\')">✕</span></td></tr>';
         });
-        html += '<tr class="totals"><td></td><td></td><td class="name-cell">الإجمالي</td>';
-        BRANCHES.forEach(b => html += '<td class="' + (b.is_admin?'admin':'') + '">' + fmt(tot[b.sto_id]) + '</td>');
+        html += '<tr class="totals"><td class="num"></td><td></td><td class="name">الإجمالي</td>';
+        BRANCHES.forEach(b => html += '<td class="num ' + (b.is_admin?'admin':'') + '">' + fmt(tot[b.sto_id]) + '</td>');
         html += '<td></td></tr>';
         body.innerHTML = html;
         document.getElementById('count').textContent = shown.length + ' صنف';

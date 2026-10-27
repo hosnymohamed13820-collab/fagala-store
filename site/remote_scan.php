@@ -116,12 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
     .hint { color:var(--mut); font-size:13px; line-height:1.8; margin-bottom:16px; }
     .sess { display:flex; gap:10px; align-items:center; margin-bottom:14px; }
     .sess label { font-size:13px; color:var(--mut); white-space:nowrap; }
-    .sess input { flex:1; padding:12px; border:1px solid var(--line); border-radius:10px;
-                  font-size:20px; text-align:center; letter-spacing:3px; font-weight:700;
-                  color:var(--navy); min-width:0; }
-    .go { width:100%; padding:16px; font-size:17px; border:none; border-radius:12px;
-          background:var(--navy); color:var(--surface); cursor:pointer; font-weight:700; }
-    .go:active { background:var(--steel); }
+    /* الخانة والزرار من المكتبة الموحّدة — بس المقاس هنا لأن الصفحة موبايل */
+    .sess .finput { flex:1; min-width:0; font-weight:700; }
+    .go { width:100%; }
     #devList { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
     .dev { display:flex; align-items:center; gap:12px; padding:14px; border:1px solid var(--line);
            border-radius:12px; cursor:pointer; background:var(--surface); }
@@ -160,9 +157,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
            جهاز جديد؟ اكتب الكود يدويًا</a>
         <div class="sess" id="manualBox" style="display:none;">
             <label for="rsSession">كود الجهاز:</label>
-            <input type="text" id="rsSession" value="<?= e($session) ?>" placeholder="PC1"
-                   aria-label="كود الاقتران" autocomplete="off" enterkeyhint="go">
-            <button type="button" class="go" style="width:auto;padding:12px 18px;" onclick="startRemote()"><i class="ti ti-camera"></i></button>
+            <input type="text" id="rsSession" class="finput" value="<?= e($session) ?>" placeholder="PC1"
+                   aria-label="كود الاقتران" autocomplete="off" enterkeyhint="go"
+                   style="text-align:center;letter-spacing:3px;font-size:var(--fs-lg);">
+            <button type="button" class="btn btn-primary go" style="width:auto;" onclick="startRemote()"><i class="ti ti-camera"></i></button>
         </div>
         <!-- خانة مخفية بيصب فيها المكون المشترك -->
         <input type="text" id="rsBarcode" aria-label="باركود" oninput="pushCode(this)"
