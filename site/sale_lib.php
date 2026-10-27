@@ -301,6 +301,7 @@ function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = 
         ],
         'expected' => [
             'cash' => $expectedCash,
+            'cash_sales' => round($expectedCash - $openingCash, 2),
             'visa' => $expectedVisa,
             'instapay' => $expectedInstapay,
             'total' => round($expectedCash + $expectedVisa + $expectedInstapay, 2),
@@ -375,9 +376,11 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
             throw new SaleApiException('الوردية دي اتقفلت قبل كده.', 409, 'duplicate');
         }
 
-        $systemTotal = round((float) $summary['expected']['total'], 2);
+        $openingCash = round((float) $summary['session']['opening_cash'], 2);
+        $cashToDeposit = round($countedCash - $openingCash, 2);
+        $systemTotal = round((float) $summary['expected']['total'] - $openingCash, 2);
         $collected = round($countedCash + $counted['visa'] + $counted['instapay'], 2);
-        $difference = round($collected - $systemTotal, 2);
+        $difference = round($collected - (float) $summary['expected']['total'], 2);
         $device = $summary['device'];
         $shiftName = 'POS-' . $sessionId;
 
@@ -392,7 +395,7 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
             (int) $session['branch_id'],
             $session['business_date'],
             $shiftName,
-            $countedCash,
+            $cashToDeposit,
             $counted['visa'],
             $counted['instapay'],
             $systemTotal,
@@ -440,6 +443,8 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
             'event_type' => 'session_closed',
             'payload' => [
                 'shift_id' => $shiftId,
+                'opening_cash' => $openingCash,
+                'cash_to_deposit' => $cashToDeposit,
                 'expected' => $summary['expected'],
                 'counted' => ['cash' => $countedCash] + $counted,
                 'difference' => [
@@ -457,6 +462,8 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
         return [
             'shift_id' => $shiftId,
             'status' => 'submitted',
+            'opening_cash' => $openingCash,
+            'cash_to_deposit' => $cashToDeposit,
             'expected' => $summary['expected'],
             'counted' => ['cash' => $countedCash] + $counted,
             'difference' => [

@@ -1273,7 +1273,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('posCloseExpected').innerHTML = ui.alert('info',
                     'المتوقع: كاش ' + Number(exp.cash || 0).toFixed(2) +
                     ' · فيزا ' + Number(exp.visa || 0).toFixed(2) +
-                    ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2));
+                    ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2)) +
+                    ui.alert('info', 'الافتتاحي (بيفضل في الدرج): ' +
+                        Number((closeSummary.session || {}).opening_cash || 0).toFixed(2)) +
+                    ui.alert('info', 'الكاش المطلوب توريده: ' + Number(exp.cash_sales || 0).toFixed(2));
                 closeCashBody.innerHTML = (closeSummary.denominations || []).map(function (denom) {
                     return '<tr><td class="num">' + Number(denom).toFixed(2) + '</td>' +
                         '<td class="num"><input class="finput num" data-denom="' + ui.esc(String(denom)) + '" type="number" min="0" step="1" value="0"></td>' +
@@ -1342,7 +1345,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }).then(function (res) {
             closeModal(modalCloseSession);
-            showAlert('pos', 'تم تقفيل الوردية وإرسالها للمراجعة. رقم التقفيل #' + Number(res.data.shift_id));
+            showAlert('pos', 'تم تقفيل الوردية وإرسالها للمراجعة. رقم التقفيل #' + Number(res.data.shift_id) +
+                ' · الكاش المطلوب توريده ' + Number(res.data.cash_to_deposit).toFixed(2));
             initContext();
         }).catch(function (err) {
             closeAlert.innerHTML = ui.alert('neg', err.message || 'تعذر تقفيل الوردية.');
