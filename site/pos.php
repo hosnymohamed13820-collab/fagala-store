@@ -319,7 +319,7 @@ require_once __DIR__ . '/includes/header.php';
                     <span class="pos-customer-badge">
                         <i class="ti ti-user-check"></i>
                         <strong id="posCustomerName">عميل نقدي</strong>
-                        <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل" style="padding:0 4px; min-width:auto;">
+                        <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل">
                             <i class="ti ti-x"></i>
                         </button>
                     </span>
@@ -381,14 +381,14 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                        <button type="button" class="btn btn-primary" id="posBtnPay" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                        <button type="button" class="btn btn-primary" id="posBtnPay" style="width:100%;" disabled>
                             <i class="ti ti-cash"></i> دفع وإنهاء (F10)
                         </button>
                         <div style="display:flex; gap:var(--sp-2); width:100%;">
                             <button type="button" class="btn btn-outline" id="posBtnInvoiceDiscount" style="flex:1; justify-content:center;">
                                 <i class="ti ti-discount-2"></i> خصم فاتورة (F4)
                             </button>
-                            <button type="button" class="btn btn-ghost" id="posBtnClearCart" style="color:var(--neg);" title="تفريغ السلة">
+                            <button type="button" class="btn btn-ghost" id="posBtnClearCart" title="تفريغ السلة">
                                 <i class="ti ti-trash"></i> مسح
                             </button>
                         </div>
@@ -400,7 +400,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- وضع المرتجع على فاتورة (F6) -->
     <div id="posViewReturn" style="display:none;">
-        <div class="fcard" style="padding:var(--sp-2); margin-bottom:var(--sp-2);">
+        <div class="fcard" style="margin-bottom:var(--sp-2);">
             <div style="display:flex; gap:var(--sp-2); align-items:center;">
                 <input type="text" class="finput" id="posReturnSearchInput"
                        placeholder="اكتب أو امسح رقم الإيصال الأصلي (مثال: 1/B238T/2026/1) أو رقم الفاتورة..."
@@ -412,7 +412,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div id="posReturnDocInfoBox" style="display:none; margin-bottom:var(--sp-2);">
-            <div class="fcard" style="padding:var(--sp-2);">
+            <div class="fcard">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--sp-2);">
                     <div style="display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;">
                         <span class="fchip fchip-info" id="posReturnDocReceipt">إيصال: --</span>
@@ -483,15 +483,15 @@ require_once __DIR__ . '/includes/header.php';
                         <div id="posReturnPaymentRows"></div>
                     </div>
 
-                    <div id="posReturnOverrideBox" class="falert falert-warn" style="display:none; margin-top:var(--sp-2); font-size:var(--fs-xs);">
+                    <div id="posReturnOverrideBox" class="falert falert-warn" style="display:none; margin-top:var(--sp-2);">
                         <i class="ti ti-alert-triangle"></i> طريقة الرد تختلف عن الفاتورة الأصلية. يلزم اعتماد مشرف.
                         <div class="ffield" style="margin-top:4px;">
-                            <input type="text" class="finput" id="posReturnOverrideReason" placeholder="سبب تغيير طريقة الرد..." style="font-size:var(--fs-xs);">
+                            <input type="text" class="finput finput-sm" id="posReturnOverrideReason" placeholder="سبب تغيير طريقة الرد...">
                         </div>
                     </div>
 
                     <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                        <button type="button" class="btn btn-primary" id="posBtnConfirmReturn" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmReturn" style="width:100%;" disabled>
                             <i class="ti ti-check"></i> إنهاء المرتجع
                         </button>
                     </div>
@@ -504,7 +504,7 @@ require_once __DIR__ . '/includes/header.php';
     <div id="posViewReturnGeneral" style="display:none;">
         <div class="pos-layout">
             <div class="pos-cart-panel">
-                <div class="fcard" style="padding:var(--sp-2); margin-bottom:var(--sp-2);">
+                <div class="fcard" style="margin-bottom:var(--sp-2);">
                     <div class="ffield">
                         <label class="flabel" for="posGenReturnReason">سبب المرتجع العام (إجباري):</label>
                         <input type="text" class="finput" id="posGenReturnReason"
@@ -555,7 +555,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                        <button type="button" class="btn btn-primary" id="posBtnConfirmGenReturn" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmGenReturn" style="width:100%;" disabled>
                             <i class="ti ti-check"></i> إنهاء المرتجع العام
                         </button>
                     </div>
@@ -569,7 +569,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="pos-layout">
             <div class="pos-cart-panel" style="gap:var(--sp-3);">
                 <!-- جزء المرتجع من فاتورة -->
-                <div class="fcard" style="padding:var(--sp-2);">
+                <div class="fcard">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
                         <strong style="color:var(--warn);"><i class="ti ti-arrow-back-up"></i> ١. المرتجع من فاتورة سابقة</strong>
                         <span id="posExchReturnSubtotalChip" class="fchip fchip-warn">صافي المرتجع: 0.00 ج.م</span>
@@ -605,7 +605,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <!-- جزء سلة البيع الجديدة -->
-                <div class="fcard" style="padding:var(--sp-2);">
+                <div class="fcard">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
                         <strong style="color:var(--accent);"><i class="ti ti-shopping-cart"></i> ٢. سلة البيع الجديدة</strong>
                         <span id="posExchSaleSubtotalChip" class="fchip fchip-info">صافي البيع: 0.00 ج.م</span>
@@ -666,7 +666,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                        <button type="button" class="btn btn-primary" id="posBtnConfirmExchange" style="width:100%; justify-content:center; padding:12px; font-size:var(--fs-lg);" disabled>
+                        <button type="button" class="btn btn-primary" id="posBtnConfirmExchange" style="width:100%;" disabled>
                             <i class="ti ti-check"></i> إنهاء الاستبدال
                         </button>
                     </div>
@@ -1272,9 +1272,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td>' + unitHtml + '</td>' +
                 '<td class="num">' +
                     '<div class="pos-qty-wrap">' +
-                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-minus" style="padding:0 6px;">-</button>' +
+                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-minus">-</button>' +
                         '<input type="number" min="0.001" step="any" class="finput finput-sm num pos-qty-input" data-idx="' + idx + '" data-action="qty-input" value="' + Number(item.qty) + '">' +
-                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-plus" style="padding:0 6px;">+</button>' +
+                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-plus">+</button>' +
                     '</div>' +
                 '</td>' +
                 '<td class="num">' + Number(item.unit_price).toFixed(2) + '</td>' +
@@ -1284,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td class="num" style="font-weight:700;">' + Number(item.net || 0).toFixed(2) + '</td>' +
                 '<td class="num" style="color:var(--ink-500); font-size:var(--fs-xs);">' + bal + '</td>' +
                 '<td>' +
-                    '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="remove" style="color:var(--neg);" title="شيل السطر">' +
+                    '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="remove" title="شيل السطر">' +
                         '<i class="ti ti-trash"></i>' +
                     '</button>' +
                 '</td>' +
@@ -1664,7 +1664,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<input type="number" step="any" min="0" class="finput num" data-field="amount" data-idx="' + idx + '" value="' + (row.amount || '') + '" placeholder="المبلغ">' +
                 '<input type="text" class="finput" data-field="reference" data-idx="' + idx + '" value="' + ui.esc(row.reference || '') + '" placeholder="مرجع اختياري">' +
                 (paymentRows.length > 1 ?
-                    '<button type="button" class="btn btn-sm btn-ghost" data-field="remove" data-idx="' + idx + '" style="color:var(--neg);"><i class="ti ti-x"></i></button>' :
+                    '<button type="button" class="btn btn-sm btn-ghost" data-field="remove" data-idx="' + idx + '"><i class="ti ti-x"></i></button>' :
                     '<span></span>') +
             '</div>';
         }).join('');
@@ -2153,7 +2153,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 '<i class="ti ti-rotate"></i> استرجاع' +
                             '</button> ' +
                             (canCancel ?
-                                '<button type="button" class="btn btn-sm btn-ghost" data-action="cancel-held" data-id="' + Number(d.id) + '" style="color:var(--neg);">' +
+                                '<button type="button" class="btn btn-sm btn-ghost" data-action="cancel-held" data-id="' + Number(d.id) + '">' +
                                     '<i class="ti ti-x"></i> إلغاء' +
                                 '</button>' : '') +
                         '</td>' +
@@ -2876,7 +2876,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td class="num"><input type="number" class="finput pos-qty-input" data-gencart-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
                 '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
                 '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
-                '<td><button type="button" class="btn btn-sm btn-ghost" data-gen-del="' + idx + '" style="color:var(--neg);" title="حذف"><i class="ti ti-trash"></i></button></td>' +
+                '<td><button type="button" class="btn btn-sm btn-ghost" data-gen-del="' + idx + '" title="حذف"><i class="ti ti-trash"></i></button></td>' +
             '</tr>';
         }).join('');
 
@@ -3179,7 +3179,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td class="num"><input type="number" class="finput pos-qty-input" data-exchsale-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
                 '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
                 '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
-                '<td><button type="button" class="btn btn-sm btn-ghost" data-exch-del="' + idx + '" style="color:var(--neg);" title="حذف"><i class="ti ti-trash"></i></button></td>' +
+                '<td><button type="button" class="btn btn-sm btn-ghost" data-exch-del="' + idx + '" title="حذف"><i class="ti ti-trash"></i></button></td>' +
             '</tr>';
         }).join('');
     }

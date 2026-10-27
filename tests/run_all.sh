@@ -112,6 +112,23 @@ if [ ${#PS1_FILES[@]} -gt 0 ]; then
     python3 tests/check_ps1.py "${PS1_FILES[@]}" || FAIL=1
 fi
 
+if command -v powershell > /dev/null 2>&1 || command -v pwsh > /dev/null 2>&1; then
+    PS_BIN="powershell"
+    command -v powershell > /dev/null 2>&1 || PS_BIN="pwsh"
+    for f in "${PS1_FILES[@]}"; do
+        [ -f "$f" ] || continue
+        ERRS=$($PS_BIN -NoProfile -Command '$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile("'$f'",[ref]$null,[ref]$e); $e | % { "'$f':" + $_.Extent.StartLineNumber + " " + $_.Message }' 2>/dev/null)
+        if [ -n "$ERRS" ]; then
+            while IFS= read -r line; do
+                [ -n "$line" ] && echo "  ❌ $line"
+            done <<< "$ERRS"
+            FAIL=1
+        fi
+    done
+else
+    echo "  (powershell مش متاح — اتخطى)"
+fi
+
 echo
 echo "== الجافاسكربت =="
 if command -v node > /dev/null; then

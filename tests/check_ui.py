@@ -13,7 +13,7 @@ SITE = ROOT / 'site'
 CSS = SITE / 'assets' / 'fagala.css'
 ICONS = SITE / 'assets' / 'tabler-subset.css'
 LEGACY = ROOT / 'tests' / 'ui_legacy.txt'
-CATS = ('hex', 'var', 'icon', 'btn', 'table', 'mono', 'control', 'component')
+CATS = ('hex', 'var', 'icon', 'btn', 'table', 'mono', 'control', 'component', 'override')
 HELP = {
     'hex': 'استخدم توكن لون من fagala.css — شوف ui_kit.php',
     'var': 'عرّف التوكن في fagala.css أو استخدم توكن موجود — شوف ui_kit.php',
@@ -23,6 +23,7 @@ HELP = {
     'mono': 'استخدم `font-variant-numeric: tabular-nums` — شوف ui_kit.php',
     'control': 'استخدم `.finput` و`.fselect` و`.ftextarea` — شوف ui_kit.php',
     'component': 'استخدم `.fcard` أو `.ftabs` — شوف ui_kit.php',
+    'override': 'شكل مكوّنات المكتبة من fagala.css بس — شوف ui_kit.php',
 }
 
 STYLE = re.compile(r'<style\b[^>]*>(.*?)</style\s*>', re.I | re.S)
@@ -34,6 +35,62 @@ ICON = re.compile(r'\bti-([a-z0-9-]+)\b')
 TABLE = re.compile(r'<table\b([^>]*)>', re.I | re.S)
 CLASS = re.compile(r'\bclass\s*=\s*(["\'])(.*?)\1', re.I | re.S)
 RULE = re.compile(r'([^{}]+)\{([^{}]*)\}', re.S)
+TAG = re.compile(r'<[a-z][^>]*>', re.I | re.S)
+DECL = re.compile(r'(?:^|;)\s*([a-z-]+)\s*:\s*([^;}]*)', re.I)
+UI_COMPONENTS = (
+    'finput', 'fselect', 'ftextarea', 'ffield', 'fcard', 'fcard-head',
+    'fcard-title', 'ftabs', 'ftab', 'ftable', 'falert', 'fkpis', 'fkpi',
+    'ffilters', 'fpage-head', 'fchip',
+)
+SHAPE_PROP = re.compile(
+    r'^(?:background(?:-[a-z-]+)?|border(?:-[a-z-]+)?|padding(?:-[a-z-]+)?|'
+    r'box-shadow|font-size|font-weight|color|height|min-height)$', re.I
+)
+CARD_STATUS_BORDER = re.compile(r'^border-[a-z-]+-color$', re.I)
+TOKEN_VALUE = re.compile(r'^var\(\s*--[a-z0-9-]+\s*\)(?:\s*!important)?$', re.I)
+
+
+def selector_components(selector):
+    """يرجّع مكوّنات المكتبة المذكورة بالاسم الصريح في الـselector."""
+    found = set()
+    for name in UI_COMPONENTS:
+        if re.search(rf'\.{re.escape(name)}(?![a-z0-9_-])', selector, re.I):
+            found.add(name)
+    for part in selector.split(','):
+        # تعريف .btn الأصلي ليه فحصه القديم؛ هنا المقصود override تحته أب.
+        if re.search(r'[\s>+~]\.btn(?![a-z0-9_-])', part.strip(), re.I):
+            found.add('btn')
+    return found
+
+
+def inline_components(attrs):
+    found = set()
+    for _quote, value in CLASS.findall(attrs):
+        classes = set(re.findall(r'[a-zA-Z0-9_-]+', value))
+        found.update(name for name in UI_COMPONENTS if name in classes)
+        if 'btn' in classes:
+            found.add('btn')
+    return found
+
+
+def has_shape(declarations, components):
+    for prop, value in DECL.findall(declarations):
+        if not SHAPE_PROP.match(prop):
+            continue
+        # شريط حالة الكارت مسموح، بشرط اللون ييجي من توكن.
+        if ('fcard' in components and CARD_STATUS_BORDER.match(prop)
+                and TOKEN_VALUE.match(value.strip())):
+            continue
+        return True
+    return False
+
+
+def override_help(components):
+    if components == {'btn'}:
+        return 'override صغير على `.btn` — اتأكد إنه لازم'
+    name = sorted(components - {'btn'})[0] if components - {'btn'} else 'btn'
+    return (f'الصفحة بتعيد تعريف شكل `.{name}` — الشكل من fagala.css بس؛ '
+            'لو محتاج حجم تاني استخدم `.finput-sm` أو اطلب مكوّن — شوف ui_kit.php')
 
 
 def css_parts(text):
@@ -55,10 +112,14 @@ def scan_file(path):
     counts['table'] = sum(1 for attrs in TABLE.findall(text)
                           if not any('ftable' in m[1].split() for m in CLASS.findall(attrs)))
     counts['mono'] = len(re.findall(r'\bmonospace\b', page_css, re.I))
+    override_details = []
 
     for block in blocks:
         clean = re.sub(r'/\*.*?\*/', '', block, flags=re.S)
-        for selector, _body in RULE.findall(clean):
+        for selector, body in RULE.findall(clean):
+            components = selector_components(selector)
+            if components and has_shape(body, components):
+                override_details.append(components)
             for part in selector.split(','):
                 sel = part.strip()
                 if re.match(r'^\.btn(?=$|[:.\[#\s])', sel):
@@ -67,7 +128,15 @@ def scan_file(path):
                     counts['control'] += 1
                 if re.search(r'\.[a-z0-9_-]+-(?:card|tabs)(?=$|[:.\[#\s])', sel, re.I):
                     counts['component'] += 1
-    return counts
+    for tag in TAG.findall(text):
+        style = STYLE_ATTR.search(tag)
+        if not style:
+            continue
+        components = inline_components(tag)
+        if components and has_shape(style.group(2), components):
+            override_details.append(components)
+    counts['override'] = len(override_details)
+    return counts, override_details
 
 
 def candidates(paths):
@@ -96,7 +165,7 @@ def rel(path):
 def dump(paths):
     print('# صفحة  التصنيف=العدد — القديم مسموح يقل بس ممنوع يزيد')
     for path in candidates(paths):
-        found = scan_file(path)
+        found, _details = scan_file(path)
         if any(found.values()):
             print(rel(path), ' '.join(f'{k}={found[k]}' for k in CATS if found[k]))
 
@@ -108,14 +177,17 @@ def main():
     legacy = load_legacy() if not args else {}
     bad = []
     for path in candidates(args):
-        name, found = rel(path), scan_file(path)
+        name = rel(path)
+        found, override_details = scan_file(path)
         allowed = legacy.get(name, {})
         for kind, count in found.items():
             if count > allowed.get(kind, 0):
-                bad.append((name, kind, count, allowed.get(kind, 0)))
-    for name, kind, count, allowed in bad:
+                details = override_details if kind == 'override' else []
+                bad.append((name, kind, count, allowed.get(kind, 0), details))
+    for name, kind, count, allowed, details in bad:
         suffix = f' (المسموح قديمًا {allowed})' if allowed else ''
-        print(f'  ❌ {name}: {count} مخالفة [{kind}]{suffix} — {HELP[kind]}')
+        help_text = override_help(set().union(*details)) if details else HELP[kind]
+        print(f'  ❌ {name}: {count} مخالفة [{kind}]{suffix} — {help_text}')
     if bad:
         print(f'  ❌ فحص الواجهة فشل: {len(bad)} نوع مخالفة')
         return 1
