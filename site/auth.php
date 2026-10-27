@@ -147,6 +147,7 @@ function all_modules(): array
         'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
         'item_master'   => ['label' => 'كارت الصنف',       'icon' => 'ti-package',           'url' => 'item_master.php'],
         'sale_prices'   => ['label' => 'أسعار البيع',       'icon' => 'ti-cash',              'url' => 'item_prices.php'],
+        'customers'     => ['label' => 'العملاء',          'icon' => 'ti-users',             'url' => 'customers.php'],
         // شاشة البيع نفسها في بريف ٢٤١؛ لحد وقتها رابط الموديول يفتح إدارة الأجهزة.
         'pos'           => ['label' => 'نقطة البيع',       'icon' => 'ti-device-desktop',    'url' => 'pos_devices.php'],
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
@@ -265,6 +266,11 @@ function module_parts(): array
         'sale_prices' => [
             'view'  => 'عرض',
             'apply' => 'تطبيق الأسعار',
+        ],
+        'customers' => [
+            'view'      => 'عرض',
+            'edit'      => 'إضافة وتعديل',
+            'statement' => 'كشف الحساب',
         ],
         'pos' => [
             'sell'                   => 'بيع',

@@ -27,6 +27,7 @@ return [
     '20261026_017_item_price_batches',
     '20261026_018_item_classes',
     '20261027_019_pos_core',
+    '20261027_020_customers',
     '20261027_021_pos_api',
     '20261027_023_custody_order_accounts',
 ];
