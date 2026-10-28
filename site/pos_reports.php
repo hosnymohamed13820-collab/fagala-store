@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return '<span class="fchip ' + cls + '">' + ui.esc(String(value || '')) + '</span>';
         }
         if (key === 'event_type' || key === 'return_type' || key === 'is_late' || key === 'method_override') {
-            return '<span class="fchip fchip-info">' + ui.esc(String(value || '')) + '</span>';
+            return '<span class="fchip fchip-mute">' + ui.esc(String(value || '')) + '</span>';
         }
         return ui.esc(String(value === null || value === undefined ? '' : value));
     }

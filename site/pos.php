@@ -147,7 +147,7 @@ require_once __DIR__ . '/includes/header.php';
 .pos-net-val {
     font-size: var(--fs-3xl);
     font-weight: 700;
-    color: var(--accent);
+    color: var(--accent-text);
     line-height: 1.1;
     font-variant-numeric: tabular-nums;
 }
@@ -244,7 +244,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="pos-top-bar">
         <div class="pos-top-info">
-            <span id="posBranchBadge" class="fchip fchip-info">فرع: --</span>
+            <span id="posBranchBadge" class="fchip fchip-pos">فرع: --</span>
             <span id="posDeviceBadge" class="fchip fchip-mute">جهاز: --</span>
             <span id="posSessionBadge" class="fchip fchip-warn">الوردية: --</span>
             <button type="button" class="btn btn-sm btn-ghost" id="posBtnSwitchDevice" title="تغيير الجهاز">
@@ -332,7 +332,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posCartTable">
+                    <table class="ftable" id="posCartTable" data-xt-off>
                         <thead>
                             <tr>
                                 <th>الكود</th>
@@ -421,7 +421,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="fcard">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--sp-2);">
                     <div style="display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap;">
-                        <span class="fchip fchip-info" id="posReturnDocReceipt">إيصال: --</span>
+                        <span class="fchip fchip-mute" id="posReturnDocReceipt">إيصال: --</span>
                         <span class="fchip fchip-mute" id="posReturnDocDate">تاريخ: --</span>
                         <span class="fchip fchip-mute" id="posReturnDocCashier">كاشير: --</span>
                         <span class="fchip fchip-mute" id="posReturnDocCustomer" style="display:none;">عميل: --</span>
@@ -440,7 +440,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="pos-layout" id="posReturnLayout" style="display:none;">
             <div class="pos-cart-panel">
                 <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posReturnLinesTable">
+                    <table class="ftable" id="posReturnLinesTable" data-xt-off>
                         <thead>
                             <tr>
                                 <th>الكود</th>
@@ -528,7 +528,7 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posGenCartTable">
+                    <table class="ftable" id="posGenCartTable" data-xt-off>
                         <thead>
                             <tr>
                                 <th>الكود</th>
@@ -594,7 +594,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span class="fchip fchip-mute" id="posExchDocDateBadge">--</span>
                     </div>
                     <div class="ftable-wrap" style="max-height:200px; overflow-y:auto;">
-                        <table class="ftable" id="posExchReturnLinesTable">
+                        <table class="ftable" id="posExchReturnLinesTable" data-xt-off>
                             <thead>
                                 <tr>
                                     <th>الكود</th>
@@ -613,8 +613,8 @@ require_once __DIR__ . '/includes/header.php';
                 <!-- جزء سلة البيع الجديدة -->
                 <div class="fcard">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2);">
-                        <strong style="color:var(--accent);"><i class="ti ti-shopping-cart"></i> ٢. سلة البيع الجديدة</strong>
-                        <span id="posExchSaleSubtotalChip" class="fchip fchip-info">صافي البيع: 0.00 ج.م</span>
+                        <strong style="color:var(--accent-text);"><i class="ti ti-shopping-cart"></i> ٢. سلة البيع الجديدة</strong>
+                        <span id="posExchSaleSubtotalChip" class="fchip fchip-mute">صافي البيع: 0.00 ج.م</span>
                     </div>
                     <div class="pos-scan-box" style="margin-bottom:var(--sp-2);">
                         <div class="pos-scan-input-wrap">
@@ -624,7 +624,7 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
                     <div class="ftable-wrap" style="max-height:220px; overflow-y:auto;">
-                        <table class="ftable" id="posExchSaleTable">
+                        <table class="ftable" id="posExchSaleTable" data-xt-off>
                             <thead>
                                 <tr>
                                     <th>الكود</th>
@@ -769,7 +769,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <div class="pos-payment-net-hero">
                     <div style="font-size:var(--fs-sm); color:var(--text-muted);">صافي الفاتورة</div>
-                    <div style="font-size:var(--fs-3xl); font-weight:700; color:var(--accent);">
+                    <div style="font-size:var(--fs-3xl); font-weight:700; color:var(--accent-text);">
                         <span id="posPayModalNet">0.00</span> ج.م
                     </div>
                 </div>
@@ -1417,7 +1417,17 @@ document.addEventListener('DOMContentLoaded', function () {
     // ==========================================
     // رسم السلة والتفاعل
     // ==========================================
+    let pendingCartFocus = null;
+
     function renderCart() {
+        const active = document.activeElement;
+        const activeRow = active && active.closest ? active.closest('tr[data-line]') : null;
+        const savedFocus = pendingCartFocus || (activeRow && active.getAttribute('data-cart-field') ? {
+            line: activeRow.getAttribute('data-line'),
+            field: active.getAttribute('data-cart-field')
+        } : null);
+        pendingCartFocus = null;
+
         if (!cart.length) {
             cartBody.innerHTML = '';
             cartEmpty.innerHTML = ui.empty('السلة فاضية — امسح كود أو ابحث عن صنف');
@@ -1430,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const hasMultipleUnits = item.codes && item.codes.length > 1;
             let unitHtml = '';
             if (hasMultipleUnits) {
-                unitHtml = '<select class="fselect fselect-sm" data-idx="' + idx + '" data-action="change-unit">' +
+                unitHtml = '<select class="fselect fselect-sm" data-idx="' + idx + '" data-action="change-unit" data-cart-field="unit">' +
                     item.codes.map(function (c) {
                         const sel = (c.code === item.code) ? ' selected' : '';
                         return '<option value="' + ui.esc(c.code) + '"' + sel + '>' + ui.esc(c.unit_name) + '</option>';
@@ -1441,20 +1451,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             const bal = Number(item.balance || 0);
-            return '<tr data-idx="' + idx + '">' +
+            return '<tr data-idx="' + idx + '" data-line="' + idx + '">' +
                 '<td class="num">' + ui.esc(item.code) + '</td>' +
                 '<td><span class="pos-item-name" title="' + ui.esc(item.name) + '">' + ui.esc(item.name) + '</span></td>' +
                 '<td>' + unitHtml + '</td>' +
                 '<td class="num">' +
                     '<div class="pos-qty-wrap">' +
                         '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-minus">-</button>' +
-                        '<input type="number" min="0.001" step="any" class="finput finput-sm num pos-qty-input" data-idx="' + idx + '" data-action="qty-input" value="' + Number(item.qty) + '">' +
+                        '<input type="number" min="0.001" step="any" class="finput finput-sm num pos-qty-input" data-idx="' + idx + '" data-action="qty-input" data-cart-field="qty" value="' + Number(item.qty) + '">' +
                         '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-plus">+</button>' +
                     '</div>' +
                 '</td>' +
                 '<td class="num">' + Number(item.unit_price).toFixed(2) + '</td>' +
                 '<td class="num">' +
-                    '<input type="text" class="finput finput-sm num pos-disc-input" data-idx="' + idx + '" data-action="disc-input" value="' + ui.esc(String(item.line_discount || '0')) + '">' +
+                    '<input type="text" class="finput finput-sm num pos-disc-input" data-idx="' + idx + '" data-action="disc-input" data-cart-field="discount" value="' + ui.esc(String(item.line_discount || '0')) + '">' +
                 '</td>' +
                 '<td class="num" style="font-weight:700;">' + Number(item.net || 0).toFixed(2) + '</td>' +
                 '<td class="num" style="color:var(--ink-500); font-size:var(--fs-xs);">' + bal + '</td>' +
@@ -1467,7 +1477,31 @@ document.addEventListener('DOMContentLoaded', function () {
         }).join('');
 
         computeTotals();
+
+        if (savedFocus) {
+            const focusEl = cartBody.querySelector(
+                'tr[data-line="' + savedFocus.line + '"] [data-cart-field="' + savedFocus.field + '"]'
+            );
+            if (focusEl) focusEl.focus();
+        }
     }
+
+    // Tab بعد تعديل خانة يكمّل في خانة السلة اللي بعدها في نفس السطر.
+    cartBody.addEventListener('keydown', function (e) {
+        if (e.key !== 'Tab' || !e.target.matches('[data-cart-field]')) return;
+        const row = e.target.closest('tr[data-line]');
+        const fields = row ? Array.from(row.querySelectorAll('[data-cart-field]')) : [];
+        const current = fields.indexOf(e.target);
+        const next = fields[current + (e.shiftKey ? -1 : 1)];
+        if (row && next) {
+            e.preventDefault();
+            pendingCartFocus = {
+                line: row.getAttribute('data-line'),
+                field: next.getAttribute('data-cart-field')
+            };
+            e.target.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+    });
 
     // أحداث جدول السلة (تغيير كمية / وحدة / خصم / حذف)
     cartBody.addEventListener('change', function (e) {
@@ -1580,7 +1614,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('posBtnClearCart').addEventListener('click', function () {
         if (!cart.length) return;
-        clearCart(false);
+        fgConfirm('متأكد إنك عايز تفضّي السلة؟', {
+            title: 'تفريغ السلة',
+            okText: 'تفريغ',
+            cancelText: 'رجوع',
+            danger: true
+        }).then(function (confirmed) {
+            if (confirmed) clearCart(false);
+        });
     });
 
     // ==========================================
@@ -2670,6 +2711,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let returnDoc = null;
     let returnLines = [];
     let returnTotals = { gross: 0, line_discount: 0, net: 0 };
+    let returnOriginalPayments = {};
+    let returnPaymentMethod = 'cash';
     let lateApprovalToken = null;
     let methodApprovalToken = null;
 
@@ -2716,6 +2759,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function loadReturnDoc(data) {
         returnDoc = data.doc;
+        returnOriginalPayments = data.payments || {};
+        returnPaymentMethod = Object.keys(returnOriginalPayments).reduce(function (best, method) {
+            const available = Number(returnOriginalPayments[method].available_refund || 0);
+            const bestAvailable = best ? Number(returnOriginalPayments[best].available_refund || 0) : -1;
+            return available > bestAvailable ? method : best;
+        }, '') || 'cash';
         returnLines = (data.lines || []).map(function (l) {
             return Object.assign({}, l, { return_qty: 0, return_net: 0 });
         });
@@ -2825,6 +2874,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateReturnPayments(net) {
         if (!returnDoc) return;
+        const currentSelect = document.getElementById('posReturnPaymentMethod');
+        if (currentSelect) returnPaymentMethod = currentSelect.value;
         if (net <= 0) {
             returnPaymentRowsContainer.innerHTML = '';
             returnOverrideBox.style.display = 'none';
@@ -2833,9 +2884,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         returnPaymentRowsContainer.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
             '<select class="fselect" id="posReturnPaymentMethod" style="flex:1;">' +
-                '<option value="cash" selected>كاش</option>' +
-                '<option value="visa">فيزا</option>' +
-                '<option value="instapay">إنستا باي</option>' +
+                '<option value="cash"' + (returnPaymentMethod === 'cash' ? ' selected' : '') + '>كاش</option>' +
+                '<option value="visa"' + (returnPaymentMethod === 'visa' ? ' selected' : '') + '>فيزا</option>' +
+                '<option value="instapay"' + (returnPaymentMethod === 'instapay' ? ' selected' : '') + '>إنستا باي</option>' +
             '</select>' +
             '<input type="number" class="finput" id="posReturnPaymentAmount" value="' + net.toFixed(2) + '" step="0.01" style="width:110px;" readonly>' +
         '</div>';
@@ -2843,6 +2894,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const methodSelect = document.getElementById('posReturnPaymentMethod');
         if (methodSelect) {
             methodSelect.addEventListener('change', function () {
+                returnPaymentMethod = this.value;
                 checkReturnMethodOverride();
             });
         }
@@ -2851,7 +2903,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function checkReturnMethodOverride() {
         if (!returnDoc) return;
-        returnOverrideBox.style.display = 'block';
+        const original = returnOriginalPayments[returnPaymentMethod];
+        const available = original ? Number(original.available_refund || 0) : 0;
+        returnOverrideBox.style.display = returnTotals.net > available + 0.0001 ? 'block' : 'none';
     }
 
     if (btnReturnSearch) {
@@ -2911,6 +2965,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     returnLayout.style.display = 'none';
                     returnDoc = null;
                     returnLines = [];
+                    returnOriginalPayments = {};
+                    returnPaymentMethod = 'cash';
                     if (returnSearchInput) returnSearchInput.value = '';
                     try {
                         triggerPrint(lastDocId, false);
@@ -3569,6 +3625,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
         const isTyping = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
         const openDlg = document.querySelector('.fg-dlg-bg[style*="display: flex"]');
+
+        if (openDlg && (e.key === 'F8' || e.key === 'F9' || e.key === 'F10')) {
+            e.preventDefault();
+            return;
+        }
 
         if (e.key === 'F1') {
             e.preventDefault();

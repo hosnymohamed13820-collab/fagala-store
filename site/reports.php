@@ -1852,7 +1852,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             'closed'    => 'fchip-pos',
                             'diff_open' => 'fchip-neg',
                             'cancelled' => 'fchip-dim',
-                            default     => 'fchip-info',
+                            default     => 'fchip-mute',
                         };
                         $statusLabel = match($r['status']) {
                             'requested' => 'طلب جديد',

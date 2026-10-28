@@ -374,7 +374,7 @@ $shifts = $pdo->query(
     <h2>تنفيذ الترحيل</h2>
     <form method="post" onsubmit="return confirm('متأكد؟ ده هيكتب في نظام الشركة فعليًا.')">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
-      <table class="ftable" style="margin-bottom:14px">
+      <table class="ftable" style="margin-bottom:14px" data-xt-off>
         <tr>
           <th style="width:130px">الوردية</th>
           <td>

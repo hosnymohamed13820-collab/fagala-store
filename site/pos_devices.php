@@ -110,6 +110,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function saveRow(row) {
         clearMessage();
+        if (row.dataset.saving === '1') {
+            row.dataset.pendingSave = '1';
+            return;
+        }
         const payload = {
             device_id: Number(row.dataset.id),
             branch_id: Number(row.dataset.branch),
@@ -118,17 +122,21 @@ document.addEventListener('DOMContentLoaded', function () {
             print_mode: row.querySelector('[data-field="print_mode"]').value,
             is_active: Number(row.querySelector('[data-field="is_active"]').value)
         };
-        row.querySelectorAll('input,select').forEach(function (el) { el.disabled = true; });
+        row.dataset.saving = '1';
         window.apiFetch('pos_devices_api.php?part=update', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         }).then(function () {
             show('pos', 'اتحفظ تعديل الجهاز.');
-            loadDevices();
         }).catch(function (e) {
             show('neg', e.message || 'التعديل ماتحفظش.');
-            loadDevices();
+        }).finally(function () {
+            row.dataset.saving = '0';
+            if (row.dataset.pendingSave === '1') {
+                row.dataset.pendingSave = '0';
+                saveRow(row);
+            }
         });
     }
 

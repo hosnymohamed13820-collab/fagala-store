@@ -114,7 +114,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="sq-meta">
         <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
         <span class="tools">
-            <button type="button" class="btn btn-secondary" onclick="exportCsv()">
+            <button type="button" class="btn btn-secondary" onclick="exportXlsx()">
                 <i class="ti ti-download"></i> تصدير
             </button>
             <button type="button" class="btn btn-danger" onclick="clearAll()">
@@ -333,18 +333,22 @@ require_once __DIR__ . '/includes/header.php';
         hideSubs(); render([]); setStatus('', '');
     }
 
-    function exportCsv() {
+    function exportXlsx() {
         if (!shown.length) { fgToast('مفيش بيانات', 'warn'); return; }
-        let csv = '\ufeff' + ['الكود','اسم الصنف', ...BRANCHES.map(b => b.is_admin?'الإدارة':b.name)].join(',') + '\n';
-        shown.forEach(r => {
-            const bal = r.balances || {};
-            csv += ['"'+r.code+'"', '"'+(r.name||'').replace(/"/g,'""')+'"',
-                    ...BRANCHES.map(b => +(bal[b.sto_id]||0))].join(',') + '\n';
-        });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-        a.download = 'ارصدة_الاصناف_' + new Date().toISOString().slice(0,10) + '.csv';
-        a.click();
+        const params = new URLSearchParams({part: 'export'});
+        if (added.length) {
+            shown.forEach(row => params.append('codes[]', row.code));
+        } else {
+            let exportMode = mode;
+            const sto = +document.getElementById('branchPick').value || 0;
+            if (mode === 'has_stock' && sto > 0) exportMode = 'branch_only';
+            params.set('mode', exportMode);
+            if (sto > 0) params.set('sto', String(sto));
+            if (mode === 'below') {
+                params.set('threshold', document.getElementById('belowVal').value || '0');
+            }
+        }
+        window.location.href = 'stock_query_api.php?' + params.toString();
     }
 
     // فشل الـAPI: الجلسة خلصت ← الصفحة تتحوّل للدخول · من غير status = مفيش نت

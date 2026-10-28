@@ -479,7 +479,7 @@ require_once __DIR__ . '/includes/header.php';
                                 'closed'    => 'fchip-pos',
                                 'diff_open' => 'fchip-neg',
                                 'cancelled' => 'fchip-dim',
-                                default     => 'fchip-info',
+                                default     => 'fchip-mute',
                             };
                             $statusLabel = match($d['status']) {
                                 'requested' => 'طلب جديد',
@@ -965,7 +965,7 @@ async function viewTransfer(docId) {
                 <div><strong>التاريخ:</strong> ${esc(doc.doc_date)}</div>
                 <div><strong>من مخزن:</strong> ${esc(doc.from_branch_name || 'مخزن ' + doc.branch_id)}</div>
                 <div><strong>إلى مخزن:</strong> ${esc(doc.to_branch_name || 'مخزن ' + doc.counter_branch_id)}</div>
-                <div><strong>الحالة:</strong> <span class="fchip fchip-info">${esc(doc.status)}</span></div>
+                <div><strong>الحالة:</strong> <span class="fchip fchip-mute">${esc(doc.status)}</span></div>
                 <div><strong>تاريخ الإرسال:</strong> ${esc(doc.sent_at || '—')}</div>
                 <div><strong>تاريخ الاستلام:</strong> ${esc(doc.received_at || '—')}</div>
                 <div><strong>المنشئ:</strong> ${esc(doc.created_by_name || '—')}</div>

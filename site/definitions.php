@@ -611,7 +611,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($emp['job_title'] ?? '—') ?></td>
                     <td>
                         <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
-                            <span class="fchip fchip-info">مرتب ثابت</span>
+                            <span class="fchip fchip-mute">مرتب ثابت</span>
                         <?php else: ?>
                             <span style="color:var(--ink-700);font-size:13px;">على الساعات</span>
                         <?php endif; ?>
