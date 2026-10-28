@@ -1860,4 +1860,11 @@ html.fg-dlg-open {
 .fchip-pos  { background: var(--pos-soft); color: var(--pos); }
 .fchip-mute { background: var(--line-soft); color: var(--ink-600); }
 
+/* الفورم الأفقي (.form-inline): الخانة بعرضها الطبيعي زي ما كانت قبل المكتبة،
+   والـ.fld اللي واخد flex بيمدّها. من غير ده .finput (width:100%) بتاخد السطر كله. */
+.form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+.form-inline .fld { display:flex; flex-direction:column; gap:4px; }
+.form-inline .finput, .form-inline .fselect { width:auto; }
+
+
 

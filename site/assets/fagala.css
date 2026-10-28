@@ -1908,6 +1908,12 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 .ffield-err { color:var(--neg); font-size:var(--fs-xs); }
 .finput.num { text-align:center; font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1; }
 
+/* الفورم الأفقي (.form-inline): الخانة بعرضها الطبيعي زي ما كانت قبل المكتبة،
+   والـ.fld اللي واخد flex بيمدّها. من غير ده .finput (width:100%) بتاخد السطر كله. */
+.form-inline { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+.form-inline .fld { display:flex; flex-direction:column; gap:4px; }
+.form-inline .finput, .form-inline .fselect { width:auto; }
+
 .fgrid { display:grid; gap:var(--sp-4); align-items:end; }
 .fgrid-2 { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 .fgrid-3 { grid-template-columns:repeat(3, minmax(0, 1fr)); }
