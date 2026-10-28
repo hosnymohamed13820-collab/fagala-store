@@ -29,7 +29,7 @@ require_once __DIR__ . '/includes/header.php';
             'attrs' => ['style' => 'display:none;'],
         ]) ?>
     </div>
-    <div class="notifs-list" id="notifPageList"><?= ui_alert('info', 'جاري تحميل الإشعارات...') ?></div>
+    <div class="notifs-list" id="notifPageList" aria-live="polite"><?= ui_alert('info', 'جاري تحميل الإشعارات...') ?></div>
     <div class="notifs-pager" id="notifPager" style="display:none;">
         <?= ui_btn('السابق', ['variant' => 'ghost', 'icon' => 'chevron-left', 'id' => 'notifPrev']) ?>
         <span id="notifPageNo"></span>

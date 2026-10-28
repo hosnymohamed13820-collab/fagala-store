@@ -174,7 +174,7 @@ require_once __DIR__ . '/includes/ui.php';
             <div class="fkpi"><span>عدد الفواتير</span><strong id="kpiCount">0</strong></div>
             <div class="fkpi"><span>إجمالي المشتريات</span><strong id="kpiSales" style="color:var(--pos);">0.00</strong></div>
             <div class="fkpi"><span>المرتجع</span><strong id="kpiReturns" style="color:var(--neg);">0.00</strong></div>
-            <div class="fkpi"><span>الصافي</span><strong id="kpiNet">0.00</strong></div>
+            <div class="fkpi"><span>الصافي</span><strong id="kpiNet" class="num-ltr">0.00</strong></div>
             <div class="fkpi"><span>آخر زيارة</span><strong id="kpiLastVisit">-</strong></div>
         </div>
 
@@ -522,7 +522,10 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('kpiCount').textContent = kpis.invoices_count || 0;
         document.getElementById('kpiSales').textContent = Number(kpis.total_sales || 0).toFixed(2);
         document.getElementById('kpiReturns').textContent = Number(kpis.total_returns || 0).toFixed(2);
-        document.getElementById('kpiNet').textContent = Number(kpis.net_total || 0).toFixed(2);
+        const netTotal = Number(kpis.net_total || 0);
+        const kpiNetEl = document.getElementById('kpiNet');
+        kpiNetEl.textContent = netTotal.toFixed(2);
+        kpiNetEl.className = 'num-ltr' + (netTotal < 0 ? ' num-neg' : '');
         document.getElementById('kpiLastVisit').textContent = kpis.last_visit || '-';
 
         const stmtBody = document.getElementById('statementTableBody');

@@ -78,17 +78,17 @@ require_once __DIR__ . '/includes/header.php';
         <a class="btn btn-outline" id="imMovement" hidden>حركة الصنف</a>
     </div>
     <div class="ftabs im-tabs" role="tablist">
-        <button class="ftab im-tab active" type="button" data-tab="data">بيانات الصنف</button>
-        <button class="ftab im-tab" type="button" data-tab="codes">أكواد ووحدات الصنف</button>
-        <button class="ftab im-tab" type="button" data-tab="company">بيانات صنف/شركة</button>
-        <button class="ftab im-tab" type="button" data-tab="pricing">التسعير</button>
-        <button class="ftab im-tab" type="button" data-tab="suppliers">موردين الصنف</button>
+        <button class="ftab im-tab active" type="button" role="tab" aria-selected="true" data-tab="data">بيانات الصنف</button>
+        <button class="ftab im-tab" type="button" role="tab" aria-selected="false" data-tab="codes">أكواد ووحدات الصنف</button>
+        <button class="ftab im-tab" type="button" role="tab" aria-selected="false" data-tab="company">بيانات صنف/شركة</button>
+        <button class="ftab im-tab" type="button" role="tab" aria-selected="false" data-tab="pricing">التسعير</button>
+        <button class="ftab im-tab" type="button" role="tab" aria-selected="false" data-tab="suppliers">موردين الصنف</button>
     </div>
-    <section class="im-panel active" data-panel="data"><div id="imData" class="im-grid"></div></section>
-    <section class="im-panel" data-panel="codes"><div id="imCodes"></div></section>
-    <section class="im-panel" data-panel="company"><div id="imCompany" class="im-grid"></div></section>
-    <section class="im-panel" data-panel="pricing"><div id="imPricing"></div></section>
-    <section class="im-panel" data-panel="suppliers"><div id="imSuppliers"></div></section>
+    <section class="im-panel active" data-panel="data" role="tabpanel"><div id="imData" class="im-grid"></div></section>
+    <section class="im-panel" data-panel="codes" role="tabpanel"><div id="imCodes"></div></section>
+    <section class="im-panel" data-panel="company" role="tabpanel"><div id="imCompany" class="im-grid"></div></section>
+    <section class="im-panel" data-panel="pricing" role="tabpanel"><div id="imPricing"></div></section>
+    <section class="im-panel" data-panel="suppliers" role="tabpanel"><div id="imSuppliers"></div></section>
     <div id="imCardStatus" class="im-status"></div>
 </div>
 
@@ -130,7 +130,7 @@ const IM_BOOT = <?= json_encode($imBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG |
     async function createItem(ev){ev.preventDefault();const f=ev.currentTarget,codes=[];f.querySelectorAll('.im-create-row').forEach(row=>{const c={whole_qty:1,is_purchase_code:1,is_sale_code:1};row.querySelectorAll('[data-new]').forEach(el=>c[el.dataset.new]=el.value);codes.push(c);});const body={name1:f.elements.name1.value,cat_is1_id:f.elements.cat_is1_id.value,cat_description_id:f.elements.cat_description_id.value,cat_type_id:f.elements.cat_type_id.value,cat_stage_id:f.elements.cat_stage_id.value,cat_company_id:f.elements.cat_company_id.value,sale_price_class:f.elements.sale_price_class.value,item_type:f.elements.item_type.value,base_unit:f.elements.base_unit.value,codes:codes};status('imCreateStatus','جاري إنشاء الصنف…');try{const r=await apiFetch('item_master_api.php?part=create',{method:'POST',body:body});status('imCreateStatus','الصنف اتعمل','ok');f.hidden=true;await openItem('site',r.data.id);await search(1);}catch(e){status('imCreateStatus',e.message,'err');}}
     $('imSearchBtn').addEventListener('click',()=>search(1));$('imSearch').addEventListener('input',debounce(()=>search(1),300));$('imSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search(1);}});
     $('imResults').addEventListener('click',e=>{const row=e.target.closest('.im-result');if(row)openItem(row.dataset.source,Number(row.dataset.id));});$('imPager').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(b)search(Number(b.dataset.page));});
-    document.querySelector('.im-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('.im-tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.im-panel').forEach(x=>x.classList.toggle('active',x.dataset.panel===b.dataset.tab));});
+    document.querySelector('.im-tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('.im-tab').forEach(x=>{const on=(x===b);x.classList.toggle('active',on);x.setAttribute('aria-selected',on?'true':'false');});document.querySelectorAll('.im-panel').forEach(x=>x.classList.toggle('active',x.dataset.panel===b.dataset.tab));});
     $('imCard').addEventListener('blur',e=>{if(e.target.matches('[data-field]'))saveMain(e.target);else if(e.target.matches('[data-code-key]'))saveCode(e.target);else if(e.target.matches('[data-price-code]'))savePrice(e.target);},true);$('imCard').addEventListener('change',e=>{if(e.target.type==='checkbox'&&e.target.matches('[data-field]'))saveMain(e.target);});
     $('imCard').addEventListener('click',e=>{if(e.target.closest('#imAddCode')){state.item.codes.push({id:0,code:'',name1:state.item.main.name1,name2:'',code_type:1,unit_name:state.item.main.base_unit||'قطعة',unit_type:'sub',unit_factor:1,whole_qty:1,open_price:0,prep_days:0,display_screen:'',display_order:0,is_purchase_code:1,is_sale_code:1});renderCodes();}});
     if(IM_BOOT.canEdit){$('imNewBtn').addEventListener('click',()=>{$('imCreate').hidden=!$('imCreate').hidden;if(!$('imCreateCodes').children.length)createRow(true);});$('imCreateAdd').addEventListener('click',()=>createRow(false));$('imCreate').addEventListener('submit',createItem);}

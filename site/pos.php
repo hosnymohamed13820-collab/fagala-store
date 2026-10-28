@@ -198,13 +198,6 @@ require_once __DIR__ . '/includes/header.php';
     color: var(--text);
     margin-left: 2px;
 }
-.pos-payment-net-hero {
-    text-align: center;
-    padding: var(--sp-2);
-    margin-bottom: var(--sp-3);
-    background: var(--surface-soft);
-    border-radius: var(--r-md);
-}
 .pos-change-box {
     text-align: center;
     padding: var(--sp-3);
@@ -767,10 +760,10 @@ require_once __DIR__ . '/includes/header.php';
             <div id="posPaymentViewNormal">
                 <h3 class="fg-dlg-title"><i class="ti ti-cash"></i> إنهاء ودفع الفاتورة</h3>
 
-                <div class="pos-payment-net-hero">
-                    <div style="font-size:var(--fs-sm); color:var(--text-muted);">صافي الفاتورة</div>
-                    <div style="font-size:var(--fs-3xl); font-weight:700; color:var(--accent-text);">
-                        <span id="posPayModalNet">0.00</span> ج.م
+                <div class="fkpis">
+                    <div class="fkpi">
+                        <span>صافي الفاتورة</span>
+                        <strong><span id="posPayModalNet">0.00</span> ج.م</strong>
                     </div>
                 </div>
 
@@ -1047,8 +1040,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function refocusScan() {
         setTimeout(function () {
             if (scanInput && !document.querySelector('.fg-dlg-bg[style*="display: flex"]')) {
+                scanInput.value = '';
                 scanInput.focus();
-                scanInput.select();
             }
         }, 60);
     }
@@ -1658,6 +1651,7 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
 
+        clearAlert();
         renderCart();
         searchDropdown.style.display = 'none';
         scanInput.value = '';
@@ -2061,6 +2055,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // تفريغ السلة في الذاكرة بدون حدث حذف
             clearCart(true);
+            const btnNew = document.getElementById('posBtnNewSale');
+            if (btnNew) btnNew.focus();
 
             // طباعة تلقائية بعد الحفظ — فشلها لا يوقف البيع
             try {
@@ -2882,6 +2878,13 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        const amtInput = document.getElementById('posReturnPaymentAmount');
+        if (amtInput && currentSelect) {
+            amtInput.value = net.toFixed(2);
+            checkReturnMethodOverride();
+            return;
+        }
+
         returnPaymentRowsContainer.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
             '<select class="fselect" id="posReturnPaymentMethod" style="flex:1;">' +
                 '<option value="cash"' + (returnPaymentMethod === 'cash' ? ' selected' : '') + '>كاش</option>' +
@@ -3069,6 +3072,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             addGenCartItem(items[0]);
                             genScanInput.value = '';
                             genSearchResults.style.display = 'none';
+                            genScanInput.focus();
                         }
                     })
                     .catch(function () {});
@@ -3086,6 +3090,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 addGenCartItem(items[idx]);
                 genScanInput.value = '';
                 genSearchResults.style.display = 'none';
+                genScanInput.focus();
             }
         });
     }
@@ -3371,6 +3376,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             addExchSaleItem(items[0]);
                             exchScanInput.value = '';
                             exchSearchResults.style.display = 'none';
+                            exchScanInput.focus();
                         }
                     })
                     .catch(function () {});
@@ -3388,6 +3394,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 addExchSaleItem(items[idx]);
                 exchScanInput.value = '';
                 exchSearchResults.style.display = 'none';
+                exchScanInput.focus();
             }
         });
     }
@@ -3628,6 +3635,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (openDlg && (e.key === 'F8' || e.key === 'F9' || e.key === 'F10')) {
             e.preventDefault();
+            return;
+        }
+
+        if (openDlg === modalPayment && paymentViewSuccess && paymentViewSuccess.style.display === 'block' && isEnter(e)) {
+            e.preventDefault();
+            const btnNew = document.getElementById('posBtnNewSale');
+            if (btnNew) btnNew.click();
             return;
         }
 

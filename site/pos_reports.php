@@ -9,10 +9,7 @@ $active_module = 'pos';
 require_once __DIR__ . '/includes/header.php';
 ?>
 
-<div class="fpage-head">
-    <div><h1>تقارير نقطة البيع</h1><p>حارس العجز للعمليات الحساسة والتقفيل.</p></div>
-    <a class="btn btn-outline" href="pos.php">رجوع لنقطة البيع</a>
-</div>
+<?= ui_page_head('تقارير نقطة البيع', 'حارس العجز للعمليات الحساسة والتقفيل.', '<a class="btn btn-outline" href="pos.php">رجوع لنقطة البيع</a>') ?>
 
 <div class="fcard">
     <form class="ffilters" id="posReportsFilters">
@@ -53,12 +50,33 @@ document.addEventListener('DOMContentLoaded', function () {
         return q;
     }
 
+    const statusLabels = {
+        approved: 'معتمد',
+        rejected: 'مرفوض',
+        pending: 'معلّق',
+        submitted: 'مستلمة',
+        completed: 'مكتملة'
+    };
+    const eventTypeLabels = {
+        line_removed: 'حذف صنف',
+        cart_cleared: 'مسح سلة',
+        drawer_open: 'فتح درج',
+        held_cancelled: 'إلغاء معلّقة',
+        session_opened: 'فتح وردية',
+        session_closed: 'إغلاق وردية'
+    };
+
     function chipValue(key, value) {
         if (key === 'status') {
             const cls = value === 'approved' ? 'fchip-pos' : (value === 'rejected' ? 'fchip-neg' : 'fchip-warn');
-            return '<span class="fchip ' + cls + '">' + ui.esc(String(value || '')) + '</span>';
+            const lbl = statusLabels[value] || value || '';
+            return '<span class="fchip ' + cls + '">' + ui.esc(String(lbl)) + '</span>';
         }
-        if (key === 'event_type' || key === 'return_type' || key === 'is_late' || key === 'method_override') {
+        if (key === 'event_type') {
+            const lbl = eventTypeLabels[value] || value || '';
+            return '<span class="fchip fchip-mute">' + ui.esc(String(lbl)) + '</span>';
+        }
+        if (key === 'return_type' || key === 'is_late' || key === 'method_override') {
             return '<span class="fchip fchip-mute">' + ui.esc(String(value || '')) + '</span>';
         }
         return ui.esc(String(value === null || value === undefined ? '' : value));

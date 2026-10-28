@@ -93,8 +93,8 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- الفلاتر: ظاهرة على طول -->
     <div class="sq-filters">
-        <span class="ftab sq-filter is-active" data-f="none" onclick="setFilter(this)">المضاف</span>
-        <span class="ftab sq-filter" data-f="has_stock" onclick="setFilter(this)">عندها رصيد</span>
+        <button type="button" class="ftab sq-filter is-active" data-f="none" onclick="setFilter(this)">المضاف</button>
+        <button type="button" class="ftab sq-filter" data-f="has_stock" onclick="setFilter(this)">عندها رصيد</button>
         <span class="sq-sub" id="subBranch">
             <select class="fselect" id="branchPick" onchange="runFilter()">
                 <option value="0">في كل المخازن</option>
@@ -103,16 +103,16 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
             </select>
         </span>
-        <span class="ftab sq-filter" data-f="admin_only" onclick="setFilter(this)">في الإدارة فقط</span>
-        <span class="ftab sq-filter" data-f="zero" onclick="setFilter(this)">رصيد صفر</span>
-        <span class="ftab sq-filter" data-f="below" onclick="setFilter(this)">أقل من</span>
+        <button type="button" class="ftab sq-filter" data-f="admin_only" onclick="setFilter(this)">في الإدارة فقط</button>
+        <button type="button" class="ftab sq-filter" data-f="zero" onclick="setFilter(this)">رصيد صفر</button>
+        <button type="button" class="ftab sq-filter" data-f="below" onclick="setFilter(this)">أقل من</button>
         <span class="sq-sub" id="subBelow">
             <input type="number" class="finput num" id="belowVal" value="5" min="0" onchange="runFilter()">
         </span>
     </div>
 
     <div class="sq-meta">
-        <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;"></span>
+        <span id="count" style="color:var(--ink-500);font-size:13.5px;font-weight:600;" aria-live="polite"></span>
         <span class="tools">
             <button type="button" class="btn btn-secondary" onclick="exportXlsx()">
                 <i class="ti ti-download"></i> تصدير
