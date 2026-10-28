@@ -7,6 +7,12 @@ require_once __DIR__ . '/item_master_lib.php';
 const IPP_PAGE_SIZE = 50;
 const IPP_PREVIEW_TTL = 1800;
 
+/** @return array<int,array{is1_id:int,name:string}> */
+function ipp_categories(): array
+{
+    return db()->query('SELECT is1_id, name FROM hq_cat_names ORDER BY name, is1_id')->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /** @return array{categories:array<int,mixed>,suppliers:array<int,string>} */
 function ipp_meta(): array
 {
@@ -19,7 +25,7 @@ function ipp_meta(): array
                  WHERE d.doc_type='purchase' AND d.status='posted'
             ) x ORDER BY supplier_name";
     return [
-        'categories' => im_categories(),
+        'categories' => ipp_categories(),
         'suppliers' => array_map('strval', db()->query($sql)->fetchAll(PDO::FETCH_COLUMN)),
     ];
 }
