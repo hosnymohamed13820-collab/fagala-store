@@ -110,7 +110,7 @@ require_once __DIR__ . '/includes/ui.php';
                 </div>
             </form>
 
-            <div style="overflow-x:auto;">
+            <div class="ftable-wrap">
                 <table class="ftable" id="customersTable">
                     <thead>
                         <tr>
@@ -182,7 +182,7 @@ require_once __DIR__ . '/includes/ui.php';
             <div class="fcard-head">
                 <h3 class="fcard-title">تفاصيل الحركات</h3>
             </div>
-            <div style="overflow-x:auto;">
+            <div class="ftable-wrap">
                 <table class="ftable" id="statementTable">
                     <thead>
                         <tr>

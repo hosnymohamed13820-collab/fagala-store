@@ -110,7 +110,7 @@ require_once __DIR__ . '/includes/header.php';
       <h3>الأصناف</h3>
       <span class="purchase-barcode-hint purchase-no-print">اكتب أو امسح الباركود واضغط Enter</span>
     </div>
-    <div class="purchase-table-wrap">
+    <div class="ftable-wrap purchase-table-wrap">
       <table class="ftable purchase-table">
         <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th></tr></thead>
         <tbody id="purchaseLines"></tbody>

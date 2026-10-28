@@ -163,6 +163,7 @@ if (($_GET['action'] ?? '') === 'print') {
             </div>
         <?php endif; ?>
 
+        <div class="ftable-wrap">
         <table class="ftable items-table">
             <thead>
                 <tr>
@@ -200,6 +201,7 @@ if (($_GET['action'] ?? '') === 'print') {
                 </tr>
             </tfoot>
         </table>
+        </div>
 
         <div class="signatures">
             <div class="sig-box">توقيع مسؤول التسليم (الراسل)</div>
@@ -918,6 +920,7 @@ async function viewTransfer(docId) {
             diffsHtml = `
                 <div style="margin-top:16px;">
                     <h4 style="margin:0 0 8px 0;font-size:14px;color:var(--neg);"><i class="ti ti-alert-triangle"></i> الفروقات المسجلة:</h4>
+                    <div class="ftable-wrap">
                     <table class="ftable">
                         <thead><tr><th>النوع</th><th>الصنف</th><th class="num">الكمية</th><th>الحالة</th><th>التفاصيل</th></tr></thead>
                         <tbody>
@@ -932,6 +935,7 @@ async function viewTransfer(docId) {
                             `).join('')}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             `;
         }

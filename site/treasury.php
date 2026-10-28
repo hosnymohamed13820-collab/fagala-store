@@ -533,7 +533,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <?php if (empty($statement)): ?>
             <div class="empty">لا توجد حركات بعد.</div>
         <?php else: ?>
-        <div class="stmt-scroll">
+        <div class="ftable-wrap stmt-scroll">
         <table class="ftable">
             <thead><tr>
                 <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
@@ -623,6 +623,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <?php if (empty($statement) && $priorBalance === null): ?>
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead>
                 <tr>
@@ -662,6 +663,8 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                         <td class="je-c-notes" data-xt-skip><?= je_notes_cell($row, $canEditEntry, $canEditNotes, $canReverse, (string) ($selectedTreasury['name'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
+            </tbody>
+            <tfoot>
                 <tr data-xt-ignore style="background:var(--line-soft);font-weight:700;">
                     <td colspan="7">الإجماليات</td>
                     <td class="num"><?= ltr_out(money_fmt_table($totalDebit)) ?></td>
@@ -669,8 +672,9 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                     <td class="num trs-fw5"><?= ltr_out(money_fmt_table($lastBalance)) ?></td>
                     <td colspan="3">—</td>
                 </tr>
-            </tbody>
+            </tfoot>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 <?php else: ?>

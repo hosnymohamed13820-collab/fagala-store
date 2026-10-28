@@ -166,7 +166,7 @@ $prioBadge = function($p) {
                     <span><b>المطلوب منه:</b> <?= e(($shr['source'] ?? 'branch') === 'purchase' ? 'المشتريات' : ($shr['to_name'] ?? '—')) ?></span>
                     <span><b>الطالب:</b> <?= e($shr['requester'] ?? '—') ?></span>
                 </div>
-                <div style="overflow-x:auto;">
+                <div class="ftable-wrap">
                     <table class="ftable">
                         <thead><tr>
                             <th class="num">#</th>

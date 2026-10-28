@@ -431,9 +431,6 @@ require_once __DIR__ . '/includes/header.php';
 
 <style>
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-    .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:12px; }
-    .badge.active { background:var(--pos-soft); color:var(--pos); }
-    .badge.inactive { background:var(--line-soft); color:var(--ink-400); }
     .modal-bg { display:none; position:fixed; inset:0; background:rgba(30,27,75,0.45);
         z-index:200; align-items:flex-start; justify-content:center; padding:30px 16px; overflow-y:auto; }
     .modal-bg.open { display:flex; }
@@ -479,6 +476,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($branches)): ?>
             <div class="empty">لا توجد فروع بعد. أضف أول فرع.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الاسم</th><th>العنوان</th><th>التليفون</th><th>الخصائص</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -492,7 +490,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php if (!empty($b['has_finance'])): ?><span class="tag-on">مالي</span>
                         <?php else: ?><span class="tag-off">توزيع فقط</span><?php endif; ?>
                     </td>
-                    <td><span class="badge <?= $b['is_active']?'active':'inactive' ?>"><?= $b['is_active']?'نشط':'موقوف' ?></span></td>
+                    <td><span class="fchip <?= $b['is_active']?'fchip-pos':'fchip-neg' ?>"><?= $b['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <button class="btn btn-sm btn-ghost"
                             onclick='openBranch(<?= json_encode($b, JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>تعديل</button>
@@ -507,6 +505,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -601,6 +600,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($employees)): ?>
             <div class="empty">لا يوجد موظفون بعد.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>نوع الحساب</th><th>الراتب</th><th>الساعات المنتظرة</th><th>التليفون</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -611,7 +611,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td><?= e($emp['job_title'] ?? '—') ?></td>
                     <td>
                         <?php if (($emp['salary_mode'] ?? 'hours') === 'fixed'): ?>
-                            <span class="badge" style="color:var(--accent-text);background:var(--accent-soft);">مرتب ثابت</span>
+                            <span class="fchip fchip-info">مرتب ثابت</span>
                         <?php else: ?>
                             <span style="color:var(--ink-700);font-size:13px;">على الساعات</span>
                         <?php endif; ?>
@@ -625,7 +625,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td>
                     <td><?= e($emp['phone'] ?? '—') ?></td>
-                    <td><span class="badge <?= $emp['is_active']?'active':'inactive' ?>"><?= $emp['is_active']?'نشط':'موقوف' ?></span></td>
+                    <td><span class="fchip <?= $emp['is_active']?'fchip-pos':'fchip-neg' ?>"><?= $emp['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <?php
                             $empJs = $emp;
@@ -646,6 +646,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -722,6 +723,7 @@ require_once __DIR__ . '/includes/header.php';
         $closingTreasuryId = central_treasury_by_type('cash'); // تقفيل الكاشير
         $custodyTreasuryId = main_cash_treasury_id();          // إذون عهدة الفروع
         ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الاسم</th><th>النوع</th><th>الرصيد</th><th>الحالة</th><th>الإيصالات</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -754,12 +756,12 @@ require_once __DIR__ . '/includes/header.php';
                         ?>
                     </td>
                     <td style="font-weight:500;"><?= number_format((float)$t['balance'],2) ?></td>
-                    <td><span class="badge <?= $t['is_active']?'active':'inactive' ?>"><?= $t['is_active']?'نشط':'موقوف' ?></span></td>
+                    <td><span class="fchip <?= $t['is_active']?'fchip-pos':'fchip-neg' ?>"><?= $t['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <?php if ($isCustody): ?>
                             <span style="color:var(--ink-400);font-size:13px;">—</span>
                         <?php else: ?>
-                            <span class="badge <?= ($t['show_in_receipts'] ?? 1)?'active':'inactive' ?>"><?= ($t['show_in_receipts'] ?? 1)?'يظهر في الإيصالات':'مخفي من الإيصالات' ?></span>
+                            <span class="fchip <?= ($t['show_in_receipts'] ?? 1)?'fchip-pos':'fchip-mute' ?>"><?= ($t['show_in_receipts'] ?? 1)?'يظهر في الإيصالات':'مخفي من الإيصالات' ?></span>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -800,6 +802,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -902,6 +905,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($categories)): ?>
             <div class="empty">لا توجد حسابات بعد.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الاسم</th><th>النوع</th><th>العهدة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -920,7 +924,7 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td style="font-size:12px;color:var(--ink-500);"><?= e($accTypeLabels[$c['type']] ?? $c['type']) ?></td>
                     <td><?= !empty($c['is_custody']) ? '<span class="tag-on">عهدة</span>' : '<span style="color:var(--ink-400);">—</span>' ?></td>
-                    <td><span class="badge <?= $c['is_active']?'active':'inactive' ?>"><?= $c['is_active']?'نشط':'موقوف' ?></span></td>
+                    <td><span class="fchip <?= $c['is_active']?'fchip-pos':'fchip-neg' ?>"><?= $c['is_active']?'نشط':'موقوف' ?></span></td>
                     <td>
                         <button class="btn btn-sm btn-ghost"
                             onclick='openCat(<?= json_encode([
@@ -940,6 +944,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 

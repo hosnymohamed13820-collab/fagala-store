@@ -352,7 +352,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div><strong>الطرف:</strong> <span id="modalSupplier">-</span></div>
                 <div><strong>التاريخ:</strong> <span id="modalDate">-</span></div>
             </div>
-            <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);" id="modalTableWrap">
+            <div class="ftable-wrap" style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);" id="modalTableWrap">
                 <table class="ftable" style="margin-top:0;">
                     <thead style="position:sticky;top:0;z-index:2;">
                         <tr>
@@ -387,7 +387,7 @@ require_once __DIR__ . '/includes/header.php';
                     <i class="ti ti-x"></i>
                 </button>
             </div>
-            <div style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);">
+            <div class="ftable-wrap" style="overflow-y:auto;flex:1;border:1px solid var(--line-soft);border-radius:var(--r-sm);">
                 <table class="ftable" style="margin-top:0;">
                     <thead style="position:sticky;top:0;z-index:2;">
                         <tr>

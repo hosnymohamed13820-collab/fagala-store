@@ -592,7 +592,7 @@ details[open] > .act-group-summary .act-group-chevron {
                     لا توجد حركات في هذه المجموعة للفترة المحددة.
                 </div>
             <?php else: ?>
-                <div class="timeline-table-wrap">
+                <div class="ftable-wrap timeline-table-wrap">
                     <table class="ftable act-table" style="width:100%;margin:0;">
                         <thead>
                             <tr>
@@ -684,7 +684,7 @@ details[open] > .act-group-summary .act-group-chevron {
             </div>
             <div class="fcard timeline-panel">
                 <div class="timeline-header"><h3 class="timeline-title">فواتير المبيعات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
-                <div class="activity-table-wrap">
+                <div class="ftable-wrap activity-table-wrap">
                     <table class="ftable">
                         <thead><tr><th>التاريخ والوقت</th>
                             <?php if ($branchFilter === null): ?>
@@ -727,6 +727,7 @@ details[open] > .act-group-summary .act-group-chevron {
                                         <?php if (empty($lines)): ?>
                                             <span style="color:var(--ink-500);font-size:13px;">مفيش أصناف مسجلة للفاتورة دي.</span>
                                         <?php else: ?>
+                                            <div class="ftable-wrap">
                                             <table class="ftable" style="font-size:12px;margin:4px 0;background:var(--surface);">
                                                 <thead>
                                                     <tr>
@@ -750,6 +751,7 @@ details[open] > .act-group-summary .act-group-chevron {
                                                     <?php endforeach; ?>
                                                 </tbody>
                                             </table>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                 </tr>
@@ -834,7 +836,7 @@ details[open] > .act-group-summary .act-group-chevron {
         </div>
         <div class="fcard timeline-panel">
             <div class="timeline-header"><h3 class="timeline-title">فواتير المشتريات والمردودات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
-            <div class="activity-table-wrap">
+            <div class="ftable-wrap activity-table-wrap">
                 <table class="ftable">
                     <thead><tr><th>التاريخ</th><th>النوع</th><th>رقم الفاتورة</th><th>المورد</th><?php if ($branchFilter === null): ?><th>الفرع</th><?php endif; ?><th class="num">الإجمالي</th><th class="num">الصافي</th></tr></thead>
                     <tbody>

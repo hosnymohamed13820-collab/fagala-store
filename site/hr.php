@@ -1120,6 +1120,7 @@ $statusBadge = function($st) {
         <?php if (empty($empList)): ?>
             <div class="empty">لا يوجد موظفون. أضفهم من التعريفات.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>الراتب</th><th>السلفة المعلّقة</th><th>الحضور المتوقع</th><th>الانصراف</th></tr></thead>
             <tbody>
@@ -1138,6 +1139,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -1170,7 +1172,7 @@ $statusBadge = function($st) {
         <?php if (empty($monthlyAdvances)): ?>
             <div class="empty">لا توجد سلف شهرية.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
+        <div class="ftable-wrap hrs-scroll-x">
         <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1235,7 +1237,7 @@ $statusBadge = function($st) {
         <?php if (empty($standingAdvances)): ?>
             <div class="empty">لا توجد سلف مستديمة.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
+        <div class="ftable-wrap hrs-scroll-x">
         <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1302,7 +1304,7 @@ $statusBadge = function($st) {
             <i class="ti ti-alert-circle"></i> دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
             (رصيد دائن في سجل حسابه). مابتتخصمش من المرتب، وبتتصرفله لما ترجّعهاله.
         </p>
-        <div class="hrs-scroll-x">
+        <div class="ftable-wrap hrs-scroll-x">
         <table class="ftable">
             <thead><tr><th>الموظف</th><th>الشركة مدينة له</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1337,6 +1339,7 @@ $statusBadge = function($st) {
         <?php if (empty($bonuses)): ?>
             <div class="empty">لا توجد مكافآت.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
@@ -1351,6 +1354,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -1372,7 +1376,7 @@ $statusBadge = function($st) {
         <?php if (empty($deductionRows)): ?>
             <div class="empty"><?= $tab === 'penalties' ? 'لا توجد جزاءات.' : 'لا يوجد عجز أو زيادة.' ?></div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
+        <div class="ftable-wrap hrs-scroll-x">
         <table class="ftable">
             <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
@@ -1506,7 +1510,7 @@ $statusBadge = function($st) {
                     <?php endif; ?>
                 </div>
             </div>
-            <div class="hrs-scroll-x">
+            <div class="ftable-wrap hrs-scroll-x">
             <table class="sal-tbl ftable" data-cashier-deficit-carry="<?= cashier_deficit_carry_enabled() ? '1' : '0' ?>">
                 <thead>
                     <tr>
@@ -1847,7 +1851,7 @@ $statusBadge = function($st) {
         <?php if (empty($salaries)): ?>
             <div class="empty">لا توجد رواتب مصروفة.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
+        <div class="ftable-wrap hrs-scroll-x">
         <table class="ftable">
             <thead>
                 <tr>
@@ -1931,6 +1935,7 @@ $statusBadge = function($st) {
         <?php if (empty($requests)): ?>
             <div class="empty">لا توجد طلبات.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الموظف</th><th>اليوم</th><th>دخول مطلوب</th><th>خروج مطلوب</th><th>السبب</th><th>الحالة</th><th>إجراء</th></tr></thead>
             <tbody>
@@ -1975,6 +1980,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -1992,6 +1998,7 @@ $statusBadge = function($st) {
         <?php if (empty($attRows)): ?>
             <div class="empty">لا يوجد سجل حضور لهذا الشهر.</div>
         <?php else: ?>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>الحضور</th><th>الانصراف</th><th>ساعات العمل</th><th>مكان البصمة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
@@ -2050,6 +2057,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 <?php endif; ?>

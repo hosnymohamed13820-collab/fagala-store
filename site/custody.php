@@ -402,6 +402,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if (empty($empExpenses)): ?>
                     <div class="empty">لا توجد مصروفات بعد.</div>
                 <?php else: ?>
+                <div class="ftable-wrap">
                 <table class="ftable">
                     <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                     <tbody>
@@ -447,6 +448,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
                 <?php endif; ?>
             </div>
 
@@ -456,6 +458,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if (empty($empOrders)): ?>
                     <div class="empty">لا توجد إذونات في هذه الفترة.</div>
                 <?php else: ?>
+                <div class="ftable-wrap">
                 <table class="ftable">
                     <thead><tr><th>التاريخ</th><th class="num">المبلغ</th><th>ملاحظات</th></tr></thead>
                     <tbody>
@@ -468,6 +471,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
                 <?php endif; ?>
             </div>
         </div>
@@ -484,6 +488,7 @@ require_once __DIR__ . '/includes/header.php';
             <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
                 الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
             </p>
+            <div class="ftable-wrap">
             <table class="ftable" style="max-width:420px;">
                 <tbody>
                     <tr><td>آخر المدة المفروض</td>
@@ -496,6 +501,7 @@ require_once __DIR__ . '/includes/header.php';
                         </td></tr>
                 </tbody>
             </table>
+            </div>
             <p style="color:var(--ink-400);font-size:12px;margin-top:12px;">
                 الفرق ده متوقع بس — الرقم النهائي هو اللي المحاسب هيستلمه فعلاً.
             </p>
@@ -512,6 +518,7 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="employee_id" value="<?= (int)$selectedEmpId ?>">
                 <input type="hidden" name="counted_cash" id="countedCashEmp" value="0">
 
+                <div class="ftable-wrap">
                 <table class="denom-table ftable" style="max-width:420px;">
                     <thead><tr><th class="num">الفئة</th><th class="num">العدد</th><th class="num">الإجمالي</th></tr></thead>
                     <tbody>
@@ -525,6 +532,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
 
                 <div id="countResultEmp" class="count-result ok" style="display:none;"></div>
 
@@ -624,6 +632,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($expenses)): ?>
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
+            <div class="ftable-wrap">
             <table class="ftable">
                 <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
@@ -654,6 +663,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
             <?php endif; ?>
         </div>
 
@@ -663,6 +673,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php if (empty($orders)): ?>
                 <div class="empty">لا توجد إذونات في هذه الفترة.</div>
             <?php else: ?>
+            <div class="ftable-wrap">
             <table class="ftable">
                 <thead><tr><th>التاريخ</th><th class="num">المبلغ</th><th>ملاحظات</th></tr></thead>
                 <tbody>
@@ -675,6 +686,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
             <?php endif; ?>
         </div>
     </div>
@@ -691,6 +703,7 @@ require_once __DIR__ . '/includes/header.php';
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">
             الأرقام اللي اتقدّمت للمحاسب. مفيش تعديل عليها لحد ما يعتمد أو يرفض.
         </p>
+        <div class="ftable-wrap">
         <table class="ftable" style="max-width:420px;">
             <tbody>
                 <tr><td>آخر المدة المفروض</td>
@@ -703,6 +716,7 @@ require_once __DIR__ . '/includes/header.php';
                     </td></tr>
             </tbody>
         </table>
+        </div>
         <p style="color:var(--ink-400);font-size:12px;margin-top:12px;">
             الفرق ده متوقع بس — الرقم النهائي هو اللي المحاسب هيستلمه فعلاً.
         </p>
@@ -718,6 +732,7 @@ require_once __DIR__ . '/includes/header.php';
             <input type="hidden" name="custody_id" value="<?= (int)$custody['id'] ?>">
             <input type="hidden" name="counted_cash" id="countedCash" value="0">
 
+            <div class="ftable-wrap">
             <table class="denom-table ftable" style="max-width:420px;">
                 <thead><tr><th class="num">الفئة</th><th class="num">العدد</th><th class="num">الإجمالي</th></tr></thead>
                 <tbody>
@@ -731,6 +746,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
 
             <div id="countResult" class="count-result ok" style="display:none;"></div>
 

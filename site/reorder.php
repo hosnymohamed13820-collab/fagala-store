@@ -330,7 +330,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- جدول الأصناف -->
-    <div class="table-responsive">
+    <div class="ftable-wrap">
         <table class="ftable reorder-table" id="reorderTable">
             <thead>
                 <tr>

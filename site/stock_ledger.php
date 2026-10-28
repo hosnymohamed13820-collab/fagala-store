@@ -288,7 +288,7 @@ require_once __DIR__ . '/includes/header.php';
             <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-filter"></i> تصفية</button>
     </form>
 
-    <div style="overflow-x:auto;">
+    <div class="ftable-wrap">
         <table class="ftable" id="docsTable">
             <thead>
                 <tr>
@@ -433,7 +433,7 @@ require_once __DIR__ . '/includes/header.php';
             <span class="fchip">مجموع فرق القطع: <?= number_format((float)$activeRecon['total_diff_pieces'], 3) ?></span>
             <span class="fchip">مجموع فرق القيمة: <?= number_format((float)$activeRecon['total_diff_value'], 2) ?> ج.م</span>
         </div>
-        <div style="overflow-x:auto;">
+        <div class="ftable-wrap">
             <table class="ftable">
                 <thead>
                     <tr>
@@ -492,7 +492,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <div style="overflow-x:auto;">
+    <div class="ftable-wrap">
         <table class="ftable">
             <thead>
                 <tr>
@@ -716,7 +716,7 @@ async function viewDoc(docId) {
             </div>
 
             <h4 style="margin:16px 0 8px 0;"><i class="ti ti-list"></i> سطور المستند (${lines.length})</h4>
-            <div style="overflow-x:auto;margin-bottom:16px;">
+            <div class="ftable-wrap" style="margin-bottom:16px;">
                 <table class="ftable">
                     <thead>
                         <tr>
@@ -750,7 +750,7 @@ async function viewDoc(docId) {
             </div>
 
             <h4 style="margin:16px 0 8px 0;"><i class="ti ti-clock"></i> حركات الدفتر (stock_moves: ${moves.length})</h4>
-            <div style="overflow-x:auto;margin-bottom:16px;">
+            <div class="ftable-wrap" style="margin-bottom:16px;">
                 <table class="ftable">
                     <thead>
                         <tr>
@@ -785,7 +785,7 @@ async function viewDoc(docId) {
             </div>
 
             <h4 style="margin:16px 0 8px 0;"><i class="ti ti-note"></i> سجل المستند (doc_events: ${events.length})</h4>
-            <div style="overflow-x:auto;">
+            <div class="ftable-wrap">
                 <table class="ftable">
                     <thead>
                         <tr>

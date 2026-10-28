@@ -84,7 +84,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="bo-status" id="status"></div>
 
-    <div style="overflow-x:auto;">
+    <div class="ftable-wrap">
         <table class="ftable bo-table">
             <thead>
                 <tr>

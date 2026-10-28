@@ -670,6 +670,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="pay-with-summary">
                 <div class="pay-method">
                     <h4><?= e($mLabel) ?></h4>
+                    <div class="ftable-wrap">
                     <table class="repeatable pay-table ftable">
                         <thead>
                             <tr>
@@ -689,11 +690,13 @@ require_once __DIR__ . '/includes/header.php';
                             <?php endfor; ?>
                         </tbody>
                     </table>
+                    </div>
                     <p style="font-size:12px;color:var(--ink-500);margin-top:8px;">اقف على آخر صف واضغط السهم لتحت لإضافة صف جديد.</p>
                 </div>
                 <div class="side-summary">
                     <div class="sum-detail">
                         <div class="sdt">تفاصيل التقفيل</div>
+                        <div class="ftable-wrap">
                         <table class="ftable">
                             <tr><td class="k">مبيعات السيستم</td><td class="v"><span class="side_system">0.00</span> ج.م</td></tr>
                             <tr><td class="k">كاش</td><td class="v"><span class="side_cash">0.00</span> ج.م</td></tr>
@@ -701,6 +704,7 @@ require_once __DIR__ . '/includes/header.php';
                             <tr><td class="k">إنستا باي</td><td class="v"><span class="side_instapay">0.00</span> ج.م</td></tr>
                             <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span class="side_collected">0.00</span> ج.م</td></tr>
                         </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -718,6 +722,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="sum-layout">
                 <div class="sum-detail">
                     <div class="sdt">تفاصيل التقفيل</div>
+                    <div class="ftable-wrap">
                     <table class="ftable">
                         <tr><td class="k">مبيعات السيستم</td><td class="v"><span id="s_system">0.00</span> ج.م</td></tr>
                         <tr><td class="k">كاش</td><td class="v"><span id="s_cash">0.00</span> ج.م</td></tr>
@@ -725,6 +730,7 @@ require_once __DIR__ . '/includes/header.php';
                         <tr><td class="k">إنستا باي</td><td class="v"><span id="s_instapay">0.00</span> ج.م</td></tr>
                         <tr class="grand"><td>إجمالي فعلي</td><td class="v"><span id="s_collected">0.00</span> ج.م</td></tr>
                     </table>
+                    </div>
                 </div>
                 <div class="sum-diff-box">
                     <div class="sdl">الفرق</div>
@@ -778,6 +784,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (!empty($myRejected)): ?>
 <div class="card fcard">
     <div class="section-title">تقفيلاتي المرفوضة (اضغط تعديل لإعادة الإرسال)</div>
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الفرع</th><th class="num">المحصّل</th><th class="num">الفرق</th><th>سبب الرفض</th><th>إجراء</th></tr></thead>
         <tbody>
@@ -815,6 +822,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -824,6 +832,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($todayShifts)): ?>
         <div class="empty">لا توجد تقفيلات اليوم بعد.</div>
     <?php else: ?>
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead><tr>
             <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th class="num">السيستم</th>
@@ -891,6 +900,7 @@ require_once __DIR__ . '/includes/header.php';
             </tr>
         </tbody>
     </table>
+    </div>
     <?php endif; ?>
 </div>
 
@@ -898,6 +908,7 @@ require_once __DIR__ . '/includes/header.php';
 <?php if (!empty($archiveShifts)): ?>
 <div class="card fcard">
     <div class="section-title">الأرشيف (تقفيلات سابقة)</div>
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead><tr>
             <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th>السيستم</th>
@@ -955,6 +966,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
 </div>
 <?php endif; ?>
 

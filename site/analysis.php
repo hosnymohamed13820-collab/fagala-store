@@ -468,6 +468,7 @@ require_once __DIR__ . '/includes/header.php';
             · الفاصل <?= e($preview['delim']) ?> · <?= count($preview['headers']) ?> عمود
         </div>
 
+        <div class="ftable-wrap">
         <table class="ftable an-prev">
             <tr><?php foreach ($preview['headers'] as $i => $h): ?>
                 <th><?= $i ?><br><?= e((string) $h) ?></th>
@@ -478,6 +479,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php endforeach; ?></tr>
             <?php endforeach; ?>
         </table>
+        </div>
 
         <form method="post" style="margin-top:14px;">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -712,7 +714,7 @@ require_once __DIR__ . '/includes/header.php';
             <span>طول الشريط تحت الرقم = تقل الصنف بالنسبة لأتقل صنف في المعروض</span>
         </div>
 
-        <div class="an-wrap">
+        <div class="ftable-wrap an-wrap">
             <table class="ftable an-tbl">
                 <thead>
                     <?php $nb = count($report['names']); ?>

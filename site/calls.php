@@ -148,7 +148,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <!-- محتوى التاب المختار -->
 <?php if ($view === 'missed' && $missedData !== null): ?>
-    <div class="table-responsive">
+    <div class="ftable-wrap">
         <table class="ftable">
             <thead>
                 <tr>
@@ -211,7 +211,7 @@ require_once __DIR__ . '/includes/header.php';
     <div style="margin-bottom:10px;font-size:13px;color:var(--ink-500);">
         ظاهر أول <?= count($logData['rows']) ?> من <?= (int)$logData['total_count'] ?>
     </div>
-    <div class="table-responsive">
+    <div class="ftable-wrap">
         <table class="ftable">
             <thead>
                 <tr>
@@ -257,7 +257,7 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
 <?php elseif ($view === 'summary' && $summaryData !== null): ?>
-    <div class="table-responsive">
+    <div class="ftable-wrap">
         <table class="ftable">
             <thead>
                 <tr>
@@ -287,7 +287,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php if ($sr['sync_status'] === 'stale'): ?>
                         <span class="fchip fchip-neg"><?= e($sr['sync_label']) ?></span>
                         <?php else: ?>
-                        <span class="fchip <?= $sr['last_sync'] ? 'fchip-pos' : '' ?>"><?= e($sr['sync_label']) ?></span>
+                        <span class="fchip <?= $sr['last_sync'] ? 'fchip-pos' : 'fchip-mute' ?>"><?= e($sr['sync_label']) ?></span>
                         <?php endif; ?>
                     </td>
                 </tr>

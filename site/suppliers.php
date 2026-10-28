@@ -255,31 +255,29 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <!-- (أ) الملخص: كل الموردين -->
-        <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
-            <div>
-                <span class="section-title" style="margin-bottom:0;">كشوف حسابات الموردين<?= $currBranch ? ' — فرع ' . e($currBranch['label']) : '' ?></span>
-                <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
-                    الفترة من <?= e($from) ?> حتى <?= e($to) ?> (رصيد ما بعد جرد ٢٧ يونيو)
-                </div>
+        <div style="margin-bottom:12px;">
+            <span class="section-title" style="margin-bottom:0;">كشوف حسابات الموردين<?= $currBranch ? ' — فرع ' . e($currBranch['label']) : '' ?></span>
+            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+                الفترة من <?= e($from) ?> حتى <?= e($to) ?> (رصيد ما بعد جرد ٢٧ يونيو)
             </div>
-            <form method="get" class="filter-form" style="margin-bottom:0;">
-                <input type="hidden" name="tab" value="statement">
-                <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
-                <label>كشف مورد
-                    <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="if(this.value && this.value!='0') this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
-                        <option value="0">اختر مورد...</option>
-                        <?php foreach ($allSuppList as $sp): ?>
-                            <option value="<?= (int)$sp['id'] ?>"><?= e($sp['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </label>
-                <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-                <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
-                <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
-                    <i class="ti ti-download"></i> تصدير إكسيل
-                </a>
-            </form>
         </div>
+        <form method="get" class="ffilters">
+            <input type="hidden" name="tab" value="statement">
+            <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
+            <label class="ffield">كشف مورد
+                <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="if(this.value && this.value!='0') this.form.submit()" class="fselect">
+                    <option value="0">اختر مورد...</option>
+                    <?php foreach ($allSuppList as $sp): ?>
+                        <option value="<?= (int)$sp['id'] ?>"><?= e($sp['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </label>
+            <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+            <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+            <a href="?tab=statement&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+                <i class="ti ti-download"></i> تصدير إكسيل
+            </a>
+        </form>
 
         <div class="fkpis">
             <div class="fkpi">
@@ -421,18 +419,18 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <form method="get" class="filter-form" style="margin-bottom:0;">
+            <form method="get" class="ffilters" style="margin-top:12px;">
                 <input type="hidden" name="tab" value="statement">
                 <input type="hidden" name="br" value="<?= e($currBranchKey) ?>">
-                <label>تغيير المورد
-                    <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
+                <label class="ffield">تغيير المورد
+                    <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" class="fselect">
                         <?php foreach ($allSuppList as $sp): ?>
                             <option value="<?= (int)$sp['id'] ?>" <?= $selectedSupplierId === (int)$sp['id'] ? 'selected' : '' ?>><?= e($sp['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
-                <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>"></label>
+                <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>"></label>
+                <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>"></label>
                 <button type="submit" class="btn btn-sm">تطبيق</button>
                 <a href="?tab=statement&supplier=<?= $selectedSupplierId ?>&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
                     <i class="ti ti-download"></i> تصدير إكسيل

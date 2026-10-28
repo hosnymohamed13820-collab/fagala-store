@@ -44,19 +44,19 @@ require_once __DIR__ . '/includes/header.php';
 <div class="fcard ipp-hidden" id="ippPreviewCard">
     <div class="ipp-section-head"><div class="section-title">نتيجة المعاينة</div><div class="ipp-actions"><a class="btn btn-outline" id="ippExport">تنزيل إكسيل</a><?php if ($ippCanApply): ?><button class="btn btn-success" type="button" id="ippApply">تطبيق نفس المعاينة</button><?php endif; ?></div></div>
     <div class="fkpis" id="ippSummary"></div>
-    <div class="ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الكود</th><th>الصنف</th><th>المصدر</th><th>القسم</th><th>آخر مورد</th><th>الأساس</th><th class="num">True</th><th class="num">القديم</th><th class="num">الجديد</th><th class="num">الفرق</th><th>النتيجة</th></tr></thead><tbody id="ippRows"></tbody></table></div>
+    <div class="ftable-wrap ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الكود</th><th>الصنف</th><th>المصدر</th><th>القسم</th><th>آخر مورد</th><th>الأساس</th><th class="num">True</th><th class="num">القديم</th><th class="num">الجديد</th><th class="num">الفرق</th><th>النتيجة</th></tr></thead><tbody id="ippRows"></tbody></table></div>
     <div class="ipp-pager" id="ippPager"></div><div class="ipp-status" id="ippApplyStatus"></div>
 </div>
 
 <div class="fcard">
     <div class="section-title">الدفعات السابقة</div>
-    <div class="ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الدفعة</th><th>العملية</th><th class="num">القيمة</th><th>التقريب</th><th class="num">السطور</th><th class="num">اتطبق</th><th class="num">اتخطى</th><th>بواسطة</th><th>التاريخ</th><th></th></tr></thead><tbody id="ippBatches"></tbody></table></div>
+    <div class="ftable-wrap ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الدفعة</th><th>العملية</th><th class="num">القيمة</th><th>التقريب</th><th class="num">السطور</th><th class="num">اتطبق</th><th class="num">اتخطى</th><th>بواسطة</th><th>التاريخ</th><th></th></tr></thead><tbody id="ippBatches"></tbody></table></div>
     <div class="ipp-pager" id="ippBatchPager"></div><div class="ipp-status" id="ippBatchStatus"></div>
 </div>
 
 <div class="fcard ipp-hidden" id="ippBatchCard">
     <div class="section-title" id="ippBatchTitle">تفاصيل الدفعة</div>
-    <div class="ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الكود</th><th class="num">القديم</th><th class="num">المقترح</th><th class="num">True وقتها</th><th>النتيجة</th><th>سبب التخطي</th></tr></thead><tbody id="ippBatchRows"></tbody></table></div>
+    <div class="ftable-wrap ipp-wrap"><table class="ftable" data-xt-off><thead><tr><th>الكود</th><th class="num">القديم</th><th class="num">المقترح</th><th class="num">True وقتها</th><th>النتيجة</th><th>سبب التخطي</th></tr></thead><tbody id="ippBatchRows"></tbody></table></div>
     <div class="ipp-pager" id="ippBatchLinePager"></div>
 </div>
 

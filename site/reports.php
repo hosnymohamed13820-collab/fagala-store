@@ -1164,7 +1164,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                             <button type="button" class="btn btn-sm" onclick="toggleAllSheets(true)">اختيار الكل</button>
                             <button type="button" class="btn btn-sm btn-ghost" onclick="toggleAllSheets(false)">إلغاء الكل</button>
                         </div>
-                        <div style="overflow-y:auto;flex:1;border:1.5px solid var(--line);border-radius:10px;">
+                        <div class="ftable-wrap" style="overflow-y:auto;flex:1;border:1.5px solid var(--line);border-radius:10px;">
                             <table class="ftable" style="width:100%;border-collapse:collapse;">
                                 <thead><tr style="background:var(--line-soft);">
                                     <th style="padding:9px 12px;width:40px;"></th>
@@ -1222,6 +1222,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <a href="?<?= $expQs ?>&fmt=xlsx" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
             </div>
         </div>
+        <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr>
                 <th>المحضر</th><th>الكود</th><th>اسم الصنف</th><th>الوحدة</th>
@@ -1255,6 +1256,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <p style="color:var(--ink-500);font-size:12px;margin-top:10px;">عرض للقراءة فقط. للتعديل، استخدم زر "إرجاع للمراجعة" من صفحة الجرد (للطوارئ).</p>
         <?php endif; ?>
     </div>
@@ -1332,7 +1334,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <div id="npStatus" class="np-muted"></div>
     </div>
 
-    <div style="overflow-x:auto;">
+    <div class="ftable-wrap">
         <table class="ftable np-table">
             <thead><tr>
                 <th>كود الصنف</th>
@@ -1700,7 +1702,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     <?php elseif (!$custRows): ?>
         <div class="empty">مفيش حجوزات في الفترة دي.</div>
     <?php else: ?>
-    <div style="overflow-x:auto;">
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead><tr>
             <th>الاسم</th><th>رقم التليفون</th><th>الفروع</th><th>عدد الحجوزات</th><th>تاريخ آخر حجز</th>
@@ -2048,7 +2050,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                     </div>
                                 </div>
 
-                                <div style="overflow-x:auto;">
+                                <div class="ftable-wrap">
                                     <table class="ftable" style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;">
                                         <thead>
                                             <tr style="background:var(--line-soft);">
@@ -2641,7 +2643,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     '<span style="font-size:13px;font-weight:600;color:var(--ink-700);">حركات الحساب (' + d.rows.length + ' حركة)</span>' +
                     '<a href="' + exportUrl + '" class="btn btn-csv" style="font-size:12px;padding:6px 14px;text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير حركات الحساب (Excel)</a>' +
                     '</div>' +
-                    '<div style="overflow-x:auto;"><table class="ftable"><thead><tr>' +
+                    '<div class="ftable-wrap"><table class="ftable"><thead><tr>' +
                     '<th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>النوع</th><th>الخزينة</th><th>الفرع</th>' +
                     '<th>مدين</th><th>دائن</th><th>الرصيد</th><th>بواسطة</th><th>الملاحظات</th>' +
                     '</tr></thead><tbody>';
@@ -2707,7 +2709,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 var qty = function (value) {
                     return Number(value || 0).toLocaleString('en-US', { maximumFractionDigits: 20 });
                 };
-                var html = '<div class="dist-inner"><table class="ftable" data-xt-off><thead><tr>' +
+                var html = '<div class="ftable-wrap dist-inner"><table class="ftable" data-xt-off><thead><tr>' +
                     '<th>الصنف</th><th>الكود</th>';
                 branchIds.forEach(function (branchId) {
                     html += '<th class="num">' + esc(branches[branchId]) + '</th>';
@@ -2731,6 +2733,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     }
     </script>
 
+    <div class="ftable-wrap">
     <table data-xt-min="1" class="ftable"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort' : '' ?>>
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= in_array($hi, $report['num_cols'] ?? [], true) ? ' class="num"' : '' ?><?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
@@ -2796,6 +2799,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <?php if ($type === 'insta_recon'): ?>
                     <tr data-xt-ignore data-xt-nosort hidden>
                         <td colspan="<?= count($report['headers']) ?>">
+                            <div class="ftable-wrap">
                             <table class="ftable"><thead><tr><th>الوردية</th><th>حالتها</th><th>الكاشير</th><th>المبلغ</th><th>مرجع الكاشير</th><th>المطابقة</th><th>وقت الرسالة</th><th>رقم الرسالة</th><th>الراسل</th></tr></thead><tbody>
                             <?php foreach ($report['details'][$ri] as $line): $sms = $line['sms']; ?>
                                 <tr><td><?= e($line['shift_name']) ?></td><td><?= e($line['shift_status']) ?></td><td><?= e($line['cashier']) ?></td>
@@ -2806,6 +2810,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                                     <td><?= e($sms['sender'] ?? '—') ?></td></tr>
                             <?php endforeach; ?>
                             </tbody></table>
+                            </div>
                         </td>
                     </tr>
                 <?php endif; ?>
@@ -2826,10 +2831,12 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
             <?php endif; ?>
         </tbody>
     </table>
+    </div>
     <?php endif; ?>
     <?php if ($type === 'insta_recon'): ?>
         <div style="margin-top:24px;">
             <h3 style="margin:0 0 10px;font-size:16px;font-weight:700;">كل العمليات</h3>
+            <div class="ftable-wrap">
             <table class="ftable" data-xt-off>
                 <thead>
                     <tr>
@@ -2875,10 +2882,12 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </div>
     <?php endif; ?>
     <?php if ($type === 'insta_recon' && $report['unmatched_sms']): ?>
         <details style="margin-top:14px;"><summary>رسايل واردة من غير مطابقة مؤكدة (<?= count($report['unmatched_sms']) ?>)</summary>
+            <div class="ftable-wrap">
             <table class="ftable"><thead><tr><th>يوم العمل</th><th>وقت الرسالة</th><th>رقمها</th><th>المبلغ</th><th>الراسل</th></tr></thead><tbody>
             <?php foreach ($report['unmatched_sms'] as $sms): ?>
                 <tr><td><?= e($sms['business_date']) ?></td><td><?= e($sms['sms_at']) ?></td>
@@ -2886,6 +2895,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     <td><?= e($sms['sender']) ?></td></tr>
             <?php endforeach; ?>
             </tbody></table>
+            </div>
         </details>
     <?php endif; ?>
     <?php endif; ?>

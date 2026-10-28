@@ -848,7 +848,7 @@ require_once __DIR__ . '/includes/header.php';
     <!-- آخر 50 إذن تم مراجعته -->
     <?php if (!empty($reviewedPermits)): ?>
         <div class="section-head" style="margin-top:30px;">آخر أذونات إنستا تمت مراجعتها</div>
-        <div class="card" style="overflow-x:auto;padding:0;">
+        <div class="card ftable-wrap" style="overflow-x:auto;padding:0;">
             <table class="ftable data-table" style="width:100%;border-collapse:collapse;font-size:13px;text-align:right;">
                 <thead>
                     <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
@@ -952,7 +952,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($seqIssues)): ?>
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">لا توجد مشاكل في تسلسل الورديات.</div>
     <?php else: ?>
-        <div class="card" style="overflow-x:auto;padding:0;">
+        <div class="card ftable-wrap" style="overflow-x:auto;padding:0;">
             <table class="ftable data-table" style="width:100%;border-collapse:collapse;font-size:14px;text-align:right;">
                 <thead>
                     <tr style="background:var(--line-soft);color:var(--ink-500);border-bottom:1.5px solid var(--line);">
@@ -1069,6 +1069,7 @@ require_once __DIR__ . '/includes/header.php';
             <!-- فيزا / إنستا (سطور) -->
             <?php foreach (['visa'=>'فيزا','instapay'=>'إنستا باي'] as $mk=>$ml): ?>
             <div class="rv-ppane" id="rp_<?= $mk ?>">
+                <div class="ftable-wrap">
                 <table class="ftable pay-table" style="width:100%;border-collapse:collapse;">
                     <thead>
                         <tr>
@@ -1087,6 +1088,7 @@ require_once __DIR__ . '/includes/header.php';
                     <?php endfor; ?>
                     </tbody>
                 </table>
+                </div>
                 <button type="button" onclick="rvAddRow('<?= $mk ?>')" style="margin-top:8px;background:var(--line-soft);color:var(--accent-text);border:1.5px dashed var(--accent);border-radius:8px;padding:7px 14px;font-family:inherit;font-size:13px;cursor:pointer;">+ إضافة صف</button>
                 <div class="rv-total">إجمالي <?= $ml ?>: <span id="rv_<?= $mk ?>_t">0.00</span> ج.م</div>
             </div>
@@ -1106,10 +1108,12 @@ require_once __DIR__ . '/includes/header.php';
                      padding:22px;text-align:center;color:var(--ink-500);font-size:14px;">
                     <i class="ti ti-lock"></i> أدخل أرقامك في التابات الأولى، وبعدها اضغط «قارن».
                 </div>
+                <div class="ftable-wrap">
                 <table class="ftable cmp-table" id="cmp_table" data-xt-off style="display:none;">
                     <thead><tr><th>البند</th><th>الموظف</th><th>المحاسب</th><th>الفرق</th></tr></thead>
                     <tbody id="cmp_body"></tbody>
                 </table>
+                </div>
                 <div id="cmp_msg" style="margin:14px 0;padding:10px 14px;border-radius:9px;text-align:center;font-size:14px;display:none;"></div>
                 <div id="cmp_decide" style="display:none;">
                     <label style="font-size:13px;color:var(--ink-500);display:block;margin-bottom:5px;">ملاحظات المحاسب (مطلوب للرفض)</label>
@@ -1522,7 +1526,7 @@ require_once __DIR__ . '/includes/header.php';
         });
 
         var body = rowsHtml
-            ? '<div style="overflow-x:auto;"><table class="ftable cmp-sub-table"><thead><tr>'
+            ? '<div class="ftable-wrap"><table class="ftable cmp-sub-table"><thead><tr>'
               + '<th>الفئة</th><th>عدد الموظف</th><th>عدد المحاسب</th><th>فرق العدد</th><th>فرق القيمة</th>'
               + '</tr></thead><tbody>' + rowsHtml + '</tbody></table></div>'
             : '<div style="padding:10px;text-align:center;color:var(--ink-500);font-size:13px;">مفيش تفاصيل فئات متسجّلة.</div>';
@@ -1664,7 +1668,7 @@ require_once __DIR__ . '/includes/header.php';
         }
 
         // 🔴 الرؤوس لازم تتغيّر مع الخانات — ٤ خانات تحت ٦ رؤوس = جدول مكسور
-        var body = summaryHtml + '<div style="overflow-x:auto;"><table class="ftable cmp-sub-table"><thead><tr>'
+        var body = summaryHtml + '<div class="ftable-wrap"><table class="ftable cmp-sub-table"><thead><tr>'
                  + '<th>الحالة</th>'
                  + (hasAnyRef ? '<th>سيريال الموظف</th>' : '')
                  + '<th>مبلغ الموظف</th>'

@@ -137,7 +137,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php if (empty($ledgerEntries)): ?>
             <div class="empty">لا توجد حركات مسجلة في كشف الحساب.</div>
         <?php else: ?>
-            <div style="overflow-x: auto;">
+            <div class="ftable-wrap">
                 <table class="ftable">
                     <thead>
                         <tr>

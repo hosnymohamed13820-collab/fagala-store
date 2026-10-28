@@ -516,7 +516,10 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 
 <style>
-    .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+    .toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+    @media (max-width: 640px) {
+        .toolbar { flex-direction:column; align-items:stretch; gap:8px; }
+    }
     .perm-chips { display:flex; flex-wrap:wrap; gap:4px; }
     .perm-chip { background:var(--bg); color:var(--accent-text); padding:2px 8px; border-radius:6px; font-size:11px; }
     .perm-all { color:var(--accent-text); font-weight:600; font-size:12px; }
@@ -594,6 +597,7 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <div class="fcard">
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead>
             <tr>
@@ -644,6 +648,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
 </div>
 
 <!-- ===== Modal: دور ===== -->
@@ -675,16 +680,14 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="toolbar">
     <span style="color:var(--ink-500);font-size:14px;"><?= count($users) ?> مستخدم</span>
-    <div style="display:flex;gap:8px;">
-        <?php if (is_owner()): ?>
-            <a href="import_users.php" class="btn btn-ghost" style="text-decoration:none;"><i class="ti ti-download"></i> استيراد من النظام</a>
-        <?php endif; ?>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost" onclick="openBulk()"><i class="ti ti-users"></i> صلاحية لمجموعة</button>
         <button class="btn" onclick="openAdd()"><i class="ti ti-plus"></i> إضافة مستخدم</button>
     </div>
 </div>
 
 <div class="fcard">
+    <div class="ftable-wrap">
     <table class="ftable">
         <thead>
             <tr>
@@ -704,11 +707,7 @@ require_once __DIR__ . '/includes/header.php';
                     <td style="font-weight:500;"><?= e($usr['full_name']) ?></td>
                     <td><?= e($usr['username']) ?></td>
                     <td>
-                        <?php if ($usr['is_owner']): ?>
-                            <span class="fchip"><?= e($usr['role_name']) ?></span>
-                        <?php else: ?>
-                            <?= e($usr['role_name']) ?>
-                        <?php endif; ?>
+                        <span class="fchip <?= $usr['is_owner'] ? 'fchip-pos' : 'fchip-mute' ?>"><?= e($usr['role_name']) ?></span>
                     </td>
                     <td><?= e($usr['branch_name'] ?? '—') ?></td>
                     <td>
@@ -730,7 +729,7 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td>
                     <td>
-                        <span class="fchip <?= $usr['is_active'] ? 'fchip-pos' : '' ?>">
+                        <span class="fchip <?= $usr['is_active'] ? 'fchip-pos' : 'fchip-neg' ?>">
                             <?= $usr['is_active'] ? 'نشط' : 'موقوف' ?>
                         </span>
                     </td>
@@ -778,6 +777,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
         </tbody>
     </table>
+    </div>
 </div>
 
 <!-- ===== Modal: إضافة / تعديل ===== -->

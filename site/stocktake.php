@@ -460,10 +460,10 @@ require_once __DIR__ . '/includes/header.php';
         <div class="session-status">
             حالة الجرد:
             <?php if ($session): ?>
-                <strong style="color:var(--pos);">نشط<span class="dot on"></span></strong>
+                <span class="fchip fchip-pos">نشط</span>
                 <?php if ($session['has_balance']): ?><span style="color:var(--ink-500);font-size:13px;">— رصيد مرفوع</span><?php endif; ?>
             <?php else: ?>
-                <strong style="color:var(--ink-400);">متوقف<span class="dot off"></span></strong>
+                <span class="fchip fchip-mute">متوقف</span>
             <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1242,8 +1242,12 @@ require_once __DIR__ . '/includes/header.php';
                         $q = $sr['final_qty'] !== null ? (float)$sr['final_qty']
                            : ($sr['review_qty'] !== null ? (float)$sr['review_qty'] : (float)$sr['base_qty']);
                         $qOut = rtrim(rtrim(number_format($q,3),'0'),'.');
-                        $stMap2 = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                        $bb = $stMap2[$sr['sheet_status']] ?? ['—','var(--ink-500)','var(--line)'];
+                        $stMap2 = [
+                            'open'      => ['مفتوح', 'fchip-mute'],
+                            'reviewing' => ['مراجعة', 'fchip-warn'],
+                            'done'      => ['منتهي', 'fchip-pos'],
+                        ];
+                        $bb = $stMap2[$sr['sheet_status']] ?? ['—', 'fchip-mute'];
                     ?>
                     <tr>
                         <td><?= e($sr['entered_code']) ?></td>
@@ -1252,7 +1256,7 @@ require_once __DIR__ . '/includes/header.php';
                         <td style="font-weight:600;color:var(--accent-text);"><?= $qOut ?></td>
                         <td>#<?= (int)$sr['sheet_no'] ?><?= $sr['place_note'] ? ' — '.e($sr['place_note']) : '' ?></td>
                         <td><?= e($sr['counter_name'] ?? '—') ?></td>
-                        <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;color:<?=$bb[1]?>;background:<?=$bb[2]?>;"><?= e($bb[0]) ?></span></td>
+                        <td><span class="fchip <?= $bb[1] ?>"><?= e($bb[0]) ?></span></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -1311,8 +1315,12 @@ require_once __DIR__ . '/includes/header.php';
                         <tbody>
                         <?php foreach ($groupSheets as $sh): ?>
                             <?php
-                                $stMap = ['open'=>['مفتوح','var(--ink-700)','var(--line-soft)'],'reviewing'=>['مراجعة','var(--warn)','var(--warn-soft)'],'done'=>['منتهي','var(--pos)','var(--pos-soft)']];
-                                $b = $stMap[$sh['status']] ?? ['—','var(--ink-500)','var(--line)'];
+                                $stMap = [
+                                    'open'      => ['مفتوح', 'fchip-mute'],
+                                    'reviewing' => ['مراجعة', 'fchip-warn'],
+                                    'done'      => ['منتهي', 'fchip-pos'],
+                                ];
+                                $b = $stMap[$sh['status']] ?? ['—', 'fchip-mute'];
                                 $searchStr = '#'.(int)$sh['sheet_no'].' '.($sh['sheet_no']).' '.($sh['place_note'] ?: ($sh['branch_name'] ?? '')).' '.($sh['counter_name'] ?? '').' '.($sh['reviewer_name'] ?? '');
                             ?>
                             <tr class="sheet-row" onclick="openSheet(<?= (int)$sh['id'] ?>)" style="cursor:pointer;" title="اضغط لفتح المحضر" data-status="<?= e($sh['status']) ?>" data-search="<?= e(mb_strtolower($searchStr)) ?>">
@@ -1321,7 +1329,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <td><?= e($sh['counter_name'] ?? '—') ?></td>
                                 <td><?= e($sh['reviewer_name'] ?? '—') ?></td>
                                 <td><?= (int)$sh['items_count'] ?></td>
-                                <td><span style="padding:3px 11px;border-radius:20px;font-size:12px;color:<?=$b[1]?>;background:<?=$b[2]?>;"><?= e($b[0]) ?></span></td>
+                                <td><span class="fchip <?= $b[1] ?>"><?= e($b[0]) ?></span></td>
                                 <td style="font-size:12px;"><?= e(date('Y-m-d', strtotime($sh['created_at']))) ?></td>
                                 <td onclick="event.stopPropagation();">
                                     <?php if ($sh['status'] === 'done'): ?>
@@ -1640,7 +1648,7 @@ require_once __DIR__ . '/includes/header.php';
                     + '<span style="color:var(--ink-500);font-size:13px;">الصنف:</span> '
                     + '<span style="font-weight:600;color:var(--ink-900);">' + escapeHtml(d.name || '—') + '</span>'
                     + '<span style="color:var(--ink-400);font-size:12px;"> — ' + d.codes.length + ' كود مربوط</span></div>';
-                html += '<div style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;">'
+                html += '<div class="ftable-wrap" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;">'
                     + '<table class="ftable" style="width:100%;border-collapse:collapse;">'
                     + '<thead style="position:sticky;top:0;background:var(--line-soft);z-index:1;"><tr>'
                     + '<th style="padding:8px 10px;text-align:right;font-size:13px;color:var(--ink-500);border-bottom:1px solid var(--line);">الكود</th>'
@@ -1652,8 +1660,8 @@ require_once __DIR__ . '/includes/header.php';
                     const isSearched = c.code === code;
                     const rowBg = isSearched ? 'background:var(--warn-soft);' : '';
                     const typeBadge = c.is_base
-                        ? '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--pos);background:var(--pos-soft);">أساسي</span>'
-                        : '<span style="padding:2px 9px;border-radius:20px;font-size:12px;color:var(--ink-700);background:var(--line-soft);">فرعي</span>';
+                        ? '<span class="fchip fchip-pos">أساسي</span>'
+                        : '<span class="fchip fchip-mute">فرعي</span>';
                     const priceTxt = c.price !== null && c.price !== undefined ? Number(c.price).toFixed(2) + ' ج.م' : '—';
                     const unitTxt = rtrimZeros(Number(c.unit));
                     html += '<tr style="' + rowBg + 'border-bottom:1px solid var(--line);">'

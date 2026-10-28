@@ -151,7 +151,8 @@ require_once __DIR__ . '/includes/header.php';
     .mk-stat { font-size:var(--fs-xs); color:var(--ink-500); }
     .mk-stat b { color:var(--ink-900); }
     .mk-our { font-size:var(--fs-base); font-weight:600; color:var(--ink-900); }
-    .mk-sub { font-size:var(--fs-xs); color:var(--ink-500); margin-top:3px; }
+    .mk-sub { font-size:var(--fs-xs); color:var(--ink-700); margin-top:3px; }
+    .mk-sub b { color:var(--ink-900); }
     .mk-sugg { margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
     .mk-opt { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:7px 0; font-size:13px; }
     .mk-manual { margin-top:8px; display:none; }
@@ -253,7 +254,7 @@ require_once __DIR__ . '/includes/header.php';
     $opts = $sugg[$iid] ?? [];
     $lnk  = $b['linked'];
 ?>
-<div class="fcard" style="margin-bottom:var(--sp-3);<?= $lnk ? 'background:var(--line-soft);border-color:var(--pos);' : '' ?><?= $b['ignored'] ? 'opacity:.55;' : '' ?>" data-item="<?= $iid ?>">
+<div class="fcard" style="margin-bottom:var(--sp-3);<?= $lnk ? 'background:var(--line-soft);border-color:var(--pos);' : '' ?><?= $b['ignored'] ? 'border-style:dashed;' : '' ?>" data-item="<?= $iid ?>">
     <div class="mk-our"><?= e($b['name']) ?></div>
     <div class="mk-sub">
         <?= e($b['code']) ?> · سعرنا: <b><?= number_format($b['sale'], 2) ?></b>
@@ -271,18 +272,18 @@ require_once __DIR__ . '/includes/header.php';
                 <span style="flex:1;"><?= e($p['name']) ?></span>
                 <b><?= number_format($p['price'], 2) ?></b>
                 <?php if ($p['permalink'] !== ''): ?>
-                    <a class="btn btn-sm btn-secondary" href="<?= e($p['permalink']) ?>" target="_blank"
+                    <a class="btn btn-sm btn-outline" href="<?= e($p['permalink']) ?>" target="_blank"
                        rel="noopener" style="text-decoration:none;">شوفه</a>
                 <?php endif; ?>
-                <button class="btn btn-sm btn-secondary" data-act="unlink">فك الربط</button>
+                <button class="btn btn-sm btn-outline" data-act="unlink">فك الربط</button>
             </div>
         </div>
     <?php elseif ($b['ignored']): ?>
         <div class="mk-sugg">
             <div class="mk-opt">
                 <span class="fchip fchip-mute">مستبعد</span>
-                <span style="flex:1;">قلت إن مالوش مقابل عندهم</span>
-                <button class="btn btn-sm btn-secondary" data-act="unignore">رجّعه</button>
+                <span style="flex:1;color:var(--ink-700);">قلت إن مالوش مقابل عندهم</span>
+                <button class="btn btn-sm btn-outline" data-act="unignore">رجّعه</button>
             </div>
         </div>
     <?php else: ?>
@@ -309,8 +310,8 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
 
             <div class="mk-opt">
-                <button class="btn btn-sm btn-secondary" data-act="manual">دوّر بإيدي</button>
-                <button class="btn btn-sm btn-secondary" data-act="ignore">مالوش مقابل</button>
+                <button class="btn btn-sm btn-outline" data-act="manual">دوّر بإيدي</button>
+                <button class="btn btn-sm btn-outline" data-act="ignore">مالوش مقابل</button>
             </div>
 
             <div class="mk-manual">

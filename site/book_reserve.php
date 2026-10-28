@@ -224,6 +224,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
+        <div class="ftable-wrap">
         <table class="ftable rs-table" style="margin-top:18px;">
             <thead><tr>
                 <th class="num">كود الصنف</th><th class="nm">اسم الصنف</th><th class="num">الكمية</th><th>حالة الكتاب</th>
@@ -240,6 +241,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
 
         <?php $pr = book_receipt_status((int)$r['id']); ?>
         <div style="margin-top:14px;display:flex;justify-content:space-between;
@@ -329,7 +331,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <div class="rs-status" id="status"></div>
 
-        <div style="overflow-x:auto;">
+        <div class="ftable-wrap">
             <table class="ftable rs-table">
                 <thead><tr>
                     <th class="num" style="width:34px;">#</th>

@@ -179,6 +179,8 @@ document.getElementById('dsDayBtn').addEventListener('click', function () {
                 <td class="num"><?= $b['ran_out'] > 0 ? '<span class="fchip fchip-neg">' . (int) $b['ran_out'] . '</span>' : '0' ?></td>
             </tr>
         <?php endforeach; ?>
+        </tbody>
+        <tfoot>
             <tr class="ds-total">
                 <td>الإجمالي</td>
                 <td class="num"><?= e(ds_money($s['total']['net'])) ?></td>
@@ -187,7 +189,7 @@ document.getElementById('dsDayBtn').addEventListener('click', function () {
                 <td class="num"><?= (int) $s['total']['count'] ?> <span class="dim">/ <?= (int) $s['total']['prev_count'] ?></span></td>
                 <td class="num"><?= (int) $s['total']['ran_out'] ?></td>
             </tr>
-        </tbody>
+        </tfoot>
     </table>
 </div>
 

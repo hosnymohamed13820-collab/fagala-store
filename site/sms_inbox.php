@@ -345,7 +345,7 @@ require_once __DIR__ . '/includes/header.php';
                 مفيش أي رسالة في الفترة أو النوع المختار.
             </div>
         <?php else: ?>
-            <div style="overflow-x:auto;">
+            <div class="ftable-wrap">
                 <table class="ftable" id="smsTable">
                     <thead>
                         <tr style="border-bottom:2px solid var(--line);text-align:right;">

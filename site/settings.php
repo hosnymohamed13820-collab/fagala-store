@@ -778,7 +778,7 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
             <div style="margin-bottom:12px;">
                 <input type="search" class="finput" id="guardSearchInput" placeholder="بحث برقم الفاتورة أو اسم المورد...">
             </div>
-            <div style="overflow-y:auto;flex:1;max-height:55vh;border:1px solid var(--line);border-radius:10px;">
+            <div class="ftable-wrap" style="overflow-y:auto;flex:1;max-height:55vh;border:1px solid var(--line);border-radius:10px;">
                 <table class="ftable" id="guardTable">
                     <thead>
                         <tr style="background:var(--line-soft);text-align:right;position:sticky;top:0;z-index:2;">

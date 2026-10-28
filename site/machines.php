@@ -93,7 +93,7 @@ function mc_chip(string $status): string {
     <h3>قرايات صبح <?= e($readingDate) ?></h3>
     <p>قراية النهارده بداية استهلاك النهارده؛ يوم امبارح بيتقفل بقراية الصبح دي.</p>
     <?php if (!$allMachines): ?><p>مفيش مكن متسجل للفرع ده.</p><?php else: ?>
-    <div style="overflow-x:auto"><table class="ftable" data-xt-off>
+    <div class="ftable-wrap"><table class="ftable" data-xt-off>
         <thead><tr><th>المكنة</th><th>النوع</th><th>العدادات</th></tr></thead><tbody>
         <?php foreach ($readingRows as $m): if (!(int)$m['is_active']) continue;
             $mid=(int)$m['id'];
@@ -166,7 +166,7 @@ function mc_chip(string $status): string {
     <?php if (!$salesReady): ?><p style="color:var(--neg)">بيانات مبيعات الفروع مش متزامنة هنا؛ عمود المباع وفروق المطابقة غير موثوقين لحد ما ربط الوكلاء يتوفر.</p><?php endif; ?>
     <p>الضغطات بتتحسب من قراية صباح بداية اليوم لقراية الصبح اللي بعده. الأيام اللي في النص بتتجمع من غير تقسيم تقديري.</p>
     <a class="btn btn-sm btn-ghost" href="?tab=<?= e($tab) ?>&branch=<?= $branchId ?: 'all' ?>&export=xlsx">تصدير إكسيل</a>
-    <div style="overflow-x:auto"><table class="ftable" data-xt-min="1"><thead><tr>
+    <div class="ftable-wrap"><table class="ftable" data-xt-min="1"><thead><tr>
         <th><?= $tab==='daily'?'اليوم':'الشهر' ?></th><th>الفرع</th>
         <th class="num">أسود مباع</th><th class="num">أسود عداد</th><th class="num">فرق الأسود</th>
         <th class="num">ألوان مباع</th><th class="num">ألوان عداد</th><th class="num">فرق الألوان</th><th>الحالة</th>
@@ -182,11 +182,11 @@ function mc_chip(string $status): string {
 </div>
 <?php if ($tab==='daily' && $unknown): ?>
 <div class="fcard"><h3>أكواد مش متعرّفة</h3>
-    <table class="ftable"><thead><tr><th>اليوم</th><th>الفرع</th><th>الكود</th><th>الاسم</th><th class="num">صافي الكمية</th></tr></thead><tbody>
+    <div class="ftable-wrap"><table class="ftable"><thead><tr><th>اليوم</th><th>الفرع</th><th>الكود</th><th>الاسم</th><th class="num">صافي الكمية</th></tr></thead><tbody>
     <?php foreach ($unknown as $r): ?>
         <tr><td><?= e($r['day']) ?></td><td><?= e($r['branch']) ?></td><td><?= e($r['code']) ?></td>
             <td><?= e($r['name']) ?></td><td class="num"><?= mc_fmt($r['qty']) ?></td></tr>
-    <?php endforeach; ?></tbody></table>
+    <?php endforeach; ?></tbody></table></div>
 </div>
 <?php endif; ?>
 <?php if ($unmapped): ?><div class="fcard">فيه مبيعات وكلاء من غير ربط مؤكد بفرع: <?= e(implode('، ',$unmapped)) ?>.</div><?php endif; ?>
@@ -200,14 +200,14 @@ function mc_chip(string $status): string {
         <label class="ffield">النوع<select class="fselect" name="kind"><option value="bw">أبيض وأسود</option><option value="color">ألوان</option></select></label>
         <button class="btn btn-sm" type="submit">إضافة</button><span id="mc-add-msg" aria-live="polite"></span>
     </form>
-    <table class="ftable"><thead><tr><th>المكنة</th><th>النوع</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>
+    <div class="ftable-wrap"><table class="ftable"><thead><tr><th>المكنة</th><th>النوع</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>
     <?php foreach ($allMachines as $m): ?>
         <tr><td><?= e($m['name']) ?></td><td><?= $m['kind']==='color'?'ألوان':'أبيض وأسود' ?></td>
             <td><span class="fchip <?= (int)$m['is_active']?'fchip-pos':'fchip-mute' ?>"><?= (int)$m['is_active']?'شغالة':'متوقفة' ?></span></td>
             <td><button class="btn btn-sm btn-ghost mc-toggle" type="button" data-id="<?= (int)$m['id'] ?>"
                         data-branch="<?= (int)$m['branch_id'] ?>" data-active="<?= (int)$m['is_active']?'0':'1' ?>">
                 <?= (int)$m['is_active']?'تعطيل':'تفعيل' ?></button></td></tr>
-    <?php endforeach; ?></tbody></table>
+    <?php endforeach; ?></tbody></table></div>
 </div>
 <script>
 (function () {

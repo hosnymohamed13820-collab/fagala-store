@@ -378,7 +378,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                         <td><?= e($m['tx_date']) ?></td>
                         <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
-                        <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
+                        <td><span class="fchip <?= (int)$m['doc_type'] === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></span></td>
                         <td style="font-weight:600;"><?= number_format((float)$m['net_amount'], 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -427,7 +427,7 @@ require_once __DIR__ . '/includes/header.php';
                     <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                         <td><?= e($m['tx_date']) ?></td>
                         <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
-                        <td><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></td>
+                        <td><span class="fchip <?= (int)$m['doc_type'] === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></span></td>
                         <td style="font-weight:600;"><?= number_format((float)$m['net_amount'], 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -665,40 +665,38 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ========================================================= -->
     <!-- تابات الشاشة الرئيسية                                     -->
     <!-- ========================================================= -->
-    <div class="tabs" style="margin-bottom:18px;">
-        <a href="branch_recon.php?from=<?= e($activeTab === '' ? $from : $stStart) ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === '' ? 'active' : '' ?>">الفروق</a>
-        <a href="branch_recon.php?tab=alerts&from=<?= e($activeTab === 'alerts' ? $from : RECON_ALERTS_START) ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === 'alerts' ? 'active' : '' ?>">تنبيهات</a>
-        <a href="branch_recon.php?tab=ashraqa&from=<?= e($activeTab === 'ashraqa' ? $from : '2026-07-01') ?>&to=<?= e($to) ?>" class="tab <?= $activeTab === 'ashraqa' ? 'active' : '' ?>">مشتريات إشراقة</a>
-    </div>
+    <nav class="ftabs" style="margin-bottom:18px;">
+        <a href="branch_recon.php?from=<?= e($activeTab === '' ? $from : $stStart) ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === '' ? 'is-active active' : '' ?>">الفروق</a>
+        <a href="branch_recon.php?tab=alerts&from=<?= e($activeTab === 'alerts' ? $from : RECON_ALERTS_START) ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === 'alerts' ? 'is-active active' : '' ?>">تنبيهات</a>
+        <a href="branch_recon.php?tab=ashraqa&from=<?= e($activeTab === 'ashraqa' ? $from : '2026-07-01') ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === 'ashraqa' ? 'is-active active' : '' ?>">مشتريات إشراقة</a>
+    </nav>
 
 <?php if ($activeTab === 'alerts'): ?>
     <!-- ========================================================= -->
     <!-- تاب التنبيهات                                             -->
     <!-- ========================================================= -->
-    <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
-        <div>
-            <span class="section-title" style="margin-bottom:0;">تنبيهات مطابقة الفروع والإدارة</span>
-            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
-                الفترة من <?= e($from) ?> حتى <?= e($to) ?>
-            </div>
+    <div style="margin-bottom:12px;">
+        <span class="section-title" style="margin-bottom:0;">تنبيهات مطابقة الفروع والإدارة</span>
+        <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+            الفترة من <?= e($from) ?> حتى <?= e($to) ?>
         </div>
-        <form method="get" class="filter-form" style="margin-bottom:0;">
-            <input type="hidden" name="tab" value="alerts">
-            <?php if ($showDone): ?>
-                <input type="hidden" name="show_done" value="1">
-            <?php endif; ?>
-            <label>الطرف
-                <select name="p" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
-                    <option value="">كل الأطراف</option>
-                    <?php foreach ($allParties as $pk => $p): ?>
-                        <option value="<?= e($pk) ?>" <?= $pFilter === $pk ? 'selected' : '' ?>><?= e($p['label']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
-        </form>
     </div>
+    <form method="get" class="ffilters">
+        <input type="hidden" name="tab" value="alerts">
+        <?php if ($showDone): ?>
+            <input type="hidden" name="show_done" value="1">
+        <?php endif; ?>
+        <label class="ffield">الطرف
+            <select name="p" onchange="this.form.submit()" class="fselect">
+                <option value="">كل الأطراف</option>
+                <?php foreach ($allParties as $pk => $p): ?>
+                    <option value="<?= e($pk) ?>" <?= $pFilter === $pk ? 'selected' : '' ?>><?= e($p['label']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+        <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+    </form>
 
     <!-- ٣ كروت إحصائية للتنبيهات -->
     <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
@@ -902,38 +900,36 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ========================================================= -->
     <!-- تاب مشتريات إشراقة: قائمة الفواتير                        -->
     <!-- ========================================================= -->
-    <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
-        <div>
-            <span class="section-title" style="margin-bottom:0;">مشتريات إشراقة</span>
-            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
-                الفترة من <?= e($from) ?> حتى <?= e($to) ?>
-            </div>
+    <div style="margin-bottom:12px;">
+        <span class="section-title" style="margin-bottom:0;">مشتريات إشراقة</span>
+        <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+            الفترة من <?= e($from) ?> حتى <?= e($to) ?>
         </div>
-        <form method="get" class="filter-form" style="margin-bottom:0;">
-            <input type="hidden" name="tab" value="ashraqa">
-            <label>النوع
-                <select name="sstt" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
-                    <option value="0">الكل</option>
-                    <option value="113" <?= $ashSstt === 113 ? 'selected' : '' ?>>شراء 113</option>
-                    <option value="115" <?= $ashSstt === 115 ? 'selected' : '' ?>>مرتجع شراء 115</option>
-                </select>
-            </label>
-            <label>المورد
-                <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);">
-                    <option value="0">كل الموردين</option>
-                    <?php foreach ($ashSuppliers as $sp): ?>
-                        <option value="<?= (int)$sp['supplier_id'] ?>" <?= $ashSupplier === (int)$sp['supplier_id'] ? 'selected' : '' ?>><?= e($sp['supplier_name']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </label>
-            <label>بحث <input type="text" name="q" value="<?= e($ashSearch) ?>" placeholder="رقم الفاتورة أو الملاحظات" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--ink-900);"></label>
-            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
-            <label style="cursor:pointer;">
-                <input type="checkbox" name="show_cancelled" value="1" <?= $ashShowCancelled ? 'checked' : '' ?> onchange="this.form.submit()"> اعرض الملغي
-            </label>
-        </form>
     </div>
+    <form method="get" class="ffilters">
+        <input type="hidden" name="tab" value="ashraqa">
+        <label class="ffield">النوع
+            <select name="sstt" onchange="this.form.submit()" class="fselect">
+                <option value="0">الكل</option>
+                <option value="113" <?= $ashSstt === 113 ? 'selected' : '' ?>>شراء 113</option>
+                <option value="115" <?= $ashSstt === 115 ? 'selected' : '' ?>>مرتجع شراء 115</option>
+            </select>
+        </label>
+        <label class="ffield">المورد
+            <select name="supplier" data-searchable="true" data-placeholder="بحث في الموردين..." data-empty="مفيش مورد بالاسم ده" onchange="this.form.submit()" class="fselect">
+                <option value="0">كل الموردين</option>
+                <?php foreach ($ashSuppliers as $sp): ?>
+                    <option value="<?= (int)$sp['supplier_id'] ?>" <?= $ashSupplier === (int)$sp['supplier_id'] ? 'selected' : '' ?>><?= e($sp['supplier_name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </label>
+        <label class="ffield">بحث <input type="text" class="finput" name="q" value="<?= e($ashSearch) ?>" placeholder="رقم الفاتورة أو الملاحظات"></label>
+        <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+        <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+        <label class="ffield" style="cursor:pointer;flex-direction:row;align-items:center;gap:6px;">
+            <input type="checkbox" name="show_cancelled" value="1" <?= $ashShowCancelled ? 'checked' : '' ?> onchange="this.form.submit()"> اعرض الملغي
+        </label>
+    </form>
 
     <!-- ٣ كروت إحصائية لإشراقة -->
     <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
@@ -983,9 +979,9 @@ require_once __DIR__ . '/includes/header.php';
                                     </a>
                                 </td>
                                 <td>
-                                    <?= (int)$ai['sstt_id'] === 113 ? 'شراء' : 'مرتجع شراء' ?>
+                                    <span class="fchip <?= (int)$ai['sstt_id'] === 113 ? 'fchip-pos' : 'fchip-warn' ?>"><?= (int)$ai['sstt_id'] === 113 ? 'شراء' : 'مرتجع شراء' ?></span>
                                     <?php if ($isCanc): ?>
-                                        <span style="font-size:11px;background:var(--line-soft);color:var(--ink-500);padding:1px 6px;border-radius:4px;margin-right:4px;">ملغية</span>
+                                        <span class="fchip fchip-mute" style="margin-right:4px;">ملغية</span>
                                     <?php endif; ?>
                                 </td>
                                 <td><?= e($ai['doc_date']) ?></td>
@@ -1010,21 +1006,19 @@ require_once __DIR__ . '/includes/header.php';
     <!-- ========================================================= -->
     <!-- الشاشة الرئيسية: جدول الأزواج العشرة                     -->
     <!-- ========================================================= -->
-    <div class="toolbar" style="align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
-        <div>
-            <span class="section-title" style="margin-bottom:0;">مطابقة البضاعة بين الإدارة والفروع</span>
-            <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
-                الفترة من <?= e($from) ?> حتى <?= e($to) ?>
-            </div>
+    <div style="margin-bottom:12px;">
+        <span class="section-title" style="margin-bottom:0;">مطابقة البضاعة بين الإدارة والفروع</span>
+        <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+            الفترة من <?= e($from) ?> حتى <?= e($to) ?>
         </div>
-        <form method="get" class="filter-form" style="margin-bottom:0;">
-            <label>من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
-            <label>إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
-            <a href="branch_recon.php?from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
-                <i class="ti ti-download"></i> تصدير إكسيل
-            </a>
-        </form>
     </div>
+    <form method="get" class="ffilters">
+        <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" min="<?= e($stStart) ?>" onchange="this.form.submit()"></label>
+        <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+        <a href="branch_recon.php?from=<?= e($from) ?>&to=<?= e($to) ?>&export=xlsx" class="btn btn-sm btn-ghost">
+            <i class="ti ti-download"></i> تصدير إكسيل
+        </a>
+    </form>
 
     <!-- ٣ كروت إحصائية -->
     <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
@@ -1093,9 +1087,9 @@ require_once __DIR__ . '/includes/header.php';
                     </td>
                     <td>
                         <?php if ($p['is_match']): ?>
-                            <span class="diff-match" style="font-size:14px;color:var(--pos);font-weight:700;">✓ متطابق</span>
+                            <span class="fchip fchip-pos">✓ متطابق</span>
                         <?php else: ?>
-                            <span class="diff-pill diff-mismatch" style="color:var(--neg);"><?= number_format($p['diff'], 2) ?></span>
+                            <span class="fchip fchip-neg"><?= number_format($p['diff'], 2) ?></span>
                             <div style="font-size:11px;color:var(--ink-500);margin-top:2px;">
                                 <?= $p['diff'] > 0 ? ('دفاتر ' . e($p['from_label']) . ' فيها أكتر') : ('دفاتر ' . e($p['to_label']) . ' فيها أكتر') ?>
                             </div>
