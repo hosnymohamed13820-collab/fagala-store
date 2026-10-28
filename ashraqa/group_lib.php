@@ -110,6 +110,8 @@ function group_list(): array
     $itemsDoneMap        = [];
     $fullDoneMap         = [];
     $selCountMap         = [];
+    $itemsDataIncomplete = false;
+    $fullDataIncomplete  = false;
 
     if (!empty($itemsGids)) {
         $inItems = implode(',', $itemsGids);
@@ -125,7 +127,10 @@ function group_list(): array
             while ($r = $st->fetch()) {
                 $itemsTotPostedMap[(int) $r['group_id']] = (float) $r['qty'];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $itemsDataIncomplete = true;
+            error_log('group_list items posted total: ' . $ex->getMessage());
+        }
 
         try {
             $st = db()->query(
@@ -139,7 +144,10 @@ function group_list(): array
             while ($r = $st->fetch()) {
                 $itemsTotUnpostedMap[(int) $r['group_id']] = (float) $r['qty'];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $itemsDataIncomplete = true;
+            error_log('group_list items unposted total: ' . $ex->getMessage());
+        }
 
         try {
             $st = db()->query(
@@ -161,7 +169,10 @@ function group_list(): array
                     'b' => (int) $r['b'],
                 ];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $itemsDataIncomplete = true;
+            error_log('group_list items distributed total: ' . $ex->getMessage());
+        }
 
         try {
             $st = db()->query(
@@ -173,7 +184,10 @@ function group_list(): array
             while ($r = $st->fetch()) {
                 $selCountMap[(int) $r['group_id']] = (int) $r['cnt'];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $itemsDataIncomplete = true;
+            error_log('group_list items selected count: ' . $ex->getMessage());
+        }
     }
 
     if (!empty($fullGids)) {
@@ -189,7 +203,10 @@ function group_list(): array
             while ($r = $st->fetch()) {
                 $fullTotPostedMap[(int) $r['group_id']] = (float) $r['qty'];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $fullDataIncomplete = true;
+            error_log('group_list full posted total: ' . $ex->getMessage());
+        }
 
         try {
             $st = db()->query(
@@ -202,7 +219,10 @@ function group_list(): array
             while ($r = $st->fetch()) {
                 $fullTotUnpostedMap[(int) $r['group_id']] = (float) $r['qty'];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $fullDataIncomplete = true;
+            error_log('group_list full unposted total: ' . $ex->getMessage());
+        }
 
         try {
             $st = db()->query(
@@ -221,7 +241,10 @@ function group_list(): array
                     'b' => (int) $r['b'],
                 ];
             }
-        } catch (Throwable $ex) {}
+        } catch (Throwable $ex) {
+            $fullDataIncomplete = true;
+            error_log('group_list full distributed total: ' . $ex->getMessage());
+        }
     }
 
     foreach ($groups as &$g) {
@@ -245,6 +268,7 @@ function group_list(): array
         $g['done_qty']  = $done;
         $g['branches']  = $branches;
         $g['pct']       = $tot > 0 ? min(100, round($done / $tot * 100)) : 0;
+        $g['data_incomplete'] = $isItems ? $itemsDataIncomplete : $fullDataIncomplete;
     }
     unset($g);
 

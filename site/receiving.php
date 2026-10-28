@@ -935,10 +935,10 @@ function updateLastScannedTable(code, name, scannedQty) {
         tbody.prepend(existingRow);
     } else {
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td><code>' + escapeHtml(code) + '</code></td>' +
-                       '<td>' + escapeHtml(name) + '</td>' +
+        tr.innerHTML = '<td><code>' + window.ui.esc(code) + '</code></td>' +
+                       '<td>' + window.ui.esc(name) + '</td>' +
                        '<td><div style="display:inline-flex;align-items:center;gap:6px;">' +
-                       '<input type="number" step="1" min="0" class="rc-qty-edit-input" data-code="' + escapeHtml(code) + '" value="' + scannedQty + '" ' +
+                       '<input type="number" step="1" min="0" class="rc-qty-edit-input" data-code="' + window.ui.esc(code) + '" value="' + scannedQty + '" ' +
                        'title="اضغط للتعديل، ويتم الحفظ تلقائياً" onfocus="this.select()" onchange="saveQtyEdit(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}" ' +
                        'style="width:75px;padding:3px 6px;border:1.5px solid var(--line);border-radius:var(--r-sm);text-align:center;font-weight:700;font-size:13px;font-family:inherit;background:var(--surface);color:var(--text);">' +
                        '<span class="save-indicator" style="display:none;color:var(--pos);font-size:13px;" title="تم الحفظ"><i class="ti ti-check"></i></span>' +
@@ -1154,10 +1154,6 @@ function deleteSingleReceipt(id) {
         .catch(function(err) { fgToast('تعذر الاتصال بالخادم', 'err'); });
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

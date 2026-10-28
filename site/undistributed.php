@@ -706,8 +706,8 @@ function openInvoiceModal(sth, suffix, highlightCode) {
                 }
                 tr.innerHTML = 
                     '<td style="text-align:center;">' + (idx + 1) + '</td>' +
-                    '<td><code>' + escapeHtml(ln.item_code) + '</code></td>' +
-                    '<td>' + escapeHtml(ln.item_name) + '</td>' +
+                    '<td><code>' + window.ui.esc(ln.item_code) + '</code></td>' +
+                    '<td>' + window.ui.esc(ln.item_name) + '</td>' +
                     '<td style="text-align:center;font-weight:600;">' + (parseFloat(ln.quantity) || 0) + '</td>' +
                     '<td style="text-align:center;">' + (parseFloat(ln.unit_price) || 0) + '</td>';
                 body.appendChild(tr);
@@ -720,7 +720,7 @@ function openInvoiceModal(sth, suffix, highlightCode) {
             }
         })
         .catch(function (err) {
-            body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--neg);padding:20px;"><i class="ti ti-alert-circle"></i> ' + escapeHtml(err.message) + '</td></tr>';
+            body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--neg);padding:20px;"><i class="ti ti-alert-circle"></i> ' + window.ui.esc(err.message) + '</td></tr>';
             if (typeof fgToast === 'function') {
                 fgToast(err.message, 'err');
             }
@@ -745,14 +745,6 @@ document.addEventListener('keydown', function (e) {
     }
 });
 
-function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

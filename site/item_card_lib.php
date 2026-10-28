@@ -43,11 +43,6 @@ const IC_SUPPLIER_CONSUMABLE = 1000192;   // مستهلكات
 //  لو الرقم طلع أكبر من ٥ يبقى حد كسر القاعدة.
 // =====================================================================
 
-function ic_q_reset(): void
-{
-    $GLOBALS['IC_QUERIES'] = 0;
-}
-
 function ic_q_count(): int
 {
     return (int) ($GLOBALS['IC_QUERIES'] ?? 0);

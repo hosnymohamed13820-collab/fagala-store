@@ -139,6 +139,34 @@ switch ($action) {
         }
 
         // تجهيز الأسطر والتأكد من استخدام الكود الأساسي code_type=0
+        $itemIds = [];
+        foreach ($rawLines as $l) {
+            if (!is_array($l)) continue;
+            $itemId = (int) ($l['item_id'] ?? 0);
+            $qty = (float) ($l['qty'] ?? $l['proposed_qty'] ?? 0);
+            if ($itemId > 0 && $qty > 0) {
+                $itemIds[$itemId] = $itemId;
+            }
+        }
+
+        $codeMap = [];
+        if ($itemIds) {
+            $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+            $cst = $pdo->prepare(
+                "SELECT item_id, code, name
+                   FROM hq_codes
+                  WHERE item_id IN ($placeholders)
+                  ORDER BY item_id, code_type ASC, code ASC"
+            );
+            $cst->execute(array_values($itemIds));
+            while ($cRow = $cst->fetch(PDO::FETCH_ASSOC)) {
+                $mapId = (int) $cRow['item_id'];
+                if (!isset($codeMap[$mapId])) {
+                    $codeMap[$mapId] = $cRow;
+                }
+            }
+        }
+
         $cleanLines = [];
         foreach ($rawLines as $l) {
             if (!is_array($l)) continue;
@@ -151,15 +179,7 @@ switch ($action) {
 
             // لو متوفر item_id نتأكد من جلب الكود الأساسي (code_type=0)
             if ($itemId > 0) {
-                $cst = $pdo->prepare(
-                    'SELECT code, name 
-                       FROM hq_codes 
-                      WHERE item_id = ? 
-                      ORDER BY code_type ASC, code ASC 
-                      LIMIT 1'
-                );
-                $cst->execute([$itemId]);
-                $cRow = $cst->fetch(PDO::FETCH_ASSOC);
+                $cRow = $codeMap[$itemId] ?? null;
                 if ($cRow) {
                     $code = (string) $cRow['code'];
                     if ($name === '') {

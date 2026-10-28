@@ -2925,6 +2925,21 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (empty($grpCurrent)): ?>
         <!-- ===== كروت المجموعات ===== -->
+        <?php
+            $grpDataIncomplete = (bool) array_filter(
+                $grpCards,
+                fn(array $card): bool => !empty($card['data_incomplete'])
+            );
+        ?>
+        <?php if ($grpDataIncomplete): ?>
+            <div id="grpDataWarning"></div>
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                var warning = document.getElementById('grpDataWarning');
+                if (warning) warning.innerHTML = window.ui.alert('warn', 'الأرقام ناقصة — فيه خطأ في التحميل');
+            });
+            </script>
+        <?php endif; ?>
         <div class="card" style="margin-bottom:16px;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
                 <div>

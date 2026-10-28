@@ -216,6 +216,48 @@
     }
 })();
 
+// مكوّنات HTML للصفحات اللي بترسم نتيجة الـAPI من الجافاسكربت.
+(function () {
+    'use strict';
+    function esc(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch];
+        });
+    }
+    function icon(name) {
+        name = String(name || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+        return '<i class="ti ti-' + esc(name) + '"></i>';
+    }
+    function attrs(values) {
+        return Object.keys(values || {}).filter(function (name) {
+            return /^[a-zA-Z_:][a-zA-Z0-9_.:-]*$/.test(name) && values[name] != null && values[name] !== false;
+        }).map(function (name) {
+            return ' ' + esc(name) + (values[name] === true ? '' : '="' + esc(values[name]) + '"');
+        }).join('');
+    }
+    function btn(label, o) {
+        o = o || {};
+        var variant = String(o.variant || 'primary').replace(/[^a-z0-9-]/g, '');
+        var body = (o.icon ? icon(o.icon) + ' ' : '') + esc(label);
+        var id = o.id ? ' id="' + esc(o.id) + '"' : '';
+        if (o.href != null) return '<a class="btn btn-' + variant + '" href="' + esc(o.href) + '"' + id + attrs(o.attrs) + '>' + body + '</a>';
+        return '<button class="btn btn-' + variant + '" type="' + esc(o.type || 'button') + '"' + id + attrs(o.attrs) + '>' + body + '</button>';
+    }
+    function chip(value, kind) {
+        kind = ['pos', 'neg', 'warn', 'mute'].indexOf(kind) >= 0 ? kind : 'mute';
+        return '<span class="fchip fchip-' + kind + '">' + esc(value) + '</span>';
+    }
+    function alert(kind, value) {
+        var icons = {info:'alert-circle', warn:'alert-triangle', neg:'alert-circle', pos:'circle-check'};
+        kind = icons[kind] ? kind : 'info';
+        return '<div class="falert falert-' + kind + '">' + icon(icons[kind]) + '<div>' + esc(value) + '</div></div>';
+    }
+    function empty(value) {
+        return '<div class="fg-empty">' + icon('inbox') + '<span>' + esc(value) + '</span></div>';
+    }
+    window.ui = {esc:esc, icon:icon, btn:btn, chip:chip, alert:alert, empty:empty};
+})();
+
 /* ============================================================
  * formSubmit — بديل `form.submit()` بيبعت حدث submit فعلاً
  * ------------------------------------------------------------

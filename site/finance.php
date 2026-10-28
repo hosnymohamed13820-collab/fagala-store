@@ -355,44 +355,69 @@ function sync_dynamic_accounts(): int
 
         if (!$parents) return 0;
 
+        $parentsBySource = [];
+        $parentIds = [];
+        foreach ($parents as $p) {
+            $src = (string) $p['dynamic_src'];
+            if ($src !== 'employees' && $src !== 'suppliers') continue;
+            $pid = (int) $p['id'];
+            $parentsBySource[$src] = true;
+            $parentIds[$pid] = $pid;
+        }
+
+        if (!$parentIds) return 0;
+
+        // كل مصدر بيتقري مرة واحدة مهما كان عدد الآباء اللي مربوطين بيه.
+        $sourceRows = [];
+        if (isset($parentsBySource['employees'])) {
+            $sourceRows['employees'] = $pdo->query(
+                'SELECT id, full_name AS name, is_active FROM employees ORDER BY full_name'
+            )->fetchAll();
+        }
+        if (isset($parentsBySource['suppliers'])) {
+            $sourceRows['suppliers'] = $pdo->query(
+                'SELECT id, name, is_active FROM suppliers ORDER BY name'
+            )->fetchAll();
+        }
+
+        // كل الأبناء الحاليين بيتجابوا مرة واحدة ويتقسموا في الذاكرة حسب الأب والمصدر.
+        $parentPlaceholders = implode(',', array_fill(0, count($parentIds), '?'));
+        $existingSt = $pdo->prepare(
+            "SELECT id, parent_id, src_table, src_id, name, is_active FROM accounts
+             WHERE parent_id IN ($parentPlaceholders)"
+        );
+        $existingSt->execute(array_values($parentIds));
+        $existingByParent = [];
+        foreach ($existingSt->fetchAll() as $e) {
+            $key = (int) $e['parent_id'] . '|' . (string) $e['src_table'];
+            $existingByParent[$key][(int) $e['src_id']] = $e;
+        }
+
+        $insert = $pdo->prepare(
+            'INSERT INTO accounts (parent_id, name, type, src_table, src_id, is_active, sort_order)
+             VALUES (?, ?, ?, ?, ?, ?, 0)'
+        );
+        $update = $pdo->prepare(
+            'UPDATE accounts SET name = ?, is_active = ? WHERE id = ?'
+        );
+
         foreach ($parents as $p) {
             $pid = (int) $p['id'];
             $src = (string) $p['dynamic_src'];
 
             // المصدر
             if ($src === 'employees') {
-                $rows = $pdo->query(
-                    'SELECT id, full_name AS name, is_active FROM employees ORDER BY full_name'
-                )->fetchAll();
+                $rows = $sourceRows['employees'];
                 $type = 'expense';
             } elseif ($src === 'suppliers') {
-                $rows = $pdo->query(
-                    'SELECT id, name, is_active FROM suppliers ORDER BY name'
-                )->fetchAll();
+                $rows = $sourceRows['suppliers'];
                 $type = 'liability';
             } else {
                 continue;
             }
 
             // الموجود حالياً تحت الأب ده
-            $st = $pdo->prepare(
-                'SELECT id, src_id, name, is_active FROM accounts
-                 WHERE parent_id = ? AND src_table = ?'
-            );
-            $st->execute([$pid, $src]);
-
-            $existing = [];
-            foreach ($st->fetchAll() as $e) {
-                $existing[(int) $e['src_id']] = $e;
-            }
-
-            $insert = $pdo->prepare(
-                'INSERT INTO accounts (parent_id, name, type, src_table, src_id, is_active, sort_order)
-                 VALUES (?, ?, ?, ?, ?, ?, 0)'
-            );
-            $update = $pdo->prepare(
-                'UPDATE accounts SET name = ?, is_active = ? WHERE id = ?'
-            );
+            $existing = $existingByParent[$pid . '|' . $src] ?? [];
 
             $seen = [];
             foreach ($rows as $r) {
