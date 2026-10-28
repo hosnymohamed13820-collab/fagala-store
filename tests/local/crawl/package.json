@@ -1,0 +1,12 @@
+{
+  "name": "fagala-crawler",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Fagala Store UI & Regression Crawler",
+  "scripts": {
+    "crawl": "node crawl.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

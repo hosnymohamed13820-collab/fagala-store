@@ -62,6 +62,7 @@ tests/         ← فحوصات ما قبل التسليم
 
 ```bash
 bash tests/run_all.sh
+bash tests/local/crawl/crawl.sh   # (اختياري قبل الرفع)
 ```
 
 بتفحص: بنية PHP · بنية PowerShell · ترميز الوكلاء · الجافاسكربت.
