@@ -19,6 +19,63 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 // متضيفش فيها حاجة من غير موافقة صريحة
 const READ_ONLY_POST = [];
 
+// 🔴 قايمة الملفات المستثناة من بذور الزحف في طابور (ج) (بريف ٨١٨)
+const SEED_SKIP = [
+  '*_api.php',
+  '*_lib.php',
+  '*_core.php',
+  '*_export.php',
+  'sync_*',
+  '*_hook.php',
+  '*_pull.php',
+  '*_worker.php',
+  'agent_*',
+  'api_login.php',
+  'api_logout.php',
+  'api_login/logout',
+  'logout.php',
+  'login.php',
+  'auth.php',
+  'finance.php',
+  'config.php',
+  'migrations_manifest.php',
+  'nag_check.php',
+  'push_subscribe.php',
+  'notifications_read.php',
+  'sens_unlock.php',
+  'guard_*',
+  'calls_hook.php',
+  'sms_hook.php',
+  'invoices_recalc.php',
+  'pos_migrate.php',
+  'task_file.php',
+  'index.php'
+];
+
+/**
+ * فحص ما إذا كان اسم الملف مستثنى من بذور طابور (ج)
+ */
+function isSeedSkipped(filename) {
+  const f = filename.toLowerCase();
+  for (const pattern of SEED_SKIP) {
+    const p = pattern.toLowerCase();
+    if (p === 'api_login/logout' || p === 'api_login/logout.php') {
+      if (f === 'api_login.php' || f === 'api_logout.php') return true;
+      continue;
+    }
+    if (p.startsWith('*') && p.endsWith('*')) {
+      if (f.includes(p.slice(1, -1))) return true;
+    } else if (p.startsWith('*')) {
+      if (f.endsWith(p.slice(1))) return true;
+    } else if (p.endsWith('*')) {
+      if (f.startsWith(p.slice(0, -1))) return true;
+    } else {
+      if (f === p) return true;
+    }
+  }
+  return false;
+}
+
 // مجلد المخرجات
 const outDir = path.join(__dirname, 'out');
 const shotsDir = path.join(outDir, 'shots');
@@ -78,6 +135,7 @@ function parseArgs() {
     headless: true,
     skipShots: false,
     pollTest: false,
+    drySeeds: false,
     wwwDir: process.env.LARAGON_WWW || 'D:/laragon/www'
   };
 
@@ -94,6 +152,7 @@ function parseArgs() {
     else if (a === '--headed' || a === '--no-headless') opts.headless = false;
     else if (a === '--skip-shots') opts.skipShots = true;
     else if (a === '--poll-test') opts.pollTest = true;
+    else if (a === '--dry-seeds') opts.drySeeds = true;
     else if (a === '--www' && args[i + 1]) opts.wwwDir = args[++i];
   }
 
@@ -542,6 +601,32 @@ async function main() {
   startTime = Date.now();
   options = parseArgs();
   state.currentPageUrl = `${options.baseUrl}/login.php`;
+
+  if (options.drySeeds) {
+    console.log('[crawl] ====================================================');
+    console.log('[crawl] فحص بذور طابور (ج) بدون تشغيل المتصفح (--dry-seeds)');
+    console.log(`[crawl] مسار السايت: ${REPO_ROOT}/site`);
+    console.log('[crawl] ====================================================');
+
+    let crawledList = [];
+    const repPath = path.join(outDir, 'report.json');
+    if (fs.existsSync(repPath)) {
+      try {
+        const rdata = JSON.parse(fs.readFileSync(repPath, 'utf-8'));
+        if (rdata && Array.isArray(rdata.pages)) {
+          crawledList = rdata.pages;
+        }
+      } catch {}
+    }
+
+    const uncrawled = getUncrawledSitePages(crawledList, REPO_ROOT, options.wwwDir);
+    const seeds = uncrawled.filter(f => !isSeedSkipped(f));
+    console.log(`[crawl] طابور (ج) بذور الصفحات المحسوبة (${seeds.length} صفحة):`);
+    for (let i = 0; i < seeds.length; i++) {
+      console.log(`  ${i + 1}. ${seeds[i]}`);
+    }
+    process.exit(0);
+  }
 
   console.log('[crawl] ====================================================');
   console.log('[crawl] بدء تشغيل زاحف فجالة ستور (بند ٨٠١ / ٨٠١b)');
@@ -1215,6 +1300,13 @@ async function main() {
 
     // بند ٤: حفظ التقرير بعد الصفحة
     saveIncrementalReport();
+
+    const uncrawledPreAuth = getUncrawledSitePages(crawledPages, REPO_ROOT, options ? options.wwwDir : null);
+    const seedsPreAuth = uncrawledPreAuth.filter(f => !isSeedSkipped(f));
+    console.log(`[crawl] طابور (ج) بذور الصفحات المحسوبة (${seedsPreAuth.length} صفحة):`);
+    for (let i = 0; i < seedsPreAuth.length; i++) {
+      console.log(`  ${i + 1}. ${seedsPreAuth[i]}`);
+    }
   } else {
     console.log(`[crawl] تم العثور على حساب: ${credentials.user} — جاري تسجيل الدخول...`);
     const loginResult = await doLogin(credentials.user, credentials.pass);
@@ -1284,6 +1376,23 @@ async function main() {
       const queryVariationsCount = new Map();
       const queueA = []; // الأولوية الأولى: صفحات بـ pathname جديد
       const queueB = []; // الأولوية الثانية: تنويعات query (بحد ٣ لكل pathname)
+      const queueC = []; // الأولوية الثالثة (بريف ٨١٨): بذور الصفحات من site/*.php غير الموجودة في القائمة
+      let queueCPopulated = false;
+
+      function populateQueueC() {
+        queueCPopulated = true;
+        const uncrawled = getUncrawledSitePages(crawledPages, REPO_ROOT, options ? options.wwwDir : null);
+        for (const file of uncrawled) {
+          if (!isSeedSkipped(file)) {
+            const urlStr = `${options.baseUrl.replace(/\/+$/, '')}/${file}`;
+            if (!visitedUrls.has(urlStr) && !queuedUrls.has(urlStr)) {
+              queuedUrls.add(urlStr);
+              queueC.push(urlStr);
+            }
+          }
+        }
+        console.log(`[crawl] طابور (ج): تم العثور على ${queueC.length} صفحة بذور من site/*.php ليس لها رابط في القائمة.`);
+      }
 
       function enqueueUrl(urlStr) {
         let u;
@@ -1341,8 +1450,30 @@ async function main() {
       console.log(`[crawl] تم اكتشاف ${queueA.length} صفحة فريدة (Queue A) و ${queueB.length} تنويع query (Queue B) في القائمة الأولية.`);
 
       // بند ٢: صفحة جديدة context.newPage() لكل URL وpage.close() في finally
-      while ((queueA.length > 0 || queueB.length > 0) && crawledPages.length < options.maxPages) {
-        const targetUrl = queueA.length > 0 ? queueA.shift() : queueB.shift();
+      while (crawledPages.length < options.maxPages) {
+        let currentQueue = 'أ';
+        let targetUrl;
+        if (queueA.length > 0) {
+          targetUrl = queueA.shift();
+          currentQueue = 'أ';
+        } else if (queueB.length > 0) {
+          targetUrl = queueB.shift();
+          currentQueue = 'ب';
+        } else if (!queueCPopulated) {
+          populateQueueC();
+          if (queueC.length > 0) {
+            targetUrl = queueC.shift();
+            currentQueue = 'ج';
+          } else {
+            break;
+          }
+        } else if (queueC.length > 0) {
+          targetUrl = queueC.shift();
+          currentQueue = 'ج';
+        } else {
+          break;
+        }
+
         if (visitedUrls.has(targetUrl)) continue;
         visitedUrls.add(targetUrl);
 
@@ -1354,7 +1485,7 @@ async function main() {
         const slug = urlObj.pathname.replace(/^\//, '').replace(/\.php$/, '') || 'home';
 
         const memMb = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-        console.log(`[crawl] (${crawledPages.length + 1}/${options.maxPages}) [طابور أ: ${queueA.length} | طابور ب: ${queueB.length}] زحف: ${slug} (${targetUrl}) | الذاكرة: ${memMb} MB`);
+        console.log(`[crawl] (${crawledPages.length + 1}/${options.maxPages}) [طابور أ: ${queueA.length} | طابور ب: ${queueB.length} | طابور ج: ${queueC.length}] زحف: ${slug} (${targetUrl}) [طابور ${currentQueue}] | الذاكرة: ${memMb} MB`);
 
         const pageErrorsThisPage = [];
         const managed = await createManagedPage(context, {
@@ -1469,11 +1600,36 @@ async function main() {
             pageErrorsThisPage.push(err);
           }
 
+          let isParamRequired = false;
+          if (navStatus === 400 || navStatus === 404) {
+            let bodyText = '';
+            try {
+              bodyText = await managed.page.evaluate(() => document.body ? (document.body.innerText || document.body.textContent || '') : '');
+            } catch {}
+
+            const hasFatal = /Fatal error[:\s]|Parse error[:\s]|Uncaught\s[a-zA-Z0-9_\\]*Exception|500 Internal Server Error/i.test(bodyText);
+
+            if (!hasFatal) {
+              isParamRequired = true;
+              // إزالة خطأ HTTP 400/404 للصفحة من قوائم الأخطاء لأنها محتاجة باراميتر وليست خطأ حقيقياً (بند ٢ بريف ٨١٨)
+              for (let i = pageErrors.length - 1; i >= 0; i--) {
+                if (pageErrors[i].page === targetUrl && (pageErrors[i].type === 'HTTP 400' || pageErrors[i].type === 'HTTP 404')) {
+                  pageErrors.splice(i, 1);
+                }
+              }
+              for (let i = pageErrorsThisPage.length - 1; i >= 0; i--) {
+                if (pageErrorsThisPage[i].page === targetUrl && (pageErrorsThisPage[i].type === 'HTTP 400' || pageErrorsThisPage[i].type === 'HTTP 404')) {
+                  pageErrorsThisPage.splice(i, 1);
+                }
+              }
+            }
+          }
+
           await inspectPageDom(managed.page, targetUrl);
           const shots = await takePageScreenshots(managed.page, slug);
-          const clicks = await interactWithPage(managed.page, targetUrl, options.maxClicks);
+          const clicks = isParamRequired ? 0 : await interactWithPage(managed.page, targetUrl, options.maxClicks);
 
-          if (crawledPages.length < options.maxPages) {
+          if (!isParamRequired && crawledPages.length < options.maxPages) {
             const internalLinks = await managed.page.evaluate((base) => {
               const anchors = Array.from(document.querySelectorAll('a[href]'));
               const res = [];
@@ -1491,24 +1647,31 @@ async function main() {
             }, options.baseUrl).catch(() => []);
 
             for (const il of internalLinks) {
-              if (crawledPages.length + queueA.length + queueB.length >= options.maxPages * 2) {
+              if (crawledPages.length + queueA.length + queueB.length + queueC.length >= options.maxPages * 2) {
                 break;
               }
               enqueueUrl(il);
             }
           }
 
+          const rawTitle = await managed.page.title().catch(() => '');
+          const pageTitle = isParamRequired
+            ? 'محتاجة باراميتر'
+            : (rawTitle && rawTitle.trim() ? rawTitle.trim() : slug);
+
           const stats = managed.getStats();
           crawledPages.push({
             url: targetUrl,
             slug,
-            title: await managed.page.title().catch(() => slug),
+            title: pageTitle,
             status: navStatus,
             clicks,
             requestsCount: stats.requestCount,
             slowestRequestMs: stats.slowestRequestMs,
             slowest5: stats.slowest5,
             errorsCount: pageErrorsThisPage.length,
+            paramRequired: isParamRequired,
+            paramNote: isParamRequired ? 'محتاجة باراميتر' : null,
             screenshots: shots
           });
         } finally {
@@ -1897,12 +2060,13 @@ function generateHtmlReport(data) {
             <td class="num" title="${(p.slowest5 || []).map(s => `${s.url}: ${s.ms}ms`).join('\n')}">${p.slowestRequestMs} ms</td>
             <td>
               ${p.exportInfo ? `<span class="badge badge-ok">${escapeHtml(p.exportInfo)}</span>` : ''}
+              ${p.paramNote ? `<span class="badge badge-warn">${escapeHtml(p.paramNote)}</span>` : ''}
               ${p.screenshots && (p.screenshots.desktop_light || p.screenshots.mobile_light) ? `
                 <a href="${escapeHtml(p.screenshots.desktop_light || '#')}" target="_blank">ديسكتوب فاتح</a> ·
                 <a href="${escapeHtml(p.screenshots.desktop_dark || '#')}" target="_blank">ديسكتوب ليلي</a> ·
                 <a href="${escapeHtml(p.screenshots.mobile_light || '#')}" target="_blank">موبايل فاتح</a> ·
                 <a href="${escapeHtml(p.screenshots.mobile_dark || '#')}" target="_blank">موبايل ليلي</a>
-              ` : (!p.exportInfo ? 'مفيش' : '')}
+              ` : (!p.exportInfo && !p.paramNote ? 'مفيش' : '')}
             </td>
           </tr>`).join('')}
         </tbody>
