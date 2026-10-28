@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 define('API_MODE', true);
+// بريف ٨١٣: أجزاء المعاينة والتصدير بتكتب كاش المعاينة في السيشن ($_SESSION['item_price_previews'])
+define('API_KEEP_SESSION', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
 api_begin();

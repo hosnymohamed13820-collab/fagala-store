@@ -15,6 +15,12 @@ require_once __DIR__ . '/auth.php';
 require_permission('stocktake');
 require_once __DIR__ . '/stocktake_lib.php';
 
+// فك قفل الجلسة لطلبات GET (بريف ٨١٣) — الصفحة بتقرأ بس من الجلسة في GET
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && session_status() === PHP_SESSION_ACTIVE) {
+    csrf_token();
+    session_write_close();
+}
+
 // بحث بالاسم (AJAX) — يرجّع JSON
 if (isset($_GET['search'])) {
     header('Content-Type: application/json; charset=utf-8');

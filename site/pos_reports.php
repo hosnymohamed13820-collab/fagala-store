@@ -86,8 +86,18 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(function (err) { alertBox.innerHTML = ui.alert('neg', err.message || 'تعذر تحميل التقرير.'); });
     }
 
-    window.apiFetch('pos_reports_api.php?part=meta').then(function (res) {
-        const data = res.data || {};
+    function initParams() {
+        const q = new URLSearchParams();
+        q.set('part', 'init');
+        q.set('report', activeReport);
+        q.set('from', document.getElementById('prFrom').value);
+        q.set('to', document.getElementById('prTo').value);
+        q.set('branch_id', document.getElementById('prBranch').value);
+        q.set('cashier_id', document.getElementById('prCashier').value);
+        return q;
+    }
+
+    function setupMeta(data) {
         definitions = data.definitions || {};
         document.getElementById('prBranch').innerHTML = '<option value="0">كل الفروع المسموحة</option>' +
             (data.branches || []).map(function (row) { return '<option value="' + Number(row.id) + '">' + ui.esc(row.name) + '</option>'; }).join('');
@@ -96,7 +106,12 @@ document.addEventListener('DOMContentLoaded', function () {
         tabs.innerHTML = reports.map(function (key) {
             return '<button type="button" class="ftab' + (key === activeReport ? ' is-active' : '') + '" data-report="' + ui.esc(key) + '">' + ui.esc(definitions[key].title) + '</button>';
         }).join('');
-        loadReport();
+    }
+
+    window.apiFetch('pos_reports_api.php?' + initParams().toString()).then(function (res) {
+        const data = res.data || {};
+        setupMeta(data.meta || {});
+        render(data.report || {});
     }).catch(function (err) {
         alertBox.innerHTML = ui.alert('neg', err.message || 'تعذر تحميل فلاتر التقارير.');
     });

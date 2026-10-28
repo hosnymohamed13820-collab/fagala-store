@@ -813,6 +813,17 @@ function require_login(): void
     } catch (Throwable $ex) {
         auth_refresh_failed($ex);
     }
+
+    // فك قفل الجلسة لطلبات GET على *_api.php (بريف ٨١٣)
+    // بعد ما الدخول والصلاحيات والـlast_seen اتحسبوا
+    if (session_status() === PHP_SESSION_ACTIVE
+        && defined('API_MODE')
+        && strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) === 'GET'
+        && !defined('API_KEEP_SESSION')
+    ) {
+        csrf_token(); // التأكد إن توكن CSRF اتولّد واتخزن قبل القفل
+        session_write_close();
+    }
 }
 
 /**

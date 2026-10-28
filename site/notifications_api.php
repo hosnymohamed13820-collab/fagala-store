@@ -13,6 +13,28 @@ require_once __DIR__ . '/notifications_lib.php';
 $part = (string) ($_GET['part'] ?? '');
 $userId = (int) (current_user()['id'] ?? 0);
 
+if ($part === 'init') {
+    api_method('GET');
+    $summary = notifgrp_summary($userId);
+    $groups = $summary['groups'] ?? [];
+    $groupKeys = array_column($groups, 'key');
+    $requestedGroup = (string) ($_GET['group'] ?? '');
+    $group = in_array($requestedGroup, $groupKeys, true)
+        ? $requestedGroup
+        : ($groupKeys[0] ?? 'sales');
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+    try {
+        $list = notifgrp_list($userId, $group, $page);
+    } catch (InvalidArgumentException $e) {
+        api_fail($e->getMessage(), 400, 'bad_request');
+    }
+    api_ok([
+        'summary' => $summary,
+        'list'    => $list,
+        'group'   => $group,
+    ]);
+}
+
 if ($part === 'summary') {
     api_method('GET');
     api_ok(notifgrp_summary($userId));

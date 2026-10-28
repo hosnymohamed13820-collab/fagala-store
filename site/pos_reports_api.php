@@ -16,6 +16,52 @@ $user = current_user() ?? [];
 $part = (string) ($_GET['part'] ?? 'report');
 
 try {
+    if ($part === 'init') {
+        $allowed = sale_allowed_branch_ids($pdo, $user);
+        $branches = [];
+        $cashiers = [];
+        if ($allowed) {
+            $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+            $branchStmt = $pdo->prepare("SELECT id, name FROM branches WHERE id IN ($placeholders) ORDER BY name");
+            $branchStmt->execute($allowed);
+            $branches = $branchStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $cashierStmt = $pdo->prepare(
+                "SELECT DISTINCT u.id, u.full_name
+                   FROM users u
+                   JOIN sale_sessions ss ON ss.cashier_id = u.id
+                  WHERE ss.branch_id IN ($placeholders)
+                  ORDER BY u.full_name"
+            );
+            $cashierStmt->execute($allowed);
+            $cashiers = $cashierStmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+        $meta = [
+            'definitions' => pos_reports_definitions(),
+            'branches' => $branches,
+            'cashiers' => $cashiers,
+        ];
+
+        $report = (string) ($_GET['report'] ?? 'removed');
+        $filter = pos_reports_filters($pdo, $_GET, $user);
+        $result = pos_reports_run($pdo, $report, $filter);
+        $reportData = [
+            'report' => $report,
+            'definition' => $result['definition'],
+            'rows' => $result['rows'],
+            'filters' => [
+                'from' => $filter['from'],
+                'to' => $filter['to'],
+                'branch_id' => $filter['branch_id'],
+                'cashier_id' => $filter['cashier_id'],
+            ],
+        ];
+
+        api_ok([
+            'meta'   => $meta,
+            'report' => $reportData,
+        ]);
+    }
     if ($part === 'meta') {
         $allowed = sale_allowed_branch_ids($pdo, $user);
         if (!$allowed) {

@@ -32,4 +32,5 @@ return [
     '20261027_023_custody_order_accounts',
     '20261027_024_pos_print',
     '20261027_025_pos_close_security',
+    '20261028_026_speed_indexes',
 ];

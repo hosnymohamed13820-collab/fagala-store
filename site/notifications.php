@@ -63,23 +63,38 @@ document.addEventListener('DOMContentLoaded', function () {
         markBtn.style.display = current && current.unread > 0 ? '' : 'none';
     }
 
+    function applySummary(data) {
+        state.groups = data.groups || [];
+        var badge = document.getElementById('notifBadge');
+        var markAll = document.getElementById('notifMarkAll');
+        var total = Number(data.total_unread) || 0;
+        if (badge) {
+            badge.textContent = total > 9 ? '9+' : String(total);
+            badge.style.display = total > 0 ? 'flex' : 'none';
+        }
+        if (markAll) markAll.style.display = total > 0 ? '' : 'none';
+        var requested = new URLSearchParams(location.search).get('group') || '';
+        if (!state.group) {
+            state.group = state.groups.some(function (g) { return g.key === requested; })
+                ? requested : (state.groups[0] ? state.groups[0].key : 'sales');
+        }
+        renderTabs();
+    }
+
+    function applyList(data) {
+        state.hasMore = !!data.has_more;
+        list.innerHTML = data.items.length
+            ? data.items.map(renderItem).join('')
+            : window.ui.empty('مفيش إشعارات في المجموعة دي');
+        document.getElementById('notifPageNo').textContent = 'صفحة ' + data.page;
+        document.getElementById('notifPrev').disabled = data.page <= 1;
+        document.getElementById('notifNext').disabled = !data.has_more;
+        pager.style.display = (data.page > 1 || data.has_more) ? 'flex' : 'none';
+    }
+
     function loadSummary() {
         return window.apiFetch('notifications_api.php?part=summary').then(function (res) {
-            state.groups = res.data.groups || [];
-            var badge = document.getElementById('notifBadge');
-            var markAll = document.getElementById('notifMarkAll');
-            var total = Number(res.data.total_unread) || 0;
-            if (badge) {
-                badge.textContent = total > 9 ? '9+' : String(total);
-                badge.style.display = total > 0 ? 'flex' : 'none';
-            }
-            if (markAll) markAll.style.display = total > 0 ? '' : 'none';
-            var requested = new URLSearchParams(location.search).get('group') || '';
-            if (!state.group) {
-                state.group = state.groups.some(function (g) { return g.key === requested; })
-                    ? requested : (state.groups[0] ? state.groups[0].key : 'sales');
-            }
-            renderTabs();
+            applySummary(res.data || {});
         });
     }
 
@@ -87,16 +102,19 @@ document.addEventListener('DOMContentLoaded', function () {
         list.innerHTML = window.ui.alert('info', 'جاري تحميل الإشعارات...');
         return window.apiFetch('notifications_api.php?part=list&group=' + encodeURIComponent(state.group) + '&page=' + state.page)
             .then(function (res) {
-                var data = res.data;
-                state.hasMore = !!data.has_more;
-                list.innerHTML = data.items.length
-                    ? data.items.map(renderItem).join('')
-                    : window.ui.empty('مفيش إشعارات في المجموعة دي');
-                document.getElementById('notifPageNo').textContent = 'صفحة ' + data.page;
-                document.getElementById('notifPrev').disabled = data.page <= 1;
-                document.getElementById('notifNext').disabled = !data.has_more;
-                pager.style.display = (data.page > 1 || data.has_more) ? 'flex' : 'none';
+                applyList(res.data || {});
             });
+    }
+
+    function loadInit() {
+        var requested = new URLSearchParams(location.search).get('group') || '';
+        var url = 'notifications_api.php?part=init' + (requested ? '&group=' + encodeURIComponent(requested) : '');
+        return window.apiFetch(url).then(function (res) {
+            var data = res.data || {};
+            state.group = data.group || requested || 'sales';
+            applySummary(data.summary || {});
+            applyList(data.list || {});
+        });
     }
 
     function showError(err) {
@@ -118,7 +136,7 @@ document.addEventListener('DOMContentLoaded', function () {
         window.apiFetch('notifications_api.php?part=mark_read', {
             method: 'POST', body: {group: state.group}
         }).then(function () {
-            return loadSummary().then(loadList);
+            return loadInit();
         }).catch(showError).finally(function () { markBtn.disabled = false; });
     });
 
@@ -133,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function () {
         loadList().catch(showError);
     });
 
-    loadSummary().then(loadList).catch(showError);
+    loadInit().catch(showError);
 });
 </script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
