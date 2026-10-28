@@ -33,7 +33,12 @@ $part = (string) ($_GET['part'] ?? '');
 switch ($part) {
     case 'export':
         $rawCodes = $_GET['codes'] ?? [];
-        $codes = is_array($rawCodes) ? array_slice($rawCodes, 0, 300) : [];
+        if (is_string($rawCodes)) {
+            $rawCodes = explode(',', $rawCodes);
+        }
+        $codes = is_array($rawCodes)
+            ? array_slice(array_values(array_filter(array_map(fn($c) => trim((string) $c), $rawCodes), fn($c) => $c !== '')), 0, 300)
+            : [];
         if ($codes) {
             $rows = stock_items_by_codes($codes);
         } else {

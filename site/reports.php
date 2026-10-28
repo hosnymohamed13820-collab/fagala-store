@@ -631,89 +631,43 @@ if ($type === 'stocktake') {
     $stkSelSheets  = $stkData['sel_sheets'];
     $stkLines      = $stkData['lines'];
 
-    // تصدير أصناف الجرد (CSV أو Excel)
+    // تصدير أصناف الجرد (Excel بـ SimpleXlsx)
     if ($export && $stkLines) {
         if (ob_get_length()) ob_end_clean(); // امسح أي output سابق
-        $fmt = $_GET['fmt'] ?? 'csv';
+        require_once __DIR__ . '/xlsx_lib.php';
+
         $headers = ['المحضر','الكود','اسم الصنف','الوحدة','جرد الجارد','جرد المراجع','النهائية','رصيد السيستم','الفرق','سعر التكلفة','إجمالي التكلفة','القائم بالجرد','المراجع'];
 
-        // مؤشرات الأعمدة (0-based) للتلوين
-        $COL_GARD = 11;  // القائم بالجرد
-        $COL_REV  = 12;  // المراجع
+        $x = new SimpleXlsx('أصناف الجرد');
+        $x->setColumnTypes(['s', 's', 's', 's', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 's', 's']);
+        $x->addRow($headers, true);
 
-        // جهّز الصفوف + خريطة الألوان
-        $NUM_COLS = count($headers);   // لتلوين السطر كامل
-        $dataRows = [];
-        $cellFills = [];
-        foreach ($stkLines as $i => $l) {
-            $base=(float)$l['base_qty'];                                  // كمية الجارد (بالأساسي)
-            $rev=$l['review_qty']!==null?(float)$l['review_qty']:null;    // كمية المراجع
-            $reviewed = ($l['sheet_status'] ?? '') === 'done' || $rev !== null || $l['final_qty']!==null;
-            $fin=$l['final_qty']!==null?(float)$l['final_qty']:($rev!==null?$rev:$base);  // النهائية
-            $sys=$l['system_qty']!==null?(float)$l['system_qty']:null;    // رصيد السيستم
-            $hasSys = $sys!==null;
-            $diff=$hasSys?$fin-$sys:null;
-            $cost=$l['cost_price']!==null?(float)$l['cost_price']:null;
-            $dataRows[] = [
-                '#'.$l['sheet_no'], (string)$l['entered_code'], $l['item_name'], $l['unit'] ?? '',
-                $base, $rev ?? '', $fin, $sys ?? '', $diff ?? '',
-                $cost ?? '', $cost!==null?($fin*$cost):'', $l['counter_name'] ?? '', $l['reviewer_name'] ?? '',
-            ];
+        foreach ($stkLines as $l) {
+            $base = (float)$l['base_qty'];
+            $rev  = $l['review_qty'] !== null ? (float)$l['review_qty'] : null;
+            $fin  = $l['final_qty'] !== null ? (float)$l['final_qty'] : ($rev !== null ? $rev : $base);
+            $sys  = $l['system_qty'] !== null ? (float)$l['system_qty'] : null;
+            $diff = $sys !== null ? ($fin - $sys) : '';
+            $cost = $l['cost_price'] !== null ? (float)$l['cost_price'] : null;
+            $totCost = $cost !== null ? ($fin * $cost) : '';
 
-            // ===== منطق الألوان =====
-            // لسه ماتراجعش المحضر → سطر عادي (بدون تلوين مقارنة)
-            if (!$reviewed) continue;
-
-            // (أ) تحديد المطابقة للسطر كله:
-            //     - لو فيه رصيد سيستم: مطابق يعني النهائية = السيستم (مفيش فرق مخزون).
-            //     - لو مفيش رصيد سيستم: مطابق يعني الجارد والمراجع اتفقوا (النهائية = الجارد = المراجع).
-            if ($hasSys) {
-                $isMatch = abs($fin - $sys) < 0.0001;
-            } else {
-                $isMatch = ($rev!==null) && abs($base - $rev) < 0.0001 && abs($fin - $base) < 0.0001;
-            }
-
-            // (ب) تلوين السطر كامل: أخضر لو مطابق، أحمر لو غير مطابق
-            $rowFill = $isMatch ? 'green' : 'red';
-            for ($c = 0; $c < $NUM_COLS; $c++) {
-                $cellFills[$i . ':' . $c] = $rowFill;
-            }
-
-            // (ج) تحديد المخطئ من الكمية النهائية (بس لو فيه اختلاف بين الجارد والمراجع)
-            //     المطابق تمامًا مايبقاش عليه مخطئ.
-            if ($rev !== null && abs($base - $rev) >= 0.0001) {
-                $finEqBase = abs($fin - $base) < 0.0001;   // النهائية = الجارد؟ → المراجع غلط
-                $finEqRev  = abs($fin - $rev)  < 0.0001;   // النهائية = المراجع؟ → الجارد غلط
-                if ($finEqBase) {
-                    $cellFills[$i . ':' . $COL_REV]  = 'redfill_redtext';   // المراجع مخطئ
-                } elseif ($finEqRev) {
-                    $cellFills[$i . ':' . $COL_GARD] = 'redfill_redtext';   // الجارد مخطئ
-                } else {
-                    // النهائية مخالفة للاتنين → الاتنين غلط
-                    $cellFills[$i . ':' . $COL_GARD] = 'redfill_redtext';
-                    $cellFills[$i . ':' . $COL_REV]  = 'redfill_redtext';
-                }
-            }
+            $x->addRow([
+                '#' . $l['sheet_no'],
+                (string)$l['entered_code'],
+                $l['item_name'],
+                $l['unit'] ?? '',
+                $base,
+                $rev !== null ? $rev : '',
+                $fin,
+                $sys !== null ? $sys : '',
+                $diff,
+                $cost !== null ? $cost : '',
+                $totCost,
+                $l['counter_name'] ?? '',
+                $l['reviewer_name'] ?? '',
+            ]);
         }
-
-        if ($fmt === 'xlsx') {
-            // ===== ملف Excel حقيقي (.xlsx) — العمود B (الكود) نص + ألوان المخطئ =====
-            stk_export_xlsx($headers, $dataRows, 'stocktake_session_' . $stkSelSession . '.xlsx', $cellFills);
-            exit;
-        }
-
-        // ===== CSV — العمود B (الكود) بصيغة ="..." يجبر إكسل يقرأه نص =====
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="stocktake_session_' . $stkSelSession . '.csv"');
-        echo "\xEF\xBB\xBF";
-        $out = fopen('php://output', 'w');
-        fputcsv($out, $headers);
-        foreach ($dataRows as $r) {
-            // العمود B (index 1 = الكود) كنص
-            $r[1] = '="' . $r[1] . '"';
-            fputcsv($out, $r);
-        }
-        fclose($out);
+        $x->download('stocktake_session_' . $stkSelSession . '.xlsx');
         exit;
     }
 }
@@ -1237,9 +1191,8 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 $expQs = 'type=stocktake&session=' . $stkSelSession . '&export=1'
                        . '&sheet_ids=' . implode(',', array_map('intval', $stkSelSheets));
             ?>
-            <div style="display:flex;gap:8px;">
-                <a href="?<?= $expQs ?>&fmt=csv" class="btn btn-csv"><i class="ti ti-download"></i> تصدير إكسل</a>
-                <a href="?<?= $expQs ?>&fmt=xlsx" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
+            <div>
+                <a href="?<?= $expQs ?>" class="btn btn-green" style="text-decoration:none;"><i class="ti ti-file-spreadsheet"></i> تصدير Excel</a>
             </div>
         </div>
         <div class="ftable-wrap">

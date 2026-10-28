@@ -381,6 +381,39 @@ function stock_codes_to_ids(array $codes): array
 }
 
 /**
+ * مجموعة أكواد جاهزة للتصدير من غير استعلام لكل كود.
+ * @return array<int,array{code:string,name:string,item_id:int,balances:array,total:float}>
+ */
+function stock_items_by_codes(array $codes): array
+{
+    $codes = array_values(array_unique(array_filter(
+        array_map(fn($code) => trim((string) $code), $codes),
+        fn($code) => $code !== ''
+    )));
+    if (!$codes) return [];
+
+    $idsByCode = stock_codes_to_ids($codes);
+    $itemIds = array_values(array_unique(array_filter(array_values($idsByCode))));
+    if (!$itemIds) return [];
+
+    $balances = sqlsrv_fetch_item_balances_all($itemIds);
+    $names = stock_item_names($itemIds);
+    $rows = [];
+    foreach ($codes as $code) {
+        $itemId = (int) ($idsByCode[$code] ?? 0);
+        if ($itemId <= 0) continue;
+        $info = $names[$itemId] ?? ['name' => '—'];
+        $rows[] = stock_build_row(
+            $itemId,
+            $balances[$itemId] ?? [],
+            $code,
+            (string) ($info['name'] ?? '—')
+        );
+    }
+    return $rows;
+}
+
+/**
  * الفلترة على مستوى SQL — بترجّع الأصناف المطابقة لشرط الرصيد
  * من غير ما نجيب كل الأصناف الأول.
  *

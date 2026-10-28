@@ -29,6 +29,7 @@ $lib = str_replace(
 file_put_contents($root . '/analysis_lib.php', $lib);
 
 copy(__DIR__ . '/../../site/analysis.php', $root . '/analysis.php');
+copy(__DIR__ . '/../../site/xlsx_lib.php', $root . '/xlsx_lib.php');
 
 file_put_contents($root . '/includes/header.php',
     "<!DOCTYPE html><html lang=\"ar\" dir=\"rtl\"><head><meta charset=\"UTF-8\">"
@@ -109,7 +110,7 @@ function render(array $get): string
          . escapeshellarg($root . '/_run.php') . ' 2>&1';
     $env = ['AN_GET' => json_encode($get)];
     $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
-    $p = proc_open($cmd, $desc, $pipes, $root, array_merge($_ENV, $env));
+    $p = proc_open($cmd, $desc, $pipes, $root, array_merge(getenv(), $env));
     $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]); fclose($pipes[2]); proc_close($p);
     return $out;
@@ -206,11 +207,26 @@ chk('الأسامي الخطرة اتهربت',
 chk('اقتراح التنقيلة ظهر', str_contains($html, 'ق لـ'));
 
 // ===== التصدير =====
-$csv = render(['export' => '1', 'batch' => '1', 'cat' => '0']);
-chk('التصدير: فيه BOM',    str_starts_with($csv, "\xEF\xBB\xBF"));
-chk('التصدير: فيه العناوين', str_contains($csv, 'كود الصنف'));
-chk('التصدير: فيه الصفوف',   str_contains($csv, '6223007312271'));
-chk('التصدير: مش بيطلع HTML', !str_contains($csv, '<html'));
+$xlsx = render(['export' => '1', 'batch' => '1', 'cat' => '0']);
+chk('التصدير: أول بايتين PK', str_starts_with($xlsx, 'PK'));
+
+$tmpXlsx = tempnam(sys_get_temp_dir(), 'an_xlsx_');
+file_put_contents($tmpXlsx, $xlsx);
+$zip = new ZipArchive();
+$open = $zip->open($tmpXlsx);
+$sheetXml = ($open === true) ? ($zip->getFromName('xl/worksheets/sheet1.xml') ?: '') : '';
+$sharedXml = ($open === true) ? ($zip->getFromName('xl/sharedStrings.xml') ?: '') : '';
+if ($open === true) {
+    $zip->close();
+}
+@unlink($tmpXlsx);
+
+chk('التصدير: الملف فيه xl/worksheets/sheet1.xml', $sheetXml !== '');
+chk('التصدير: فيه نص العناوين وعدد الصفوف المتوقع',
+    (str_contains($sharedXml, 'كود الصنف') || str_contains($sheetXml, 'كود الصنف'))
+    && (str_contains($sharedXml, '6223007312271') || str_contains($sheetXml, '6223007312271'))
+    && preg_match_all('/<row\b/', $sheetXml, $mRows) === 4);
+chk('التصدير: مش بيطلع HTML', !str_contains($xlsx, '<html'));
 
 // ===== تصادم اسم دالة JS مع id =====
 preg_match_all('/function\s+([A-Za-z_$][\w$]*)\s*\(/', $html, $fn);

@@ -39,29 +39,39 @@ if ($ready && ($_GET['export'] ?? '') === '1') {
         $rep = an_report($bid, $cat, true, 1000000);
         $b   = an_batch($bid);
 
-        header('Content-Type: text/csv; charset=utf-8');
-        header('Content-Disposition: attachment; filename="analysis_' . $bid . '_' . $cat . '.csv"');
-        echo "\xEF\xBB\xBF"; // BOM عشان العربي يبان في إكسل
-        $out = fopen('php://output', 'w');
+        require_once __DIR__ . '/xlsx_lib.php';
+        $x = new SimpleXlsx('تحليل الموسم');
+
+        $types = ['s', 's', 's'];
+        foreach ($rep['names'] as $n) {
+            $types[] = 'n';
+            $types[] = 'n';
+            $types[] = 'n';
+        }
+        $types = array_merge($types, ['n', 'n', 'n', 'n', 'n', 's', 'n']);
+        foreach ($rep['names'] as $n) {
+            $types[] = 's';
+        }
+        $x->setColumnTypes($types);
 
         $hdr = ['كود الصنف', 'اسم الصنف', 'القسم'];
         foreach ($rep['names'] as $n) { $hdr[] = 'مبيعات ' . $n; $hdr[] = 'رصيد ' . $n; $hdr[] = 'مطلوب ' . $n; }
         $hdr = array_merge($hdr, ['مبيعات عام', 'رصيد عام', 'المطلوب العام',
             'وارد ' . $rep['hq_name'], 'سعر التكلفة', 'حالة الصنف', 'الأولوية (ج)']);
         foreach ($rep['names'] as $n) $hdr[] = 'من ' . $n;
-        fputcsv($out, $hdr);
+        $x->addRow($hdr, true);
 
         foreach ($rep['rows'] as $r) {
-            $line = [$r['barcode'], $r['name'], $r['cat']];
+            $line = [(string)$r['barcode'], (string)$r['name'], (string)$r['cat']];
             foreach (array_keys($rep['names']) as $k) {
                 $line[] = $r['sales'][$k]; $line[] = $r['bal'][$k]; $line[] = $r['req'][$k];
             }
             $line = array_merge($line, [$r['sum_sales'], $r['sum_bal'], $r['sum_req'],
                 $r['hq_in'], $r['cost'], $r['status'], $r['priority']]);
             foreach (array_keys($rep['names']) as $k) $line[] = $r['transfers'][$k];
-            fputcsv($out, $line);
+            $x->addRow($line);
         }
-        fclose($out);
+        $x->download('analysis_' . $bid . '_' . $cat . '.xlsx');
         exit;
     }
 }

@@ -23,6 +23,71 @@ stock_mirror_only(true);
 
 $uid = (int) current_user()['id'];
 
+// =====================================================================
+//  تصدير إكسيل (قبل أي HTML وبنفس الحراسة)
+// =====================================================================
+$export = (string) ($_GET['export'] ?? '');
+if ($export === 'xlsx') {
+    require_once __DIR__ . '/xlsx_lib.php';
+
+    $mode = (string) ($_GET['mode'] ?? '');
+    $sto = (int) ($_GET['sto'] ?? 0);
+    $threshold = (float) ($_GET['threshold'] ?? 0);
+    $rawCodes = $_GET['codes'] ?? [];
+    if (is_string($rawCodes)) {
+        $rawCodes = explode(',', $rawCodes);
+    }
+    $codes = is_array($rawCodes)
+        ? array_slice(array_values(array_filter(array_map(fn($c) => trim((string) $c), $rawCodes), fn($c) => $c !== '')), 0, 300)
+        : [];
+    $reqParam = (string) ($_GET['req'] ?? '');
+
+    $reqMap = [];
+    if ($reqParam !== '') {
+        $dec = json_decode($reqParam, true);
+        if (is_array($dec)) $reqMap = $dec;
+    }
+
+    $rows = [];
+    if ($codes) {
+        $rows = stock_items_by_codes($codes);
+    } elseif ($mode !== '' && $mode !== 'none') {
+        $rows = stock_filter_items($mode, $sto, $threshold);
+        if ($mode !== 'zero') {
+            $rows = array_filter($rows, fn($r) => ((float)($r['total'] ?? 0)) > 0.0001);
+        }
+    }
+
+    $branches = stock_branches_map();
+    $branches = array_merge($branches, stock_extra_stores(array_column($branches, 'sto_id')));
+
+    $x = new SimpleXlsx('طلب نواقص');
+    $types = ['s', 's', 'n'];
+    $hdr = ['الكود', 'اسم الصنف', 'الكمية المطلوبة'];
+    foreach ($branches as $b) {
+        $hdr[] = $b['is_admin'] ? 'الإدارة' : $b['name'];
+        $types[] = 'n';
+    }
+    $x->setColumnTypes($types);
+    $x->addRow($hdr, true);
+
+    foreach ($rows as $r) {
+        $bal = $r['balances'] ?? [];
+        $line = [
+            (string) $r['code'],
+            (string) ($r['name'] ?? ''),
+            (float) ($reqMap[$r['code']] ?? 0),
+        ];
+        foreach ($branches as $b) {
+            $line[] = (float) ($bal[$b['sto_id']] ?? 0);
+        }
+        $x->addRow($line);
+    }
+
+    $x->download('shortage_' . date('Y-m-d') . '.xlsx');
+    exit;
+}
+
 // ===== AJAX =====
 $ajax = $_GET['ajax'] ?? '';
 if ($ajax !== '') {
@@ -231,9 +296,9 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn" id="reqBtn" style="background:var(--pos-fill);" onclick="openRequest()">
                 <i class="ti ti-shopping-cart"></i> طلب نواقص
             </button>
-            <button type="button" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);" onclick="exportCsv()">
+            <a id="exportBtn" class="btn" style="background:var(--fill-strong);color:var(--fill-strong-fg);text-decoration:none;" href="shortage.php?export=xlsx">
                 <i class="ti ti-download"></i> تصدير
-            </button>
+            </a>
             <button type="button" class="btn" style="background:var(--neg-fill);" onclick="clearAll()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
@@ -424,6 +489,7 @@ require_once __DIR__ . '/includes/header.php';
         const q = parseFloat(val);
         if (q > 0) reqQty[code] = q; else delete reqQty[code];
         updateReqBtn();
+        updateExportLink();
     }
     function updateReqBtn() {
         const n = Object.keys(reqQty).length;
@@ -504,6 +570,7 @@ require_once __DIR__ . '/includes/header.php';
                     ? 'امسح باركود أو اكتب اسم صنف، اكتب الكمية المطلوبة، وبعدين اضغط "طلب نواقص"'
                     : 'مفيش أصناف مطابقة للفلتر') + '</td></tr>';
             document.getElementById('count').textContent = '';
+            updateExportLink();
             return;
         }
         const tot = {}; BRANCHES.forEach(b => tot[b.sto_id] = 0);
@@ -531,6 +598,7 @@ require_once __DIR__ . '/includes/header.php';
         body.innerHTML = html;
         document.getElementById('count').textContent = shown.length + ' صنف';
         updateReqBtn();
+        updateExportLink();
     }
 
     function clearAll() {
@@ -543,18 +611,36 @@ require_once __DIR__ . '/includes/header.php';
         hideSubs(); render([]); setStatus('', '');
     }
 
-    function exportCsv() {
-        if (!shown.length) { fgToast('مفيش بيانات', 'warn'); return; }
-        let csv = '\ufeff' + ['الكود','اسم الصنف','الكمية المطلوبة', ...BRANCHES.map(b => b.is_admin?'الإدارة':b.name)].join(',') + '\n';
-        shown.forEach(r => {
-            const bal = r.balances || {};
-            csv += ['"'+r.code+'"', '"'+(r.name||'').replace(/"/g,'""')+'"', (reqQty[r.code]||0),
-                    ...BRANCHES.map(b => +(bal[b.sto_id]||0))].join(',') + '\n';
+    function updateExportLink() {
+        const btn = document.getElementById('exportBtn');
+        if (!btn) return;
+        const p = new URLSearchParams({export: 'xlsx'});
+        if (added.length) {
+            const codes = shown.map(r => r.code).filter(Boolean);
+            if (codes.length) p.set('codes', codes.join(','));
+            const reqEntries = Object.entries(reqQty).filter(([c, q]) => q > 0);
+            if (reqEntries.length) {
+                p.set('req', JSON.stringify(Object.fromEntries(reqEntries)));
+            }
+        } else if (mode && mode !== 'none') {
+            p.set('mode', mode);
+            if (mode === 'has_stock') {
+                const sto = +document.getElementById('branchPick').value || 0;
+                if (sto > 0) { p.set('mode', 'branch_only'); p.set('sto', String(sto)); }
+            }
+            if (mode === 'below') p.set('threshold', document.getElementById('belowVal').value || '0');
+        }
+        btn.href = 'shortage.php?' + p.toString();
+    }
+
+    const expBtn = document.getElementById('exportBtn');
+    if (expBtn) {
+        expBtn.addEventListener('click', function(e) {
+            if (!shown.length) {
+                e.preventDefault();
+                fgToast('مفيش بيانات', 'warn');
+            }
         });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-        a.download = 'طلب_نواقص_' + new Date().toISOString().slice(0,10) + '.csv';
-        a.click();
     }
 
     // ===== بوب أب الطلب =====
