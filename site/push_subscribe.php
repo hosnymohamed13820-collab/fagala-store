@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/api_lib.php';
 
 require_login();
 
@@ -26,6 +27,12 @@ function sub_response(bool $ok, ?string $error = null, int $httpCode = 200): voi
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     sub_response(false, 'طلب غير مسموح — POST فقط', 405);
 }
+
+$contentType = strtolower(trim(explode(';', (string) ($_SERVER['CONTENT_TYPE'] ?? ''), 2)[0]));
+if ($contentType !== 'application/json') {
+    sub_response(false, 'نوع المحتوى لازم يكون application/json', 415);
+}
+api_csrf();
 
 $raw = file_get_contents('php://input');
 if ($raw === false || strlen($raw) === 0) {

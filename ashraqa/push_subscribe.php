@@ -27,6 +27,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     sub_response(false, 'طلب غير مسموح — POST فقط', 405);
 }
 
+$contentType = strtolower(trim(explode(';', (string) ($_SERVER['CONTENT_TYPE'] ?? ''), 2)[0]));
+if ($contentType !== 'application/json') {
+    sub_response(false, 'نوع المحتوى لازم يكون application/json', 415);
+}
+$csrf = (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
+if ($csrf === '' || !csrf_verify($csrf)) {
+    sub_response(false, 'انتهت صلاحية الجلسة، حدّث الصفحة وحاول تاني', 403);
+}
+
 $raw = file_get_contents('php://input');
 if ($raw === false || strlen($raw) === 0) {
     sub_response(false, 'بيانات الطلب فاضية', 400);

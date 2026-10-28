@@ -282,7 +282,11 @@ switch ($part) {
         if (!$sheet || !stk_can_review($sheet, $u)) {
             api_fail('غير مسموح: التعديل لصاحب المحضر والمراجع فقط', 403, 'forbidden');
         }
-        stk_set_final_qty($lineId, $qty, $uid);
+        try {
+            stk_set_final_qty($sheetId, $lineId, $qty, $uid);
+        } catch (RuntimeException $ex) {
+            api_fail($ex->getMessage(), 404, 'not_found');
+        }
         api_ok([
             'line_id'   => $lineId,
             'sheet_id'  => $sheetId,
@@ -302,8 +306,10 @@ switch ($part) {
         if (!is_array($rawFinals)) {
             api_fail('بيانات غير صالحة', 400, 'bad_request');
         }
-        foreach ($rawFinals as $lid => $q) {
-            stk_set_final_qty((int)$lid, (float)$q, $uid);
+        try {
+            stk_set_final_bulk($sheetId, $rawFinals, $uid);
+        } catch (RuntimeException $ex) {
+            api_fail($ex->getMessage(), 404, 'not_found');
         }
         if ($owner) {
             stk_finalize_sheet($sheetId, $uid);

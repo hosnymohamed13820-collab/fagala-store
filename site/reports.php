@@ -190,9 +190,19 @@ if (($_GET['ajax'] ?? '') === 'je_details') {
             ];
         }
         echo json_encode(['ok' => true, 'rows' => $out], JSON_UNESCAPED_UNICODE);
-    } catch (Throwable $ex) {
+    } catch (PDOException $ex) {
+        $errorId = substr(bin2hex(random_bytes(8)), 0, 10);
+        errlog_record('php', "رقم الخطأ $errorId: " . $ex->getMessage(), $ex->getFile(), $ex->getLine(), $ex->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => "حصل خطأ — رقم: $errorId"], JSON_UNESCAPED_UNICODE);
+    } catch (RuntimeException|DomainException $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        $errorId = substr(bin2hex(random_bytes(8)), 0, 10);
+        errlog_record('php', "رقم الخطأ $errorId: " . $ex->getMessage(), $ex->getFile(), $ex->getLine(), $ex->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => "حصل خطأ — رقم: $errorId"], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
@@ -297,9 +307,19 @@ if ($ajax !== '') {
             default:
                 throw new RuntimeException('عملية غير معروفة.');
         }
-    } catch (Throwable $ex) {
+    } catch (PDOException $ex) {
+        $errorId = substr(bin2hex(random_bytes(8)), 0, 10);
+        errlog_record('php', "رقم الخطأ $errorId: " . $ex->getMessage(), $ex->getFile(), $ex->getLine(), $ex->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => "حصل خطأ — رقم: $errorId"], JSON_UNESCAPED_UNICODE);
+    } catch (RuntimeException|DomainException $ex) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => $ex->getMessage()], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $ex) {
+        $errorId = substr(bin2hex(random_bytes(8)), 0, 10);
+        errlog_record('php', "رقم الخطأ $errorId: " . $ex->getMessage(), $ex->getFile(), $ex->getLine(), $ex->getTraceAsString());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => "حصل خطأ — رقم: $errorId"], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }

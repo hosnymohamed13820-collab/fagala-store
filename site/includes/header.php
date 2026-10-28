@@ -346,7 +346,10 @@ require_once __DIR__ . '/nav_icons.php';
                         var subJson = subscription.toJSON();
                         return fetch('push_subscribe.php', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-Token': <?= json_encode(csrf_token(), JSON_UNESCAPED_UNICODE) ?>
+                            },
                             body: JSON.stringify({
                                 action: 'subscribe',
                                 endpoint: subscription.endpoint,

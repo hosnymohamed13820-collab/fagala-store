@@ -288,7 +288,7 @@ function module_parts(): array
 
 /**
  * كام محاولة فاشلة مسموح بيها قبل القفل المؤقت.
- * الحساب بيتقفل لو تخطّى العدد ده من نفس اليوزرنيم **أو** من نفس الـIP
+ * القفل على الجهاز: خمس محاولات فاشلة من نفس الـIP.
  * خلال آخر LOGIN_LOCK_MINUTES دقيقة.
  */
 const LOGIN_MAX_FAILS     = 5;
@@ -307,9 +307,9 @@ function login_lock_minutes(string $username, ?string $ip): int
              FROM login_log
              WHERE success = 0
                AND created_at > NOW() - INTERVAL ? MINUTE
-               AND (username = ? OR (ip_address IS NOT NULL AND ip_address = ?))'
+               AND ip_address IS NOT NULL AND ip_address = ?'
         );
-        $st->execute([LOGIN_LOCK_MINUTES, $username, $ip]);
+        $st->execute([LOGIN_LOCK_MINUTES, $ip]);
         $row = $st->fetch();
 
         if (!$row || (int) $row['fails'] < LOGIN_MAX_FAILS) return 0;
@@ -319,6 +319,7 @@ function login_lock_minutes(string $username, ?string $ip): int
         return max($left, 1);
     } catch (Throwable $ex) {
         // الجدول ناقص أو فيه مشكلة — مانقفلش الدخول في وش الناس
+        error_log('login lock check failed: ' . $ex->getMessage());
         return 0;
     }
 }
@@ -713,6 +714,28 @@ function auth_bounce(): void
     exit;
 }
 
+/** هل الخطأ سببه أعمدة version اللي migration قديم لسه ما ضافهاش؟ */
+function auth_missing_version_columns(Throwable $ex): bool
+{
+    return $ex instanceof PDOException
+        && ($ex->getCode() === '42S22' || (int) ($ex->errorInfo[1] ?? 0) === 1054);
+}
+
+/** فشل تحديث الحساب: القراءة تكمل، والكتابة تتقفل. */
+function auth_refresh_failed(Throwable $ex): void
+{
+    error_log('account refresh failed: ' . $ex->getMessage());
+    if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'POST') return;
+
+    http_response_code(503);
+    $msg = 'حصل خطأ في التحقق من الحساب، ادخل تاني';
+    if (defined('API_MODE')) {
+        echo json_encode(['ok' => false, 'error' => $msg, 'code' => 'auth_check'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    die('<div style="font-family:sans-serif;text-align:center;padding:60px;direction:rtl">' . e($msg) . '</div>');
+}
+
 /**
  * يفرض تسجيل الدخول — لو مش داخل يحوّله لصفحة الدخول.
  * كمان بيتأكد إن الحساب لسه نشط وإن الصلاحيات متزامنة مع أحدث إصدار.
@@ -737,7 +760,7 @@ function require_login(): void
 
     try {
         $st = db()->prepare(
-            'SELECT u.is_active, u.perms_version, u.pw_version, u.branch_id, u.role_id, r.is_owner
+            'SELECT u.is_active, u.branch_id, u.role_id, r.is_owner
                FROM users u JOIN roles r ON r.id = u.role_id
               WHERE u.id = ?'
         );
@@ -750,9 +773,21 @@ function require_login(): void
             auth_bounce();
         }
 
+        try {
+            $verSt = db()->prepare('SELECT perms_version, pw_version FROM users WHERE id = ?');
+            $verSt->execute([$userId]);
+            $versions = $verSt->fetch(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $verEx) {
+            if (auth_missing_version_columns($verEx)) {
+                $versions = [];
+            } else {
+                throw $verEx;
+            }
+        }
+
         // فحص إصدار الباسورد: لو اتغير الباسورد من جهاز تاني نطلّع الجلسات القديمة
-        if (isset($row['pw_version'])) {
-            $currentPwVer = (int) $row['pw_version'];
+        if (isset($versions['pw_version'])) {
+            $currentPwVer = (int) $versions['pw_version'];
             if (!isset($_SESSION['user']['pw_version'])) {
                 // جلسة قديمة من قبل الرفع: نخزّن القيمة الحالية وما نطلّعوش
                 $_SESSION['user']['pw_version'] = $currentPwVer;
@@ -767,8 +802,8 @@ function require_login(): void
         $_SESSION['user']['is_owner']  = (int) $row['is_owner'] === 1;
 
         // لو رقم إصدار الصلاحيات اتغير (الأونر عدّل صلاحياته)، نحدّث الجلسة فوراً من غير خروج
-        if (isset($row['perms_version'])) {
-            $currentVer = (int) $row['perms_version'];
+        if (isset($versions['perms_version'])) {
+            $currentVer = (int) $versions['perms_version'];
             $sessionVer = (int) ($_SESSION['user']['perms_version'] ?? 0);
             if ($sessionVer !== $currentVer) {
                 load_permissions($userId);
@@ -776,12 +811,7 @@ function require_login(): void
             }
         }
     } catch (Throwable $ex) {
-        // =====================================================================
-        //  حزام أمان حاسم: الدالة دي بتشتغل في أول كل ريكوست لكل الـ ٤٩ مستخدم.
-        //  لو الاستعلام رمى أي خطأ (مثلاً ملف SQL لسه ما اتنفّذش على السيرفر
-        //  والعمود perms_version لسه مش موجود، أو فيه عطل لحظي)، بنبلع الخطأ
-        //  بهدوء ونكمّل بالسلوك العادي من غير ما نوقّع الموقع في وش الناس.
-        // =====================================================================
+        auth_refresh_failed($ex);
     }
 }
 

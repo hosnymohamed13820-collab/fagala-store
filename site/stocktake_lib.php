@@ -545,19 +545,72 @@ function stk_add_review(int $sheetId, string $code, float $countQty): array
  * تعديل الكمية النهائية المتفق عليها لصنف (final_qty) بالأساسي.
  * بيسجّل في review_log.
  */
-function stk_set_final_qty(int $lineId, float $finalQty, ?int $userId = null): void
+function stk_set_final_qty(int $sheetId, int $lineId, float $finalQty, ?int $userId): void
 {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $st = $pdo->prepare('SELECT review_log FROM stocktake_lines WHERE id=? FOR UPDATE');
-        $st->execute([$lineId]);
+        $st = $pdo->prepare('SELECT review_log FROM stocktake_lines WHERE id=? AND sheet_id=? FOR UPDATE');
+        $st->execute([$lineId, $sheetId]);
         $row = $st->fetch();
         if (!$row) throw new RuntimeException('السطر غير موجود.');
         $log = (string)($row['review_log'] ?? '');
         $log .= ($log ? ' | ' : '') . 'نهائي:' . rtrim(rtrim(number_format($finalQty,3,'.',''),'0'),'.');
         $pdo->prepare('UPDATE stocktake_lines SET final_qty=?, review_log=? WHERE id=?')
             ->execute([$finalQty, $log, $lineId]);
+        $pdo->commit();
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
+/** حفظ كل الكميات النهائية بعد التأكد إن كل السطور تابعة لنفس المحضر. */
+function stk_set_final_bulk(int $sheetId, array $finals, ?int $userId): void
+{
+    if ($finals === []) return;
+
+    $clean = [];
+    foreach ($finals as $lineId => $qty) {
+        $lineId = (int) $lineId;
+        if ($lineId <= 0) throw new RuntimeException('السطر غير موجود.');
+        $clean[$lineId] = (float) $qty;
+    }
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $ids = array_keys($clean);
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $st = $pdo->prepare("SELECT id, review_log FROM stocktake_lines WHERE sheet_id=? AND id IN ($marks) FOR UPDATE");
+        $st->execute(array_merge([$sheetId], $ids));
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) !== count($ids)) {
+            throw new RuntimeException('فيه سطر مش تابع للمحضر ده.');
+        }
+
+        $byId = [];
+        foreach ($rows as $row) $byId[(int) $row['id']] = $row;
+        $qtyCase = [];
+        $logCase = [];
+        $qtyArgs = [];
+        $logArgs = [];
+        foreach ($clean as $lineId => $qty) {
+            $log = (string) ($byId[$lineId]['review_log'] ?? '');
+            $log .= ($log ? ' | ' : '') . 'نهائي:' . rtrim(rtrim(number_format($qty, 3, '.', ''), '0'), '.');
+            $qtyCase[] = 'WHEN ? THEN ?';
+            $qtyArgs[] = $lineId;
+            $qtyArgs[] = $qty;
+            $logCase[] = 'WHEN ? THEN ?';
+            $logArgs[] = $lineId;
+            $logArgs[] = $log;
+        }
+        $whereMarks = implode(',', array_fill(0, count($ids), '?'));
+        $sql = 'UPDATE stocktake_lines SET final_qty = CASE id ' . implode(' ', $qtyCase)
+             . ' END, review_log = CASE id ' . implode(' ', $logCase)
+             . " END WHERE sheet_id=? AND id IN ($whereMarks)";
+        $args = array_merge($qtyArgs, $logArgs, [$sheetId], $ids);
+        $pdo->prepare($sql)->execute($args);
         $pdo->commit();
     } catch (Throwable $ex) {
         if ($pdo->inTransaction()) $pdo->rollBack();

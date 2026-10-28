@@ -9,6 +9,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/sync_tokens.php';
+require_once __DIR__ . '/errlog_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -77,5 +78,7 @@ try {
 
     echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
-    note_die('Server error: ' . $e->getMessage(), 500);
+    $errorId = substr(bin2hex(random_bytes(8)), 0, 10);
+    errlog_record('php', "رقم الخطأ $errorId: " . $e->getMessage(), $e->getFile(), $e->getLine(), $e->getTraceAsString());
+    note_die("حصل خطأ — رقم: $errorId", 500);
 }

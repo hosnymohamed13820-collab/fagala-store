@@ -295,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>false,'err'=>'غير مسموح']); exit; }
                     throw new RuntimeException('غير مسموح: التعديل لصاحب المحضر والمراجع فقط.');
                 }
-                stk_set_final_qty($lineId, $qty, $uid);
+                stk_set_final_qty($sheetId, $lineId, $qty, $uid);
                 if ($isAjax) { header('Content-Type: application/json'); echo json_encode(['ok'=>true]); exit; }
                 header('Location: stocktake.php?sheet=' . $sheetId . '&mode=review');
                 exit;
@@ -306,9 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sheet = $loadSheet($sheetId);
                 if (!$sheet || !stk_can_review($sheet, $u)) throw new RuntimeException('غير مسموح.');
                 $finals = $_POST['final'] ?? [];
-                foreach ($finals as $lid => $q) {
-                    stk_set_final_qty((int)$lid, (float)$q, $uid);
-                }
+                stk_set_final_bulk($sheetId, (array) $finals, $uid);
                 // الإنهاء للأونر فقط — الموظف بيحفظ بس، وصاحب المكان يراجع وينهي
                 if ($owner) {
                     stk_finalize_sheet($sheetId, $uid);
