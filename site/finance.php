@@ -1804,11 +1804,16 @@ function save_custody_review(
             $empStmt = $pdo->prepare("SELECT full_name FROM employees WHERE id=?");
             $empStmt->execute([(int)$custody['employee_id']]);
             $empName = $empStmt->fetchColumn() ?: 'موظف';
+            $empAccountId = get_or_create_employee_custody_account(
+                (int) $custody['employee_id'],
+                $empName,
+                $pdo
+            );
 
             $openingBalance = (float) $custody['opening_balance'];
             if ($openingBalance > 0) {
                 post_journal($cashId, 0, $openingBalance, 'قيد عكسي لإذن صرف عهدة: ' . $empName,
-                             $date, 'custody_reverse_order', $custodyId, $userId, $pdo);
+                             $date, 'custody_reverse_order', $custodyId, $userId, $pdo, $empAccountId);
                 post_journal($custodyTreasuryId, $openingBalance, 0, 'قيد عكسي لإذن صرف عهدة: ' . $empName,
                              $date, 'custody_reverse_order', $custodyId, $userId, $pdo);
             }
@@ -1845,9 +1850,6 @@ function save_custody_review(
             // عجز أو زيادة في الكاش المستلم
             if ($variance < 0) {
                 $deficit = abs($variance);
-                $empAccountId = ($employeeId !== null && $employeeId > 0)
-                    ? get_or_create_employee_custody_account($employeeId, $empName, $pdo)
-                    : null;
                 post_journal($cashId, $deficit, 0, 'عجز عهدة موظف عند الإقفال: ' . $empName,
                              $date, 'custody_deficit', $custodyId, $userId, $pdo, $empAccountId);
 
@@ -1862,7 +1864,7 @@ function save_custody_review(
                 }
             } elseif ($variance > 0) {
                 post_journal($cashId, 0, $variance, 'زيادة عهدة موظف عند الإقفال: ' . $empName,
-                             $date, 'custody_surplus', $custodyId, $userId, $pdo);
+                             $date, 'custody_surplus', $custodyId, $userId, $pdo, $empAccountId);
             }
         } else {
             // =================================================================
@@ -1885,7 +1887,7 @@ function save_custody_review(
                 post_journal($custodyTreasuryId, $accountantCounted, 0, 'استلام باقي العهدة عند الإقفال',
                              $date, 'custody_settlement', $custodyId, $userId, $pdo);
                 post_journal($cashId, 0, $accountantCounted, 'استلام باقي عهدة الفرع',
-                             $date, 'custody_settlement', $custodyId, $userId, $pdo);
+                             $date, 'custody_settlement', $custodyId, $userId, $pdo, 73);
             }
 
             // 3. معالجة العجز (لو الفعلي أقل من المفروض)
@@ -2648,7 +2650,7 @@ function receive_custody(
         post_journal($ctId, $amount, 0, 'رد عهدة للخزينة الرئيسية' . ($notes ? " - $notes" : ''),
                      $date, 'custody_return', $branchId, $userId, $pdo);
         post_journal($mainTreasuryId, 0, $amount, 'استلام عهدة من الفرع' . ($notes ? " - $notes" : ''),
-                     $date, 'custody_return', $branchId, $userId, $pdo);
+                     $date, 'custody_return', $branchId, $userId, $pdo, 73);
 
         // قلّل أول المدة في العهدة المفتوحة أو المرفوضة
         $st = $pdo->prepare("SELECT id, opening_balance, total_expenses FROM branch_custody WHERE branch_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1 FOR UPDATE");
