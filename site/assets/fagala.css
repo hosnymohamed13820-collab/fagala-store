@@ -1942,15 +1942,6 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 .ftab:is(.is-active, .active) { border-color:var(--accent); background:var(--accent); color:#fff; }
 .ftab:is(.is-active, .active):is(:hover, :focus-visible) { background:var(--accent-hover); color:#fff; }
 
-@media (max-width: 768px) {
-    .ftabs {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-    .ftab { flex-shrink: 0; white-space: nowrap; }
-}
-
 .falert, .alert {
     display:flex; align-items:flex-start; gap:var(--sp-2);
     padding:var(--sp-3) var(--sp-4); margin-bottom:var(--sp-4);

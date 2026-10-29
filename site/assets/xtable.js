@@ -263,8 +263,20 @@
 
     /* ---- الشريط العلوي ---------------------------------------- */
     function buildBar(st) {
+        // شيل أي شريط قديم يتيم أو شريط جدول تم استبداله يسبق هذا الجدول
+        var p = st.table.previousElementSibling;
+        while (p && p.classList && p.classList.contains('xt-bar')) {
+            var toRemove = p;
+            p = p.previousElementSibling;
+            if (!toRemove._xtTable || !isTableConnected(toRemove._xtTable) || toRemove._xtTable !== st.table) {
+                toRemove.remove();
+            }
+        }
+
         var bar = document.createElement('div');
         bar.className = 'xt-bar';
+        bar._xtTable = st.table;
+        st.table.__xtBar = bar;
         bar.innerHTML =
             '<div class="xt-search">' +
               '<i class="ti ti-search"></i>' +
@@ -350,8 +362,26 @@
        ================================================================ */
     var openBox = null, openWidth = 0;
 
+    function isTableConnected(tbl) {
+        if (!tbl) return false;
+        return typeof tbl.isConnected === 'boolean' ? tbl.isConnected : document.contains(tbl);
+    }
+
     function closePanel() {
         if (openBox) { openBox.remove(); openBox = null; }
+    }
+
+    function cleanupOrphans() {
+        var bars = document.querySelectorAll('.xt-bar');
+        for (var i = 0; i < bars.length; i++) {
+            var b = bars[i];
+            if (!b._xtTable || !isTableConnected(b._xtTable)) {
+                b.remove();
+            }
+        }
+        if (openBox && (!openBox._xtTable || !isTableConnected(openBox._xtTable))) {
+            closePanel();
+        }
     }
     document.addEventListener('click', function (e) {
         if (openBox && !e.target.closest('.xt-panel')) closePanel();
@@ -708,6 +738,7 @@
               '<button type="button" class="xt-btn xt-p-clear">مسح فلتر العمود</button>' +
             '</div>';
         document.body.appendChild(box);
+        box._xtTable = st.table;
         openBox = box;
 
         var list = box.querySelector('.xt-p-list');
@@ -1143,6 +1174,7 @@
     }
 
     function scan(root) {
+        cleanupOrphans();
         var list = (root || document).querySelectorAll('table');
         for (var i = 0; i < list.length; i++) {
             try {
@@ -1159,9 +1191,15 @@
             if (watching) return;                     // إحنا اللي بنعدّل — تجاهل
             clearTimeout(wtmr);
             wtmr = setTimeout(function () {
-                if (!document.querySelector('table:not(.xt-on)')) return;
                 watching = true;
-                try { scan(document); } finally { watching = false; }
+                try {
+                    cleanupOrphans();
+                    if (document.querySelector('table:not(.xt-on)')) {
+                        scan(document);
+                    }
+                } finally {
+                    watching = false;
+                }
             }, 400);
         });
         obs.observe(document.body, { childList: true, subtree: true });
