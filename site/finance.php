@@ -1241,12 +1241,17 @@ function issue_disbursement_order(
     $own = !$pdo->inTransaction();
     if ($own) $pdo->beginTransaction();
     try {
-        // حارس: لو الفرع عنده عهدة معلقة للمراجعة، نرفض قبل أي حركة مالية (المرفوضة مفتوحة للتعديل)
-        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE branch_id=? AND status = 'pending_review' ORDER BY id DESC LIMIT 1");
-        $chk->execute([$branchId]);
-        $pendingStatus = $chk->fetchColumn();
-        if ($pendingStatus) {
-            throw new RuntimeException('عهدة الفرع مقدّمة للمراجعة لسه. لازم المحاسب يعتمدها أو يرفضها قبل إذن صرف جديد.');
+        // اقفل العهدة الحالية قبل أي حركة مالية: المفتوحة/المرفوضة تتغذى، والمقدّمة تتوقف للمراجعة.
+        $custodyStmt = $pdo->prepare(
+            "SELECT id, status, opening_balance, total_expenses
+               FROM branch_custody
+              WHERE branch_id=? AND employee_id IS NULL AND status <> 'closed'
+              ORDER BY (status = 'pending_review') DESC, id DESC LIMIT 1 FOR UPDATE"
+        );
+        $custodyStmt->execute([$branchId]);
+        $currentCustody = $custodyStmt->fetch();
+        if ($currentCustody && $currentCustody['status'] === 'pending_review') {
+            throw new RuntimeException('فيه عهدة للفرع ده مستنية الاعتماد — اعتمدها أو ارفضها الأول. العهدة مقدّمة للمراجعة.');
         }
 
         // تسجيل الإذن
@@ -1265,20 +1270,12 @@ function issue_disbursement_order(
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
-        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة أو المرفوضة
-        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE branch_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1");
-        $st->execute([$branchId]);
-        $custodyId = $st->fetchColumn();
-
-        if ($custodyId) {
-            // عهدة مفتوحة: اقرأ القيم الحالية واحسب صراحةً
-            $cur = $pdo->prepare('SELECT opening_balance, total_expenses FROM branch_custody WHERE id=? FOR UPDATE');
-            $cur->execute([$custodyId]);
-            $row = $cur->fetch();
-            $newOpening = (float)$row['opening_balance'] + $amount;
-            $newClosing = $newOpening - (float)$row['total_expenses'];
+        // فتح عهدة جديدة فقط لو كل العهد السابقة مقفولة؛ المفتوحة أو المرفوضة تتغذى كما هي.
+        if ($currentCustody) {
+            $newOpening = (float)$currentCustody['opening_balance'] + $amount;
+            $newClosing = $newOpening - (float)$currentCustody['total_expenses'];
             $pdo->prepare('UPDATE branch_custody SET opening_balance=?, closing_balance=? WHERE id=?')
-                ->execute([$newOpening, $newClosing, $custodyId]);
+                ->execute([$newOpening, $newClosing, $currentCustody['id']]);
         } else {
             // افتح عهدة جديدة (آخر المدة = أول المدة، مفيش مصروفات بعد)
             $pdo->prepare(
@@ -1340,12 +1337,17 @@ function issue_employee_disbursement_order(
         $empName = $emp['full_name'];
         $empBranchId = !empty($emp['branch_id']) ? (int) $emp['branch_id'] : null;
 
-        // حارس: لو الموظف عنده عهدة معلقة للمراجعة، نرفض قبل أي حركة مالية (المرفوضة مفتوحة للتعديل)
-        $chk = $pdo->prepare("SELECT status FROM branch_custody WHERE employee_id=? AND status = 'pending_review' ORDER BY id DESC LIMIT 1");
-        $chk->execute([$employeeId]);
-        $pendingStatus = $chk->fetchColumn();
-        if ($pendingStatus) {
-            throw new RuntimeException('عهدة الموظف مقدّمة للمراجعة لسه. لازم المحاسب يعتمدها أو يرفضها قبل إذن صرف جديد.');
+        // اقفل العهدة الحالية قبل أي حركة مالية: المفتوحة/المرفوضة تتغذى، والمقدّمة تتوقف للمراجعة.
+        $custodyStmt = $pdo->prepare(
+            "SELECT id, status, opening_balance, total_expenses
+               FROM branch_custody
+              WHERE employee_id=? AND status <> 'closed'
+              ORDER BY (status = 'pending_review') DESC, id DESC LIMIT 1 FOR UPDATE"
+        );
+        $custodyStmt->execute([$employeeId]);
+        $currentCustody = $custodyStmt->fetch();
+        if ($currentCustody && $currentCustody['status'] === 'pending_review') {
+            throw new RuntimeException('فيه عهدة للموظف ده مستنية الاعتماد — اعتمدها أو ارفضها الأول. العهدة مقدّمة للمراجعة.');
         }
 
         // حارس منع التكرار اللحظي (Double click / Debounce):
@@ -1387,20 +1389,12 @@ function issue_employee_disbursement_order(
         post_journal($custodyTreasuryId, 0, $amount, 'استلام إذن صرف عهدة' . ($notes ? " - $notes" : ''),
                      $date, 'disbursement_order', $orderId, $userId, $pdo);
 
-        // فتح عهدة أو تزويد أول المدة للعهدة المفتوحة أو المرفوضة
-        $st = $pdo->prepare("SELECT id FROM branch_custody WHERE employee_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1");
-        $st->execute([$employeeId]);
-        $custodyId = $st->fetchColumn();
-
-        if ($custodyId) {
-            // عهدة مفتوحة: اقرأ القيم الحالية واحسب صراحةً
-            $cur = $pdo->prepare('SELECT opening_balance, total_expenses FROM branch_custody WHERE id=? FOR UPDATE');
-            $cur->execute([$custodyId]);
-            $row = $cur->fetch();
-            $newOpening = (float)$row['opening_balance'] + $amount;
-            $newClosing = $newOpening - (float)$row['total_expenses'];
+        // فتح عهدة جديدة فقط لو كل العهد السابقة مقفولة؛ المفتوحة أو المرفوضة تتغذى كما هي.
+        if ($currentCustody) {
+            $newOpening = (float)$currentCustody['opening_balance'] + $amount;
+            $newClosing = $newOpening - (float)$currentCustody['total_expenses'];
             $pdo->prepare('UPDATE branch_custody SET opening_balance=?, closing_balance=? WHERE id=?')
-                ->execute([$newOpening, $newClosing, $custodyId]);
+                ->execute([$newOpening, $newClosing, $currentCustody['id']]);
         } else {
             // افتح عهدة جديدة للموظف
             $pdo->prepare(
@@ -2646,6 +2640,17 @@ function receive_custody(
         $ctId = (int) $ct->fetchColumn();
         if (!$ctId) throw new RuntimeException('لا توجد خزينة عهدة لهذا الفرع.');
 
+        // افحص رصيد العهدة واقفل صفها قبل القيود؛ الرفض لازم يسبق أي حركة مالية.
+        $st = $pdo->prepare("SELECT id, opening_balance, total_expenses FROM branch_custody WHERE branch_id=? AND employee_id IS NULL AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1 FOR UPDATE");
+        $st->execute([$branchId]);
+        $row = $st->fetch();
+        if ($row && $amount > (float)$row['opening_balance']) {
+            throw new RuntimeException(
+                'مبلغ رد العهدة أكبر من الرصيد المتاح. الرصيد المتاح: ' .
+                number_format((float)$row['opening_balance'], 2) . ' ج.'
+            );
+        }
+
         // خزينة العهدة تنقص (مدين)، الخزينة الرئيسية تستلم (دائن)
         post_journal($ctId, $amount, 0, 'رد عهدة للخزينة الرئيسية' . ($notes ? " - $notes" : ''),
                      $date, 'custody_return', $branchId, $userId, $pdo);
@@ -2653,11 +2658,8 @@ function receive_custody(
                      $date, 'custody_return', $branchId, $userId, $pdo, 73);
 
         // قلّل أول المدة في العهدة المفتوحة أو المرفوضة
-        $st = $pdo->prepare("SELECT id, opening_balance, total_expenses FROM branch_custody WHERE branch_id=? AND status IN ('open','rejected') ORDER BY id DESC LIMIT 1 FOR UPDATE");
-        $st->execute([$branchId]);
-        $row = $st->fetch();
         if ($row) {
-            $newOpening = max(0, (float)$row['opening_balance'] - $amount);
+            $newOpening = (float)$row['opening_balance'] - $amount;
             $newClosing = $newOpening - (float)$row['total_expenses'];
             $pdo->prepare('UPDATE branch_custody SET opening_balance=?, closing_balance=? WHERE id=?')
                 ->execute([$newOpening, $newClosing, $row['id']]);
