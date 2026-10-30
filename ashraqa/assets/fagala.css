@@ -1132,7 +1132,7 @@
         @keyframes ic-out { 0%,100%{transform:translateX(0);} 45%{transform:translateX(-5px);} }
         .btn-logout:hover i { animation: ic-out .55s ease; }
         /* ===== المحتوى الرئيسي ===== */
-        .main { flex: 1; margin-right: 250px; min-width: 0; }
+        .layout > .main { flex: 1; margin-right: 250px; min-width: 0; }
         .topbar {
             background: var(--surface);
             padding: 15px 26px;
@@ -1467,7 +1467,7 @@
         @media (max-width: 1024px) {
             .sidebar { transform: translateX(100%); box-shadow: -4px 0 20px rgba(0,0,0,0.15); }
             .sidebar.open { transform: translateX(0); }
-            .main { margin-right: 0 !important; width: 100%; }
+            .layout > .main { margin-right: 0 !important; width: 100%; }
             .topbar .menu-toggle { display: block; }
             .overlay.show { display: block; }
             .content { padding: 16px; }
