@@ -52,6 +52,16 @@ else
 fi
 
 echo
+echo "== الدوال المتنادية وغير المتعرّفة =="
+if [ -n "$PHP_BIN" ]; then
+    "$PHP_BIN" tests/check_undefined_functions.php || FAIL=1
+else
+    echo "  ❌ php مش ملقي — فحص الدوال غير المتعرّفة ما اتعملش."
+    echo "     حط المسار الكامل في PHP_BIN، أو ضيف فولدر php.exe للـPATH."
+    FAIL=1
+fi
+
+echo
 echo "== مفيش إيموجي في الواجهة (السطور الجديدة بس) =="
 PY=""
 for c in python3 python; do command -v $c > /dev/null 2>&1 && $c -c "" > /dev/null 2>&1 && { PY=$c; break; }; done

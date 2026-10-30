@@ -3,3 +3,4 @@ fastcgi_finish_request   # PHP-FPM على السيرفر · push_lib.php بيت�
 finfo_open               # إضافة fileinfo على السيرفر
 finfo_file
 finfo_close
+getallheaders            # دالة سيرفر الويب (LiteSpeed/Apache) غير موجودة في CLI · كل نداء محمي بـ function_exists

@@ -173,6 +173,18 @@ function errlog_record(string $type, string $msg, string $file = '', int $line =
     }
 }
 
+/**
+ * تسجيل استثناء في السجل كغلاف لـ errlog_record
+ *
+ * @param Throwable $e الاستثناء المراد تسجيله
+ * @param string $context سياق أو اسم الموديول اختياري (يُضاف لرسالة الخطأ)
+ */
+function errlog_exception(Throwable $e, string $context = ''): void
+{
+    $msg = $context !== '' ? "[$context] " . $e->getMessage() : $e->getMessage();
+    errlog_record('php', $msg, $e->getFile(), (int) $e->getLine(), $e->getTraceAsString());
+}
+
 /** معالج أخطاء PHP (تحذيرات ونوتس) */
 function errlog_php_error(int $no, string $str, string $file = '', int $line = 0): bool
 {
