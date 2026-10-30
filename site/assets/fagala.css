@@ -326,6 +326,10 @@
         .btn:where(.btn-danger, .btn-red, .btn-reject) { background: var(--neg-fill); color: #fff; }
         .btn:where(.btn-danger, .btn-red, .btn-reject):is(:hover, :focus-visible) { background: var(--neg-fill); color: #fff; filter: brightness(.92); }
 
+        /* التحذير / أصفر */
+        .btn:where(.btn-warn, .btn-yellow) { background: var(--warn-fill); color: #fff; }
+        .btn:where(.btn-warn, .btn-yellow):is(:hover, :focus-visible) { background: var(--warn-fill); color: #fff; filter: brightness(.92); }
+
         /* النجاح */
         .btn:where(.btn-success, .btn-green, .btn-approve) { background: var(--pos-fill); color: #fff; }
         .btn:where(.btn-success, .btn-green, .btn-approve):is(:hover, :focus-visible) { background: var(--pos-fill); color: #fff; filter: brightness(.92); }
@@ -1873,6 +1877,47 @@ html.fg-dlg-open {
 .fchip-warn { background: var(--warn-soft); color: var(--warn); }
 .fchip-pos  { background: var(--pos-soft); color: var(--pos); }
 .fchip-mute { background: var(--line-soft); color: var(--ink-600); }
+.fchip-accent, .fchip-blue { background: var(--accent-soft); color: var(--accent-text); }
+.fchip-green  { background: var(--pos-soft); color: var(--pos); }
+.fchip-yellow { background: var(--warn-soft); color: var(--warn); }
+.fchip-red    { background: var(--neg-soft); color: var(--neg); }
+
+/* صفوف ملونة للمراجعة والتحديد (.ftable) — بريف ٨٢٥ */
+.ftable tr.frow-green  { background: var(--pos-soft); }
+.ftable tr.frow-yellow { background: var(--warn-soft); }
+.ftable tr.frow-red    { background: var(--neg-soft); }
+.ftable tr.frow-blue   { background: var(--accent-soft); }
+
+.ftable tr.frow-green > td:first-child  { border-inline-start: 4px solid var(--pos); }
+.ftable tr.frow-yellow > td:first-child { border-inline-start: 4px solid var(--warn); }
+.ftable tr.frow-red > td:first-child    { border-inline-start: 4px solid var(--neg); }
+.ftable tr.frow-blue > td:first-child   { border-inline-start: 4px solid var(--accent); }
+
+.ftable tr.frow-selected {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+.ftable tr.frow-selected:not(.frow-green):not(.frow-yellow):not(.frow-red):not(.frow-blue) {
+    background: var(--line-soft);
+}
+
+/* شريط إجراءات التحديد للجدول (.ftable-action-bar) — بريف ٨٢٥ */
+.ftable-action-bar {
+    position: sticky;
+    bottom: var(--sp-4);
+    z-index: var(--z-sticky);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    margin: var(--sp-3) 0;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow);
+}
 
 /* =====================================================================
  * مكتبة الواجهة الموحّدة — بريف ٢٣٦

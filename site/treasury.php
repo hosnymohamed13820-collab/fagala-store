@@ -536,11 +536,12 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <div class="ftable-wrap stmt-scroll">
         <table class="ftable">
             <thead><tr>
-                <th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                <th>اللون</th><th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
-                    <tr id="je-<?= (int)$row['id'] ?>">
+                    <tr id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
+                        <td class="je-c-color"><?= je_mark_cell($row) ?></td>
                         <td><?= e($row['entry_date']) ?></td>
                         <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
                         <td class="trs-fw5"><?= e($row['treasury_name']) ?></td>
@@ -567,6 +568,20 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
+        <div class="ftable-action-bar stmt-selection-bar" style="display:none;">
+            <div class="stmt-bar-info">
+                <strong class="stmt-sel-count">0</strong>
+                <span>صف متحدد</span>
+            </div>
+            <div class="stmt-bar-actions" style="display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);">
+                <button type="button" class="btn btn-sm btn-green" data-mark-color="green">أخضر</button>
+                <button type="button" class="btn btn-sm btn-yellow" data-mark-color="yellow">أصفر</button>
+                <button type="button" class="btn btn-sm btn-red" data-mark-color="red">أحمر</button>
+                <button type="button" class="btn btn-sm btn-primary" data-mark-color="blue">أزرق</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mark-color="">شيل اللون</button>
+                <button type="button" class="btn btn-sm btn-outline stmt-clear-selection">إلغاء التحديد</button>
+            </div>
         </div>
         <?php endif; ?>
     </div>
@@ -627,19 +642,21 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
         <table class="ftable">
             <thead>
                 <tr>
-                    <th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
+                    <th>اللون</th><th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if ($priorBalance !== null): ?>
                     <tr data-xt-ignore style="background:var(--line-soft);font-weight:600;">
+                        <td>—</td>
                         <td><?= e($stFrom) ?></td><td>—</td><td>رصيد سابق</td>
                         <td colspan="4">—</td><td>0.00</td><td>0.00</td>
                         <td class="trs-fw5"><?= ltr_out(money_fmt_table($priorBalance)) ?></td><td colspan="3">—</td>
                     </tr>
                 <?php endif; ?>
                 <?php foreach ($statement as $row): ?>
-                    <tr id="je-<?= (int)$row['id'] ?>">
+                    <tr id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
+                        <td class="je-c-color"><?= je_mark_cell($row) ?></td>
                         <td><?= e($row['entry_date']) ?></td>
                         <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
                         <td class="je-c-desc">
@@ -666,7 +683,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             </tbody>
             <tfoot>
                 <tr data-xt-ignore style="background:var(--line-soft);font-weight:700;">
-                    <td colspan="7">الإجماليات</td>
+                    <td colspan="8">الإجماليات</td>
                     <td class="num"><?= ltr_out(money_fmt_table($totalDebit)) ?></td>
                     <td class="num"><?= ltr_out(money_fmt_table($totalCredit)) ?></td>
                     <td class="num trs-fw5"><?= ltr_out(money_fmt_table($lastBalance)) ?></td>
@@ -674,6 +691,20 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                 </tr>
             </tfoot>
         </table>
+        </div>
+        <div class="ftable-action-bar stmt-selection-bar" style="display:none;">
+            <div class="stmt-bar-info">
+                <strong class="stmt-sel-count">0</strong>
+                <span>صف متحدد</span>
+            </div>
+            <div class="stmt-bar-actions" style="display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);">
+                <button type="button" class="btn btn-sm btn-green" data-mark-color="green">أخضر</button>
+                <button type="button" class="btn btn-sm btn-yellow" data-mark-color="yellow">أصفر</button>
+                <button type="button" class="btn btn-sm btn-red" data-mark-color="red">أحمر</button>
+                <button type="button" class="btn btn-sm btn-primary" data-mark-color="blue">أزرق</button>
+                <button type="button" class="btn btn-sm btn-secondary" data-mark-color="">شيل اللون</button>
+                <button type="button" class="btn btn-sm btn-outline stmt-clear-selection">إلغاء التحديد</button>
+            </div>
         </div>
         <?php endif; ?>
     </div>
@@ -1564,6 +1595,210 @@ $today = date('Y-m-d');
             });
         })(blocks[b]);
     }
+
+    /* =====================================================================
+       تحديد وتلوين صفوف كشف الخزينة — بريف ٨٢٥
+       ===================================================================== */
+    (function () {
+        var table = document.querySelector('.ftable-wrap table.ftable');
+        if (!table) return;
+
+        var bar = document.querySelector('.stmt-selection-bar');
+        if (!bar) return;
+
+        var countEl = bar.querySelector('.stmt-sel-count');
+        var clearBtn = bar.querySelector('.stmt-clear-selection');
+        var colorBtns = bar.querySelectorAll('[data-mark-color]');
+
+        // تخزين التحديد بالـ id مش بالـ DOM (بريف ٨٢٥ - recurring bug 2)
+        var selectedIds = new Set();
+        var lastClickedId = null;
+
+        var COLOR_MAP = {
+            green:  { label: 'أخضر', chip: 'pos' },
+            yellow: { label: 'أصفر', chip: 'warn' },
+            red:    { label: 'أحمر', chip: 'neg' },
+            blue:   { label: 'أزرق', chip: 'accent' }
+        };
+
+        function updateBar() {
+            var count = selectedIds.size;
+            if (countEl) countEl.textContent = count;
+            bar.style.display = count > 0 ? 'flex' : 'none';
+        }
+
+        function syncRows() {
+            var rows = table.querySelectorAll('tbody tr[id^="je-"]');
+            for (var i = 0; i < rows.length; i++) {
+                var tr = rows[i];
+                var id = parseInt(tr.getAttribute('data-entry-id') || tr.id.replace('je-', ''), 10);
+                if (id > 0) {
+                    if (selectedIds.has(id)) {
+                        tr.classList.add('frow-selected');
+                    } else {
+                        tr.classList.remove('frow-selected');
+                    }
+                }
+            }
+            updateBar();
+        }
+
+        // استماع لحدث xtable:filter عشان التحديد يفضل متزامن (recurring bug 2)
+        document.addEventListener('xtable:filter', function (ev) {
+            if (ev.detail && ev.detail.table === table) {
+                syncRows();
+            }
+        });
+
+        // تفويض الضغط على الصفوف
+        table.addEventListener('click', function (ev) {
+            // استثناء الروابط والأزرار والخانات وفلاتر xtable وخلايا الملاحظات (recurring bug 1)
+            var interactive = ev.target.closest('a, button, input, select, textarea, .xt-wrap, .xt-popover, .je-c-notes, [data-xt-skip]');
+            if (interactive) return;
+
+            // استثناء تحديد النص الحر
+            var sel = window.getSelection ? window.getSelection().toString() : '';
+            if (sel && sel.trim().length > 0) return;
+
+            var tr = ev.target.closest('tbody tr[id^="je-"]');
+            if (!tr || !table.contains(tr)) return;
+
+            var id = parseInt(tr.getAttribute('data-entry-id') || tr.id.replace('je-', ''), 10);
+            if (!id) return;
+
+            if (ev.shiftKey && lastClickedId !== null && lastClickedId !== id) {
+                // Shift + ضغطة: تحديد المدى من آخر صف لحد ده
+                var allRows = Array.from(table.querySelectorAll('tbody tr[id^="je-"]'));
+                var visibleRows = allRows.filter(function (r) {
+                    return r.style.display !== 'none';
+                });
+                var idxA = -1, idxB = -1;
+                for (var i = 0; i < visibleRows.length; i++) {
+                    var rId = parseInt(visibleRows[i].getAttribute('data-entry-id') || visibleRows[i].id.replace('je-', ''), 10);
+                    if (rId === lastClickedId) idxA = i;
+                    if (rId === id) idxB = i;
+                }
+                if (idxA !== -1 && idxB !== -1) {
+                    var start = Math.min(idxA, idxB);
+                    var end = Math.max(idxA, idxB);
+                    for (var j = start; j <= end; j++) {
+                        var rangeId = parseInt(visibleRows[j].getAttribute('data-entry-id') || visibleRows[j].id.replace('je-', ''), 10);
+                        if (rangeId > 0) selectedIds.add(rangeId);
+                    }
+                } else {
+                    selectedIds.add(id);
+                }
+            } else {
+                // ضغطة عادية: تبديل التحديد (تحديد / إلغاء تحديد)
+                if (selectedIds.has(id)) {
+                    selectedIds.delete(id);
+                } else {
+                    selectedIds.add(id);
+                }
+                lastClickedId = id;
+            }
+
+            syncRows();
+        });
+
+        // إلغاء التحديد
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function () {
+                selectedIds.clear();
+                lastClickedId = null;
+                syncRows();
+            });
+        }
+
+        // تلوين الصفوف المحددة
+        for (var b = 0; b < colorBtns.length; b++) {
+            colorBtns[b].addEventListener('click', function () {
+                var color = this.getAttribute('data-mark-color') || '';
+                var ids = Array.from(selectedIds);
+                if (!ids.length) return;
+
+                var prevDisabled = [];
+                for (var k = 0; k < colorBtns.length; k++) {
+                    prevDisabled[k] = colorBtns[k].disabled;
+                    colorBtns[k].disabled = true;
+                }
+
+                apiFetch('treasury_api.php', {
+                    method: 'POST',
+                    body: {
+                        action: 'mark',
+                        ids: ids,
+                        color: color
+                    }
+                }).then(function (res) {
+                    for (var k = 0; k < colorBtns.length; k++) {
+                        colorBtns[k].disabled = prevDisabled[k];
+                    }
+
+                    if (!res || !res.ok) {
+                        var errMsg = (res && res.error) ? res.error : 'فشل تلوين القيود';
+                        if (window.fgToast) {
+                            window.fgToast(errMsg, 'err');
+                        } else {
+                            alert(errMsg);
+                        }
+                        return;
+                    }
+
+                    // تحديث الصفوف في الصفحة مباشرة من غير reload
+                    var data = res.data || {};
+                    var updatedIds = data.ids || ids;
+                    var newColor = data.color !== undefined ? data.color : color;
+                    var byName = data.marked_by_name || '';
+                    var atDate = data.marked_at ? data.marked_at.substring(0, 16) : '';
+                    var titleText = newColor ? ('لوّنه ' + byName + (atDate ? ' — ' + atDate : '')) : '';
+
+                    for (var i = 0; i < updatedIds.length; i++) {
+                        var entryId = updatedIds[i];
+                        var tr = document.getElementById('je-' + entryId);
+                        if (!tr) continue;
+
+                        tr.classList.remove('frow-green', 'frow-yellow', 'frow-red', 'frow-blue');
+                        if (newColor && COLOR_MAP[newColor]) {
+                            tr.classList.add('frow-' + newColor);
+                            tr.setAttribute('data-color', newColor);
+                        } else {
+                            tr.removeAttribute('data-color');
+                        }
+
+                        var colorCell = tr.querySelector('.je-c-color') || tr.cells[0];
+                        if (colorCell) {
+                            if (newColor && COLOR_MAP[newColor]) {
+                                var info = COLOR_MAP[newColor];
+                                var escFn = (window.ui && window.ui.esc) ? window.ui.esc : function (s) { return s; };
+                                colorCell.innerHTML = '<span class="fchip fchip-' + info.chip + '" title="' + escFn(titleText) + '">' + escFn(info.label) + '</span>';
+                            } else {
+                                colorCell.innerHTML = '<span class="trs-dash">—</span>';
+                            }
+                        }
+                    }
+
+                    if (window.fgToast) {
+                        window.fgToast(newColor ? 'تم تلوين القيود بنجاح' : 'تم إزالة اللون بنجاح', 'ok');
+                    }
+
+                    selectedIds.clear();
+                    lastClickedId = null;
+                    syncRows();
+                }).catch(function (err) {
+                    for (var k = 0; k < colorBtns.length; k++) {
+                        colorBtns[k].disabled = prevDisabled[k];
+                    }
+                    var errMsg = (err && err.message) ? err.message : 'تعذر الاتصال بالسيرفر';
+                    if (window.fgToast) {
+                        window.fgToast(errMsg, 'err');
+                    } else {
+                        alert(errMsg);
+                    }
+                });
+            });
+        }
+    })();
 })();
 </script>
 

@@ -79,9 +79,11 @@ function ui_code(string $code): string
         <table class="ftable">
             <thead><tr><th>الصنف</th><th>الحالة</th><th class="num">الكمية</th></tr></thead>
             <tbody>
-                <tr><td class="name">كشكول سلك</td><td><span class="fchip fchip-pos">متاح</span></td><td class="num">١٢</td></tr>
-                <tr><td class="name">قلم جاف</td><td><span class="fchip fchip-warn">قليل</span></td><td class="num">٣</td></tr>
-                <tr><td class="name">ورق تصوير</td><td><span class="fchip fchip-neg">ناقص</span></td><td class="num">−٢</td></tr>
+                <tr class="frow-green"><td class="name">كشكول سلك (أخضر)</td><td><span class="fchip fchip-pos">متاح</span></td><td class="num">١٢</td></tr>
+                <tr class="frow-yellow"><td class="name">قلم جاف (أصفر)</td><td><span class="fchip fchip-warn">قليل</span></td><td class="num">٣</td></tr>
+                <tr class="frow-red"><td class="name">ورق تصوير (أحمر)</td><td><span class="fchip fchip-neg">ناقص</span></td><td class="num">−٢</td></tr>
+                <tr class="frow-blue"><td class="name">ملف بلاستيك (أزرق)</td><td><span class="fchip fchip-accent">وارد</span></td><td class="num">٥٠</td></tr>
+                <tr class="frow-selected"><td class="name">براية معدن (متحدد)</td><td><span class="fchip fchip-mute">عادي</span></td><td class="num">١٠</td></tr>
             </tbody>
         </table>
     </div>

@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'push'
 <link rel="icon" href="favicon-32.png?v=4">
 <meta name="theme-color" content="#16233d">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/fagala.css?v=28">
+<link rel="stylesheet" href="assets/fagala.css?v=29">
 <!-- 🔴 الصفحة دي مستقلة عن includes/header.php عن قصد، فسكربت الثيم
      مكرّر هنا. لولاه data-theme مابتتحطّش والوضع الليلي مابيشتغلش. -->
 <script>

@@ -117,9 +117,14 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                     cb.name AS cost_branch_name,
                     sh.shift_name,
                     tfrom.name AS transfer_from_name,
-                    tto.name AS transfer_to_name{$tmRevSelect}
+                    tto.name AS transfer_to_name{$tmRevSelect},
+                    jem.color AS mark_color,
+                    jem.marked_at,
+                    jemu.full_name AS marked_by_name
              FROM journal_entries je
              JOIN treasuries t ON t.id = je.treasury_id
+             LEFT JOIN journal_entry_marks jem ON jem.entry_id = je.id
+             LEFT JOIN users jemu ON jemu.id = jem.marked_by
              LEFT JOIN users u ON u.id = je.created_by
              LEFT JOIN users eu ON eu.id = je.edited_by
              LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
@@ -178,8 +183,13 @@ function treasury_get_statement(PDO $pdo, string $selectedParam, string $stFrom,
                             cb.name AS cost_branch_name,
                             sh.shift_name,
                             tfrom.name AS transfer_from_name,
-                            tto.name AS transfer_to_name{$tmRevSelect}
+                            tto.name AS transfer_to_name{$tmRevSelect},
+                            jem.color AS mark_color,
+                            jem.marked_at,
+                            jemu.full_name AS marked_by_name
                      FROM journal_entries je
+                     LEFT JOIN journal_entry_marks jem ON jem.entry_id = je.id
+                     LEFT JOIN users jemu ON jemu.id = jem.marked_by
                      LEFT JOIN users u ON u.id = je.created_by
                      LEFT JOIN users eu ON eu.id = je.edited_by
                      LEFT JOIN treasury_movements tm ON tm.id = je.ref_id AND je.ref_type IN ('receipt','disbursement','date_fix_rev','reversal')
@@ -269,4 +279,143 @@ function treasury_get_auxiliary_lists(PDO $pdo): array {
         'entry_codes'          => entry_codes_list(),
         'cost_branches'        => cost_branches_list(),
     ];
+}
+
+/**
+ * جلب علامات الألوان لقيود اليومية (استعلام واحد).
+ *
+ * @param PDO $pdo
+ * @param array $entryIds
+ * @param int|null $treasuryId
+ * @param string|null $from
+ * @param string|null $to
+ * @return array
+ */
+function treasury_get_marks(PDO $pdo, array $entryIds = [], ?int $treasuryId = null, ?string $from = null, ?string $to = null): array {
+    if (!empty($entryIds)) {
+        $entryIds = array_values(array_unique(array_filter(array_map('intval', $entryIds), static fn($id) => $id > 0)));
+        if (empty($entryIds)) {
+            return [];
+        }
+        $ph = implode(',', array_fill(0, count($entryIds), '?'));
+        $st = $pdo->prepare(
+            "SELECT jem.entry_id, jem.color, jem.marked_by, jem.marked_at, u.full_name AS marked_by_name
+             FROM journal_entry_marks jem
+             LEFT JOIN users u ON u.id = jem.marked_by
+             WHERE jem.entry_id IN ($ph)"
+        );
+        $st->execute($entryIds);
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    if ($from !== null && $to !== null) {
+        $sql = "SELECT jem.entry_id, jem.color, jem.marked_by, jem.marked_at, u.full_name AS marked_by_name
+                FROM journal_entry_marks jem
+                JOIN journal_entries je ON je.id = jem.entry_id
+                LEFT JOIN users u ON u.id = jem.marked_by
+                WHERE je.entry_date BETWEEN ? AND ?";
+        $params = [$from, $to];
+        if ($treasuryId !== null && $treasuryId > 0) {
+            $sql .= " AND je.treasury_id = ?";
+            $params[] = $treasuryId;
+        }
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    return [];
+}
+
+/**
+ * تلوين أو إلغاء تلوين مجموعة قيود (استعلام واحد لكل العملية).
+ *
+ * @param PDO $pdo
+ * @param array $ids
+ * @param string $color
+ * @param int $userId
+ * @return array
+ */
+function treasury_mark_entries(PDO $pdo, array $ids, string $color, int $userId): array {
+    $cleanIds = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+    if (empty($cleanIds)) {
+        return ['ok' => false, 'http' => 400, 'code' => 'no_ids', 'error' => 'مافيش قيود محددة'];
+    }
+    if (count($cleanIds) > 500) {
+        return ['ok' => false, 'http' => 400, 'code' => 'too_many', 'error' => 'الحد الأقصى ٥٠٠ قيد في المرة الواحدة'];
+    }
+
+    $color = trim($color);
+    $validColors = ['green', 'yellow', 'red', 'blue'];
+    if ($color !== '' && !in_array($color, $validColors, true)) {
+        return ['ok' => false, 'http' => 400, 'code' => 'invalid_color', 'error' => 'اللون غير صالح'];
+    }
+
+    // التحقق من أن القيود تخص خزائن نشطة ومسموحة (نفس فلتر الكشف بالحرف)
+    $ph = implode(',', array_fill(0, count($cleanIds), '?'));
+    $checkSt = $pdo->prepare(
+        "SELECT je.id
+         FROM journal_entries je
+         JOIN treasuries t ON t.id = je.treasury_id
+         WHERE t.is_active = 1 AND je.id IN ($ph)"
+    );
+    $checkSt->execute($cleanIds);
+    $allowedIds = $checkSt->fetchAll(PDO::FETCH_COLUMN);
+
+    if (count($allowedIds) !== count($cleanIds)) {
+        return ['ok' => false, 'http' => 403, 'code' => 'forbidden', 'error' => 'قيود غير مسموحة أو غير موجودة'];
+    }
+
+    if ($color === '') {
+        // إلغاء التلوين — استعلام واحد
+        $delSt = $pdo->prepare("DELETE FROM journal_entry_marks WHERE entry_id IN ($ph)");
+        $delSt->execute($cleanIds);
+    } else {
+        // حفظ اللون — استعلام واحد مجمّع
+        $rows = [];
+        $params = [];
+        foreach ($cleanIds as $id) {
+            $rows[] = '(?, ?, ?, NOW())';
+            $params[] = $id;
+            $params[] = $color;
+            $params[] = $userId;
+        }
+        $sql = "INSERT INTO journal_entry_marks (entry_id, color, marked_by, marked_at)
+                VALUES " . implode(', ', $rows) . "
+                ON DUPLICATE KEY UPDATE
+                    color = VALUES(color),
+                    marked_by = VALUES(marked_by),
+                    marked_at = VALUES(marked_at)";
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+    }
+
+    return [
+        'ok'    => true,
+        'ids'   => $cleanIds,
+        'color' => $color,
+    ];
+}
+
+/**
+ * شارة لون القيد في عمود «اللون» (بريف ٨٢٥).
+ */
+function je_mark_cell(array $row): string {
+    $color = $row['mark_color'] ?? '';
+    $colors = [
+        'green'  => ['label' => 'أخضر', 'chip' => 'pos'],
+        'yellow' => ['label' => 'أصفر', 'chip' => 'warn'],
+        'red'    => ['label' => 'أحمر', 'chip' => 'neg'],
+        'blue'   => ['label' => 'أزرق', 'chip' => 'accent'],
+    ];
+
+    if (!empty($color) && isset($colors[$color])) {
+        $info = $colors[$color];
+        $by = !empty($row['marked_by_name']) ? (string) $row['marked_by_name'] : '—';
+        $at = !empty($row['marked_at']) ? date('Y-m-d H:i', strtotime((string)$row['marked_at'])) : '';
+        $title = 'لوّنه ' . $by . ($at !== '' ? ' — ' . $at : '');
+        return '<span class="fchip fchip-' . $info['chip'] . '" title="' . e($title) . '">' . e($info['label']) . '</span>';
+    }
+
+    return '<span class="trs-dash">—</span>';
 }

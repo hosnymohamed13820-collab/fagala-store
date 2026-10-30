@@ -24,12 +24,54 @@ require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/treasury_lib.php';
 
-// الخزينة في المرحلة الحالية قراءة فقط
-api_method('GET');
+// الخزينة تدعم القراءة وتلوين الصفوف
+api_method('GET', 'POST');
+
+$pdo = db();
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+
+if ($method === 'POST') {
+    api_csrf();
+    $input = api_input();
+    $action = (string) ($input['action'] ?? $_POST['action'] ?? $_GET['action'] ?? 'mark');
+
+    if ($action !== 'mark') {
+        api_fail('العملية المطلوبة غير معروفة', 400, 'bad_request');
+    }
+
+    $rawIds = $input['ids'] ?? $_POST['ids'] ?? [];
+    if (is_string($rawIds)) {
+        $rawIds = explode(',', $rawIds);
+    }
+    if (!is_array($rawIds)) {
+        api_fail('مافيش قيود محددة', 400, 'no_ids');
+    }
+
+    $color = (string) ($input['color'] ?? $_POST['color'] ?? '');
+    $uid = (int) current_user()['id'];
+
+    try {
+        $res = treasury_mark_entries($pdo, $rawIds, $color, $uid);
+        if (!$res['ok']) {
+            api_fail($res['error'], $res['http'] ?? 400, $res['code'] ?? 'bad_request');
+        }
+
+        api_ok([
+            'ids'            => $res['ids'],
+            'color'          => $res['color'],
+            'marked_by'      => $uid,
+            'marked_by_name' => (string) (current_user()['full_name'] ?? current_user()['username'] ?? ''),
+            'marked_at'      => date('Y-m-d H:i:s'),
+        ]);
+    } catch (Throwable $e) {
+        errlog_exception($e, 'treasury_api');
+        api_fail('حدث خطأ أثناء حفظ ألوان القيود', 500, 'server_error');
+    }
+}
 
 $part = (string) ($_GET['part'] ?? 'all');
 
-$allowedParts = ['treasuries', 'statement', 'meta', 'all'];
+$allowedParts = ['treasuries', 'statement', 'meta', 'all', 'marks'];
 if (!in_array($part, $allowedParts, true)) {
     api_fail('الجزء المطلوب غير معروف', 400, 'bad_request');
 }
@@ -40,7 +82,6 @@ if (in_array($part, $sensitiveParts, true) && !sens_unlocked()) {
     api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
 }
 
-$pdo = db();
 $periodInfo    = treasury_parse_period($_GET['from'] ?? null, $_GET['to'] ?? null);
 $stFrom        = $periodInfo['from'];
 $stTo          = $periodInfo['to'];
@@ -49,6 +90,15 @@ $stMaxRows     = 5000;
 
 try {
     switch ($part) {
+        case 'marks':
+            $rawIds = $_GET['ids'] ?? [];
+            if (is_string($rawIds)) {
+                $rawIds = explode(',', $rawIds);
+            }
+            $entryIds = is_array($rawIds) ? $rawIds : [];
+            $treId = isset($_GET['treasury']) && ctype_digit((string)$_GET['treasury']) ? (int)$_GET['treasury'] : null;
+            $marks = treasury_get_marks($pdo, $entryIds, $treId, $_GET['from'] ?? null, $_GET['to'] ?? null);
+            api_ok(['marks' => $marks]);
         case 'meta':
             $auxLists = treasury_get_auxiliary_lists($pdo);
             api_ok([
