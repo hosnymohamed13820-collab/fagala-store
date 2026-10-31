@@ -207,6 +207,11 @@ if ($isDetailView) {
             $totAshBuy        = $ashListData['tot_buy'];
             $totAshRet        = $ashListData['tot_ret'];
         }
+    } elseif ($activeTab === 'ash_recon') {
+        // ---------------------------------------------------------
+        // تاب مطابقة إشراقة (بريف ٨٣١)
+        // ---------------------------------------------------------
+        $ashReconData = branch_recon_get_ashraqa_recon($pdo, $from, $to);
     } else {
         // -------------------------------------------------------------
         // الشاشة العامة: جدول الأزواج العشرة (الفروق)
@@ -669,6 +674,7 @@ require_once __DIR__ . '/includes/header.php';
         <a href="branch_recon.php?from=<?= e($activeTab === '' ? $from : $stStart) ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === '' ? 'is-active active' : '' ?>">الفروق</a>
         <a href="branch_recon.php?tab=alerts&from=<?= e($activeTab === 'alerts' ? $from : RECON_ALERTS_START) ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === 'alerts' ? 'is-active active' : '' ?>">تنبيهات</a>
         <a href="branch_recon.php?tab=ashraqa&from=<?= e($activeTab === 'ashraqa' ? $from : '2026-07-01') ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === 'ashraqa' ? 'is-active active' : '' ?>">مشتريات إشراقة</a>
+        <a href="branch_recon.php?tab=ash_recon&from=<?= e($activeTab === 'ash_recon' ? $from : '2026-07-01') ?>&to=<?= e($to) ?>" class="ftab <?= $activeTab === 'ash_recon' ? 'is-active active' : '' ?>">مطابقة إشراقة</a>
     </nav>
 
 <?php if ($activeTab === 'alerts'): ?>
@@ -993,6 +999,220 @@ require_once __DIR__ . '/includes/header.php';
                                 <td style="direction:ltr;text-align:right;"><?= number_format((float)$ai['total_pieces'], 2) ?></td>
                                 <td style="font-weight:700;direction:ltr;text-align:right;">
                                     <?= number_format((float)$ai['net_amount'], 2) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<?php elseif ($activeTab === 'ash_recon'): ?>
+    <!-- ========================================================= -->
+    <!-- تاب مطابقة إشراقة قصاد فروعنا (بريف ٨٣١)                 -->
+    <!-- ========================================================= -->
+    <div style="margin-bottom:12px;">
+        <span class="section-title" style="margin-bottom:0;">مطابقة إشراقة قصاد فروعنا</span>
+        <div style="font-size:13px;color:var(--ink-500);margin-top:4px;">
+            الفترة من <?= e($from) ?> حتى <?= e($to) ?>
+        </div>
+    </div>
+    <form method="get" class="ffilters" style="margin-bottom:16px;">
+        <input type="hidden" name="tab" value="ash_recon">
+        <label class="ffield">من <input type="date" class="finput" name="from" value="<?= e($from) ?>" onchange="this.form.submit()"></label>
+        <label class="ffield">إلى <input type="date" class="finput" name="to" value="<?= e($to) ?>" onchange="this.form.submit()"></label>
+    </form>
+
+    <?php if (abs($ashReconData['diff']) < 0.005 && empty($ashReconData['ash_unmatched']) && empty($ashReconData['our_unmatched'])): ?>
+        <div class="falert falert-pos" style="margin-bottom:16px;">
+            <i class="ti ti-check" aria-hidden="true"></i>
+            <div>إشراقة مقفولة قصادنا</div>
+        </div>
+    <?php endif; ?>
+
+    <!-- ٤ كروت إحصائية -->
+    <div class="fkpis" style="margin-top:0;margin-bottom:8px;">
+        <div class="fkpi">
+            <span>صافي إشراقة</span>
+            <strong style="direction:ltr;text-align:right;"><?= number_format($ashReconData['ash_net'], 2) ?></strong>
+            <span style="font-size:11px;color:var(--ink-500);">شراء <?= number_format($ashReconData['ash_buy'], 2) ?> − مرتجع <?= number_format($ashReconData['ash_ret'], 2) ?></span>
+        </div>
+        <div class="fkpi">
+            <span>صافينا</span>
+            <strong style="direction:ltr;text-align:right;"><?= number_format($ashReconData['our_net'], 2) ?></strong>
+            <span style="font-size:11px;color:var(--ink-500);">منصرف <?= number_format($ashReconData['our_out'], 2) ?> − وارد <?= number_format($ashReconData['our_in'], 2) ?></span>
+        </div>
+        <div class="fkpi" style="<?= abs($ashReconData['diff']) >= 0.01 ? 'background:var(--neg-soft);border-color:var(--neg);' : 'background:var(--pos-soft);border-color:var(--pos);' ?>">
+            <span style="<?= abs($ashReconData['diff']) >= 0.01 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">الفرق</span>
+            <strong style="direction:ltr;text-align:right;<?= abs($ashReconData['diff']) >= 0.01 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">
+                <?= number_format($ashReconData['diff'], 2) ?>
+            </strong>
+        </div>
+        <div class="fkpi" style="<?= abs($ashReconData['diff_after_post']) >= 0.01 ? 'background:var(--neg-soft);border-color:var(--neg);' : 'background:var(--pos-soft);border-color:var(--pos);' ?>">
+            <span style="<?= abs($ashReconData['diff_after_post']) >= 0.01 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">الفرق بعد ترحيل غير المترحّل</span>
+            <strong style="direction:ltr;text-align:right;<?= abs($ashReconData['diff_after_post']) >= 0.01 ? 'color:var(--neg);' : 'color:var(--pos);' ?>">
+                <?= number_format($ashReconData['diff_after_post'], 2) ?>
+            </strong>
+            <span style="font-size:11px;color:var(--ink-500);"><?= (int)$ashReconData['unposted_count'] ?> فواتير غير مترحّلة (<?= number_format($ashReconData['unposted_net'], 2) ?>)</span>
+        </div>
+    </div>
+    <div style="font-size:12px;color:var(--ink-500);margin-bottom:18px;">
+        الفرق موجب = إشراقة مسجّلة إنها استلمت مننا أكتر من اللي إحنا مسجّلينه
+    </div>
+
+    <!-- جدول إحنا قصاد إشراقة لكل طرف -->
+    <div class="fcard" style="margin-bottom:18px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:12px;color:var(--ink-900);">إحنا قصاد إشراقة لكل طرف</div>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th>الطرف</th>
+                        <th class="num">بعتنا</th>
+                        <th class="num">اشترينا</th>
+                        <th class="num">الصافي</th>
+                        <th class="num">غير مترحّل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $totPartiesOut = 0.0;
+                    $totPartiesIn = 0.0;
+                    $totPartiesNet = 0.0;
+                    $totPartiesUnposted = 0.0;
+                    ?>
+                    <?php foreach ($ashReconData['parties'] as $pt): ?>
+                        <?php
+                        $totPartiesOut += (float)$pt['out_amt'];
+                        $totPartiesIn += (float)$pt['in_amt'];
+                        $totPartiesNet += (float)$pt['net_amt'];
+                        $totPartiesUnposted += (float)$pt['unposted_net'];
+                        ?>
+                        <tr>
+                            <td style="font-weight:600;"><?= e($pt['name']) ?></td>
+                            <td class="num"><?= number_format((float)$pt['out_amt'], 2) ?></td>
+                            <td class="num"><?= number_format((float)$pt['in_amt'], 2) ?></td>
+                            <td class="num" style="font-weight:700;"><?= number_format((float)$pt['net_amt'], 2) ?></td>
+                            <td class="num"><?= number_format((float)$pt['unposted_net'], 2) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:700;background:var(--surface-soft);">
+                        <td>الإجمالي</td>
+                        <td class="num"><?= number_format($totPartiesOut, 2) ?></td>
+                        <td class="num"><?= number_format($totPartiesIn, 2) ?></td>
+                        <td class="num"><?= number_format($totPartiesNet, 2) ?></td>
+                        <td class="num"><?= number_format($totPartiesUnposted, 2) ?></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- جدول عند إشراقة ومالهاش مقابل عندنا -->
+    <?php
+    $ashUnmatchedSum = array_sum(array_column($ashReconData['ash_unmatched'], 'amount'));
+    $ashUnmatchedCount = count($ashReconData['ash_unmatched']);
+    ?>
+    <div class="fcard" style="margin-bottom:18px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:12px;color:var(--ink-900);">
+            عند إشراقة ومالهاش مقابل عندنا (<?= $ashUnmatchedCount ?> فاتورة · <?= number_format($ashUnmatchedSum, 2) ?>)
+        </div>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th>الرقم</th>
+                        <th>النوع</th>
+                        <th>التاريخ</th>
+                        <th>الملاحظات</th>
+                        <th class="num">المبلغ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($ashReconData['ash_unmatched'])): ?>
+                        <tr><td colspan="5" class="empty">لا توجد فواتير</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($ashReconData['ash_unmatched'] as $au): ?>
+                            <?php
+                            $auUrl = 'branch_recon.php?tab=ashraqa&doc=' . urlencode($au['doc_key']) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
+                            ?>
+                            <tr>
+                                <td style="font-weight:700;">
+                                    <a href="<?= $auUrl ?>" class="inv-link">
+                                        <?= e($au['doc_no']) ?>
+                                    </a>
+                                </td>
+                                <td>
+                                    <span class="fchip <?= (int)$au['type'] === 113 ? 'fchip-pos' : 'fchip-warn' ?>">
+                                        <?= (int)$au['type'] === 113 ? 'شراء' : 'مرتجع' ?>
+                                    </span>
+                                    <?php if (!empty($au['cancels'])): ?>
+                                        <span class="fchip fchip-mute" style="margin-right:4px;">بيلغي <?= e($au['cancels']) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= e($au['date']) ?></td>
+                                <td style="color:var(--ink-600);font-size:13px;max-width:250px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="<?= e($au['notes'] ?? '') ?>">
+                                    <?= e($au['notes'] ?? '') ?>
+                                </td>
+                                <td class="num" style="font-weight:700;">
+                                    <?= number_format((float)$au['amount'], 2) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- جدول عندنا ومالهاش مقابل عند إشراقة -->
+    <?php
+    $ourUnmatchedSum = array_sum(array_column($ashReconData['our_unmatched'], 'amount'));
+    $ourUnmatchedCount = count($ashReconData['our_unmatched']);
+    ?>
+    <div class="fcard" style="margin-bottom:18px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:12px;color:var(--ink-900);">
+            عندنا ومالهاش مقابل عند إشراقة (<?= $ourUnmatchedCount ?> · <?= number_format($ourUnmatchedSum, 2) ?>)
+        </div>
+        <div class="ftable-wrap">
+            <table class="ftable">
+                <thead>
+                    <tr>
+                        <th>الطرف</th>
+                        <th>النوع</th>
+                        <th>الرقم</th>
+                        <th>التاريخ</th>
+                        <th class="num">المبلغ</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($ashReconData['our_unmatched'])): ?>
+                        <tr><td colspan="6" class="empty">لا توجد فواتير</td></tr>
+                    <?php else: ?>
+                        <?php foreach ($ashReconData['our_unmatched'] as $ou): ?>
+                            <tr>
+                                <td style="font-weight:600;"><?= e($ou['party_label'] ?? $ou['branch_name']) ?></td>
+                                <td>
+                                    <span class="fchip <?= (int)$ou['doc_type'] === 6 ? 'fchip-pos' : 'fchip-warn' ?>">
+                                        <?= (int)$ou['doc_type'] === 6 ? 'توزيع' : 'شراء' ?>
+                                    </span>
+                                </td>
+                                <td style="font-weight:700;"><?= e($ou['doc_no']) ?></td>
+                                <td><?= e($ou['date']) ?></td>
+                                <td class="num" style="font-weight:700;">
+                                    <?= number_format((float)$ou['amount'], 2) ?>
+                                </td>
+                                <td>
+                                    <?php if (!$ou['posted']): ?>
+                                        <span class="fchip fchip-warn">مش مترحّلة</span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($ou['cancels'])): ?>
+                                        <span class="fchip fchip-mute" style="<?= !$ou['posted'] ? 'margin-right:4px;' : '' ?>">بيلغي <?= e($ou['cancels']) ?></span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

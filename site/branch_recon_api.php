@@ -39,7 +39,7 @@ $bKey = trim((string)($_GET['b'] ?? ''));
 $docParam = trim((string)($_GET['doc'] ?? ''));
 
 $part = $_GET['part'] ?? '';
-$allowedParts = ['', 'pairs', 'detail', 'alerts', 'ashraqa', 'parties', 'meta', 'all'];
+$allowedParts = ['', 'pairs', 'detail', 'alerts', 'ashraqa', 'ashraqa_recon', 'parties', 'meta', 'all'];
 
 if (!in_array($part, $allowedParts, true)) {
     http_response_code(400);
@@ -54,6 +54,8 @@ if ($part === '') {
         $part = 'alerts';
     } elseif ($activeTab === 'ashraqa') {
         $part = 'ashraqa';
+    } elseif ($activeTab === 'ash_recon') {
+        $part = 'ashraqa_recon';
     } else {
         $part = 'pairs';
     }
@@ -112,6 +114,12 @@ if ($part === 'parties' || $part === 'meta') {
             'to'   => $to,
         ]);
     }
+} elseif ($part === 'ashraqa_recon') {
+    $reconData = branch_recon_get_ashraqa_recon($pdo, $from, $to);
+    $response['data'] = array_merge($reconData, [
+        'from' => $from,
+        'to'   => $to,
+    ]);
 } elseif ($part === 'all') {
     $pairsData = branch_recon_get_pairs_data($pdo, $from, $to);
     $response['data'] = [

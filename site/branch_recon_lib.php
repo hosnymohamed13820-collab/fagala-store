@@ -12,6 +12,8 @@ require_once __DIR__ . '/item_flags_lib.php';
 require_once __DIR__ . '/recon_alerts_lib.php';
 
 const RECON_ALERTS_DEFAULT_START = '2026-10-01';
+const ASHRAQA_ERP_IDS = [1000245, 1000252];
+const ASHRAQA_OUR_SUPPLIER = 8;
 
 /**
  * جلب تاريخ البداية الافتراضي من الإعدادات
@@ -37,7 +39,7 @@ function branch_recon_get_date_range(?string $activeTab, ?string $fromParam, ?st
 {
     if ($activeTab === 'alerts') {
         $from = (isset($fromParam) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromParam)) ? $fromParam : RECON_ALERTS_DEFAULT_START;
-    } elseif ($activeTab === 'ashraqa') {
+    } elseif ($activeTab === 'ashraqa' || $activeTab === 'ash_recon') {
         $from = (isset($fromParam) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromParam)) ? $fromParam : '2026-07-01';
     } else {
         $from = (isset($fromParam) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromParam)) ? $fromParam : $defaultStart;
@@ -329,6 +331,423 @@ function branch_recon_get_ashraqa_list(PDO $pdo, string $from, string $to, int $
         'invoices'  => $ashInvoices,
         'tot_buy'   => $totAshBuy,
         'tot_ret'   => $totAshRet,
+    ];
+}
+
+/**
+ * مطابقة حساب إشراقة قصاد فروعنا (بريف ٨٣١)
+ *
+ * @param PDO $pdo
+ * @param string $from
+ * @param string $to
+ * @return array
+ */
+function branch_recon_get_ashraqa_recon(PDO $pdo, string $from, string $to): array
+{
+    // (أ) فواتير إشراقة (٣ معاملات)
+    $sqlAsh = "SELECT sstt_id, brch_id, fy_no, add_doc, doc_date, net_amount, notes
+               FROM ashraqa_purchases
+               WHERE supplier_id = ? AND cancelled = 0 AND doc_date BETWEEN ? AND ?
+               ORDER BY doc_date ASC, add_doc ASC";
+    $stAsh = $pdo->prepare($sqlAsh);
+    $stAsh->execute([ASHRAQA_OUR_SUPPLIER, $from, $to]);
+    $ashRows = $stAsh->fetchAll(PDO::FETCH_ASSOC);
+
+    // (ب) فواتيرنا المترحّلة (٤ معاملات)
+    $sqlOurPosted = "SELECT sth_id, suffix, doc_no, doc_type, company_branch, DATE(invoice_date) AS tx_date, net_amount
+                     FROM hq_invoices
+                     WHERE supplier_id IN (?, ?)
+                       AND doc_type IN (2, 6)
+                       AND invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+                     ORDER BY invoice_date ASC, sth_id ASC";
+    $stOurPosted = $pdo->prepare($sqlOurPosted);
+    $stOurPosted->execute([ASHRAQA_ERP_IDS[0], ASHRAQA_ERP_IDS[1], $from, $to]);
+    $ourPostedRows = $stOurPosted->fetchAll(PDO::FETCH_ASSOC);
+
+    // (ج) فواتيرنا غير المترحّلة (٤ معاملات)
+    $sqlOurUnposted = "SELECT sth_id, doc_no, doc_type, company_branch, DATE(invoice_date) AS tx_date, net_amount
+                       FROM hq_unposted
+                       WHERE supplier_id IN (?, ?)
+                         AND doc_type IN (2, 6)
+                         AND invoice_date >= ? AND invoice_date < DATE_ADD(?, INTERVAL 1 DAY)
+                       ORDER BY invoice_date ASC, sth_id ASC";
+    $stOurUnposted = $pdo->prepare($sqlOurUnposted);
+    $stOurUnposted->execute([ASHRAQA_ERP_IDS[0], ASHRAQA_ERP_IDS[1], $from, $to]);
+    $ourUnpostedRows = $stOurUnposted->fetchAll(PDO::FETCH_ASSOC);
+
+    // تجهيز أطرافنا الخمسة
+    $allParties = recon_all_parties();
+    $cbToPartyKey = [];
+    $cbToPartyName = [];
+    $partiesData = [];
+    foreach ($allParties as $k => $p) {
+        $cb = (int)($p['cb'] ?? 1);
+        $name = (string)($p['label'] ?? $p['name'] ?? $k);
+        $cbToPartyKey[$cb] = $k;
+        $cbToPartyName[$cb] = $name;
+        $partiesData[$k] = [
+            'key'          => $k,
+            'name'         => $name,
+            'out_amt'      => 0.0,
+            'in_amt'       => 0.0,
+            'net_amt'      => 0.0,
+            'unposted_net' => 0.0,
+        ];
+    }
+
+    // تجميع إشراقة
+    $ashBuy = 0.0;
+    $ashRet = 0.0;
+    $ashDocs = [];
+    foreach ($ashRows as $idx => $r) {
+        $amt = (float)$r['net_amount'];
+        $sstt = (int)$r['sstt_id'];
+        if ($sstt === 113) {
+            $ashBuy += $amt;
+        } elseif ($sstt === 115) {
+            $ashRet += $amt;
+        }
+        $docKey = $r['sstt_id'] . '-' . $r['brch_id'] . '-' . $r['fy_no'] . '-' . $r['add_doc'];
+        $ashDocs[$idx] = [
+            'idx'      => $idx,
+            'doc_key'  => $docKey,
+            'doc_no'   => (int)$r['add_doc'],
+            'type'     => $sstt,
+            'date'     => (string)$r['doc_date'],
+            'amount'   => $amt,
+            'notes'    => $r['notes'] !== null ? (string)$r['notes'] : null,
+            'cancels'  => null,
+            'matched'  => false,
+        ];
+    }
+    $ashNet = $ashBuy - $ashRet;
+
+    // تجميع فواتيرنا المترحّلة
+    $ourOut = 0.0;
+    $ourIn = 0.0;
+    $ourDocs = [];
+    $ourIdx = 0;
+    foreach ($ourPostedRows as $r) {
+        $amt = (float)$r['net_amount'];
+        $dt = (int)$r['doc_type'];
+        $cb = ($r['company_branch'] === null) ? 1 : (int)$r['company_branch'];
+        $pKey = $cbToPartyKey[$cb] ?? 'hq';
+        $pLabel = $cbToPartyName[$cb] ?? ($partiesData[$pKey]['name'] ?? 'الإدارة');
+
+        if ($dt === 6) {
+            $ourOut += $amt;
+            if (isset($partiesData[$pKey])) {
+                $partiesData[$pKey]['out_amt'] += $amt;
+            }
+        } elseif ($dt === 2) {
+            $ourIn += $amt;
+            if (isset($partiesData[$pKey])) {
+                $partiesData[$pKey]['in_amt'] += $amt;
+            }
+        }
+
+        $ourDocs[$ourIdx] = [
+            'idx'         => $ourIdx,
+            'party_key'   => $pKey,
+            'party_label' => $pLabel,
+            'branch'      => $cb,
+            'branch_name' => $pLabel,
+            'doc_no'      => $r['doc_no'],
+            'doc_type'    => $dt,
+            'type'        => $dt,
+            'date'        => (string)$r['tx_date'],
+            'amount'      => $amt,
+            'posted'      => true,
+            'cancels'     => null,
+            'matched'     => false,
+        ];
+        $ourIdx++;
+    }
+    $ourNet = $ourOut - $ourIn;
+
+    // تجميع فواتيرنا غير المترحّلة
+    $unpostedOut = 0.0;
+    $unpostedIn = 0.0;
+    $unpostedCount = count($ourUnpostedRows);
+    foreach ($ourUnpostedRows as $r) {
+        $amt = (float)$r['net_amount'];
+        $dt = (int)$r['doc_type'];
+        $cb = ($r['company_branch'] === null) ? 1 : (int)$r['company_branch'];
+        $pKey = $cbToPartyKey[$cb] ?? 'hq';
+        $pLabel = $cbToPartyName[$cb] ?? ($partiesData[$pKey]['name'] ?? 'الإدارة');
+
+        if ($dt === 6) {
+            $unpostedOut += $amt;
+            if (isset($partiesData[$pKey])) {
+                $partiesData[$pKey]['unposted_net'] += $amt;
+            }
+        } elseif ($dt === 2) {
+            $unpostedIn += $amt;
+            if (isset($partiesData[$pKey])) {
+                $partiesData[$pKey]['unposted_net'] -= $amt;
+            }
+        }
+
+        $ourDocs[$ourIdx] = [
+            'idx'         => $ourIdx,
+            'party_key'   => $pKey,
+            'party_label' => $pLabel,
+            'branch'      => $cb,
+            'branch_name' => $pLabel,
+            'doc_no'      => $r['doc_no'],
+            'doc_type'    => $dt,
+            'type'        => $dt,
+            'date'        => (string)$r['tx_date'],
+            'amount'      => $amt,
+            'posted'      => false,
+            'cancels'     => null,
+            'matched'     => false,
+        ];
+        $ourIdx++;
+    }
+    $unpostedNet = $unpostedOut - $unpostedIn;
+
+    foreach ($partiesData as $k => &$pd) {
+        $pd['net_amt'] = $pd['out_amt'] - $pd['in_amt'];
+    }
+    unset($pd);
+
+    $diff = $ashNet - $ourNet;
+    $diffAfterPost = $ashNet - ($ourNet + $unpostedNet);
+
+    // خطوة ١: مطابقة بين الطرفين (113 مع 6، و115 مع 2)
+    // الشرط: abs(فرق المبلغ) <= 0.05 و abs(فرق التاريخ) <= 90 يوم
+    // ترتيب الاحتمالات بفرق الأيام من الأصغر للأكبر، وكل فاتورة تتربط مرة واحدة
+    $candidatePairs = [];
+    foreach ($ashDocs as $aIdx => $aDoc) {
+        $targetOurType = ($aDoc['type'] === 113) ? 6 : 2;
+        $aTime = strtotime($aDoc['date']);
+        foreach ($ourDocs as $oIdx => $oDoc) {
+            if ($oDoc['doc_type'] !== $targetOurType) {
+                continue;
+            }
+            $amtDiff = abs($aDoc['amount'] - $oDoc['amount']);
+            if ($amtDiff > 0.05) {
+                continue;
+            }
+            $oTime = strtotime($oDoc['date']);
+            $diffDays = (int)round(abs($aTime - $oTime) / 86400);
+            if ($diffDays > 90) {
+                continue;
+            }
+            $candidatePairs[] = [
+                'aIdx'     => $aIdx,
+                'oIdx'     => $oIdx,
+                'diffDays' => $diffDays,
+                'amtDiff'  => $amtDiff,
+            ];
+        }
+    }
+
+    usort($candidatePairs, function (array $p1, array $p2): int {
+        if ($p1['diffDays'] !== $p2['diffDays']) {
+            return $p1['diffDays'] <=> $p2['diffDays'];
+        }
+        if ($p1['amtDiff'] !== $p2['amtDiff']) {
+            return ($p1['amtDiff'] < $p2['amtDiff']) ? -1 : 1;
+        }
+        if ($p1['aIdx'] !== $p2['aIdx']) {
+            return $p1['aIdx'] <=> $p2['aIdx'];
+        }
+        return $p1['oIdx'] <=> $p2['oIdx'];
+    });
+
+    $matchedAsh = [];
+    $matchedOur = [];
+    foreach ($candidatePairs as $cp) {
+        $aIdx = $cp['aIdx'];
+        $oIdx = $cp['oIdx'];
+        if (isset($matchedAsh[$aIdx]) || isset($matchedOur[$oIdx])) {
+            continue;
+        }
+        $matchedAsh[$aIdx] = true;
+        $matchedOur[$oIdx] = true;
+        $ashDocs[$aIdx]['matched'] = true;
+        $ourDocs[$oIdx]['matched'] = true;
+    }
+    $ashMatchedCount = count($matchedAsh);
+    $ourMatchedCount = count($matchedOur);
+
+    // خطوة ٢: جوه نفس الطرف (على اللي فضل بس بعد خطوة ١)
+    // ٢.أ: عندنا بين 6 و2 من نفس الفرع (±0.05 وخلال 45 يوم)
+    $remainingOurByBranch = [];
+    foreach ($ourDocs as $oIdx => $oDoc) {
+        if (!$oDoc['matched']) {
+            $remainingOurByBranch[$oDoc['branch']][] = $oIdx;
+        }
+    }
+
+    foreach ($remainingOurByBranch as $branchId => $branchOurIndices) {
+        $cancelsCandidates = [];
+        $cnt = count($branchOurIndices);
+        for ($i = 0; $i < $cnt; $i++) {
+            $idx1 = $branchOurIndices[$i];
+            $doc1 = $ourDocs[$idx1];
+            for ($j = $i + 1; $j < $cnt; $j++) {
+                $idx2 = $branchOurIndices[$j];
+                $doc2 = $ourDocs[$idx2];
+                if (($doc1['doc_type'] === 6 && $doc2['doc_type'] === 2) ||
+                    ($doc1['doc_type'] === 2 && $doc2['doc_type'] === 6)) {
+                    $amtDiff = abs($doc1['amount'] - $doc2['amount']);
+                    if ($amtDiff <= 0.05) {
+                        $diffDays = (int)round(abs(strtotime($doc1['date']) - strtotime($doc2['date'])) / 86400);
+                        if ($diffDays <= 45) {
+                            $cancelsCandidates[] = [
+                                'idx1'     => $idx1,
+                                'idx2'     => $idx2,
+                                'diffDays' => $diffDays,
+                                'amtDiff'  => $amtDiff,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        usort($cancelsCandidates, function (array $c1, array $c2): int {
+            if ($c1['diffDays'] !== $c2['diffDays']) {
+                return $c1['diffDays'] <=> $c2['diffDays'];
+            }
+            if ($c1['amtDiff'] !== $c2['amtDiff']) {
+                return ($c1['amtDiff'] < $c2['amtDiff']) ? -1 : 1;
+            }
+            return $c1['idx1'] <=> $c2['idx1'];
+        });
+
+        $pairedOur = [];
+        foreach ($cancelsCandidates as $cand) {
+            $i1 = $cand['idx1'];
+            $i2 = $cand['idx2'];
+            if (isset($pairedOur[$i1]) || isset($pairedOur[$i2])) {
+                continue;
+            }
+            $pairedOur[$i1] = true;
+            $pairedOur[$i2] = true;
+            $ourDocs[$i1]['cancels'] = (string)$ourDocs[$i2]['doc_no'];
+            $ourDocs[$i2]['cancels'] = (string)$ourDocs[$i1]['doc_no'];
+        }
+    }
+
+    // ٢.ب: عند إشراقة بين 113 و115 (±0.05 وخلال 45 يوم)
+    $remainingAshIndices = [];
+    foreach ($ashDocs as $aIdx => $aDoc) {
+        if (!$aDoc['matched']) {
+            $remainingAshIndices[] = $aIdx;
+        }
+    }
+    $ashCancelsCandidates = [];
+    $ashCnt = count($remainingAshIndices);
+    for ($i = 0; $i < $ashCnt; $i++) {
+        $idx1 = $remainingAshIndices[$i];
+        $doc1 = $ashDocs[$idx1];
+        for ($j = $i + 1; $j < $ashCnt; $j++) {
+            $idx2 = $remainingAshIndices[$j];
+            $doc2 = $ashDocs[$idx2];
+            if (($doc1['type'] === 113 && $doc2['type'] === 115) ||
+                ($doc1['type'] === 115 && $doc2['type'] === 113)) {
+                $amtDiff = abs($doc1['amount'] - $doc2['amount']);
+                if ($amtDiff <= 0.05) {
+                    $diffDays = (int)round(abs(strtotime($doc1['date']) - strtotime($doc2['date'])) / 86400);
+                    if ($diffDays <= 45) {
+                        $ashCancelsCandidates[] = [
+                            'idx1'     => $idx1,
+                            'idx2'     => $idx2,
+                            'diffDays' => $diffDays,
+                            'amtDiff'  => $amtDiff,
+                        ];
+                    }
+                }
+            }
+        }
+    }
+
+    usort($ashCancelsCandidates, function (array $c1, array $c2): int {
+        if ($c1['diffDays'] !== $c2['diffDays']) {
+            return $c1['diffDays'] <=> $c2['diffDays'];
+        }
+        if ($c1['amtDiff'] !== $c2['amtDiff']) {
+            return ($c1['amtDiff'] < $c2['amtDiff']) ? -1 : 1;
+        }
+        return $c1['idx1'] <=> $c2['idx1'];
+    });
+
+    $pairedAsh = [];
+    foreach ($ashCancelsCandidates as $cand) {
+        $i1 = $cand['idx1'];
+        $i2 = $cand['idx2'];
+        if (isset($pairedAsh[$i1]) || isset($pairedAsh[$i2])) {
+            continue;
+        }
+        $pairedAsh[$i1] = true;
+        $pairedAsh[$i2] = true;
+        $ashDocs[$i1]['cancels'] = (string)$ashDocs[$i2]['doc_no'];
+        $ashDocs[$i2]['cancels'] = (string)$ashDocs[$i1]['doc_no'];
+    }
+
+    // بناء القائمتين غير المتطابقتين وترتيبهما تنازلياً بالمبلغ
+    $ashUnmatched = [];
+    foreach ($ashDocs as $ad) {
+        if (!$ad['matched']) {
+            $ashUnmatched[] = [
+                'doc_key' => $ad['doc_key'],
+                'doc_no'  => $ad['doc_no'],
+                'type'    => $ad['type'],
+                'date'    => $ad['date'],
+                'amount'  => $ad['amount'],
+                'notes'   => $ad['notes'],
+                'cancels' => $ad['cancels'],
+            ];
+        }
+    }
+    usort($ashUnmatched, function (array $a, array $b): int {
+        return ($b['amount'] <=> $a['amount']);
+    });
+
+    $ourUnmatched = [];
+    foreach ($ourDocs as $od) {
+        if (!$od['matched']) {
+            $ourUnmatched[] = [
+                'party_key'   => $od['party_key'],
+                'party_label' => $od['party_label'],
+                'branch'      => $od['branch'],
+                'branch_name' => $od['branch_name'],
+                'doc_no'      => $od['doc_no'],
+                'doc_type'    => $od['doc_type'],
+                'type'        => $od['doc_type'],
+                'date'        => $od['date'],
+                'amount'      => $od['amount'],
+                'posted'      => $od['posted'],
+                'cancels'     => $od['cancels'],
+            ];
+        }
+    }
+    usort($ourUnmatched, function (array $a, array $b): int {
+        return ($b['amount'] <=> $a['amount']);
+    });
+
+    return [
+        'ash_buy'           => round($ashBuy, 2),
+        'ash_ret'           => round($ashRet, 2),
+        'ash_net'           => round($ashNet, 2),
+        'our_out'           => round($ourOut, 2),
+        'our_in'            => round($ourIn, 2),
+        'our_net'           => round($ourNet, 2),
+        'unposted_out'      => round($unpostedOut, 2),
+        'unposted_in'       => round($unpostedIn, 2),
+        'unposted_net'      => round($unpostedNet, 2),
+        'unposted_count'    => $unpostedCount,
+        'diff'              => round($diff, 2),
+        'diff_after_post'   => round($diffAfterPost, 2),
+        'parties'           => array_values($partiesData),
+        'ash_unmatched'     => $ashUnmatched,
+        'our_unmatched'     => $ourUnmatched,
+        'ash_matched_count' => $ashMatchedCount,
+        'our_matched_count' => $ourMatchedCount,
     ];
 }
 
