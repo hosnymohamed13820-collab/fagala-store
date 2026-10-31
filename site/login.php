@@ -195,7 +195,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=72').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=73').catch(() => {});
             });
         }
 
