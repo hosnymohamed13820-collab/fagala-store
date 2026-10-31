@@ -67,14 +67,46 @@ if ($method === 'GET') {
         $st->execute(PURCHASE_INTERNAL_ERP_SUPPLIERS);
         api_ok(['suppliers'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
     }
+    if ($action === 'balances') {
+        $branchId = (int) ($_GET['branch_id'] ?? $userBranch);
+        purchase_api_branch($branchId);
+        $raw = $_GET['codes'] ?? [];
+        if (!is_array($raw) || count($raw) > 1000) api_fail('عدد الأكواد أكبر من المسموح',400,'validation');
+        $codes = array_values(array_unique(array_filter(array_map('strval', $raw), fn($code) => $code !== '')));
+        $balances = [];
+        if ($codes) {
+            $marks = implode(',', array_fill(0, count($codes), '?'));
+            // رصيد فعلي بالقطع، من غير رصيد البضاعة اللي في الطريق.
+            $st = $pdo->prepare("SELECT c.code,COALESCE(b.qty,0)/COALESCE(NULLIF(c.unit_factor,0),1) balance
+                FROM hq_codes c LEFT JOIN stock_balances b ON b.item_id=c.item_id AND b.branch_id=? AND b.is_transit=0
+                WHERE c.code IN ($marks)");
+            $st->execute(array_merge([$branchId], $codes));
+            $balances = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+        }
+        api_ok(['balances'=>(object) $balances]);
+    }
     if ($action === 'code') {
         api_require('purchase_docs:create');
+        // نفس بحث كارت الصنف، تحت صلاحية الشراء ومن غير جهاز POS أو endpoint جديد.
+        if (isset($_GET['q'])) {
+            require_once __DIR__ . '/item_card_lib.php';
+            $found = ic_search((string) $_GET['q'], 20);
+            api_ok(['items'=>$found['items']]);
+        }
+        if (isset($_GET['name'])) {
+            $name = trim((string) $_GET['name']);
+            $st = $pdo->prepare('SELECT c.code FROM hq_codes c LEFT JOIN hq_items i ON i.item_id=c.item_id
+                WHERE BINARY c.name=BINARY ? OR BINARY i.name=BINARY ? ORDER BY (c.code_type=0) DESC,c.code LIMIT 1');
+            $st->execute([$name,$name]);
+            $code = $st->fetchColumn();
+            api_ok(['item'=>$code === false ? null : ['code'=>(string) $code]]);
+        }
         $code = trim((string) ($_GET['code'] ?? ''));
         $supplierId = (int) ($_GET['supplier_id'] ?? 0);
         $st = $pdo->prepare('SELECT code,item_id,name,unit_factor,price FROM hq_codes WHERE code=? LIMIT 1');
         $st->execute([$code]);
         $item = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$item) api_fail('الكود مش موجود', 404, 'not_found');
+        if (!$item) api_fail('الكود ' . $code . ' مش موجود', 404, 'not_found');
         // التكلفة رقم حساس؛ ماتخرجش في الرد إلا والجلسة فاتحة الأرقام الحساسة.
         $item['last_purchase_price'] = $supplierId > 0 && sens_unlocked()
             ? purchase_last_true_price($pdo, $supplierId, (int) $item['item_id'])
@@ -167,7 +199,38 @@ try {
         $type = (string) ($input['doc_type'] ?? 'purchase');
         $docId = !empty($input['doc_id']) ? (int) $input['doc_id'] : null;
         if ($docId !== null) purchase_api_doc($pdo, $docId);
-        $id = purchase_save_draft($pdo,$type,$input,is_array($input['lines'] ?? null)?$input['lines']:[],$uid,$docId);
+        $removed = is_array($input['removed_lines'] ?? null) ? $input['removed_lines'] : [];
+        $lines = is_array($input['lines'] ?? null) ? $input['lines'] : [];
+        if (count($removed) > 1000) api_fail('عدد السطور أكبر من المسموح',400,'validation');
+        $pdo->beginTransaction();
+        try {
+            if (!$lines && $docId !== null && $removed) {
+                // مسح آخر سطر يفضّي المسودة بس، من غير تغيير قواعد حساب أي سطر.
+                $doc = purchase_api_doc($pdo, $docId, true);
+                if ($doc['status'] !== 'draft') throw new RuntimeException('المستند مش مسودة قابلة للتعديل.');
+                $pdo->prepare("UPDATE stock_doc_lines SET qty_units=0,qty_pieces=0,unit_cost=0,unit_price=0,discount_pct=0,line_total=0,inv_discount_alloc=0,notes='سطر اتشال من المسودة' WHERE doc_id=?")->execute([$docId]);
+                $pdo->prepare('UPDATE stock_docs SET total_amount=0,gross_amount=0,inv_discount_type=NULL,inv_discount_value=0,hq_match=NULL WHERE id=?')->execute([$docId]);
+                $id = $docId;
+            } else {
+                $id = purchase_save_draft($pdo,$type,$input,$lines,$uid,$docId);
+            }
+            if ($removed) {
+                $values = [];
+                $params = [];
+                foreach ($removed as $line) {
+                    if (!is_array($line) || trim((string) ($line['code'] ?? '')) === '' || !is_numeric($line['qty_units'] ?? null)) {
+                        throw new RuntimeException('بيانات السطر الممسوح مش صحيحة.');
+                    }
+                    $values[] = "('stock',?,'line_removed',?,NOW(),?)";
+                    array_push($params, $id, $uid, json_encode(['code'=>(string) $line['code'],'qty_units'=>(float) $line['qty_units']], JSON_UNESCAPED_UNICODE));
+                }
+                $pdo->prepare('INSERT INTO doc_events (doc_kind,doc_id,event,user_id,at,details) VALUES '.implode(',', $values))->execute($params);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
         $saved = purchase_api_doc($pdo, $id);
         $st = $pdo->prepare('SELECT line_no,inv_discount_alloc,line_total/NULLIF(qty_units,0) net_unit_cost FROM stock_doc_lines WHERE doc_id=? AND qty_pieces>0 ORDER BY line_no');
         $st->execute([$id]);

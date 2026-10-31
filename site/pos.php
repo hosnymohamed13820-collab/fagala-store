@@ -176,6 +176,9 @@ require_once __DIR__ . '/includes/header.php';
 .pos-cart-table-wrap td.fcell {
     padding: 2px 4px;
 }
+#posViewExchange .pos-cart-panel, #posViewExchange .fcard { min-width:0; }
+#posExchSaleTable { min-width:1110px; }
+#posExchSaleTable th:nth-child(4), #posExchSaleTable td:nth-child(4) { min-width:180px; }
 .pos-row-btn {
     padding: 2px 6px;
     min-width: 0;
@@ -820,7 +823,7 @@ require_once __DIR__ . '/includes/header.php';
                         <table class="ftable" id="posExchSaleTable" data-xt-off style="table-layout: fixed; width: 100%;">
                             <colgroup>
                                 <col style="width: 40px;">
-                                <col style="width: 48px;">
+                                <col style="width: 36px;">
                                 <col style="width: 150px;">
                                 <col style="width: auto;">
                                 <col style="width: 70px;">
@@ -828,8 +831,8 @@ require_once __DIR__ . '/includes/header.php';
                                 <col style="width: 90px;">
                                 <col style="width: 90px;">
                                 <col style="width: 100px;">
-                                <col style="width: 90px;">
-                                <col style="width: 100px;">
+                                <col style="width: 70px;">
+                                <col style="width: 70px;">
                                 <col style="width: 44px;">
                             </colgroup>
                             <thead>
@@ -1317,7 +1320,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 const mb = parseFloat(getComputedStyle(layoutEl).marginBottom);
                 layoutGap = isNaN(mb) ? 0 : mb;
             }
-            let availableHeight = window.innerHeight - wrapTop - totalsBarHeight - shortcutsHeight - marginsAndGaps - layoutGap;
+            let exchangeTail = 0;
+            if (parentView && parentView.id === 'posViewExchange' && layoutEl) {
+                exchangeTail = Math.max(0, layoutEl.getBoundingClientRect().bottom - wrapRect.bottom);
+            }
+            let availableHeight = window.innerHeight - wrapTop - totalsBarHeight - shortcutsHeight - marginsAndGaps - layoutGap - exchangeTail;
             if (availableHeight < 240) availableHeight = 240;
             wrap.style.height = Math.floor(availableHeight) + 'px';
         });
@@ -1608,8 +1615,8 @@ document.addEventListener('DOMContentLoaded', function () {
             'المتوقع: كاش ' + Number(exp.cash || 0).toFixed(2) +
             ' · فيزا ' + Number(exp.visa || 0).toFixed(2) +
             ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2)) +
-            ui.alert('info', 'الافتتاحي (بيفضل في الدرج): ' +
-                Number(session.opening_cash || 0).toFixed(2)) +
+            (Object.prototype.hasOwnProperty.call(session, 'opening_cash') ? ui.alert('info', 'الافتتاحي (بيفضل في الدرج): ' +
+                Number(session.opening_cash).toFixed(2)) : '') +
             ui.alert('info', 'الكاش المطلوب توريده: ' + Number(exp.cash_sales || 0).toFixed(2));
     }
 

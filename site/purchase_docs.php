@@ -29,11 +29,14 @@ require_once __DIR__ . '/includes/header.php';
 .purchase-lines-panel{flex:1;display:flex;flex-direction:column;min-height:360px;padding:0;overflow:hidden}
 .purchase-lines-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line-soft)}
 .purchase-lines-title h3{margin:0;font-size:16px}.purchase-barcode-hint{font-size:12px;color:var(--ink-500)}
-.purchase-table-wrap{overflow:auto;flex:1}.purchase-table{min-width:800px}.purchase-table th,.purchase-table td{vertical-align:middle}.purchase-table .line-index{width:45px;text-align:center;color:var(--ink-500)}
-.purchase-table .line-code-cell{width:190px}.purchase-table .line-name-cell{min-width:250px}.purchase-table .line-unit{width:95px}.purchase-table .line-number{width:125px}.purchase-table .line-remove-cell{width:60px;text-align:center}
-.purchase-code-wrap{display:flex;align-items:center;gap:5px}.purchase-code-wrap .finput{min-width:0;width:100%}.purchase-code-wrap .btn{flex:0 0 auto}
-.purchase-table .finput{width:100%;min-width:0}.purchase-table .line-name{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px}.purchase-table .line-total{font-variant-numeric:tabular-nums;font-weight:700}
-.purchase-summary{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:20px;align-items:center;flex-wrap:wrap;padding:12px 16px;background:var(--surface);border-top:1px solid var(--line-soft);font-size:13px}.purchase-summary strong{font-size:18px;font-variant-numeric:tabular-nums}
+.purchase-table-wrap{overflow:auto;flex:1;min-width:0}.purchase-shell,.purchase-lines-panel{min-width:0}
+.purchase-table{width:100%;table-layout:fixed}.purchase-table th,.purchase-table td{vertical-align:middle}.purchase-table .line-index{text-align:center;color:var(--ink-500)}
+.purchase-code-wrap{display:flex;align-items:center;gap:2px}.purchase-code-wrap .finput{min-width:0;width:100%}.purchase-code-wrap .btn{flex:0 0 auto}
+.purchase-table .finput{width:100%;min-width:0}.purchase-table .line-name,.purchase-table .line-code-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.purchase-table .line-total{font-variant-numeric:tabular-nums;font-weight:700}
+.purchase-summary{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line-soft);font-size:13px}.purchase-summary strong{font-size:18px;font-variant-numeric:tabular-nums}.purchase-summary .ffield{width:125px}
+.purchase-shortcuts{display:flex;gap:12px;flex-wrap:wrap;padding:8px 16px;font-size:12px;color:var(--ink-500)}.purchase-shortcuts kbd{font:inherit;font-weight:700}
+.purchase-search-bg[hidden]{display:none}.purchase-search-bg .fg-dlg{width:min(92vw,720px)}.purchase-search-results{max-height:50vh;overflow:auto}.purchase-search-results .btn{display:block;width:100%;text-align:right;white-space:normal}
+@media(max-width:1100px){.purchase-table{min-width:1020px}}
 .purchase-save-state{min-width:90px;font-size:12px;color:var(--ink-500)}.purchase-save-state.is-ok{color:var(--pos)}.purchase-save-state.is-bad{color:var(--neg)}
 .purchase-origin[hidden],.purchase-event-list[hidden]{display:none}.purchase-event-list{font-size:12px;line-height:1.9;color:var(--ink-500)}
 .purchase-readonly-note{margin:0}
@@ -112,23 +115,33 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="ftable-wrap purchase-table-wrap">
       <table class="ftable purchase-table">
-        <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">خصم %</th><th class="num">صافي سعر التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th></tr></thead>
+        <colgroup><col style="width:30px"><col style="width:120px"><col><col style="width:74px"><col style="width:65px"><col style="width:72px"><col style="width:80px"><col style="width:62px"><col style="width:90px"><col style="width:86px"><col style="width:76px"></colgroup>
+        <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">الرصيد</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">خصم %</th><th class="num">صافي سعر التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th></tr></thead>
         <tbody id="purchaseLines"></tbody>
       </table>
     </div>
+    <div class="purchase-shortcuts purchase-no-print"><span><kbd>Insert / Ctrl+N</kbd> الصف الفاضي</span><span><kbd>Ctrl+Delete</kbd> مسح الصف</span><span><kbd>F2</kbd> بحث صنف</span><span><kbd>Esc</kbd> قفل البحث</span></div>
     <div class="purchase-summary">
       <span>عدد الأصناف <strong id="purchaseItemsCount">0</strong></span>
       <span>إجمالي القطع <strong id="purchasePieces">0</strong></span>
+      <span>الإجمالي قبل الخصم <strong id="purchaseGross">0.00</strong></span>
       <label class="ffield">خصم الفاتورة % <input id="purchaseDiscountPct" class="finput finput-sm num" type="number" min="0" max="100" step="0.0001" data-edit></label>
       <label class="ffield">خصم الفاتورة قيمة <input id="purchaseDiscountAmount" class="finput finput-sm num" type="number" min="0" step="0.0001" data-edit></label>
-      <span>الإجمالي قبل الخصم <strong id="purchaseGross">0.00</strong></span>
-      <span>الصافي <strong id="purchaseGrand">0.00</strong></span>
+      <div class="fkpi"><span>الصافي</span><strong id="purchaseGrand">0.00</strong></div>
     </div>
   </div>
 
   <div id="purchaseEvents" class="fcard purchase-event-list" hidden></div>
 </div>
 
+<div id="purchaseSearch" class="purchase-search-bg purchase-no-print" hidden>
+  <div class="fg-dlg" role="dialog" aria-modal="true" aria-labelledby="purchaseSearchTitle">
+    <h3 id="purchaseSearchTitle" class="fg-dlg-title">بحث الأصناف</h3>
+    <label class="ffield">اسم الصنف<input id="purchaseSearchTerm" class="finput" autocomplete="off"></label>
+    <div id="purchaseSearchResults" class="purchase-search-results"></div>
+    <div class="fg-dlg-actions"><button id="purchaseSearchClose" class="btn btn-secondary" type="button">رجوع</button></div>
+  </div>
+</div>
 <script src="assets/barcode_scanner.js?v=9"></script>
 <script>
 const PURCHASE_CSRF=<?= json_encode(csrf_token()) ?>;
@@ -145,6 +158,9 @@ let purchaseSaving=null;
 let purchaseSaveDirty=false;
 let purchaseDiscountType=null;
 let purchaseOriginCosts={};
+let purchaseRemoved=[];
+let purchaseSearchLine=null,purchaseSearchItems=[],purchaseSearchIndex=0,purchaseSearchRequest=0,purchaseBalanceRequest=0;
+let purchaseSearchTimer=null,purchaseBalanceTimer=null;
 const pe=id=>document.getElementById(id);
 
 function purchaseEsc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
@@ -169,41 +185,89 @@ function purchaseLineTemplate(row={}){
   const id=++purchaseLineSeq;
   const itemId=Number(row.item_id)||0;
   const factor=Number(row.unit_factor)||1;
+  return '<tr class="purchase-line" data-line="'+id+'" data-lookup-code="'+purchaseEsc(itemId?row.code||'':'')+'">'
+    +'<td class="line-index"></td>'
+    +'<td class="fcell line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="finput finput-cell num line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"></td>'
+    +'<td class="fcell line-name-cell">'+(itemId?'<span class="line-name" title="'+purchaseEsc(row.item_name||'')+'">'+purchaseEsc(row.item_name||'')+'</span>':'<input class="finput finput-cell line-name-input" autocomplete="off" placeholder="اكتب اسم الصنف…">')+'</td>'
+    +purchaseLineDetails(row)+'</tr>';
+}
+function purchaseLineDetails(row={}){
+  if(!Number(row.item_id))return '<td></td><td class="num line-balance"></td>'+ '<td></td>'.repeat(6);
+  const factor=Number(row.unit_factor)||1;
   const qty=row.qty_units===undefined?1:Number(row.qty_units);
   const price=row.unit_price===undefined?0:Number(row.unit_price);
   const discount=Number(row.discount_pct)||0;
-  return '<tr class="purchase-line" data-line="'+id+'" data-lookup-code="'+purchaseEsc(itemId?row.code||'':'')+'">'
-    +'<td class="line-index"></td>'
-    +'<td class="line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="finput finput-sm line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"></td>'
-    +'<td class="line-name-cell"><span class="line-name" title="'+purchaseEsc(row.item_name||'')+'">'+purchaseEsc(row.item_name||'')+'</span></td>'
-    +'<td><span class="line-unit">'+(itemId?purchaseEsc(purchaseUnitText(factor)):'—')+'</span></td>'
-    +'<td class="num line-number"><input class="finput finput-sm num line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(qty)+'"></td>'
-    +'<td class="num line-number"><input class="finput finput-sm num line-cost" type="number" min="0" step="0.0001" value="'+purchaseEsc(price)+'"></td>'
-    +'<td class="num line-number"><input class="finput finput-sm num line-discount" type="number" min="0" max="100" step="0.001" value="'+purchaseEsc(discount)+'"></td>'
+  return '<td><span class="line-unit">'+purchaseEsc(purchaseUnitText(factor))+'</span></td>'
+    +'<td class="num line-balance">—</td>'
+    +'<td class="num fcell line-number"><input class="finput finput-cell num line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(qty)+'"></td>'
+    +'<td class="num fcell line-number"><input class="finput finput-cell num line-cost" type="number" min="0" step="0.0001" value="'+purchaseEsc(price)+'"></td>'
+    +'<td class="num fcell line-number"><input class="finput finput-cell num line-discount" type="number" min="0" max="100" step="0.001" value="'+purchaseEsc(discount)+'"></td>'
     +'<td class="num line-number"><span class="line-net">0.00</span></td>'
     +'<td class="num line-number"><span class="line-total">0.00</span></td>'
-    +'<td class="line-remove-cell purchase-no-print"><button class="btn btn-sm btn-danger line-remove" type="button" aria-label="حذف السطر"><i class="ti ti-trash"></i></button></td></tr>';
+    +'<td class="line-remove-cell purchase-no-print"><button class="btn btn-sm btn-danger line-remove" type="button" aria-label="حذف السطر"><i class="ti ti-trash"></i></button></td>';
 }
 function purchaseAddLine(row={},focus=false){
   pe('purchaseLines').insertAdjacentHTML('beforeend',purchaseLineTemplate(row));
   const line=pe('purchaseLines').lastElementChild;
+  if(Number(row.item_id))purchaseLockCode(line);
   purchaseBindLine(line);
+  purchaseQueueBalances();
   if(row.line_total!==undefined){line.dataset.savedTotal=String(row.line_total);line.dataset.savedNet=String(row.net_unit_cost)}
   purchaseCalc();
-  if(focus)line.querySelector('.line-code').focus();
+  if(focus)line.querySelector('.line-code,.line-qty').focus();
   return line;
+}
+function purchaseCode(line){return line.dataset.lookupCode||line.querySelector('.line-code')?.value.trim()||''}
+function purchaseLockCode(line){
+  const input=line.querySelector('.line-code');if(!input)return;
+  const text=document.createElement('span');text.className='line-code-text num';text.textContent=purchaseCode(line);text.title=text.textContent;
+  input.closest('.purchase-code-wrap').replaceWith(text);
 }
 function purchaseBindLine(line){
   const code=line.querySelector('.line-code');
-  code.addEventListener('keydown',event=>{if(isEnterKey(event)){event.preventDefault();purchaseLookup(line)}});
-  code.addEventListener('blur',()=>purchaseLookup(line));
-  line.querySelector('.line-scan').addEventListener('click',()=>openBarcodeScanner(code.id));
+  if(code){
+    code.addEventListener('keydown',event=>{if(isEnterKey(event)){event.preventDefault();purchaseLookup(line,undefined,!event.isTrusted||code.dataset.scanFast==='1')}});
+    code.addEventListener('input',event=>{
+      code.classList.remove('is-invalid');
+      const now=Number(event.timeStamp)||Date.now(),last=Number(code.dataset.scanLast||0);
+      const count=now-last<80?Number(code.dataset.scanCount||0)+1:1;
+      code.dataset.scanLast=String(now);code.dataset.scanCount=String(count);code.dataset.scanFast=count>=3&&code.value.length>=3?'1':'0';
+    });
+    line.querySelector('.line-scan').addEventListener('click',()=>openBarcodeScanner(code.id));
+    line.querySelector('.line-name-input').addEventListener('keydown',event=>{if(isEnterKey(event)){event.preventDefault();purchaseLookupName(line)}});
+  }
   line.querySelectorAll('.line-qty,.line-cost,.line-discount').forEach(input=>{
     input.addEventListener('input',()=>{purchaseCalc();purchaseQueueSave()});
     input.addEventListener('blur',()=>purchaseQueueSave(true));
     input.addEventListener('keydown',event=>purchaseGridKey(event,input));
   });
-  line.querySelector('.line-remove').addEventListener('click',()=>{line.remove();purchaseEnsureBlank();purchaseCalc();purchaseQueueSave(true)});
+  line.querySelector('.line-remove')?.addEventListener('click',()=>purchaseRemoveLine(line));
+}
+async function purchaseRemoveLine(line){
+  if(purchaseReadonly||!line?.isConnected)return;
+  if(!await fgConfirm('متأكد إنك عايز تمسح الصف ده؟',{title:'مسح صف',okText:'مسح',cancelText:'رجوع',danger:true}))return;
+  if(purchaseReadonly||!line.isConnected)return;
+  if(Number(line.querySelector('.line-item').value))purchaseRemoved.push({code:purchaseCode(line),qty_units:Number(line.querySelector('.line-qty').value)});
+  line.remove();purchaseEnsureBlank();purchaseCalc();purchaseQueueSave(true);purchaseFocusBarcode();
+}
+function purchaseMergeLine(line){
+  const rows=purchaseBoundLines(),index=rows.indexOf(line);
+  const old=rows.slice(0,index).find(other=>purchaseCode(other)===purchaseCode(line));
+  if(!old)return false;
+  old.querySelector('.line-qty').value=String(purchaseRound(Number(old.querySelector('.line-qty').value)+Number(line.querySelector('.line-qty').value),3));
+  line.remove();purchaseEnsureBlank();purchaseCalc();purchaseQueueSave(true);purchaseFocusBarcode();return true;
+}
+function purchaseQueueBalances(){clearTimeout(purchaseBalanceTimer);purchaseBalanceTimer=setTimeout(purchaseBalances,60)}
+async function purchaseBalances(){
+  const request=++purchaseBalanceRequest,branch=Number(pe('purchaseBranch').value),codes=[...new Set(purchaseBoundLines().map(purchaseCode))];
+  if(!branch||!codes.length)return;
+  purchaseBoundLines().forEach(line=>line.querySelector('.line-balance').textContent='…');
+  try{
+    const query=new URLSearchParams({action:'balances',branch_id:branch});codes.forEach(code=>query.append('codes[]',code));
+    const data=await purchaseApi('purchase_docs_api.php?'+query);
+    if(request!==purchaseBalanceRequest||branch!==Number(pe('purchaseBranch').value))return;
+    purchaseBoundLines().forEach(line=>{line.querySelector('.line-balance').textContent=data.balances[purchaseCode(line)]===undefined?'—':purchaseNumber(data.balances[purchaseCode(line)])});
+  }catch(error){if(request===purchaseBalanceRequest){purchaseBoundLines().forEach(line=>line.querySelector('.line-balance').textContent='—');purchaseMessage(error.message,true)}}
 }
 function purchaseBoundLines(){return [...pe('purchaseLines').querySelectorAll('.purchase-line')].filter(line=>Number(line.querySelector('.line-item').value)>0)}
 function purchaseEnsureBlank(){
@@ -217,39 +281,89 @@ function purchaseEnsureBlank(){
 function purchaseRenumber(){[...pe('purchaseLines').children].forEach((line,index)=>{line.querySelector('.line-index').textContent=String(index+1)})}
 function purchaseFocusBarcode(){const blank=[...pe('purchaseLines').children].find(line=>!Number(line.querySelector('.line-item').value));blank?.querySelector('.line-code').focus()}
 
-async function purchaseLookup(line){
-  if(purchaseReadonly||!line.isConnected)return;
-  const input=line.querySelector('.line-code');
-  const code=input.value.trim();
+async function purchaseLookup(line,chosenCode,scanner=false){
+  if(purchaseReadonly||!line.isConnected||Number(line.querySelector('.line-item').value)||line.dataset.busy)return;
+  const input=line.querySelector('.line-code'),code=chosenCode??input.value.trim();
   if(!code)return;
-  if(line.dataset.lookupCode===code&&Number(line.querySelector('.line-item').value)>0)return;
+  line.dataset.busy='1';
   try{
-    const supplierId=purchaseResolveSupplier();
-    const data=await purchaseApi('purchase_docs_api.php?action=code&code='+encodeURIComponent(code)+'&supplier_id='+supplierId);
+    const data=await purchaseApi('purchase_docs_api.php?action=code&code='+encodeURIComponent(code)+'&supplier_id='+purchaseResolveSupplier());
+    if(!line.isConnected||purchaseReadonly)return;
+    if(purchaseHasOrigin()&&purchaseOriginCosts[Number(data.item.item_id)]===undefined)throw new Error('الصنف مش موجود في فاتورة الأصل');
     const foundCode=String(data.item.code||code);
-    const duplicate=purchaseBoundLines().find(other=>other!==line&&other.querySelector('.line-code').value.trim()===foundCode);
-    if(duplicate){
-      const qty=duplicate.querySelector('.line-qty');
-      qty.value=String((Number(qty.value)||0)+(Number(line.querySelector('.line-qty').value)||1));
-      line.remove();
-    }else{
-      line.dataset.lookupCode=String(data.item.code||code);
-      input.value=String(data.item.code||code);
+    const duplicate=purchaseBoundLines().find(other=>purchaseCode(other)===foundCode);
+    if(scanner&&duplicate){duplicate.querySelector('.line-qty').value=String(purchaseRound(Number(duplicate.querySelector('.line-qty').value)+1,3));line.remove()}
+    else{
+      line.dataset.lookupCode=foundCode;
       line.querySelector('.line-item').value=String(Number(data.item.item_id));
       line.querySelector('.line-factor').value=String(Number(data.item.unit_factor)||1);
-      line.querySelector('.line-name').textContent=String(data.item.name||data.item.code||'');
-      line.querySelector('.line-name').title=String(data.item.name||data.item.code||'');
-      line.querySelector('.line-unit').textContent=purchaseUnitText(data.item.unit_factor);
+      line.querySelector('.line-name-cell').innerHTML='<span class="line-name" title="'+purchaseEsc(data.item.name||foundCode)+'">'+purchaseEsc(data.item.name||foundCode)+'</span>';
+      while(line.cells.length>3)line.deleteCell(3);
+      line.insertAdjacentHTML('beforeend',purchaseLineDetails({item_id:data.item.item_id,unit_factor:data.item.unit_factor}));
       if(Number(line.querySelector('.line-cost').value)===0&&data.item.last_purchase_price!==null)line.querySelector('.line-cost').value=String(data.item.last_purchase_price);
+      purchaseLockCode(line);
+      purchaseBindLine(line);
     }
-    purchaseEnsureBlank();purchaseCalc();purchaseQueueSave();purchaseFocusBarcode();purchaseMessage('');
-  }catch(error){purchaseMessage(error.message,true);input.focus();input.select()}
+    purchaseEnsureBlank();purchaseCalc();purchaseQueueBalances();purchaseQueueSave();purchaseMessage('');
+    if(scanner){const blank=[...pe('purchaseLines').children].find(row=>!Number(row.querySelector('.line-item').value));const next=blank?.querySelector('.line-code');if(next){next.id=input.id;next.focus()}}else{const qty=line.querySelector('.line-qty');qty.focus();qty.select()}
+  }catch(error){purchaseMessage(error.message,true);input.classList.add('is-invalid');input.focus();input.select()}
+  finally{delete line.dataset.busy}
 }
-
+async function purchaseLookupName(line){
+  const name=line.querySelector('.line-name-input')?.value.trim();if(!name)return;
+  try{
+    const data=await purchaseApi('purchase_docs_api.php?action=code&name='+encodeURIComponent(name));
+    if(data.item)await purchaseLookup(line,data.item.code);else purchaseOpenSearch(line,name);
+  }catch(error){purchaseMessage(error.message,true)}
+}
+function purchaseOpenSearch(line,text=''){
+  if(purchaseReadonly)return;
+  purchaseSearchLine=line;pe('purchaseSearch').classList.add('fg-dlg-bg');pe('purchaseSearch').hidden=false;document.documentElement.classList.add('fg-dlg-open');
+  pe('purchaseSearchTerm').value=text;pe('purchaseSearchTerm').focus();purchaseRunSearch();
+}
+function purchaseCloseSearch(){
+  ++purchaseSearchRequest;clearTimeout(purchaseSearchTimer);pe('purchaseSearch').hidden=true;pe('purchaseSearch').classList.remove('fg-dlg-bg');document.documentElement.classList.remove('fg-dlg-open');
+  if(purchaseSearchLine?.isConnected)(purchaseSearchLine.querySelector('.line-name-input')||purchaseSearchLine.querySelector('.line-qty')).focus();else purchaseFocusBarcode();
+}
+function purchaseRenderSearch(){
+  pe('purchaseSearchResults').innerHTML=purchaseSearchItems.length?purchaseSearchItems.map((item,index)=>'<button type="button" class="btn '+(index===purchaseSearchIndex?'btn-primary':'btn-ghost')+'" data-result="'+index+'" aria-pressed="'+(index===purchaseSearchIndex)+'">'+purchaseEsc(item.code)+' — '+purchaseEsc(item.name)+'</button>').join(''):'<p>مفيش نتايج</p>';
+  pe('purchaseSearchResults').querySelectorAll('[data-result]').forEach(button=>button.addEventListener('click',()=>purchaseChooseSearch(Number(button.dataset.result))));
+}
+async function purchaseRunSearch(){
+  const request=++purchaseSearchRequest,term=pe('purchaseSearchTerm').value.trim();purchaseSearchItems=[];purchaseSearchIndex=0;
+  if(!term){pe('purchaseSearchResults').textContent='اكتب اسم الصنف';return}
+  pe('purchaseSearchResults').textContent='جاري البحث…';
+  try{
+    const data=await purchaseApi('purchase_docs_api.php?action=code&q='+encodeURIComponent(term));
+    if(request!==purchaseSearchRequest)return;
+    purchaseSearchItems=data.items||[];purchaseRenderSearch();
+  }catch(error){if(request===purchaseSearchRequest)pe('purchaseSearchResults').textContent=error.message}
+}
+async function purchaseChooseSearch(index){
+  const item=purchaseSearchItems[index];if(!item)return;
+  const line=purchaseSearchLine?.isConnected&&!Number(purchaseSearchLine.querySelector('.line-item').value)?purchaseSearchLine:[...pe('purchaseLines').children].find(row=>!Number(row.querySelector('.line-item').value));
+  purchaseCloseSearch();if(line)await purchaseLookup(line,item.code);
+}
+pe('purchaseSearchClose').addEventListener('click',purchaseCloseSearch);
+pe('purchaseSearchTerm').addEventListener('input',()=>{++purchaseSearchRequest;purchaseSearchItems=[];clearTimeout(purchaseSearchTimer);purchaseSearchTimer=setTimeout(purchaseRunSearch,250)});
+pe('purchaseSearch').addEventListener('keydown',event=>{
+  if(event.key==='Escape'){event.preventDefault();event.stopPropagation();purchaseCloseSearch()}
+  else if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();purchaseSearchIndex=Math.max(0,Math.min(purchaseSearchItems.length-1,purchaseSearchIndex+(event.key==='ArrowDown'?1:-1)));purchaseRenderSearch();pe('purchaseSearchResults').children[purchaseSearchIndex]?.scrollIntoView({block:'nearest'})}
+  else if(isEnterKey(event)&&event.target===pe('purchaseSearchTerm')){event.preventDefault();purchaseChooseSearch(purchaseSearchIndex)}
+  else if(event.key==='Tab'){const controls=[...pe('purchaseSearch').querySelectorAll('input,button')],first=controls[0],last=controls.at(-1);if(event.shiftKey&&event.target===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&event.target===last){event.preventDefault();first.focus()}}
+});
+document.addEventListener('keydown',event=>{
+  if(purchaseReadonly||!pe('purchaseSearch').hidden||document.querySelector('.fg-dlg-bg:not([hidden]):not(.purchase-search-bg)'))return;
+  const line=document.activeElement?.closest('.purchase-line');
+  if(event.key==='Insert'||event.ctrlKey&&event.key.toLowerCase()==='n'){event.preventDefault();purchaseEnsureBlank();purchaseFocusBarcode()}
+  else if(event.ctrlKey&&event.key==='Delete'&&line){event.preventDefault();purchaseRemoveLine(line)}
+  else if(event.key==='F2'){event.preventDefault();purchaseOpenSearch(line)}
+});
 function purchaseGridKey(event,input){
   const enter=isEnterKey(event);
   if(!enter&&!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key))return;
   const line=input.closest('.purchase-line');
+  if(enter&&input.matches('.line-qty')&&purchaseMergeLine(line)){event.preventDefault();return}
   const rows=[...pe('purchaseLines').querySelectorAll('.purchase-line')];
   const columns=['.line-code','.line-qty','.line-cost','.line-discount'];
   const column=columns.findIndex(selector=>input.matches(selector));
@@ -259,12 +373,12 @@ function purchaseGridKey(event,input){
   else if(event.key==='ArrowDown'&&row<rows.length-1)target=rows[row+1].querySelector(columns[column]);
   else if(event.key==='ArrowLeft'&&column<columns.length-1)target=line.querySelector(columns[column+1]);
   else if(event.key==='ArrowRight'&&column>0)target=line.querySelector(columns[column-1]);
-  else if(enter){target=column<columns.length-1?line.querySelector(columns[column+1]):rows[row+1]?.querySelector('.line-code')}
+  else if(enter){target=column<columns.length-1?line.querySelector(columns[column+1]):rows[row+1]?.querySelector('.line-code,.line-qty')}
   if(target){event.preventDefault();target.focus();target.select()}
 }
 
 function purchaseRows(){return purchaseBoundLines().map(line=>({
-  code:line.querySelector('.line-code').value.trim(),
+  code:purchaseCode(line),
   item_id:Number(line.querySelector('.line-item').value),
   unit_factor:Number(line.querySelector('.line-factor').value),
   qty_units:Number(line.querySelector('.line-qty').value),
@@ -313,7 +427,7 @@ function purchaseCalc(){
   pe('purchaseGross').textContent=(gross/100).toFixed(2);
   purchaseRenumber();
 }
-function purchasePayload(action){return {action,doc_id:Number(pe('purchaseDocId').value)||null,doc_type:pe('purchaseType').value,supplier_id:purchaseResolveSupplier(),branch_id:Number(pe('purchaseBranch').value),doc_date:pe('purchaseDate').value,ref_text:pe('purchaseRef').value.trim(),orig_doc_id:Number(pe('purchaseOrigin').value)||null,notes:pe('purchaseNotes').value.trim(),inv_discount:purchaseDiscount(),lines:purchaseRows()}}
+function purchasePayload(action){return {action,doc_id:Number(pe('purchaseDocId').value)||null,doc_type:pe('purchaseType').value,supplier_id:purchaseResolveSupplier(),branch_id:Number(pe('purchaseBranch').value),doc_date:pe('purchaseDate').value,ref_text:pe('purchaseRef').value.trim(),orig_doc_id:Number(pe('purchaseOrigin').value)||null,notes:pe('purchaseNotes').value.trim(),inv_discount:purchaseDiscount(),lines:purchaseRows(),removed_lines:purchaseRemoved.slice()}}
 function purchaseQueueSave(immediate=false){
   if(purchaseLoading||purchaseReadonly)return;
   purchaseSaveDirty=true;clearTimeout(purchaseSaveTimer);
@@ -326,12 +440,13 @@ async function purchaseSaveNow(force=false){
   if(purchaseSaving){purchaseSaveDirty=true;await purchaseSaving;if(force||purchaseSaveDirty)return purchaseSaveNow(force);return}
   if(!purchaseSaveDirty&&!force)return;
   const payload=purchasePayload('save');
-  if(!payload.supplier_id||!payload.branch_id||!payload.lines.length){if(force)throw new Error('كمّل المورد والفرع والأصناف الأول');return}
+  if(!payload.supplier_id||!payload.branch_id||(!payload.lines.length&&(!payload.doc_id||!payload.removed_lines.length))){if(force)throw new Error('كمّل المورد والفرع والأصناف الأول');return}
   purchaseSaveDirty=false;purchaseSaveState('بيتحفظ…');
   purchaseSaving=purchaseApi('purchase_docs_api.php',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':PURCHASE_CSRF},body:JSON.stringify(payload)});
   let failed=false;
   try{
     const data=await purchaseSaving;
+    purchaseRemoved.splice(0,payload.removed_lines.length);
     pe('purchaseDocId').value=String(data.doc_id);
     pe('purchaseDocNo').textContent='مسودة-'+data.doc_id;
     pe('purchaseType').disabled=true;
@@ -433,7 +548,7 @@ async function purchaseInit(){
 });
 pe('purchaseSupplier').addEventListener('input',()=>{purchaseResolveSupplier();purchaseQueueSave()});
 pe('purchaseSupplier').addEventListener('change',()=>{purchaseResolveSupplier();purchaseLoadOrigins();purchaseQueueSave(true)});
-pe('purchaseBranch').addEventListener('change',()=>{purchaseLoadOrigins();purchaseQueueSave(true)});
+pe('purchaseBranch').addEventListener('change',()=>{purchaseLoadOrigins();purchaseQueueBalances();purchaseQueueSave(true)});
 pe('purchaseType').addEventListener('change',()=>{purchaseLoadOrigins();purchaseQueueSave(true)});
 pe('purchaseOrigin').addEventListener('change',purchaseFillOrigin);
 pe('purchasePost')?.addEventListener('click',purchasePostDoc);

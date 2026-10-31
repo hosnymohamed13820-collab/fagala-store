@@ -2023,6 +2023,7 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
     background:var(--line-soft); color:var(--ink-800);
     font-size:var(--fs-md); line-height:1.7;
 }
+.alert[hidden], .falert[hidden] { display: none !important; }
 .falert > .ti, .alert > .ti { flex:0 0 auto; margin-top:3px; font-size:var(--fs-lg); }
 .falert-info, .alert-info { border-color:var(--accent-text); background:var(--accent-soft); color:var(--accent-text); }
 .falert-warn, .alert-warning { border-color:var(--warn); background:var(--warn-soft); color:var(--warn); }

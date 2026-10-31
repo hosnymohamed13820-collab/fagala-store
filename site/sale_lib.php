@@ -140,7 +140,7 @@ function sale_context(PDO $pdo, string $uuid, array $user): array
     foreach ($settingRows as $settingRow) {
         $settings[$settingRow['setting_key']] = $settingRow['setting_value'];
     }
-    return [
+    return sale_hide_expected_fields([
         'device' => [
             'id' => (int) $device['id'],
             'uuid' => $device['device_uuid'],
@@ -162,7 +162,7 @@ function sale_context(PDO $pdo, string $uuid, array $user): array
             'pos_return_days' => max(0, (int) $settings['pos_return_days']), 'stock_allow_negative' => $settings['stock_allow_negative'] === '1',
         ],
         'ready' => sale_branch_ready((int) $device['branch_id']),
-    ];
+    ], $user);
 }
 
 /** إدراج أحداث البيع في استعلام مجمّع واحد. */
@@ -252,6 +252,15 @@ function sale_shift_expected_visible(array $user = []): bool
     return false;
 }
 
+// session_invoices: الكاشير محتاج قيم الفواتير للطباعة والمرتجع (قرار كلود ٣١/١٠).
+function sale_hide_expected_fields(array $payload, array $user): array
+{
+    if (!sale_shift_expected_visible($user)) {
+        unset($payload['expected'], $payload['session']['opening_cash'], $payload['opening_cash']);
+    }
+    return $payload;
+}
+
 /** ملخص أرقام وردية جهاز من المستندات المكتملة فقط — من غير فلترة صلاحية. */
 function sale_session_summary_full(PDO $pdo, string $uuid, array $user, bool $lock = false): array
 {
@@ -330,11 +339,7 @@ function sale_session_summary_full(PDO $pdo, string $uuid, array $user, bool $lo
  */
 function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = false): array
 {
-    $summary = sale_session_summary_full($pdo, $uuid, $user, $lock);
-    if (!sale_shift_expected_visible($user)) {
-        unset($summary['expected'], $summary['session']['opening_cash']);
-    }
-    return $summary;
+    return sale_hide_expected_fields(sale_session_summary_full($pdo, $uuid, $user, $lock), $user);
 }
 
 /** تقفيل وردية الجهاز وإرسال صف shifts لدورة المراجعة الموجودة. */
