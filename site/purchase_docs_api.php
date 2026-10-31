@@ -33,6 +33,8 @@ function purchase_api_doc(PDO $pdo, int $docId, bool $lock = false): array
     $doc = $st->fetch(PDO::FETCH_ASSOC);
     if (!$doc) api_fail('مستند الشراء مش موجود', 404, 'not_found');
     purchase_api_branch((int) $doc['branch_id']);
+    $doc['inv_discount'] = ['type'=>$doc['inv_discount_type'], 'value'=>(float) $doc['inv_discount_value']];
+    $doc['gross_amount'] = (float) ($doc['gross_amount'] ?? $doc['total_amount']);
     return $doc;
 }
 
@@ -81,7 +83,7 @@ if ($method === 'GET') {
     }
     if ($action === 'doc') {
         $doc = purchase_api_doc($pdo, (int) ($_GET['id'] ?? 0));
-        $st = $pdo->prepare('SELECT l.id,l.doc_id,l.line_no,l.item_id,l.code,l.unit_factor,l.qty_units,l.qty_pieces,l.unit_price,l.discount_pct,l.line_total,l.notes,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
+        $st = $pdo->prepare('SELECT l.id,l.doc_id,l.line_no,l.item_id,l.code,l.unit_factor,l.qty_units,l.qty_pieces,l.unit_price,l.discount_pct,l.line_total,l.inv_discount_alloc,l.line_total/NULLIF(l.qty_units,0) net_unit_cost,l.notes,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
         $st->execute([(int) $doc['id']]);
         $lines = $st->fetchAll(PDO::FETCH_ASSOC);
         $ev = $pdo->prepare('SELECT e.*,u.full_name user_name FROM doc_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.doc_kind=\'stock\' AND e.doc_id=? ORDER BY e.id');
@@ -107,7 +109,8 @@ if ($method === 'GET') {
         $origin = purchase_api_doc($pdo, (int) ($_GET['orig_doc_id'] ?? 0));
         if ($origin['doc_type'] !== 'purchase' || $origin['status'] !== 'posted') api_fail('فاتورة الأصل مش مترحلة',400,'validation');
         $st = $pdo->prepare(
-            'SELECT o.item_id,MAX(o.code) code,MAX(o.unit_factor) unit_factor,MAX(o.unit_price) unit_price,
+            'SELECT o.item_id,MAX(o.code) code,
+                    SUM(o.qty_pieces * o.unit_cost)/SUM(o.qty_pieces) unit_cost,
                     MAX(COALESCE(n.name,o.code)) item_name,SUM(o.qty_pieces)-COALESCE(r.returned,0) available_pieces
              FROM stock_doc_lines o
              LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=o.item_id
@@ -115,10 +118,20 @@ if ($method === 'GET') {
                  SELECT l.item_id,SUM(l.qty_pieces) returned FROM stock_docs d JOIN stock_doc_lines l ON l.doc_id=d.id
                  WHERE d.doc_type=\'purchase_return\' AND d.orig_doc_id=? AND d.status=\'posted\' GROUP BY l.item_id
              ) r ON r.item_id=o.item_id
-             WHERE o.doc_id=? GROUP BY o.item_id,r.returned HAVING available_pieces>0 ORDER BY item_name'
+             WHERE o.doc_id=? AND o.qty_pieces>0 GROUP BY o.item_id,r.returned HAVING available_pieces>0 ORDER BY item_name'
         );
         $st->execute([(int)$origin['id'],(int)$origin['id']]);
-        api_ok(['lines'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
+        $available = $st->fetchAll(PDO::FETCH_ASSOC);
+        $factors = item_code_factors($pdo, array_column($available, 'code'));
+        foreach ($available as &$line) {
+            // معامل نفس الكود المختار، علشان كود القطعة ماياخدش معامل الباكو بالغلط.
+            $line['unit_factor'] = (float) ($factors[$line['code']]['unit_factor'] ?? 1);
+            $line['unit_price'] = round((float) $line['unit_cost'] * $line['unit_factor'], 4);
+            $line['net_unit_cost'] = $line['unit_price'];
+            $line['inv_discount_alloc'] = 0;
+        }
+        unset($line);
+        api_ok(['lines'=>$available]);
     }
 
     $where = ["d.doc_type IN ('purchase','purchase_return')"];
@@ -134,7 +147,11 @@ if ($method === 'GET') {
     $st->execute($params);
     $docs = $st->fetchAll(PDO::FETCH_ASSOC);
     $matches = purchase_match_hq($pdo, array_column($docs,'id'));
-    foreach ($docs as &$doc) $doc['hq_state'] = $matches[(int)$doc['id']] ?? ['state'=>'missing','hq_match'=>null,'doc_no'=>null];
+    foreach ($docs as &$doc) {
+        $doc['hq_state'] = $matches[(int)$doc['id']] ?? ['state'=>'missing','hq_match'=>null,'doc_no'=>null];
+        $doc['inv_discount'] = ['type'=>$doc['inv_discount_type'], 'value'=>(float) $doc['inv_discount_value']];
+        $doc['gross_amount'] = (float) ($doc['gross_amount'] ?? $doc['total_amount']);
+    }
     unset($doc);
     api_ok(['docs'=>$docs]);
 }
@@ -151,7 +168,11 @@ try {
         $docId = !empty($input['doc_id']) ? (int) $input['doc_id'] : null;
         if ($docId !== null) purchase_api_doc($pdo, $docId);
         $id = purchase_save_draft($pdo,$type,$input,is_array($input['lines'] ?? null)?$input['lines']:[],$uid,$docId);
-        api_ok(['doc_id'=>$id]);
+        $saved = purchase_api_doc($pdo, $id);
+        $st = $pdo->prepare('SELECT line_no,inv_discount_alloc,line_total/NULLIF(qty_units,0) net_unit_cost FROM stock_doc_lines WHERE doc_id=? AND qty_pieces>0 ORDER BY line_no');
+        $st->execute([$id]);
+        api_ok(['doc_id'=>$id,'inv_discount'=>$saved['inv_discount'],'gross_amount'=>$saved['gross_amount'],
+            'total_amount'=>(float) $saved['total_amount'],'lines'=>$st->fetchAll(PDO::FETCH_ASSOC)]);
     }
     if ($action === 'post') {
         api_require('purchase_docs:post');
@@ -168,5 +189,5 @@ try {
     }
     api_fail('طلب غير معروف',400,'bad_request');
 } catch (RuntimeException $e) {
-    api_fail($e->getMessage(),400,'validation');
+    api_fail($e->getMessage(),422,'validation');
 }

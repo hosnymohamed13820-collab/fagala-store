@@ -37,4 +37,5 @@ return [
     '20261028_028_custody_return_ids',
     '20261029_029_abc_custody_opening',
     '20261030_030_journal_entry_marks',
+    '20261030_031_purchase_invoice_discount',
 ];

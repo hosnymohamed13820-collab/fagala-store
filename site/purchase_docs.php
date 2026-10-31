@@ -112,14 +112,17 @@ require_once __DIR__ . '/includes/header.php';
     </div>
     <div class="ftable-wrap purchase-table-wrap">
       <table class="ftable purchase-table">
-        <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th></tr></thead>
+        <thead><tr><th>#</th><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">خصم %</th><th class="num">صافي سعر التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th></tr></thead>
         <tbody id="purchaseLines"></tbody>
       </table>
     </div>
     <div class="purchase-summary">
       <span>عدد الأصناف <strong id="purchaseItemsCount">0</strong></span>
       <span>إجمالي القطع <strong id="purchasePieces">0</strong></span>
-      <span>الإجمالي <strong id="purchaseGrand">0.00</strong></span>
+      <label class="ffield">خصم الفاتورة % <input id="purchaseDiscountPct" class="finput finput-sm num" type="number" min="0" max="100" step="0.0001" data-edit></label>
+      <label class="ffield">خصم الفاتورة قيمة <input id="purchaseDiscountAmount" class="finput finput-sm num" type="number" min="0" step="0.0001" data-edit></label>
+      <span>الإجمالي قبل الخصم <strong id="purchaseGross">0.00</strong></span>
+      <span>الصافي <strong id="purchaseGrand">0.00</strong></span>
     </div>
   </div>
 
@@ -140,6 +143,8 @@ let purchaseLineSeq=0;
 let purchaseSaveTimer=null;
 let purchaseSaving=null;
 let purchaseSaveDirty=false;
+let purchaseDiscountType=null;
+let purchaseOriginCosts={};
 const pe=id=>document.getElementById(id);
 
 function purchaseEsc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
@@ -169,11 +174,13 @@ function purchaseLineTemplate(row={}){
   const discount=Number(row.discount_pct)||0;
   return '<tr class="purchase-line" data-line="'+id+'" data-lookup-code="'+purchaseEsc(itemId?row.code||'':'')+'">'
     +'<td class="line-index"></td>'
-    +'<td class="line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="finput finput-sm line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"><input class="line-discount" type="hidden" value="'+discount+'"></td>'
+    +'<td class="line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode'+id+'" class="finput finput-sm line-code" value="'+purchaseEsc(row.code||'')+'" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="'+itemId+'"><input class="line-factor" type="hidden" value="'+factor+'"></td>'
     +'<td class="line-name-cell"><span class="line-name" title="'+purchaseEsc(row.item_name||'')+'">'+purchaseEsc(row.item_name||'')+'</span></td>'
     +'<td><span class="line-unit">'+(itemId?purchaseEsc(purchaseUnitText(factor)):'—')+'</span></td>'
     +'<td class="num line-number"><input class="finput finput-sm num line-qty" type="number" min="0.001" step="0.001" value="'+purchaseEsc(qty)+'"></td>'
     +'<td class="num line-number"><input class="finput finput-sm num line-cost" type="number" min="0" step="0.0001" value="'+purchaseEsc(price)+'"></td>'
+    +'<td class="num line-number"><input class="finput finput-sm num line-discount" type="number" min="0" max="100" step="0.001" value="'+purchaseEsc(discount)+'"></td>'
+    +'<td class="num line-number"><span class="line-net">0.00</span></td>'
     +'<td class="num line-number"><span class="line-total">0.00</span></td>'
     +'<td class="line-remove-cell purchase-no-print"><button class="btn btn-sm btn-danger line-remove" type="button" aria-label="حذف السطر"><i class="ti ti-trash"></i></button></td></tr>';
 }
@@ -181,6 +188,7 @@ function purchaseAddLine(row={},focus=false){
   pe('purchaseLines').insertAdjacentHTML('beforeend',purchaseLineTemplate(row));
   const line=pe('purchaseLines').lastElementChild;
   purchaseBindLine(line);
+  if(row.line_total!==undefined){line.dataset.savedTotal=String(row.line_total);line.dataset.savedNet=String(row.net_unit_cost)}
   purchaseCalc();
   if(focus)line.querySelector('.line-code').focus();
   return line;
@@ -190,7 +198,7 @@ function purchaseBindLine(line){
   code.addEventListener('keydown',event=>{if(isEnterKey(event)){event.preventDefault();purchaseLookup(line)}});
   code.addEventListener('blur',()=>purchaseLookup(line));
   line.querySelector('.line-scan').addEventListener('click',()=>openBarcodeScanner(code.id));
-  line.querySelectorAll('.line-qty,.line-cost').forEach(input=>{
+  line.querySelectorAll('.line-qty,.line-cost,.line-discount').forEach(input=>{
     input.addEventListener('input',()=>{purchaseCalc();purchaseQueueSave()});
     input.addEventListener('blur',()=>purchaseQueueSave(true));
     input.addEventListener('keydown',event=>purchaseGridKey(event,input));
@@ -243,7 +251,7 @@ function purchaseGridKey(event,input){
   if(!enter&&!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key))return;
   const line=input.closest('.purchase-line');
   const rows=[...pe('purchaseLines').querySelectorAll('.purchase-line')];
-  const columns=['.line-code','.line-qty','.line-cost'];
+  const columns=['.line-code','.line-qty','.line-cost','.line-discount'];
   const column=columns.findIndex(selector=>input.matches(selector));
   const row=rows.indexOf(line);
   let target=null;
@@ -263,22 +271,49 @@ function purchaseRows(){return purchaseBoundLines().map(line=>({
   unit_price:Number(line.querySelector('.line-cost').value),
   discount_pct:Number(line.querySelector('.line-discount').value)||0
 }))}
+function purchaseHasOrigin(){return pe('purchaseType').value==='purchase_return'&&Number(pe('purchaseOrigin').value)>0}
+function purchaseDiscount(){return purchaseHasOrigin()||!purchaseDiscountType?null:{type:purchaseDiscountType,value:Number(pe(purchaseDiscountType==='percent'?'purchaseDiscountPct':'purchaseDiscountAmount').value)||0}}
+function purchaseRound(value,digits){const scale=10**digits,scaled=value*scale;return Math.round(scaled+Number.EPSILON*Math.max(1,Math.abs(scaled)))/scale}
+function purchaseNetText(value){return Number(value).toFixed(Number.isInteger(Number(value))?2:4)}
 function purchaseCalc(){
-  let grand=0,pieces=0;
-  purchaseBoundLines().forEach(line=>{
-    const qty=Number(line.querySelector('.line-qty').value)||0;
-    const cost=Number(line.querySelector('.line-cost').value)||0;
-    const discount=Number(line.querySelector('.line-discount').value)||0;
-    const total=Math.round(qty*cost*(1-discount/100)*100)/100;
-    pieces+=qty*(Number(line.querySelector('.line-factor').value)||1);grand+=total;
-    line.querySelector('.line-total').textContent=total.toFixed(2);
+  let grand=0,pieces=0,gross=0,largest=0;
+  const bound=purchaseBoundLines(),locked=purchaseHasOrigin();
+  const rows=bound.map((line,index)=>{
+    const qty=purchaseRound(Number(line.querySelector('.line-qty').value)||0,3);
+    const price=line.querySelector('.line-cost'),discountInput=line.querySelector('.line-discount');
+    if(locked&&!purchaseReadonly){
+      const cost=purchaseOriginCosts[Number(line.querySelector('.line-item').value)];
+      if(cost!==undefined)price.value=String(purchaseRound(cost*Number(line.querySelector('.line-factor').value),4));
+      discountInput.value='0';
+    }
+    price.readOnly=locked;discountInput.readOnly=locked;
+    const cost=purchaseRound(Number(price.value)||0,4),discount=purchaseRound(Number(discountInput.value)||0,3);
+    const after=Math.round(purchaseRound(qty*cost*(1-discount/100),2)*100);
+    if(index===0||after>bound[largest]._after)largest=index;
+    line._after=after;gross+=after;
+    pieces+=purchaseRound(qty*Number(line.querySelector('.line-factor').value||1),3);
+    return {line,qty,after,alloc:0};
   });
+  pe('purchaseDiscountPct').disabled=purchaseReadonly||locked;pe('purchaseDiscountAmount').disabled=purchaseReadonly||locked;
+  const discount=purchaseDiscount(),value=purchaseRound(discount?.value||0,4);
+  const target=purchaseRound(discount?.type==='percent'?gross*value/100:value*100,0);
+  let allocated=0;
+  rows.forEach(row=>{row.alloc=purchaseRound(discount?.type==='percent'?row.after*value/100:(gross>0?value*100*row.after/gross:0),0);allocated+=row.alloc});
+  if(rows.length)rows[largest].alloc+=target-allocated;
+  rows.forEach(row=>{
+    let total=(row.after-row.alloc)/100,net=row.qty>0?total/row.qty:0;
+    if(purchaseReadonly&&row.line.dataset.savedTotal!==undefined){total=Number(row.line.dataset.savedTotal);net=Number(row.line.dataset.savedNet)}
+    grand+=total;row.line.querySelector('.line-total').textContent=total.toFixed(2);row.line.querySelector('.line-net').textContent=purchaseNetText(net);
+  });
+  if(purchaseDiscountType!=='percent')pe('purchaseDiscountPct').value=gross?String(purchaseRound(value*10000/gross,4)):'0';
+  if(purchaseDiscountType!=='amount')pe('purchaseDiscountAmount').value=(target/100).toFixed(2);
   pe('purchaseItemsCount').textContent=String(purchaseBoundLines().length);
   pe('purchasePieces').textContent=purchaseNumber(pieces);
   pe('purchaseGrand').textContent=grand.toFixed(2);
+  pe('purchaseGross').textContent=(gross/100).toFixed(2);
   purchaseRenumber();
 }
-function purchasePayload(action){return {action,doc_id:Number(pe('purchaseDocId').value)||null,doc_type:pe('purchaseType').value,supplier_id:purchaseResolveSupplier(),branch_id:Number(pe('purchaseBranch').value),doc_date:pe('purchaseDate').value,ref_text:pe('purchaseRef').value.trim(),orig_doc_id:Number(pe('purchaseOrigin').value)||null,notes:pe('purchaseNotes').value.trim(),lines:purchaseRows()}}
+function purchasePayload(action){return {action,doc_id:Number(pe('purchaseDocId').value)||null,doc_type:pe('purchaseType').value,supplier_id:purchaseResolveSupplier(),branch_id:Number(pe('purchaseBranch').value),doc_date:pe('purchaseDate').value,ref_text:pe('purchaseRef').value.trim(),orig_doc_id:Number(pe('purchaseOrigin').value)||null,notes:pe('purchaseNotes').value.trim(),inv_discount:purchaseDiscount(),lines:purchaseRows()}}
 function purchaseQueueSave(immediate=false){
   if(purchaseLoading||purchaseReadonly)return;
   purchaseSaveDirty=true;clearTimeout(purchaseSaveTimer);
@@ -322,12 +357,15 @@ async function purchaseLoadOrigins(selected=0){
       if(![...pe('purchaseOrigin').options].some(option=>Number(option.value)===selected))pe('purchaseOrigin').insertAdjacentHTML('beforeend','<option value="'+selected+'">فاتورة الأصل #'+selected+'</option>');
       pe('purchaseOrigin').value=String(selected);
     }
+    purchaseCalc();
   }catch(error){purchaseMessage(error.message,true)}
 }
 async function purchaseFillOrigin(){
-  const id=Number(pe('purchaseOrigin').value);if(!id)return purchaseQueueSave(true);
+  const id=Number(pe('purchaseOrigin').value);if(!id){purchaseOriginCosts={};purchaseCalc();return purchaseQueueSave(true)}
   try{
     const data=await purchaseApi('purchase_docs_api.php?action=return_available&orig_doc_id='+id);
+    purchaseOriginCosts=Object.fromEntries(data.lines.map(line=>[Number(line.item_id),Number(line.unit_cost)]));
+    purchaseDiscountType=null;pe('purchaseDiscountPct').value='';pe('purchaseDiscountAmount').value='';
     purchaseLoading=true;pe('purchaseLines').textContent='';
     data.lines.forEach(line=>purchaseAddLine({code:line.code,item_id:line.item_id,item_name:line.item_name,unit_factor:line.unit_factor,qty_units:Number(line.available_pieces)/Number(line.unit_factor||1),unit_price:line.unit_price,discount_pct:0}));
     purchaseLoading=false;purchaseEnsureBlank();purchaseCalc();purchaseQueueSave(true);purchaseFocusBarcode();
@@ -356,9 +394,15 @@ function purchaseRenderEvents(events){
 async function purchaseOpen(id){
   const data=await purchaseApi('purchase_docs_api.php?action=doc&id='+id);
   const doc=data.doc;
+  purchaseDiscountType=doc.inv_discount?.type||null;
+  if(purchaseDiscountType)pe(purchaseDiscountType==='percent'?'purchaseDiscountPct':'purchaseDiscountAmount').value=String(doc.inv_discount.value);
   pe('purchaseDocId').value=String(doc.id);pe('purchaseType').value=doc.doc_type;purchaseSetSupplier(doc.supplier_id);pe('purchaseBranch').value=String(doc.branch_id);pe('purchaseDate').value=doc.doc_date;pe('purchaseRef').value=doc.ref_text||'';pe('purchaseNotes').value=doc.notes||'';
   pe('purchaseLines').textContent='';data.lines.forEach(line=>purchaseAddLine(line));
   await purchaseLoadOrigins(Number(doc.orig_doc_id)||0);
+  if(doc.orig_doc_id&&doc.status==='draft'){
+    const origin=await purchaseApi('purchase_docs_api.php?action=return_available&orig_doc_id='+Number(doc.orig_doc_id));
+    purchaseOriginCosts=Object.fromEntries(origin.lines.map(line=>[Number(line.item_id),Number(line.unit_cost)]));
+  }
   const label=doc.doc_type==='purchase'?'فاتورة شراء':'مرتجع مورد';
   pe('purchaseTitle').textContent=label;pe('purchaseDocNo').textContent=doc.doc_no?doc.doc_year+'/'+doc.doc_no:'مسودة-'+doc.id;purchaseStatus(doc.status);purchaseRenderEvents(data.events||[]);
   const readonly=doc.status!=='draft'||!PURCHASE_CAN_CREATE;purchaseSetReadonly(readonly,doc.status);pe('purchaseType').disabled=true;if(!readonly)purchaseEnsureBlank();purchaseCalc();
@@ -383,6 +427,10 @@ async function purchaseInit(){
 }
 
 ['purchaseRef','purchaseNotes','purchaseDate'].forEach(id=>{pe(id).addEventListener('input',()=>purchaseQueueSave());pe(id).addEventListener('blur',()=>purchaseQueueSave(true))});
+[['purchaseDiscountPct','percent'],['purchaseDiscountAmount','amount']].forEach(([id,type])=>{
+  pe(id).addEventListener('input',()=>{purchaseDiscountType=type;purchaseCalc();purchaseQueueSave()});
+  pe(id).addEventListener('blur',()=>purchaseQueueSave(true));
+});
 pe('purchaseSupplier').addEventListener('input',()=>{purchaseResolveSupplier();purchaseQueueSave()});
 pe('purchaseSupplier').addEventListener('change',()=>{purchaseResolveSupplier();purchaseLoadOrigins();purchaseQueueSave(true)});
 pe('purchaseBranch').addEventListener('change',()=>{purchaseLoadOrigins();purchaseQueueSave(true)});

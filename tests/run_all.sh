@@ -216,7 +216,8 @@ fi
 
 echo
 echo "== اختبارات منطق الفلوس =="
-if [ -f "/d/laragon/www/config.php" ]; then
+# لو نسخة Laragon فيها شغل من فرع تاني، انسخ ملفات شغلك بس وشغّل بـSKIP_LARAGON_SYNC=1.
+if [ "${SKIP_LARAGON_SYNC:-0}" != "1" ] && [ -f "/d/laragon/www/config.php" ]; then
     bash tests/local/sync_to_laragon.sh > /dev/null 2>&1 || {
         echo "  ❌ فشلت مزامنة الكود إلى Laragon قبل الاختبارات"
         FAIL=1
@@ -225,6 +226,7 @@ fi
 
 if [ -n "$PHP_BIN" ]; then
     LOG="${TMPDIR:-/tmp}"
+    "$PHP_BIN" tests/purchase/test_purchase_net_cost.php || FAIL=1
     "$PHP_BIN" tests/finance/test_salary.php > "$LOG/sal.log" 2>&1         && tail -1 "$LOG/sal.log" || { cat "$LOG/sal.log"; FAIL=1; }
     "$PHP_BIN" tests/finance/test_distribution.php > "$LOG/dist.log" 2>&1 && tail -1 "$LOG/dist.log" || { cat "$LOG/dist.log"; FAIL=1; }
     "$PHP_BIN" tests/finance/test_custody.php > "$LOG/cust.log" 2>&1      && tail -1 "$LOG/cust.log" || { cat "$LOG/cust.log"; FAIL=1; }

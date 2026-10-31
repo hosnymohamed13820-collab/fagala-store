@@ -27,7 +27,7 @@ function purchase_supplier(PDO $pdo, int $supplierId, bool $forUpdate = false): 
 }
 
 /** @return array<int,array<string,mixed>> */
-function purchase_normalize_lines(PDO $pdo, array $lines): array
+function purchase_normalize_lines(PDO $pdo, array $lines, ?int $origDocId = null): array
 {
     if (!$lines) {
         throw new RuntimeException('لازم تضيف صنف واحد على الأقل.');
@@ -41,6 +41,18 @@ function purchase_normalize_lines(PDO $pdo, array $lines): array
         }
     }
     $codeRows = item_code_factors($pdo, array_values(array_unique($codes)));
+    $originCosts = null;
+    if ($origDocId !== null) {
+        $ids = array_values(array_unique(array_column($codeRows, 'item_id')));
+        $originCosts = [];
+        if ($ids) {
+            $marks = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT item_id,SUM(qty_pieces*unit_cost)/SUM(qty_pieces) unit_cost
+                FROM stock_doc_lines WHERE doc_id=? AND qty_pieces>0 AND item_id IN ($marks) GROUP BY item_id");
+            $st->execute(array_merge([$origDocId], $ids));
+            $originCosts = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+        }
+    }
     $out = [];
     $lineNo = 1;
     foreach ($lines as $line) {
@@ -54,6 +66,11 @@ function purchase_normalize_lines(PDO $pdo, array $lines): array
         $unitPrice = round((float) ($line['unit_price'] ?? 0), 4);
         $discount = round((float) ($line['discount_pct'] ?? 0), 3);
         $codeFactor = (float) $codeRow['unit_factor'];
+        if ($originCosts !== null) {
+            if (!array_key_exists($itemId, $originCosts)) throw new RuntimeException('الصنف مش موجود في فاتورة الأصل.');
+            $unitPrice = round((float) $originCosts[$itemId] * $codeFactor, 4);
+            $discount = 0;
+        }
         $pieces = item_line_pieces($qtyUnits, null, $codeFactor);
 
         if ($itemId <= 0 || $qtyUnits <= 0 || $pieces['pieces'] <= 0) {
@@ -63,8 +80,6 @@ function purchase_normalize_lines(PDO $pdo, array $lines): array
             throw new RuntimeException("السعر أو الخصم في السطر $lineNo مش صحيح.");
         }
 
-        $lineTotal = round($qtyUnits * $unitPrice * (1 - ($discount / 100)), 2);
-        $unitCost = round($lineTotal / $pieces['pieces'], 4);
         $out[] = [
             'line_no' => $lineNo++,
             'item_id' => $itemId,
@@ -72,14 +87,55 @@ function purchase_normalize_lines(PDO $pdo, array $lines): array
             'unit_factor' => round((float) $pieces['factor'], 4),
             'qty_units' => $qtyUnits,
             'qty_pieces' => round((float) $pieces['pieces'], 3),
-            'unit_cost' => $unitCost,
             'unit_price' => $unitPrice,
             'discount_pct' => $discount,
-            'line_total' => $lineTotal,
             'notes' => trim((string) ($line['notes'] ?? '')) ?: null,
         ];
     }
     return $out;
+}
+
+/** مثال محمد: ١٠ أقلام × ١٢ جنيه وخصم فاتورة ١٠٪ = ١٠٨ جنيه، وتكلفة القطعة ١٠٫٨. */
+function purchase_calculate_totals(array $lines, mixed $discount = null, bool $hasOrigin = false): array
+{
+    if ($hasOrigin && $discount !== null) throw new RuntimeException('المرتجع على أصل مالوش خصم فاتورة.');
+    if ($discount !== null && (!is_array($discount) || !in_array($discount['type'] ?? null, ['percent', 'amount'], true)
+        || !is_numeric($discount['value'] ?? null) || !is_finite((float) $discount['value']))) {
+        throw new RuntimeException('خصم الفاتورة مش صحيح.');
+    }
+    $type = $discount['type'] ?? null;
+    $value = round((float) ($discount['value'] ?? 0), 4);
+    if ($value < 0 || ($type === 'percent' && $value > 100)) throw new RuntimeException('خصم الفاتورة مش صحيح.');
+    $gross = 0;
+    $largest = null;
+    foreach ($lines as $i => &$line) {
+        $after = (int) round(round($line['qty_units'] * $line['unit_price'] * (1 - $line['discount_pct'] / 100), 2) * 100);
+        $line['after_cents'] = $after;
+        $gross += $after;
+        if ($largest === null || $after > $lines[$largest]['after_cents']) $largest = $i;
+    }
+    unset($line);
+    if ($type === 'amount' && $value > $gross / 100) throw new RuntimeException('خصم الفاتورة أكبر من الإجمالي.');
+    $target = (int) round($type === 'percent' ? $gross * $value / 100 : $value * 100);
+    $allocated = 0;
+    foreach ($lines as &$line) {
+        $alloc = (int) round($type === 'percent' ? $line['after_cents'] * $value / 100
+            : ($gross > 0 ? $value * 100 * $line['after_cents'] / $gross : 0));
+        $line['alloc_cents'] = $alloc;
+        $allocated += $alloc;
+    }
+    unset($line);
+    if ($largest !== null) $lines[$largest]['alloc_cents'] += $target - $allocated;
+    foreach ($lines as &$line) {
+        $line['inv_discount_alloc'] = $line['alloc_cents'] / 100.0;
+        $line['line_total'] = ($line['after_cents'] - $line['alloc_cents']) / 100.0;
+        $line['unit_cost'] = round($line['line_total'] / $line['qty_pieces'], 4);
+        $line['net_unit_cost'] = $line['line_total'] / $line['qty_units'];
+        unset($line['after_cents'], $line['alloc_cents']);
+    }
+    unset($line);
+    return ['lines'=>$lines, 'inv_discount'=>['type'=>$type, 'value'=>$value],
+        'gross_amount'=>$gross / 100.0, 'total_amount'=>($gross - $target) / 100.0];
 }
 
 function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, int $uid, ?int $docId = null): int
@@ -93,8 +149,6 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
         throw new RuntimeException('المخزن غير صالح.');
     }
     purchase_supplier($pdo, $supplierId);
-    $normalized = purchase_normalize_lines($pdo, $lines);
-    $total = round(array_sum(array_column($normalized, 'line_total')), 2);
     $origDocId = !empty($head['orig_doc_id']) ? (int) $head['orig_doc_id'] : null;
     if ($type === 'purchase' && $origDocId !== null) {
         throw new RuntimeException('فاتورة الشراء مالهاش مستند أصل.');
@@ -103,14 +157,29 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
     $ownTx = !$pdo->inTransaction();
     if ($ownTx) $pdo->beginTransaction();
     try {
+        if ($origDocId !== null) {
+            $origin = $pdo->prepare('SELECT doc_type,status,branch_id,supplier_id FROM stock_docs WHERE id=? FOR UPDATE');
+            $origin->execute([$origDocId]);
+            $source = $origin->fetch(PDO::FETCH_ASSOC);
+            if (!$source || $source['doc_type'] !== 'purchase' || $source['status'] !== 'posted'
+                || (int) $source['branch_id'] !== $branchId || (int) $source['supplier_id'] !== $supplierId) {
+                throw new RuntimeException('فاتورة الأصل لازم تكون مترحلة ولنفس المخزن والمورد.');
+            }
+        }
+        $calc = purchase_calculate_totals(purchase_normalize_lines($pdo, $lines, $origDocId), $head['inv_discount'] ?? null, $origDocId !== null);
+        $normalized = $calc['lines'];
+        $total = $calc['total_amount'];
+        $invType = $calc['inv_discount']['type'];
+        $invValue = $calc['inv_discount']['value'];
+        $gross = $calc['gross_amount'];
         if ($docId === null) {
             $st = $pdo->prepare(
                 'INSERT INTO stock_docs
-                 (doc_type, branch_id, supplier_id, orig_doc_id, total_amount, status, doc_date, ref_text, notes, created_by, created_at)
-                 VALUES (?, ?, ?, ?, ?, \'draft\', ?, ?, ?, ?, NOW())'
+                 (doc_type, branch_id, supplier_id, orig_doc_id, total_amount, inv_discount_type, inv_discount_value, gross_amount, status, doc_date, ref_text, notes, created_by, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'draft\', ?, ?, ?, ?, NOW())'
             );
             $st->execute([
-                $type, $branchId, $supplierId, $origDocId, $total,
+                $type, $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
                 (string) ($head['doc_date'] ?? date('Y-m-d')),
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
@@ -126,9 +195,9 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
                 throw new RuntimeException('المستند مش مسودة قابلة للتعديل.');
             }
             $pdo->prepare(
-                'UPDATE stock_docs SET branch_id=?, supplier_id=?, orig_doc_id=?, total_amount=?, doc_date=?, ref_text=?, notes=?, hq_match=NULL WHERE id=?'
+                'UPDATE stock_docs SET branch_id=?, supplier_id=?, orig_doc_id=?, total_amount=?, inv_discount_type=?, inv_discount_value=?, gross_amount=?, doc_date=?, ref_text=?, notes=?, hq_match=NULL WHERE id=?'
             )->execute([
-                $branchId, $supplierId, $origDocId, $total,
+                $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
                 (string) ($head['doc_date'] ?? date('Y-m-d')),
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
@@ -136,25 +205,27 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             ]);
             // المسودات بتتعدل من غير حذف تاريخي: بنصفّر القديم، والسطور الحالية
             // بتتكتب تاني بنفس line_no عن طريق مفتاح المستند والسطر.
-            $pdo->prepare('UPDATE stock_doc_lines SET qty_units=0,qty_pieces=0,unit_cost=0,unit_price=0,discount_pct=0,line_total=0,notes=\'سطر اتشال من المسودة\' WHERE doc_id=?')->execute([$docId]);
+            $pdo->prepare('UPDATE stock_doc_lines SET qty_units=0,qty_pieces=0,unit_cost=0,unit_price=0,discount_pct=0,line_total=0,inv_discount_alloc=0,notes=\'سطر اتشال من المسودة\' WHERE doc_id=?')->execute([$docId]);
             $event = 'edited';
         }
 
-        $ins = $pdo->prepare(
+        $values = [];
+        $params = [];
+        foreach ($normalized as $line) {
+            $values[] = '(?,?,?,?,?,?,?,?,?,?,?,?,?)';
+            array_push($params, $docId, $line['line_no'], $line['item_id'], $line['code'], $line['unit_factor'],
+                $line['qty_units'], $line['qty_pieces'], $line['unit_cost'], $line['unit_price'],
+                $line['discount_pct'], $line['line_total'], $line['inv_discount_alloc'], $line['notes']);
+        }
+        $pdo->prepare(
             'INSERT INTO stock_doc_lines
-             (doc_id,line_no,item_id,code,unit_factor,qty_units,qty_pieces,unit_cost,unit_price,discount_pct,line_total,notes)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+             (doc_id,line_no,item_id,code,unit_factor,qty_units,qty_pieces,unit_cost,unit_price,discount_pct,line_total,inv_discount_alloc,notes)
+             VALUES ' . implode(',', $values) . '
              ON DUPLICATE KEY UPDATE item_id=VALUES(item_id),code=VALUES(code),unit_factor=VALUES(unit_factor),
              qty_units=VALUES(qty_units),qty_pieces=VALUES(qty_pieces),unit_cost=VALUES(unit_cost),
-             unit_price=VALUES(unit_price),discount_pct=VALUES(discount_pct),line_total=VALUES(line_total),notes=VALUES(notes)'
-        );
-        foreach ($normalized as $line) {
-            $ins->execute([
-                $docId, $line['line_no'], $line['item_id'], $line['code'], $line['unit_factor'],
-                $line['qty_units'], $line['qty_pieces'], $line['unit_cost'], $line['unit_price'],
-                $line['discount_pct'], $line['line_total'], $line['notes'],
-            ]);
-        }
+             unit_price=VALUES(unit_price),discount_pct=VALUES(discount_pct),line_total=VALUES(line_total),
+             inv_discount_alloc=VALUES(inv_discount_alloc),notes=VALUES(notes)'
+        )->execute($params);
         $pdo->prepare(
             'INSERT INTO doc_events (doc_kind,doc_id,event,user_id,at,details) VALUES (\'stock\',?,?,?,NOW(),?)'
         )->execute([$docId, $event, $uid, json_encode(['lines_count'=>count($normalized),'total_amount'=>$total], JSON_UNESCAPED_UNICODE)]);
