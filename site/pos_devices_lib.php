@@ -67,6 +67,28 @@ function posdev_list(PDO $pdo, int $branchId): array
     return $st->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/** قائمة أجهزة كل الفروع المسموحة باستعلام واحد. */
+function posdev_list_all(PDO $pdo, array $branchIds): array
+{
+    $branchIds = array_values(array_unique(array_filter(array_map('intval', $branchIds))));
+    if (!$branchIds) {
+        return [];
+    }
+    $marks = implode(',', array_fill(0, count($branchIds), '?'));
+    $st = $pdo->prepare(
+        "SELECT d.id, d.branch_id, b.name AS branch_name, d.name, d.device_uuid,
+                d.code, d.is_active, d.print_mode, d.last_seen_at, d.created_at,
+                u.full_name AS created_by_name
+           FROM sale_devices d
+           JOIN branches b ON b.id = d.branch_id
+           LEFT JOIN users u ON u.id = d.created_by
+          WHERE d.branch_id IN ($marks)
+          ORDER BY b.name, d.is_active DESC, d.name, d.id"
+    );
+    $st->execute($branchIds);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /**
  * إضافة جهاز جديد وتوليد UUID على السيرفر.
  */

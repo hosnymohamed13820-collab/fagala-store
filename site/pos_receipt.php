@@ -44,6 +44,15 @@ $discount = (float) ($payload['discount'] ?? 0.0);
 $net = (float) ($payload['net'] ?? 0.0);
 $paid = (float) ($payload['paid'] ?? 0.0);
 $changeDue = (float) ($payload['change_due'] ?? 0.0);
+$returnDays = (int) ($payload['return_days'] ?? 0);
+$returnUntil = (string) ($payload['return_until'] ?? '');
+$returnUntilDisplay = '';
+if ($returnUntil !== '') {
+    $rTs = strtotime($returnUntil);
+    if ($rTs !== false) {
+        $returnUntilDisplay = date('d/m/Y', $rTs);
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -225,6 +234,15 @@ $changeDue = (float) ($payload['change_due'] ?? 0.0);
             margin-top: 10px;
         }
 
+        .receipt-return-policy {
+            margin-bottom: 2px;
+        }
+
+        .receipt-return-until {
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
         .receipt-actions {
             margin: 12px auto 0;
             display: flex;
@@ -394,6 +412,10 @@ $changeDue = (float) ($payload['change_due'] ?? 0.0);
         <div class="receipt-divider-dash"></div>
 
         <div class="receipt-footer">
+            <?php if (!$isReturn && $returnDays > 0 && $returnUntilDisplay !== ''): ?>
+                <div class="receipt-return-policy">الاستبدال والاسترجاع خلال <?= $returnDays ?> يوم بأصل الإيصال</div>
+                <div class="receipt-return-until"><strong>حتى يوم <?= htmlspecialchars($returnUntilDisplay, ENT_QUOTES, 'UTF-8') ?></strong></div>
+            <?php endif; ?>
             <div>شكراً لتعاملكم معنا</div>
         </div>
     </div>

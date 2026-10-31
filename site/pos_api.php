@@ -65,11 +65,14 @@ try {
             api_ok(sale_context($pdo, (string) ($in['device_uuid'] ?? ''), $user));
         case 'lookup':
             $device = sale_device($pdo, (string) ($in['device_uuid'] ?? ''), $user);
+            $lookupMode = (string) ($in['mode'] ?? 'middle');
             api_ok(['items' => sale_lookup(
                 $pdo,
                 (int) $device['branch_id'],
                 (string) ($in['code'] ?? ''),
-                (string) ($in['q'] ?? '')
+                (string) ($in['q'] ?? ''),
+                $lookupMode,
+                array_key_exists('mode', $in)
             )]);
         case 'session_open':
             api_ok(sale_session_open(

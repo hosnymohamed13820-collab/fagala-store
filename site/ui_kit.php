@@ -89,6 +89,26 @@ function ui_code(string $code): string
     </div>
     <div class="fg-empty"><?= ui_icon('inbox') ?><span>مفيش بيانات للعرض</span></div>
     <?= ui_code('<table class="ftable">…</table>') ?>
+
+    <h4 style="margin:var(--sp-4) 0 var(--sp-2) 0; font-size:var(--fs-base); color:var(--ink-700);">خانات داخل الخلايا (<code>.finput-cell</code> + <code>td.fcell</code>)</h4>
+    <div class="ftable-wrap">
+        <table class="ftable">
+            <thead><tr><th>الصنف</th><th class="num" style="width:110px;">الكمية</th><th class="num" style="width:110px;">خصم %</th></tr></thead>
+            <tbody>
+                <tr>
+                    <td class="name">قلم جاف أزرق روترنج</td>
+                    <td class="fcell"><input type="number" class="finput finput-cell num" value="5"></td>
+                    <td class="fcell"><input type="number" class="finput finput-cell num" value="10"></td>
+                </tr>
+                <tr>
+                    <td class="name">كشكول سلك ٨٠ ورقة مسطر</td>
+                    <td class="fcell"><input type="number" class="finput finput-cell num" value="2"></td>
+                    <td class="fcell"><input type="number" class="finput finput-cell num" value="0"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <?= ui_code('<td class="fcell"><input type="number" class="finput finput-cell num" value="…"></td>') ?>
     <?= ui_card_close() ?>
 
     <?= ui_card_open('الرسم من الجافاسكربت') ?>

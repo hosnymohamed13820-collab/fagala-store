@@ -1938,6 +1938,35 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 }
 .ftextarea { min-height:88px; resize:vertical; }
 .finput-sm { min-height:34px; padding:7px 10px; font-size:var(--fs-base); }
+/* خانة جوه خلية جدول (.ftable) — بريف 827g */
+.finput-cell {
+    width: 100%; min-width: 0; height: 30px; min-height: 30px; padding: 2px 8px;
+    font-size: var(--fs-base); border: 1px solid transparent; border-radius: var(--r-sm);
+    background: transparent; box-shadow: none; color: var(--ink-800); box-sizing: border-box;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.finput-cell:hover:not(:disabled):not([readonly]) {
+    border-color: var(--line);
+}
+.finput-cell:focus {
+    outline: none; border-color: var(--accent-text); background: var(--surface);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.finput-cell.num {
+    text-align: left; direction: ltr; font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1; -moz-appearance: textfield; appearance: textfield;
+}
+.finput-cell.num::-webkit-inner-spin-button,
+.finput-cell.num::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0; display: none;
+}
+.finput-cell:is(:disabled, [readonly]) {
+    background: transparent; color: inherit; cursor: default;
+    border-color: transparent !important; box-shadow: none !important; opacity: 1;
+}
+.ftable td.fcell {
+    padding: 2px 4px;
+}
 .finput:focus, .fselect:focus, .ftextarea:focus {
     outline:none; border-color:var(--accent-text); background:var(--surface);
     box-shadow:0 0 0 3px var(--accent-ring);

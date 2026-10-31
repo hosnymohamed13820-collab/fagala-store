@@ -5,6 +5,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/sale_lib.php';
 require_module_access('pos');
 if (!can('pos:sell') && !can('pos:return_ref') && !can('pos:return_general') && !is_real_owner()) {
     http_response_code(403);
@@ -16,6 +17,21 @@ $active_module = 'pos';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
+/* إخفاء التنبيهات العامة في شاشة نقطة البيع فقط (بريف 827e) */
+#agtNag,
+#pushNag,
+#shrNag {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
+.layout {
+    min-height: auto;
+}
+
 .pos-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 340px;
@@ -27,6 +43,38 @@ require_once __DIR__ . '/includes/header.php';
     .pos-layout {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+/* سطر معلومات واحد (بريف 827e) */
+.pos-info-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-2);
+}
+/* سطر زراير واحد: تابات + عمليات (بريف 827e) */
+.pos-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-2);
+}
+.pos-actions-btns {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    flex-wrap: wrap;
+}
+/* سطر أزرار فوق الجدول (بريف 827e) */
+.pos-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-1);
+    flex-wrap: wrap;
 }
 .pos-top-bar {
     display: flex;
@@ -99,31 +147,58 @@ require_once __DIR__ . '/includes/header.php';
     padding: 2px 10px;
     font-size: var(--fs-sm);
 }
+/* الجدول ياخد اللي فاضل من الشاشة (بريف 827f) — حساب ديناميكي بـJS والـCSS fallback */
 .pos-cart-table-wrap {
-    max-height: calc(100vh - 300px);
+    height: calc(100vh - 380px);
     min-height: 240px;
     overflow-y: auto;
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    margin-bottom: var(--sp-2);
+}
+.pos-cart-table-wrap .table-scroll {
+    display: contents;
+}
+.pos-cart-table-wrap thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg);
+    padding: var(--sp-2) var(--sp-2);
+    white-space: nowrap;
+}
+.pos-cart-table-wrap td {
+    padding: var(--sp-1) var(--sp-2);
+    white-space: nowrap;
+}
+.pos-cart-table-wrap td.fcell {
+    padding: 2px 4px;
+}
+.pos-row-btn {
+    padding: 2px 6px;
+    min-width: 0;
+}
+@media (max-width: 600px) {
+    .pos-cart-table-wrap {
+        height: auto;
+        max-height: 55vh;
+        min-height: 240px;
+    }
 }
 .pos-item-name {
-    max-width: 200px;
+    max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: inline-block;
+    display: block;
     vertical-align: middle;
 }
 .pos-qty-wrap {
     display: flex;
     align-items: center;
     gap: 4px;
-}
-.pos-qty-input {
-    width: 60px;
-    text-align: center;
-}
-.pos-disc-input {
-    width: 65px;
-    text-align: center;
 }
 .pos-totals-panel {
     position: sticky;
@@ -173,6 +248,110 @@ require_once __DIR__ . '/includes/header.php';
     font-variant-numeric: tabular-nums;
     font-weight: 600;
 }
+/* شريط الإجماليات الثابت بالأسفل — أقسام منظمة بخط فاصل رأسي (بريف 827g) */
+.pos-totals-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.04);
+}
+.pos-tot-sec {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 var(--sp-3);
+    border-inline-start: 1px solid var(--line-soft);
+    min-height: 52px;
+}
+.pos-tot-sec:first-child {
+    border-inline-start: none;
+    padding-inline-start: 0;
+}
+.pos-tot-title {
+    font-size: var(--fs-sm);
+    color: var(--ink-500);
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+.pos-tot-value {
+    font-size: var(--fs-lg);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--ink-900);
+    line-height: 1.2;
+}
+.pos-tot-inputs {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.pos-input-affix-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 100px;
+}
+.pos-input-affix-wrap .pos-affix {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: var(--fs-xs);
+    color: var(--ink-500);
+    pointer-events: none;
+    font-weight: 500;
+}
+.pos-tot-net {
+    background: var(--surface-soft);
+    border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-4);
+    border-inline-start: none;
+    align-items: flex-end;
+}
+.pos-tot-net .pos-tot-title {
+    color: var(--ink-700);
+    font-weight: 600;
+}
+.pos-net-val-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+.pos-net-val {
+    font-size: var(--fs-3xl);
+    font-weight: 700;
+    color: var(--pos);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.pos-net-currency {
+    font-size: var(--fs-xs);
+    color: var(--ink-500);
+}
+@media (max-width: 600px) {
+    .pos-totals-bar {
+        flex-wrap: wrap;
+        gap: var(--sp-2);
+    }
+    .pos-tot-sec {
+        border-inline-start: none;
+        padding: var(--sp-1) 0;
+    }
+    .pos-tot-net {
+        width: 100%;
+        align-items: center;
+        text-align: center;
+        justify-content: center;
+    }
+}
 .pos-shortcuts-bar {
     position: fixed;
     bottom: 0;
@@ -181,13 +360,15 @@ require_once __DIR__ . '/includes/header.php';
     z-index: var(--z-sticky);
     background: var(--surface);
     border-top: 1px solid var(--line);
-    padding: 6px 16px;
+    padding: 4px 12px;
     display: flex;
-    gap: var(--sp-3);
+    gap: var(--sp-2);
     flex-wrap: wrap;
     justify-content: center;
     font-size: var(--fs-xs);
     color: var(--text-muted);
+    min-height: 28px;
+    align-items: center;
 }
 .pos-shortcut-key {
     display: inline-block;
@@ -213,18 +394,6 @@ require_once __DIR__ . '/includes/header.php';
     background: var(--warn-soft);
     color: var(--warn);
 }
-.pos-payment-row {
-    display: grid;
-    grid-template-columns: 120px 1fr 1fr auto;
-    gap: var(--sp-2);
-    align-items: center;
-    margin-bottom: var(--sp-2);
-}
-@media (max-width: 600px) {
-    .pos-payment-row {
-        grid-template-columns: 1fr;
-    }
-}
 </style>
 
 <main class="content-container" id="posContainer"
@@ -233,26 +402,59 @@ require_once __DIR__ . '/includes/header.php';
       data-can-return-general="<?= (can('pos:return_general') || is_real_owner()) ? '1' : '0' ?>"
       data-can-drawer="<?= (can('pos:drawer') || is_real_owner()) ? '1' : '0' ?>"
       data-can-held-cancel="<?= (can('pos:held_cancel') || is_real_owner()) ? '1' : '0' ?>"
+      data-can-shift-expected="<?= sale_shift_expected_visible() ? '1' : '0' ?>"
       data-can-devices="<?= (can('pos:devices') || is_real_owner()) ? '1' : '0' ?>">
 
-    <div class="pos-top-bar">
-        <div class="pos-top-info">
-            <span id="posBranchBadge" class="fchip fchip-pos">فرع: --</span>
-            <span id="posDeviceBadge" class="fchip fchip-mute">جهاز: --</span>
-            <span id="posSessionBadge" class="fchip fchip-warn">الوردية: --</span>
-            <button type="button" class="btn btn-sm btn-ghost" id="posBtnSwitchDevice" title="تغيير الجهاز">
-                <i class="ti ti-device-desktop"></i> تغيير الجهاز
+    <!-- سطر معلومات واحد (بريف 827e): شارات fchip صغيرة — الفرع · الجهاز · الوردية · التاريخ · البائع — وزرار العميل -->
+    <div class="pos-info-bar">
+        <span id="posBranchBadge" class="fchip fchip-mute">فرع: --</span>
+        <span id="posDeviceBadge" class="fchip fchip-mute">جهاز: --</span>
+        <button type="button" class="btn btn-sm btn-ghost" id="posBtnSwitchDevice" title="تغيير الجهاز">
+            <i class="ti ti-device-desktop"></i>
+        </button>
+        <span id="posSessionBadge" class="fchip fchip-warn">الوردية: --</span>
+        <span id="posDateBadge" class="fchip fchip-mute">تاريخ: --</span>
+        <span id="posSellerBadge" class="fchip fchip-mute">بائع: --</span>
+        <button type="button" class="btn btn-sm btn-outline" id="posBtnCustomer">
+            <i class="ti ti-users"></i> <span id="posCustomerName">نقدي</span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل" style="display:none;">
+            <i class="ti ti-x"></i>
+        </button>
+        <!-- الخانات الأصلية مخفية للحفاظ على التوافق مع أي سكريبتات قائمة -->
+        <input type="hidden" id="posInvoiceBranch">
+        <input type="hidden" id="posInvoiceDevice">
+        <input type="hidden" id="posInvoiceDate">
+        <input type="hidden" id="posInvoiceSeller">
+        <div id="posCustomerBar" style="display:none;"></div>
+    </div>
+
+    <div id="posAlert"></div>
+
+    <!-- سطر زراير واحد (بريف 827e): تابات أوضاع نقطة البيع + أزرار العمليات -->
+    <div class="pos-actions-bar">
+        <div class="ftabs" id="posModeTabs">
+            <button type="button" class="ftab is-active" data-mode="sale" id="posTabSale">
+                <i class="ti ti-shopping-cart"></i> بيع (F1)
+            </button>
+            <button type="button" class="ftab" data-mode="return" id="posTabReturn">
+                <i class="ti ti-arrow-back-up"></i> مرتجع (F7)
+            </button>
+            <?php if (can('pos:return_general') || is_real_owner()): ?>
+            <button type="button" class="ftab" data-mode="return_general" id="posTabReturnGeneral">
+                <i class="ti ti-arrow-down-left"></i> مرتجع عام
+            </button>
+            <?php endif; ?>
+            <button type="button" class="ftab" data-mode="exchange" id="posTabExchange">
+                <i class="ti ti-transfer"></i> استبدال
             </button>
         </div>
-        <div class="pos-top-actions">
-            <button type="button" class="btn btn-sm btn-outline" id="posBtnCustomer">
-                <i class="ti ti-users"></i> عميل
+        <div class="pos-actions-btns">
+            <button type="button" class="btn btn-sm btn-outline" id="posBtnHold">
+                <i class="ti ti-bookmark"></i> تعليق (F8)
             </button>
             <button type="button" class="btn btn-sm btn-outline" id="posBtnHeldList">
                 <i class="ti ti-clock"></i> المعلّق (F9)
-            </button>
-            <button type="button" class="btn btn-sm btn-outline" id="posBtnHold">
-                <i class="ti ti-bookmark"></i> تعليق (F8)
             </button>
             <button type="button" class="btn btn-sm btn-outline" id="posBtnSessionInvoices" title="فواتير الوردية">
                 <i class="ti ti-file-invoice"></i> فواتير الوردية
@@ -262,7 +464,7 @@ require_once __DIR__ . '/includes/header.php';
             </button>
             <?php if (can('pos:drawer') || is_real_owner()): ?>
                 <button type="button" class="btn btn-sm btn-ghost" id="posBtnOpenDrawer">
-                    <i class="ti ti-cash"></i> فتح الدرج
+                    <i class="ti ti-cash"></i> فتح الدرج (F3)
                 </button>
             <?php endif; ?>
             <button type="button" class="btn btn-sm btn-success" id="posBtnOpenSession" style="display:none;">
@@ -272,127 +474,115 @@ require_once __DIR__ . '/includes/header.php';
                 <i class="ti ti-lock"></i> تقفيل الوردية
             </button>
             <?php if (can('pos:reports') || is_real_owner()): ?>
-                <a class="btn btn-sm btn-outline" href="pos_reports.php"><i class="ti ti-chart-bar"></i> تقارير نقطة البيع</a>
+                <a class="btn btn-sm btn-outline" href="pos_reports.php"><i class="ti ti-chart-bar"></i> تقارير</a>
             <?php endif; ?>
         </div>
     </div>
 
-    <div id="posAlert"></div>
-
-    <!-- تابات أوضاع نقطة البيع -->
-    <div class="ftabs" id="posModeTabs" style="margin-bottom: var(--sp-2);">
-        <button type="button" class="ftab is-active" data-mode="sale" id="posTabSale">
-            <i class="ti ti-shopping-cart"></i> بيع (F1)
-        </button>
-        <button type="button" class="ftab" data-mode="return" id="posTabReturn">
-            <i class="ti ti-arrow-back-up"></i> مرتجع (F6)
-        </button>
-        <?php if (can('pos:return_general') || is_real_owner()): ?>
-        <button type="button" class="ftab" data-mode="return_general" id="posTabReturnGeneral">
-            <i class="ti ti-arrow-down-left"></i> مرتجع عام
-        </button>
-        <?php endif; ?>
-        <button type="button" class="ftab" data-mode="exchange" id="posTabExchange">
-            <i class="ti ti-transfer"></i> استبدال
-        </button>
-    </div>
-
     <!-- وضع البيع (الافتراضي) -->
     <div id="posViewSale">
-        <div class="pos-layout" id="posMainLayout">
-            <!-- عمود السلة والمسح -->
-            <div class="pos-cart-panel">
-                <div class="pos-scan-box">
-                    <div class="pos-scan-input-wrap">
-                        <input type="text" class="finput" id="posScanInput"
-                               placeholder="امسح الباركود أو اكتب كود/اسم الصنف (F2)..."
-                               autocomplete="off" autofocus>
-                        <div id="posSearchResults" class="pos-search-dropdown" style="display:none;"></div>
-                    </div>
-                    <button type="button" class="btn btn-outline" id="posBtnCamera" title="مسح بالكاميرا">
-                        <i class="ti ti-camera"></i>
+        <div id="posSaleItemsPanel">
+            <!-- سطر صغير فوق الجدول: أزرار العمليات (بريف 827e) -->
+            <div class="pos-table-toolbar">
+                <div style="display:flex; align-items:center; gap:var(--sp-2);">
+                    <button type="button" class="btn btn-sm btn-outline" id="posBtnOpenItemSearch">
+                        <i class="ti ti-search"></i> بحث صنف (F2)
                     </button>
                 </div>
-
-                <div id="posCustomerBar" style="display:none;">
-                    <span class="pos-customer-badge">
-                        <i class="ti ti-user-check"></i>
-                        <strong id="posCustomerName">عميل نقدي</strong>
-                        <button type="button" class="btn btn-sm btn-ghost" id="posBtnRemoveCustomer" title="إلغاء العميل">
-                            <i class="ti ti-x"></i>
-                        </button>
-                    </span>
+                <div>
+                    <button type="button" class="btn btn-sm btn-ghost" id="posBtnClearCart">
+                        <i class="ti ti-trash"></i> مسح الفاتورة
+                    </button>
                 </div>
-
-                <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posCartTable" data-xt-off>
-                        <thead>
-                            <tr>
-                                <th>الكود</th>
-                                <th>الاسم</th>
-                                <th>الوحدة</th>
-                                <th class="num">الكمية</th>
-                                <th class="num">السعر</th>
-                                <th class="num">الخصم</th>
-                                <th class="num">الصافي</th>
-                                <th class="num" style="color:var(--ink-500);">رصيد</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="posCartBody"></tbody>
-                    </table>
-                </div>
-                <div id="posCartEmpty"></div>
             </div>
 
-            <!-- عمود الإجماليات والدفع -->
-            <div class="pos-totals-panel">
-                <div class="fcard">
-                    <div class="pos-net-box">
-                        <div class="pos-net-title">الصافي المطلوب</div>
-                        <div class="pos-net-val">
-                            <span id="posNetDisplay">0.00</span>
-                            <span class="pos-net-currency">ج.م</span>
-                        </div>
-                    </div>
+            <!-- الجدول ياخد باقي الشاشة بعرض أعمدة ثابت (بريف 827g) -->
+            <div class="ftable-wrap pos-cart-table-wrap">
+                <table class="ftable" id="posCartTable" data-xt-off style="table-layout: fixed; width: 100%;">
+                    <colgroup>
+                        <col style="width: 40px;">
+                        <col style="width: 48px;">
+                        <col style="width: 150px;">
+                        <col style="width: auto;">
+                        <col style="width: 70px;">
+                        <col style="width: 70px;">
+                        <col style="width: 90px;">
+                        <col style="width: 90px;">
+                        <col style="width: 100px;">
+                        <col style="width: 90px;">
+                        <col style="width: 100px;">
+                        <col style="width: 44px;">
+                    </colgroup>
+                    <thead><tr>
+                        <th class="num">#</th><th>كاميرا</th><th>الكود</th><th>الاسم</th><th>الوحدة</th>
+                        <th class="num">الرصيد</th><th class="num">الكمية</th><th class="num">السعر</th>
+                        <th class="num">الإجمالي</th><th class="num">خصم %</th><th class="num">خصم قيمة</th><th></th>
+                    </tr></thead>
+                    <tbody id="posCartBody"></tbody>
+                </table>
+            </div>
+            <div id="posCartEmpty"></div>
 
-                    <div class="pos-summary-list">
-                        <div class="pos-summary-row">
-                            <span class="pos-label">الإجمالي</span>
-                            <span class="pos-val" id="posGrossDisplay">0.00</span>
+            <!-- شريط الإجماليات الثابت بالأسفل — شكل جديد منظم (بريف 827g) -->
+            <div class="pos-totals-bar">
+                <div class="pos-tot-sec pos-tot-counts">
+                    <span class="pos-tot-title">عدد الأصناف / القطع</span>
+                    <strong id="posItemsPiecesDisplay" class="pos-tot-value">0 صنف · 0 قطعة</strong>
+                </div>
+                <div class="pos-tot-sec pos-tot-gross">
+                    <span class="pos-tot-title">الإجمالي</span>
+                    <strong id="posGrossDisplay" class="pos-tot-value">0.00</strong>
+                </div>
+                <div class="pos-tot-sec pos-tot-linedisc">
+                    <span class="pos-tot-title">خصم الأصناف</span>
+                    <strong id="posLineDiscDisplay" class="pos-tot-value">0.00</strong>
+                </div>
+                <div class="pos-tot-sec pos-tot-invdisc">
+                    <span class="pos-tot-title">خصم الفاتورة</span>
+                    <div class="pos-tot-inputs">
+                        <div class="pos-input-affix-wrap">
+                            <input type="number" class="finput num" id="posInvDiscPct" min="0" step="0.001" value="0">
+                            <span class="pos-affix">%</span>
                         </div>
-                        <div class="pos-summary-row">
-                            <span class="pos-label">خصم السطور</span>
-                            <span class="pos-val" id="posLineDiscDisplay">0.00</span>
-                        </div>
-                        <div class="pos-summary-row">
-                            <span class="pos-label">خصم الفاتورة</span>
-                            <span class="pos-val" id="posInvDiscDisplay">0.00</span>
-                        </div>
-                        <div class="pos-summary-row">
-                            <span class="pos-label">إجمالي الخصم</span>
-                            <span class="pos-val" id="posTotalDiscDisplay">0.00</span>
-                        </div>
-                        <div class="pos-summary-row">
-                            <span class="pos-label">عدد الأصناف / القطع</span>
-                            <span class="pos-val"><span id="posLinesCount">0</span> / <span id="posPiecesCount">0</span></span>
-                        </div>
-                    </div>
-
-                    <div class="fcard-actions" style="flex-direction:column; gap:var(--sp-2); margin-top:var(--sp-3);">
-                        <button type="button" class="btn btn-primary" id="posBtnPay" style="width:100%;" disabled>
-                            <i class="ti ti-cash"></i> دفع وإنهاء (F10)
-                        </button>
-                        <div style="display:flex; gap:var(--sp-2); width:100%;">
-                            <button type="button" class="btn btn-outline" id="posBtnInvoiceDiscount" style="flex:1; justify-content:center;">
-                                <i class="ti ti-discount-2"></i> خصم فاتورة (F4)
-                            </button>
-                            <button type="button" class="btn btn-ghost" id="posBtnClearCart" title="تفريغ السلة">
-                                <i class="ti ti-trash"></i> مسح
-                            </button>
+                        <div class="pos-input-affix-wrap">
+                            <input type="number" class="finput num" id="posInvDiscAmount" min="0" step="0.01" value="0">
+                            <span class="pos-affix">ج.م</span>
                         </div>
                     </div>
                 </div>
+                <div class="pos-tot-sec pos-tot-net">
+                    <span class="pos-tot-title">الصافي</span>
+                    <div class="pos-net-val-wrap">
+                        <strong id="posNetDisplay" class="pos-net-val">0.00</strong>
+                        <span class="pos-net-currency">ج.م</span>
+                    </div>
+                </div>
+            </div>
+            <span id="posInvDiscDisplay" style="display:none;">0.00</span>
+            <span id="posTotalDiscDisplay" style="display:none;">0.00</span>
+            <span id="posLinesCount" style="display:none;">0</span>
+            <span id="posPiecesCount" style="display:none;">0</span>
+            <button type="button" id="posBtnPay" style="display:none;" disabled></button>
+        </div>
+
+        <div id="posPaymentPanel" style="display:none;">
+            <div class="fkpis">
+                <div class="fkpi"><span>الصافي</span><strong><span id="posPayModalNet" style="font-size:var(--fs-3xl);">0.00</span></strong></div>
+                <div class="fkpi"><span>المدفوع</span><strong><span id="posPaidTotal" style="font-size:var(--fs-3xl);">0.00</span></strong></div>
+                <div class="fkpi"><span>المتبقي</span><strong><span id="posRemainingTotal" style="font-size:var(--fs-3xl);">0.00</span></strong></div>
+            </div>
+            <div id="posPaymentModalAlert"></div>
+            <div class="ftable-wrap" style="margin-top:var(--sp-2);">
+                <table class="ftable" data-xt-off>
+                    <thead><tr><th>النوع</th><th class="num">المبلغ</th><th>ملاحظات</th><th></th></tr></thead>
+                    <tbody id="posPaymentRowsContainer"></tbody>
+                </table>
+            </div>
+            <div id="posChangeDueBox" class="falert falert-info">المتبقي: 0.00 ج.م</div>
+            <div class="fcard-actions" style="margin-top:var(--sp-2);">
+                <button type="button" class="btn btn-sm btn-outline" id="posBtnAddPaymentRow"><i class="ti ti-plus"></i> إضافة سطر دفع</button>
+                <button type="button" class="btn btn-primary" id="posBtnConfirmFinalize" disabled><i class="ti ti-device-floppy"></i> حفظ وضرب الفاتورة (F12)</button>
+                <button type="button" class="btn btn-secondary" id="posBtnClosePaymentModal">رجوع للأصناف (F6)</button>
             </div>
         </div>
     </div>
@@ -433,7 +623,18 @@ require_once __DIR__ . '/includes/header.php';
         <div class="pos-layout" id="posReturnLayout" style="display:none;">
             <div class="pos-cart-panel">
                 <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posReturnLinesTable" data-xt-off>
+                    <table class="ftable" id="posReturnLinesTable" data-xt-off style="table-layout: fixed; width: 100%;">
+                        <colgroup>
+                            <col style="width: 130px;">
+                            <col style="width: auto;">
+                            <col style="width: 65px;">
+                            <col style="width: 65px;">
+                            <col style="width: 65px;">
+                            <col style="width: 65px;">
+                            <col style="width: 85px;">
+                            <col style="width: 85px;">
+                            <col style="width: 90px;">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>الكود</th>
@@ -442,7 +643,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <th class="num">المباع</th>
                                 <th class="num">مردود</th>
                                 <th class="num">المتاح</th>
-                                <th class="num" style="width:90px;">المرتجع</th>
+                                <th class="num">المرتجع</th>
                                 <th class="num">سعر القطعة</th>
                                 <th class="num">الصافي</th>
                             </tr>
@@ -511,25 +712,31 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <div class="pos-scan-box">
-                    <div class="pos-scan-input-wrap">
-                        <input type="text" class="finput" id="posGenScanInput"
-                               placeholder="امسح الباركود أو اكتب كود/اسم الصنف لإضافته للمرتجع..."
-                               autocomplete="off">
-                        <div id="posGenSearchResults" class="pos-search-dropdown" style="display:none;"></div>
-                    </div>
-                </div>
-
                 <div class="ftable-wrap pos-cart-table-wrap">
-                    <table class="ftable" id="posGenCartTable" data-xt-off>
+                    <table class="ftable" id="posGenCartTable" data-xt-off style="table-layout: fixed; width: 100%;">
+                        <colgroup>
+                            <col style="width: 40px;">
+                            <col style="width: 48px;">
+                            <col style="width: 150px;">
+                            <col style="width: auto;">
+                            <col style="width: 70px;">
+                            <col style="width: 70px;">
+                            <col style="width: 90px;">
+                            <col style="width: 90px;">
+                            <col style="width: 100px;">
+                            <col style="width: 44px;">
+                        </colgroup>
                         <thead>
                             <tr>
+                                <th class="num">#</th>
+                                <th>كاميرا</th>
                                 <th>الكود</th>
                                 <th>الاسم</th>
                                 <th>الوحدة</th>
+                                <th class="num">الرصيد</th>
                                 <th class="num">الكمية</th>
-                                <th class="num">سعر الوحدة</th>
-                                <th class="num">الصافي</th>
+                                <th class="num">السعر</th>
+                                <th class="num">الإجمالي</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -609,23 +816,35 @@ require_once __DIR__ . '/includes/header.php';
                         <strong style="color:var(--accent-text);"><i class="ti ti-shopping-cart"></i> ٢. سلة البيع الجديدة</strong>
                         <span id="posExchSaleSubtotalChip" class="fchip fchip-mute">صافي البيع: 0.00 ج.م</span>
                     </div>
-                    <div class="pos-scan-box" style="margin-bottom:var(--sp-2);">
-                        <div class="pos-scan-input-wrap">
-                            <input type="text" class="finput" id="posExchScanInput"
-                                   placeholder="امسح أو ابحث عن صنف لإضافته للبيع الجديد...">
-                            <div id="posExchSearchResults" class="pos-search-dropdown" style="display:none;"></div>
-                        </div>
-                    </div>
-                    <div class="ftable-wrap" style="max-height:220px; overflow-y:auto;">
-                        <table class="ftable" id="posExchSaleTable" data-xt-off>
+                    <div class="ftable-wrap pos-cart-table-wrap">
+                        <table class="ftable" id="posExchSaleTable" data-xt-off style="table-layout: fixed; width: 100%;">
+                            <colgroup>
+                                <col style="width: 40px;">
+                                <col style="width: 48px;">
+                                <col style="width: 150px;">
+                                <col style="width: auto;">
+                                <col style="width: 70px;">
+                                <col style="width: 70px;">
+                                <col style="width: 90px;">
+                                <col style="width: 90px;">
+                                <col style="width: 100px;">
+                                <col style="width: 90px;">
+                                <col style="width: 100px;">
+                                <col style="width: 44px;">
+                            </colgroup>
                             <thead>
                                 <tr>
+                                    <th class="num">#</th>
+                                    <th>كاميرا</th>
                                     <th>الكود</th>
                                     <th>الاسم</th>
                                     <th>الوحدة</th>
+                                    <th class="num">الرصيد</th>
                                     <th class="num">الكمية</th>
                                     <th class="num">السعر</th>
-                                    <th class="num">الصافي</th>
+                                    <th class="num">الإجمالي</th>
+                                    <th class="num">خصم %</th>
+                                    <th class="num">خصم قيمة</th>
                                     <th></th>
                                 </tr>
                             </thead>
@@ -677,14 +896,17 @@ require_once __DIR__ . '/includes/header.php';
     <!-- شريط الاختصارات بالأسفل -->
     <div class="pos-shortcuts-bar">
         <span><span class="pos-shortcut-key">F1</span> بيع</span>
-        <span><span class="pos-shortcut-key">F2</span> بحث / مسح</span>
-        <span><span class="pos-shortcut-key">F4</span> خصم</span>
-        <span><span class="pos-shortcut-key">F6</span> مرتجع</span>
+        <span><span class="pos-shortcut-key">F2</span> بحث صنف</span>
+        <span><span class="pos-shortcut-key">F3</span> فتح الدرج</span>
+        <span><span class="pos-shortcut-key">F4</span> خصم الفاتورة %</span>
+        <span><span class="pos-shortcut-key">F6</span> الدفع / الأصناف</span>
+        <span><span class="pos-shortcut-key">F7</span> مرتجع</span>
         <span><span class="pos-shortcut-key">F8</span> تعليق</span>
         <span><span class="pos-shortcut-key">F9</span> المعلّق</span>
-        <span><span class="pos-shortcut-key">F10</span> دفع</span>
-        <span><span class="pos-shortcut-key">Del</span> حذف السطر</span>
-        <span><span class="pos-shortcut-key">+</span> / <span class="pos-shortcut-key">-</span> الكمية</span>
+        <span><span class="pos-shortcut-key">F12 / Ctrl+S</span> حفظ</span>
+        <span><span class="pos-shortcut-key">Insert</span> الصف الفاضي</span>
+        <span><span class="pos-shortcut-key">Ctrl+N</span> الصف الفاضي (PWA)</span>
+        <span><span class="pos-shortcut-key">Ctrl+Delete</span> مسح الصف</span>
         <span><span class="pos-shortcut-key">Esc</span> رجوع</span>
     </div>
 
@@ -729,8 +951,14 @@ require_once __DIR__ . '/includes/header.php';
         <div class="fg-dlg" style="width:min(96vw,900px);max-height:92vh;overflow:auto;">
             <h3 class="fg-dlg-title"><i class="ti ti-lock"></i> تقفيل الوردية</h3>
             <div id="posCloseSessionAlert"></div>
+            <?php if (sale_shift_expected_visible()): ?>
+            <div class="ffield" id="posCloseDetailsWrap">
+                <label for="posCloseShowDetails" style="display:flex;align-items:center;gap:var(--sp-1);cursor:pointer;">
+                    <input type="checkbox" id="posCloseShowDetails"> اعرض تفاصيل الوردية
+                </label>
+            </div>
+            <?php endif; ?>
             <div id="posCloseExpected"></div>
-            <div class="falert falert-warn" id="posCloseHeldWarning" style="display:none;"></div>
             <h4>عد فئات الكاش</h4>
             <div class="ftable-wrap">
                 <table class="ftable" data-xt-off>
@@ -754,42 +982,9 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <!-- نافذة الدفع (F10) -->
+    <!-- شاشة نجاح تسجيل الفاتورة -->
     <div class="fg-dlg-bg" id="posModalPayment" style="display:none;" role="dialog" aria-modal="true">
         <div class="fg-dlg" style="width: min(92vw, 560px);">
-            <div id="posPaymentViewNormal">
-                <h3 class="fg-dlg-title"><i class="ti ti-cash"></i> إنهاء ودفع الفاتورة</h3>
-
-                <div class="fkpis">
-                    <div class="fkpi">
-                        <span>صافي الفاتورة</span>
-                        <strong><span id="posPayModalNet">0.00</span> ج.م</strong>
-                    </div>
-                </div>
-
-                <div id="posPaymentModalAlert"></div>
-
-                <div style="margin-bottom:var(--sp-2);">
-                    <div style="font-weight:600; font-size:var(--fs-sm); margin-bottom:6px;">طرق الدفع (أقصى ٣ طرق):</div>
-                    <div id="posPaymentRowsContainer"></div>
-                    <button type="button" class="btn btn-sm btn-ghost" id="posBtnAddPaymentRow">
-                        <i class="ti ti-plus"></i> إضافة طريقة دفع
-                    </button>
-                </div>
-
-                <div id="posChangeDueBox" class="pos-change-box">
-                    الباقي: 0.00 ج.م
-                </div>
-
-                <div class="fg-dlg-actions" style="margin-top:var(--sp-3);">
-                    <button type="button" class="fg-dlg-btn fg-dlg-ok" id="posBtnConfirmFinalize" disabled>
-                        <i class="ti ti-check"></i> إنهاء وحفظ الفاتورة
-                    </button>
-                    <button type="button" class="fg-dlg-btn fg-dlg-cancel" id="posBtnClosePaymentModal">رجوع (Esc)</button>
-                </div>
-            </div>
-
-            <!-- عرض النجاح بعد الدفع -->
             <div id="posPaymentViewSuccess" style="display:none; text-align:center;">
                 <div style="font-size:48px; color:var(--pos); margin-bottom:var(--sp-2);">
                     <i class="ti ti-circle-check"></i>
@@ -843,20 +1038,24 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     </div>
 
-    <!-- نافذة خصم الفاتورة (F4) -->
-    <div class="fg-dlg-bg" id="posModalInvoiceDiscount" style="display:none;" role="dialog" aria-modal="true">
-        <div class="fg-dlg" style="width: min(92vw, 420px);">
-            <h3 class="fg-dlg-title"><i class="ti ti-discount-2"></i> خصم على إجمالي الفاتورة</h3>
-            <div class="fg-dlg-msg">
-                <div class="ffield">
-                    <label class="flabel" for="posInvDiscInput">قيمة الخصم (اكتب مبلغ مثل 10 أو نسبة مثل 10%):</label>
-                    <input type="text" class="finput num" id="posInvDiscInput" placeholder="مثال: 5 أو 10%">
-                </div>
+    <!-- نافذة البحث عن صنف -->
+    <div class="fg-dlg-bg" id="posModalItemSearch" style="display:none;" role="dialog" aria-modal="true">
+        <div class="fg-dlg" style="width:min(96vw,920px);max-height:92vh;overflow:auto;">
+            <h3 class="fg-dlg-title"><i class="ti ti-search"></i> بحث عن صنف</h3>
+            <div class="fgrid fgrid-3">
+                <div class="ffield"><label for="posItemSearchInput">كلمة البحث</label><input class="finput" id="posItemSearchInput" autocomplete="off"></div>
+                <div class="ffield"><label>البحث في</label><div class="ftabs" id="posSearchFieldTabs"><button type="button" class="ftab is-active" data-value="name">الاسم</button><button type="button" class="ftab" data-value="code">الكود</button></div></div>
+                <div class="ffield"><label>طريقة المطابقة</label><div class="ftabs" id="posSearchModeTabs"><button type="button" class="ftab" data-value="start">بداية</button><button type="button" class="ftab is-active" data-value="middle">وسط</button><button type="button" class="ftab" data-value="end">نهاية</button></div></div>
             </div>
-            <div class="fg-dlg-actions">
-                <button type="button" class="fg-dlg-btn fg-dlg-ok" id="posBtnApplyInvDiscount">تطبيق الخصم</button>
-                <button type="button" class="fg-dlg-btn fg-dlg-cancel" id="posBtnCloseInvDiscount">إلغاء</button>
+            <div id="posItemSearchAlert"></div>
+            <div class="ftable-wrap" style="margin-top:var(--sp-2);">
+                <table class="ftable" data-xt-off>
+                    <thead><tr><th>الكود</th><th>الاسم</th><th class="num">السعر</th><th>الوحدة</th><th class="num">المعامل</th><th class="num">الرصيد</th></tr></thead>
+                    <tbody id="posItemSearchBody"></tbody>
+                </table>
             </div>
+            <div id="posItemSearchEmpty"></div>
+            <div class="fg-dlg-actions" style="margin-top:var(--sp-2);"><button type="button" class="btn btn-secondary" id="posBtnCloseItemSearch">إغلاق (Esc)</button></div>
         </div>
     </div>
 
@@ -972,18 +1171,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // حالة التطبيق
     let deviceUuid = '';
     let context = null;
-    let cart = []; // عناصر السلة
-    let invoiceDiscount = 0;
+    let cart = []; // سطور الفاتورة المضروبة؛ الصف الفاضي بيتترسم لوحده
+    let invoiceDiscount = {type: 'amount', value: 0};
     let currentCustomer = null;
     let currentDocId = null; // للمعلّق
     let currentClientUuid = '';
     let approvalToken = null;
     let isSubmitting = false;
+    let restoredDraftKey = '';
+    let quantityValidationTimer = null;
 
     // عناصر الصفحة الأساسية
     const alertBox = document.getElementById('posAlert');
-    const scanInput = document.getElementById('posScanInput');
-    const searchDropdown = document.getElementById('posSearchResults');
     const cartBody = document.getElementById('posCartBody');
     const cartEmpty = document.getElementById('posCartEmpty');
     const netDisplay = document.getElementById('posNetDisplay');
@@ -999,8 +1198,39 @@ document.addEventListener('DOMContentLoaded', function () {
     const sessionBadge = document.getElementById('posSessionBadge');
     const openSessionBtn = document.getElementById('posBtnOpenSession');
     const closeSessionBtn = document.getElementById('posBtnCloseSession');
-    const customerBar = document.getElementById('posCustomerBar');
     const customerNameEl = document.getElementById('posCustomerName');
+    const removeCustomerBtn = document.getElementById('posBtnRemoveCustomer');
+    const saleItemsPanel = document.getElementById('posSaleItemsPanel');
+    const paymentPanel = document.getElementById('posPaymentPanel');
+    const invDiscPctInput = document.getElementById('posInvDiscPct');
+    const invDiscAmountInput = document.getElementById('posInvDiscAmount');
+    let paymentPanelOpen = false;
+
+    // ==========================================
+    // السلة الهدف (بريف 827k) — نفس دوال البيع تخدم التابات التلاتة
+    // ==========================================
+    // كل تاب عنده object بنفس الشكل: cart (getter/setter على المصفوفة) + tbody
+    // + خيارات الشكل. الدوال المشتركة بتاخد الـstore بدل ما تلمس global cart.
+    const saleStore = {
+        key: 'sale',
+        get cart() { return cart; },
+        set cart(v) { cart = v; },
+        tbody: cartBody,
+        cartEmpty: cartEmpty,
+        discounts: true,
+        stockGuard: true,
+        codeIdPrefix: 'posCodeInput_',
+        nameIdPrefix: 'posNameInput_',
+        onChange: function () { saveDraft(); },
+        onTotals: function () { computeTotals(); }
+    };
+
+    // السلة الظاهرة دلوقتي حسب التاب المفتوح
+    function activeCartStore() {
+        if (currentMode === 'return_general' && typeof genStore !== 'undefined') return genStore;
+        if (currentMode === 'exchange' && typeof exchStore !== 'undefined') return exchStore;
+        return saleStore;
+    }
 
     // قراءة المعرف من الرابط أو التخزين المحلي
     try {
@@ -1013,13 +1243,16 @@ document.addEventListener('DOMContentLoaded', function () {
     function showAlert(kind, msg) {
         if (!msg) {
             alertBox.innerHTML = '';
+            scheduleAdjustCartTableHeight();
             return;
         }
         alertBox.innerHTML = ui.alert(kind, msg);
+        scheduleAdjustCartTableHeight();
     }
 
     function clearAlert() {
         alertBox.innerHTML = '';
+        scheduleAdjustCartTableHeight();
     }
 
     function openModal(el) {
@@ -1039,11 +1272,68 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function refocusScan() {
         setTimeout(function () {
-            if (scanInput && !document.querySelector('.fg-dlg-bg[style*="display: flex"]')) {
-                scanInput.value = '';
-                scanInput.focus();
+            if (!paymentPanelOpen && !document.querySelector('.fg-dlg-bg[style*="display: flex"]')) {
+                const store = activeCartStore();
+                if (!store || !store.tbody) return;
+                const codeInput = store.tbody.querySelector('tr[data-empty-row="1"] [data-cart-field="code"]');
+                if (codeInput) codeInput.focus();
             }
         }, 60);
+    }
+
+    // حساب ارتفاع جدول السلة ديناميكياً ليملأ باقي الشاشة تماماً بدون scroll (بريف 827f)
+    function adjustCartTableHeight() {
+        if (window.innerWidth <= 600) {
+            document.querySelectorAll('.pos-cart-table-wrap').forEach(function (wrap) {
+                wrap.style.height = '';
+            });
+            return;
+        }
+        const wraps = document.querySelectorAll('.pos-cart-table-wrap');
+        wraps.forEach(function (wrap) {
+            if (!wrap.offsetParent) return;
+            const wrapRect = wrap.getBoundingClientRect();
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop || 0;
+            const wrapTop = wrapRect.top + scrollTop;
+
+            let totalsBarHeight = 0;
+            const parentView = wrap.closest('#posViewSale, #posViewReturn, #posViewReturnGeneral, #posViewExchange');
+            const totalsBar = parentView ? parentView.querySelector('.pos-totals-bar') : null;
+            if (totalsBar && totalsBar.offsetParent !== null) {
+                totalsBarHeight = totalsBar.getBoundingClientRect().height || 0;
+            }
+
+            let shortcutsHeight = 0;
+            const shortcutsBar = document.querySelector('.pos-shortcuts-bar');
+            if (shortcutsBar && getComputedStyle(shortcutsBar).display !== 'none') {
+                shortcutsHeight = shortcutsBar.getBoundingClientRect().height || 28;
+            }
+
+            const marginsAndGaps = 18;
+            // شاشات المرتجع العام والاستبدال جوه .pos-layout اللي تحته هامش سفلي
+            let layoutGap = 0;
+            const layoutEl = wrap.closest('.pos-layout');
+            if (layoutEl) {
+                const mb = parseFloat(getComputedStyle(layoutEl).marginBottom);
+                layoutGap = isNaN(mb) ? 0 : mb;
+            }
+            let availableHeight = window.innerHeight - wrapTop - totalsBarHeight - shortcutsHeight - marginsAndGaps - layoutGap;
+            if (availableHeight < 240) availableHeight = 240;
+            wrap.style.height = Math.floor(availableHeight) + 'px';
+        });
+    }
+
+    window.addEventListener('resize', adjustCartTableHeight);
+    window.addEventListener('load', adjustCartTableHeight);
+
+    // تنبيه فوق الجدول بيزوّد ارتفاعه — لازم نعيد حساب ارتفاع الجدول بعده (بريف 827j)
+    var cartHeightFrame = 0;
+    function scheduleAdjustCartTableHeight() {
+        if (cartHeightFrame) return;
+        cartHeightFrame = window.requestAnimationFrame(function () {
+            cartHeightFrame = 0;
+            adjustCartTableHeight();
+        });
     }
 
     function isEnter(e) {
@@ -1057,8 +1347,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // ==========================================
     // تهيئة الجهاز وسياق العمل
     // ==========================================
-    function initContext() {
-        clearAlert();
+    function initContext(keepAlert) {
+        if (!keepAlert) clearAlert();
         if (!deviceUuid) {
             promptDeviceSelection();
             return;
@@ -1085,10 +1375,45 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!context) return;
         branchBadge.textContent = 'فرع: ' + (context.branch ? context.branch.name : '--');
         deviceBadge.textContent = 'جهاز: ' + (context.device ? context.device.name + ' (' + context.device.code + ')' : '--');
+        const invBranch = document.getElementById('posInvoiceBranch');
+        if (invBranch) invBranch.value = context.branch ? context.branch.name : '--';
+        const invDev = document.getElementById('posInvoiceDevice');
+        if (invDev) invDev.value = context.device ? context.device.name + ' (' + context.device.code + ')' : '--';
+        const invDate = document.getElementById('posInvoiceDate');
+        if (invDate) invDate.value = context.session ? context.session.business_date : new Date().toLocaleDateString('en-CA');
+        const invSeller = document.getElementById('posInvoiceSeller');
+        if (invSeller) invSeller.value = context.session ? (context.session.cashier_name || '--') : '--';
+
+        const sellerBadge = document.getElementById('posSellerBadge');
+        if (sellerBadge) {
+            sellerBadge.textContent = 'بائع: ' + (context.session ? (context.session.cashier_name || '--') : '--');
+        }
+
+        const dateBadge = document.getElementById('posDateBadge');
+        if (dateBadge) {
+            const todayStr = (function () {
+                const d = new Date();
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return y + '-' + m + '-' + day;
+            })();
+            const bizDate = (context.session && context.session.business_date) ? context.session.business_date : todayStr;
+            if (context.session && context.session.business_date && context.session.business_date < todayStr) {
+                const parts = context.session.business_date.split('-');
+                const dayMonth = (parts.length === 3) ? (parts[2] + '/' + parts[1]) : context.session.business_date;
+                dateBadge.className = 'fchip fchip-warn';
+                dateBadge.textContent = 'وردية من ' + dayMonth;
+                dateBadge.title = 'تنبيه: وردية عمل سابقة بتاريخ ' + context.session.business_date;
+            } else {
+                dateBadge.className = 'fchip fchip-mute';
+                dateBadge.textContent = 'تاريخ: ' + bizDate;
+                dateBadge.title = 'تاريخ يوم العمل';
+            }
+        }
 
         if (context.ready === false) {
             showAlert('warn', 'الفرع لسه على True — البيع مقفول');
-            scanInput.disabled = true;
             payBtn.disabled = true;
             sessionBadge.className = 'fchip fchip-neg';
             sessionBadge.textContent = 'البيع مقفول';
@@ -1106,7 +1431,7 @@ document.addEventListener('DOMContentLoaded', function () {
             sessionBadge.textContent = 'وردية مفتوحة #' + context.session.id;
             openSessionBtn.style.display = 'none';
             closeSessionBtn.style.display = 'inline-flex';
-            scanInput.disabled = false;
+            restoreDraft();
         }
         refocusScan();
     }
@@ -1120,7 +1445,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function promptDeviceSelection() {
         deviceModalAlert.innerHTML = '';
-        window.apiFetch('pos_devices_api.php?part=list')
+        window.apiFetch('pos_devices_api.php?part=list_all')
             .then(function (res) {
                 const devs = (res.data && res.data.devices) ? res.data.devices : [];
                 if (!devs.length) {
@@ -1132,7 +1457,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 deviceSelect.innerHTML = devs.map(function (d) {
                     const sel = (d.device_uuid === deviceUuid) ? ' selected' : '';
                     return '<option value="' + ui.esc(d.device_uuid) + '"' + sel + '>' +
-                           ui.esc(d.name) + ' (' + ui.esc(d.code) + ')</option>';
+                           ui.esc(d.branch_name || '--') + ' — ' + ui.esc(d.name) + ' (' + ui.esc(d.code) + ')</option>';
                 }).join('');
                 openModal(modalDevice);
             })
@@ -1200,7 +1525,7 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (res) {
             closeModal(modalSession);
             showAlert('pos', 'تم فتح الوردية بنجاح.');
-            initContext();
+            initContext(true);
         })
         .catch(function (err) {
             sessionModalAlert.innerHTML = ui.alert('neg', err.message || 'تعذر فتح الوردية.');
@@ -1217,7 +1542,76 @@ document.addEventListener('DOMContentLoaded', function () {
     const closeAlert = document.getElementById('posCloseSessionAlert');
     const closeCashBody = document.getElementById('posCloseCashBody');
     const closePaymentsBody = document.getElementById('posClosePaymentsBody');
+    const closeExpectedBox = document.getElementById('posCloseExpected');
+    const closeDifferencesBox = document.getElementById('posCloseDifferences');
+    const detailsToggle = document.getElementById('posCloseShowDetails');
+    const canSeeShiftExpected = document.getElementById('posContainer').getAttribute('data-can-shift-expected') === '1';
+    const CLOSE_DETAILS_KEY = 'pos_shift_show_details';
+    let closeShowDetails = false;
     let closeSummary = null;
+
+    // مفتاح «اعرض تفاصيل الوردية» — افتراضي مقفول والاختيار بيتفتكر على الجهاز.
+    if (canSeeShiftExpected && detailsToggle) {
+        try {
+            closeShowDetails = localStorage.getItem(CLOSE_DETAILS_KEY) === '1';
+        } catch (e) {
+            closeShowDetails = false;
+        }
+        detailsToggle.checked = closeShowDetails;
+        detailsToggle.addEventListener('change', function () {
+            closeShowDetails = detailsToggle.checked;
+            try {
+                localStorage.setItem(CLOSE_DETAILS_KEY, closeShowDetails ? '1' : '0');
+            } catch (e) {}
+            renderCloseView();
+        });
+    }
+
+    function closeDetailsVisible() {
+        return canSeeShiftExpected && closeShowDetails && !!(closeSummary && closeSummary.expected);
+    }
+
+    function showHeldBlockedAlert(message) {
+        alertBox.innerHTML = '<div class="falert falert-neg">' +
+            '<i class="ti ti-alert-circle"></i>' +
+            '<div>' + ui.esc(message) +
+            ' <button type="button" class="btn btn-sm btn-outline" data-open-held-list>' +
+            '<i class="ti ti-clock"></i> الفواتير المعلّقة (F9)</button></div></div>';
+    }
+
+    function showDrawerBlockedAlert() {
+        alertBox.innerHTML = '<div class="falert falert-warn">' +
+            '<i class="ti ti-alert-triangle"></i>' +
+            '<div>' + ui.esc('الكود 0 «فتح درج» مش بيتباع هنا — استخدم زرار «فتح الدرج» واكتب السبب.') +
+            ' <button type="button" class="btn btn-sm btn-outline" data-open-drawer>' +
+            '<i class="ti ti-cash"></i> فتح الدرج (F3)</button></div></div>';
+    }
+
+    alertBox.addEventListener('click', function (event) {
+        if (event.target.closest('[data-open-held-list]')) {
+            openHeldListModal();
+        }
+        if (event.target.closest('[data-open-drawer]')) {
+            openDrawerModal();
+        }
+    });
+
+    function renderCloseExpected() {
+        if (!closeExpectedBox) return;
+        if (!closeDetailsVisible()) {
+            closeExpectedBox.innerHTML = '';
+            return;
+        }
+        const exp = closeSummary.expected || {};
+        const session = closeSummary.session || {};
+        closeExpectedBox.innerHTML = ui.alert('info',
+            'المتوقع: كاش ' + Number(exp.cash || 0).toFixed(2) +
+            ' · فيزا ' + Number(exp.visa || 0).toFixed(2) +
+            ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2)) +
+            ui.alert('info', 'الافتتاحي (بيفضل في الدرج): ' +
+                Number(session.opening_cash || 0).toFixed(2)) +
+            ui.alert('info', 'الكاش المطلوب توريده: ' + Number(exp.cash_sales || 0).toFixed(2));
+    }
 
     function closePaymentRow(method) {
         const tr = document.createElement('tr');
@@ -1244,9 +1638,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const method = tr.querySelector('.pos-close-method').value;
             counted[method] += Math.max(0, Number(tr.querySelector('.pos-close-amount').value || 0));
         });
+        if (!closeDetailsVisible()) {
+            closeDifferencesBox.innerHTML = '';
+            return;
+        }
         const exp = closeSummary.expected;
         const totalDiff = counted.cash + counted.visa + counted.instapay - Number(exp.total);
-        document.getElementById('posCloseDifferences').innerHTML =
+        closeDifferencesBox.innerHTML =
             '<table class="ftable" data-xt-off><thead><tr><th>الطريقة</th><th class="num">المتوقع</th><th class="num">المعدود</th><th class="num">الفرق</th></tr></thead><tbody>' +
             ['cash', 'visa', 'instapay'].map(function (method) {
                 const names = { cash: 'كاش', visa: 'فيزا', instapay: 'إنستا باي' };
@@ -1257,19 +1655,21 @@ document.addEventListener('DOMContentLoaded', function () {
             '</tbody></table>';
     }
 
+    function renderCloseView() {
+        renderCloseExpected();
+        renderCloseDiffs();
+    }
+
     closeSessionBtn.addEventListener('click', function () {
         closeAlert.innerHTML = '';
         window.apiFetch('pos_api.php?part=session_summary&device_uuid=' + encodeURIComponent(deviceUuid))
             .then(function (res) {
                 closeSummary = res.data || {};
-                const exp = closeSummary.expected || {};
-                document.getElementById('posCloseExpected').innerHTML = ui.alert('info',
-                    'المتوقع: كاش ' + Number(exp.cash || 0).toFixed(2) +
-                    ' · فيزا ' + Number(exp.visa || 0).toFixed(2) +
-                    ' · إنستا باي ' + Number(exp.instapay || 0).toFixed(2)) +
-                    ui.alert('info', 'الافتتاحي (بيفضل في الدرج): ' +
-                        Number((closeSummary.session || {}).opening_cash || 0).toFixed(2)) +
-                    ui.alert('info', 'الكاش المطلوب توريده: ' + Number(exp.cash_sales || 0).toFixed(2));
+                const held = closeSummary.held_docs || [];
+                if (held.length) {
+                    showHeldBlockedAlert('فيه ' + held.length + ' فاتورة معلّقة — استرجعها وكمّلها أو الغيها الأول.');
+                    return;
+                }
                 closeCashBody.innerHTML = (closeSummary.denominations || []).map(function (denom) {
                     return '<tr><td class="num">' + Number(denom).toFixed(2) + '</td>' +
                         '<td class="num"><input class="finput num" data-denom="' + ui.esc(String(denom)) + '" type="number" min="0" step="1" value="0"></td>' +
@@ -1278,18 +1678,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 closePaymentsBody.innerHTML = '';
                 closePaymentRow('visa');
                 closePaymentRow('instapay');
-                const held = closeSummary.held_docs || [];
-                const warning = document.getElementById('posCloseHeldWarning');
-                if (held.length) {
-                    warning.style.display = 'block';
-                    warning.innerHTML = 'فيه ' + held.length + ' فاتورة معلقة مفتوحة في الوردية: ' +
-                        held.map(function (doc) { return '#' + ui.esc(String(doc.id)); }).join(' · ') +
-                        '. التقفيل مسموح، والفواتير هتفضل معلقة.';
-                } else {
-                    warning.style.display = 'none';
-                    warning.innerHTML = '';
-                }
-                renderCloseDiffs();
+                renderCloseView();
                 openModal(modalCloseSession);
             })
             .catch(function (err) { showAlert('neg', err.message || 'تعذر تحميل ملخص الوردية.'); });
@@ -1338,10 +1727,18 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }).then(function (res) {
             closeModal(modalCloseSession);
-            showAlert('pos', 'تم تقفيل الوردية وإرسالها للمراجعة. رقم التقفيل #' + Number(res.data.shift_id) +
-                ' · الكاش المطلوب توريده ' + Number(res.data.cash_to_deposit).toFixed(2));
-            initContext();
+            let msg = 'تم تقفيل الوردية وإرسالها للمراجعة. رقم التقفيل #' + Number(res.data.shift_id);
+            if (res.data.cash_to_deposit !== undefined) {
+                msg += ' · الكاش المطلوب توريده ' + Number(res.data.cash_to_deposit).toFixed(2);
+            }
+            showAlert('pos', msg);
+            initContext(true);
         }).catch(function (err) {
+            if (err.code === 'held_open') {
+                closeModal(modalCloseSession);
+                showHeldBlockedAlert(err.message || 'فيه فاتورة معلّقة — استرجعها وكمّلها أو الغيها الأول.');
+                return;
+            }
             closeAlert.innerHTML = ui.alert('neg', err.message || 'تعذر تقفيل الوردية.');
         }).finally(function () { btn.disabled = false; });
     });
@@ -1349,44 +1746,183 @@ document.addEventListener('DOMContentLoaded', function () {
     // ==========================================
     // حسابات السلة والخصم (sale_compute)
     // ==========================================
-    function parseDiscount(disc, base) {
-        if (!disc) return 0;
-        if (typeof disc === 'number') return Math.min(base, Math.max(0, disc));
-        const s = String(disc).trim();
-        if (s.endsWith('%')) {
-            const pct = parseFloat(s.slice(0, -1)) || 0;
-            return Math.min(base, Math.max(0, Math.round(base * pct) / 100));
+    function round2(value) {
+        const n = Number(value) || 0;
+        return Number(Math.round(Number(n + 'e2')) + 'e-2');
+    }
+    function normalizeSpaces(value) { return String(value || '').trim().replace(/\s+/g, ' '); }
+    function normalizeDiscount(discount) {
+        if (discount && typeof discount === 'object') {
+            return {type: discount.type === 'percent' ? 'percent' : 'amount', value: Number(discount.value) || 0};
         }
-        const n = parseFloat(s) || 0;
-        return Math.min(base, Math.max(0, n));
+        const text = String(discount || '').trim();
+        if (text.endsWith('%')) return {type: 'percent', value: Number(text.slice(0, -1)) || 0};
+        return {type: 'amount', value: Number(text) || 0};
+    }
+    function discountAmount(discount, base) {
+        const clean = normalizeDiscount(discount);
+        return clean.type === 'percent' ? round2(base * clean.value / 100) : round2(clean.value);
+    }
+
+    function draftStorageKey() {
+        if (!deviceUuid || !context || !context.session) return '';
+        return 'pos_open_invoice_' + deviceUuid + '_' + context.session.id;
+    }
+
+    function saveDraft() {
+        const key = draftStorageKey();
+        if (!key) return;
+        try {
+            localStorage.setItem(key, JSON.stringify({
+                cart: cart,
+                invoice_discount: invoiceDiscount,
+                customer: currentCustomer,
+                doc_id: currentDocId,
+                client_uuid: currentClientUuid,
+                saved_at: new Date().toISOString()
+            }));
+        } catch (e) {}
+    }
+
+    function clearDraft() {
+        const key = draftStorageKey();
+        if (!key) return;
+        try { localStorage.removeItem(key); } catch (e) {}
+        restoredDraftKey = key;
+    }
+
+    function restoreDraft() {
+        const key = draftStorageKey();
+        if (!key || restoredDraftKey === key || cart.length) return;
+        restoredDraftKey = key;
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) return;
+            const draft = JSON.parse(raw);
+            if (!draft || !Array.isArray(draft.cart) || !draft.cart.length) return;
+            cart = draft.cart.filter(function (line) {
+                return line && line.code && Number(line.qty) > 0;
+            }).map(function (line) {
+                line.qty = Number(line.qty);
+                line.unit_price = Number(line.unit_price || 0);
+                line.unit_factor = Number(line.unit_factor || 1);
+                line.balance = Number(line.balance || 0);
+                line.stock_known = line.stock_known !== false;
+                line.line_discount = normalizeDiscount(line.line_discount);
+                return line;
+            });
+            if (!cart.length) return;
+            invoiceDiscount = normalizeDiscount(draft.invoice_discount);
+            currentCustomer = draft.customer || null;
+            currentDocId = draft.doc_id || null;
+            currentClientUuid = draft.client_uuid || '';
+            updateCustomerBadge();
+            renderCart({idx:cart.length, field:'code'});
+            showAlert('info', 'رجّعنا الفاتورة اللي كانت مفتوحة');
+        } catch (e) {}
+    }
+
+    function negativeStockAllowed() {
+        return !!(context && context.settings && context.settings.stock_allow_negative);
+    }
+
+    function availableLineQty(line) {
+        const factor = Math.max(0.001, Number(line.unit_factor) || 1);
+        return Math.max(0, Number(line.balance) || 0) / factor;
+    }
+
+    function lineOverStock(line) {
+        if (!line || line.stock_known === false) return false;
+        return Number(line.qty || 0) > availableLineQty(line) + 0.0000001;
+    }
+
+    function validateStockCart(targetAlert) {
+        if (negativeStockAllowed()) return true;
+        const bad = cart.find(function (line) { return lineOverStock(line); });
+        if (!bad) return true;
+        const message = 'الرصيد مش مكفّي (المتاح ' + Number(availableLineQty(bad).toFixed(3)) + ')';
+        if (targetAlert) targetAlert.innerHTML = ui.alert('neg', message); else showAlert('warn', message);
+        return false;
+    }
+
+    function noteInputSpeed(input, event) {
+        const now = Number(event.timeStamp) || Date.now();
+        const last = Number(input.dataset.scanLast || 0);
+        let count = Number(input.dataset.scanCount || 0);
+        count = last && now - last > 0 && now - last <= 50 ? count + 1 : 1;
+        input.dataset.scanLast = String(now);
+        input.dataset.scanCount = String(count);
+        input.dataset.scanFast = count >= 4 && String(input.value || '').length >= 4 ? '1' : '0';
+        return input.dataset.scanFast === '1';
+    }
+
+    function enforceQuantityStock(store, input, idx) {
+        if (!store.cart[idx] || !store.stockGuard || negativeStockAllowed() || !lineOverStock(store.cart[idx])) return true;
+        const available = availableLineQty(store.cart[idx]);
+        showAlert('warn', 'الرصيد مش مكفّي (المتاح ' + Number(available.toFixed(3)) + ')');
+        store.cart[idx].qty = available > 0 ? available : Math.max(0.001, Number(input.dataset.qtyBeforeInput) || 1);
+        input.value = String(store.cart[idx].qty);
+        syncLineInputsFor(store, idx);
+        store.onChange();
+        return false;
+    }
+
+    function routeQuantityBarcode(store, input, idx, raw) {
+        if (!raw || input.dataset.barcodeRouted === '1') return;
+        input.dataset.barcodeRouted = '1';
+        if (store.cart[idx]) {
+            store.cart[idx].qty = Math.max(0.001, Number(input.dataset.qtyBeforeInput) || 1);
+            syncLineInputsFor(store, idx);
+            store.onChange();
+        }
+        const emptyCode = store.tbody.querySelector('tr[data-empty-row="1"] [data-cart-field="code"]');
+        if (!emptyCode) return;
+        emptyCode.value = raw;
+        emptyCode.dataset.scanFast = '1';
+        handleCodeEnter(store, emptyCode, true);
+    }
+
+    // حساب سطر واحد — نفس معادلة sale_compute على السيرفر (بريف 827k)
+    function computeLineAmounts(line) {
+        const lineGross = round2((Number(line.qty) || 0) * (Number(line.unit_price) || 0));
+        const clean = normalizeDiscount(line.line_discount);
+        clean.value = clean.type === 'percent'
+            ? Math.min(100, Math.max(0, clean.value))
+            : Math.min(lineGross, Math.max(0, round2(clean.value)));
+        const lineDisc = discountAmount(clean, lineGross);
+        line.line_discount = clean;
+        line.gross = lineGross;
+        line.line_discount_amount = lineDisc;
+        line.line_discount_pct = clean.type === 'percent'
+            ? clean.value
+            : (lineGross > 0 ? Math.round(lineDisc / lineGross * 10000) / 100 : 0);
+        line.net = round2(lineGross - lineDisc);
+        line.pieces = Math.round((Number(line.qty) || 0) * (Number(line.unit_factor) || 1) * 1000) / 1000;
+        return line;
     }
 
     function computeTotals() {
         let gross = 0;
         let lineDiscountTotal = 0;
         let piecesCount = 0;
-
         cart.forEach(function (line) {
-            const qty = Number(line.qty) || 0;
-            const price = Number(line.unit_price) || 0;
-            const factor = Number(line.unit_factor) || 1;
-            const lineGross = Math.round(qty * price * 100) / 100;
-            const lineDisc = parseDiscount(line.line_discount, lineGross);
-            line.gross = lineGross;
-            line.line_discount_amount = lineDisc;
-            line.net = Math.round((lineGross - lineDisc) * 100) / 100;
-            line.pieces = Math.round(qty * factor * 1000) / 1000;
-
-            gross = Math.round((gross + lineGross) * 100) / 100;
-            lineDiscountTotal = Math.round((lineDiscountTotal + lineDisc) * 100) / 100;
+            computeLineAmounts(line);
+            gross = round2(gross + line.gross);
+            lineDiscountTotal = round2(lineDiscountTotal + line.line_discount_amount);
             piecesCount += line.pieces;
         });
-
-        const afterLine = Math.round((gross - lineDiscountTotal) * 100) / 100;
-        const invDiscAmount = parseDiscount(invoiceDiscount, afterLine);
-        const net = Math.round((afterLine - invDiscAmount) * 100) / 100;
-        const totalDiscount = Math.round((lineDiscountTotal + invDiscAmount) * 100) / 100;
-        const discountPct = gross > 0 ? Math.round((totalDiscount / gross) * 100000) / 1000 : 0;
+        const afterLine = round2(gross - lineDiscountTotal);
+        invoiceDiscount = normalizeDiscount(invoiceDiscount);
+        invoiceDiscount.value = invoiceDiscount.type === 'percent'
+            ? Math.min(100, Math.max(0, invoiceDiscount.value))
+            : Math.min(afterLine, Math.max(0, round2(invoiceDiscount.value)));
+        const invDiscAmount = discountAmount(invoiceDiscount, afterLine);
+        const invDiscPct = invoiceDiscount.type === 'percent'
+            ? invoiceDiscount.value
+            : (afterLine > 0 ? Math.round(invDiscAmount / afterLine * 10000) / 100 : 0);
+        const net = round2(afterLine - invDiscAmount);
+        const totalDiscount = round2(lineDiscountTotal + invDiscAmount);
+        const discountPct = gross > 0 ? Math.round(totalDiscount / gross * 100000) / 1000 : 0;
 
         netDisplay.textContent = net.toFixed(2);
         grossDisplay.textContent = gross.toFixed(2);
@@ -1395,429 +1931,526 @@ document.addEventListener('DOMContentLoaded', function () {
         totalDiscDisplay.textContent = totalDiscount.toFixed(2);
         linesCountEl.textContent = String(cart.length);
         piecesCountEl.textContent = String(piecesCount);
-
-        payBtn.disabled = (cart.length === 0 || (context && context.ready === false));
-
-        return {
-            gross: gross,
-            line_discount: lineDiscountTotal,
-            invoice_discount: invDiscAmount,
-            net: net,
-            discount_pct: discountPct
-        };
+        const itemsPiecesDisplay = document.getElementById('posItemsPiecesDisplay');
+        if (itemsPiecesDisplay) {
+            itemsPiecesDisplay.textContent = cart.length + ' أصناف · ' + piecesCount + ' قطعة';
+        }
+        if (document.activeElement !== invDiscPctInput) {
+            invDiscPctInput.value = invoiceDiscount.type === 'percent'
+                ? invoiceDiscount.value
+                : invDiscPct.toFixed(2);
+        }
+        if (document.activeElement !== invDiscAmountInput) {
+            invDiscAmountInput.value = invoiceDiscount.type === 'amount'
+                ? invoiceDiscount.value
+                : invDiscAmount.toFixed(2);
+        }
+        payBtn.disabled = cart.length === 0 || (context && context.ready === false);
+        return {gross: gross, line_discount: lineDiscountTotal, after_line: afterLine,
+            invoice_discount: invDiscAmount, net: net, discount_pct: discountPct};
     }
 
     // ==========================================
-    // رسم السلة والتفاعل
+    // رسم السلة — نسخة واحدة لكل التابات (بريف 827k)
     // ==========================================
-    let pendingCartFocus = null;
-
-    function renderCart() {
-        const active = document.activeElement;
-        const activeRow = active && active.closest ? active.closest('tr[data-line]') : null;
-        const savedFocus = pendingCartFocus || (activeRow && active.getAttribute('data-cart-field') ? {
-            line: activeRow.getAttribute('data-line'),
-            field: active.getAttribute('data-cart-field')
-        } : null);
-        pendingCartFocus = null;
-
-        if (!cart.length) {
-            cartBody.innerHTML = '';
-            cartEmpty.innerHTML = ui.empty('السلة فاضية — امسح كود أو ابحث عن صنف');
-            computeTotals();
-            return;
-        }
-        cartEmpty.innerHTML = '';
-
-        cartBody.innerHTML = cart.map(function (item, idx) {
-            const hasMultipleUnits = item.codes && item.codes.length > 1;
-            let unitHtml = '';
-            if (hasMultipleUnits) {
-                unitHtml = '<select class="fselect fselect-sm" data-idx="' + idx + '" data-action="change-unit" data-cart-field="unit">' +
-                    item.codes.map(function (c) {
-                        const sel = (c.code === item.code) ? ' selected' : '';
-                        return '<option value="' + ui.esc(c.code) + '"' + sel + '>' + ui.esc(c.unit_name) + '</option>';
-                    }).join('') +
-                    '</select>';
-            } else {
-                unitHtml = '<span>' + ui.esc(item.unit_name || 'قطعة') + '</span>';
-            }
-
-            const bal = Number(item.balance || 0);
-            return '<tr data-idx="' + idx + '" data-line="' + idx + '">' +
+    function renderCartView(store, focus) {
+        if (!store || !store.tbody) return;
+        const list = store.cart;
+        list.forEach(function (line) { computeLineAmounts(line); });
+        const rows = list.map(function (item, idx) {
+            const stockClass = (store.stockGuard && negativeStockAllowed() && lineOverStock(item)) ? ' class="frow-red"' : '';
+            const isPct = item.line_discount && item.line_discount.type === 'percent';
+            const pctVal = isPct ? item.line_discount.value : Number(item.line_discount_pct || 0).toFixed(2);
+            const amtVal = !isPct && item.line_discount && item.line_discount.type === 'amount'
+                ? item.line_discount.value
+                : Number(item.line_discount_amount || 0).toFixed(2);
+            const discCells = store.discounts
+                ? '<td class="num fcell"><input type="number" min="0" max="100" step="any" class="finput finput-cell num" data-idx="' + idx + '" data-cart-field="discount_pct" value="' + pctVal + '"></td>' +
+                  '<td class="num fcell"><input type="number" min="0" step="any" class="finput finput-cell num" data-idx="' + idx + '" data-cart-field="discount_amount" value="' + amtVal + '"></td>'
+                : '';
+            return '<tr data-idx="' + idx + '" data-line="' + idx + '"' + stockClass + '>' +
+                '<td class="num">' + (idx + 1) + '</td>' +
+                '<td><button type="button" class="btn btn-sm btn-ghost pos-row-btn" title="الكود اتقفل بعد ضرب الصنف" disabled><i class="ti ti-camera"></i></button></td>' +
                 '<td class="num">' + ui.esc(item.code) + '</td>' +
-                '<td><span class="pos-item-name" title="' + ui.esc(item.name) + '">' + ui.esc(item.name) + '</span></td>' +
-                '<td>' + unitHtml + '</td>' +
-                '<td class="num">' +
-                    '<div class="pos-qty-wrap">' +
-                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-minus">-</button>' +
-                        '<input type="number" min="0.001" step="any" class="finput finput-sm num pos-qty-input" data-idx="' + idx + '" data-action="qty-input" data-cart-field="qty" value="' + Number(item.qty) + '">' +
-                        '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="qty-plus">+</button>' +
-                    '</div>' +
-                '</td>' +
-                '<td class="num">' + Number(item.unit_price).toFixed(2) + '</td>' +
-                '<td class="num">' +
-                    '<input type="text" class="finput finput-sm num pos-disc-input" data-idx="' + idx + '" data-action="disc-input" data-cart-field="discount" value="' + ui.esc(String(item.line_discount || '0')) + '">' +
-                '</td>' +
-                '<td class="num" style="font-weight:700;">' + Number(item.net || 0).toFixed(2) + '</td>' +
-                '<td class="num" style="color:var(--ink-500); font-size:var(--fs-xs);">' + bal + '</td>' +
-                '<td>' +
-                    '<button type="button" class="btn btn-sm btn-ghost" data-idx="' + idx + '" data-action="remove" title="شيل السطر">' +
-                        '<i class="ti ti-trash"></i>' +
-                    '</button>' +
-                '</td>' +
+                '<td class="name"><span class="pos-item-name" title="' + ui.esc(item.name) + '">' + ui.esc(item.name) + '</span></td>' +
+                '<td>' + ui.esc(item.unit_name || 'قطعة') + '</td>' +
+                '<td class="num">' + Number(item.balance || 0) + '</td>' +
+                '<td class="num fcell"><input type="number" min="0.001" step="any" class="finput finput-cell num" data-idx="' + idx + '" data-cart-field="qty" value="' + Number(item.qty) + '"></td>' +
+                '<td class="num">' + Number(item.unit_price || 0).toFixed(2) + '</td>' +
+                '<td class="num" data-line-gross="' + idx + '">' + Number(item.gross || 0).toFixed(2) + '</td>' +
+                discCells +
+                '<td><button type="button" class="btn btn-sm btn-ghost pos-row-btn" data-action="remove" data-idx="' + idx + '" title="مسح الصف"><i class="ti ti-trash"></i></button></td>' +
             '</tr>';
         }).join('');
-
-        computeTotals();
-
-        if (savedFocus) {
-            const focusEl = cartBody.querySelector(
-                'tr[data-line="' + savedFocus.line + '"] [data-cart-field="' + savedFocus.field + '"]'
-            );
-            if (focusEl) focusEl.focus();
+        const emptyIdx = list.length;
+        const emptyTds = store.discounts
+            ? '<td></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td></td>'
+            : '<td></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td></td>';
+        store.tbody.innerHTML = rows + '<tr data-empty-row="1" data-line="' + emptyIdx + '">' +
+            '<td class="num">' + (emptyIdx + 1) + '</td>' +
+            '<td><button type="button" class="btn btn-sm btn-ghost pos-row-btn" data-action="camera" data-idx="' + emptyIdx + '" title="مسح بالكاميرا"><i class="ti ti-camera"></i></button></td>' +
+            '<td class="fcell"><input class="finput finput-cell num" id="' + store.codeIdPrefix + emptyIdx + '" data-idx="' + emptyIdx + '" data-cart-field="code" autocomplete="off" placeholder="الكود…"></td>' +
+            '<td class="fcell"><input class="finput finput-cell" id="' + store.nameIdPrefix + emptyIdx + '" data-idx="' + emptyIdx + '" data-cart-field="name" autocomplete="off" placeholder="اكتب اسم الصنف…"></td>' +
+            emptyTds + '</tr>';
+        if (store.cartEmpty) store.cartEmpty.innerHTML = '';
+        if (store.onTotals) store.onTotals();
+        if (focus) {
+            const el = store.tbody.querySelector('[data-idx="' + focus.idx + '"][data-cart-field="' + focus.field + '"]');
+            if (el) { el.focus(); if (focus.select && el.select) el.select(); }
         }
     }
 
-    // Tab بعد تعديل خانة يكمّل في خانة السلة اللي بعدها في نفس السطر.
-    cartBody.addEventListener('keydown', function (e) {
-        if (e.key !== 'Tab' || !e.target.matches('[data-cart-field]')) return;
-        const row = e.target.closest('tr[data-line]');
-        const fields = row ? Array.from(row.querySelectorAll('[data-cart-field]')) : [];
-        const current = fields.indexOf(e.target);
-        const next = fields[current + (e.shiftKey ? -1 : 1)];
-        if (row && next) {
-            e.preventDefault();
-            pendingCartFocus = {
-                line: row.getAttribute('data-line'),
-                field: next.getAttribute('data-cart-field')
-            };
-            e.target.dispatchEvent(new Event('change', {bubbles: true}));
+    function renderCart(focus) {
+        renderCartView(saleStore, focus);
+    }
+
+    function syncLineInputsFor(store, idx) {
+        const line = store.cart[idx];
+        if (!line) return;
+        computeLineAmounts(line);
+        if (store.onTotals) store.onTotals();
+        const row = store.tbody.querySelector('tr[data-idx="' + idx + '"]');
+        if (!row) return;
+        const grossCell = row.querySelector('[data-line-gross]');
+        const pct = row.querySelector('[data-cart-field="discount_pct"]');
+        const amount = row.querySelector('[data-cart-field="discount_amount"]');
+        if (grossCell) grossCell.textContent = Number(line.gross || 0).toFixed(2);
+        const isPct = line.line_discount && line.line_discount.type === 'percent';
+        if (pct && document.activeElement !== pct) {
+            pct.value = isPct ? line.line_discount.value : Number(line.line_discount_pct || 0).toFixed(2);
         }
-    });
-
-    // أحداث جدول السلة (تغيير كمية / وحدة / خصم / حذف)
-    cartBody.addEventListener('change', function (e) {
-        const action = e.target.getAttribute('data-action');
-        const idx = parseInt(e.target.getAttribute('data-idx'), 10);
-        if (isNaN(idx) || !cart[idx]) return;
-        const item = cart[idx];
-
-        if (action === 'change-unit') {
-            const newCode = e.target.value;
-            const matched = item.codes.find(function (c) { return c.code === newCode; });
-            if (matched) {
-                item.code = matched.code;
-                item.unit_name = matched.unit_name;
-                item.unit_factor = matched.unit_factor;
-                item.unit_price = Number(matched.price || 0);
-                renderCart();
-            }
-        } else if (action === 'qty-input') {
-            const q = parseFloat(e.target.value) || 1;
-            item.qty = Math.max(0.001, q);
-            renderCart();
-        } else if (action === 'disc-input') {
-            item.line_discount = e.target.value.trim() || '0';
-            renderCart();
+        if (amount && document.activeElement !== amount) {
+            amount.value = !isPct && line.line_discount && line.line_discount.type === 'amount'
+                ? line.line_discount.value
+                : Number(line.line_discount_amount || 0).toFixed(2);
         }
-    });
+        row.classList.toggle('frow-red', !!(store.stockGuard && negativeStockAllowed() && lineOverStock(line)));
+    }
 
-    cartBody.addEventListener('click', function (e) {
-        const btn = e.target.closest('button[data-action]');
-        if (!btn) return;
-        const action = btn.getAttribute('data-action');
-        const idx = parseInt(btn.getAttribute('data-idx'), 10);
-        if (isNaN(idx) || !cart[idx]) return;
-        const item = cart[idx];
+    function syncLineInputs(idx) {
+        syncLineInputsFor(saleStore, idx);
+    }
 
-        if (action === 'qty-plus') {
-            item.qty = Math.round((Number(item.qty) + 1) * 1000) / 1000;
-            renderCart();
-        } else if (action === 'qty-minus') {
-            if (Number(item.qty) > 1) {
-                item.qty = Math.round((Number(item.qty) - 1) * 1000) / 1000;
-                renderCart();
-            } else {
-                removeCartLine(idx);
-            }
-        } else if (action === 'remove') {
-            removeCartLine(idx);
-        }
-    });
-
-    function removeCartLine(idx) {
-        if (!cart[idx]) return;
-        const removed = cart[idx];
-        cart.splice(idx, 1);
-        renderCart();
-        refocusScan();
-
-        // حدث إزالة سطر في الخلفية (قرار ١٢)
-        if (context && context.session) {
-            window.apiFetch('pos_api.php?part=cart_event', {
-                method: 'POST',
-                body: {
-                    device_uuid: deviceUuid,
-                    event_type: 'line_removed',
-                    item_id: removed.item_id,
-                    code: removed.code,
-                    name: removed.name,
-                    qty: removed.qty,
-                    price: removed.unit_price
+    function removeCartLine(store, idx) {
+        if (!store.cart[idx]) return;
+        fgConfirm('متأكد إنك عايز تمسح الصف ده؟', {title:'مسح صف', okText:'مسح', cancelText:'رجوع', danger:true})
+            .then(function (confirmed) {
+                if (!confirmed || !store.cart[idx]) return;
+                const removed = store.cart[idx];
+                store.cart.splice(idx, 1);
+                renderCartView(store, {idx: store.cart.length, field: 'code'});
+                store.onChange();
+                if (store.key === 'sale' && context && context.session) {
+                    window.apiFetch('pos_api.php?part=cart_event', {method:'POST', body:{
+                        device_uuid:deviceUuid, event_type:'line_removed', item_id:removed.item_id,
+                        code:removed.code, name:removed.name, qty:removed.qty, price:removed.unit_price
+                    }}).catch(function () {});
                 }
-            }).catch(function () {});
-        }
+            });
     }
 
     function clearCart(silent) {
-        if (!cart.length) return;
         const count = cart.length;
-        const clearedLines = cart.map(function (line) {
-            return {
-                item_id: line.item_id,
-                code: line.code,
-                name: line.name,
-                qty: line.qty,
-                price: line.unit_price
-            };
-        });
+        const clearedLines = cart.map(function (line) { return {item_id:line.item_id, code:line.code,
+            name:line.name, qty:line.qty, price:line.unit_price}; });
+        clearDraft();
         cart = [];
-        invoiceDiscount = 0;
+        invoiceDiscount = {type:'amount', value:0};
         currentCustomer = null;
         currentDocId = null;
         currentClientUuid = '';
         approvalToken = null;
+        paymentRows = [];
+        paymentPanelOpen = false;
+        saleItemsPanel.style.display = 'block';
+        paymentPanel.style.display = 'none';
         updateCustomerBadge();
-        renderCart();
-        refocusScan();
-
-        if (!silent && context && context.session) {
-            window.apiFetch('pos_api.php?part=cart_event', {
-                method: 'POST',
-                body: {
-                    device_uuid: deviceUuid,
-                    event_type: 'cart_cleared',
-                    lines_count: count,
-                    lines: clearedLines
-                }
-            }).catch(function () {});
+        renderCart({idx:0, field:'code'});
+        if (!silent && count && context && context.session) {
+            window.apiFetch('pos_api.php?part=cart_event', {method:'POST', body:{
+                device_uuid:deviceUuid, event_type:'cart_cleared', lines_count:count, lines:clearedLines
+            }}).catch(function () {});
         }
     }
 
     document.getElementById('posBtnClearCart').addEventListener('click', function () {
         if (!cart.length) return;
-        fgConfirm('متأكد إنك عايز تفضّي السلة؟', {
-            title: 'تفريغ السلة',
-            okText: 'تفريغ',
-            cancelText: 'رجوع',
-            danger: true
-        }).then(function (confirmed) {
-            if (confirmed) clearCart(false);
-        });
+        fgConfirm('متأكد إنك عايز تمسح الفاتورة كلها؟', {title:'مسح الفاتورة', okText:'مسح', cancelText:'رجوع', danger:true})
+            .then(function (confirmed) { if (confirmed) clearCart(false); });
     });
 
-    // ==========================================
-    // البحث وإضافة صنف (سكانر أو نص)
-    // ==========================================
-    function addItemToCart(item, selectedCode) {
-        const codeInfo = selectedCode || (item.codes && item.codes[0]) || {
-            code: '0',
-            unit_name: 'قطعة',
-            unit_factor: 1,
-            price: 0
-        };
-
-        // فحص لو الصنف موجود في السلة بنفس الكود والوحدة
-        const existing = cart.find(function (line) {
-            return line.code === codeInfo.code;
-        });
-
-        if (existing) {
-            existing.qty = Math.round((Number(existing.qty) + 1) * 1000) / 1000;
-        } else {
-            cart.push({
-                item_id: item.item_id,
-                name: item.name,
-                source: item.source,
-                balance: item.balance,
-                code: codeInfo.code,
-                unit_name: codeInfo.unit_name || 'قطعة',
-                unit_factor: codeInfo.unit_factor || 1,
-                unit_price: Number(codeInfo.price || 0),
-                qty: 1,
-                line_discount: 0,
-                codes: item.codes || [codeInfo]
-            });
-        }
-
-        clearAlert();
-        renderCart();
-        searchDropdown.style.display = 'none';
-        scanInput.value = '';
-        refocusScan();
+    // اسم السطر = اسم الكود (hq_codes.name) ولو فاضي اسم الصنف (بريف 827j)
+    function codeDisplayName(codeInfo) {
+        return normalizeSpaces((codeInfo && (codeInfo.code_name || codeInfo.name)) || '');
     }
 
-    function handleScanLookup(val) {
-        val = val.trim();
-        if (!val) return;
-        searchDropdown.style.display = 'none';
+    function lineDisplayName(item, codeInfo) {
+        return codeDisplayName(codeInfo) || normalizeSpaces(item.name || '');
+    }
 
-        if (!deviceUuid) {
-            showAlert('warn', 'اختار الجهاز أولاً.');
-            promptDeviceSelection();
+    function roundQty(value) {
+        return Math.round((Number(value) || 0) * 1000) / 1000;
+    }
+
+    // أول صف قبل idx بنفس الكود — مفتاح التجميع الكود مش item_id (بريف 827j)
+    function findEarlierLineByCode(store, idx, code) {
+        for (let i = 0; i < idx; i++) {
+            if (store.cart[i] && String(store.cart[i].code) === String(code)) return i;
+        }
+        return -1;
+    }
+
+    // الكود اللي اتضرب بالظبط أو اللي اتختار من البوب أب؛ codes[0] بس لما الإضافة كانت باسم من غير كود (بريف 827k)
+    function addItemToCart(store, item, selectedCode, focusNextCode) {
+        const codeInfo = selectedCode || (item.codes && item.codes[0]);
+        if (!codeInfo || !codeInfo.code) { showAlert('warn', 'الصنف ده ملوش كود بيع.'); return; }
+        // الاسكانر: الكود الموجود في السلة بياخد +1 على طول من غير صف جديد (بريف 827j)
+        if (focusNextCode) {
+            const dupIdx = store.cart.findIndex(function (line) { return String(line.code) === String(codeInfo.code); });
+            if (dupIdx >= 0) {
+                const dupLine = store.cart[dupIdx];
+                const nextQty = roundQty(Number(dupLine.qty) + 1);
+                if (store.stockGuard && !negativeStockAllowed() && nextQty > availableLineQty(dupLine) + 0.0000001) {
+                    showAlert('warn', 'الرصيد مش مكفّي (المتاح ' + Number(availableLineQty(dupLine).toFixed(3)) + ')');
+                    return;
+                }
+                dupLine.qty = nextQty;
+                clearAlert();
+                renderCartView(store, {idx: store.cart.length, field: 'code'});
+                store.onChange();
+                return;
+            }
+        }
+        const newLine = {item_id:item.item_id, name:lineDisplayName(item, codeInfo), source:item.source, balance:Number(item.balance || 0), stock_known:true,
+            code:codeInfo.code, unit_name:codeInfo.unit_name || 'قطعة', unit_factor:codeInfo.unit_factor || 1,
+            unit_price:Number(codeInfo.price || 0), qty:1, line_discount:{type:'amount', value:0}, codes:item.codes || [codeInfo]};
+        if (store.stockGuard && !negativeStockAllowed() && lineOverStock(newLine)) {
+            showAlert('warn', 'الرصيد مش مكفّي (المتاح ' + Number(availableLineQty(newLine).toFixed(3)) + ')');
             return;
         }
+        store.cart.push(newLine);
+        clearAlert();
+        if (modalItemSearch.style.display === 'flex') {
+            modalItemSearch.style.display = 'none';
+            if (!document.querySelector('.fg-dlg-bg[style*="display: flex"]')) document.documentElement.classList.remove('fg-dlg-open');
+        }
+        renderCartView(store, focusNextCode
+            ? {idx:store.cart.length, field:'code'}
+            : {idx:store.cart.length - 1, field:'qty', select:true});
+        store.onChange();
+    }
 
-        // محاولة مطابقة كود مباشر أولاً
+    // تجميع الصف المكرر لما تدوس Enter في الكمية (بريف 827j)
+    // بيرجّع 'merged' لو اتجمّع · 'blocked' لو الرصيد مش مكفّي · 'none' لو مفيش صف قبله بنفس الكود
+    function mergeDuplicateLine(store, idx) {
+        const line = store.cart[idx];
+        if (!line) return 'none';
+        const targetIdx = findEarlierLineByCode(store, idx, line.code);
+        if (targetIdx < 0) return 'none';
+        const target = store.cart[targetIdx];
+        const mergedQty = roundQty(Number(target.qty) + Number(line.qty));
+        if (store.stockGuard && !negativeStockAllowed() && mergedQty > availableLineQty(target) + 0.0000001) {
+            showAlert('warn', 'الرصيد مش مكفّي (المتاح ' + Number(availableLineQty(target).toFixed(3)) + ')');
+            return 'blocked';
+        }
+        target.qty = mergedQty;
+        store.cart.splice(idx, 1);
+        clearAlert();
+        renderCartView(store, {idx: store.cart.length, field: 'code'});
+        store.onChange();
+        return 'merged';
+    }
+
+    function findExactLookup(items, wanted) {
+        let byItemName = null;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const codes = item.codes || [];
+            for (let j = 0; j < codes.length; j++) {
+                const codeName = codeDisplayName(codes[j]);
+                if (codeName && normalizeSpaces(codeName).toLocaleLowerCase('ar') === wanted) {
+                    return {item: item, code: codes[j]};
+                }
+            }
+            if (!byItemName && codes.length && normalizeSpaces(item.name).toLocaleLowerCase('ar') === wanted) {
+                byItemName = {item: item, code: codes[0]};
+            }
+        }
+        return byItemName;
+    }
+
+    function lookupByName(store, val, input, scannerInput) {
+        if (!deviceUuid) { showAlert('warn', 'اختار الجهاز الأول.'); promptDeviceSelection(); return Promise.resolve(); }
+        if (input) input.disabled = true;
+        return window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
+            .then(function (res) {
+                const items = res && res.data && res.data.items ? res.data.items : [];
+                const wanted = normalizeSpaces(val).toLocaleLowerCase('ar');
+                const exact = findExactLookup(items, wanted);
+                if (exact) {
+                    addItemToCart(store, exact.item, exact.code, scannerInput);
+                } else {
+                    openItemSearch(val, store.cart.length, store);
+                }
+            })
+            .catch(function (err) { showAlert('neg', err.message || 'تعذر البحث عن الصنف.'); })
+            .finally(function () { if (input) input.disabled = false; });
+    }
+
+    function handleCodeEnter(store, input, forceScanner) {
+        const val = normalizeSpaces(input.value);
+        const scannerInput = forceScanner === true || input.dataset.scanFast === '1';
+        if (!val) return;
+        if (!deviceUuid) { showAlert('warn', 'اختار الجهاز الأول.'); promptDeviceSelection(); return; }
+        if (val === '0') {
+            input.classList.add('is-invalid');
+            showDrawerBlockedAlert();
+            input.select();
+            return;
+        }
+        input.disabled = true;
         window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&code=' + encodeURIComponent(val))
             .then(function (res) {
-                const items = (res.data && res.data.items) ? res.data.items : [];
-                if (items.length === 1) {
-                    const matchedCode = items[0].codes.find(function (c) { return c.code === val; }) || items[0].codes[0];
-                    addItemToCart(items[0], matchedCode);
-                    return;
+                const items = res.data && res.data.items ? res.data.items : [];
+                let exactItem = null;
+                let exactCode = null;
+                items.some(function (item) {
+                    const code = (item.codes || []).find(function (c) { return String(c.code) === val; });
+                    if (code) { exactItem = item; exactCode = code; return true; }
+                    return false;
+                });
+                if (exactItem) {
+                    input.classList.remove('is-invalid');
+                    addItemToCart(store, exactItem, exactCode, scannerInput);
+                    return null;
                 }
-                // لو مفيش كود مباشر، بحث بالاسم
-                handleTextSearch(val);
+                input.classList.add('is-invalid');
+                showAlert('neg', 'الكود ' + val + ' مش موجود');
+                input.select();
+                return null;
             })
-            .catch(function () {
-                handleTextSearch(val);
-            });
+            .catch(function (err) { showAlert('neg', err.message || 'تعذر البحث عن الصنف.'); })
+            .finally(function () { input.disabled = false; });
     }
 
-    function handleTextSearch(val) {
-        window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
-            .then(function (res) {
-                const items = (res.data && res.data.items) ? res.data.items : [];
-                if (!items.length) {
-                    showAlert('warn', 'الصنف مش موجود: ' + val);
+    // ==========================================
+    // أحداث السلة — نفس المعالجات لكل التابات (بريف 827k)
+    // ==========================================
+    function bindCartEvents(store) {
+        if (!store || !store.tbody) return;
+
+        store.tbody.addEventListener('input', function (e) {
+            if (e.target && e.target.classList && e.target.classList.contains('is-invalid')) {
+                e.target.classList.remove('is-invalid');
+            }
+            const field = e.target.getAttribute('data-cart-field');
+            const idx = Number(e.target.getAttribute('data-idx'));
+            const fastInput = noteInputSpeed(e.target, e);
+            if (!store.cart[idx]) return;
+            if (field === 'qty') {
+                if (!e.target.dataset.qtyBeforeInput) e.target.dataset.qtyBeforeInput = String(store.cart[idx].qty);
+                if (fastInput) {
+                    store.cart[idx].qty = Math.max(0.001, Number(e.target.dataset.qtyBeforeInput) || 1);
+                    syncLineInputsFor(store, idx);
                     return;
                 }
-                if (items.length === 1 && items[0].codes && items[0].codes.length === 1) {
-                    addItemToCart(items[0], items[0].codes[0]);
+                store.cart[idx].qty = Math.max(0.001, Number(e.target.value) || 1);
+                clearTimeout(quantityValidationTimer);
+                quantityValidationTimer = setTimeout(function () {
+                    if (e.target.dataset.scanFast === '1') return;
+                    const raw = normalizeSpaces(e.target.value);
+                    if (Number(raw) > 9999) routeQuantityBarcode(store, e.target, idx, raw);
+                    else enforceQuantityStock(store, e.target, idx);
+                }, 80);
+            } else if (field === 'discount_pct') {
+                store.cart[idx].line_discount = {type:'percent', value:Math.max(0, Number(e.target.value) || 0)};
+            } else if (field === 'discount_amount') {
+                store.cart[idx].line_discount = {type:'amount', value:Math.max(0, Number(e.target.value) || 0)};
+            } else return;
+            syncLineInputsFor(store, idx);
+            store.onChange();
+        });
+
+        store.tbody.addEventListener('focusin', function (e) {
+            if (e.target.getAttribute('data-cart-field') !== 'qty') return;
+            const idx = Number(e.target.getAttribute('data-idx'));
+            if (store.cart[idx]) e.target.dataset.qtyBeforeInput = String(store.cart[idx].qty);
+            e.target.dataset.scanLast = '';
+            e.target.dataset.scanCount = '0';
+            e.target.dataset.scanFast = '0';
+        });
+
+        store.tbody.addEventListener('click', function (e) {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const idx = Number(btn.getAttribute('data-idx'));
+            if (btn.getAttribute('data-action') === 'remove') removeCartLine(store, idx);
+            if (btn.getAttribute('data-action') === 'camera') {
+                const input = store.tbody.querySelector('tr[data-empty-row="1"] [data-cart-field="code"]');
+                if (!input) return;
+                if (typeof window.openBarcodeScanner === 'function') window.openBarcodeScanner(input.id, {keepOpen:true});
+                else showAlert('warn', 'مكتبة السكانر مش محملة.');
+            }
+        });
+
+        store.tbody.addEventListener('keydown', function (e) {
+            const input = e.target.closest('[data-cart-field]');
+            if (!input) return;
+            const field = input.getAttribute('data-cart-field');
+            const idx = Number(input.getAttribute('data-idx'));
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                moveSameColumn(store, input, e.key === 'ArrowUp' ? -1 : 1);
+            } else if (isEnter(e) && field === 'code') {
+                e.preventDefault();
+                handleCodeEnter(store, input);
+            } else if (isEnter(e) && field === 'name') {
+                e.preventDefault();
+                const val = normalizeSpaces(input.value);
+                if (!val) return;
+                lookupByName(store, val, input, false);
+            } else if (isEnter(e) && field === 'qty') {
+                e.preventDefault();
+                clearTimeout(quantityValidationTimer);
+                const raw = normalizeSpaces(input.value);
+                if (input.dataset.scanFast === '1' || Number(raw) > 9999) {
+                    routeQuantityBarcode(store, input, idx, raw);
                     return;
                 }
-                // عرض قايمة نتايج لاختيار الصنف
-                renderSearchResults(items);
-            })
-            .catch(function (err) {
-                showAlert('neg', err.message || 'تعذر البحث عن الصنف.');
-            });
-    }
-
-    let searchItems = [];
-    let selectedSearchIdx = 0;
-
-    function renderSearchResults(items) {
-        searchItems = items;
-        selectedSearchIdx = 0;
-        searchDropdown.innerHTML = items.map(function (it, idx) {
-            const firstCode = (it.codes && it.codes[0]) ? it.codes[0] : {};
-            const p = Number(firstCode.price || 0).toFixed(2);
-            return '<div class="pos-search-item' + (idx === 0 ? ' is-selected' : '') + '" data-idx="' + idx + '">' +
-                '<div>' +
-                    '<strong>' + ui.esc(it.name) + '</strong>' +
-                    '<div style="font-size:var(--fs-xs); color:var(--text-muted);">' +
-                        'كود: ' + ui.esc(firstCode.code || '') + ' · وحدة: ' + ui.esc(firstCode.unit_name || 'قطعة') +
-                    '</div>' +
-                '</div>' +
-                '<div style="text-align:left;">' +
-                    '<strong class="num">' + p + ' ج.م</strong>' +
-                    '<div style="font-size:var(--fs-xs); color:var(--ink-500);">رصيد: ' + Number(it.balance || 0) + '</div>' +
-                '</div>' +
-            '</div>';
-        }).join('');
-        searchDropdown.style.display = 'block';
-    }
-
-    searchDropdown.addEventListener('click', function (e) {
-        const itemEl = e.target.closest('.pos-search-item');
-        if (!itemEl) return;
-        const idx = parseInt(itemEl.getAttribute('data-idx'), 10);
-        if (searchItems[idx]) {
-            addItemToCart(searchItems[idx], searchItems[idx].codes ? searchItems[idx].codes[0] : null);
-        }
-    });
-
-    scanInput.addEventListener('keydown', function (e) {
-        if (isEnter(e)) {
-            e.preventDefault();
-            if (searchDropdown.style.display === 'block' && searchItems[selectedSearchIdx]) {
-                addItemToCart(searchItems[selectedSearchIdx], searchItems[selectedSearchIdx].codes ? searchItems[selectedSearchIdx].codes[0] : null);
-            } else {
-                handleScanLookup(this.value);
-            }
-            return;
-        }
-
-        if (searchDropdown.style.display === 'block' && searchItems.length > 0) {
-            if (e.key === 'ArrowDown') {
+                enforceQuantityStock(store, input, idx);
+                if (mergeDuplicateLine(store, idx) === 'blocked') {
+                    input.select();
+                    return;
+                }
+                const emptyCode = store.tbody.querySelector('tr[data-empty-row="1"] [data-cart-field="code"]');
+                if (emptyCode) emptyCode.focus();
+            } else if (e.ctrlKey && e.key === 'Delete' && store.cart[idx]) {
                 e.preventDefault();
-                selectedSearchIdx = (selectedSearchIdx + 1) % searchItems.length;
-                updateSearchSelection();
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                selectedSearchIdx = (selectedSearchIdx - 1 + searchItems.length) % searchItems.length;
-                updateSearchSelection();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                searchDropdown.style.display = 'none';
-            }
-        }
-    });
-
-    function updateSearchSelection() {
-        const list = searchDropdown.querySelectorAll('.pos-search-item');
-        list.forEach(function (el, idx) {
-            el.classList.toggle('is-selected', idx === selectedSearchIdx);
-            if (idx === selectedSearchIdx) {
-                el.scrollIntoView({ block: 'nearest' });
+                e.stopPropagation();
+                removeCartLine(store, idx);
             }
         });
     }
 
-    // مسح بالكاميرا (openBarcodeScanner)
-    document.getElementById('posBtnCamera').addEventListener('click', function () {
-        if (typeof window.openBarcodeScanner === 'function') {
-            window.openBarcodeScanner('posScanInput', { keepOpen: true });
-        } else {
-            showAlert('warn', 'مكتبة السكانر مش محملة.');
-        }
-    });
-
-    // ==========================================
-    // خصم الفاتورة (F4)
-    // ==========================================
-    const modalInvDiscount = document.getElementById('posModalInvoiceDiscount');
-    const invDiscInput = document.getElementById('posInvDiscInput');
-
-    function promptInvoiceDiscount() {
-        invDiscInput.value = invoiceDiscount ? String(invoiceDiscount) : '';
-        openModal(modalInvDiscount);
-        setTimeout(function () { invDiscInput.focus(); invDiscInput.select(); }, 100);
+    function moveSameColumn(store, input, direction) {
+        const field = input.getAttribute('data-cart-field');
+        const fields = Array.from(store.tbody.querySelectorAll('[data-cart-field="' + field + '"]'));
+        const next = fields[fields.indexOf(input) + direction];
+        if (next) { next.focus(); if (next.select) next.select(); }
     }
 
-    document.getElementById('posBtnInvoiceDiscount').addEventListener('click', promptInvoiceDiscount);
-    document.getElementById('posBtnCloseInvDiscount').addEventListener('click', function () {
-        closeModal(modalInvDiscount);
-    });
+    bindCartEvents(saleStore);
 
-    document.getElementById('posBtnApplyInvDiscount').addEventListener('click', function () {
-        invoiceDiscount = invDiscInput.value.trim() || 0;
-        closeModal(modalInvDiscount);
-        computeTotals();
-    });
+    const modalItemSearch = document.getElementById('posModalItemSearch');
+    const itemSearchInput = document.getElementById('posItemSearchInput');
+    const itemSearchBody = document.getElementById('posItemSearchBody');
+    const itemSearchEmpty = document.getElementById('posItemSearchEmpty');
+    const itemSearchAlert = document.getElementById('posItemSearchAlert');
+    let itemSearchField = 'name';
+    let itemSearchMode = 'middle';
+    let itemSearchRows = [];
+    let itemSearchSelected = 0;
+    let itemSearchTargetRow = 0;
+    let itemSearchTargetStore = null;
+    let itemSearchTimer = null;
 
-    invDiscInput.addEventListener('keydown', function (e) {
-        if (isEnter(e)) {
+    function openItemSearch(value, targetRow, store) {
+        itemSearchField = 'name';
+        itemSearchMode = 'middle';
+        document.querySelectorAll('#posSearchFieldTabs .ftab').forEach(function (tab) {
+            tab.classList.toggle('is-active', tab.getAttribute('data-value') === itemSearchField);
+        });
+        document.querySelectorAll('#posSearchModeTabs .ftab').forEach(function (tab) {
+            tab.classList.toggle('is-active', tab.getAttribute('data-value') === itemSearchMode);
+        });
+        itemSearchTargetStore = store || saleStore;
+        itemSearchTargetRow = Number.isFinite(targetRow) ? targetRow : itemSearchTargetStore.cart.length;
+        itemSearchInput.value = value || '';
+        itemSearchAlert.innerHTML = '';
+        openModal(modalItemSearch);
+        setTimeout(function () { itemSearchInput.focus(); itemSearchInput.select(); if (itemSearchInput.value) runItemSearch(); }, 80);
+    }
+    function runItemSearch() {
+        const q = normalizeSpaces(itemSearchInput.value);
+        if (!q) { itemSearchRows = []; itemSearchBody.innerHTML = ''; itemSearchEmpty.innerHTML = ui.empty('اكتب كلمة البحث'); return; }
+        const key = itemSearchField === 'code' ? 'code' : 'q';
+        window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&' + key + '=' + encodeURIComponent(q) + '&mode=' + itemSearchMode)
+            .then(function (res) {
+                itemSearchRows = [];
+                (res.data && res.data.items ? res.data.items : []).forEach(function (item) {
+                    (item.codes || []).forEach(function (code) {
+                        const codeText = String(code.code || '');
+                        const codeMatches = itemSearchMode === 'start' ? codeText.startsWith(q)
+                            : (itemSearchMode === 'end' ? codeText.endsWith(q) : codeText.includes(q));
+                        if (itemSearchField === 'name' || codeMatches) itemSearchRows.push({item:item, code:code});
+                    });
+                });
+                itemSearchSelected = 0;
+                renderItemSearchRows();
+            }).catch(function (err) { itemSearchAlert.innerHTML = ui.alert('neg', err.message || 'تعذر البحث.'); });
+    }
+    function renderItemSearchRows() {
+        itemSearchBody.innerHTML = itemSearchRows.map(function (row, idx) {
+            return '<tr data-search-idx="' + idx + '" class="' + (idx === itemSearchSelected ? 'frow-selected' : '') + '">' +
+                '<td class="num">' + ui.esc(row.code.code || '') + '</td><td class="name">' + ui.esc(row.item.name || '') + '</td>' +
+                '<td class="num">' + Number(row.code.price || 0).toFixed(2) + '</td><td>' + ui.esc(row.code.unit_name || 'قطعة') + '</td>' +
+                '<td class="num">' + Number(row.code.unit_factor || 1) + '</td><td class="num">' + Number(row.item.balance || 0) + '</td></tr>';
+        }).join('');
+        itemSearchEmpty.innerHTML = itemSearchRows.length ? '' : ui.empty('مفيش نتايج');
+    }
+    function chooseItemSearch() {
+        const row = itemSearchRows[itemSearchSelected];
+        const store = itemSearchTargetStore || saleStore;
+        if (!row || itemSearchTargetRow !== store.cart.length) return;
+        addItemToCart(store, row.item, row.code);
+    }
+    itemSearchInput.addEventListener('input', function () {
+        clearTimeout(itemSearchTimer);
+        itemSearchTimer = setTimeout(runItemSearch, 180);
+    });
+    itemSearchInput.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
-            document.getElementById('posBtnApplyInvDiscount').click();
-        }
+            if (!itemSearchRows.length) return;
+            itemSearchSelected = Math.max(0, Math.min(itemSearchRows.length - 1, itemSearchSelected + (e.key === 'ArrowDown' ? 1 : -1)));
+            renderItemSearchRows();
+            const row = itemSearchBody.querySelector('[data-search-idx="' + itemSearchSelected + '"]');
+            if (row) row.scrollIntoView({block:'nearest'});
+        } else if (isEnter(e)) { e.preventDefault(); chooseItemSearch(); }
+    });
+    itemSearchBody.addEventListener('click', function (e) {
+        const row = e.target.closest('[data-search-idx]');
+        if (!row) return;
+        itemSearchSelected = Number(row.getAttribute('data-search-idx'));
+        chooseItemSearch();
+    });
+    function bindSearchTabs(id, setter) {
+        document.getElementById(id).addEventListener('click', function (e) {
+            const tab = e.target.closest('.ftab');
+            if (!tab) return;
+            this.querySelectorAll('.ftab').forEach(function (el) { el.classList.toggle('is-active', el === tab); });
+            setter(tab.getAttribute('data-value'));
+            if (itemSearchInput.value) runItemSearch();
+        });
+    }
+    bindSearchTabs('posSearchFieldTabs', function (v) { itemSearchField = v; });
+    bindSearchTabs('posSearchModeTabs', function (v) { itemSearchMode = v; });
+    document.getElementById('posBtnOpenItemSearch').addEventListener('click', function () { openItemSearch('', cart.length); });
+    document.getElementById('posBtnCloseItemSearch').addEventListener('click', function () { closeModal(modalItemSearch); });
+
+    invDiscPctInput.addEventListener('input', function () {
+        invoiceDiscount = {type:'percent', value:Math.max(0, Number(this.value) || 0)};
+        computeTotals();
+        saveDraft();
+    });
+    invDiscAmountInput.addEventListener('input', function () {
+        invoiceDiscount = {type:'amount', value:Math.max(0, Number(this.value) || 0)};
+        computeTotals();
+        saveDraft();
     });
 
     // ==========================================
-    // الدفع والإنهاء (F10)
+    // لوحة الدفع والإنهاء (F6 / F12)
     // ==========================================
     const modalPayment = document.getElementById('posModalPayment');
     const payModalNet = document.getElementById('posPayModalNet');
@@ -1825,13 +2458,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const changeDueBox = document.getElementById('posChangeDueBox');
     const confirmFinalizeBtn = document.getElementById('posBtnConfirmFinalize');
     const paymentModalAlert = document.getElementById('posPaymentModalAlert');
-    const paymentViewNormal = document.getElementById('posPaymentViewNormal');
     const paymentViewSuccess = document.getElementById('posPaymentViewSuccess');
+    const paidTotalEl = document.getElementById('posPaidTotal');
+    const remainingTotalEl = document.getElementById('posRemainingTotal');
 
     let paymentRows = [];
 
     function openPaymentModal() {
-        if (!cart.length) return;
+        if (paymentPanelOpen) return;
+        if (!cart.length) { showAlert('warn', 'الفاتورة فاضية.'); return; }
+        if (!validateStockCart()) return;
         const totals = computeTotals();
         const cap = (context && context.discount_cap_pct) ? Number(context.discount_cap_pct) : 0;
 
@@ -1848,17 +2484,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 'cli_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
         }
 
-        paymentViewNormal.style.display = 'block';
-        paymentViewSuccess.style.display = 'none';
         paymentModalAlert.innerHTML = '';
-        confirmFinalizeBtn.disabled = false;
         payModalNet.textContent = totals.net.toFixed(2);
 
         paymentRows = [
             { method: 'cash', amount: totals.net.toFixed(2), reference: '' }
         ];
         renderPaymentRows();
-        openModal(modalPayment);
+        paymentPanelOpen = true;
+        saleItemsPanel.style.display = 'none';
+        paymentPanel.style.display = 'block';
 
         setTimeout(function () {
             const firstAmt = paymentRowsContainer.querySelector('input[type="number"]');
@@ -1866,40 +2501,41 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 100);
     }
 
+    function closePaymentPanel() {
+        paymentPanelOpen = false;
+        paymentPanel.style.display = 'none';
+        saleItemsPanel.style.display = 'block';
+        adjustCartTableHeight();
+        refocusScan();
+    }
+
     function renderPaymentRows() {
         const totals = computeTotals();
         let totalPaid = 0;
-        let totalCash = 0;
-
         paymentRowsContainer.innerHTML = paymentRows.map(function (row, idx) {
             const amt = parseFloat(row.amount) || 0;
             totalPaid += amt;
-            if (row.method === 'cash') totalCash += amt;
 
-            return '<div class="pos-payment-row" data-idx="' + idx + '">' +
+            return '<tr data-idx="' + idx + '"><td>' +
                 '<select class="fselect" data-field="method" data-idx="' + idx + '">' +
                     '<option value="cash"' + (row.method === 'cash' ? ' selected' : '') + '>كاش</option>' +
                     '<option value="visa"' + (row.method === 'visa' ? ' selected' : '') + '>فيزا</option>' +
                     '<option value="instapay"' + (row.method === 'instapay' ? ' selected' : '') + '>إنستا باي</option>' +
-                '</select>' +
-                '<input type="number" step="any" min="0" class="finput num" data-field="amount" data-idx="' + idx + '" value="' + (row.amount || '') + '" placeholder="المبلغ">' +
-                '<input type="text" class="finput" data-field="reference" data-idx="' + idx + '" value="' + ui.esc(row.reference || '') + '" placeholder="مرجع اختياري">' +
+                '</select></td><td class="num">' +
+                '<input type="number" step="0.01" min="0" class="finput finput-sm num" data-field="amount" data-idx="' + idx + '" value="' + (row.amount || '') + '"></td><td>' +
+                '<input type="text" class="finput finput-sm" data-field="reference" data-idx="' + idx + '" value="' + ui.esc(row.reference || '') + '" placeholder="ملاحظات"></td><td>' +
                 (paymentRows.length > 1 ?
                     '<button type="button" class="btn btn-sm btn-ghost" data-field="remove" data-idx="' + idx + '"><i class="ti ti-x"></i></button>' :
                     '<span></span>') +
-            '</div>';
+            '</td></tr>';
         }).join('');
 
-        const change = Math.round((totalPaid - totals.net) * 100) / 100;
-        if (totalPaid < totals.net) {
-            changeDueBox.className = 'pos-change-box is-due-remain';
-            changeDueBox.textContent = 'متبقي مطلوب: ' + (totals.net - totalPaid).toFixed(2) + ' ج.م';
-            confirmFinalizeBtn.disabled = true;
-        } else {
-            changeDueBox.className = 'pos-change-box';
-            changeDueBox.textContent = 'الباقي: ' + change.toFixed(2) + ' ج.م';
-            confirmFinalizeBtn.disabled = false;
-        }
+        const remaining = round2(totals.net - totalPaid);
+        paidTotalEl.textContent = totalPaid.toFixed(2);
+        remainingTotalEl.textContent = remaining.toFixed(2);
+        changeDueBox.className = 'falert ' + (Math.abs(remaining) < 0.005 ? 'falert-pos' : 'falert-warn');
+        changeDueBox.textContent = 'المتبقي: ' + remaining.toFixed(2) + ' ج.م';
+        confirmFinalizeBtn.disabled = Math.abs(remaining) >= 0.005;
 
         document.getElementById('posBtnAddPaymentRow').style.display =
             (paymentRows.length < 3) ? 'inline-flex' : 'none';
@@ -1915,16 +2551,12 @@ document.addEventListener('DOMContentLoaded', function () {
             const totals = computeTotals();
             let totalPaid = 0;
             paymentRows.forEach(function (r) { totalPaid += (parseFloat(r.amount) || 0); });
-            const change = Math.round((totalPaid - totals.net) * 100) / 100;
-            if (totalPaid < totals.net) {
-                changeDueBox.className = 'pos-change-box is-due-remain';
-                changeDueBox.textContent = 'متبقي مطلوب: ' + (totals.net - totalPaid).toFixed(2) + ' ج.م';
-                confirmFinalizeBtn.disabled = true;
-            } else {
-                changeDueBox.className = 'pos-change-box';
-                changeDueBox.textContent = 'الباقي: ' + change.toFixed(2) + ' ج.م';
-                confirmFinalizeBtn.disabled = false;
-            }
+            const remaining = round2(totals.net - totalPaid);
+            paidTotalEl.textContent = totalPaid.toFixed(2);
+            remainingTotalEl.textContent = remaining.toFixed(2);
+            changeDueBox.className = 'falert ' + (Math.abs(remaining) < 0.005 ? 'falert-pos' : 'falert-warn');
+            changeDueBox.textContent = 'المتبقي: ' + remaining.toFixed(2) + ' ج.م';
+            confirmFinalizeBtn.disabled = Math.abs(remaining) >= 0.005;
         } else if (field === 'reference') {
             paymentRows[idx].reference = e.target.value;
         }
@@ -1986,12 +2618,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     payBtn.addEventListener('click', openPaymentModal);
     document.getElementById('posBtnClosePaymentModal').addEventListener('click', function () {
-        closeModal(modalPayment);
+        closePaymentPanel();
     });
 
     // إرسال الفاتورة والإنهاء
     confirmFinalizeBtn.addEventListener('click', function () {
         if (isSubmitting) return;
+        if (!validateStockCart(paymentModalAlert)) return;
         const totals = computeTotals();
         let totalPaid = 0;
         const cleanPayments = [];
@@ -2011,8 +2644,8 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
 
-        if (totalPaid < totals.net) {
-            paymentModalAlert.innerHTML = ui.alert('neg', 'المدفوع أقل من الصافي المطلوب.');
+        if (Math.abs(round2(totalPaid - totals.net)) >= 0.005) {
+            paymentModalAlert.innerHTML = ui.alert('neg', 'لازم المتبقي يبقى صفر قبل الحفظ.');
             return;
         }
 
@@ -2048,8 +2681,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (btnPrintLast) btnPrintLast.style.display = 'inline-flex';
 
             // نجاح: عرض شاشة التأكيد
-            paymentViewNormal.style.display = 'none';
             paymentViewSuccess.style.display = 'block';
+            openModal(modalPayment);
             document.getElementById('posSuccessReceiptNo').textContent = 'رقم الإيصال: ' + (data.receipt_no || '');
             document.getElementById('posSuccessChangeBox').textContent = 'الباقي: ' + Number(data.change_due || 0).toFixed(2) + ' ج.م';
 
@@ -2077,6 +2710,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('posBtnNewSale').addEventListener('click', function () {
         closeModal(modalPayment);
+        closePaymentPanel();
     });
 
     // ==========================================
@@ -2423,7 +3057,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         item_id: l.item_id,
                         name: l.item_name || l.code,
                         source: 'held',
-                        balance: 0,
+                        balance: Number(l.balance || 0),
+                        stock_known: false,
                         code: l.code,
                         unit_name: l.unit_name || 'قطعة',
                         unit_factor: l.unit_factor || 1,
@@ -2443,6 +3078,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 closeModal(modalHeld);
                 renderCart();
+                saveDraft();
                 showAlert('pos', 'تم استرجاع الفاتورة المعلقة #' + docId);
             })
             .catch(function (err) {
@@ -2574,20 +3210,23 @@ document.addEventListener('DOMContentLoaded', function () {
     function setCustomer(c) {
         currentCustomer = c;
         updateCustomerBadge();
+        saveDraft();
     }
 
     function updateCustomerBadge() {
         if (currentCustomer) {
-            customerBar.style.display = 'block';
-            customerNameEl.textContent = 'عميل: ' + currentCustomer.name + (currentCustomer.phone ? ' (' + currentCustomer.phone + ')' : '');
+            customerNameEl.textContent = currentCustomer.name + (currentCustomer.phone ? ' (' + currentCustomer.phone + ')' : '');
+            removeCustomerBtn.style.display = 'inline-flex';
         } else {
-            customerBar.style.display = 'none';
+            customerNameEl.textContent = 'نقدي';
+            removeCustomerBtn.style.display = 'none';
         }
     }
 
     document.getElementById('posBtnRemoveCustomer').addEventListener('click', function () {
         currentCustomer = null;
         updateCustomerBadge();
+        saveDraft();
     });
 
     function loadCustomerById(id) {
@@ -2608,13 +3247,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const drawerAlert = document.getElementById('posDrawerAlert');
     const btnOpenDrawer = document.getElementById('posBtnOpenDrawer');
 
+    function openDrawerModal() {
+        if (!modalDrawer) return;
+        drawerAlert.innerHTML = '';
+        drawerReasonInput.value = '';
+        openModal(modalDrawer);
+        setTimeout(function () { drawerReasonInput.focus(); }, 100);
+    }
+
     if (btnOpenDrawer) {
-        btnOpenDrawer.addEventListener('click', function () {
-            drawerAlert.innerHTML = '';
-            drawerReasonInput.value = '';
-            openModal(modalDrawer);
-            setTimeout(function () { drawerReasonInput.focus(); }, 100);
-        });
+        btnOpenDrawer.addEventListener('click', openDrawerModal);
     }
 
     document.getElementById('posBtnCloseDrawer').addEventListener('click', function () {
@@ -2658,7 +3300,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // ==========================================
     // إدارة الأوضاع (بيع · مرتجع · مرتجع عام · استبدال)
     // ==========================================
-    let currentMode = 'sale';
+    var currentMode = 'sale';
     const viewSale = document.getElementById('posViewSale');
     const viewReturn = document.getElementById('posViewReturn');
     const viewReturnGeneral = document.getElementById('posViewReturnGeneral');
@@ -2666,6 +3308,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const modeTabs = document.getElementById('posModeTabs');
 
     function switchMode(mode) {
+        if (paymentPanelOpen && mode !== 'sale') closePaymentPanel();
         currentMode = mode;
         if (modeTabs) {
             modeTabs.querySelectorAll('.ftab').forEach(function (tab) {
@@ -2676,6 +3319,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (viewReturn) viewReturn.style.display = (mode === 'return') ? 'block' : 'none';
         if (viewReturnGeneral) viewReturnGeneral.style.display = (mode === 'return_general') ? 'block' : 'none';
         if (viewExchange) viewExchange.style.display = (mode === 'exchange') ? 'block' : 'none';
+
+        adjustCartTableHeight();
 
         if (mode === 'sale') {
             refocusScan();
@@ -2800,6 +3445,7 @@ document.addEventListener('DOMContentLoaded', function () {
         returnLayout.style.display = 'grid';
         renderReturnLines();
         computeReturnTotals();
+        adjustCartTableHeight();
     }
 
     function renderReturnLines() {
@@ -2812,8 +3458,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td class="num">' + l.qty + '</td>' +
                 '<td class="num">' + l.returned_qty + '</td>' +
                 '<td class="num"><strong>' + l.available_qty + '</strong></td>' +
-                '<td class="num">' +
-                    (isAvail ? '<input type="number" class="finput pos-qty-input" data-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
+                '<td class="num fcell">' +
+                    (isAvail ? '<input type="number" class="finput finput-cell num pos-qty-input" data-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
                 '</td>' +
                 '<td class="num">' + Number(l.unit_net).toFixed(2) + '</td>' +
                 '<td class="num"><strong id="posRetLineNet_' + idx + '">' + Number(l.return_net).toFixed(2) + '</strong></td>' +
@@ -3021,153 +3667,58 @@ document.addEventListener('DOMContentLoaded', function () {
     let genCart = [];
     let genTotals = { net: 0 };
     const genReasonInput = document.getElementById('posGenReturnReason');
-    const genScanInput = document.getElementById('posGenScanInput');
-    const genSearchResults = document.getElementById('posGenSearchResults');
     const genCartBody = document.getElementById('posGenCartBody');
     const genNetDisplay = document.getElementById('posGenNetDisplay');
     const genPaymentRows = document.getElementById('posGenPaymentRows');
     const btnConfirmGenReturn = document.getElementById('posBtnConfirmGenReturn');
 
-    let genSearchTimer = null;
-    if (genScanInput) {
-        genScanInput.addEventListener('input', function () {
-            clearTimeout(genSearchTimer);
-            const val = this.value.trim();
-            if (!val) {
-                genSearchResults.style.display = 'none';
-                return;
-            }
-            genSearchTimer = setTimeout(function () {
-                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
-                    .then(function (res) {
-                        const items = res.data && res.data.items ? res.data.items : [];
-                        if (items.length === 0) {
-                            genSearchResults.innerHTML = '<div style="padding:var(--sp-2); color:var(--text-muted); font-size:var(--fs-sm);">مفيش نتائج</div>';
-                            genSearchResults.style.display = 'block';
-                            return;
-                        }
-                        genSearchResults.innerHTML = items.map(function (it, i) {
-                            const codeObj = it.codes && it.codes[0] ? it.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
-                            return '<div class="pos-search-item" data-gen-item-idx="' + i + '">' +
-                                '<div><strong>' + ui.esc(it.name) + '</strong><br><small style="color:var(--text-muted);">كود: ' + ui.esc(codeObj.code) + '</small></div>' +
-                                '<div style="text-align:left; font-weight:600;">' + Number(codeObj.price || 0).toFixed(2) + ' ج.م</div>' +
-                            '</div>';
-                        }).join('');
-                        genSearchResults.style.display = 'block';
-                        genSearchResults._items = items;
-                    })
-                    .catch(function () {});
-            }, 250);
-        });
+    // المرتجع العام مالوش خصم سطر في السيرفر (sale_return_general بتحط line_discount = 0)
+    // فالسلة دي من غير أعمدة خصم، ومن غير حارس رصيد — المرتجع بيزوّد المخزون (بريف 827k)
+    var genStore = {
+        key: 'general',
+        get cart() { return genCart; },
+        set cart(v) { genCart = v; },
+        tbody: genCartBody,
+        cartEmpty: null,
+        discounts: false,
+        stockGuard: false,
+        codeIdPrefix: 'posGenCodeInput_',
+        nameIdPrefix: 'posGenNameInput_',
+        onChange: function () {},
+        onTotals: function () { updateGenTotals(); }
+    };
 
-        genScanInput.addEventListener('keydown', function (e) {
-            if (isEnter(e)) {
-                e.preventDefault();
-                const val = this.value.trim();
-                if (!val) return;
-                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&code=' + encodeURIComponent(val))
-                    .then(function (res) {
-                        const items = res.data && res.data.items ? res.data.items : [];
-                        if (items.length > 0) {
-                            addGenCartItem(items[0]);
-                            genScanInput.value = '';
-                            genSearchResults.style.display = 'none';
-                            genScanInput.focus();
-                        }
-                    })
-                    .catch(function () {});
-            }
-        });
+    // سطر طريقة رد المبلغ — بيترسم مرة واحدة، والكمية (المبلغ) بتتحدّث لوحدها
+    function renderGenPaymentRow() {
+        if (!genPaymentRows) return;
+        if (document.getElementById('posGenMethodSelect')) return;
+        genPaymentRows.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
+            '<select class="fselect" id="posGenMethodSelect" style="flex:1;">' +
+                '<option value="cash" selected>كاش</option>' +
+                '<option value="visa">فيزا</option>' +
+                '<option value="instapay">إنستا باي</option>' +
+            '</select>' +
+            '<input type="number" class="finput num" id="posGenRefundAmount" value="0.00" step="0.01" style="width:110px;" readonly>' +
+        '</div>';
     }
 
-    if (genSearchResults) {
-        genSearchResults.addEventListener('click', function (e) {
-            const el = e.target.closest('[data-gen-item-idx]');
-            if (!el) return;
-            const idx = parseInt(el.getAttribute('data-gen-item-idx'), 10);
-            const items = genSearchResults._items || [];
-            if (items[idx]) {
-                addGenCartItem(items[idx]);
-                genScanInput.value = '';
-                genSearchResults.style.display = 'none';
-                genScanInput.focus();
-            }
-        });
-    }
-
-    function addGenCartItem(item) {
-        const c = item.codes && item.codes[0] ? item.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
-        const existing = genCart.find(function (x) { return x.code === c.code; });
-        if (existing) {
-            existing.qty = Math.round((existing.qty + 1) * 1000) / 1000;
-        } else {
-            genCart.push({
-                item_id: item.item_id,
-                name: item.name,
-                code: c.code,
-                unit_name: c.unit_name || 'قطعة',
-                qty: 1,
-                unit_price: Number(c.price || 0)
-            });
-        }
-        renderGenCart();
+    function updateGenTotals() {
+        let total = 0;
+        genCart.forEach(function (it) { total = round2(total + computeLineAmounts(it).net); });
+        genTotals.net = total;
+        if (genNetDisplay) genNetDisplay.textContent = total.toFixed(2);
+        renderGenPaymentRow();
+        const refundInput = document.getElementById('posGenRefundAmount');
+        if (refundInput) refundInput.value = total.toFixed(2);
+        if (btnConfirmGenReturn) btnConfirmGenReturn.disabled = (total <= 0);
     }
 
     function renderGenCart() {
-        if (!genCartBody) return;
-        let total = 0;
-        genCartBody.innerHTML = genCart.map(function (it, idx) {
-            const lineNet = Math.round(it.qty * it.unit_price * 100) / 100;
-            total = Math.round((total + lineNet) * 100) / 100;
-            return '<tr>' +
-                '<td><code>' + ui.esc(it.code) + '</code></td>' +
-                '<td><span class="pos-item-name" title="' + ui.esc(it.name) + '">' + ui.esc(it.name) + '</span></td>' +
-                '<td>' + ui.esc(it.unit_name) + '</td>' +
-                '<td class="num"><input type="number" class="finput pos-qty-input" data-gencart-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
-                '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
-                '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
-                '<td><button type="button" class="btn btn-sm btn-ghost" data-gen-del="' + idx + '" title="حذف"><i class="ti ti-trash"></i></button></td>' +
-            '</tr>';
-        }).join('');
-
-        genTotals.net = total;
-        if (genNetDisplay) genNetDisplay.textContent = total.toFixed(2);
-
-        if (genPaymentRows) {
-            genPaymentRows.innerHTML = '<div style="display:flex; gap:var(--sp-2); align-items:center;">' +
-                '<select class="fselect" id="posGenMethodSelect" style="flex:1;">' +
-                    '<option value="cash" selected>كاش</option>' +
-                    '<option value="visa">فيزا</option>' +
-                    '<option value="instapay">إنستا باي</option>' +
-                '</select>' +
-                '<input type="number" class="finput" value="' + total.toFixed(2) + '" step="0.01" style="width:110px;" readonly>' +
-            '</div>';
-        }
-
-        if (btnConfirmGenReturn) {
-            btnConfirmGenReturn.disabled = (total <= 0);
-        }
+        renderCartView(genStore);
     }
 
-    if (genCartBody) {
-        genCartBody.addEventListener('input', function (e) {
-            const inp = e.target.closest('input[data-gencart-idx]');
-            if (!inp) return;
-            const idx = parseInt(inp.getAttribute('data-gencart-idx'), 10);
-            let val = parseFloat(inp.value) || 1;
-            if (val <= 0) val = 1;
-            genCart[idx].qty = val;
-            renderGenCart();
-        });
-
-        genCartBody.addEventListener('click', function (e) {
-            const btn = e.target.closest('[data-gen-del]');
-            if (!btn) return;
-            const idx = parseInt(btn.getAttribute('data-gen-del'), 10);
-            genCart.splice(idx, 1);
-            renderGenCart();
-        });
-    }
+    bindCartEvents(genStore);
+    renderGenCart();
 
     if (btnConfirmGenReturn) {
         btnConfirmGenReturn.addEventListener('click', function () {
@@ -3238,8 +3789,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const exchReturnSubtotalChip = document.getElementById('posExchReturnSubtotalChip');
     const exchDocInfo = document.getElementById('posExchReturnDocInfo');
 
-    const exchScanInput = document.getElementById('posExchScanInput');
-    const exchSearchResults = document.getElementById('posExchSearchResults');
     const exchSaleBody = document.getElementById('posExchSaleBody');
     const exchSaleSubtotalChip = document.getElementById('posExchSaleSubtotalChip');
 
@@ -3307,8 +3856,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td><code>' + ui.esc(l.code) + '</code></td>' +
                 '<td><span class="pos-item-name" title="' + ui.esc(l.item_name) + '">' + ui.esc(l.item_name) + '</span></td>' +
                 '<td class="num"><strong>' + l.available_qty + '</strong></td>' +
-                '<td class="num">' +
-                    (isAvail ? '<input type="number" class="finput pos-qty-input" data-exch-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
+                '<td class="num fcell">' +
+                    (isAvail ? '<input type="number" class="finput finput-cell num pos-qty-input" data-exch-ret-idx="' + idx + '" min="0" max="' + l.available_qty + '" step="1" value="' + l.return_qty + '">' : '<span style="color:var(--text-muted);">تم رده</span>') +
                 '</td>' +
                 '<td class="num">' + Number(l.unit_net).toFixed(2) + '</td>' +
                 '<td class="num"><strong id="posExchRetLineNet_' + idx + '">' + Number(l.return_net).toFixed(2) + '</strong></td>' +
@@ -3332,131 +3881,26 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    let exchSearchTimer = null;
-    if (exchScanInput) {
-        exchScanInput.addEventListener('input', function () {
-            clearTimeout(exchSearchTimer);
-            const val = this.value.trim();
-            if (!val) {
-                exchSearchResults.style.display = 'none';
-                return;
-            }
-            exchSearchTimer = setTimeout(function () {
-                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&q=' + encodeURIComponent(val))
-                    .then(function (res) {
-                        const items = res.data && res.data.items ? res.data.items : [];
-                        if (items.length === 0) {
-                            exchSearchResults.innerHTML = '<div style="padding:var(--sp-2); color:var(--text-muted); font-size:var(--fs-sm);">مفيش نتائج</div>';
-                            exchSearchResults.style.display = 'block';
-                            return;
-                        }
-                        exchSearchResults.innerHTML = items.map(function (it, i) {
-                            const codeObj = it.codes && it.codes[0] ? it.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
-                            return '<div class="pos-search-item" data-exch-item-idx="' + i + '">' +
-                                '<div><strong>' + ui.esc(it.name) + '</strong><br><small style="color:var(--text-muted);">كود: ' + ui.esc(codeObj.code) + '</small></div>' +
-                                '<div style="text-align:left; font-weight:600;">' + Number(codeObj.price || 0).toFixed(2) + ' ج.م</div>' +
-                            '</div>';
-                        }).join('');
-                        exchSearchResults.style.display = 'block';
-                        exchSearchResults._items = items;
-                    })
-                    .catch(function () {});
-            }, 250);
-        });
-
-        exchScanInput.addEventListener('keydown', function (e) {
-            if (isEnter(e)) {
-                e.preventDefault();
-                const val = this.value.trim();
-                if (!val) return;
-                window.apiFetch('pos_api.php?part=lookup&device_uuid=' + encodeURIComponent(deviceUuid) + '&code=' + encodeURIComponent(val))
-                    .then(function (res) {
-                        const items = res.data && res.data.items ? res.data.items : [];
-                        if (items.length > 0) {
-                            addExchSaleItem(items[0]);
-                            exchScanInput.value = '';
-                            exchSearchResults.style.display = 'none';
-                            exchScanInput.focus();
-                        }
-                    })
-                    .catch(function () {});
-            }
-        });
-    }
-
-    if (exchSearchResults) {
-        exchSearchResults.addEventListener('click', function (e) {
-            const el = e.target.closest('[data-exch-item-idx]');
-            if (!el) return;
-            const idx = parseInt(el.getAttribute('data-exch-item-idx'), 10);
-            const items = exchSearchResults._items || [];
-            if (items[idx]) {
-                addExchSaleItem(items[idx]);
-                exchScanInput.value = '';
-                exchSearchResults.style.display = 'none';
-                exchScanInput.focus();
-            }
-        });
-    }
-
-    function addExchSaleItem(item) {
-        const c = item.codes && item.codes[0] ? item.codes[0] : { code: '', price: 0, unit_name: 'قطعة' };
-        const existing = exchSaleCart.find(function (x) { return x.code === c.code; });
-        if (existing) {
-            existing.qty = Math.round((existing.qty + 1) * 1000) / 1000;
-        } else {
-            exchSaleCart.push({
-                item_id: item.item_id,
-                name: item.name,
-                code: c.code,
-                unit_name: c.unit_name || 'قطعة',
-                qty: 1,
-                unit_price: Number(c.price || 0)
-            });
-        }
-        renderExchSaleCart();
-        computeExchangeTotals();
-    }
+    var exchStore = {
+        key: 'exchange',
+        get cart() { return exchSaleCart; },
+        set cart(v) { exchSaleCart = v; },
+        tbody: exchSaleBody,
+        cartEmpty: null,
+        discounts: true,
+        stockGuard: true,
+        codeIdPrefix: 'posExchCodeInput_',
+        nameIdPrefix: 'posExchNameInput_',
+        onChange: function () {},
+        onTotals: function () { computeExchangeTotals(); }
+    };
 
     function renderExchSaleCart() {
-        if (!exchSaleBody) return;
-        let total = 0;
-        exchSaleBody.innerHTML = exchSaleCart.map(function (it, idx) {
-            const lineNet = Math.round(it.qty * it.unit_price * 100) / 100;
-            total = Math.round((total + lineNet) * 100) / 100;
-            return '<tr>' +
-                '<td><code>' + ui.esc(it.code) + '</code></td>' +
-                '<td><span class="pos-item-name" title="' + ui.esc(it.name) + '">' + ui.esc(it.name) + '</span></td>' +
-                '<td>' + ui.esc(it.unit_name) + '</td>' +
-                '<td class="num"><input type="number" class="finput pos-qty-input" data-exchsale-idx="' + idx + '" min="1" step="1" value="' + it.qty + '"></td>' +
-                '<td class="num">' + it.unit_price.toFixed(2) + '</td>' +
-                '<td class="num"><strong>' + lineNet.toFixed(2) + '</strong></td>' +
-                '<td><button type="button" class="btn btn-sm btn-ghost" data-exch-del="' + idx + '" title="حذف"><i class="ti ti-trash"></i></button></td>' +
-            '</tr>';
-        }).join('');
+        renderCartView(exchStore);
     }
 
-    if (exchSaleBody) {
-        exchSaleBody.addEventListener('input', function (e) {
-            const inp = e.target.closest('input[data-exchsale-idx]');
-            if (!inp) return;
-            const idx = parseInt(inp.getAttribute('data-exchsale-idx'), 10);
-            let val = parseFloat(inp.value) || 1;
-            if (val <= 0) val = 1;
-            exchSaleCart[idx].qty = val;
-            renderExchSaleCart();
-            computeExchangeTotals();
-        });
-
-        exchSaleBody.addEventListener('click', function (e) {
-            const btn = e.target.closest('[data-exch-del]');
-            if (!btn) return;
-            const idx = parseInt(btn.getAttribute('data-exch-del'), 10);
-            exchSaleCart.splice(idx, 1);
-            renderExchSaleCart();
-            computeExchangeTotals();
-        });
-    }
+    bindCartEvents(exchStore);
+    renderExchSaleCart();
 
     function computeExchangeTotals() {
         let retNet = 0;
@@ -3476,7 +3920,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         let saleNet = 0;
         exchSaleCart.forEach(function (it) {
-            saleNet = Math.round((saleNet + (it.qty * it.unit_price)) * 100) / 100;
+            computeLineAmounts(it);
+            saleNet = Math.round((saleNet + it.net) * 100) / 100;
         });
 
         exchTotals.returnNet = retNet;
@@ -3560,7 +4005,10 @@ document.addEventListener('DOMContentLoaded', function () {
                             approval_token: exchLateToken
                         },
                         sale: {
-                            lines: exchSaleCart.map(function (c) { return { code: c.code, qty: c.qty, line_discount: 0 }; })
+                            lines: exchSaleCart.map(function (c) {
+                                computeLineAmounts(c);
+                                return { code: c.code, qty: c.qty, line_discount: Number(c.line_discount_amount || 0) };
+                            })
                         },
                         payments: payments,
                         method_approval_token: exchMethodToken
@@ -3625,7 +4073,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ==========================================
-    // اختصارات الكيبورد العامة (F1, F2, F4, F6, F8, F9, F10, Esc, Del, +, -)
+    // اختصارات الكيبورد العامة لشاشة نقطة البيع
     // ==========================================
     document.addEventListener('keydown', function (e) {
         // لو المستخدم بيكتب في خانة نص جوه نافذة، نتجاهل بعض الاختصارات
@@ -3633,7 +4081,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const isTyping = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
         const openDlg = document.querySelector('.fg-dlg-bg[style*="display: flex"]');
 
-        if (openDlg && (e.key === 'F8' || e.key === 'F9' || e.key === 'F10')) {
+        if (e.defaultPrevented) return;
+        const isGlobalShortcut = ['F1', 'F2', 'F3', 'F4', 'F6', 'F7', 'F8', 'F9', 'F12', 'Insert'].includes(e.key)
+            || (e.ctrlKey && ['s', 'n'].includes(e.key.toLowerCase()))
+            || (e.ctrlKey && e.key === 'Delete');
+        if (openDlg && isGlobalShortcut) {
             e.preventDefault();
             return;
         }
@@ -3647,56 +4099,82 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (e.key === 'F1') {
             e.preventDefault();
+            if (paymentPanelOpen) closePaymentPanel();
             switchMode('sale');
         } else if (e.key === 'F6') {
             e.preventDefault();
+            if (currentMode !== 'sale') switchMode('sale');
+            if (paymentPanelOpen) closePaymentPanel(); else openPaymentModal();
+        } else if (e.key === 'F7') {
+            e.preventDefault();
+            if (paymentPanelOpen) closePaymentPanel();
             switchMode('return');
         } else if (e.key === 'F2') {
             e.preventDefault();
-            refocusScan();
+            if (paymentPanelOpen) closePaymentPanel();
+            switchMode('sale');
+            openItemSearch('', cart.length);
+        } else if (e.key === 'F3') {
+            e.preventDefault();
+            if (paymentPanelOpen) closePaymentPanel();
+            openDrawerModal();
         } else if (e.key === 'F4') {
             e.preventDefault();
-            promptInvoiceDiscount();
+            if (paymentPanelOpen) closePaymentPanel();
+            switchMode('sale');
+            invDiscPctInput.focus();
+            invDiscPctInput.select();
         } else if (e.key === 'F8') {
             e.preventDefault();
             holdCurrentCart();
         } else if (e.key === 'F9') {
             e.preventDefault();
             openHeldListModal();
-        } else if (e.key === 'F10') {
+        } else if (e.key === 'F12' || (e.ctrlKey && e.key.toLowerCase() === 's')) {
             e.preventDefault();
-            openPaymentModal();
+            if (!paymentPanelOpen) {
+                showAlert('warn', 'راجع الدفع الأول (F6)');
+            } else if (confirmFinalizeBtn.disabled) {
+                paymentModalAlert.innerHTML = ui.alert('warn', 'لازم المتبقي يبقى صفر قبل الحفظ.');
+            } else {
+                confirmFinalizeBtn.click();
+            }
+        } else if (e.key === 'Insert' || (e.ctrlKey && e.key.toLowerCase() === 'n')) {
+            e.preventDefault();
+            if (paymentPanelOpen) closePaymentPanel();
+            switchMode('sale');
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                const active = document.activeElement;
+                const field = active.getAttribute && active.getAttribute('data-cart-field');
+                if (field === 'qty') {
+                    const idx = Number(active.getAttribute('data-idx'));
+                    clearTimeout(quantityValidationTimer);
+                    enforceQuantityStock(saleStore, active, idx);
+                }
+                active.blur();
+            }
+            refocusScan();
+        } else if (e.ctrlKey && e.key === 'Delete') {
+            e.preventDefault();
+            if (paymentPanelOpen || currentMode !== 'sale') return;
+            const row = document.activeElement && document.activeElement.closest ? document.activeElement.closest('tr[data-idx]') : null;
+            const idx = row ? Number(row.getAttribute('data-idx')) : cart.length - 1;
+            if (cart[idx]) removeCartLine(saleStore, idx);
         } else if (e.key === 'Escape') {
             if (openDlg) {
                 e.preventDefault();
                 closeModal(openDlg);
-            } else if (searchDropdown.style.display === 'block') {
+            } else if (paymentPanelOpen) {
                 e.preventDefault();
-                searchDropdown.style.display = 'none';
-            }
-        } else if (!openDlg && !isTyping) {
-            if (e.key === 'Delete' && cart.length > 0) {
-                e.preventDefault();
-                removeCartLine(cart.length - 1);
-            } else if ((e.key === '+' || e.key === '=') && cart.length > 0) {
-                e.preventDefault();
-                const last = cart[cart.length - 1];
-                last.qty = Math.round((Number(last.qty) + 1) * 1000) / 1000;
-                renderCart();
-            } else if ((e.key === '-' || e.key === '_') && cart.length > 0) {
-                e.preventDefault();
-                const last = cart[cart.length - 1];
-                if (Number(last.qty) > 1) {
-                    last.qty = Math.round((Number(last.qty) - 1) * 1000) / 1000;
-                    renderCart();
-                }
+                closePaymentPanel();
             }
         }
     });
 
     // تشغيل الصفحة عند التحميل
     initContext();
-    renderCart();
+    renderCart({idx:0, field:'code'});
+    adjustCartTableHeight();
 });
 </script>
 

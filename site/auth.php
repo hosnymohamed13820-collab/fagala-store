@@ -273,6 +273,7 @@ function module_parts(): array
         ],
         'pos' => [
             'sell'                   => 'بيع',
+            'shift_expected'         => 'يشوف المتوقع والفرق وهو بيقفل الوردية',
             'reports'                => 'تقارير نقطة البيع',
             'discount_override'      => 'اعتماد خصم فوق السقف',
             'return_ref'             => 'مرتجع على فاتورة',

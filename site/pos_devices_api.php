@@ -11,11 +11,20 @@ api_begin();
 require_login();
 
 require_once __DIR__ . '/pos_devices_lib.php';
+require_once __DIR__ . '/sale_lib.php';
 
 $part = (string) ($_GET['part'] ?? ($_POST['part'] ?? ''));
 $pdo = db();
 
 switch ($part) {
+    case 'list_all':
+        api_method('GET');
+        api_require('pos:devices');
+        $allowedBranchIds = sale_allowed_branch_ids($pdo, current_user() ?? []);
+        api_ok([
+            'devices' => posdev_list_all($pdo, $allowedBranchIds),
+        ]);
+
     case 'list':
         api_method('GET');
         api_require('pos:devices');

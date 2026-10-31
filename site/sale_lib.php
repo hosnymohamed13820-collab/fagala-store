@@ -131,11 +131,11 @@ function sale_context(PDO $pdo, string $uuid, array $user): array
     $session = sale_open_session($pdo, (int) $device['id']);
     $capStmt = $pdo->prepare('SELECT discount_cap_pct FROM users WHERE id = ?');
     $capStmt->execute([(int) $user['id']]);
-    $settings = ['pos_max_payments' => '3', 'pos_return_days' => '14'];
+    $settings = ['pos_max_payments' => '3', 'pos_return_days' => '14', 'stock_allow_negative' => '1'];
     $settingRows = $pdo->query(
         "SELECT setting_key, setting_value
            FROM settings
-          WHERE setting_key IN ('pos_max_payments','pos_return_days')"
+          WHERE setting_key IN ('pos_max_payments','pos_return_days','stock_allow_negative')"
     )->fetchAll(PDO::FETCH_ASSOC);
     foreach ($settingRows as $settingRow) {
         $settings[$settingRow['setting_key']] = $settingRow['setting_value'];
@@ -159,7 +159,7 @@ function sale_context(PDO $pdo, string $uuid, array $user): array
         'discount_cap_pct' => round((float) ($capStmt->fetchColumn() ?: 0), 2),
         'settings' => [
             'pos_max_payments' => max(1, (int) $settings['pos_max_payments']),
-            'pos_return_days' => max(0, (int) $settings['pos_return_days']),
+            'pos_return_days' => max(0, (int) $settings['pos_return_days']), 'stock_allow_negative' => $settings['stock_allow_negative'] === '1',
         ],
         'ready' => sale_branch_ready((int) $device['branch_id']),
     ];
@@ -239,8 +239,21 @@ function sale_session_open(PDO $pdo, string $uuid, float $openingCash, array $us
     }
 }
 
-/** ملخص أرقام وردية جهاز من المستندات المكتملة فقط. */
-function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = false): array
+/** هل المستخدم يشوف المتوقع والفرق وهو بيقفل الوردية؟ (بريف ٨٢٧c / ٨٢٧d) */
+function sale_shift_expected_visible(array $user = []): bool
+{
+    if (function_exists('is_real_owner') && is_real_owner()) {
+        return true;
+    }
+    $perms = $user['permissions'] ?? ($_SESSION['permissions'] ?? []);
+    if (is_array($perms) && in_array('pos:shift_expected', $perms, true)) {
+        return true;
+    }
+    return false;
+}
+
+/** ملخص أرقام وردية جهاز من المستندات المكتملة فقط — من غير فلترة صلاحية. */
+function sale_session_summary_full(PDO $pdo, string $uuid, array $user, bool $lock = false): array
 {
     $device = sale_device($pdo, $uuid, $user, $lock);
     $session = sale_open_session($pdo, (int) $device['id'], $lock);
@@ -286,7 +299,7 @@ function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = 
     $heldStmt = $pdo->prepare(
         "SELECT id, client_uuid, gross, net, created_at
            FROM sale_docs
-          WHERE session_id = ? AND status = 'held'
+          WHERE session_id = ? AND doc_kind = 'sale' AND status = 'held'
           ORDER BY created_at, id"
     );
     $heldStmt->execute([(int) $session['id']]);
@@ -309,6 +322,19 @@ function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = 
         'held_docs' => $heldStmt->fetchAll(PDO::FETCH_ASSOC),
         'denominations' => cashier_cash_denominations(),
     ];
+}
+
+/**
+ * ملخص الوردية للواجهة — المتوقع والافتتاحي والفرق للي معاه pos:shift_expected بس.
+ * الكاشير من غير الصلاحية بياخد الأعداد اللي هيكتبها هو بس.
+ */
+function sale_session_summary(PDO $pdo, string $uuid, array $user, bool $lock = false): array
+{
+    $summary = sale_session_summary_full($pdo, $uuid, $user, $lock);
+    if (!sale_shift_expected_visible($user)) {
+        unset($summary['expected'], $summary['session']['opening_cash']);
+    }
+    return $summary;
 }
 
 /** تقفيل وردية الجهاز وإرسال صف shifts لدورة المراجعة الموجودة. */
@@ -367,13 +393,29 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
 
     $pdo->beginTransaction();
     try {
-        $summary = sale_session_summary($pdo, $uuid, $user, true);
+        $summary = sale_session_summary_full($pdo, $uuid, $user, true);
         $sessionId = (int) $summary['session']['id'];
         $sessionStmt = $pdo->prepare('SELECT * FROM sale_sessions WHERE id = ? FOR UPDATE');
         $sessionStmt->execute([$sessionId]);
         $session = $sessionStmt->fetch(PDO::FETCH_ASSOC);
         if (!$session || $session['status'] !== 'open' || !empty($session['shift_id'])) {
             throw new SaleApiException('الوردية دي اتقفلت قبل كده.', 409, 'duplicate');
+        }
+
+        // بريف ٨٢٧c: مفيش تقفيل وفيه فاتورة معلّقة — نفس شرط held_list بالحرف.
+        $heldCountStmt = $pdo->prepare(
+            "SELECT COUNT(*)
+               FROM sale_docs
+              WHERE session_id = ? AND doc_kind = 'sale' AND status = 'held'"
+        );
+        $heldCountStmt->execute([$sessionId]);
+        $heldCount = (int) $heldCountStmt->fetchColumn();
+        if ($heldCount > 0) {
+            throw new SaleApiException(
+                'فيه ' . $heldCount . ' فاتورة معلّقة — استرجعها وكمّلها أو الغيها الأول.',
+                409,
+                'held_open'
+            );
         }
 
         $openingCash = round((float) $summary['session']['opening_cash'], 2);
@@ -459,21 +501,25 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
         ]]);
 
         $pdo->commit();
-        return [
+        $response = [
             'shift_id' => $shiftId,
             'status' => 'submitted',
-            'opening_cash' => $openingCash,
-            'cash_to_deposit' => $cashToDeposit,
-            'expected' => $summary['expected'],
             'counted' => ['cash' => $countedCash] + $counted,
-            'difference' => [
+            'held_docs' => $summary['held_docs'],
+        ];
+        // المتوقع والافتتاحي والفرق للي معاه pos:shift_expected بس (بريف ٨٢٧c).
+        if (sale_shift_expected_visible($user)) {
+            $response['opening_cash'] = $openingCash;
+            $response['cash_to_deposit'] = $cashToDeposit;
+            $response['expected'] = $summary['expected'];
+            $response['difference'] = [
                 'cash' => round($countedCash - (float) $summary['expected']['cash'], 2),
                 'visa' => round($counted['visa'] - (float) $summary['expected']['visa'], 2),
                 'instapay' => round($counted['instapay'] - (float) $summary['expected']['instapay'], 2),
                 'total' => $difference,
-            ],
-            'held_docs' => $summary['held_docs'],
-        ];
+            ];
+        }
+        return $response;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
@@ -486,55 +532,58 @@ function sale_session_close(PDO $pdo, string $uuid, array $input, array $user): 
 }
 
 /** كل كلمات الاسم بأي ترتيب، وبحد أقصى ٢٠ صنف. */
-function sale_lookup(PDO $pdo, int $branchId, string $code, string $q): array
+function sale_lookup(PDO $pdo, int $branchId, string $code, string $q, string $mode = 'middle', bool $modeExplicit = false): array
 {
     $code = trim($code);
-    $q = trim($q);
+    $q = trim($q); $mode = in_array($mode, ['start', 'middle', 'end'], true) ? $mode : 'middle';
     if ($code === '' && $q === '') {
         throw new SaleApiException('اكتب كود أو اسم الصنف.');
+    }
+    if ($code === '0' && $q === '') {
+        return [];
     }
 
     $words = im_words($q);
     $trueNameParts = [];
     $siteNameParts = [];
-    foreach ($words as $word) {
+    foreach ($words as $wordIdx => $word) {
         $trueNameParts[] = "CONCAT_WS(' ',c.name,ic.item_name) LIKE ?";
         $siteNameParts[] = "CONCAT_WS(' ',m.name1,mc.name1,mc.name2) LIKE ?";
     }
-    $trueWhere = $code !== '' ? 'c.code=?' : '0';
-    $siteWhere = $code !== '' ? 'mc.code=?' : '0';
+    $trueWhere = $code !== '' ? ($modeExplicit ? 'c.code LIKE ?' : 'c.code = ?') : '0';
+    $siteWhere = $code !== '' ? ($modeExplicit ? 'mc.code LIKE ?' : 'mc.code = ?') : '0';
     if ($trueNameParts) {
         $trueWhere .= ' OR (' . implode(' AND ', $trueNameParts) . ')';
         $siteWhere .= ' OR (' . implode(' AND ', $siteNameParts) . ')';
     }
-    $trueParams = [$code];
-    $siteParams = [$code];
+    $trueParams = [$code, $q];
+    $siteParams = [$code, $q];
     if ($code !== '') {
-        $trueParams[] = $code;
-        $siteParams[] = $code;
+        $trueParams[] = $siteParams[] = $modeExplicit ? ($mode === 'start' ? $code . '%' : ($mode === 'end' ? '%' . $code : '%' . $code . '%')) : $code;
     }
-    foreach ($words as $word) {
-        $trueParams[] = '%' . $word . '%';
-        $siteParams[] = '%' . $word . '%';
+    foreach ($words as $wordIdx => $word) {
+        $pattern = $mode === 'start' && $wordIdx === 0 ? $word . '%'
+            : ($mode === 'end' && $wordIdx === count($words) - 1 ? '%' . $word : '%' . $word . '%');
+        $trueParams[] = $siteParams[] = $pattern;
     }
 
     $sql = "SELECT source, source_id, item_id, item_name, exact_code
               FROM (
                     SELECT 'true' source, c.item_id source_id, c.item_id item_id,
                            COALESCE(MAX(ic.item_name),MAX(c.name),'') item_name,
-                           MAX(c.code=?) exact_code
+                           MAX(c.code=?) exact_code, COALESCE(MAX(ic.item_name),MAX(c.name),'') = ? exact_name
                       FROM hq_codes c
                       LEFT JOIN hq_item_cats ic ON ic.item_id=c.item_id
-                     WHERE $trueWhere
+                     WHERE c.code != '0' AND ($trueWhere)
                      GROUP BY c.item_id
                     UNION ALL
-                    SELECT 'site', m.id, -m.id, m.name1, MAX(mc.code=?)
+                    SELECT 'site', m.id, -m.id, m.name1, MAX(mc.code=?), m.name1 = ?
                       FROM item_master m
                       JOIN item_master_codes mc ON mc.item_master_id=m.id
-                     WHERE m.is_cancelled=0 AND mc.is_sale_code=1 AND ($siteWhere)
+                     WHERE m.is_cancelled=0 AND mc.is_sale_code=1 AND mc.code != '0' AND ($siteWhere)
                      GROUP BY m.id,m.name1
                    ) x
-             ORDER BY exact_code DESC,item_name,source
+             ORDER BY exact_code DESC,exact_name DESC,item_name,source
              LIMIT 20";
     $stmt = $pdo->prepare($sql);
     $stmt->execute(array_merge($trueParams, $siteParams));
@@ -567,7 +616,7 @@ function sale_lookup(PDO $pdo, int $branchId, string $code, string $q): array
                           LEFT JOIN item_prices ip ON ip.code=c.code
                           LEFT JOIN stock_balances sb
                             ON sb.item_id=c.item_id AND sb.branch_id=? AND sb.is_transit=0
-                         WHERE c.item_id IN ($placeholders)";
+                         WHERE c.item_id IN ($placeholders) AND c.code != '0'";
         array_push($params, $branchId, ...$trueItemIds);
     }
     if ($siteItemIds) {
@@ -576,7 +625,7 @@ function sale_lookup(PDO $pdo, int $branchId, string $code, string $q): array
                                mc.unit_name, mc.unit_factor, ip.price, COALESCE(sb.qty,0)
                           FROM item_master m
                           JOIN item_master_codes mc
-                            ON mc.item_master_id=m.id AND mc.is_sale_code=1
+                            ON mc.item_master_id=m.id AND mc.is_sale_code=1 AND mc.code != '0'
                           LEFT JOIN item_prices ip ON ip.code=mc.code
                           LEFT JOIN stock_balances sb
                             ON sb.item_id=-m.id AND sb.branch_id=? AND sb.is_transit=0
@@ -770,6 +819,9 @@ function sale_resolve_lines(PDO $pdo, array $lines): array
         $code = trim((string) ($line['code'] ?? ''));
         if ($code === '') {
             throw new SaleApiException('كود الصنف مطلوب في كل سطر.');
+        }
+        if ($code === '0') {
+            throw new SaleApiException('الكود 0 «فتح درج» مش بيتباع هنا — استخدم زرار «فتح الدرج» واكتب السبب.', 422, 'drawer_code');
         }
         $uniqueCodeSet[$code] = true;
     }
@@ -3294,6 +3346,21 @@ function sale_receipt_payload(int $docId, bool $forceReprint = false, ?array $us
     $paid = (float) $doc['paid'];
     $changeDue = (float) $doc['change_due'];
 
+    // إعداد مدة الاسترجاع وتاريخ نهاية الاسترجاع (بريف ٨٢٧h)
+    $posReturnDays = 14;
+    $daysSetting = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'pos_return_days'")->fetchColumn();
+    if ($daysSetting !== false && is_numeric($daysSetting)) {
+        $posReturnDays = max(0, (int) $daysSetting);
+    }
+    $completedAtBase = !empty($doc['completed_at']) ? (string) $doc['completed_at'] : (string) ($doc['created_at'] ?? 'now');
+    try {
+        $returnUntilObj = new DateTime($completedAtBase);
+    } catch (Throwable) {
+        $returnUntilObj = new DateTime();
+    }
+    $returnUntilObj->modify('+' . $posReturnDays . ' days');
+    $returnUntil = $returnUntilObj->format('Y-m-d');
+
     return [
         'v'                => 1,
         'doc_id'           => (int) $doc['id'],
@@ -3320,6 +3387,8 @@ function sale_receipt_payload(int $docId, bool $forceReprint = false, ?array $us
         'created_at'       => $rawCompletedAt,
         'is_reprint'       => $isReprint,
         'reprint_count'    => $reprintCount,
+        'return_days'      => $posReturnDays,
+        'return_until'     => $returnUntil,
         'lines'            => $linesOut,
         'gross'            => $gross,
         'line_discount'    => $lineDiscount,
