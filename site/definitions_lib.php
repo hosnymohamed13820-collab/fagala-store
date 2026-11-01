@@ -120,6 +120,7 @@ function def_suppliers_list(string $filter = 'all'): array
                     s.id,
                     s.name,
                     s.payment_type,
+                    s.erp_supplier_code,
                     COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS display_code
                 FROM suppliers s
                 LEFT JOIN hq_invoices h ON h.supplier_id = s.erp_supplier_id

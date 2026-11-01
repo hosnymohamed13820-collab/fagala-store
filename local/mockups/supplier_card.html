@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نموذج — كارت المورد</title>
+<link rel="stylesheet" href="../../site/assets/fagala.css">
+<link rel="stylesheet" href="../../site/assets/tabler-subset.css">
+<!-- مسارات بيئة Laragon (localhost) -->
+<link rel="stylesheet" href="/assets/fagala.css">
+<link rel="stylesheet" href="/assets/tabler-subset.css">
+<style>
+body {
+    background: var(--bg);
+    margin: 0;
+    font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    color: var(--ink-800);
+}
+.mk {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: var(--sp-4);
+}
+.mk-note {
+    font-size: var(--fs-sm);
+    color: var(--ink-500);
+    margin-bottom: var(--sp-3);
+}
+.sc-bar {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: center;
+    margin-bottom: var(--sp-4);
+    width: 100%;
+}
+.sc-bar .finput {
+    flex: 1;
+    font-size: var(--fs-lg);
+    padding: 12px 14px;
+}
+.sc-head {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--sp-4);
+    align-items: start;
+}
+.sc-title {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.sc-title h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ink-900);
+}
+.sc-sub {
+    display: flex;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    align-items: center;
+    color: var(--ink-500);
+    font-size: var(--fs-sm);
+}
+.sc-code {
+    direction: ltr;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--accent-text, #38bdf8);
+    font-size: 18px;
+}
+.sc-actions {
+    display: flex;
+    gap: var(--sp-2);
+}
+.sc-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: var(--sp-4);
+    margin-top: var(--sp-4);
+    width: 100%;
+}
+.sc-side .fcard {
+    margin-bottom: var(--sp-3);
+}
+.sc-side h3 {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-base);
+    color: var(--ink-500);
+    font-weight: 600;
+}
+.sc-big {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--ink-900);
+    font-variant-numeric: tabular-nums;
+}
+.sc-big.due-for {
+    color: var(--warn, #f59e0b);
+}
+.sc-big.due-on {
+    color: var(--pos, #10b981);
+}
+.sc-rows {
+    display: grid;
+    gap: 7px;
+    font-size: var(--fs-base);
+}
+.sc-rows div {
+    display: flex;
+    justify-content: space-between;
+    font-variant-numeric: tabular-nums;
+}
+.sc-rows span:first-child {
+    color: var(--ink-500);
+}
+.sc-fields {
+    display: grid;
+    gap: var(--sp-3);
+    width: 100%;
+}
+.sc-val {
+    padding: 9px 12px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: var(--bg);
+    min-height: 20px;
+    color: var(--ink-900);
+    font-weight: 600;
+    width: 100%;
+    box-sizing: border-box;
+}
+.sc-sec {
+    margin-top: var(--sp-4);
+    margin-bottom: var(--sp-2);
+    font-weight: 700;
+    color: var(--ink-700);
+    font-size: var(--fs-base);
+}
+.sc-panel {
+    display: none;
+    margin-top: var(--sp-4);
+    width: 100%;
+}
+.sc-panel.on {
+    display: block;
+}
+td.code {
+    direction: ltr;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.sc-fields[style*="text-align:center"] .finput,
+.sc-fields[style*="text-align:center"] .fselect,
+.sc-fields[style*="text-align:center"] .sc-val {
+    text-align: center;
+    text-align-last: center;
+}
+</style>
+</head>
+<body>
+
+<div class="mk">
+  <div class="mk-note">نموذج كارت المورد بداتا حقيقية («حامد الرائد») — بنفس أسلوب وتصميم كارت الصنف (fagala.css). دوس على التابات وجرّب البحث.</div>
+
+  <!-- شريط البحث السريع والعمليات (زي كارت الصنف) -->
+  <div class="sc-bar">
+    <label style="font-weight:700;color:var(--ink-700);white-space:nowrap;">كود المورد</label>
+    <input class="finput" id="mkSuppCode" value="1000142" placeholder="اكتب كود المورد واضغط Enter (جرّب 1000142 أو 9999)" style="direction:ltr;text-align:right;">
+    <button class="btn btn-outline" onclick="mkSearch(true)"><i class="ti ti-search"></i> بحث بالاسم</button>
+    <button class="btn btn-outline" onclick="mkState('new')"><i class="ti ti-plus"></i> مورد جديد</button>
+    <button class="btn btn-ghost" onclick="toggleTheme()" title="تبديل المظهر" style="padding:10px 12px;"><i class="ti ti-moon"></i></button>
+  </div>
+  <div class="mk-note">جرّب: اكتب <b>9999</b> واضغط Enter (مورد مش متسجل) — أو <b>1000142</b> (متسجل).</div>
+
+  <!-- تنبيه: كود مورد مش متعرّف -->
+  <div class="falert falert-warn" id="mkMissing" hidden style="display:none;justify-content:space-between;align-items:center;margin-bottom:var(--sp-4);">
+    <span>كود المورد <b id="mkMissingCode" style="direction:ltr;">9999</b> مش متسجل عندنا في قاعدة البيانات.</span>
+    <button class="btn btn-primary btn-sm" onclick="mkState('new')"><i class="ti ti-plus"></i> سجّل المورد ده دلوقتي</button>
+  </div>
+
+  <!-- نموذج تعريف مورد جديد: نفس الحقول الأصلية فقط متوزعة بعرض الكارت بالكامل -->
+  <div class="fcard" id="mkNew" hidden style="display:none;margin-bottom:var(--sp-4);">
+    <div class="sc-head" style="margin-bottom:16px;border-bottom:1px solid var(--line-soft);padding-bottom:12px;">
+      <div class="sc-title">
+        <div class="sc-sub">
+          <span class="fchip fchip-pos"><i class="ti ti-plus"></i> مورد جديد</span>
+          <span>البيانات الأساسية للمورد</span>
+        </div>
+        <h1 style="font-size:20px;">تسجيل بيانات مورد جديد</h1>
+      </div>
+      <div class="sc-actions">
+        <button class="btn btn-ghost" onclick="mkState('card')"><i class="ti ti-x"></i> إلغاء ورجوع</button>
+      </div>
+    </div>
+
+    <!-- السطر 1: الكود التلقائي + كود خارجي/ضريبي -->
+    <div class="sc-fields" style="grid-template-columns:220px 1fr;text-align:center;">
+      <div class="ffield">
+        <label>كود المورد <span class="fchip fchip-mute">تلقائي</span></label>
+        <div class="sc-val code" style="font-weight:700;">1000781</div>
+      </div>
+      <div class="ffield">
+        <label>كود خارجي / ضريبي (اختياري)</label>
+        <input class="finput" id="mkNewExtCode" placeholder="الرقم الضريبي أو كود المورد لدى الشركة" style="direction:ltr;text-align:center;">
+      </div>
+    </div>
+
+    <!-- السطر 2: الاسم بالكامل بعرض الشاشة -->
+    <div class="ffield" style="margin-top:var(--sp-3);width:100%;">
+      <label>اسم المورد / الشركة التجارية</label>
+      <input class="finput" id="mkNewName" placeholder="مثال: شركة النيل للورق والأدوات المكتبية" style="font-size:18px;font-weight:700;width:100%;">
+    </div>
+
+    <!-- السطر 3: التليفون الأساسي + تليفون إضافي + طريقة التعامل + فترة السماح -->
+    <div class="sc-fields" style="grid-template-columns:repeat(4,1fr);text-align:center;margin-top:var(--sp-3);width:100%;">
+      <div class="ffield">
+        <label>التليفون الأساسي</label>
+        <input class="finput" placeholder="010xxxxxxxx" style="direction:ltr;text-align:center;">
+      </div>
+      <div class="ffield">
+        <label>تليفون إضافي / واتساب</label>
+        <input class="finput" placeholder="011xxxxxxxx" style="direction:ltr;text-align:center;">
+      </div>
+      <div class="ffield">
+        <label>طريقة التعامل</label>
+        <select class="fselect" style="text-align:center;">
+          <option selected>آجل (فترة سداد)</option>
+          <option>كاش (نقدي فور الاستلام)</option>
+        </select>
+      </div>
+      <div class="ffield">
+        <label>فترة السماح (أيام)</label>
+        <input class="finput" type="number" value="30" style="text-align:center;">
+      </div>
+    </div>
+
+    <!-- السطر 4: العنوان بالتفصيل بعرض الشاشة -->
+    <div class="ffield" style="margin-top:var(--sp-3);width:100%;">
+      <label>العنوان بالتفصيل</label>
+      <input class="finput" placeholder="الشارع، المنطقة، المحافظة" style="width:100%;">
+    </div>
+
+    <!-- السطر 5: ملاحظات التعامل بعرض الشاشة -->
+    <div class="ffield" style="margin-top:var(--sp-3);width:100%;">
+      <label>ملاحظات التعامل</label>
+      <textarea class="finput" rows="3" placeholder="مواعيد التوريد، التوصيل، نسب الخصم المعتادة..." style="width:100%;"></textarea>
+    </div>
+
+    <!-- أزرار الإجراءات -->
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="btn btn-primary" onclick="mkState('card')"><i class="ti ti-check"></i> حفظ بيانات المورد</button>
+      <button class="btn btn-ghost" onclick="mkState('card')">إلغاء</button>
+    </div>
+  </div>
+
+  <!-- نافذة البحث المنبثقة بالاسم (Modal) زي كارت الصنف -->
+  <div id="mkModal" style="position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:flex-start;justify-content:center;padding-top:70px;z-index:100;backdrop-filter:blur(2px);">
+    <div class="fcard" style="width:820px;max-width:94vw;box-shadow:0 16px 40px rgba(0,0,0,0.5);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:16px;font-weight:700;"><i class="ti ti-search"></i> بحث عن مورد بالاسم أو الكود</h3>
+        <button class="btn btn-ghost btn-sm" onclick="mkSearch(false)"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input class="finput" id="modalSearchInput" value="حامد" placeholder="اكتب اسم المورد للبحث..." style="flex:1;" oninput="filterModalSuppliers(this.value)">
+        <button class="btn btn-ghost" onclick="mkSearch(false)">إغلاق (Esc)</button>
+      </div>
+      <div class="ftable-wrap">
+        <table class="ftable">
+          <thead>
+            <tr>
+              <th>الكود</th>
+              <th>اسم المورد</th>
+              <th>التليفون</th>
+              <th>طريقة التعامل</th>
+              <th class="num">الرصيد الحالي</th>
+              <th>الحالة</th>
+            </tr>
+          </thead>
+          <tbody id="modalSuppTbody">
+            <tr style="cursor:pointer;" onclick="selectSupplierFromModal('1000142')">
+              <td class="code">1000142</td>
+              <td><b>حامد الرائد ادوات مكتبيه / ورق تصوير</b></td>
+              <td style="direction:ltr;">01001234567</td>
+              <td><span class="fchip">آجل (30 يوم)</span></td>
+              <td class="num" style="color:var(--warn);font-weight:700;">48,500.00 ج.م</td>
+              <td><span class="fchip fchip-pos">نشط</span></td>
+            </tr>
+            <tr style="cursor:pointer;" onclick="selectSupplierFromModal('1000210')">
+              <td class="code">1000210</td>
+              <td>شركة الشرق لتجارة الأدوات المكتبية والورقيات</td>
+              <td style="direction:ltr;">01223456780</td>
+              <td><span class="fchip">آجل (45 يوم)</span></td>
+              <td class="num" style="color:var(--warn);font-weight:700;">12,800.00 ج.م</td>
+              <td><span class="fchip fchip-pos">نشط</span></td>
+            </tr>
+            <tr style="cursor:pointer;" onclick="selectSupplierFromModal('1000305')">
+              <td class="code">1000305</td>
+              <td>مكتبة ومطبعة الأهرام التجارية الفجالة</td>
+              <td style="direction:ltr;">01112233445</td>
+              <td><span class="fchip">كاش</span></td>
+              <td class="num" style="color:var(--pos);font-weight:700;">0.00 ج.م</td>
+              <td><span class="fchip fchip-pos">نشط</span></td>
+            </tr>
+            <tr style="cursor:pointer;" onclick="selectSupplierFromModal('1000412')">
+              <td class="code">1000412</td>
+              <td>مؤسسة بريما للأقلام ومستلزمات الكتابة</td>
+              <td style="direction:ltr;">01099887766</td>
+              <td><span class="fchip">آجل (30 يوم)</span></td>
+              <td class="num" style="color:var(--warn);font-weight:700;">34,200.00 ج.م</td>
+              <td><span class="fchip fchip-pos">نشط</span></td>
+            </tr>
+            <tr style="cursor:pointer;" onclick="selectSupplierFromModal('1000550')">
+              <td class="code">1000550</td>
+              <td>شركة فابر كاستل مصر للاستيراد والتوزيع</td>
+              <td style="direction:ltr;">01200112233</td>
+              <td><span class="fchip">آجل (60 يوم)</span></td>
+              <td class="num" style="color:var(--warn);font-weight:700;">85,000.00 ج.م</td>
+              <td><span class="fchip fchip-pos">نشط</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mk-note" style="margin-top:8px;">اضغط على أي صف لفتح كارت المورد مباشرة.</div>
+    </div>
+  </div>
+
+  <!-- كارت المورد الرئيسي -->
+  <div class="fcard" id="mainCard">
+    <!-- رأس الكارت: الكود + الاسم كبير + الشارات + أزرار العمليات السريعة -->
+    <div class="sc-head">
+      <div class="sc-title">
+        <div class="sc-sub">
+          <span class="sc-code">#1000142</span>
+          <span class="fchip fchip-pos"><i class="ti ti-check"></i> نشط</span>
+          <span class="fchip">آجل (30 يوم)</span>
+          <span class="fchip fchip-mute">ورقيات وأدوات مكتبية</span>
+          <span>14 صنف مورّد</span>
+        </div>
+        <h1>حامد الرائد ادوات مكتبيه / ورق تصوير</h1>
+      </div>
+      <div class="sc-actions">
+        <a href="purchase_doc.html" class="btn btn-primary"><i class="ti ti-plus"></i> فاتورة شراء جديدة</a>
+        <button class="btn btn-outline" onclick="printStatement()"><i class="ti ti-file-text"></i> كشف حساب (طباعة)</button>
+      </div>
+    </div>
+
+    <!-- شبكة المحتوى: الأعمدة الرئيسية + العمود الجانبي الثابت -->
+    <div class="sc-grid">
+      <!-- الجزء الأيمن: التابات ومحتواها -->
+      <div>
+        <nav class="ftabs">
+          <button class="ftab is-active" data-t="info"><i class="ti ti-id"></i> بيانات المورد</button>
+          <button class="ftab" data-t="invoices"><i class="ti ti-file-invoice"></i> فواتير الشراء (8)</button>
+          <button class="ftab" data-t="returns"><i class="ti ti-arrow-back-up"></i> المرتجعات (1)</button>
+          <button class="ftab" data-t="items"><i class="ti ti-packages"></i> الأصناف المورّدة (14)</button>
+          <button class="ftab" data-t="ledger"><i class="ti ti-report-money"></i> كشف الحساب التفصيلي</button>
+        </nav>
+
+        <!-- تاب 1: بيانات المورد -->
+        <section class="sc-panel on" data-p="info">
+          <!-- الكود والاسم -->
+          <div class="sc-fields" style="grid-template-columns:160px 180px;justify-content:start;text-align:center;">
+            <div class="ffield">
+              <label>كود المورد <span class="fchip fchip-mute">تلقائي</span></label>
+              <div class="sc-val code">1000142</div>
+            </div>
+            <div class="ffield">
+              <label>الحالة التجارية</label>
+              <div class="sc-val"><span class="fchip fchip-pos">نشط ومتاح للتوريد</span></div>
+            </div>
+          </div>
+
+          <div class="ffield" style="margin-top:var(--sp-3);width:100%;">
+            <label>اسم المورد التجاري</label>
+            <div class="sc-val" style="font-size:20px;font-weight:700;color:var(--ink-900);padding:12px 14px;width:100%;">
+              حامد الرائد ادوات مكتبيه / ورق تصوير
+            </div>
+          </div>
+
+          <!-- الاتصال وطريقة الدفع -->
+          <div class="sc-fields" style="grid-template-columns:repeat(4,1fr);text-align:center;margin-top:var(--sp-3);width:100%;">
+            <div class="ffield">
+              <label>التليفون الأساسي</label>
+              <div class="sc-val" style="direction:ltr;"><i class="ti ti-phone" style="font-size:12px;color:var(--ink-400);"></i> 01001234567</div>
+            </div>
+            <div class="ffield">
+              <label>تليفون إضافي / واتساب</label>
+              <div class="sc-val" style="direction:ltr;"><i class="ti ti-brand-whatsapp" style="font-size:12px;color:var(--pos);"></i> 01123456789</div>
+            </div>
+            <div class="ffield">
+              <label>طريقة الدفع المعتمدة</label>
+              <div class="sc-val"><span class="fchip" style="font-weight:700;">آجل (سداد دوري)</span></div>
+            </div>
+            <div class="ffield">
+              <label>فترة السماح والائتمان</label>
+              <div class="sc-val" style="font-weight:700;">30 يوم · 150,000 ج.م</div>
+            </div>
+          </div>
+
+          <!-- العنوان والموقع -->
+          <div class="sc-sec">بيانات الموقع والتسليم</div>
+          <div class="sc-fields" style="grid-template-columns:2fr 1fr;width:100%;">
+            <div class="ffield">
+              <label>العنوان ومقر التوزيع</label>
+              <div class="sc-val"><i class="ti ti-map-pin" style="color:var(--accent);"></i> 15 شارع الفجالة — الأزبكية — القاهرة (بجوار محطة مترو رمسيس)</div>
+            </div>
+            <div class="ffield">
+              <label>مكان استلام البضاعة</label>
+              <div class="sc-val">تسليم المخزن الرئيسي (مخزن 1)</div>
+            </div>
+          </div>
+
+          <!-- ملاحظات وتفاصيل التعامل -->
+          <div class="sc-sec">ملاحظات التعامل التجاري</div>
+          <div class="sc-val" style="width:100%;line-height:1.6;color:var(--ink-700);">
+            المورد الرئيسي لورق التصوير A4 و A5 (ماركات أوراق التصوير استهلاك وماي كوبي ومالتي أوفيس). التسليم بسيارة المورد للمخزن الرئيسي بالفجالة في خلال 24 ساعة من أمر الشراء. خصم إضافي 2% عند سداد الفاتورة خلال أسبوعين من الاستلام.
+          </div>
+        </section>
+
+        <!-- تاب 2: فواتير الشراء -->
+        <section class="sc-panel" data-p="invoices">
+          <div class="ftable-wrap">
+            <table class="ftable">
+              <thead>
+                <tr>
+                  <th>رقم الفاتورة</th>
+                  <th>تاريخ الشراء</th>
+                  <th>فاتورة المورد</th>
+                  <th>فرع الاستلام</th>
+                  <th class="num">عدد الأصناف</th>
+                  <th class="num">إجمالي الفاتورة</th>
+                  <th class="num">الخصم</th>
+                  <th class="num">الصافي</th>
+                  <th>طريقة الدفع</th>
+                  <th>حالة السداد</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="code"><b>#PO-2026-1049</b></td>
+                  <td>2026-10-26</td>
+                  <td class="code">INV-9842</td>
+                  <td>الإدارة المركزية (مخزن 1)</td>
+                  <td class="num">5</td>
+                  <td class="num">12,820.00</td>
+                  <td class="num">136.30</td>
+                  <td class="num" style="font-weight:700;color:var(--accent);">12,683.70</td>
+                  <td>آجل</td>
+                  <td><span class="fchip fchip-warn">مستحق السداد</span></td>
+                </tr>
+                <tr>
+                  <td class="code"><b>#PO-2026-0982</b></td>
+                  <td>2026-10-15</td>
+                  <td class="code">INV-9610</td>
+                  <td>فرع الفجالة</td>
+                  <td class="num">8</td>
+                  <td class="num">36,500.00</td>
+                  <td class="num">680.00</td>
+                  <td class="num" style="font-weight:700;">35,820.00</td>
+                  <td>آجل</td>
+                  <td><span class="fchip fchip-warn">مستحق السداد</span></td>
+                </tr>
+                <tr>
+                  <td class="code"><b>#PO-2026-0890</b></td>
+                  <td>2026-09-28</td>
+                  <td class="code">INV-9415</td>
+                  <td>الإدارة المركزية (مخزن 1)</td>
+                  <td class="num">4</td>
+                  <td class="num">24,300.00</td>
+                  <td class="num">300.00</td>
+                  <td class="num" style="font-weight:700;">24,000.00</td>
+                  <td>آجل</td>
+                  <td><span class="fchip fchip-pos">تم السداد</span></td>
+                </tr>
+                <tr>
+                  <td class="code"><b>#PO-2026-0814</b></td>
+                  <td>2026-09-10</td>
+                  <td class="code">INV-9208</td>
+                  <td>فرع بولاق الدكرور</td>
+                  <td class="num">6</td>
+                  <td class="num">18,750.00</td>
+                  <td class="num">250.00</td>
+                  <td class="num" style="font-weight:700;">18,500.00</td>
+                  <td>آجل</td>
+                  <td><span class="fchip fchip-pos">تم السداد</span></td>
+                </tr>
+                <tr>
+                  <td class="code"><b>#PO-2026-0742</b></td>
+                  <td>2026-08-22</td>
+                  <td class="code">INV-8991</td>
+                  <td>الإدارة المركزية (مخزن 1)</td>
+                  <td class="num">7</td>
+                  <td class="num">42,100.00</td>
+                  <td class="num">800.00</td>
+                  <td class="num" style="font-weight:700;">41,300.00</td>
+                  <td>آجل</td>
+                  <td><span class="fchip fchip-pos">تم السداد</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mk-note" style="margin-top:8px;">إجمالي 8 فواتير شراء خلال آخر 90 يوم بمجموع صافي 215,400.00 ج.م.</div>
+        </section>
+
+        <!-- تاب 3: المرتجعات -->
+        <section class="sc-panel" data-p="returns">
+          <div class="ftable-wrap">
+            <table class="ftable">
+              <thead>
+                <tr>
+                  <th>رقم إذن الارتجاع</th>
+                  <th>التاريخ</th>
+                  <th>الفرع المرتجع منه</th>
+                  <th>الصنف المرتجع</th>
+                  <th class="num">الكمية</th>
+                  <th class="num">سعر الوحدة</th>
+                  <th class="num">إجمالي القيمة</th>
+                  <th>سبب الإرجاع</th>
+                  <th>حالة التسوية</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="code"><b>#RET-2026-041</b></td>
+                  <td>2026-10-18</td>
+                  <td>فرع الفجالة</td>
+                  <td>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</td>
+                  <td class="num">10 رزمة</td>
+                  <td class="num">124.00</td>
+                  <td class="num" style="font-weight:700;color:var(--neg);">1,240.00</td>
+                  <td>تلف تغليف المصنع أثناء النقل</td>
+                  <td><span class="fchip fchip-pos">تم الخصم من الحساب</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mk-note" style="margin-top:8px;">أي مرتجع شراء يتم خصم قيمته تلقائياً من رصيد المورد الدائن في كشف الحساب.</div>
+        </section>
+
+        <!-- تاب 4: الأصناف التي يوردها -->
+        <section class="sc-panel" data-p="items">
+          <div class="ftable-wrap">
+            <table class="ftable">
+              <thead>
+                <tr>
+                  <th>كود الصنف</th>
+                  <th>اسم الصنف</th>
+                  <th>الوحدة</th>
+                  <th class="num">آخر سعر توريد</th>
+                  <th class="num">أقل سعر</th>
+                  <th class="num">أعلى سعر</th>
+                  <th class="num">إجمالي الكمية الموردة</th>
+                  <th>تاريخ آخر توريد</th>
+                  <th>الرصيد المتاح</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="code">0056</td>
+                  <td><b>روزمة ورق تصوير 70 جرام A4 (استهلاك)</b></td>
+                  <td>روزمة (500ق)</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">124.00</td>
+                  <td class="num">120.00</td>
+                  <td class="num">126.00</td>
+                  <td class="num">850 روزمة</td>
+                  <td>2026-10-26</td>
+                  <td class="num">152 روزمة</td>
+                </tr>
+                <tr>
+                  <td class="code">0042</td>
+                  <td>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</td>
+                  <td>قطعة</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">0.248</td>
+                  <td class="num">0.240</td>
+                  <td class="num">0.252</td>
+                  <td class="num">425,000 قطعة</td>
+                  <td>2026-10-26</td>
+                  <td class="num">75,995 قطعة</td>
+                </tr>
+                <tr>
+                  <td class="code">0047</td>
+                  <td>ورق تصوير بالورقة 70 جرام A5 (استهلاك)</td>
+                  <td>قطعة</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">0.135</td>
+                  <td class="num">0.130</td>
+                  <td class="num">0.140</td>
+                  <td class="num">60,000 قطعة</td>
+                  <td>2026-10-15</td>
+                  <td class="num">14,200 قطعة</td>
+                </tr>
+                <tr>
+                  <td class="code">1010042</td>
+                  <td>كشكول سلك 80 ورقة A4 مسطر فاخر غلاف بلاستيك</td>
+                  <td>كشكول</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">28.50</td>
+                  <td class="num">27.00</td>
+                  <td class="num">29.00</td>
+                  <td class="num">900 كشكول</td>
+                  <td>2026-10-26</td>
+                  <td class="num">305 كشكول</td>
+                </tr>
+                <tr>
+                  <td class="code">1020015</td>
+                  <td>قلم جاف بريما سوبر 0.7 ملم أزرق أصلي</td>
+                  <td>باكتة (12ق)</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">54.00</td>
+                  <td class="num">52.00</td>
+                  <td class="num">55.00</td>
+                  <td class="num">180 باكتة</td>
+                  <td>2026-10-26</td>
+                  <td class="num">48 باكتة</td>
+                </tr>
+                <tr>
+                  <td class="code">1020044</td>
+                  <td>قلم رصاص فابر كاستل جولد فايبر HB بممحاة</td>
+                  <td>باكتة (12ق)</td>
+                  <td class="num" style="color:var(--accent);font-weight:700;">82.00</td>
+                  <td class="num">79.00</td>
+                  <td class="num">84.00</td>
+                  <td class="num">120 باكتة</td>
+                  <td>2026-10-26</td>
+                  <td class="num">32 باكتة</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mk-note" style="margin-top:8px;">إجمالي 14 صنف مختلف يتم توريدهم بانتظام من هذا المورد بأسعار الجملة.</div>
+        </section>
+
+        <!-- تاب 5: كشف الحساب التفصيلي -->
+        <section class="sc-panel" data-p="ledger">
+          <div class="ftable-wrap">
+            <table class="ftable">
+              <thead>
+                <tr>
+                  <th>التاريخ</th>
+                  <th>نوع الحركة</th>
+                  <th>رقم المستند</th>
+                  <th class="num">مدين (سداد لنا)</th>
+                  <th class="num">دائن (فواتير له)</th>
+                  <th class="num">الرصيد التراكمي</th>
+                  <th>البيان والتفاصيل</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2026-09-01</td>
+                  <td>رصيد افتتاحي</td>
+                  <td>—</td>
+                  <td class="num">—</td>
+                  <td class="num">25,000.00</td>
+                  <td class="num" style="font-weight:700;">25,000.00 له</td>
+                  <td>رصيد مرحل من الدورة السابقة</td>
+                </tr>
+                <tr>
+                  <td>2026-09-10</td>
+                  <td>فاتورة شراء</td>
+                  <td class="code">#PO-2026-0814</td>
+                  <td class="num">—</td>
+                  <td class="num">18,500.00</td>
+                  <td class="num" style="font-weight:700;">43,500.00 له</td>
+                  <td>فاتورة توريد فرع بولاق (INV-9208)</td>
+                </tr>
+                <tr>
+                  <td>2026-09-18</td>
+                  <td>سند صرف نقدية</td>
+                  <td class="code">#PAY-2026-0312</td>
+                  <td class="num" style="color:var(--pos);font-weight:700;">25,000.00</td>
+                  <td class="num">—</td>
+                  <td class="num" style="font-weight:700;">18,500.00 له</td>
+                  <td>سداد نقدي من الخزينة الرئيسية بشيك رقم 44810</td>
+                </tr>
+                <tr>
+                  <td>2026-09-28</td>
+                  <td>فاتورة شراء</td>
+                  <td class="code">#PO-2026-0890</td>
+                  <td class="num">—</td>
+                  <td class="num">24,000.00</td>
+                  <td class="num" style="font-weight:700;">42,500.00 له</td>
+                  <td>فاتورة توريد ورق مخزن رئيسي (INV-9415)</td>
+                </tr>
+                <tr>
+                  <td>2026-10-05</td>
+                  <td>سند صرف نقدية</td>
+                  <td class="code">#PAY-2026-0348</td>
+                  <td class="num" style="color:var(--pos);font-weight:700;">18,500.00</td>
+                  <td class="num">—</td>
+                  <td class="num" style="font-weight:700;">24,000.00 له</td>
+                  <td>تحويل بنكي لسداد فاتورة #PO-2026-0814</td>
+                </tr>
+                <tr>
+                  <td>2026-10-15</td>
+                  <td>فاتورة شراء</td>
+                  <td class="code">#PO-2026-0982</td>
+                  <td class="num">—</td>
+                  <td class="num">35,820.00</td>
+                  <td class="num" style="font-weight:700;">59,820.00 له</td>
+                  <td>فاتورة توريد كشاكيل وأقلام (INV-9610)</td>
+                </tr>
+                <tr>
+                  <td>2026-10-18</td>
+                  <td>مرتجع شراء</td>
+                  <td class="code">#RET-2026-041</td>
+                  <td class="num" style="color:var(--pos);font-weight:700;">1,240.00</td>
+                  <td class="num">—</td>
+                  <td class="num" style="font-weight:700;">58,580.00 له</td>
+                  <td>إرجاع 10 رزم ورق تالفة تغليف</td>
+                </tr>
+                <tr>
+                  <td>2026-10-22</td>
+                  <td>سند صرف نقدية</td>
+                  <td class="code">#PAY-2026-0391</td>
+                  <td class="num" style="color:var(--pos);font-weight:700;">22,763.70</td>
+                  <td class="num">—</td>
+                  <td class="num" style="font-weight:700;">35,816.30 له</td>
+                  <td>سداد دفعة نقدية خزينة الفجالة</td>
+                </tr>
+                <tr style="background:var(--accent-soft);">
+                  <td>2026-10-26</td>
+                  <td>فاتورة شراء</td>
+                  <td class="code">#PO-2026-1049</td>
+                  <td class="num">—</td>
+                  <td class="num">12,683.70</td>
+                  <td class="num" style="font-weight:800;color:var(--warn);font-size:15px;">48,500.00 له</td>
+                  <td>آخر فاتورة توريد ورق وكشاكيل (INV-9842)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mk-note" style="margin-top:8px;">صافي الرصيد الحالي المستحق للمورد: <b>48,500.00 ج.م (دائن)</b>.</div>
+        </section>
+      </div>
+
+      <!-- العمود الجانبي الثابت: الرصيد الحالي + آخر فاتورة + مشتريات 90 يوم + الأصناف -->
+      <aside class="sc-side">
+        <!-- كارت 1: الرصيد الحالي (له / عليه) -->
+        <div class="fcard">
+          <h3>الرصيد الحالي</h3>
+          <div class="sc-big due-for">48,500.00 <small style="font-size:14px;color:var(--ink-500);">ج.م (له)</small></div>
+          <div class="sc-sub" style="margin-top:6px;">
+            <span class="fchip fchip-warn">مستحق للمورد</span>
+            <span>حد الائتمان 150,000</span>
+          </div>
+          <div class="sc-rows" style="margin-top:12px;">
+            <div><span>فاتورة 26 أكتوبر</span><span>12,683.70</span></div>
+            <div><span>فاتورة 15 أكتوبر</span><span>35,816.30</span></div>
+            <div><span>فترة السداد</span><span style="color:var(--warn);">متبقي 14 يوم</span></div>
+          </div>
+        </div>
+
+        <!-- كارت 2: آخر فاتورة شراء -->
+        <div class="fcard">
+          <h3>آخر فاتورة شراء</h3>
+          <div class="sc-big" style="color:var(--accent);font-size:22px;">12,683.70 <small style="font-size:13px;color:var(--ink-500);">ج.م</small></div>
+          <div class="sc-rows" style="margin-top:10px;">
+            <div><span>رقم الفاتورة</span><span class="code">#PO-2026-1049</span></div>
+            <div><span>فاتورة المورد</span><span class="code">INV-9842</span></div>
+            <div><span>تاريخ الشراء</span><span>2026-10-26</span></div>
+            <div><span>فرع الاستلام</span><span>المخزن الرئيسي</span></div>
+            <div><span>عدد الأصناف</span><span>5 أصناف</span></div>
+          </div>
+        </div>
+
+        <!-- كارت 3: مشتريات آخر 90 يوم -->
+        <div class="fcard">
+          <h3>مشتريات آخر 90 يوم</h3>
+          <div class="sc-big">215,400 <small style="font-size:14px;color:var(--ink-500);">ج.م</small></div>
+          <div class="sc-rows" style="margin-top:10px;">
+            <div><span>عدد الفواتير</span><span>8 فواتير شراء</span></div>
+            <div><span>إجمالي المرتجعات</span><span style="color:var(--neg);">1,240.00 ج.م</span></div>
+            <div><span>إجمالي المسدد</span><span style="color:var(--pos);">166,900.00 ج.م</span></div>
+            <div><span>المتبقي غير مسدد</span><span style="color:var(--warn);">48,500.00 ج.م</span></div>
+          </div>
+        </div>
+
+        <!-- كارت 4: عدد الأصناف اللي بنشتريها منه -->
+        <div class="fcard">
+          <h3>الأصناف المورّدة</h3>
+          <div class="sc-big" style="color:var(--ink-900);">14 <small style="font-size:14px;color:var(--ink-500);">صنف نشط</small></div>
+          <div class="sc-rows" style="margin-top:10px;">
+            <div><span>ورق تصوير A4 و A5</span><span>3 أصناف</span></div>
+            <div><span>كشاكيل وكشاكيل سلك</span><span>5 أصناف</span></div>
+            <div><span>أقلام جاف ورصاص</span><span>4 أصناف</span></div>
+            <div><span>مستلزمات مكتبية</span><span>2 صنف</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<script>
+const mainCard = document.getElementById('mainCard');
+const mkNew = document.getElementById('mkNew');
+const mkMissing = document.getElementById('mkMissing');
+
+// التبديل بين حالات الصفحة (كارت / مورد جديد / كود مفقود)
+function mkState(state) {
+    if (state === 'card') {
+        mainCard.style.display = 'block';
+        mkNew.style.display = 'none';
+        mkMissing.style.display = 'none';
+    } else if (state === 'new') {
+        mainCard.style.display = 'none';
+        mkNew.style.display = 'block';
+        mkMissing.style.display = 'none';
+        document.getElementById('mkNewName').focus();
+    } else if (state === 'missing') {
+        mainCard.style.display = 'none';
+        mkNew.style.display = 'none';
+        mkMissing.style.display = 'flex';
+    }
+}
+
+// فتح وإغلاق بوب أب البحث بالاسم
+function mkSearch(open) {
+    const modal = document.getElementById('mkModal');
+    modal.style.display = open ? 'flex' : 'none';
+    if (open) {
+        const inp = document.getElementById('modalSearchInput');
+        setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    }
+}
+
+// اختيار مورد من بوب أب البحث
+function selectSupplierFromModal(code) {
+    document.getElementById('mkSuppCode').value = code;
+    mkSearch(false);
+    mkState('card');
+}
+
+// بحث سريع داخل جدول المودال
+function filterModalSuppliers(q) {
+    const term = q.trim().toLowerCase();
+    const rows = document.querySelectorAll('#modalSuppTbody tr');
+    rows.forEach(r => {
+        const text = r.textContent.toLowerCase();
+        r.style.display = text.includes(term) ? '' : 'none';
+    });
+}
+
+// فحص الكود المكتوب في الخانة العلوية
+document.getElementById('mkSuppCode').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const v = e.target.value.trim();
+    if (v === '1000142' || v === '1000210' || v === '1000305' || v === '1000412' || v === '1000550') {
+        mkState('card');
+    } else {
+        document.getElementById('mkMissingCode').textContent = v || 'فارغ';
+        mkState('missing');
+    }
+});
+
+// التنقل بين التابات (Tabs)
+document.querySelectorAll('[data-t]').forEach(btn => {
+    btn.onclick = () => {
+        document.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('is-active', x === btn));
+        document.querySelectorAll('[data-p]').forEach(panel => {
+            panel.classList.toggle('on', panel.dataset.p === btn.dataset.t);
+        });
+    };
+});
+
+// إغلاق المودال بزر Escape
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        mkSearch(false);
+    }
+});
+
+// تبديل المظهر دارك / لايت
+function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    html.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+
+function printStatement() {
+    window.print();
+}
+</script>
+
+</body>
+</html>

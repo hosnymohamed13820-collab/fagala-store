@@ -146,6 +146,7 @@ function all_modules(): array
         'stock_ledger'  => ['label' => 'دفتر المخزن',      'icon' => 'ti-packages',         'url' => 'stock_ledger.php'],
         'purchase_docs' => ['label' => 'فواتير الشراء',    'icon' => 'ti-package-import',    'url' => 'purchase_docs.php'],
         'item_master'   => ['label' => 'كارت الصنف',       'icon' => 'ti-package',           'url' => 'item_master.php'],
+        'supplier_card' => ['label' => 'كارت المورد', 'icon' => 'ti-package', 'url' => 'supplier_card.php'],
         'sale_prices'   => ['label' => 'أسعار البيع',       'icon' => 'ti-cash',              'url' => 'item_prices.php'],
         'customers'     => ['label' => 'العملاء',          'icon' => 'ti-users',             'url' => 'customers.php'],
         'pos'           => ['label' => 'نقطة البيع',       'icon' => 'ti-device-desktop',    'url' => 'pos.php'],
@@ -256,6 +257,11 @@ function module_parts(): array
             'post'    => 'ترحيل فواتير الشراء والمرتجعات',
             'cancel'  => 'إلغاء مستندات الشراء',
             'reports' => 'تقارير المشتريات',
+        ],
+        'supplier_card' => [
+            'view' => 'عرض وبحث',
+            'edit' => 'إضافة وتعديل',
+            'prices' => 'التكاليف والإجماليات وكشف الحساب',
         ],
         'item_master' => [
             'view'   => 'عرض وبحث',

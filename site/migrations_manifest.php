@@ -45,4 +45,5 @@ return [
     '20261101_036_true_specs',
     '20261101_037_item_sys_code',
     '20261101_038_item_class_assign',
+    '20261102_039_supplier_card',
 ];

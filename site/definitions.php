@@ -866,7 +866,7 @@ require_once __DIR__ . '/includes/header.php';
                 ?>
                     <tr class="supp-row" data-has-type="<?= $hasType ? '1' : '0' ?>" data-id="<?= (int)$s['id'] ?>">
                         <td class="num"><?= e($s['display_code']) ?></td>
-                        <td class="name" style="max-width:none;" title="<?= e($s['name']) ?>"><?= e($s['name']) ?></td>
+                        <td class="name" style="max-width:none;" title="<?= e($s['name']) ?>"><?php if (!empty($s['erp_supplier_code']) && can('supplier_card:view')): ?><a href="supplier_card.php?code=<?= e(rawurlencode((string)$s['erp_supplier_code'])) ?>"><?= e($s['name']) ?></a><?php else: ?><?= e($s['name']) ?><?php endif; ?></td>
                         <td>
                             <div style="display:flex;align-items:center;gap:8px;">
                                 <select class="fselect supp-ptype" data-prev="<?= e($s['payment_type'] ?? '') ?>"

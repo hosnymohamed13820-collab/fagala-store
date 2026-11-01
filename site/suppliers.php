@@ -403,6 +403,7 @@ require_once __DIR__ . '/includes/header.php';
                 </a>
                 <div class="section-title" style="margin-bottom:2px;font-size:18px;">
                     <?= e($singleSupplier['name']) ?><?= $currBranch ? ' — <span style="font-size:14px;color:var(--accent-text);font-weight:500;">فرع: ' . e($currBranch['label']) . '</span>' : '' ?>
+                    <?php if (!empty($singleSupplier['erp_supplier_code']) && can('supplier_card:view')): ?><a class="btn btn-ghost btn-sm" href="supplier_card.php?code=<?= e(rawurlencode($singleSupplier['erp_supplier_code'])) ?>">كارت المورد</a><?php endif; ?>
                 </div>
                 <div style="font-size:12px;color:var(--ink-500);">
                     <?= !empty($singleSupplier['phone']) ? ('تليفون: ' . e($singleSupplier['phone'])) : '' ?>
