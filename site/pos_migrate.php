@@ -316,15 +316,15 @@ $shifts = $pdo->query(
   <?php if ($summary): ?>
     <div class="fcard">
       <h2>نتيجة الترحيل</h2>
-      <div class="fkpis sum">
-        <div class="fkpi"><div class="n" style="color:var(--pos)"><?= $summary['ok'] ?></div>نجحت</div>
-        <div class="fkpi"><div class="n" style="color:var(--neg)"><?= $summary['fail'] ?></div>فشلت</div>
-        <div class="fkpi"><div class="n"><?= $summary['total'] ?></div>الإجمالي</div>
+      <div class="fkpis sum" data-xt-kpis="#posMigrateResults">
+        <div class="fkpi"><div class="n" style="color:var(--pos)"><span data-xt-sum="ok" data-xt-dec="0"><?= $summary['ok'] ?></span></div>نجحت</div>
+        <div class="fkpi"><div class="n" style="color:var(--neg)"><span data-xt-sum="fail" data-xt-dec="0"><?= $summary['fail'] ?></span></div>فشلت</div>
+        <div class="fkpi"><div class="n"><span data-xt-sum="total" data-xt-dec="0"><?= $summary['total'] ?></span></div>الإجمالي</div>
       </div>
-      <table class="ftable">
-        <tr><th class="num">الفاتورة</th><th>الحالة</th><th class="num">STH_ID</th><th class="num">DOC_NO</th><th class="num">الأوامر</th><th class="num">الوقت</th></tr>
+      <table class="ftable" id="posMigrateResults">
+        <thead><tr><th class="num">الفاتورة</th><th>الحالة</th><th class="num">STH_ID</th><th class="num">DOC_NO</th><th class="num">الأوامر</th><th class="num">الوقت</th></tr></thead><tbody>
         <?php foreach ($results as $r): ?>
-        <tr>
+        <tr data-v-ok="<?= $r['ok'] ? 1 : 0 ?>" data-v-fail="<?= $r['ok'] ? 0 : 1 ?>" data-v-total="1">
           <td class="num">#<?= (int)$r['inv'] ?></td>
           <td class="<?= $r['ok'] ? 'ok-row' : 'bad-row' ?>">
             <?= $r['ok'] ? '✓ اترحّلت' : '✗ ' . e($r['msg'] ?? '') ?>
@@ -335,7 +335,7 @@ $shifts = $pdo->query(
           <td class="num"><?= $r['ok'] ? (int)$r['ms'] . ' ms' : '—' ?></td>
         </tr>
         <?php endforeach; ?>
-      </table>
+      </tbody></table>
       <?php if ($summary['fail'] > 0): ?>
         <p style="color:var(--neg);font-size:13px;margin-top:14px">
           <i class="ti ti-alert-triangle"></i> الفواتير اللي نجحت اتكتبت فعليًا في نظام الشركة.

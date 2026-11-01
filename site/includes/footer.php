@@ -140,7 +140,7 @@
 <!-- خصائص جداول الإكسيل (فلتر · ترتيب · بحث) لكل جداول النظام.
      بيشتغل لوحده — مفيش تعديل مطلوب في أي صفحة.
      لاستثناء جدول: <table class="ftable" data-xt-off> -->
-<script src="assets/xtable.js?v=13"></script>
+<script src="assets/xtable.js?v=14"></script>
 <script src="assets/anicons.js?v=1"></script>
 <script>document.querySelectorAll('.sens-lock-card').forEach(function (card) { card.classList.add('fcard'); });</script>
 </body>

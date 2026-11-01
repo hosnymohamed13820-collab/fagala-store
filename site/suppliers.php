@@ -279,30 +279,30 @@ require_once __DIR__ . '/includes/header.php';
             </a>
         </form>
 
-        <div class="fkpis">
+        <div class="fkpis" data-xt-kpis="#suppTable">
             <div class="fkpi">
                 <span>عدد الموردين</span>
-                <strong id="cardSuppCount"><?= count($statementSummary) ?></strong>
+                <strong id="cardSuppCount" data-xt-count><?= count($statementSummary) ?></strong>
             </div>
             <div class="fkpi">
                 <span>إجمالي المشتريات</span>
-                <strong id="cardTotPurchases"><?= number_format($totSumPurchases, 2) ?></strong>
+                <strong id="cardTotPurchases" data-xt-sum="p"><?= number_format($totSumPurchases, 2) ?></strong>
             </div>
             <div class="fkpi">
                 <span>إجمالي المردودات</span>
-                <strong id="cardTotReturns"><?= number_format($totSumReturns, 2) ?></strong>
+                <strong id="cardTotReturns" data-xt-sum="r"><?= number_format($totSumReturns, 2) ?></strong>
             </div>
             <div class="fkpi">
                 <span>إجمالي المصروف للموردين</span>
-                <strong id="cardTotPaid"><?= number_format($totSumPaid, 2) ?></strong>
+                <strong id="cardTotPaid" data-xt-sum="pd"><?= number_format($totSumPaid, 2) ?></strong>
             </div>
             <div class="fkpi">
                 <span>إجمالي المستلم من الموردين</span>
-                <strong id="cardTotReceived"><?= number_format($totSumReceived, 2) ?></strong>
+                <strong id="cardTotReceived" data-xt-sum="rc"><?= number_format($totSumReceived, 2) ?></strong>
             </div>
             <div class="fkpi" id="cardBalanceBox" style="background:<?= $totSumBalance > 0 ? 'var(--neg-soft)' : ($totSumBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
                 <span>إجمالي الرصيد القائم</span>
-                <strong id="cardTotBalance" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
+                <strong id="cardTotBalance" data-xt-sum="b" style="color:<?= $totSumBalance > 0 ? 'var(--neg)' : ($totSumBalance < 0 ? 'var(--pos)' : 'var(--ink-900)') ?>;">
                     <?= number_format($totSumBalance, 2) ?>
                 </strong>
                 <small id="cardBalanceHint" style="font-size:11px;color:var(--ink-500);display:block;margin-top:2px;">
@@ -338,11 +338,11 @@ require_once __DIR__ . '/includes/header.php';
                 <tbody id="suppTbody">
                 <?php foreach ($statementSummary as $s): ?>
                     <tr data-name="<?= e(mb_strtolower($s['name'])) ?>"
-                        data-p="<?= $s['purchases'] ?>"
-                        data-r="<?= $s['returns'] ?>"
-                        data-pd="<?= $s['paid'] ?>"
-                        data-rc="<?= $s['received'] ?>"
-                        data-b="<?= $s['balance'] ?>">
+                        data-p="<?= $s['purchases'] ?>" data-v-p="<?= (float)$s['purchases'] ?>"
+                        data-r="<?= $s['returns'] ?>" data-v-r="<?= (float)$s['returns'] ?>"
+                        data-pd="<?= $s['paid'] ?>" data-v-pd="<?= (float)$s['paid'] ?>"
+                        data-rc="<?= $s['received'] ?>" data-v-rc="<?= (float)$s['received'] ?>"
+                        data-b="<?= $s['balance'] ?>" data-v-b="<?= (float)$s['balance'] ?>">
                         <td style="font-weight:600;">
                             <a href="?tab=statement&supplier=<?= (int)$s['id'] ?>&br=<?= e($currBranchKey) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="inv-link">
                                 <?= e($s['name']) ?>
@@ -364,8 +364,8 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <script>
-        /* الكروت بتتحسب من الصفوف الظاهرة في فلتر الجدول العام (xtable.js بيبعت
-           xtable:filter بالصفوف الظاهرة بعد أي بحث/فلتر/مسح) — نفس اللي الجدول بيعرضه بالظبط. */
+        /* أرقام الكروت بقت بالسمات في المكتبة. الربط اليدوي اللي فاضل هنا للون الرصيد
+           ووصف مين مديون لمين بس؛ xtable:filter بيحدد الصفوف الظاهرة لنفس الجدول. */
         (function () {
             var table = document.getElementById('suppTable');
             if (!table) return;
@@ -377,23 +377,13 @@ require_once __DIR__ . '/includes/header.php';
             }
 
             table.addEventListener('xtable:filter', function (ev) {
-                var rows = (ev.detail && ev.detail.rows) || [];
-                var sP = 0, sR = 0, sPd = 0, sRc = 0, sB = 0, n = 0;
-                rows.forEach(function (r) {
-                    if (!r.hasAttribute('data-p')) return;
-                    n++;
-                    sP  += parseFloat(r.getAttribute('data-p'))  || 0;
-                    sR  += parseFloat(r.getAttribute('data-r'))  || 0;
-                    sPd += parseFloat(r.getAttribute('data-pd')) || 0;
-                    sRc += parseFloat(r.getAttribute('data-rc')) || 0;
-                    sB  += parseFloat(r.getAttribute('data-b'))  || 0;
-                });
-                $('cardSuppCount').textContent    = n.toLocaleString('en-US');
-                $('cardTotPurchases').textContent = fmt(sP);
-                $('cardTotReturns').textContent   = fmt(sR);
-                $('cardTotPaid').textContent      = fmt(sPd);
-                $('cardTotReceived').textContent  = fmt(sRc);
-                cardB.textContent = fmt(sB);
+                var sB = <?= (float)$totSumBalance ?>;
+                if (ev.detail && ev.detail.active) {
+                    sB = (ev.detail.rows || []).reduce(function (total, row) {
+                        return total + Number(row.getAttribute('data-v-b') || 0);
+                    }, 0);
+                }
+
                 var tone = sB > 0.005 ? 'neg' : (sB < -0.005 ? 'pos' : '');
                 cardBBox.style.background  = tone ? 'var(--' + tone + '-soft)' : 'var(--line-soft)';
                 cardBBox.style.borderColor = tone ? 'var(--' + tone + ')' : 'var(--line)';
@@ -440,7 +430,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="fcard">
             <div class="ftable-wrap">
-            <table class="ftable">
+            <table class="ftable" id="supplierMovesTable">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -469,7 +459,7 @@ require_once __DIR__ . '/includes/header.php';
                 <?php else: ?>
                     <?php foreach ($allMoves as $m): ?>
                         <?php $isSiteMove = ($m['source'] ?? '') === 'site'; ?>
-                        <tr<?= $isSiteMove ? ' class="site-doc-row"' : '' ?>>
+                        <tr data-v-purchases="<?= ($m['source'] === 'hq' || ($m['source'] === 'site' && ($m['site_state'] ?? '') === 'missing')) ? max(0, (float)$m['credit']) : 0 ?>" data-v-returns="<?= ($m['source'] === 'hq' || ($m['source'] === 'site' && ($m['site_state'] ?? '') === 'missing')) ? max(0, (float)$m['debit']) : 0 ?>" data-v-paid="<?= ($m['source'] === 'hq' || ($m['source'] === 'site' && ($m['site_state'] ?? '') === 'missing')) ? 0 : max(0, (float)$m['debit']) ?>" data-v-received="<?= ($m['source'] === 'hq' || ($m['source'] === 'site' && ($m['site_state'] ?? '') === 'missing')) ? 0 : max(0, (float)$m['credit']) ?>"<?= $isSiteMove ? ' class="site-doc-row"' : '' ?>>
                             <td><?= e($m['tx_date']) ?></td>
                             <td>
                                 <?php if ($isSiteMove): ?>
@@ -520,22 +510,22 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         </div>
 
-        <div class="fkpis">
+        <div class="fkpis" data-xt-kpis="#supplierMovesTable">
             <div class="fkpi">
                 <span>المشتريات</span>
-                <strong><?= number_format($periodPurchases, 2) ?></strong>
+                <strong><span data-xt-sum="purchases"><?= number_format($periodPurchases, 2) ?></span></strong>
             </div>
             <div class="fkpi">
                 <span>المردودات</span>
-                <strong><?= number_format($periodReturns, 2) ?></strong>
+                <strong><span data-xt-sum="returns"><?= number_format($periodReturns, 2) ?></span></strong>
             </div>
             <div class="fkpi">
                 <span>المصروف له</span>
-                <strong><?= number_format($periodPaid, 2) ?></strong>
+                <strong><span data-xt-sum="paid"><?= number_format($periodPaid, 2) ?></span></strong>
             </div>
             <div class="fkpi">
                 <span>المستلم منه</span>
-                <strong><?= number_format($periodReceived, 2) ?></strong>
+                <strong><span data-xt-sum="received"><?= number_format($periodReceived, 2) ?></span></strong>
             </div>
             <div class="fkpi" style="background:<?= $finalBalance > 0 ? 'var(--neg-soft)' : ($finalBalance < 0 ? 'var(--pos-soft)' : 'var(--line-soft)') ?>;border-color:<?= $finalBalance > 0 ? 'var(--neg)' : ($finalBalance < 0 ? 'var(--pos)' : 'var(--line)') ?>;">
                 <span>الرصيد الختامي</span>

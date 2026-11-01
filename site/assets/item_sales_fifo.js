@@ -70,13 +70,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (key === 'no_purchase_qty' && Number(row[key])) return '<span class="fchip fchip-warn">' + num(row[key]) + '</span>';
         return num(row[key]);
     }
-    function table(rows, cols, expand) {
-        return '<div class="ftable-wrap"><table class="ftable"><thead><tr>'
+    function table(rows, cols, expand, main) {
+        return '<div class="ftable-wrap"><table class="ftable"' + (main ? ' id="fifoMainTable"' : '') + '><thead><tr>'
             + cols.map(([key, label]) => '<th' + (textKeys.includes(key) ? '' : ' class="num"') + '>' + esc(label) + '</th>').join('')
             + '</tr></thead><tbody>' + rows.map(row => {
                 let id;
                 if (expand) { id = 'fifoDetail' + (++serial); actions.set(id, {row, expand}); }
-                return '<tr' + (expand ? ' data-fifo-open="' + id + '" role="button" tabindex="0" aria-expanded="false" aria-controls="' + id + '" style="cursor:pointer"' : '') + '>'
+                const values = main ? ['sold','profit_revenue','cost','profit'].map(key => ' data-v-' + key + '="'
+                    + esc(row[key] ?? (key === 'profit_revenue' ? (row.revenue ?? 0) : 0)) + '"').join('') : '';
+                return '<tr' + values + (expand ? ' data-fifo-open="' + id + '" role="button" tabindex="0" aria-expanded="false" aria-controls="' + id + '" style="cursor:pointer"' : '') + '>'
                     + cols.map(([key]) => '<td' + (textKeys.includes(key) ? '' : ' class="num"')
                     + (key === 'profit' && row[key] < 0 ? ' style="color:var(--neg)"' : '') + '>'
                     + cell(row, key)
@@ -95,8 +97,11 @@ document.addEventListener('DOMContentLoaded', function () {
         actions.clear();
         if (!data) return;
         const t = data.totals;
+        el('fifoTotals').setAttribute('data-xt-kpis', '#fifoMainTable');
         el('fifoTotals').innerHTML = [['sold','المباع'],['revenue','الإيراد'],['cost','تكلفة الربح'],['profit','الربح'],['margin','النسبة %']]
-            .map(([k,label]) => '<div class="fkpi"><span>' + label + '</span><strong' + (k === 'profit' && t[k] < 0 ? ' style="color:var(--neg)"' : '') + '>' + num(t[k]) + '</strong></div>').join('');
+            .map(([k,label]) => '<div class="fkpi"><span>' + label + '</span><strong '
+                + (k === 'margin' ? 'data-xt-ratio="profit,profit_revenue"' : 'data-xt-sum="' + (k === 'revenue' ? 'profit_revenue' : k) + '"')
+                + (k === 'profit' && t[k] < 0 ? ' style="color:var(--neg)"' : '') + '>' + num(t[k]) + '</strong></div>').join('');
         el('fifoNotes').innerHTML = 'منه <span class="fchip fchip-warn">' + num(t.no_purchase_qty) + ' قطعة من غير فاتورة شراء</span>'
             + ' بإيراد ' + num(t.no_purchase_revenue) + ' · ربحها مش محسوب. إجمالي الإيراد والربح والنسبة من البيع اللي له تكلفة بس.<br>اتبعت لإشراقة ' + num(t.ashraqa) + ' قطعة بتكلفة ' + num(t.ashraqa_cost)
             + ' · عمر الباقي لحد النهارده، من غير فلتر الفترة.';
@@ -107,7 +112,7 @@ document.addEventListener('DOMContentLoaded', function () {
             ? storeCols.filter(([key]) => byItem || key !== 'code') : supplierCols;
         const supplierAge = report === 'supplier_invoices' ? '<p>عمر باقي المورد كله لحد النهارده</p>' + table([{aging:data.aging}],agingCols) : '';
         el('fifoResults').innerHTML = supplierAge + (rows.length ? table(rows, columns,
-            report === 'supplier_invoices' ? 'invoice' : report === 'suppliers_profit' ? 'supplier' : null) : '<p>مفيش بيانات في الفترة دي.</p>');
+            report === 'supplier_invoices' ? 'invoice' : report === 'suppliers_profit' ? 'supplier' : null, true) : '<p>مفيش بيانات في الفترة دي.</p>');
         visible(el('fifoPages'), data.rows.length > pageSize);
         el('fifoPageLabel').innerHTML = 'صفحة ' + num(page + 1) + ' من ' + num(Math.max(1,Math.ceil(data.rows.length / pageSize)))
             + (byItem ? '<br><small>الفلتر على الصفحة الحالية بس</small>' : '');

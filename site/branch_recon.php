@@ -364,7 +364,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
             <?php else: ?>
             <div class="ftable-wrap">
-            <table class="ftable recon-table">
+            <table class="ftable recon-table" id="reconOurTable">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -380,7 +380,7 @@ require_once __DIR__ . '/includes/header.php';
                     $mColor = $reconMarks[$mkKey] ?? '';
                     $rowClass = $mColor !== '' ? 'hl-' . $mColor : '';
                     ?>
-                    <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
+                    <tr data-v-buy="<?= (int)$m['doc_type'] === 2 ? (float)$m['net_amount'] : 0 ?>" data-v-return="<?= (int)$m['doc_type'] === 6 ? (float)$m['net_amount'] : 0 ?>" data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                         <td><?= e($m['tx_date']) ?></td>
                         <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
                         <td><span class="fchip <?= (int)$m['doc_type'] === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></span></td>
@@ -392,14 +392,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <?php endif; ?>
 
-            <div class="fkpis" style="margin-top:16px;">
+            <div class="fkpis" style="margin-top:16px;" data-xt-kpis="#reconOurTable">
                 <div class="fkpi">
                     <span>إجمالي الشراء</span>
-                    <strong><?= number_format($partyTotOurBuy, 2) ?></strong>
+                    <strong><span data-xt-sum="buy"><?= number_format($partyTotOurBuy, 2) ?></span></strong>
                 </div>
                 <div class="fkpi">
                     <span>إجمالي المردود</span>
-                    <strong><?= number_format($partyTotOurRet, 2) ?></strong>
+                    <strong><span data-xt-sum="return"><?= number_format($partyTotOurRet, 2) ?></span></strong>
                 </div>
             </div>
         </div>
@@ -413,7 +413,7 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد فواتير مسجلة في هذه الفترة.</div>
             <?php else: ?>
             <div class="ftable-wrap">
-            <table class="ftable recon-table">
+            <table class="ftable recon-table" id="reconHisTable">
                 <thead>
                     <tr>
                         <th>التاريخ</th>
@@ -429,7 +429,7 @@ require_once __DIR__ . '/includes/header.php';
                     $mColor = $reconMarks[$mkKey] ?? '';
                     $rowClass = $mColor !== '' ? 'hl-' . $mColor : '';
                     ?>
-                    <tr data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
+                    <tr data-v-buy="<?= (int)$m['doc_type'] === 2 ? (float)$m['net_amount'] : 0 ?>" data-v-return="<?= (int)$m['doc_type'] === 6 ? (float)$m['net_amount'] : 0 ?>" data-sth-id="<?= (int)$m['sth_id'] ?>" data-suffix="<?= e($m['suffix']) ?>" class="<?= $rowClass ?>">
                         <td><?= e($m['tx_date']) ?></td>
                         <td style="font-weight:600;"><?= e($m['doc_no']) ?></td>
                         <td><span class="fchip <?= (int)$m['doc_type'] === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= (int)$m['doc_type'] === 2 ? 'شراء' : 'مردود' ?></span></td>
@@ -441,14 +441,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <?php endif; ?>
 
-            <div class="fkpis" style="margin-top:16px;">
+            <div class="fkpis" style="margin-top:16px;" data-xt-kpis="#reconHisTable">
                 <div class="fkpi">
                     <span>إجمالي الشراء</span>
-                    <strong><?= number_format($partyTotHisBuy, 2) ?></strong>
+                    <strong><span data-xt-sum="buy"><?= number_format($partyTotHisBuy, 2) ?></span></strong>
                 </div>
                 <div class="fkpi">
                     <span>إجمالي المردود</span>
-                    <strong><?= number_format($partyTotHisRet, 2) ?></strong>
+                    <strong><span data-xt-sum="return"><?= number_format($partyTotHisRet, 2) ?></span></strong>
                 </div>
             </div>
         </div>
@@ -938,24 +938,24 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 
     <!-- ٣ كروت إحصائية لإشراقة -->
-    <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
+    <div class="fkpis" style="margin-top:0;margin-bottom:18px;" data-xt-kpis="#reconAshInvoices">
         <div class="fkpi">
             <span>عدد الفواتير</span>
-            <strong><?= count($ashInvoices) ?></strong>
+            <strong><span data-xt-sum="count" data-xt-dec="0"><?= count($ashInvoices) ?></span></strong>
         </div>
         <div class="fkpi" style="background:var(--pos-soft);border-color:var(--pos);">
             <span style="color:var(--pos);">إجمالي الشراء</span>
-            <strong style="color:var(--pos);direction:ltr;text-align:right;"><?= number_format($totAshBuy, 2) ?></strong>
+            <strong style="color:var(--pos);direction:ltr;text-align:right;"><span data-xt-sum="buy"><?= number_format($totAshBuy, 2) ?></span></strong>
         </div>
         <div class="fkpi" style="background:var(--neg-soft);border-color:var(--neg);">
             <span style="color:var(--neg);">إجمالي المرتجع</span>
-            <strong style="color:var(--neg);direction:ltr;text-align:right;"><?= number_format($totAshRet, 2) ?></strong>
+            <strong style="color:var(--neg);direction:ltr;text-align:right;"><span data-xt-sum="return"><?= number_format($totAshRet, 2) ?></span></strong>
         </div>
     </div>
 
     <div class="fcard" style="margin-bottom:18px;">
         <div class="ftable-wrap">
-            <table class="ftable">
+            <table class="ftable" id="reconAshInvoices">
                 <thead>
                     <tr>
                         <th>الرقم</th>
@@ -978,7 +978,7 @@ require_once __DIR__ . '/includes/header.php';
                             $rowUrl = 'branch_recon.php?tab=ashraqa&doc=' . urlencode($rowDocKey) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
                             $isCanc = ((int)$ai['cancelled'] === 1);
                             ?>
-                            <tr class="recon-row" onclick="window.location='<?= $rowUrl ?>'" style="<?= $isCanc ? 'opacity:0.55;' : '' ?>">
+                            <tr data-v-count="1" data-v-buy="<?= !$isCanc && (int)$ai['sstt_id'] === 113 ? (float)$ai['net_amount'] : 0 ?>" data-v-return="<?= !$isCanc && (int)$ai['sstt_id'] === 115 ? (float)$ai['net_amount'] : 0 ?>" class="recon-row" onclick="window.location='<?= $rowUrl ?>'" style="<?= $isCanc ? 'opacity:0.55;' : '' ?>">
                                 <td style="font-weight:700;">
                                     <a href="<?= $rowUrl ?>" class="inv-link" onclick="event.stopPropagation();">
                                         <?= e($ai['add_doc']) ?>
@@ -1241,18 +1241,18 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 
     <!-- ٣ كروت إحصائية -->
-    <div class="fkpis" style="margin-top:0;margin-bottom:18px;">
+    <div class="fkpis" style="margin-top:0;margin-bottom:18px;" data-xt-kpis="#reconPairs">
         <div class="fkpi">
             <span>عدد الأزواج</span>
-            <strong><?= (int)$totPairsCount ?></strong>
+            <strong><span data-xt-sum="count" data-xt-dec="0"><?= (int)$totPairsCount ?></span></strong>
         </div>
         <div class="fkpi" style="background:var(--pos-soft);border-color:var(--pos);">
             <span style="color:var(--pos);">متطابق</span>
-            <strong style="color:var(--pos);"><?= (int)$matchCount ?></strong>
+            <strong style="color:var(--pos);"><span data-xt-sum="match" data-xt-dec="0"><?= (int)$matchCount ?></span></strong>
         </div>
         <div class="fkpi" style="background:<?= $mismatchCount > 0 ? 'var(--neg-soft)' : 'var(--line-soft)' ?>;border-color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--line)' ?>;">
             <span style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-500)' ?>;">فيه فرق</span>
-            <strong style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><?= (int)$mismatchCount ?></strong>
+            <strong style="color:<?= $mismatchCount > 0 ? 'var(--neg)' : 'var(--ink-900)' ?>;"><span data-xt-sum="mismatch" data-xt-dec="0"><?= (int)$mismatchCount ?></span></strong>
         </div>
     </div>
 
@@ -1262,7 +1262,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
 
         <div class="ftable-wrap">
-        <table class="ftable">
+        <table class="ftable" id="reconPairs">
             <thead>
                 <tr>
                     <th>من</th>
@@ -1278,7 +1278,7 @@ require_once __DIR__ . '/includes/header.php';
                 // كشف ٥٩ مبني على إن a هو اللي استلم — لو a بقى «من» الأرقام بتطلع سالبة
                 $rowUrl = 'branch_recon.php?a=' . urlencode($p['to_key']) . '&b=' . urlencode($p['from_key']) . '&from=' . urlencode($from) . '&to=' . urlencode($to);
                 ?>
-                <tr class="recon-row" onclick="window.location='<?= $rowUrl ?>'">
+                <tr data-v-count="1" data-v-match="<?= $p['is_match'] ? 1 : 0 ?>" data-v-mismatch="<?= $p['is_match'] ? 0 : 1 ?>" class="recon-row" onclick="window.location='<?= $rowUrl ?>'">
                     <td style="font-weight:700;">
                         <a href="<?= $rowUrl ?>" class="inv-link" onclick="event.stopPropagation();">
                             <?= e($p['from_label']) ?>

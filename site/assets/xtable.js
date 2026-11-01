@@ -79,8 +79,9 @@
         return isNaN(v) ? null : v;
     }
 
-    function fmtNum(v) {
+    function fmtNum(v, decimals, trim) {
         if (!isFinite(v)) return '—';
+        if (decimals !== undefined) return v.toLocaleString('en-US', {minimumFractionDigits: trim ? 0 : decimals, maximumFractionDigits: decimals});
         var r = Math.round(v * 1000) / 1000;
         var s = (Math.abs(r) >= 1000)
             ? r.toLocaleString('en-US', { maximumFractionDigits: 3 })
@@ -111,6 +112,68 @@
         }
         return t;
     }
+
+    /* الكروت المربوطة بالجدول: القيم الخام من سمات الصفوف بس، ورقم السيرفر بيرجع مع مسح الفلتر. */
+    function kpiRaw(el, rows) {
+        rows = rows.filter(function (row) {
+            return row.tagName === 'TR' && !row.hasAttribute('data-xt-ignore') && !row.closest('tfoot');
+        });
+        function sum(key) {
+            return rows.reduce(function (total, row) {
+                var raw = row.getAttribute('data-v-' + key), value = raw === null || raw.trim() === '' ? 0 : Number(raw);
+                return total + (isFinite(value) ? value : 0);
+            }, 0);
+        }
+        if (el.hasAttribute('data-xt-count')) return rows.length;
+        if (el.hasAttribute('data-xt-ratio')) {
+            var keys = el.getAttribute('data-xt-ratio').split(',').map(function (key) { return key.trim(); });
+            var denominator = sum(keys[1]);
+            return denominator ? sum(keys[0]) / denominator * 100 : null;
+        }
+        return sum(el.getAttribute('data-xt-sum'));
+    }
+
+    function kpiText(el, rows, active) {
+        if (!active) return el.getAttribute('data-xt-orig');
+        var value = kpiRaw(el, rows);
+        var decimals = el.hasAttribute('data-xt-dec') ? Number(el.getAttribute('data-xt-dec')) : (el.hasAttribute('data-xt-count') ? 0 : 2);
+        decimals = isFinite(decimals) ? Math.max(0, Math.min(20, Math.floor(decimals))) : 2;
+        return value === null ? '—' : fmtNum(value, decimals, el.hasAttribute('data-xt-trim'));
+    }
+
+    document.addEventListener('xtable:filter', function (ev) {
+        var detail = ev.detail;
+        if (!detail || !detail.table) return;
+        document.querySelectorAll('[data-xt-kpis]').forEach(function (box) {
+            var table;
+            try { table = document.querySelector(box.getAttribute('data-xt-kpis')); } catch (_) { return; }
+            if (table !== detail.table) return;
+            box.querySelectorAll('[data-xt-sum],[data-xt-count],[data-xt-ratio]').forEach(function (el) {
+                if (!el.hasAttribute('data-xt-orig')) el.setAttribute('data-xt-orig', el.innerHTML);
+                if (el.hasAttribute('data-xt-signed') && !el.hasAttribute('data-xt-orig-class')) el.setAttribute('data-xt-orig-class', el.className);
+                var badge = el.nextElementSibling;
+                if (!badge || !badge.classList.contains('fkpi-scope')) {
+                    badge = document.createElement('small'); badge.className = 'fkpi-scope';
+                    badge.textContent = 'للظاهر بس'; badge.hidden = true;
+                    el.insertAdjacentElement('afterend', badge);
+                }
+                if (detail.active) {
+                    el.textContent = kpiText(el, detail.rows || [], true);
+                    el.setAttribute('data-xt-filtered', '1');
+                    if (el.hasAttribute('data-xt-signed')) {
+                        var signed = kpiRaw(el, detail.rows || []);
+                        el.classList.toggle('neg', signed < 0); el.classList.toggle('pos', signed > 0);
+                    }
+                } else if (el.hasAttribute('data-xt-filtered')) {
+                    el.innerHTML = kpiText(el, [], false);
+                    el.removeAttribute('data-xt-filtered');
+                    if (el.hasAttribute('data-xt-signed')) el.className = el.getAttribute('data-xt-orig-class');
+                }
+                badge.hidden = !detail.active;
+            });
+            box.classList.toggle('filtered', !!detail.active);
+        });
+    });
 
     /* ================================================================
        2) تصنيف الصفوف

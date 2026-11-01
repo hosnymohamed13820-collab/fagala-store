@@ -360,10 +360,10 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php else: ?>
             <!-- كروت الإحصائيات -->
-            <div class="fkpis" style="margin-bottom:var(--sp-6);">
+            <div class="fkpis" style="margin-bottom:var(--sp-6);" data-xt-kpis="#opsPagesTable">
                 <div class="fkpi">
                     <span>إجمالي الطلبات</span>
-                    <strong><?= number_format($totalRequests) ?></strong>
+                    <strong data-xt-sum="requests" data-xt-dec="0"><?= number_format($totalRequests) ?></strong>
                 </div>
                 <div class="fkpi">
                     <span>المتوسط العام</span>
@@ -384,7 +384,7 @@ require_once __DIR__ . '/includes/header.php';
                 <i class="ti ti-list"></i> أداء الصفحات
             </div>
             <div class="ftable-wrap">
-                <table class="ftable">
+                <table class="ftable" id="opsPagesTable">
                     <thead>
                         <tr>
                             <th>الصفحة</th>
@@ -398,7 +398,7 @@ require_once __DIR__ . '/includes/header.php';
                     </thead>
                     <tbody>
                         <?php foreach ($pagesStats as $p): ?>
-                            <tr>
+                            <tr data-v-requests="<?= (int)$p['count'] ?>">
                                 <td class="ops-page-name"><?= e($p['page']) ?></td>
                                 <td class="num"><?= number_format($p['count']) ?></td>
                                 <td class="num" style="<?= ops_ms_style($p['avg_ms']) ?>"><?= number_format($p['avg_ms'], 1) ?></td>

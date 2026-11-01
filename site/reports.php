@@ -2513,7 +2513,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         <?php /* الكروت بتتحسب في المتصفح من الصفوف الظاهرة في الجدول.
                  القيم الابتدائية سيرفر-سايد عشان الكروت تبان صح حتى لو
                  الجافاسكربت اتأخر. أول ما xtable يفلتر، بتتحدّث. */ ?>
-        <div class="sum-cards" id="sumCards"
+        <div class="sum-cards" id="sumCards" data-xt-kpis="#reportMainTable"
              data-cards='<?= json_encode($report['sum_cards'], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>'>
             <?php foreach ($report['sum_cards'] as $ci => $cd): ?>
                 <?php
@@ -2543,7 +2543,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 ?>
                 <div class="fcard sum-box sum-card" data-card="<?= (int)$ci ?>">
                     <div class="sc-label"><?= e($cd['label']) ?></div>
-                    <div class="sc-value"><?= !empty($cd['qty']) ? rtrim(rtrim(number_format($t, 10, '.', ','), '0'), '.') : ((!empty($cd['int']) || !empty($cd['count'])) ? number_format($t) : number_format($t, 2)) ?></div>
+                    <div class="sc-value" <?= !empty($cd['count']) ? 'data-xt-count' : 'data-xt-sum="card' . (int)$ci . '"' ?> data-xt-dec="<?= !empty($cd['qty']) ? 10 : ((!empty($cd['int']) || !empty($cd['count'])) ? 0 : 2) ?>"<?= !empty($cd['qty']) ? ' data-xt-trim' : '' ?><?= !empty($cd['signed']) ? ' data-xt-signed' : '' ?>><?= !empty($cd['qty']) ? rtrim(rtrim(number_format($t, 10, '.', ','), '0'), '.') : ((!empty($cd['int']) || !empty($cd['count'])) ? number_format($t) : number_format($t, 2)) ?></div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -2709,7 +2709,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
     </script>
 
     <div class="ftable-wrap">
-    <table data-xt-min="1" class="ftable"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort' : '' ?>>
+    <table id="reportMainTable" data-xt-min="1" class="ftable"<?= in_array($type, ['insta_recon', 'dist_invoices'], true) ? ' data-xt-nosort' : '' ?>>
         <thead>
             <tr><?php foreach ($report['headers'] as $hi => $h): ?><th<?= in_array($hi, $report['num_cols'] ?? [], true) ? ' class="num"' : '' ?><?= $hi === $noteCol ? ' data-xt-skip' : '' ?>><?= e($h) ?></th><?php endforeach; ?></tr>
         </thead>
@@ -2726,9 +2726,23 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                 $isDist = $type === 'dist_invoices' && $rowMeta !== null;
                 if ($isDist) $trClasses[] = 'dist-row';
                 if (!empty($report['reversed_rows'][$ri])) $trClasses[] = 'is-reversed';
+                $xtKpiAttrs = '';
+                foreach (($report['sum_cards'] ?? []) as $xtIndex => $xtCard) {
+                    if (!empty($xtCard['count'])) continue;
+                    $xtValue = 0.0;
+                    if (empty($report['reversed_rows'][$ri])) {
+                        foreach (($xtCard['cols'] ?? (isset($xtCard['col']) ? [$xtCard['col']] : [])) as $xtCol) {
+                            $xtValue += (float) str_replace([',', '—'], '', (string)($row[$xtCol] ?? '0'));
+                        }
+                        foreach (($xtCard['minus'] ?? []) as $xtCol) {
+                            $xtValue -= (float) str_replace([',', '—'], '', (string)($row[$xtCol] ?? '0'));
+                        }
+                    }
+                    $xtKpiAttrs .= ' data-v-card' . (int)$xtIndex . '="' . e((string)$xtValue) . '"';
+                }
                 $trClassAttr = !empty($trClasses) ? ' class="' . implode(' ', $trClasses) . '"' : '';
                 ?>
-                <tr<?= $trClassAttr ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?><?= $isDist ? ' data-dist-id="'.(int)$rowMeta.'" tabindex="0" role="button" aria-expanded="false" onclick="distToggle(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();distToggle(this);}"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
+                <tr<?= $trClassAttr ?><?= $xtKpiAttrs ?><?= (($type === 'treasury' && ($row[3] ?? '') === 'رصيد سابق') || ($type === 'custody' && ($row[2] ?? '') === 'رصيد سابق')) ? ' data-xt-ignore style="background:var(--line-soft);font-weight:600;"' : '' ?><?= $type === 'insta_recon' ? ' data-insta-summary tabindex="0" role="button" aria-expanded="false"' : '' ?><?= $isAcc ? ' data-acc="'.$accId.'" data-branch="'.$brId.'" onclick="jeToggle(this)"' : '' ?><?= $isDist ? ' data-dist-id="'.(int)$rowMeta.'" tabindex="0" role="button" aria-expanded="false" onclick="distToggle(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();distToggle(this);}"' : '' ?>><?php foreach ($row as $ci => $cell): ?>
                     <?php if ($type === 'purchase_docs' && $ci === 0 && !empty($report['row_links'][$ri])): ?>
                         <td><a href="<?= e($report['row_links'][$ri]) ?>"><?= e((string)$cell) ?></a></td>
                     <?php elseif ($type === 'purchase_docs' && $ci === 8): ?>
@@ -2891,125 +2905,25 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
        الداتابيز  ->  استعلام للجدول  +  استعلام تاني للكروت
 
    xtable بيبعت 'xtable:filter' في كل فلترة ومعاه الصفوف الظاهرة،
-   فالكروت بتجمع من الـDOM نفسه. يعني مستحيل يحصل اختلاف بين رقم
+   فالكروت بتجمع من سمات الصفوف الخام في المكتبة. يعني مستحيل يحصل اختلاف بين رقم
    الكارت واللي تحته في الجدول.
 
    لو xtable مش موجود لأي سبب، القيم اللي السيرفر حسبها بتفضل ظاهرة.
    ===================================================================== */
-(function () {
-    var box = document.getElementById('sumCards');
-    if (!box) return;
+/* تحويل "1,234.50" و«—» بقى وقت طباعة data-v-card، مش من نص الخلية في المتصفح. */
+// أعمدة بتتجمع في قيمة السمة الخام للكارت.
+// أعمدة بتتطرح (الصافي) في نفس السمة، من غير تغيير حساب السيرفر.
+// كارت عدّاد: data-xt-count لعدد الصفوف الظاهرة.
+// الملاحظة بقت الشارة الموحّدة fkpi-scope جنب الرقم،
+// والمكتبة بتخبيها لما الفلتر يترفع.
+/* الصفوف الظاهرة فعلاً في الجدول دلوقتي.
+       المكتبة بتبعتهم في ev.detail.rows وبتتجاهل صفوف التفاصيل والإجماليات.
+       قيم الكروت بتتجمع من data-v-* بس. */
+/* المصدر الأساسي بقى ربط data-xt-kpis من جوه xtable.
+       المراقب القديم اتشال، والمكتبة بتميز الجدول نفسه وقت كل حدث.
+       ده اللي بيخلّي الكروت = اللي في الجدول حرفياً من غير ربط يدوي. */
+/* الحدث وطباعة الشارة واسترجاع الأصل كلهم مسؤولية المكتبة. */
 
-    var cards;
-    try { cards = JSON.parse(box.dataset.cards || '[]'); } catch (e) { return; }
-    if (!cards.length) return;
-
-    var table = document.querySelector('.card table');
-    if (!table) return;
-
-    /* "1,234.50" -> 1234.5   |   "—" أو فاضي -> 0 */
-    function num(txt) {
-        var v = parseFloat(String(txt).replace(/,/g, '').replace(/[^\d.\-]/g, ''));
-        return isNaN(v) ? 0 : v;
-    }
-
-    function fmt(v, isInt, isQty) {
-        if (isQty) return v.toLocaleString('en-US', { maximumFractionDigits: 20 });
-        return isInt
-            ? v.toLocaleString('en-US', { maximumFractionDigits: 0 })
-            : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function paint(rows, active, shown, total) {
-        for (var i = 0; i < cards.length; i++) {
-            var cd = cards[i], sum = 0;
-            var cols  = cd.cols || [cd.col];   // أعمدة بتتجمع
-            var minus = cd.minus || [];        // أعمدة بتتطرح (الصافي)
-            if (cd.count) {                    // كارت عدّاد: عدد الصفوف الظاهرة
-                var el0 = box.querySelector('[data-card="' + i + '"] .sc-value');
-                if (el0) { el0.textContent = fmt(rows.length, true, false);
-                           el0.classList.remove('neg','pos'); }
-                continue;
-            }
-            for (var r = 0; r < rows.length; r++) {
-                if (rows[r].classList.contains('is-reversed')) continue;
-                for (var c = 0; c < cols.length; c++) {
-                    var cell = rows[r].cells[cols[c]];
-                    if (cell) sum += num(cell.textContent);
-                }
-                for (var m = 0; m < minus.length; m++) {
-                    var mc = rows[r].cells[minus[m]];
-                    if (mc) sum -= num(mc.textContent);
-                }
-            }
-            var el = box.querySelector('[data-card="' + i + '"] .sc-value');
-            if (!el) continue;
-            el.textContent = fmt(sum, !!cd.int, !!cd.qty);
-            el.classList.remove('neg', 'pos');
-            if (cd.signed && sum < 0) el.classList.add('neg');
-            else if (cd.signed && sum > 0) el.classList.add('pos');
-        }
-        box.classList.toggle('filtered', !!active);
-
-        // الملاحظة شقيقة للـbox مش جواه — لازم ندوّر عليها في الأب،
-        // وإلا مابتتلقاش ومابتتشالش لما الفلتر يترفع.
-        var note = box.parentNode.querySelector('.sc-note-wrap');
-        if (active) {
-            if (!note) {
-                note = document.createElement('div');
-                note.className = 'sc-note-wrap sc-note';
-                box.parentNode.insertBefore(note, box.nextSibling);
-            }
-            note.textContent = 'الأرقام دي للـ ' + shown + ' صف الظاهرين بعد الفلترة (من ' + total + ')';
-        } else if (note) {
-            note.parentNode.removeChild(note);
-        }
-    }
-
-    /* الصفوف الظاهرة فعلاً في الجدول دلوقتي.
-       بنقرا من الـDOM مباشرةً: أي صف عليه xt-out يبقى مخفي بالفلتر.
-       صف الإجمالي وصف مجموع xtable مش صفوف داتا فبيتشالوا. */
-    function visibleRows() {
-        var out = [], total = 0, tb = table.tBodies[0];
-        if (!tb) return { rows: out, total: 0 };
-        for (var i = 0; i < tb.rows.length; i++) {
-            var tr = tb.rows[i];
-            if (tr.classList.contains('totals') ||
-                tr.classList.contains('xt-sumrow') ||
-                tr.hasAttribute('data-xt-ignore')) continue;
-            total++;
-            if (!tr.classList.contains('xt-out') && tr.style.display !== 'none') out.push(tr);
-        }
-        return { rows: out, total: total };
-    }
-
-    function refresh() {
-        var v = visibleRows();
-        paint(v.rows, v.rows.length !== v.total, v.rows.length, v.total);
-    }
-
-    /* المصدر الأساسي: مراقبة الجدول نفسه.
-       xtable بيخفي الصفوف بإضافة الكلاس xt-out، فأي فلترة بتوصلنا
-       من غير ما نعتمد على حدث من مكتبة معيّنة أو نسخة معيّنة منها.
-       ده اللي بيخلّي الكروت = اللي في الجدول حرفياً. */
-    var tmr = null;
-    function schedule() { clearTimeout(tmr); tmr = setTimeout(refresh, 30); }
-
-    if (window.MutationObserver) {
-        new MutationObserver(schedule).observe(table, {
-            attributes: true, attributeFilter: ['class', 'style'],
-            subtree: true, childList: true
-        });
-    }
-
-    /* مسار سريع لو المكتبة بتبعت الحدث (بيوفّر لفة المراقب) */
-    document.addEventListener('xtable:filter', function (ev) {
-        if (ev.detail && ev.detail.table !== table) return;
-        schedule();
-    });
-
-    refresh();
-})();
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

@@ -75,6 +75,25 @@ function ui_code(string $code): string
     <?= ui_card_close() ?>
 
     <?= ui_card_open('الجدول والشارات والحالة الفاضية') ?>
+    <div class="fkpis" data-xt-kpis="#demoKpiTable">
+        <div class="fkpi"><span>إجمالي المبلغ</span><strong data-xt-sum="amount">50.00</strong></div>
+        <div class="fkpi"><span>عدد الصفوف</span><strong data-xt-count>6</strong></div>
+        <div class="fkpi"><span>نسبة الربح</span><strong><span data-xt-ratio="profit,amount">20.00</span>%</strong></div>
+    </div>
+    <div class="ftable-wrap">
+        <table class="ftable" id="demoKpiTable">
+            <thead><tr><th>الصنف</th><th class="num">المبلغ</th><th class="num">الربح</th></tr></thead>
+            <tbody>
+                <?php foreach ([[10,2],[20.5,4],[-5,-1],[15,3],[0,0],[9.5,2]] as $demoIndex => [$demoAmount,$demoProfit]): ?>
+                    <tr data-v-amount="<?= $demoAmount ?>" data-v-profit="<?= $demoProfit ?>">
+                        <td>صنف <?= $demoIndex + 1 ?></td><td class="num"><?= $demoAmount ?></td><td class="num"><?= $demoProfit ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= ui_code('<div class="fkpis" data-xt-kpis="#demoKpiTable">' . "\n" . '<strong data-xt-sum="amount">50.00</strong>' . "\n" . '<strong data-xt-count>6</strong>' . "\n" . '<strong data-xt-ratio="profit,amount">20.00</strong></div>' . "\n" . '<tr data-v-amount="10" data-v-profit="2">…</tr>') ?>
+
     <div class="ftable-wrap">
         <table class="ftable">
             <thead><tr><th>الصنف</th><th>الحالة</th><th class="num">الكمية</th></tr></thead>

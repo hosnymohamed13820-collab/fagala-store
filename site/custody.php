@@ -375,14 +375,14 @@ require_once __DIR__ . '/includes/header.php';
             </div>
         <?php endif; ?>
 
-        <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;" data-xt-kpis="#custodyEmpExpenses">
             <div class="stat fkpi" style="flex:1;min-width:160px;">
                 <div class="label">رصيد أول المدة</div>
                 <div class="value"><?= number_format($empOpening,2) ?></div>
             </div>
             <div class="stat fkpi" style="flex:1;min-width:160px;">
                 <div class="label">إجمالي المصروفات</div>
-                <div class="value" style="color:var(--neg);"><?= number_format($empTotalExp,2) ?></div>
+                <div class="value" style="color:var(--neg);"><span data-xt-sum="expense"><?= number_format($empTotalExp,2) ?></span></div>
             </div>
             <div class="stat fkpi accent" style="flex:1;min-width:160px;">
                 <div class="label">رصيد آخر المدة (المفروض)</div>
@@ -403,11 +403,11 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="empty">لا توجد مصروفات بعد.</div>
                 <?php else: ?>
                 <div class="ftable-wrap">
-                <table class="ftable">
+                <table class="ftable" id="custodyEmpExpenses">
                     <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditThisEmpCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php foreach ($empExpenses as $ex): ?>
-                        <tr>
+                        <tr data-v-expense="<?= (float)$ex['amount'] ?>">
                             <td><?= e($ex['expense_date']) ?></td>
                             <td><?= e($ex['branch_name'] ?? '—') ?></td>
                             <td><?= e($ex['account_root_name'] ?? '—') ?></td>
@@ -605,14 +605,14 @@ require_once __DIR__ . '/includes/header.php';
         </div>
     <?php endif; ?>
 
-    <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;">
+    <div class="stats fkpis" style="display:flex;gap:14px;flex-wrap:wrap;" data-xt-kpis="#custodyExpenses">
         <div class="stat fkpi" style="flex:1;min-width:160px;">
             <div class="label">رصيد أول المدة</div>
             <div class="value"><?= number_format($opening,2) ?></div>
         </div>
         <div class="stat fkpi" style="flex:1;min-width:160px;">
             <div class="label">إجمالي المصروفات</div>
-            <div class="value" style="color:var(--neg);"><?= number_format($totalExp,2) ?></div>
+            <div class="value" style="color:var(--neg);"><span data-xt-sum="expense"><?= number_format($totalExp,2) ?></span></div>
         </div>
         <div class="stat fkpi accent" style="flex:1;min-width:160px;">
             <div class="label">رصيد آخر المدة (المفروض)</div>
@@ -633,11 +633,11 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="empty">لا توجد مصروفات بعد.</div>
             <?php else: ?>
             <div class="ftable-wrap">
-            <table class="ftable">
+            <table class="ftable" id="custodyExpenses">
                 <thead><tr><th>التاريخ</th><th>الفرع</th><th>رأس القيد</th><th>القيد</th><th>البيان</th><th class="num">المبلغ</th><?php if ($canEditCustody): ?><th style="width:52px;"></th><?php endif; ?></tr></thead>
                 <tbody>
                 <?php foreach ($expenses as $ex): ?>
-                    <tr>
+                    <tr data-v-expense="<?= (float)$ex['amount'] ?>">
                         <td><?= e($ex['expense_date']) ?></td>
                         <td><?= e($ex['branch_name'] ?? '—') ?></td>
                         <td><?= e($ex['account_root_name'] ?? '—') ?></td>

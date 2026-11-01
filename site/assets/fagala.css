@@ -2082,6 +2082,18 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 .fpage-sub { margin-top:var(--sp-1); color:var(--ink-500); font-size:var(--fs-base); }
 .fpage-actions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--sp-2); }
 
+.fkpi-scope {
+    display: inline-block;
+    margin-inline-start: var(--sp-2);
+    padding: var(--sp-1) var(--sp-2);
+    border-radius: var(--r-sm);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+}
+.fkpi-scope[hidden] { display: none; }
+
 .fkpis {
     display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));
     gap:var(--sp-3); margin-bottom:var(--sp-4);

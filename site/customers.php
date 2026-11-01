@@ -170,11 +170,11 @@ require_once __DIR__ . '/includes/ui.php';
             </div>
         </section>
 
-        <div class="fkpis" id="stmtKpis" style="margin-bottom:var(--sp-4);">
-            <div class="fkpi"><span>عدد الفواتير</span><strong id="kpiCount">0</strong></div>
-            <div class="fkpi"><span>إجمالي المشتريات</span><strong id="kpiSales" style="color:var(--pos);">0.00</strong></div>
-            <div class="fkpi"><span>المرتجع</span><strong id="kpiReturns" style="color:var(--neg);">0.00</strong></div>
-            <div class="fkpi"><span>الصافي</span><strong id="kpiNet" class="num-ltr">0.00</strong></div>
+        <div class="fkpis" id="stmtKpis" data-xt-kpis="#statementTable" style="margin-bottom:var(--sp-4);">
+            <div class="fkpi"><span>عدد الفواتير</span><strong id="kpiCount" data-xt-sum="count" data-xt-dec="0">0</strong></div>
+            <div class="fkpi"><span>إجمالي المشتريات</span><strong id="kpiSales" data-xt-sum="sales" style="color:var(--pos);">0.00</strong></div>
+            <div class="fkpi"><span>المرتجع</span><strong id="kpiReturns" data-xt-sum="returns" style="color:var(--neg);">0.00</strong></div>
+            <div class="fkpi"><span>الصافي</span><strong id="kpiNet" data-xt-sum="net" class="num-ltr">0.00</strong></div>
             <div class="fkpi"><span>آخر زيارة</span><strong id="kpiLastVisit">-</strong></div>
         </div>
 
@@ -207,6 +207,7 @@ require_once __DIR__ . '/includes/ui.php';
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const ui = window.ui;
+    const statementTemplate = document.getElementById('statementTable').outerHTML;
     const canEdit = <?= $canEdit ? 'true' : 'false' ?>;
 
     const alertBox = document.getElementById('custAlertBox');
@@ -519,6 +520,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         btnExportXlsx.href = 'customers_api.php?part=statement&id=' + encodeURIComponent(cust.id) + '&format=xlsx';
 
+        document.querySelectorAll('#stmtKpis [data-xt-orig]').forEach(function (el) { el.removeAttribute('data-xt-orig'); el.removeAttribute('data-xt-filtered'); });
+        document.querySelectorAll('#stmtKpis .fkpi-scope').forEach(function (el) { el.remove(); });
         document.getElementById('kpiCount').textContent = kpis.invoices_count || 0;
         document.getElementById('kpiSales').textContent = Number(kpis.total_sales || 0).toFixed(2);
         document.getElementById('kpiReturns').textContent = Number(kpis.total_returns || 0).toFixed(2);
@@ -528,6 +531,9 @@ document.addEventListener('DOMContentLoaded', function () {
         kpiNetEl.className = 'num-ltr' + (netTotal < 0 ? ' num-neg' : '');
         document.getElementById('kpiLastVisit').textContent = kpis.last_visit || '-';
 
+        const freshStatement = document.createElement('div');
+        freshStatement.innerHTML = statementTemplate;
+        document.getElementById('statementTable').replaceWith(freshStatement.firstElementChild);
         const stmtBody = document.getElementById('statementTableBody');
         if (!statement.length) {
             stmtBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:var(--sp-4); color:var(--ink-500);">مفيش حركات مسجّلة للعميل ده.</td></tr>';
@@ -542,7 +548,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const netDisplay = isSale ? Number(row.net).toFixed(2) : ('−' + Number(row.net).toFixed(2));
             const netClass = isSale ? '' : 'style="color:var(--neg);"';
 
-            return '<tr>' +
+            return '<tr data-v-count="1" data-v-sales="' + (isSale ? Number(row.net) : 0) + '" data-v-returns="' + (isSale ? 0 : Number(row.net)) + '" data-v-net="' + (isSale ? Number(row.net) : -Number(row.net)) + '">' +
                 '<td>' + ui.esc(row.completed_at || row.created_at) + '</td>' +
                 '<td class="num">' + ui.esc(row.receipt_no || ('#' + row.id)) + '</td>' +
                 '<td>' + kindBadge + '</td>' +

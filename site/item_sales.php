@@ -952,22 +952,22 @@ th.sorted .sort-icon {
 
             <!-- كروت الإجمالي -->
             <?php $tot = $profitData['totals']; ?>
-            <div class="fkpis">
+            <div class="fkpis" data-xt-kpis="#islProfitItems">
                 <div class="fkpi">
                     <span>إجمالي الإيراد الصافي</span>
-                    <strong><?= number_format($tot['revenue'], 2) ?></strong>
+                    <strong><span data-xt-sum="revenue"><?= number_format($tot['revenue'], 2) ?></span></strong>
                 </div>
                 <div class="fkpi">
                     <span>إجمالي التكلفة</span>
-                    <strong><?= number_format($tot['cost'], 2) ?></strong>
+                    <strong><span data-xt-sum="cost"><?= number_format($tot['cost'], 2) ?></span></strong>
                 </div>
                 <div class="fkpi">
                     <span>إجمالي الربح</span>
-                    <strong style="color:var(--pos);"><?= number_format($tot['profit'], 2) ?></strong>
+                    <strong style="color:var(--pos);"><span data-xt-sum="profit"><?= number_format($tot['profit'], 2) ?></span></strong>
                 </div>
                 <div class="fkpi">
                     <span>هامش الربح العام</span>
-                    <strong style="color:var(--fill-strong);"><?= $tot['margin'] ?>%</strong>
+                    <strong style="color:var(--fill-strong);"><span data-xt-ratio="profit,revenue"><?= $tot['margin'] ?></span>%</strong>
                 </div>
             </div>
 
@@ -1041,7 +1041,7 @@ th.sorted .sort-icon {
                 <?php if (empty($profitData['items'])): ?>
                     <div class="empty-box">مفيش أصناف مباعة في هذه الفترة.</div>
                 <?php else: ?>
-                    <table class="ftable" data-sortable>
+                    <table class="ftable" data-sortable id="islProfitItems">
                         <thead>
                             <tr>
                                 <th>#</th>
@@ -1057,7 +1057,7 @@ th.sorted .sort-icon {
                         </thead>
                         <tbody>
                             <?php $i = 1; foreach (array_slice($profitData['items'], 0, 100) as $it): ?>
-                                <tr>
+                                <tr data-v-revenue="<?= (float)$it['revenue'] ?>" data-v-cost="<?= (float)$it['cost'] ?>" data-v-profit="<?= (float)$it['profit'] ?>">
                                     <td><?= $i++ ?></td>
                                     <td class="num" data-v="<?= e($it['barcode']) ?>"><?= e($it['barcode']) ?></td>
                                     <td style="font-weight:600;" data-v="<?= e($it['name']) ?>"><?= e($it['name']) ?></td>

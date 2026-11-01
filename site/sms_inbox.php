@@ -266,32 +266,32 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 
     <!-- (٤) كروت ملخص الفترة والفلتر وجدول الرسايل -->
-    <div class="fkpis" style="margin-bottom:20px;">
+    <div class="fkpis" style="margin-bottom:20px;" data-xt-kpis="#smsTable">
         <div class="fkpi" style="border-top:3px solid var(--pos);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي الداخل</div>
-            <div style="font-size:20px;font-weight:700;color:var(--pos);"><?= number_format($totInAmount, 2) ?> <span style="font-size:13px;font-weight:400;">جم</span></div>
-            <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><?= number_format($totInCount) ?> عملية</div>
+            <div style="font-size:20px;font-weight:700;color:var(--pos);"><span data-xt-sum="in"><?= number_format($totInAmount, 2) ?></span> <span style="font-size:13px;font-weight:400;">جم</span></div>
+            <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><span data-xt-sum="incount" data-xt-dec="0"><?= number_format($totInCount) ?></span> عملية</div>
         </div>
         <div class="fkpi" style="border-top:3px solid var(--neg);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">إجمالي الخارج (تحويلات + كارت)</div>
-            <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($totOutAmount, 2) ?> <span style="font-size:13px;font-weight:400;">جم</span></div>
-            <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><?= number_format($totOutCount) ?> عملية</div>
+            <div style="font-size:20px;font-weight:700;color:var(--neg);"><span data-xt-sum="out"><?= number_format($totOutAmount, 2) ?></span> <span style="font-size:13px;font-weight:400;">جم</span></div>
+            <div style="font-size:12px;color:var(--ink-400);margin-top:2px;"><span data-xt-sum="outcount" data-xt-dec="0"><?= number_format($totOutCount) ?></span> عملية</div>
         </div>
         <div class="fkpi" style="border-top:3px solid <?= $netAmount >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">الصافي</div>
             <div style="font-size:20px;font-weight:700;color:<?= $netAmount >= 0 ? 'var(--pos)' : 'var(--neg)' ?>;">
-                <?= ($netAmount < 0 ? '−' : '') . number_format(abs($netAmount), 2) ?> <span style="font-size:13px;font-weight:400;">جم</span>
+                <span data-xt-sum="net"><?= ($netAmount < 0 ? '−' : '') . number_format(abs($netAmount), 2) ?></span> <span style="font-size:13px;font-weight:400;">جم</span>
             </div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">داخل − خارج</div>
         </div>
         <div class="fkpi" style="border-top:3px solid var(--ink-400);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;">مش معروف</div>
-            <div style="font-size:20px;font-weight:700;color:var(--ink-600);"><?= number_format($unknownCount) ?></div>
+            <div style="font-size:20px;font-weight:700;color:var(--ink-600);"><span data-xt-sum="unknown" data-xt-dec="0"><?= number_format($unknownCount) ?></span></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">رسائل خارج النمط</div>
         </div>
         <div class="fkpi" style="border-top:3px solid var(--neg);">
             <div style="font-size:12px;color:var(--ink-500);margin-bottom:4px;"><?= e(SMS_FOREIGN_LABEL) ?> (مش شغل)</div>
-            <div style="font-size:20px;font-weight:700;color:var(--neg);"><?= number_format($foreignCount) ?></div>
+            <div style="font-size:20px;font-weight:700;color:var(--neg);"><span data-xt-sum="foreign" data-xt-dec="0"><?= number_format($foreignCount) ?></span></div>
             <div style="font-size:12px;color:var(--ink-400);margin-top:2px;">برّه الإجماليات · بالأحمر</div>
         </div>
     </div>
@@ -368,7 +368,7 @@ require_once __DIR__ . '/includes/header.php';
                                 $sClass = $m['source'] === 'live' ? 'fchip-pos' : '';
                                 $sLabel = $m['source'] === 'live' ? 'جديدة' : 'قديمة';
                             ?>
-                            <tr class="sms-row <?= !empty($m['foreign']) ? 'sms-foreign' : '' ?> <?= $m['color'] !== '' ? 'sms-mark-' . e($m['color']) : '' ?>" style="border-bottom:1px solid var(--line);"
+                            <tr data-v-in="<?= empty($m['foreign']) && $m['kind'] === 'in' ? (float)$m['amount'] : 0 ?>" data-v-out="<?= empty($m['foreign']) && in_array($m['kind'], ['out','card'], true) ? (float)$m['amount'] : 0 ?>" data-v-incount="<?= empty($m['foreign']) && $m['kind'] === 'in' ? 1 : 0 ?>" data-v-outcount="<?= empty($m['foreign']) && in_array($m['kind'], ['out','card'], true) ? 1 : 0 ?>" data-v-net="<?= (empty($m['foreign']) && $m['kind'] === 'in' ? (float)$m['amount'] : 0) - (empty($m['foreign']) && in_array($m['kind'], ['out','card'], true) ? (float)$m['amount'] : 0) ?>" data-v-unknown="<?= empty($m['foreign']) && !in_array($m['kind'], ['in','out','card'], true) ? 1 : 0 ?>" data-v-foreign="<?= !empty($m['foreign']) ? 1 : 0 ?>" class="sms-row <?= !empty($m['foreign']) ? 'sms-foreign' : '' ?> <?= $m['color'] !== '' ? 'sms-mark-' . e($m['color']) : '' ?>" style="border-bottom:1px solid var(--line);"
                                 data-sms-id="<?= (int) $m['id'] ?>" data-color="<?= e($m['color']) ?>"
                                 data-search="<?= e(mb_strtolower($m['sender'] . ' ' . $m['body'] . ' ' . ($m['party'] ?? '') . ' ' . ($m['ref'] ?? '') . ' ' . ($m['device'] ?? ''))) ?>">
                                 <td style="padding:10px 8px;white-space:nowrap;direction:ltr;text-align:right;font-size:12px;">

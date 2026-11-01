@@ -560,35 +560,35 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php /* الترتيب مقصود: سيستم · كاش · فيزا · إنستا · الفيزا+الإنستا · الفرق.
          كارت «الفيزا + الإنستا» = الوسائل غير النقدية، الكاش مش داخل فيه. */ ?>
-<div class="cashier-kpis fkpis">
+<div class="cashier-kpis fkpis" data-xt-kpis="#cashierTodayTable">
     <div class="cashier-kpi fkpi">
         <div class="label">سيستم اليوم</div>
-        <div class="value"><?= number_format($sumSys,2) ?></div>
+        <div class="value"><span data-xt-sum="system"><?= number_format($sumSys,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="cashier-kpi fkpi">
         <div class="label">كاش اليوم</div>
-        <div class="value"><?= number_format($sumCash,2) ?></div>
+        <div class="value"><span data-xt-sum="cash"><?= number_format($sumCash,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="cashier-kpi fkpi">
         <div class="label">فيزا اليوم</div>
-        <div class="value"><?= number_format($sumVisa,2) ?></div>
+        <div class="value"><span data-xt-sum="visa"><?= number_format($sumVisa,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="cashier-kpi fkpi">
         <div class="label">إنستا اليوم</div>
-        <div class="value"><?= number_format($sumInsta,2) ?></div>
+        <div class="value"><span data-xt-sum="insta"><?= number_format($sumInsta,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="cashier-kpi fkpi">
         <div class="label">الفيزا + الإنستا</div>
-        <div class="value"><?= number_format($sumVI,2) ?></div>
+        <div class="value"><span data-xt-sum="vi"><?= number_format($sumVI,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
     <div class="cashier-kpi fkpi">
         <div class="label">الفرق المجمع</div>
-        <div class="value <?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><?= number_format($sumDiff,2) ?></div>
+        <div class="value <?= $sumDiff>=0?'diff-pos':'diff-neg' ?>"><span data-xt-sum="diff"><?= number_format($sumDiff,2) ?></span></div>
         <div class="sub">ج.م</div>
     </div>
 </div>
@@ -833,7 +833,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="empty">لا توجد تقفيلات اليوم بعد.</div>
     <?php else: ?>
     <div class="ftable-wrap">
-    <table class="ftable">
+    <table class="ftable" id="cashierTodayTable">
         <thead><tr>
             <th>التاريخ</th><th>رقم الوردية</th><th>الكاشير</th><th>الفرع</th><th class="num">السيستم</th>
             <th class="num">كاش</th><th class="num">فيزا</th><th class="num">إنستا</th>
@@ -847,7 +847,7 @@ require_once __DIR__ . '/includes/header.php';
                 $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; $diff=(float)$s['difference'];
                 $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
         ?>
-            <tr>
+            <tr data-v-system="<?= (float)$sys ?>" data-v-cash="<?= (float)$cash ?>" data-v-visa="<?= (float)$visa ?>" data-v-insta="<?= (float)$insta ?>" data-v-vi="<?= (float)$visa + (float)$insta ?>" data-v-diff="<?= (float)$diff ?>">
                 <td><?= e($s['business_date']) ?></td>
                 <td class="csh-shift-name">
                     <?= $s['shift_name'] !== null && $s['shift_name'] !== '' ? e($s['shift_name']) : '—' ?>

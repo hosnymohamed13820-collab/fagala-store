@@ -505,18 +505,18 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <button type="submit" class="btn btn-filter"><i class="ti ti-filter"></i> تطبيق</button>
         </form>
 
-        <div class="fkpis st-cards">
+        <div class="fkpis st-cards" data-xt-kpis="#treasuryAllStatement">
             <div class="fkpi">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><span dir="ltr" data-xt-sum="debit"><?= ltr_out(money_fmt($totalDebit)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="fkpi">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><span dir="ltr" data-xt-sum="credit"><?= ltr_out(money_fmt($totalCredit)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="fkpi">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><span dir="ltr" data-xt-sum="net"><?= ltr_out(money_fmt($totalNet)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
         </div>
         <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
@@ -534,13 +534,13 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <div class="empty">لا توجد حركات بعد.</div>
         <?php else: ?>
         <div class="ftable-wrap stmt-scroll">
-        <table class="ftable">
+        <table class="ftable" id="treasuryAllStatement">
             <thead><tr>
                 <th>اللون</th><th>التاريخ</th><th>رقم الوردية</th><th>الخزينة</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
             </tr></thead>
             <tbody>
                 <?php foreach ($statement as $row): ?>
-                    <tr id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
+                    <tr data-v-debit="<?= (float)$row['debit'] ?>" data-v-credit="<?= (float)$row['credit'] ?>" data-v-net="<?= (float)$row['debit'] - (float)$row['credit'] ?>" id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
                         <td class="je-c-color"><?= je_mark_cell($row) ?></td>
                         <td><?= e($row['entry_date']) ?></td>
                         <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
@@ -603,18 +603,18 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <a href="?treasury=<?= (int)$selectedTreasury['id'] ?><?= $hasFrom ? '&from=' . e($stFrom) : '' ?>&to=<?= e($stTo) ?><?= $showCancelled ? '&show_cancelled=1' : '' ?>&export=xlsx" class="btn btn-ghost">تصدير إكسيل</a>
         </form>
 
-        <div class="fkpis st-cards">
+        <div class="fkpis st-cards" data-xt-kpis="#treasuryStatement">
             <div class="fkpi">
                 <div class="sc-label">إجمالي المدين</div>
-                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><?= ltr_out(money_fmt($totalDebit)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value amt-debit" data-sc="debit" data-server="<?= (float)$totalDebit ?>"><span dir="ltr" data-xt-sum="debit"><?= ltr_out(money_fmt($totalDebit)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="fkpi">
                 <div class="sc-label">إجمالي الدائن</div>
-                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><?= ltr_out(money_fmt($totalCredit)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value amt-credit" data-sc="credit" data-server="<?= (float)$totalCredit ?>"><span dir="ltr" data-xt-sum="credit"><?= ltr_out(money_fmt($totalCredit)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
             <div class="fkpi">
                 <div class="sc-label">الصافي (مدين − دائن)</div>
-                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><?= ltr_out(money_fmt($totalNet)) ?> <span class="sc-cur">ج.م</span></div>
+                <div class="sc-value <?= $totalNet > 0 ? 'amt-debit' : ($totalNet < 0 ? 'amt-credit' : '') ?>" data-sc="net" data-server="<?= (float)$totalNet ?>"><span dir="ltr" data-xt-sum="net"><?= ltr_out(money_fmt($totalNet)) ?></span> <span class="sc-cur">ج.م</span></div>
             </div>
         </div>
         <div class="st-filter-note" style="display:none;font-size:12.5px;color:var(--warn);margin:-8px 0 14px;font-weight:500;">
@@ -639,7 +639,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
             <div class="empty">لا توجد حركات على هذه الخزينة بعد.</div>
         <?php else: ?>
         <div class="ftable-wrap">
-        <table class="ftable">
+        <table class="ftable" id="treasuryStatement">
             <thead>
                 <tr>
                     <th>اللون</th><th>التاريخ</th><th>رقم الوردية</th><th>البيان</th><th>رأس القيد</th><th>القيد</th><th>الاسم</th><th>الفرع</th><th class="num">مدين</th><th class="num">دائن</th><th class="num">الرصيد</th><th>بواسطة</th><th>الوقت</th><th data-xt-skip>الملاحظات</th>
@@ -655,7 +655,7 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
                     </tr>
                 <?php endif; ?>
                 <?php foreach ($statement as $row): ?>
-                    <tr id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
+                    <tr data-v-debit="<?= (float)$row['debit'] ?>" data-v-credit="<?= (float)$row['credit'] ?>" data-v-net="<?= (float)$row['debit'] - (float)$row['credit'] ?>" id="je-<?= (int)$row['id'] ?>" class="<?= !empty($row['mark_color']) ? 'frow-' . e($row['mark_color']) : '' ?>" data-entry-id="<?= (int)$row['id'] ?>" data-color="<?= e($row['mark_color'] ?? '') ?>">
                         <td class="je-c-color"><?= je_mark_cell($row) ?></td>
                         <td><?= e($row['entry_date']) ?></td>
                         <td><?= !empty($row['shift_name']) ? e($row['shift_name']) : '—' ?></td>
@@ -1522,80 +1522,15 @@ $today = date('Y-m-d');
                  مفيش فلتر     ← رجّع رقم السيرفر واخفي السطر.
    ===================================================================== */
 (function () {
-    function num(txt) {
-        var v = parseFloat(String(txt).replace(/,/g, '').replace(/[^\d.\-]/g, ''));
-        return isNaN(v) ? 0 : v;
-    }
-    function fmt(v) {
-        return v.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-    }
-    /* بنكتب في العقدة النصية الأولى بس عشان <span>ج.م</span> مايتمسحش */
-    function setVal(el, v) {
-        /* 🔴 الرقم بقى جوه <bdi> عشان إشارة السالب ماتتقلبش. لازم نحدّثه
-           هو بالذات — لو عدّينا على el.textContent كنا هنمسح وحدة العملة
-           اللي جنبه، والكارت يفضل رقم من غير «ج.م» بعد أول فلترة. */
-        var bdi = el.querySelector('bdi');
-        if (bdi) { bdi.textContent = fmt(v); return; }
-        if (el.firstChild && el.firstChild.nodeType === 3) el.firstChild.nodeValue = fmt(v) + ' ';
-        else el.textContent = fmt(v);
-    }
-
-    /* الكروت متكررة (كل الخزائن / خزينة محددة) — بنربط كل بلوك
-       بالجدول اللي بعده، عشان الاتنين يشتغلوا من غير id مكرر. */
-    var blocks = document.querySelectorAll('.st-cards');
-    for (var b = 0; b < blocks.length; b++) {
-        (function (box) {
-            var note = box.parentNode.querySelector('.st-filter-note');
-            var table = null, n = box.nextElementSibling;
-            while (n) { if (n.tagName === 'TABLE') { table = n; break; }
-                        table = n.querySelector && n.querySelector('table');
-                        if (table) break; n = n.nextElementSibling; }
-            if (!table) return;
-
-            var cells = {};
-            var scs = box.querySelectorAll('[data-sc]');
-            for (var i = 0; i < scs.length; i++) cells[scs[i].dataset.sc] = scs[i];
-
-            /* أرقام الأعمدة بالاسم مش بالعد */
-            var dIdx = -1, cIdx = -1, ths = table.querySelectorAll('thead th');
-            for (var t = 0; t < ths.length; t++) {
-                var h = ths[t].textContent.trim();
-                if (h === 'مدين') dIdx = t;
-                if (h === 'دائن') cIdx = t;
-            }
-            if (dIdx < 0 || cIdx < 0) return;
-
-            document.addEventListener('xtable:filter', function (ev) {
-                /* 🔴 الحدث بيطلع لفوق والصفحة فيها أكتر من جدول */
-                if (!ev.detail || ev.detail.table !== table) return;
-
-                if (!ev.detail.active) {
-                    /* الفلتر اتقفل — رجّع رقم السيرفر (الفترة كلها) */
-                    for (var k in cells) if (cells.hasOwnProperty(k)) {
-                        setVal(cells[k], parseFloat(cells[k].dataset.server) || 0);
-                    }
-                    if (note) note.style.display = 'none';
-                    return;
-                }
-
-                var d = 0, c = 0, rows = ev.detail.rows;
-                for (var r = 0; r < rows.length; r++) {
-                    d += num(rows[r].cells[dIdx] ? rows[r].cells[dIdx].textContent : '');
-                    c += num(rows[r].cells[cIdx] ? rows[r].cells[cIdx].textContent : '');
-                }
-                if (cells.debit)  setVal(cells.debit, d);
-                if (cells.credit) setVal(cells.credit, c);
-                if (cells.net)    setVal(cells.net, d - c);
-
-                if (note) {
-                    var fc = note.querySelector('.st-fc');
-                    if (fc) fc.textContent = ev.detail.shown + ' من ' + ev.detail.total;
-                    note.style.display = '';
-                }
-            });
-        })(blocks[b]);
-    }
-
+/* الرقم بقى جوه عنصر data-xt-sum، ووحدة <span>ج.م</span> برّه العنصر عشان ماتتمسحش. */
+/* 🔴 عنصر الرقم اتجاهه ltr، والأصل اللي جواه <bdi> بيتحفظ زي ما هو.
+           المكتبة بتحدّث الرقم بس وبتسيب وحدة العملة،
+           ولما الفلتر يتقفل بترجّع HTML السيرفر بالظبط. */
+/* الكروت متكررة (كل الخزائن / خزينة محددة) — كل بلوك مربوط
+       بمعرّف جدول مختلف، عشان الاتنين يشتغلوا من غير id مكرر. */
+/* القيم الخام من data-v-debit وdata-v-credit وdata-v-net، مش من عدّ الأعمدة. */
+/* 🔴 الحدث بيطلع لفوق والصفحة فيها أكتر من جدول */
+/* الفلتر اتقفل — رجّع رقم السيرفر (الفترة كلها) */
     /* =====================================================================
        تحديد وتلوين صفوف كشف الخزينة — بريف ٨٢٥
        ===================================================================== */

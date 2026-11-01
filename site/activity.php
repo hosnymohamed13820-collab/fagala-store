@@ -671,21 +671,21 @@ details[open] > .act-group-summary .act-group-chevron {
             <div class="fcard timeline-panel">اختار فترة أقل من سنة.</div>
         <?php else: ?>
             <?php $salesNet = $salesTotals['sale_sum'] - $salesTotals['ret_sum']; ?>
-            <div class="fkpis">
+            <div class="fkpis" data-xt-kpis="#actSalesTable">
                 <?php foreach ([
                     ['فواتير البيع', number_format($salesTotals['sale_cnt'])],
                     ['إجمالي البيع', sens_mask(number_format($salesTotals['sale_sum'], 2))],
                     ['عدد المرتجعات', number_format($salesTotals['ret_cnt'])],
                     ['إجمالي المرتجعات', sens_mask(number_format($salesTotals['ret_sum'], 2))],
                     ['الصافي', sens_mask(number_format($salesNet, 2))],
-                ] as [$label, $value]): ?>
-                    <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
+                ] as $xtIndex => [$label, $value]): ?>
+                    <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value" <?= ($xtIndex === 0 || $xtIndex === 2 || sens_unlocked()) ? 'data-xt-sum="' . ['sale_count','sales','return_count','returns','net'][$xtIndex] . '" data-xt-dec="' . (($xtIndex === 0 || $xtIndex === 2) ? 0 : 2) . '"' : '' ?>><?= $value ?></span></div>
                 <?php endforeach; ?>
             </div>
             <div class="fcard timeline-panel">
                 <div class="timeline-header"><h3 class="timeline-title">فواتير المبيعات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
                 <div class="ftable-wrap activity-table-wrap">
-                    <table class="ftable">
+                    <table class="ftable" id="actSalesTable">
                         <thead><tr><th>التاريخ والوقت</th>
                             <?php if ($branchFilter === null): ?>
                                 <th>الفرع</th>
@@ -706,7 +706,7 @@ details[open] > .act-group-summary .act-group-chevron {
                                 $typeChip = $isSale ? 'fchip-pos' : 'fchip-warn';
                                 $typeLabel = $isSale ? 'بيع' : 'مرتجع';
                                 ?>
-                                <tr>
+                                <tr data-v-sale_count="<?= $isSale ? 1 : 0 ?>" data-v-return_count="<?= $isSale ? 0 : 1 ?>" data-v-sales="<?= sens_unlocked() ? ($isSale ? (float)$inv['net_amount'] : 0) : 0 ?>" data-v-returns="<?= sens_unlocked() ? ($isSale ? 0 : (float)$inv['net_amount']) : 0 ?>" data-v-net="<?= sens_unlocked() ? (($isSale ? 1 : -1) * (float)$inv['net_amount']) : 0 ?>">
                                     <td><?= e(date('Y-m-d H:i', strtotime((string) $inv['invoice_date']))) ?></td>
                                     <?php if ($branchFilter === null): ?>
                                         <td><?= e($salesAgentNames[(string) $inv['agent_key']] ?? $inv['agent_key']) ?></td>
@@ -823,26 +823,26 @@ details[open] > .act-group-summary .act-group-chevron {
             <?php endforeach; ?>
         </nav>
         <?php $purchaseNet = $purchaseTotals['sale_sum'] - $purchaseTotals['ret_sum']; $purchaseCount = $purchaseTotals['sale_cnt'] + $purchaseTotals['ret_cnt']; ?>
-        <div class="fkpis">
+        <div class="fkpis" data-xt-kpis="#actPurchasesTable">
             <?php foreach ([
                 ['فواتير الشراء', number_format($purchaseTotals['sale_cnt'])],
                 ['إجمالي الشراء', sens_mask(number_format($purchaseTotals['sale_sum'], 2))],
                 ['عدد المردودات', number_format($purchaseTotals['ret_cnt'])],
                 ['إجمالي المردودات', sens_mask(number_format($purchaseTotals['ret_sum'], 2))],
                 ['الصافي', sens_mask(number_format($purchaseNet, 2))],
-            ] as [$label, $value]): ?>
-                <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value"><?= $value ?></span></div>
+            ] as $xtIndex => [$label, $value]): ?>
+                <div class="activity-stat"><span class="activity-stat-label"><?= e($label) ?></span><span class="activity-stat-value" <?= ($xtIndex === 0 || $xtIndex === 2 || sens_unlocked()) ? 'data-xt-sum="' . ['sale_count','sales','return_count','returns','net'][$xtIndex] . '" data-xt-dec="' . (($xtIndex === 0 || $xtIndex === 2) ? 0 : 2) . '"' : '' ?>><?= $value ?></span></div>
             <?php endforeach; ?>
         </div>
         <div class="fcard timeline-panel">
             <div class="timeline-header"><h3 class="timeline-title">فواتير المشتريات والمردودات</h3><span class="timeline-meta">الفترة: <?= e(substr($dateStart, 0, 10)) ?> إلى <?= e(substr($dateEnd, 0, 10)) ?></span></div>
             <div class="ftable-wrap activity-table-wrap">
-                <table class="ftable">
+                <table class="ftable" id="actPurchasesTable">
                     <thead><tr><th>التاريخ</th><th>النوع</th><th>رقم الفاتورة</th><th>المورد</th><?php if ($branchFilter === null): ?><th>الفرع</th><?php endif; ?><th class="num">الإجمالي</th><th class="num">الصافي</th></tr></thead>
                     <tbody>
                         <?php foreach ($purchaseRows as $r): ?>
                             <?php $cb = (int) $r['company_branch']; $dt = (int) $r['doc_type']; ?>
-                            <tr><td><?= e((string) $r['event_time']) ?></td>
+                            <tr data-v-sale_count="<?= $dt === 2 ? 1 : 0 ?>" data-v-return_count="<?= $dt === 2 ? 0 : 1 ?>" data-v-sales="<?= sens_unlocked() ? ($dt === 2 ? (float)$r['net_amount'] : 0) : 0 ?>" data-v-returns="<?= sens_unlocked() ? ($dt === 2 ? 0 : (float)$r['net_amount']) : 0 ?>" data-v-net="<?= sens_unlocked() ? (($dt === 2 ? 1 : -1) * (float)$r['net_amount']) : 0 ?>"><td><?= e((string) $r['event_time']) ?></td>
                                 <td><span class="fchip <?= $dt === 2 ? 'fchip-pos' : 'fchip-warn' ?>"><?= $dt === 2 ? 'شراء' : 'مردود' ?></span></td>
                                 <td><a class="activity-link" href="<?= e('invoices.php?invoice=' . (int) $r['sth_id'] . '&suffix=' . urlencode((string) $r['suffix']) . '&cb=' . $cb . '&dt=' . $dt) ?>"><?= e((string) $r['doc_no']) ?></a></td>
                                 <td><?= e((string) ($r['supplier_name'] ?: 'غير محدد')) ?></td>

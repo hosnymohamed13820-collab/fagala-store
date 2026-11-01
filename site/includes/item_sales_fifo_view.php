@@ -22,7 +22,7 @@ require_once __DIR__ . '/ui.php';
         <?= ui_btn('تصدير إكسيل',['attrs'=>['id'=>'fifoExport'],'icon'=>'download']) ?>
     </form>
     <div id="fifoMessage" role="status"></div>
-    <div id="fifoTotals" class="fkpis"></div>
+    <div id="fifoTotals" class="fkpis" data-xt-kpis="#fifoMainTable"></div>
     <p id="fifoNotes"></p>
     <div id="fifoResults"></div>
     <div class="ffilters" id="fifoPages" hidden style="display:none">
@@ -31,4 +31,4 @@ require_once __DIR__ . '/ui.php';
         <?= ui_btn('التالي',['attrs'=>['id'=>'fifoNext']]) ?>
     </div>
 </section>
-<script src="assets/item_sales_fifo.js?v=6" defer></script>
+<script src="assets/item_sales_fifo.js?v=7" defer></script>

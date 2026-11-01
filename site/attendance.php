@@ -462,19 +462,19 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
     </form>
 
-    <div class="fkpis">
+    <div class="fkpis" data-xt-kpis="#attPeriodTable">
         <div class="fkpi">
             <span>إجمالي ساعات العمل</span>
-            <strong style="color:var(--accent-text);"><?= number_format($periodTotalHours, 2) ?> <small>ساعة</small></strong>
+            <strong style="color:var(--accent-text);"><span data-xt-sum="hours"><?= number_format($periodTotalHours, 2) ?></span> <small>ساعة</small></strong>
         </div>
         <div class="fkpi">
             <span>أيام سجّلت فيها حضور وانصراف</span>
-            <strong style="color:var(--pos);"><?= $completeDays ?> <small>يوم</small></strong>
+            <strong style="color:var(--pos);"><span data-xt-sum="complete" data-xt-dec="0"><?= $completeDays ?></span> <small>يوم</small></strong>
         </div>
         <div class="fkpi"
              title="دول الأيام اللي نسيت فيها تسجّل دخول أو خروج — اطلب تصحيح من الزرار اللي فوق">
             <span>أيام تسجيلها ناقص</span>
-            <strong style="color:var(--warn);"><?= $missingDays ?> <small>يوم</small></strong>
+            <strong style="color:var(--warn);"><span data-xt-sum="missing" data-xt-dec="0"><?= $missingDays ?></span> <small>يوم</small></strong>
         </div>
         <div class="fkpi"
              title="أيام مالكش فيها تسجيل خالص — لو فيها شغل اطلب تصحيح">
@@ -487,7 +487,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
         <div style="text-align:center;color:var(--ink-400);padding:24px;">لا يوجد سجل لهذه الفترة.</div>
     <?php else: ?>
     <div class="ftable-wrap">
-    <table class="ftable">
+    <table class="ftable" id="attPeriodTable">
         <thead><tr>
             <th>التاريخ</th><th class="num">الحضور</th><th class="num">الانصراف</th><th class="num">ساعات العمل</th><th>الحالة</th>
         </tr></thead>
@@ -514,7 +514,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
                     $sb = ['مفيش تسجيل', 'var(--neg)', 'var(--neg-soft)'];
                 }
             ?>
-            <tr<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
+            <tr data-v-hours="<?= (float)($a['work_hours'] ?? 0) ?>" data-v-complete="<?= $rowHasIn && $rowHasOut ? 1 : 0 ?>" data-v-missing="<?= $rowMissing ? 1 : 0 ?>"<?= $rowMissing ? ' style="background:var(--warn-soft);"' : '' ?>>
                 <td><?= e($a['att_date']) ?></td>
                 <td class="num">
                     <?php if ($rowHasIn): ?>
