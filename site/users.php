@@ -21,6 +21,7 @@ if (!is_owner()) {
 
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/users_lib.php';
+require_once __DIR__ . '/salary_pin_lib.php';
 
 $pdo         = db();
 $modules     = all_modules();
@@ -168,6 +169,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $flashType = 'error';
     } else {
         $action = $_POST['action'] ?? '';
+
+        // بريف ٨٣٢: مسح رقم الكشف بس، من غير تغيير الباسورد.
+        if ($action === 'reset_salary_pin') {
+            if (!is_real_owner()) {
+                http_response_code(403);
+                exit('للأونر بس');
+            }
+            $pinUserId = (int) ($_POST['user_id'] ?? 0);
+            salary_pin_reset($pdo, $pinUserId);
+            $flash = 'اتمسح الرقم السري لكشف الحساب';
+        }
 
         // --- إضافة مستخدم ---
         if ($action === 'add') {
@@ -894,6 +906,12 @@ require_once __DIR__ . '/includes/header.php';
                 <button type="button" class="btn btn-cancel" onclick="closeModal()">إلغاء</button>
             </div>
         </form>
+        <form method="post" id="salaryPinResetForm" hidden data-confirm="تأكيد مسح الرقم السري لكشف الحساب؟">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="reset_salary_pin">
+            <input type="hidden" name="user_id" id="salaryPinResetUserId" value="">
+            <button class="btn btn-danger" type="submit">امسح الرقم السري لكشف الحساب</button>
+        </form>
     </div>
 </div>
 
@@ -1059,6 +1077,7 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function openAdd() {
+        document.getElementById('salaryPinResetForm').hidden = true;
         document.getElementById('modalTitle').textContent = 'إضافة مستخدم';
         document.getElementById('formAction').value = 'add';
         document.getElementById('formUserId').value = '';
@@ -1081,6 +1100,8 @@ require_once __DIR__ . '/includes/header.php';
     }
 
     function openEdit(data) {
+        document.getElementById('salaryPinResetForm').hidden = false;
+        document.getElementById('salaryPinResetUserId').value = data.id;
         document.getElementById('modalTitle').textContent = 'تعديل مستخدم';
         document.getElementById('formAction').value = 'edit';
         document.getElementById('formUserId').value = data.id;

@@ -19,6 +19,16 @@ $uid = (int)($u['id'] ?? 0);
 $isManager = is_owner() || can('hr:salaries');
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
+$page_title = 'تفاصيل المرتب';
+$active_module = ''; // مش موديول في القايمة الجانبية
+require_once __DIR__ . '/salary_pin_lib.php';
+require_once __DIR__ . '/includes/header.php';
+
+if (!salary_pin_unlocked()) {
+    salary_pin_lock_screen('تفاصيل المرتب');
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
 $data = my_salary_data($uid, $isManager, $requestedEmpId, $pdo);
 $targetEmpId       = $data['target_emp_id'];
 $employee          = $data['employee'];
@@ -27,17 +37,7 @@ $salary            = $data['salary'];
 $showDetails       = $data['show_details'];
 $expiredOrNoSalary = $data['expired_or_no_salary'];
 
-$page_title = 'تفاصيل المرتب';
-$active_module = ''; // مش موديول في القايمة الجانبية
-require_once __DIR__ . '/sensitive_lib.php';
-sens_page();
-require_once __DIR__ . '/includes/header.php';
-
-if (!sens_unlocked()) {
-    sens_lock_screen('تفاصيل المرتب');
-    require_once __DIR__ . '/includes/footer.php';
-    exit;
-}
+salary_pin_lock_button();
 ?>
 
 <style>

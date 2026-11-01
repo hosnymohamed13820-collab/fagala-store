@@ -11,6 +11,7 @@
 require_once __DIR__ . '/auth.php';
 require_login();
 require_once __DIR__ . '/salary_view_lib.php';
+require_once __DIR__ . '/salary_pin_lib.php';
 
 $pdo = db();
 $u = current_user();
@@ -19,13 +20,7 @@ $uid = (int)($u['id'] ?? 0);
 $isManager = is_owner() || can('hr:advances');
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
-$data = employee_statement_data($uid, $isManager, $requestedEmpId, $pdo);
-$targetEmpId    = $data['target_emp_id'];
-$employee       = $data['employee'];
-$notLinked      = $data['not_linked'];
-$ledgerEntries  = $data['ledger_entries'];
-$currentBalance = $data['current_balance'];
-
+$pinRequired = salary_pin_statement_required(db(), $uid, $isManager, $requestedEmpId);
 // مسميات أنواع الحركات بالعامية
 $moveTypeLabels = [
     'advance'          => 'سلفة',
@@ -35,11 +30,23 @@ $moveTypeLabels = [
     'opening'          => 'رصيد افتتاحي',
 ];
 
-$curBalInfo = format_ledger_balance($currentBalance);
-
 $page_title = 'كشف حساب الموظف';
 $active_module = ''; // مش موديول في القايمة الجانبية
 require_once __DIR__ . '/includes/header.php';
+if ($pinRequired && !salary_pin_unlocked()) {
+    salary_pin_lock_screen('كشف حساب الموظف');
+    require_once __DIR__ . '/includes/footer.php';
+    exit;
+}
+$data = employee_statement_data($uid, $isManager, $requestedEmpId, $pdo);
+$targetEmpId    = $data['target_emp_id'];
+$employee       = $data['employee'];
+$notLinked      = $data['not_linked'];
+$ledgerEntries  = $data['ledger_entries'];
+$currentBalance = $data['current_balance'];
+
+$curBalInfo = format_ledger_balance($currentBalance);
+if ($pinRequired) salary_pin_lock_button();
 ?>
 
 <style>

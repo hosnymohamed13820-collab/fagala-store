@@ -245,8 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $employeeUserId = (int) $userStmt->fetchColumn();
                 if ($employeeUserId > 0) {
                     require_once __DIR__ . '/push_lib.php';
-                    $body = 'اتسجّل عليك جزاء بمبلغ ' . number_format($amount, 2) . ' ج بتاريخ ' . $date
-                        . ' — السبب: ' . ($reason !== '' ? $reason : 'غير مذكور');
+                    $body = 'افتح التفاصيل من صفحة المرتب';
                     notify($pdo, [$employeeUserId], 'penalty', 'جزاء جديد', $body, 'my_salary.php');
                 }
                 $flash = 'تم تسجيل الجزاء.'; $tab='penalties';

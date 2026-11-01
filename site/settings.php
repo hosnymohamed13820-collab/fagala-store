@@ -94,83 +94,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        require_once __DIR__ . '/sensitive_lib.php';
-        $now = time();
-        if (!empty($_SESSION['pw_block_until']) && (int) $_SESSION['pw_block_until'] > $now) {
-            $_SESSION['flash'] = 'استنى ٥ دقايق وجرّب تاني.';
-            $_SESSION['flash_type'] = 'error';
-            header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-            exit;
-        }
-
-        try {
-            $currentPass = (string) ($_POST['current_password'] ?? '');
-            $newPass     = (string) ($_POST['new_password'] ?? '');
-            $newPass2    = (string) ($_POST['new_password2'] ?? '');
-
-            $userId = (int) (current_user()['id'] ?? 0);
-            $st = $pdo->prepare('SELECT password_hash FROM users WHERE id = ? AND is_active = 1 LIMIT 1');
-            $st->execute([$userId]);
-            $hash = $st->fetchColumn();
-
-            if (!$hash || !password_verify($currentPass, (string) $hash)) {
-                $fails = ((int) ($_SESSION['pw_fails'] ?? 0)) + 1;
-                if ($fails >= SENS_MAX_FAILS) {
-                    $_SESSION['pw_block_until'] = $now + SENS_BLOCK_SECONDS;
-                    $_SESSION['pw_fails'] = 0;
-                } else {
-                    $_SESSION['pw_fails'] = $fails;
-                }
-                $_SESSION['flash'] = 'الباسورد الحالي غلط';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-                exit;
-            }
-
-            if (mb_strlen($newPass) < 8) {
-                $_SESSION['flash'] = 'الباسورد الجديد لازم ٨ حروف على الأقل';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-                exit;
-            }
-
-            if ($newPass !== $newPass2) {
-                $_SESSION['flash'] = 'التأكيد مش زي الباسورد الجديد';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-                exit;
-            }
-
-            if ($newPass === $currentPass) {
-                $_SESSION['flash'] = 'الباسورد الجديد زي القديم';
-                $_SESSION['flash_type'] = 'error';
-                header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-                exit;
-            }
-
-            $newHash = password_hash($newPass, PASSWORD_DEFAULT);
-            $updSt = $pdo->prepare('UPDATE users SET password_hash = ?, pw_version = pw_version + 1 WHERE id = ?');
-            $updSt->execute([$newHash, $userId]);
-
-            $stVer = $pdo->prepare('SELECT pw_version FROM users WHERE id = ?');
-            $stVer->execute([$userId]);
-            $newPwVer = (int) $stVer->fetchColumn();
-            $_SESSION['user']['pw_version'] = $newPwVer;
-
-            session_regenerate_id(true);
-            $_SESSION['pw_fails'] = 0;
-            unset($_SESSION['pw_block_until']);
-
-            $_SESSION['flash'] = 'اتغيّر الباسورد، وأي جهاز تاني كان داخل بحسابك هيخرج.';
-            $_SESSION['flash_type'] = 'success';
-            header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-            exit;
-        } catch (Throwable $e) {
-            $_SESSION['flash'] = 'حصل خطأ، جرّب تاني';
-            $_SESSION['flash_type'] = 'error';
-            header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
-            exit;
-        }
+        require_once __DIR__ . '/account_lib.php';
+        $result = my_account_change_password(
+            $pdo,
+            (int) (current_user()['id'] ?? 0),
+            (string) ($_POST['current_password'] ?? ''),
+            (string) ($_POST['new_password'] ?? ''),
+            (string) ($_POST['new_password2'] ?? '')
+        );
+        $_SESSION['flash'] = $result['ok'] ? $result['message'] : $result['error'];
+        $_SESSION['flash_type'] = $result['ok'] ? 'success' : 'error';
+        header('Location: ' . ($_SERVER['REQUEST_URI'] ?? $_SERVER['PHP_SELF']));
+        exit;
     }
 
     if (!csrf_verify($_POST['csrf'] ?? '')) {

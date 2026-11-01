@@ -9,9 +9,12 @@
 declare(strict_types=1);
 
 define('API_MODE', true);
+// مهلة الرقم بتتجدّد في الجلسة مع فتح الكشف.
+define('API_KEEP_SESSION', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
 require_once __DIR__ . '/salary_view_lib.php';
+require_once __DIR__ . '/salary_pin_lib.php';
 
 api_begin();
 require_login();
@@ -22,6 +25,11 @@ $uid = (int)($u['id'] ?? 0);
 
 $isManager = is_owner() || can('hr:advances');
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
+
+$pinRequired = salary_pin_statement_required(db(), $uid, $isManager, $requestedEmpId);
+if ($pinRequired && !salary_pin_unlocked()) {
+    api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
+}
 
 $data = employee_statement_data($uid, $isManager, $requestedEmpId);
 $targetEmpId    = $data['target_emp_id'];

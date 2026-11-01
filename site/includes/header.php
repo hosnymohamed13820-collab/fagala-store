@@ -202,6 +202,9 @@ require_once __DIR__ . '/nav_icons.php';
                     <div class="role"><?= is_real_owner() ? 'أونر' : e($u['username']) ?></div>
                 </div>
             </div>
+            <a href="account.php" class="btn-logout">
+                <i class="ti ti-user-cog"></i> حسابي
+            </a>
             <a href="logout.php" class="btn-logout">
                 <i class="ti ti-logout"></i> تسجيل الخروج
             </a>

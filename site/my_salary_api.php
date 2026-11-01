@@ -9,9 +9,11 @@
 declare(strict_types=1);
 
 define('API_MODE', true);
+// مهلة الرقم بتتجدّد في الجلسة مع فتح التفاصيل.
+define('API_KEEP_SESSION', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
-require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/salary_pin_lib.php';
 require_once __DIR__ . '/salary_view_lib.php';
 
 api_begin();
@@ -24,8 +26,7 @@ $uid = (int)($u['id'] ?? 0);
 $isManager = is_owner() || can('hr:salaries');
 
 // الأرقام الحساسة: نفس رد مقفول اللي في item_sales_api.php
-sens_page();
-if (!sens_unlocked()) {
+if (!salary_pin_unlocked()) {
     api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
 }
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;

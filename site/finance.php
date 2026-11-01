@@ -4724,8 +4724,7 @@ function notify_advance_disbursed(array $items): void
                 continue;
             }
             $userId    = $empToUser[$empId];
-            $amountStr = number_format($data['amount'], 2);
-            $body      = 'سلفة بمبلغ ' . $amountStr . ' ج.م بتاريخ ' . $data['date'] . ' — هتتخصم من المرتب';
+            $body      = 'افتح التفاصيل من صفحة المرتب';
             $groups[$body][] = $userId;
         }
 
