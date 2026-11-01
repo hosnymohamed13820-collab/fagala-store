@@ -159,6 +159,31 @@ function ui_code(string $code): string
     <?= ui_code('<td class="fcell"><input type="number" class="finput finput-cell num" value="…"></td>') ?>
     <?= ui_card_close() ?>
 
+    <?= ui_card_open('كارت التوثيق والدخول (.fauth)') ?>
+    <div class="fcard fauth">
+        <div class="fauth-steps" aria-label="خطوات توثيق تجريبية">
+            <span class="fauth-step is-done">١</span>
+            <span class="fauth-step-sep">·</span>
+            <span class="fauth-step is-active">٢</span>
+            <span class="fauth-step-sep">·</span>
+            <span class="fauth-step">٣</span>
+        </div>
+        <div class="fcard-head"><h3 class="fcard-title">عنوان الكارت</h3></div>
+        <p class="fauth-desc">شرح مختصر أو إرشادات الخطوة الحالية.</p>
+        <form onsubmit="return false;">
+            <div class="ffield">
+                <label for="demoAuthUser">اسم المستخدم</label>
+                <input class="finput" id="demoAuthUser" value="demo_user">
+            </div>
+            <button class="btn btn-primary" type="button">زرار أساسي بعرض الكارت</button>
+            <div class="fauth-actions">
+                <a class="btn btn-ghost" href="#auth">رابط أو زر ثانوي</a>
+            </div>
+        </form>
+    </div>
+    <?= ui_code('<div class="fcard fauth">' . "\n" . '  <div class="fauth-steps"><span class="fauth-step is-active">١</span>…</div>' . "\n" . '  <div class="fcard-head"><h2 class="fcard-title">…</h2></div>' . "\n" . '  <form><div class="ffield"><input class="finput"></div><button class="btn btn-primary">…</button></form>' . "\n" . '</div>') ?>
+    <?= ui_card_close() ?>
+
     <?= ui_card_open('الرسم من الجافاسكربت') ?>
     <div id="jsUiDemo"></div>
     <?= ui_code("ui.btn('إضافة', {icon:'plus'})\nui.chip('متاح', 'pos')\nui.alert('info', 'رسالة')\nui.empty('مفيش بيانات')\nui.esc('نص حر أو قيمة attribute')") ?>

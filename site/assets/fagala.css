@@ -2251,5 +2251,145 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
     }
 }
 
+/* ==========================================================================
+   مكوّن شاشات الدخول والتوثيق .fauth (بريف ٨٣٧)
+   ========================================================================== */
+.fauth {
+    width: 100%;
+    max-width: 400px;
+    margin: var(--sp-6) auto;
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-lg);
+    padding: var(--sp-5);
+    box-shadow: var(--shadow-sm);
+    box-sizing: border-box;
+}
+.fauth .fcard-head {
+    margin-bottom: var(--sp-3);
+    text-align: center;
+    justify-content: center;
+}
+.fauth .fcard-title {
+    font-size: var(--fs-xl);
+    text-align: center;
+    width: 100%;
+}
+.fauth-desc {
+    color: var(--ink-500);
+    font-size: var(--fs-base);
+    line-height: 1.6;
+    margin-bottom: var(--sp-4);
+    text-align: center;
+}
+.fauth .brand {
+    text-align: center;
+    margin-bottom: var(--sp-5);
+}
+.fauth .brand .logo {
+    width: 58px;
+    height: 58px;
+    box-shadow: var(--shadow);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--sp-3);
+}
+.fauth .brand .logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.fauth .brand h1 {
+    font-size: var(--fs-2xl);
+    color: var(--ink-900);
+    font-weight: 600;
+    margin: 0;
+}
+.fauth .brand p {
+    font-size: var(--fs-base);
+    color: var(--ink-500);
+    margin-top: var(--sp-1);
+}
+.fauth form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+}
+.fauth .ffield {
+    width: 100%;
+}
+.fauth .finput,
+.fauth .fselect,
+.fauth .ftextarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+.fauth .btn-primary,
+.fauth .btn-submit {
+    width: 100%;
+    margin-top: var(--sp-1);
+}
+.fauth-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-top: var(--sp-2);
+    width: 100%;
+}
+.fauth-actions .btn {
+    width: 100%;
+    justify-content: center;
+}
+.fauth-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-4);
+}
+.fauth-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--line);
+    background: var(--surface);
+    color: var(--ink-500);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.fauth-step.is-active {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--fill-strong-fg);
+}
+.fauth-step.is-done {
+    border-color: var(--pos);
+    background: var(--pos-soft);
+    color: var(--pos);
+}
+.fauth-step-sep {
+    color: var(--ink-300);
+    font-size: var(--fs-xs);
+    user-select: none;
+}
+@media (max-width: 480px) {
+    .fauth {
+        max-width: 100%;
+        margin-top: var(--sp-3);
+        margin-bottom: var(--sp-3);
+    }
+}
+
+
 
 
