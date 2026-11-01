@@ -31,4 +31,4 @@ require_once __DIR__ . '/ui.php';
         <?= ui_btn('التالي',['attrs'=>['id'=>'fifoNext']]) ?>
     </div>
 </section>
-<script src="assets/item_sales_fifo.js?v=4" defer></script>
+<script src="assets/item_sales_fifo.js?v=5" defer></script>

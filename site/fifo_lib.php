@@ -298,7 +298,7 @@ function fifo_aging(PDO $pdo, ?int $supplierId = null): array
 function fifo_supplier_invoices(PDO $pdo, int $supplierId, string $from, string $to): array
 {
     $sales=fifo_lot_sales_sql();
-    $rows=fifo_q($pdo,"SELECT l.*,COALESCE(n.name,CONCAT('صنف ',l.item_id)) name,
+    $rows=fifo_q($pdo,"SELECT l.*,COALESCE(hc.code,'—') code,COALESCE(n.name,CONCAT('صنف ',l.item_id)) name,
         h.company_branch,COALESCE(st.name,'مخزن مش معروف') store_name,
         COALESCE(a.sold,0) sold,COALESCE(a.branch_sold,0) branch_sold,
         COALESCE(a.zahraa,0) zahraa,COALESCE(a.bonjour,0) bonjour,COALESCE(a.degla,0) degla,COALESCE(a.abc,0) abc,
@@ -308,6 +308,7 @@ function fifo_supplier_invoices(PDO $pdo, int $supplierId, string $from, string 
         FROM fifo_lots l JOIN fifo_runs r ON r.id=l.run_id AND r.is_current=1 AND r.status='done'
         LEFT JOIN ($sales) a ON a.run_id=l.run_id AND a.lot_id=l.lot_id
         LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_items GROUP BY item_id) n ON n.item_id=l.item_id
+        LEFT JOIN (SELECT item_id, MIN(code) code FROM hq_codes WHERE code_type = 0 GROUP BY item_id) hc ON hc.item_id=l.item_id
         LEFT JOIN hq_invoices h ON h.sth_id=l.sth_id AND h.suffix=l.suffix
         LEFT JOIN hq_stores st ON st.sto_id=h.company_branch
         WHERE l.kind='purchase' AND l.supplier_id=? AND l.lot_date>=? AND l.lot_date<DATE_ADD(?,INTERVAL 1 DAY)
@@ -389,13 +390,15 @@ function fifo_store_profit(PDO $pdo, string $store, string $from, string $to, st
         .($store!=='all' ? " AND a.agent_key='$store'" : '').' GROUP BY a.item_id';
     $byCat=$group==='category';
     $select=$byCat ? "COALESCE(cn.name,'من غير تصنيف') name,COALESCE(ic.is1_id,0) category_id,
-        GROUP_CONCAT(DISTINCT s.supplier_name SEPARATOR '، ') supplier_name" : "s.item_id,COALESCE(n.name,CONCAT('صنف ',s.item_id)) name,MAX(s.supplier_name) supplier_name";
+        GROUP_CONCAT(DISTINCT s.supplier_name SEPARATOR '، ') supplier_name" : "s.item_id,COALESCE(MAX(hc.code),'—') code,COALESCE(n.name,CONCAT('صنف ',s.item_id)) name,MAX(s.supplier_name) supplier_name";
+    $codeJoin=$byCat ? '' : 'LEFT JOIN (SELECT item_id, MIN(code) code FROM hq_codes WHERE code_type = 0 GROUP BY item_id) hc ON hc.item_id=s.item_id';
     $metrics=[];
     foreach (['sold','revenue','cost','profit_revenue','known_rows','no_purchase_qty','ashraqa','ashraqa_cost'] as $k) $metrics[]="SUM(s.$k) $k";
     $rows=fifo_q($pdo,"SELECT $select,".implode(',',$metrics).",SUM(COALESCE(i.in_qty,0)) in_qty,SUM(COALESCE(b.balance,0)) balance
         FROM ($sales) s LEFT JOIN ($inSql) i ON i.item_id=s.item_id
         LEFT JOIN ($balanceSql) b ON b.item_id=s.item_id
         LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_items GROUP BY item_id) n ON n.item_id=s.item_id
+        $codeJoin
         LEFT JOIN hq_item_cats ic ON ic.item_id=s.item_id LEFT JOIN hq_cat_names cn ON cn.is1_id=ic.is1_id
         GROUP BY ".($byCat ? "COALESCE(ic.is1_id,0),COALESCE(cn.name,'من غير تصنيف')" : 's.item_id,n.name')." ORDER BY name",[$from,$to,$from,$to])->fetchAll(PDO::FETCH_ASSOC);
     $rows=array_map('fifo_finish_row',$rows);

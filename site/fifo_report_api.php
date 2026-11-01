@@ -55,11 +55,12 @@ if ($part!=='export') api_ok($data);
 require_once __DIR__ . '/xlsx_lib.php';
 $xlsx=new SimpleXlsx('أرباح الموردين');
 $cols=$report==='supplier_invoices'
-    ? ['doc_no'=>'الفاتورة','lot_date'=>'التاريخ','store_name'=>'المخزن','name'=>'الصنف','qty_in'=>'الكمية','qty_returned'=>'المرتجع','unit_cost'=>'تكلفة القطعة','sale_price'=>'سعر البيع','sold'=>'إجمالي المباع','zahraa'=>'الفجالة','bonjour'=>'بونجور','degla'=>'دجلة','abc'=>'اي بي سي','ashraqa'=>'إشراقة','remaining'=>'الباقي','revenue'=>'الإيراد','cost'=>'التكلفة','profit'=>'الربح','margin'=>'النسبة','sell_through'=>'نسبة البيع','sold_days'=>'اتباعت في']
+    ? ['doc_no'=>'الفاتورة','lot_date'=>'التاريخ','store_name'=>'المخزن','code'=>'الكود','name'=>'الصنف','qty_in'=>'الكمية','qty_returned'=>'المرتجع','unit_cost'=>'تكلفة القطعة','sale_price'=>'سعر البيع','sold'=>'إجمالي المباع','zahraa'=>'الفجالة','bonjour'=>'بونجور','degla'=>'دجلة','abc'=>'اي بي سي','ashraqa'=>'إشراقة','remaining'=>'الباقي','revenue'=>'الإيراد','cost'=>'التكلفة','profit'=>'الربح','margin'=>'النسبة','sell_through'=>'نسبة البيع','sold_days'=>'اتباعت في']
     : ($report==='store_profit'
         ? ['name'=>'الصنف / التصنيف','supplier_name'=>'المورد','in_qty'=>'الوارد','sold'=>'الصادر','ashraqa'=>'إشراقة','revenue'=>'الإيراد','cost'=>'التكلفة','profit'=>'الربح','margin'=>'النسبة','balance'=>'الرصيد','no_purchase_qty'=>'من غير شراء']
         : ['name'=>'المورد','qty_in'=>'المشترى','qty_returned'=>'المرتجع','sold'=>'المباع','ashraqa'=>'إشراقة','revenue'=>'الإيراد','cost'=>'التكلفة','profit'=>'الربح','margin'=>'النسبة','sell_through'=>'نسبة البيع','no_purchase_qty'=>'من غير شراء']);
-$xlsx->setColumnTypes(array_map(static fn($k)=>in_array($k,['doc_no','lot_date','store_name','name','supplier_name'],true) ? 's' : 'n',array_keys($cols)));
+if ($report==='store_profit' && $group==='item') $cols=['code'=>'الكود']+$cols;
+$xlsx->setColumnTypes(array_map(static fn($k)=>in_array($k,['code','doc_no','lot_date','store_name','name','supplier_name'],true) ? 's' : 'n',array_keys($cols)));
 $xlsx->addRow(array_values($cols),true);
 foreach ($data['rows'] as $row) {
     $lines=$report==='supplier_invoices' ? $row['lines'] : [$row];

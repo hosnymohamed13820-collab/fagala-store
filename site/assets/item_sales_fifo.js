@@ -13,16 +13,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const actions = new Map();
     const common = [['revenue','الإيراد'],['cost','التكلفة'],['profit','الربح'],['margin','النسبة %']];
     const agingCols = ageKeys.map(k => ['age:' + k, 'عمر الباقي ' + (k === '90+' ? 'أكتر من 90' : k) + ' (قطعة / قيمة)']);
-    const lineCols = [['name','الصنف'],['qty_in','الكمية'],['qty_returned','المرتجع'],['unit_cost','تكلفة القطعة'],['sale_price','سعر البيع'],
+    const lineCols = [['code','الكود'],['name','الصنف'],['qty_in','الكمية'],['qty_returned','المرتجع'],['unit_cost','تكلفة القطعة'],['sale_price','سعر البيع'],
         ['sold','إجمالي المباع'],['zahraa','الفجالة'],['bonjour','بونجور'],['degla','دجلة'],['abc','اي بي سي'],['ashraqa','إشراقة'],['remaining','الباقي'],
         ...common,['sell_through','نسبة البيع %'],['sold_days','اتباعت في']];
     const invoiceCols = [['doc_no','الفاتورة'],['lot_date','التاريخ'],['store_name','المخزن'],['qty_in','الكمية'],['sold','المباع'],['remaining','الباقي'],
         ...common,['sell_through','نسبة البيع %'],['ashraqa','إشراقة'],...agingCols];
     const supplierCols = [['name','المورد'],['qty_in','المشترى'],['qty_returned','المرتجع'],['sold','المباع'],['ashraqa','إشراقة'],
         ...common,['sell_through','نسبة البيع %'],['no_purchase_qty','من غير شراء'],...agingCols];
-    const storeCols = [['name','الصنف / التصنيف'],['supplier_name','المورد'],['in_qty','الوارد'],['sold','الصادر'],['ashraqa','إشراقة'],
+    const storeCols = [['code','الكود'],['name','الصنف / التصنيف'],['supplier_name','المورد'],['in_qty','الوارد'],['sold','الصادر'],['ashraqa','إشراقة'],
         ...common,['balance','الرصيد الحالي'],['no_purchase_qty','من غير شراء']];
-    const textKeys = ['name','supplier_name','doc_no','lot_date','store_name'];
+    const textKeys = ['code','name','supplier_name','doc_no','lot_date','store_name'];
     function visible(node, show) { node.hidden = !show; node.style.display = show ? '' : 'none'; }
     function query(part) {
         const q = new URLSearchParams(new FormData(form));
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return num(row[key]);
     }
     function table(rows, cols, expand) {
-        return '<div class="ftable-wrap"><table class="ftable" data-xt-off><thead><tr>'
+        return '<div class="ftable-wrap"><table class="ftable"><thead><tr>'
             + cols.map(([key, label]) => '<th' + (textKeys.includes(key) ? '' : ' class="num"') + '>' + esc(label) + '</th>').join('')
             + '</tr></thead><tbody>' + rows.map(row => {
                 let id;
@@ -81,8 +81,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     + (key === 'profit' && row[key] < 0 ? ' style="color:var(--neg)"' : '') + '>'
                     + cell(row, key)
                     + '</td>').join('') + '</tr>'
-                    + (expand ? '<tr id="' + id + '" hidden><td colspan="' + cols.length + '"></td></tr>' : '');
+                    + (expand ? '<tr id="' + id + '" hidden data-xt-ignore data-xt-nosort><td colspan="' + cols.length + '"></td></tr>' : '');
             }).join('') + '</tbody></table></div>';
+    }
+    function showDetails(target, html) {
+        // المكتبة بتعدّي الجدول المتداخل، فبنجهّز فلاتره قبل ما نحطه جوه صف التفاصيل.
+        const content = document.createElement('div');
+        content.innerHTML = html;
+        if (window.xtableScan) window.xtableScan(content);
+        target.replaceChildren(...content.childNodes);
     }
     function show() {
         actions.clear();
@@ -93,14 +100,19 @@ document.addEventListener('DOMContentLoaded', function () {
         el('fifoNotes').innerHTML = 'منه <span class="fchip fchip-warn">' + num(t.no_purchase_qty) + ' قطعة من غير فاتورة شراء</span>'
             + ' بإيراد ' + num(t.no_purchase_revenue) + ' · ربحها مش محسوب. إجمالي الإيراد والربح والنسبة من البيع اللي له تكلفة بس.<br>اتبعت لإشراقة ' + num(t.ashraqa) + ' قطعة بتكلفة ' + num(t.ashraqa_cost)
             + ' · عمر الباقي لحد النهارده، من غير فلتر الفترة.';
-        const rows = data.rows.slice(page * 100, (page + 1) * 100);
+        const byItem = report === 'store_profit' && new URLSearchParams(loadedQuery).get('group') !== 'category';
+        const pageSize = byItem ? 500 : Math.max(1, data.rows.length);
+        const rows = data.rows.slice(page * pageSize, (page + 1) * pageSize);
+        const columns = report === 'supplier_invoices' ? invoiceCols : report === 'store_profit'
+            ? storeCols.filter(([key]) => byItem || key !== 'code') : supplierCols;
         const supplierAge = report === 'supplier_invoices' ? '<p>عمر باقي المورد كله لحد النهارده</p>' + table([{aging:data.aging}],agingCols) : '';
-        el('fifoResults').innerHTML = supplierAge + (rows.length ? table(rows, report === 'supplier_invoices' ? invoiceCols : report === 'store_profit' ? storeCols : supplierCols,
+        el('fifoResults').innerHTML = supplierAge + (rows.length ? table(rows, columns,
             report === 'supplier_invoices' ? 'invoice' : report === 'suppliers_profit' ? 'supplier' : null) : '<p>مفيش بيانات في الفترة دي.</p>');
-        visible(el('fifoPages'), data.rows.length > 100);
-        el('fifoPageLabel').textContent = 'صفحة ' + num(page + 1) + ' من ' + num(Math.max(1,Math.ceil(data.rows.length / 100)));
+        visible(el('fifoPages'), data.rows.length > pageSize);
+        el('fifoPageLabel').innerHTML = 'صفحة ' + num(page + 1) + ' من ' + num(Math.max(1,Math.ceil(data.rows.length / pageSize)))
+            + (byItem ? '<br><small>الفلتر على الصفحة الحالية بس</small>' : '');
         el('fifoPrev').disabled = page === 0;
-        el('fifoNext').disabled = (page + 1) * 100 >= data.rows.length;
+        el('fifoNext').disabled = (page + 1) * pageSize >= data.rows.length;
     }
     async function load() {
         const ticket = ++sequence;
@@ -130,7 +142,7 @@ document.addEventListener('DOMContentLoaded', function () {
         target.hidden = !target.hidden; row.setAttribute('aria-expanded', String(!target.hidden));
         if (target.hidden || target.dataset.loaded) return;
         if (action.expand === 'invoice') {
-            target.firstElementChild.innerHTML = table(action.row.lines, lineCols);
+            showDetails(target.firstElementChild, table(action.row.lines, lineCols));
             target.dataset.loaded = '1'; return;
         }
         if (!action.row.supplier_id) { target.firstElementChild.textContent = 'المباع ده من غير فاتورة شراء'; return; }
@@ -138,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const q = new URLSearchParams(loadedQuery); q.set('part','supplier_invoices'); q.set('supplier_id',action.row.supplier_id);
             const invoices = await request(q);
-            target.firstElementChild.innerHTML = table(invoices.rows,invoiceCols,'invoice'); target.dataset.loaded = '1';
+            showDetails(target.firstElementChild, table(invoices.rows,invoiceCols,'invoice')); target.dataset.loaded = '1';
         } catch (err) { target.firstElementChild.textContent = err.message; }
     });
     root.addEventListener('keydown', function (event) {
