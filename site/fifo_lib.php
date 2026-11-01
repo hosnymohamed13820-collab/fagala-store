@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/purchase_doc_lib.php';
 require_once __DIR__ . '/branch_recon_lib.php';
 require_once __DIR__ . '/reorder_lib.php';
+require_once __DIR__ . '/item_classes_lib.php';
 
 function fifo_internal_ids(): array
 {
@@ -389,18 +390,20 @@ function fifo_store_profit(PDO $pdo, string $store, string $from, string $to, st
         WHERE a.sale_date>=? AND a.sale_date<DATE_ADD(?,INTERVAL 1 DAY)"
         .($store!=='all' ? " AND a.agent_key='$store'" : '').' GROUP BY a.item_id';
     $byCat=$group==='category';
-    $select=$byCat ? "COALESCE(cn.name,'من غير تصنيف') name,COALESCE(ic.is1_id,0) category_id,
+    $select=$byCat ? "COALESCE(cn.name,'من غير تصنيف') name,COALESCE(ic.class_id,0) category_id,
         GROUP_CONCAT(DISTINCT s.supplier_name SEPARATOR '، ') supplier_name" : "s.item_id,COALESCE(MAX(hc.code),'—') code,COALESCE(n.name,CONCAT('صنف ',s.item_id)) name,MAX(s.supplier_name) supplier_name";
     $codeJoin=$byCat ? '' : 'LEFT JOIN (SELECT item_id, MIN(code) code FROM hq_codes WHERE code_type = 0 GROUP BY item_id) hc ON hc.item_id=s.item_id';
     $metrics=[];
+    $effective=ic_effective_sql('section');
+    $categoryJoin=$byCat ? "LEFT JOIN ($effective) ic ON ic.item_id=s.item_id LEFT JOIN item_classes cn ON cn.id=ic.class_id" : '';
     foreach (['sold','revenue','cost','profit_revenue','known_rows','no_purchase_qty','ashraqa','ashraqa_cost'] as $k) $metrics[]="SUM(s.$k) $k";
     $rows=fifo_q($pdo,"SELECT $select,".implode(',',$metrics).",SUM(COALESCE(i.in_qty,0)) in_qty,SUM(COALESCE(b.balance,0)) balance
         FROM ($sales) s LEFT JOIN ($inSql) i ON i.item_id=s.item_id
         LEFT JOIN ($balanceSql) b ON b.item_id=s.item_id
         LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_items GROUP BY item_id) n ON n.item_id=s.item_id
         $codeJoin
-        LEFT JOIN hq_item_cats ic ON ic.item_id=s.item_id LEFT JOIN hq_cat_names cn ON cn.is1_id=ic.is1_id
-        GROUP BY ".($byCat ? "COALESCE(ic.is1_id,0),COALESCE(cn.name,'من غير تصنيف')" : 's.item_id,n.name')." ORDER BY name",[$from,$to,$from,$to])->fetchAll(PDO::FETCH_ASSOC);
+        $categoryJoin
+        GROUP BY ".($byCat ? "COALESCE(ic.class_id,0),COALESCE(cn.name,'من غير تصنيف')" : 's.item_id,n.name')." ORDER BY name",[$from,$to,$from,$to])->fetchAll(PDO::FETCH_ASSOC);
     $rows=array_map('fifo_finish_row',$rows);
     return ['rows'=>$rows,'totals'=>fifo_totals($rows)];
 }

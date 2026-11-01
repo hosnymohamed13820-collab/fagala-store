@@ -2393,3 +2393,13 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 
 
 
+
+/* خانة بقايمة وشريط التحديد، من نفس توكنات المكتبة. */
+.fcombo{position:fixed;z-index:var(--z-modal);max-height:260px;max-width:95vw;overflow:auto;background:var(--surface);color:var(--ink-800);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--shadow);direction:rtl}
+.fcombo-option{padding:var(--sp-2) var(--sp-3);cursor:pointer}
+.fcombo-option:hover,.fcombo-option.is-active{background:var(--accent-soft);color:var(--accent-text)}
+.fcombo[hidden]{display:none}
+.ftable .finput-cell{min-width:110px}
+.ftable .fcell-name{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ftable-action-bar.floating{position:fixed;bottom:var(--sp-4);left:50%;transform:translateX(-50%);width:min(1200px,94vw);z-index:var(--z-dropdown);background:var(--surface);border:1px solid var(--accent);box-shadow:var(--shadow)}
+.ftable-action-bar[hidden]{display:none}

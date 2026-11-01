@@ -73,7 +73,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/login_fx.css?v=10">
     <link rel="stylesheet" href="assets/tabler-subset.css?v=2">
-    <link rel="stylesheet" href="assets/fagala.css?v=37">
+    <link rel="stylesheet" href="assets/fagala.css?v=38">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -199,7 +199,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=79').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=80').catch(() => {});
             });
         }
 

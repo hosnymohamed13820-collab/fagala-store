@@ -71,7 +71,7 @@ if (($_GET['action'] ?? '') === 'print') {
     <head>
         <meta charset="utf-8">
         <title>إذن تحويل بضاعة <?= e($docNoLabel) ?></title>
-        <link rel="stylesheet" href="assets/fagala.css?v=37">
+        <link rel="stylesheet" href="assets/fagala.css?v=38">
         <style>
             @page { size: A4 portrait; margin: 15mm; }
             body {

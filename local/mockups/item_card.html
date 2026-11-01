@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نموذج — كارت الصنف</title>
+<link rel="stylesheet" href="../../site/assets/fagala.css">
+<link rel="stylesheet" href="../../site/assets/tabler-subset.css">
+<style>
+/* نموذج بس للموافقة — مش كود الموقع. التخطيط هنا هو المطلوب يتنفّذ بمكوّنات المكتبة. */
+body{background:var(--bg);margin:0;font-family:'IBM Plex Sans Arabic',system-ui,sans-serif}
+.mk{max-width:1280px;margin:0 auto;padding:var(--sp-5)}
+.mk-note{font-size:var(--fs-sm);color:var(--ink-500);margin-bottom:var(--sp-3)}
+.ic-bar{display:flex;gap:var(--sp-3);align-items:center;margin-bottom:var(--sp-4)}
+.ic-bar .finput{flex:1;font-size:var(--fs-lg);padding:12px 14px}
+.ic-head{display:grid;grid-template-columns:1fr auto;gap:var(--sp-4);align-items:start}
+.ic-title{display:flex;flex-direction:column;gap:6px}
+.ic-title h1{margin:0;font-size:22px;color:var(--ink-900)}
+.ic-sub{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center;color:var(--ink-500);font-size:var(--fs-sm)}
+.ic-code{direction:ltr;font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent-text);font-size:18px}
+.ic-actions{display:flex;gap:var(--sp-2)}
+.ic-grid{display:grid;grid-template-columns:1fr 300px;gap:var(--sp-4);margin-top:var(--sp-4)}
+.ic-side .fcard{margin-bottom:var(--sp-3)}
+.ic-side h3{margin:0 0 var(--sp-2);font-size:var(--fs-base);color:var(--ink-500);font-weight:600}
+.ic-big{font-size:26px;font-weight:700;color:var(--ink-900);font-variant-numeric:tabular-nums}
+.ic-rows{display:grid;gap:6px;font-size:var(--fs-base)}
+.ic-rows div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+.ic-rows span:first-child{color:var(--ink-500)}
+.ic-fields{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-3)}
+.ic-val{padding:9px 12px;border:1px solid var(--line-soft);border-radius:8px;background:var(--bg);min-height:20px}
+.ic-sec{margin-top:var(--sp-4);font-weight:700;color:var(--ink-700);font-size:var(--fs-base)}
+.ic-panel{display:none;margin-top:var(--sp-4)}.ic-panel.on{display:block}
+td.code{direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="mk">
+<div class="mk-note">نموذج بداتا حقيقية (الصنف 1010437) — للموافقة على الشكل بس. دوس على التابات.</div>
+
+<!-- ١) زي ترو: الخانة للكود اللي معاك بس (متعرّف ولا لأ). البحث بالاسم = زرار بيفتح بوب أب -->
+<div class="ic-bar">
+  <label style="font-weight:700;color:var(--ink-700);white-space:nowrap">كود الصنف</label>
+  <input class="finput" id="mkCode" value="0056" placeholder="امسح أو اكتب الكود واضغط Enter" style="direction:ltr;text-align:right">
+  <button class="btn btn-outline" onclick="mkSearch(true)"><i class="ti ti-search"></i> بحث بالاسم</button>
+  <button class="btn btn-outline" onclick="mkState('new')"><i class="ti ti-plus"></i> صنف جديد</button>
+</div>
+<div class="mk-note">جرّب: اكتب <b>9999</b> واضغط Enter (كود مش متعرّف) — أو <b>0056</b> (متعرّف).</div>
+
+<!-- كود مش متعرّف -->
+<div class="falert falert-warn" id="mkMissing" hidden style="justify-content:space-between">
+  <span>الكود <b id="mkMissingCode" style="direction:ltr">9999</b> مش متعرّف عندنا.</span>
+  <button class="btn btn-primary btn-sm" onclick="mkState('new')"><i class="ti ti-plus"></i> عرّف الصنف ده</button>
+</div>
+
+<!-- تعريف صنف جديد: نفس ترتيب ترو — الكود · الاسم · سعر البيع · التكلفة · القسم وبس -->
+<div class="fcard" id="mkNew" hidden>
+  <div class="ic-sub" style="margin-bottom:8px"><span class="fchip fchip-pos">صنف جديد</span><span>الباقي (أكواد فرعية · وحدات · موردين) من التابات بعد الحفظ</span></div>
+  <div class="ic-fields" style="grid-template-columns:140px 260px;justify-content:start;text-align:center">
+    <div class="ffield"><label>كود الصنف <span class="fchip fchip-mute">تلقائي</span></label><div class="ic-val code">1000246</div></div>
+    <div class="ffield"><label>الباركود (اختياري)</label><input class="finput" id="mkNewCode" style="direction:ltr;text-align:center"></div>
+  </div>
+  <div class="ffield" style="margin-top:var(--sp-3);max-width:860px"><label>اسم الصنف</label><input class="finput" placeholder="اسم الصنف" style="font-size:18px"></div>
+  <div class="ic-fields" style="grid-template-columns:repeat(4,140px);max-width:860px;justify-content:space-between;text-align:center;margin-top:var(--sp-3)">
+    <div class="ffield"><label>التكلفة</label><input class="finput" placeholder="0.00"></div>
+    <div class="ffield"><label>سعر البيع</label><input class="finput" placeholder="0.00"></div>
+    <div class="ffield"><label>نوع الصنف</label><select class="fselect"><option>مخزني</option><option>غير مخزني (خدمة)</option></select></div>
+    <div class="ffield"><label>الوحدة</label><input class="finput" value="قطعة"></div>
+  </div>
+  <div class="ic-sec">التصنيفات</div>
+  <div class="ic-fields" style="grid-template-columns:repeat(5,1fr)">
+    <div class="ffield"><label>القسم</label><select class="fselect"><option>اختار</option><option>خدمات</option><option>ادوات مكتبية</option></select></div>
+    <div class="ffield"><label>الوصف</label><select class="fselect"><option>—</option></select></div>
+    <div class="ffield"><label>النوع</label><select class="fselect"><option>—</option></select></div>
+    <div class="ffield"><label>المرحلة</label><select class="fselect"><option>—</option></select></div>
+    <div class="ffield"><label>الشركات</label><select class="fselect"><option>—</option></select></div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:12px">
+    <button class="btn btn-primary" onclick="mkState('card')"><i class="ti ti-check"></i> حفظ الصنف</button>
+    <button class="btn btn-ghost" onclick="mkState('card')">إلغاء</button>
+  </div>
+  <div class="mk-note" style="margin-top:8px">بعد الحفظ: الكود ده يبقى السطر الأساسي في «أكواد ووحدات الصنف» بالسعر اللي اتكتب، وأول سطر في «التسعير».</div>
+</div>
+
+<!-- بوب أب البحث بالاسم -->
+<div id="mkModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;padding-top:80px;z-index:50">
+  <div class="fcard" style="width:760px;max-width:92vw">
+    <div style="display:flex;gap:8px;margin-bottom:10px"><input class="finput" value="ورق تصوير" style="flex:1"><button class="btn btn-ghost" onclick="mkSearch(false)">قفل</button></div>
+    <div class="ftable-wrap"><table class="ftable"><thead><tr><th>الكود</th><th>الاسم</th><th>القسم</th><th class="num">السعر</th><th class="num">الرصيد</th></tr></thead><tbody>
+      <tr style="cursor:pointer" onclick="mkSearch(false)"><td class="code">0042</td><td>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</td><td>خدمات</td><td class="num">0.75</td><td class="num">75,996</td></tr>
+      <tr style="cursor:pointer" onclick="mkSearch(false)"><td class="code">0056</td><td>روزمة ورق تصوير 70 جرام A4 (استهلاك)</td><td>خدمات</td><td class="num">162.40</td><td class="num">≈ 152</td></tr>
+      <tr style="cursor:pointer" onclick="mkSearch(false)"><td class="code">0047</td><td>ورق تصوير بالورقة 70 جرام A5 (استهلاك)</td><td>خدمات</td><td class="num">0.75</td><td class="num">—</td></tr>
+    </tbody></table></div>
+    <div class="mk-note" style="margin-top:6px">Enter على أي صف أو دوسة = يفتح الكارت ويقفل البوب أب.</div>
+  </div>
+</div>
+
+<div class="fcard">
+  <!-- ٢) رأس الكارت: الكود الأساسي كبير + الاسم + الشارات -->
+  <div class="ic-head">
+    <div class="ic-title">
+      <div class="ic-sub"><span class="ic-code">0042</span><span class="fchip fchip-mute">True</span><span class="fchip">خدمات</span><span class="fchip">تصوير و طباعة</span><span>15 كود</span></div>
+      <h1>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</h1>
+    </div>
+    <div class="ic-actions">
+      <a class="btn btn-outline"><i class="ti ti-arrows-exchange"></i> حركة الصنف</a>
+      <a class="btn btn-outline"><i class="ti ti-printer"></i> باركود</a>
+    </div>
+  </div>
+
+  <div class="ic-grid">
+    <div>
+      <!-- ٣) التابات بأسماء ترو -->
+      <nav class="ftabs">
+        <button class="ftab is-active" data-t="data">بيانات الصنف</button>
+        <button class="ftab" data-t="codes">أكواد ووحدات الصنف</button>
+        <button class="ftab" data-t="company">بيانات صنف/شركة</button>
+        <button class="ftab" data-t="pricing">التسعير</button>
+        <button class="ftab" data-t="suppliers">موردين الصنف</button>
+      </nav>
+
+      <section class="ic-panel on" data-p="data">
+        <!-- ترتيب محمد ١/١١ من فوق لتحت -->
+        <!-- ١) الكودين: كود الصنف (من السيستم، تلقائي، صغير) + الباركود — الاتنين بيتباع بيهم، ولو مفيش باركود يتباع بكود الصنف -->
+        <div class="ic-fields" style="grid-template-columns:140px 260px;justify-content:start;text-align:center">
+          <div class="ffield"><label>كود الصنف <span class="fchip fchip-mute">تلقائي</span></label><div class="ic-val code">1000245</div></div>
+          <div class="ffield"><label>الباركود</label><div class="ic-val code">0042</div></div>
+        </div>
+        <!-- ٢) الاسم لوحده كبير -->
+        <div class="ffield" style="margin-top:var(--sp-3);max-width:860px"><label>اسم الصنف</label>
+          <div class="ic-val" style="font-size:20px;font-weight:700;color:var(--ink-900);padding:12px 14px">ورق تصوير بالورقة 70 جرام A4 (استهلاك)</div></div>
+        <!-- ٣) صغيرين محندقين: التكلفة · سعر البيع · مخزني/غير مخزني · الوحدة -->
+        <div class="ic-fields" style="grid-template-columns:repeat(4,140px);max-width:860px;justify-content:space-between;text-align:center;margin-top:var(--sp-3)">
+          <div class="ffield"><label>التكلفة</label><div class="ic-val num">0.248</div></div>
+          <div class="ffield"><label>سعر البيع</label><div class="ic-val num">0.75</div></div>
+          <div class="ffield"><label>نوع الصنف</label><div class="ic-val"><span class="fchip fchip-pos">مخزني</span></div></div>
+          <div class="ffield"><label>الوحدة</label><div class="ic-val">قطعة</div></div>
+        </div>
+        <div class="mk-note" style="margin-top:6px">مخزني = ليه رصيد بيزيد وينقص. غير مخزني (خدمات زي التدبيس) = مالوش رصيد، بيتباع ويدخّل فلوس بس.</div>
+        <!-- ٤) الأقسام -->
+        <div class="ic-sec">التصنيفات</div>
+        <div class="ic-fields" style="grid-template-columns:repeat(5,1fr)">
+          <div class="ffield"><label>القسم</label><div class="ic-val">خدمات</div></div>
+          <div class="ffield"><label>الوصف</label><div class="ic-val">تصوير و طباعة</div></div>
+          <div class="ffield"><label>النوع</label><div class="ic-val">—</div></div>
+          <div class="ffield"><label>المرحلة</label><div class="ic-val">—</div></div>
+          <div class="ffield"><label>الشركات</label><div class="ic-val">—</div></div>
+        </div>
+      </section>
+
+      <section class="ic-panel" data-p="codes">
+        <div class="ftable-wrap"><table class="ftable">
+          <thead><tr><th>الكود</th><th>الاسم 1</th><th>الاسم 2</th><th>نوع الكود</th><th>الوحدة</th><th>نوع الوحدة</th><th class="num">م.التحويل</th><th>كميات صحيحة</th><th>سعر مفتوح</th><th class="num">مدة التجهيز</th><th>شاشة عرض</th><th class="num">ترتيب</th><th>كود شراء</th><th>كود بيع</th></tr></thead>
+          <tbody><tr><td class="code"><b>0042</b></td><td>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</td><td>—</td><td><span class="fchip fchip-pos">أساسي</span></td><td>قطعة</td><td>أساسي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>نعم</td><td>نعم</td></tr><tr><td class="code">0056</td><td>روزمة ورق تصوير 70 جرام A4 (استهلاك)</td><td>—</td><td>فرعي</td><td>روزمة</td><td>فرعي</td><td class="num">500</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>نعم</td><td>نعم</td></tr><tr><td class="code">0047</td><td>ورق تصوير بالورقة 70 جرام A5 (استهلاك)</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">002</td><td>تصوير ورق (وش وضهر) A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">0.5</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">004</td><td>طباعة وجه واحد A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">*0010</td><td>تصوير / طباعة الوان خفيف (وش و ضهر) A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0018</td><td>طباعة/تصوير الوان صورة صفحة كاملة A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0020</td><td>طباعة/تصوير الوان خفيف A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0022</td><td>طباعة/تصوير الوان وسط A4</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0044</td><td>تصوير/طباعة (وجه واحد) للشركات 2ج من 1-14ورقة</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0045</td><td>تصوير بطاقة/كارنيه 2.5ج</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0046</td><td>تصوير/طباعة ورق (وش وضهر) للشركات 3ج من1-14ورقة</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">0.5</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0052</td><td>تصوير / طباعة الوان خفيف خاص ب فرع ABC</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0053</td><td>تصوير / طباعة الوان وسط خاص ب فرع ABC</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr><tr><td class="code">0054</td><td>تصوير / طباعة الوان ورقة كاملة خاص ب فرع ABC</td><td>—</td><td>فرعي</td><td>قطعة</td><td>فرعي</td><td class="num">1</td><td>نعم</td><td>لا</td><td class="num">0</td><td>—</td><td class="num">0</td><td>لا</td><td>نعم</td></tr></tbody></table></div>
+        <div class="mk-note" style="margin-top:8px">أعمدة ترو بالترتيب. أول سطر دايماً الكود الأساسي اللي اتعرّف بيه الصنف. الـ15 كود حقيقيين.</div>
+      </section>
+
+      <section class="ic-panel" data-p="company">
+        <div class="ic-sec" style="margin-top:0">بيانات الصنف</div>
+        <div class="ic-fields">
+          <div class="ffield"><label>تكلفة/أساسي</label><div class="ic-val">0.248</div></div>
+          <div class="ffield"><label>بيانات الوحدة الأساسية</label><div class="ic-val">قطعة · معامل 1</div></div>
+          <div class="ffield"><label>بيانات آخر حركة</label><div class="ic-val"><a href="#">افتح حركة الصنف</a></div></div>
+        </div>
+        <div class="ic-sec">بيانات المخزون</div>
+        <div class="ic-fields">
+          <div class="ffield"><label>الحد الأدنى</label><div class="ic-val">—</div></div>
+          <div class="ffield"><label>الحد الأعلى</label><div class="ic-val">—</div></div>
+        </div>
+        <div class="ic-sec">بيانات الضرائب والخصومات</div>
+        <div class="ic-fields">
+          <div class="ffield"><label>خصم مسموح به %</label><div class="ic-val">0.000</div></div>
+        </div>
+        <div class="falert falert-info" style="margin-top:12px">نفس تقسيم ترو. الحد الأدنى والأعلى والخصم المسموح لسه مش مربوطين بالنواقص ونقطة البيع.</div>
+      </section>
+
+      <section class="ic-panel" data-p="pricing">
+        <div class="ftable-wrap"><table class="ftable">
+          <thead><tr><th>الكود</th><th>الاسم</th><th>الوحدة</th><th class="num">م.التحويل</th><th class="num">سعر الوحدة</th><th>نوع السعر</th><th>التاريخ</th></tr></thead>
+          <tbody><tr><td class="code">0042</td><td>ورق تصوير بالورقة 70 جرام A4 (استهلاك)</td><td>قطعة</td><td class="num">1</td><td class="num">0.75</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0056</td><td>روزمة ورق تصوير 70 جرام A4 (استهلاك)</td><td>روزمة</td><td class="num">500</td><td class="num">162.40</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0047</td><td>ورق تصوير بالورقة 70 جرام A5 (استهلاك)</td><td>قطعة</td><td class="num">1</td><td class="num">0.75</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">002</td><td>تصوير ورق (وش وضهر) A4</td><td>قطعة</td><td class="num">0.5</td><td class="num">0.90</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">004</td><td>طباعة وجه واحد A4</td><td>قطعة</td><td class="num">1</td><td class="num">1.05</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">*0010</td><td>تصوير / طباعة الوان خفيف (وش و ضهر) A4</td><td>قطعة</td><td class="num">1</td><td class="num">1.34</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0018</td><td>طباعة/تصوير الوان صورة صفحة كاملة A4</td><td>قطعة</td><td class="num">1</td><td class="num">6.00</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0020</td><td>طباعة/تصوير الوان خفيف A4</td><td>قطعة</td><td class="num">1</td><td class="num">3.50</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0022</td><td>طباعة/تصوير الوان وسط A4</td><td>قطعة</td><td class="num">1</td><td class="num">4.50</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0044</td><td>تصوير/طباعة (وجه واحد) للشركات 2ج من 1-14ورقة</td><td>قطعة</td><td class="num">1</td><td class="num">1.75</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0045</td><td>تصوير بطاقة/كارنيه 2.5ج</td><td>قطعة</td><td class="num">1</td><td class="num">2.80</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0046</td><td>تصوير/طباعة ورق (وش وضهر) للشركات 3ج من1-14ورقة</td><td>قطعة</td><td class="num">0.5</td><td class="num">3.36</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0052</td><td>تصوير / طباعة الوان خفيف خاص ب فرع ABC</td><td>قطعة</td><td class="num">1</td><td class="num">4.00</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0053</td><td>تصوير / طباعة الوان وسط خاص ب فرع ABC</td><td>قطعة</td><td class="num">1</td><td class="num">6.00</td><td>مستهلك</td><td>سعر True الحالي</td></tr><tr><td class="code">0054</td><td>تصوير / طباعة الوان ورقة كاملة خاص ب فرع ABC</td><td>قطعة</td><td class="num">1</td><td class="num">5.00</td><td>مستهلك</td><td>سعر True الحالي</td></tr></tbody></table></div>
+        <div class="ic-sec">سجل تغيير الأسعار</div>
+        <div class="falert">مفيش أي تغيير سعر من الموقع للصنف ده لسه. أي تغيير بعد كده يتسجّل هنا بالتاريخ والسعر القديم والجديد ومين غيّره.</div>
+      </section>
+
+      <section class="ic-panel" data-p="suppliers">
+        <div class="ftable-wrap"><table class="ftable">
+          <thead><tr><th>الكود</th><th>المورد</th><th>نوع المورد</th><th class="num">آخر سعر شراء</th><th class="num">معامل التحويل</th><th>الوحدة</th><th class="num">الكمية</th><th>تاريخ شراء</th></tr></thead>
+          <tbody>
+            <tr><td class="code">0056</td><td><span class="fchip fchip-pos">آخر مورد</span> حامد الرائد ادوات مكتبيه / ورق تصوير</td><td>مورد</td><td class="num">124.00</td><td class="num">500</td><td>روزمة</td><td class="num">75</td><td>2026-10-26</td></tr>
+            <tr><td class="code">0056</td><td>مستهلكات</td><td>داخلي</td><td class="num">125.00</td><td class="num">500</td><td>روزمة</td><td class="num">5</td><td>2026-10-16</td></tr>
+            <tr><td class="code">0056</td><td>رصيد افتتاحي</td><td>رصيد افتتاحي</td><td class="num">125.00</td><td class="num">500</td><td>روزمة</td><td class="num">1</td><td>2026-10-16</td></tr>
+          </tbody></table></div>
+        <div class="mk-note" style="margin-top:8px">سطر واحد لكل مورد = آخر شراء منه (زي ترو). التحويلات بين الفروع مش موردين ومش ظاهرة.</div>
+      </section>
+    </div>
+
+    <!-- ٤) عمود جانبي ثابت: الرصيد بالفروع + آخر شراء — اللي بتبص عليه أول ما تفتح الصنف -->
+    <aside class="ic-side">
+      <div class="fcard">
+        <h3>الرصيد الكلي</h3>
+        <div class="ic-big">75,996 <small style="font-size:14px;color:var(--ink-500)">قطعة ≈ 152 روزمة</small></div>
+        <div class="ic-rows" style="margin-top:10px">
+          <div><span>الإدارة</span><span>19,000</span></div>
+          <div><span>الفجالة</span><span>635.5</span></div>
+          <div><span>بونجور</span><span>13,320</span></div>
+          <div><span>دجلة</span><span>25,648</span></div>
+          <div><span>اي بي سي</span><span>17,392.5</span></div>
+        </div>
+      </div>
+      <div class="fcard">
+        <h3>آخر شراء</h3>
+        <div class="ic-rows">
+          <div><span>المورد</span><span>حامد الرائد</span></div>
+          <div><span>التاريخ</span><span>2026-10-26</span></div>
+          <div><span>السعر</span><span>124.00 / روزمة</span></div>
+          <div><span>تكلفة القطعة</span><span>0.248</span></div>
+        </div>
+      </div>
+      <div class="fcard">
+        <h3>مبيعات آخر 30 يوم</h3>
+        <div class="ic-big">146,348 <small style="font-size:14px;color:var(--ink-500)">قطعة</small></div>
+        <div class="ic-rows" style="margin-top:10px">
+          <div><span>بونجور</span><span>58,072</span></div>
+          <div><span>دجلة</span><span>36,386</span></div>
+          <div><span>اي بي سي</span><span>35,086</span></div>
+          <div><span>الفجالة</span><span>16,804</span></div>
+          <div><span>الرصيد يكفي</span><span style="color:var(--warn)">≈ 16 يوم</span></div>
+        </div>
+      </div>
+      <div class="fcard">
+        <h3>سعر البيع</h3>
+        <div class="ic-rows">
+          <div><span>القطعة (0042)</span><span>0.75</span></div>
+          <div><span>الروزمة (0056)</span><span>162.40</span></div>
+          <div><span>هامش الروزمة</span><span style="color:var(--pos)">23.6%</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+</div>
+<script>
+const mkCard=document.querySelector('.mk > .fcard:not(#mkNew)');
+function mkState(s){mkCard.hidden=s!=='card';document.getElementById('mkNew').hidden=s!=='new';document.getElementById('mkMissing').hidden=s!=='missing';if(s==='new')document.getElementById('mkNewCode').value=document.getElementById('mkCode').value;}
+function mkSearch(on){document.getElementById('mkModal').style.display=on?'flex':'none';if(!on)mkState('card');}
+document.getElementById('mkCode').addEventListener('keydown',e=>{if(e.key!=='Enter')return;const v=e.target.value.trim();if(v==='0056'||v==='0042'){mkState('card');}else{document.getElementById('mkMissingCode').textContent=v;mkState('missing');}});
+document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-t]').forEach(x=>x.classList.toggle('is-active',x===b));document.querySelectorAll('[data-p]').forEach(p=>p.classList.toggle('on',p.dataset.p===b.dataset.t));});
+</script>
+</body>
+</html>
+<style>.ic-fields[style*="text-align:center"] .finput,.ic-fields[style*="text-align:center"] .fselect{text-align:center;text-align-last:center}</style>

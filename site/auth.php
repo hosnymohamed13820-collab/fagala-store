@@ -262,6 +262,8 @@ function module_parts(): array
             'edit'   => 'تعريف وتعديل أصناف الموقع',
             'prices' => 'تغيير الأسعار',
             'classes' => 'الأقسام والتصنيفات',
+            'classify' => 'تقسيم الأصناف',
+            'classify_review' => 'مراجعة التقسيم',
         ],
         'sale_prices' => [
             'view'  => 'عرض',

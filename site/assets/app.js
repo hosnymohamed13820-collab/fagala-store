@@ -1011,3 +1011,108 @@ window.apiFetch = function (url, opts) {
     }
 })();
 
+
+
+/* خانة بقايمة: القيم من الاختيارات بس، والأسهم للقايمة وهي مفتوحة. */
+(function () {
+    function norm(s) {
+        if (s == null) return '';
+        return String(s)
+            .replace(/[\u0660-\u0669]/g, function (d) {          // أرقام عربية
+                return String.fromCharCode(d.charCodeAt(0) - 0x0630);
+            })
+            .replace(/[\u06F0-\u06F9]/g, function (d) {          // أرقام فارسية
+                return String.fromCharCode(d.charCodeAt(0) - 0x06C0);
+            })
+            .replace(/[\u064B-\u0652\u0640\u0670]/g, '')         // تشكيل + تطويل
+            .replace(/[\u0623\u0625\u0622\u0671]/g, '\u0627')    // أ إ آ ← ا
+            .replace(/\u0649/g, '\u064A')                        // ى ← ي
+            .replace(/\u0629/g, '\u0647')                        // ة ← ه
+            .replace(/\u0624/g, '\u0648')                        // ؤ ← و
+            .replace(/\u0626/g, '\u064A')                        // ئ ← ي
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+    }
+    let serial = 0;
+    window.ui.combo = function (input, options, config) {
+        if (input.fcombo) input.fcombo.destroy();
+        config = config || {};
+        const items = options.map(o => typeof o === 'string' ? {id:o,name:o} : o);
+        const list = document.createElement('div');
+        list.className = 'fcombo'; list.id = 'fcombo-' + (++serial);
+        list.setAttribute('role','listbox'); list.hidden = true;
+        document.body.appendChild(list);
+        input.setAttribute('role','combobox'); input.setAttribute('aria-autocomplete','list');
+        input.setAttribute('aria-controls',list.id); input.setAttribute('aria-expanded','false');
+        input.autocomplete = 'off';
+        let old = input.value, filtered = [], active = -1;
+        function close() { list.hidden = true; input.setAttribute('aria-expanded','false'); input.removeAttribute('aria-activedescendant'); }
+        function position() {
+            const r = input.getBoundingClientRect();
+            list.style.left = Math.max(0,Math.min(r.left,window.innerWidth-r.width))+'px';
+            list.style.top = Math.min(r.bottom,window.innerHeight-list.offsetHeight)+'px';
+            list.style.minWidth = r.width+'px';
+        }
+        function highlight() {
+            Array.from(list.children).forEach((el,i) => {
+                el.classList.toggle('is-active',i===active); el.setAttribute('aria-selected',String(i===active));
+            });
+            if (list.children[active]) { input.setAttribute('aria-activedescendant',list.children[active].id); list.children[active].scrollIntoView({block:'nearest'}); }
+        }
+        function open(all) {
+            const q = all ? '' : norm(input.value);
+            const rank = o => { const n=norm(o.name); return n===q ? 0 : n.startsWith(q) ? 1 : 2; };
+            filtered = items.filter(o => norm(o.name).includes(q)).sort((a,b)=>rank(a)-rank(b));
+            list.replaceChildren(); active = filtered.length ? 0 : -1;
+            filtered.forEach((o,i) => {
+                const el=document.createElement('div'); el.className='fcombo-option'; el.id=list.id+'-'+i;
+                el.setAttribute('role','option'); el.textContent=o.name;
+                el.addEventListener('mousedown',e=>{e.preventDefault();pick(o,true);}); list.appendChild(el);
+            });
+            list.hidden = false; input.setAttribute('aria-expanded','true'); highlight(); position();
+        }
+        function pick(o, force) {
+            const changed=old!==o.name; input.value=o.name; old=o.name; close();
+            if ((changed || force) && config.onPick) config.onPick(o);
+        }
+        function onInput() { open(false); }
+        function onBlur() {
+            const match=items.find(o=>norm(o.name)===norm(input.value));
+            if (match) pick(match); else { input.value=old; close(); }
+        }
+        function key(e) {
+            if ((e.ctrlKey||e.altKey)&&e.key==='ArrowDown') { e.preventDefault();e.stopPropagation();open(true);return; }
+            if (e.key==='Escape') { e.preventDefault();e.stopPropagation();input.value=old;close();return; }
+            if (list.hidden) {
+                if (e.key==='Enter') { e.preventDefault();e.stopPropagation();open(true); }
+                else if (e.key==='ArrowLeft'||e.key==='ArrowRight') {
+                    const cell=input.closest('td');
+                    if (cell) {
+                        const step=(e.key==='ArrowLeft') === (document.documentElement.dir==='rtl') ? 1 : -1;
+                        const cells=Array.from(cell.parentElement.cells); let i=cells.indexOf(cell)+step;
+                        for (;i>=0&&i<cells.length;i+=step) {
+                            const target=cells[i].querySelector('input:not([disabled]),select:not([disabled])');
+                            if(target){e.preventDefault();e.stopPropagation();target.focus();break;}
+                        }
+                    }
+                }
+                return;
+            }
+            if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter'].includes(e.key)) {
+                e.preventDefault();e.stopPropagation();
+                if(e.key==='ArrowDown') active=Math.min(filtered.length-1,active+1);
+                if(e.key==='ArrowUp') active=Math.max(0,active-1);
+                if(e.key==='Enter'&&filtered[active]) pick(filtered[active],true); else highlight();
+            }
+        }
+        input.addEventListener('input',onInput);input.addEventListener('blur',onBlur);input.addEventListener('keydown',key);
+        function scroll(e) { if (e.target!==list && !list.contains(e.target)) close(); }
+        window.addEventListener('resize',close);window.addEventListener('scroll',scroll,true);
+        const api={open:()=>open(true), close, setValue:value=>{input.value=value;old=value;close();}, destroy:()=>{
+            close();list.remove();input.removeEventListener('input',onInput);input.removeEventListener('blur',onBlur);input.removeEventListener('keydown',key);
+            window.removeEventListener('resize',close);window.removeEventListener('scroll',scroll,true);delete input.fcombo;
+        }};
+        input.fcombo=api; return api;
+    };
+})();

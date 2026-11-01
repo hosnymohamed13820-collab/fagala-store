@@ -287,7 +287,7 @@ $shifts = $pdo->query(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ترحيل البيانات</title>
 <link rel="stylesheet" href="assets/tabler-subset.css">
-<link rel="stylesheet" href="assets/fagala.css?v=37">
+<link rel="stylesheet" href="assets/fagala.css?v=38">
 <style>
   body{margin:0;padding:24px}
   .wrap{max-width:900px;margin:0 auto}

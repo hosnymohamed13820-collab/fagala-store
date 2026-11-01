@@ -185,6 +185,7 @@ function ui_code(string $code): string
     <?= ui_card_close() ?>
 
     <?= ui_card_open('الرسم من الجافاسكربت') ?>
+    <div class="ffield"><label for="comboDemo">خانة بقايمة — اكتب أو افتح بـCtrl وسهم لتحت</label><input id="comboDemo" class="finput" value="ورق وتصوير"><span id="comboPicked" class="fpage-sub"></span></div>
     <div id="jsUiDemo"></div>
     <?= ui_code("ui.btn('إضافة', {icon:'plus'})\nui.chip('متاح', 'pos')\nui.alert('info', 'رسالة')\nui.empty('مفيش بيانات')\nui.esc('نص حر أو قيمة attribute')") ?>
     <?= ui_card_close() ?>
@@ -206,6 +207,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+    window.ui.combo(document.getElementById('comboDemo'), ['أدوات مدرسية','أدوات مكتبية','ورق وتصوير'], {onPick: function(o){document.getElementById('comboPicked').textContent=o.name;}});
     document.getElementById('jsUiDemo').innerHTML =
         window.ui.btn('إضافة', {icon:'plus'}) + ' ' +
         window.ui.chip('متاح', 'pos') +

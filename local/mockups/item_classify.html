@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نموذج — تقسيم الأصناف (تصنيف سريع زي الإكسيل)</title>
+<link rel="stylesheet" href="../../site/assets/fagala.css">
+<link rel="stylesheet" href="../../site/assets/tabler-subset.css">
+<!-- دعم الفتح عبر السيرفر المحلي Laragon (localhost) وعبر الملف المباشر -->
+<link rel="stylesheet" href="/assets/fagala.css">
+<link rel="stylesheet" href="/assets/tabler-subset.css">
+<style>
+/* نموذج تفاعلي للموافقة — مش كود الموقع */
+body {
+    background: var(--bg);
+    margin: 0;
+    font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    color: var(--ink-800);
+}
+.mk {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: var(--sp-4) var(--sp-5) 90px;
+}
+.mk-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+}
+.mk-title {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.mk-title h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink-900);
+}
+.mk-counter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: var(--r-full);
+    background: var(--warn-soft);
+    border: 1px solid var(--warn);
+    color: var(--warn);
+    font-size: var(--fs-sm);
+    font-weight: 700;
+}
+.mk-note {
+    font-size: var(--fs-sm);
+    color: var(--ink-500);
+    margin-bottom: var(--sp-3);
+}
+
+/* فلاتر الصفحة */
+.classify-filters {
+    display: flex;
+    gap: var(--sp-3);
+    align-items: flex-end;
+    flex-wrap: wrap;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-4);
+}
+.filter-chip-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border-radius: var(--r-md);
+    border: 1.5px solid var(--line);
+    background: var(--line-soft);
+    color: var(--ink-700);
+    font-size: var(--fs-base);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: all .15s ease;
+}
+.filter-chip-toggle.is-active {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-text);
+}
+.filter-chip-toggle input {
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* جدول تقسيم الأصناف زي الإكسيل */
+.classify-card {
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 0;
+    overflow: hidden;
+}
+.classify-table {
+    margin: 0;
+    font-size: 13px;
+    width: 100%;
+    border-collapse: collapse;
+}
+.classify-table th {
+    background: var(--surface-soft);
+    color: var(--ink-700);
+    font-weight: 700;
+    white-space: nowrap;
+    padding: 10px 10px;
+    border-bottom: 2px solid var(--line);
+}
+.classify-table td {
+    padding: 6px 8px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--line-soft);
+}
+.classify-table tr:hover:not(.frow-selected) {
+    background: var(--line-soft);
+}
+.td-code {
+    direction: ltr;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--ink-900);
+}
+.td-name {
+    font-weight: 600;
+    color: var(--ink-900);
+    min-width: 250px;
+}
+.fselect-cell {
+    width: 100%;
+    min-width: 110px;
+    height: 32px;
+    min-height: 32px;
+    padding: 2px 8px;
+    font-size: 12.5px;
+    font-family: inherit;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    color: var(--ink-800);
+    box-sizing: border-box;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+}
+.fselect-cell:hover {
+    border-color: var(--accent);
+}
+.fselect-cell:focus {
+    outline: none;
+    border-color: var(--accent-text);
+    background: var(--surface);
+    box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.fchip-suggest {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: var(--r-sm);
+    background: var(--line-soft);
+    color: var(--ink-600);
+    border: 1px dashed var(--line);
+    white-space: nowrap;
+    opacity: 0.85;
+}
+.row-check {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* شريط الإجراءات المثبت أسفل الشاشة */
+.ftable-action-bar.floating {
+    position: fixed;
+    bottom: var(--sp-4);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(1200px, 94vw);
+    margin: 0;
+    z-index: 99;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+    border: 1.5px solid var(--accent);
+    background: var(--surface);
+    animation: barSlideUp 0.2s ease-out;
+}
+@keyframes barSlideUp {
+    from { transform: translate(-50%, 20px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+</style>
+</head>
+<body>
+<div class="mk">
+
+  <!-- رأس النموذج -->
+  <div class="mk-head">
+    <div class="mk-title">
+      <h1>تقسيم الأصناف</h1>
+      <span class="mk-counter-pill">
+        <i class="ti ti-alert-triangle"></i>
+        باقي 9,901 صنف من غير قسم
+      </span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" title="تبديل الوضع الليلي / الفاتح">
+        <i class="ti ti-moon" id="themeIcon"></i> وضع الواجهة
+      </button>
+      <span class="fchip fchip-mute">نموذج مقترح — بريف 832</span>
+    </div>
+  </div>
+
+  <div class="mk-note">
+    جدول تعديل سريع زي الإكسيل: اختار التصنيف لكل صنف مباشرة، أو علّم كذا صنف وطبّق عليهم دفعة واحدة من الشريط تحت.
+  </div>
+
+  <!-- فلاتر التحكم العلوية -->
+  <div class="classify-filters">
+    <!-- فلتر مالوش قسم -->
+    <label class="filter-chip-toggle is-active" id="lblNoDept">
+      <input type="checkbox" id="chkNoDept" checked onchange="toggleFilter(this, 'lblNoDept')">
+      <i class="ti ti-folder-off"></i> مالوش قسم
+    </label>
+
+    <!-- فلتر اتباع آخر 90 يوم -->
+    <label class="filter-chip-toggle is-active" id="lblSold90">
+      <input type="checkbox" id="chkSold90" checked onchange="toggleFilter(this, 'lblSold90')">
+      <i class="ti ti-chart-line"></i> اتباع آخر 90 يوم
+    </label>
+
+    <!-- بحث بالاسم أو الكود -->
+    <div class="ffield" style="flex:1;min-width:240px;">
+      <label for="searchBox" style="font-size:12px;">بحث بالاسم أو الكود</label>
+      <div style="position:relative;">
+        <input type="text" id="searchBox" class="finput finput-sm" placeholder="اكتب اسم الصنف أو كوده (مثلاً: كشكول، فابر، ورق)..." oninput="liveSearch(this.value)">
+      </div>
+    </div>
+
+    <!-- قسّمه مين -->
+    <div class="ffield" style="width:160px;">
+      <label style="font-size:12px;">قسّمه مين</label>
+      <select class="fselect finput-sm" id="userFilter" onchange="filterUser(this.value)">
+        <option value="all">كل المستخدمين</option>
+        <option value="أحمد ع.">أحمد ع.</option>
+        <option value="سارة م.">سارة م.</option>
+        <option value="سيستم (اقتراح)">سيستم (اقتراح)</option>
+        <option value="none">بدون تقسيم (فاضي)</option>
+      </select>
+    </div>
+
+    <!-- مستني مراجعة -->
+    <div class="ffield" style="width:150px;">
+      <label style="font-size:12px;">حالة المراجعة</label>
+      <select class="fselect finput-sm" id="statusFilter" onchange="filterStatus(this.value)">
+        <option value="all">كل الحالات</option>
+        <option value="مستني مراجعة" selected>مستني مراجعة</option>
+        <option value="متراجع">متراجع</option>
+      </select>
+    </div>
+
+    <!-- زر إعادة تعيين -->
+    <button class="btn btn-outline btn-sm" onclick="resetFilters()">
+      <i class="ti ti-refresh"></i> استعادة الفلاتر
+    </button>
+  </div>
+
+  <!-- جدول تقسيم الأصناف -->
+  <div class="classify-card">
+    <div class="ftable-wrap" style="overflow-x:auto;">
+      <table class="ftable classify-table" id="itemTable">
+        <thead>
+          <tr>
+            <th style="width:36px;text-align:center;">
+              <input type="checkbox" id="masterCheckbox" class="row-check" onclick="toggleSelectAll(this.checked)" title="تحديد الكل">
+            </th>
+            <th style="width:90px;">الكود</th>
+            <th style="min-width:260px;">الاسم</th>
+            <th class="num" style="width:110px;">مبيعات 90 يوم</th>
+            <th class="num" style="width:85px;">الرصيد</th>
+            <th style="min-width:135px;">القسم</th>
+            <th style="min-width:145px;">الوصف</th>
+            <th style="min-width:120px;">النوع</th>
+            <th style="min-width:115px;">المرحلة</th>
+            <th style="min-width:130px;">الشركات</th>
+            <th style="min-width:145px;">اقتراح</th>
+            <th style="width:115px;text-align:center;">الحالة</th>
+            <th style="width:105px;">قسّمه</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- 1 -->
+          <tr data-item-id="1" class="frow-selected">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" checked onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1010042</td>
+            <td class="td-name">كشكول سلك 80 ورقة A4 مسطر فاخر غلاف بلاستيك</td>
+            <td class="num">1,420</td>
+            <td class="num">385</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+                <option value="ورق وتصوير">ورق وتصوير</option>
+                <option value="ألوان وفنون">ألوان وفنون</option>
+                <option value="خدمات">خدمات</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="كشاكيل وكشاكيل سلك" selected>كشاكيل وكشاكيل سلك</option>
+                <option value="أقلام جاف وحبر">أقلام جاف وحبر</option>
+                <option value="ورق تصوير وطباعة">ورق تصوير وطباعة</option>
+                <option value="لواصق وتثبيت">لواصق وتثبيت</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سلك" selected>سلك</option>
+                <option value="دبوس عادي">دبوس عادي</option>
+                <option value="روزمة">روزمة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="جامعي ومكتبي" selected>جامعي ومكتبي</option>
+                <option value="ثانوي">ثانوي</option>
+                <option value="إعدادي">إعدادي</option>
+                <option value="ابتدائي">ابتدائي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سمير وعلي" selected>سمير وعلي</option>
+                <option value="سيمبا">سيمبا</option>
+                <option value="كانسون">كانسون</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 2 -->
+          <tr data-item-id="2" class="frow-selected">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" checked onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1010058</td>
+            <td class="td-name">كشكول 60 ورقة مربعات مسطر أحمر كشكول عربي</td>
+            <td class="num">2,850</td>
+            <td class="num">1,120</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+                <option value="ورق وتصوير">ورق وتصوير</option>
+                <option value="ألوان وفنون">ألوان وفنون</option>
+                <option value="خدمات">خدمات</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="كشاكيل وكشاكيل سلك" selected>كشاكيل وكشاكيل سلك</option>
+                <option value="أقلام جاف وحبر">أقلام جاف وحبر</option>
+                <option value="ورق تصوير وطباعة">ورق تصوير وطباعة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="دبوس عادي" selected>دبوس عادي</option>
+                <option value="سلك">سلك</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ابتدائي" selected>ابتدائي</option>
+                <option value="إعدادي">إعدادي</option>
+                <option value="ثانوي">ثانوي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سيمبا" selected>سيمبا</option>
+                <option value="سمير وعلي">سمير وعلي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سارة م.</td>
+          </tr>
+
+          <!-- 3 -->
+          <tr data-item-id="3" class="frow-selected">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" checked onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1010112</td>
+            <td class="td-name">كراس رسم كانسون 20 ورقة مقاس 1/8 فرخ 150 جرام</td>
+            <td class="num">640</td>
+            <td class="num">94</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ألوان وفنون" selected>ألوان وفنون</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+                <option value="ورق وتصوير">ورق وتصوير</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أقلام رصاص ورسم" selected>أقلام رصاص ورسم</option>
+                <option value="كشاكيل وكشاكيل سلك">كشاكيل وكشاكيل سلك</option>
+                <option value="ألوان خشب وفلوماستر">ألوان خشب وفلوماستر</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سلك" selected>سلك</option>
+                <option value="دبوس عادي">دبوس عادي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="إعدادي" selected>إعدادي</option>
+                <option value="ابتدائي">ابتدائي</option>
+                <option value="ثانوي">ثانوي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="كانسون" selected>كانسون</option>
+                <option value="فابر كاستل">فابر كاستل</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ألوان وفنون</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سيستم (اقتراح)</td>
+          </tr>
+
+          <!-- 4 -->
+          <tr data-item-id="4">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1020015</td>
+            <td class="td-name">قلم جاف بريما سوبر 0.7 ملم أزرق أصلي</td>
+            <td class="num">5,320</td>
+            <td class="num">2,410</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مكتبية" selected>أدوات مكتبية</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+                <option value="ورق وتصوير">ورق وتصوير</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أقلام جاف وحبر" selected>أقلام جاف وحبر</option>
+                <option value="أقلام تمييز وتحديد">أقلام تمييز وتحديد</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="جاف" selected>جاف</option>
+                <option value="جيل">جيل</option>
+                <option value="رصاص HB">رصاص HB</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="عام" selected>عام</option>
+                <option value="جامعي ومكتبي">جامعي ومكتبي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="بريما (Prima)" selected>بريما (Prima)</option>
+                <option value="روتو (Roto)">روتو (Roto)</option>
+                <option value="شنايدر (Schneider)">شنايدر (Schneider)</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مكتبية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 5 -->
+          <tr data-item-id="5">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1020028</td>
+            <td class="td-name">قلم جيل روتو 0.5 ملم أسود ماكس تاتش</td>
+            <td class="num">1,890</td>
+            <td class="num">415</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مكتبية" selected>أدوات مكتبية</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أقلام جاف وحبر" selected>أقلام جاف وحبر</option>
+                <option value="أقلام تمييز وتحديد">أقلام تمييز وتحديد</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="جيل" selected>جيل</option>
+                <option value="جاف">جاف</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ثانوي" selected>ثانوي</option>
+                <option value="جامعي ومكتبي">جامعي ومكتبي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="روتو (Roto)" selected>روتو (Roto)</option>
+                <option value="بريما (Prima)">بريما (Prima)</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مكتبية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سارة م.</td>
+          </tr>
+
+          <!-- 6 -->
+          <tr data-item-id="6">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1020044</td>
+            <td class="td-name">قلم رصاص فابر كاستل جولد فايبر HB بممحاة</td>
+            <td class="num">3,110</td>
+            <td class="num">890</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+                <option value="ألوان وفنون">ألوان وفنون</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أقلام رصاص ورسم" selected>أقلام رصاص ورسم</option>
+                <option value="أقلام جاف وحبر">أقلام جاف وحبر</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="رصاص HB" selected>رصاص HB</option>
+                <option value="جاف">جاف</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ابتدائي" selected>ابتدائي</option>
+                <option value="إعدادي">إعدادي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="فابر كاستل (Faber-Castell)" selected>فابر كاستل</option>
+                <option value="روتو (Roto)">روتو</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 7 -->
+          <tr data-item-id="7">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1020063</td>
+            <td class="td-name">قلم تحديد هايلايتر شنايدر ون 15 أصفر فسفوري</td>
+            <td class="num">980</td>
+            <td class="num">160</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مكتبية" selected>أدوات مكتبية</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أقلام تمييز وتحديد" selected>أقلام تمييز وتحديد</option>
+                <option value="أقلام جاف وحبر">أقلام جاف وحبر</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="بلاستيك" selected>بلاستيك</option>
+                <option value="جيل">جيل</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="جامعي ومكتبي" selected>جامعي ومكتبي</option>
+                <option value="ثانوي">ثانوي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="شنايدر (Schneider)" selected>شنايدر</option>
+                <option value="روتو (Roto)">روتو</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مكتبية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سيستم (اقتراح)</td>
+          </tr>
+
+          <!-- 8 -->
+          <tr data-item-id="8">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1030005</td>
+            <td class="td-name">روزمة ورق تصوير دابل إيه 80 جرام A4 كرتونة 5 رزم</td>
+            <td class="num">4,210</td>
+            <td class="num">680</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ورق وتصوير" selected>ورق وتصوير</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+                <option value="خدمات">خدمات</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ورق تصوير وطباعة" selected>ورق تصوير وطباعة</option>
+                <option value="كشاكيل وكشاكيل سلك">كشاكيل وكشاكيل سلك</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="روزمة" selected>روزمة</option>
+                <option value="سلك">سلك</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="عام" selected>عام</option>
+                <option value="جامعي ومكتبي">جامعي ومكتبي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="دابل إيه (Double A)" selected>دابل إيه</option>
+                <option value="منت فريش">منت فريش</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ورق وتصوير</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 9 -->
+          <tr data-item-id="9">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1030018</td>
+            <td class="td-name">روزمة ورق تصوير بيبر وان 70 جرام A4 مستورد</td>
+            <td class="num">3,450</td>
+            <td class="num">520</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ورق وتصوير" selected>ورق وتصوير</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ورق تصوير وطباعة" selected>ورق تصوير وطباعة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="روزمة" selected>روزمة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="عام" selected>عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="منت فريش" selected>منت فريش</option>
+                <option value="دابل إيه">دابل إيه</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ورق وتصوير</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 10 -->
+          <tr data-item-id="10">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1030032</td>
+            <td class="td-name">باكتة ورق تصوير ألوان A4 مشكل 100 ورقة 80 جرام</td>
+            <td class="num">430</td>
+            <td class="num">75</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ورق وتصوير" selected>ورق وتصوير</option>
+                <option value="ألوان وفنون">ألوان وفنون</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ورق تصوير وطباعة" selected>ورق تصوير وطباعة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="روزمة" selected>روزمة</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="حضانات وأطفال" selected>حضانات وأطفال</option>
+                <option value="ابتدائي">ابتدائي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سمير وعلي" selected>سمير وعلي</option>
+                <option value="دابل إيه">دابل إيه</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ورق وتصوير</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سارة م.</td>
+          </tr>
+
+          <!-- 11 -->
+          <tr data-item-id="11">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1040008</td>
+            <td class="td-name">علبة ألوان خشب فابر كاستل كلاسيك 12 لون طويل</td>
+            <td class="num">1,670</td>
+            <td class="num">240</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ألوان وفنون" selected>ألوان وفنون</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ألوان خشب وفلوماستر" selected>ألوان خشب وفلوماستر</option>
+                <option value="أقلام رصاص ورسم">أقلام رصاص ورسم</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="علبة 12 لون" selected>علبة 12 لون</option>
+                <option value="رصاص HB">رصاص HB</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ابتدائي" selected>ابتدائي</option>
+                <option value="إعدادي">إعدادي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="فابر كاستل (Faber-Castell)" selected>فابر كاستل</option>
+                <option value="مابيد">مابيد</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ألوان وفنون</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 12 -->
+          <tr data-item-id="12">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1040024</td>
+            <td class="td-name">علبة ألوان فلوماستر مابيد أوشن كيدز 12 لون قابل للغسيل</td>
+            <td class="num">820</td>
+            <td class="num">110</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="ألوان وفنون" selected>ألوان وفنون</option>
+                <option value="أدوات مدرسية">أدوات مدرسية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ألوان خشب وفلوماستر" selected>ألوان خشب وفلوماستر</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="علبة 12 لون" selected>علبة 12 لون</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="حضانات وأطفال" selected>حضانات وأطفال</option>
+                <option value="ابتدائي">ابتدائي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="مابيد (Maped)" selected>مابيد (Maped)</option>
+                <option value="فابر كاستل">فابر كاستل</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: ألوان وفنون</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سارة م.</td>
+          </tr>
+
+          <!-- 13 -->
+          <tr data-item-id="13">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1050012</td>
+            <td class="td-name">صمغ أصبع يو هو ستيك 21 جرام خالي من المذيبات</td>
+            <td class="num">2,150</td>
+            <td class="num">390</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="لواصق وتثبيت" selected>لواصق وتثبيت</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ستيك / أصبع" selected>ستيك / أصبع</option>
+                <option value="بلاستيك">بلاستيك</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="عام" selected>عام</option>
+                <option value="ابتدائي">ابتدائي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="يو هو (UHU)" selected>يو هو (UHU)</option>
+                <option value="سمير وعلي">سمير وعلي</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-pos status-chip">متراجع</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">أحمد ع.</td>
+          </tr>
+
+          <!-- 14 -->
+          <tr data-item-id="14">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1050035</td>
+            <td class="td-name">مسطرة مرنة فينيل 30 سم سمير وعلي مدرجة ضد الكسر</td>
+            <td class="num">1,940</td>
+            <td class="num">610</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أدوات هندسية وقص" selected>أدوات هندسية وقص</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="بلاستيك" selected>بلاستيك</option>
+                <option value="معدن">معدن</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="إعدادي" selected>إعدادي</option>
+                <option value="ابتدائي">ابتدائي</option>
+                <option value="ثانوي">ثانوي</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="سمير وعلي" selected>سمير وعلي</option>
+                <option value="مابيد">مابيد</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سيستم (اقتراح)</td>
+          </tr>
+
+          <!-- 15 -->
+          <tr data-item-id="15">
+            <td style="text-align:center;"><input type="checkbox" class="row-check" onchange="rowCheckChanged(this)"></td>
+            <td class="td-code">1050049</td>
+            <td class="td-name">براية معدن مابيد فتحة واحدة سبيكة ألمونيوم أصلية</td>
+            <td class="num">2,760</td>
+            <td class="num">480</td>
+            <td class="fcell">
+              <select class="fselect-cell dept-select" onchange="markRowDirty(this)">
+                <option value="أدوات مدرسية" selected>أدوات مدرسية</option>
+                <option value="أدوات مكتبية">أدوات مكتبية</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="أدوات هندسية وقص" selected>أدوات هندسية وقص</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="معدن" selected>معدن</option>
+                <option value="بلاستيك">بلاستيك</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="ابتدائي" selected>ابتدائي</option>
+                <option value="إعدادي">إعدادي</option>
+                <option value="عام">عام</option>
+              </select>
+            </td>
+            <td class="fcell">
+              <select class="fselect-cell" onchange="markRowDirty(this)">
+                <option value="مابيد (Maped)" selected>مابيد (Maped)</option>
+                <option value="فابر كاستل">فابر كاستل</option>
+              </select>
+            </td>
+            <td><span class="fchip-suggest"><i class="ti ti-bulb"></i> شبه: أدوات مدرسية</span></td>
+            <td style="text-align:center;"><span class="fchip fchip-warn status-chip">مستني مراجعة</span></td>
+            <td style="color:var(--ink-600);font-size:12px;">سارة م.</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- شريط الإجراءات المثبت لما تعلّم صفوف -->
+  <div class="ftable-action-bar floating" id="actionBar">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-weight:700;color:var(--ink-900);display:flex;align-items:center;gap:6px;">
+        <i class="ti ti-checkbox" style="color:var(--accent);font-size:18px;"></i>
+        اتعلّم <span id="selectedCount" style="color:var(--accent-text);font-size:16px;">3</span> صنف
+      </span>
+      <span style="color:var(--line);font-size:18px;">|</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label for="bulkDept" style="font-size:13px;font-weight:600;color:var(--ink-700);">اختار القسم ▾</label>
+        <select class="fselect finput-sm" id="bulkDept" style="width:160px;min-height:34px;padding:4px 8px;">
+          <option value="">— اختار القسم —</option>
+          <option value="أدوات مكتبية">أدوات مكتبية</option>
+          <option value="أدوات مدرسية">أدوات مدرسية</option>
+          <option value="ورق وتصوير">ورق وتصوير</option>
+          <option value="ألوان وفنون">ألوان وفنون</option>
+          <option value="خدمات">خدمات</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="applyBulkDept()">
+          <i class="ti ti-check"></i> طبّق على المعلّم
+        </button>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="btn btn-outline btn-sm" style="color:var(--pos);border-color:var(--pos);" onclick="approveBulkSelected()">
+        <i class="ti ti-badge-check"></i> وافق على المعلّم
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="clearAllSelections()">
+        <i class="ti ti-x"></i> إلغاء التحديد
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// تبديل الثيم
+function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    document.getElementById('themeIcon').className = next === 'dark' ? 'ti ti-moon' : 'ti ti-sun';
+}
+
+// تحديث العداد وشريط الإجراءات
+function updateSelectionState() {
+    const rows = document.querySelectorAll('#itemTable tbody tr');
+    let checkedCount = 0;
+    rows.forEach(tr => {
+        const chk = tr.querySelector('.row-check');
+        if (chk && chk.checked) {
+            checkedCount++;
+            tr.classList.add('frow-selected');
+        } else {
+            tr.classList.remove('frow-selected');
+        }
+    });
+
+    const masterChk = document.getElementById('masterCheckbox');
+    if (masterChk) {
+        masterChk.checked = (checkedCount > 0 && checkedCount === rows.length);
+        masterChk.indeterminate = (checkedCount > 0 && checkedCount < rows.length);
+    }
+
+    const bar = document.getElementById('actionBar');
+    const counter = document.getElementById('selectedCount');
+    if (counter) counter.textContent = checkedCount;
+
+    if (bar) {
+        bar.style.display = checkedCount > 0 ? 'flex' : 'none';
+    }
+}
+
+// تشكبوكس مفرد
+function rowCheckChanged(input) {
+    updateSelectionState();
+}
+
+// تحديد الكل
+function toggleSelectAll(checked) {
+    const rows = document.querySelectorAll('#itemTable tbody tr');
+    rows.forEach(tr => {
+        if (tr.style.display !== 'none') {
+            const chk = tr.querySelector('.row-check');
+            if (chk) chk.checked = checked;
+        }
+    });
+    updateSelectionState();
+}
+
+// إلغاء كل التحديد
+function clearAllSelections() {
+    const chks = document.querySelectorAll('#itemTable .row-check');
+    chks.forEach(c => c.checked = false);
+    updateSelectionState();
+}
+
+// تطبيق القسم دفعة واحدة على المحدد
+function applyBulkDept() {
+    const dept = document.getElementById('bulkDept').value;
+    if (!dept) {
+        alert('من فضلك اختار قسم الأول عشان تطبقه على الأصناف المعلّمة.');
+        return;
+    }
+    const selectedRows = document.querySelectorAll('#itemTable tbody tr.frow-selected');
+    if (selectedRows.length === 0) return;
+
+    selectedRows.forEach(tr => {
+        const deptSelect = tr.querySelector('.dept-select');
+        if (deptSelect) {
+            deptSelect.value = dept;
+        }
+        const chip = tr.querySelector('.status-chip');
+        if (chip) {
+            chip.className = 'fchip fchip-warn status-chip';
+            chip.textContent = 'مستني مراجعة';
+        }
+        const userCell = tr.querySelector('td:last-child');
+        if (userCell) {
+            userCell.textContent = 'أنت (تطبيق مجمع)';
+            userCell.style.color = 'var(--accent-text)';
+        }
+    });
+
+    // وميض تأكيد بصري خفيف
+    const bar = document.getElementById('actionBar');
+    bar.style.borderColor = 'var(--pos)';
+    setTimeout(() => { bar.style.borderColor = 'var(--accent)'; }, 600);
+}
+
+// الموافقة على المحدد
+function approveBulkSelected() {
+    const selectedRows = document.querySelectorAll('#itemTable tbody tr.frow-selected');
+    if (selectedRows.length === 0) return;
+
+    selectedRows.forEach(tr => {
+        const chip = tr.querySelector('.status-chip');
+        if (chip) {
+            chip.className = 'fchip fchip-pos status-chip';
+            chip.textContent = 'متراجع';
+        }
+    });
+
+    clearAllSelections();
+}
+
+// تعديل خانة في صف
+function markRowDirty(select) {
+    const tr = select.closest('tr');
+    if (!tr) return;
+    const chip = tr.querySelector('.status-chip');
+    if (chip) {
+        chip.className = 'fchip fchip-warn status-chip';
+        chip.textContent = 'مستني مراجعة';
+    }
+    const userCell = tr.querySelector('td:last-child');
+    if (userCell) {
+        userCell.textContent = 'أنت (تعديل)';
+        userCell.style.color = 'var(--accent-text)';
+    }
+}
+
+// بحث بالاسم أو الكود
+function liveSearch(val) {
+    const q = val.trim().toLowerCase();
+    const rows = document.querySelectorAll('#itemTable tbody tr');
+    rows.forEach(tr => {
+        const text = tr.innerText.toLowerCase();
+        tr.style.display = text.includes(q) ? '' : 'none';
+    });
+    updateSelectionState();
+}
+
+// فلتر اليوزر
+function filterUser(val) {
+    const rows = document.querySelectorAll('#itemTable tbody tr');
+    rows.forEach(tr => {
+        const user = tr.querySelector('td:last-child')?.textContent.trim() || '';
+        if (val === 'all' || user === val) {
+            tr.style.display = '';
+        } else {
+            tr.style.display = 'none';
+        }
+    });
+    updateSelectionState();
+}
+
+// فلتر الحالة
+function filterStatus(val) {
+    const rows = document.querySelectorAll('#itemTable tbody tr');
+    rows.forEach(tr => {
+        const status = tr.querySelector('.status-chip')?.textContent.trim() || '';
+        if (val === 'all' || status === val) {
+            tr.style.display = '';
+        } else {
+            tr.style.display = 'none';
+        }
+    });
+    updateSelectionState();
+}
+
+// شارة الفلتر العلوية
+function toggleFilter(checkbox, labelId) {
+    const lbl = document.getElementById(labelId);
+    if (lbl) {
+        lbl.classList.toggle('is-active', checkbox.checked);
+    }
+}
+
+// استعادة الفلاتر
+function resetFilters() {
+    document.getElementById('searchBox').value = '';
+    document.getElementById('userFilter').value = 'all';
+    document.getElementById('statusFilter').value = 'all';
+    document.getElementById('chkNoDept').checked = true;
+    document.getElementById('lblNoDept').classList.add('is-active');
+    document.getElementById('chkSold90').checked = true;
+    document.getElementById('lblSold90').classList.add('is-active');
+    liveSearch('');
+}
+
+// تشغيل الحالة المبدئية
+updateSelectionState();
+</script>
+</body>
+</html>
+

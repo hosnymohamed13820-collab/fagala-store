@@ -374,6 +374,20 @@ function im_detail(string $source, int $id): ?array
         }
     }
 
+    $effectiveId=$source==='true' ? $id : (int)($main['true_item_id'] ?? 0);
+    if ($effectiveId>0) {
+        $effectiveSql=ic_effective_sql('section');
+        $st=db()->prepare("SELECT e.class_id,c.name,t.name true_name FROM ($effectiveSql) e
+            JOIN item_classes c ON c.id=e.class_id LEFT JOIN hq_item_cats h ON h.item_id=e.item_id
+            LEFT JOIN hq_cat_names t ON t.is1_id=h.is1_id WHERE e.item_id=?");
+        $st->execute([$effectiveId]);
+        $effective=$st->fetch(PDO::FETCH_ASSOC);
+        if ($effective) {
+            $main['cat_is1_id']=(int)$effective['class_id'];$main['category_name']=$effective['name'];
+            $main['class_names']['section']=$effective['name'];
+            $main['true_category_name']=$effective['true_name'];
+        }
+    }
     $codeValues = array_column($codes, 'code');
     $suppliers = im_suppliers($source, $id);
     $sidebar = im_sidebar($source === 'true' ? $id : ($main['true_item_id'] !== null ? (int)$main['true_item_id'] : null), $codes, $suppliers, $unlocked);

@@ -27,6 +27,19 @@ function ic_kinds(): array
     return IC_KINDS;
 }
 
+/** اختيار الموقع يغلب True، حتى لو لسه مستني مراجعة؛ المراجعة حالة مستقلة. */
+function ic_effective_sql(string $kind): string
+{
+    ic_kind_label($kind);
+    $column = ['section'=>'is1_id','description'=>'is2_id','type'=>'is3_id','stage'=>'is4_id','company'=>'is5_id'][$kind];
+    return "SELECT item_id,class_id FROM item_class_assign WHERE kind='$kind'
+        UNION ALL
+        SELECT t.item_id,MIN(c.id) class_id FROM hq_item_cats t
+        JOIN item_classes c ON c.kind='$kind' AND c.true_id=t.$column AND t.$column>0
+        WHERE NOT EXISTS (SELECT 1 FROM item_class_assign a WHERE a.item_id=t.item_id AND a.kind='$kind')
+        GROUP BY t.item_id";
+}
+
 function ic_kind_label(string $kind): string
 {
     if (!isset(IC_KINDS[$kind])) throw new InvalidArgumentException('نوع التصنيف غير معروف');

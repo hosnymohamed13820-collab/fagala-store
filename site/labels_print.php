@@ -96,7 +96,7 @@ if ($error !== '') {
     echo '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">'
         . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
         . '<title>تعذّرت الطباعة</title>'
-        . '<link rel="stylesheet" href="assets/fagala.css?v=37">'
+        . '<link rel="stylesheet" href="assets/fagala.css?v=38">'
         . '<style>body{font-family:inherit;background:var(--surface);color:var(--text);'
         . 'text-align:center;padding:60px 18px;margin:0;}'
         . 'h2{font-size:20px;margin:0 0 10px;}p{font-size:15px;margin:0 0 22px;}'
@@ -115,7 +115,7 @@ $chunks = array_chunk($labels, $cols);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ليبلز — <?= count($labels) ?> ليبل</title>
-<link rel="stylesheet" href="assets/fagala.css?v=37">
+<link rel="stylesheet" href="assets/fagala.css?v=38">
 <style>
     /* 🔴 المقاس بالمليمتر: ده اللي بيخلي الطابعة الحرارية تطبع بمقاسها الحقيقي */
     @page { size: <?= $sheetW ?>mm <?= $h ?>mm; margin: 0; }
