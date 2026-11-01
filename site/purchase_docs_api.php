@@ -2,21 +2,11 @@
 /** purchase_docs_api.php — API فواتير الشراء ومرتجعات المورد. */
 declare(strict_types=1);
 
-define('API_MODE', true);
+if (!defined('PURCHASE_VIEW_ONLY')) define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/purchase_doc_lib.php';
-
-api_begin();
-require_login();
-require_module_access('purchase_docs');
-sens_page();
-
-$pdo = db();
-$uid = (int) ($_SESSION['user']['id'] ?? 0);
-$userBranch = (int) ($_SESSION['user']['branch_id'] ?? 0);
-$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
 function purchase_api_branch(int $branchId): void
 {
@@ -38,9 +28,8 @@ function purchase_api_doc(PDO $pdo, int $docId, bool $lock = false): array
     return $doc;
 }
 
-if ($method === 'GET') {
-    $action = (string) ($_GET['action'] ?? 'docs');
-    if ($action === 'options') {
+function purchase_view_options(PDO $pdo, int $userBranch): array
+{
         $branchSql = 'SELECT id,name FROM branches WHERE is_active=1 AND id IN (1,2,3,4,6)';
         $branchParams = [];
         if (!is_real_owner()) {
@@ -52,14 +41,72 @@ if ($method === 'GET') {
         $bs->execute($branchParams);
 
         $marks = implode(',', array_fill(0, count(PURCHASE_INTERNAL_ERP_SUPPLIERS), '?'));
-        $ss = $pdo->prepare("SELECT id,name FROM suppliers WHERE is_active=1 AND (erp_supplier_id IS NULL OR erp_supplier_id NOT IN ($marks)) ORDER BY name");
+        $ss = $pdo->prepare("SELECT id,name,erp_supplier_code FROM suppliers WHERE is_active=1 AND (erp_supplier_id IS NULL OR erp_supplier_id NOT IN ($marks)) ORDER BY name");
         $ss->execute(PURCHASE_INTERNAL_ERP_SUPPLIERS);
-        api_ok([
+        return [
             'branches' => $bs->fetchAll(PDO::FETCH_ASSOC),
             'suppliers' => $ss->fetchAll(PDO::FETCH_ASSOC),
             'owner' => is_real_owner(),
             'user_branch' => $userBranch,
-        ]);
+        ];
+}
+
+function purchase_view_doc(PDO $pdo, int $docId): array
+{
+        $doc = purchase_api_doc($pdo, $docId);
+        $st = $pdo->prepare('SELECT l.id,l.doc_id,l.line_no,l.item_id,l.code,l.unit_factor,l.qty_units,l.qty_pieces,l.unit_price,l.discount_pct,l.line_total,l.inv_discount_alloc,l.line_total/NULLIF(l.qty_units,0) net_unit_cost,l.notes,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
+        $st->execute([(int) $doc['id']]);
+        $lines = $st->fetchAll(PDO::FETCH_ASSOC);
+        $ev = $pdo->prepare('SELECT e.*,u.full_name user_name FROM doc_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.doc_kind=\'stock\' AND e.doc_id=? ORDER BY e.id');
+        $ev->execute([(int) $doc['id']]);
+        return ['doc'=>$doc,'lines'=>$lines,'events'=>$ev->fetchAll(PDO::FETCH_ASSOC)];
+}
+
+function purchase_view_docs(PDO $pdo, array $filters, int $userBranch): array
+{
+    $where = ["d.doc_type IN ('purchase','purchase_return')"];
+    $params = [];
+    if (!is_real_owner()) { $where[]='d.branch_id=?'; $params[]=$userBranch; }
+    elseif (!empty($filters['branch_id'])) { $where[]='d.branch_id=?'; $params[]=(int)$filters['branch_id']; }
+    if (!empty($filters['supplier_id'])) { $where[]='d.supplier_id=?'; $params[]=(int)$filters['supplier_id']; }
+    if (!empty($filters['type'])) { $where[]='d.doc_type=?'; $params[]=(string)$filters['type']; }
+    if (!empty($filters['status'])) { $where[]='d.status=?'; $params[]=(string)$filters['status']; }
+    if (!empty($filters['from'])) { $where[]='d.doc_date>=?'; $params[]=(string)$filters['from']; }
+    if (!empty($filters['to'])) { $where[]='d.doc_date<=?'; $params[]=(string)$filters['to']; }
+    $page = max(1, (int) ($filters['page'] ?? 1));
+    $offset = ($page - 1) * 200;
+    $count = $pdo->prepare('SELECT COUNT(*) FROM stock_docs d WHERE '.implode(' AND ', $where));
+    $count->execute($params);
+    $total = (int) $count->fetchColumn();
+    $st = $pdo->prepare('SELECT d.*,s.name supplier_name,b.name branch_name,COALESCE(e.last_modified,d.created_at) last_modified,SUM(CASE WHEN l.qty_pieces<>0 THEN 1 ELSE 0 END) lines_count FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id LEFT JOIN stock_doc_lines l ON l.doc_id=d.id LEFT JOIN (SELECT doc_id,MAX(at) last_modified FROM doc_events WHERE doc_kind=\'stock\' GROUP BY doc_id) e ON e.doc_id=d.id WHERE '.implode(' AND ',$where).' GROUP BY d.id ORDER BY d.doc_date DESC,d.id DESC LIMIT 200 OFFSET '.$offset);
+    $st->execute($params);
+    $docs = $st->fetchAll(PDO::FETCH_ASSOC);
+    $matches = purchase_match_hq($pdo, array_column($docs,'id'));
+    foreach ($docs as &$doc) {
+        $doc['hq_state'] = $matches[(int)$doc['id']] ?? ['state'=>'missing','hq_match'=>null,'doc_no'=>null];
+        $doc['inv_discount'] = ['type'=>$doc['inv_discount_type'], 'value'=>(float) $doc['inv_discount_value']];
+        $doc['gross_amount'] = (float) ($doc['gross_amount'] ?? $doc['total_amount']);
+    }
+    unset($doc);
+    return ['docs'=>$docs, 'total'=>$total];
+}
+
+if (defined('PURCHASE_VIEW_ONLY')) return;
+
+api_begin();
+require_login();
+require_module_access('purchase_docs');
+sens_page();
+
+$pdo = db();
+$uid = (int) ($_SESSION['user']['id'] ?? 0);
+$userBranch = (int) ($_SESSION['user']['branch_id'] ?? 0);
+$method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+
+if ($method === 'GET') {
+    $action = (string) ($_GET['action'] ?? 'docs');
+    if ($action === 'options') {
+        api_ok(purchase_view_options($pdo, $userBranch));
     }
     if ($action === 'suppliers') {
         $marks = implode(',', array_fill(0, count(PURCHASE_INTERNAL_ERP_SUPPLIERS), '?'));
@@ -114,13 +161,7 @@ if ($method === 'GET') {
         api_ok(['item'=>$item]);
     }
     if ($action === 'doc') {
-        $doc = purchase_api_doc($pdo, (int) ($_GET['id'] ?? 0));
-        $st = $pdo->prepare('SELECT l.id,l.doc_id,l.line_no,l.item_id,l.code,l.unit_factor,l.qty_units,l.qty_pieces,l.unit_price,l.discount_pct,l.line_total,l.inv_discount_alloc,l.line_total/NULLIF(l.qty_units,0) net_unit_cost,l.notes,COALESCE(n.name,l.code) item_name FROM stock_doc_lines l LEFT JOIN (SELECT item_id,MAX(name) name FROM hq_codes GROUP BY item_id) n ON n.item_id=l.item_id WHERE l.doc_id=? AND l.qty_pieces<>0 ORDER BY l.line_no');
-        $st->execute([(int) $doc['id']]);
-        $lines = $st->fetchAll(PDO::FETCH_ASSOC);
-        $ev = $pdo->prepare('SELECT e.*,u.full_name user_name FROM doc_events e LEFT JOIN users u ON u.id=e.user_id WHERE e.doc_kind=\'stock\' AND e.doc_id=? ORDER BY e.id');
-        $ev->execute([(int) $doc['id']]);
-        api_ok(['doc'=>$doc,'lines'=>$lines,'events'=>$ev->fetchAll(PDO::FETCH_ASSOC)]);
+        api_ok(purchase_view_doc($pdo, (int) ($_GET['id'] ?? 0)));
     }
     if ($action === 'origins') {
         api_require('purchase_docs:create');
@@ -166,26 +207,7 @@ if ($method === 'GET') {
         api_ok(['lines'=>$available]);
     }
 
-    $where = ["d.doc_type IN ('purchase','purchase_return')"];
-    $params = [];
-    if (!is_real_owner()) { $where[]='d.branch_id=?'; $params[]=$userBranch; }
-    elseif (!empty($_GET['branch_id'])) { $where[]='d.branch_id=?'; $params[]=(int)$_GET['branch_id']; }
-    if (!empty($_GET['supplier_id'])) { $where[]='d.supplier_id=?'; $params[]=(int)$_GET['supplier_id']; }
-    if (!empty($_GET['type'])) { $where[]='d.doc_type=?'; $params[]=(string)$_GET['type']; }
-    if (!empty($_GET['status'])) { $where[]='d.status=?'; $params[]=(string)$_GET['status']; }
-    if (!empty($_GET['from'])) { $where[]='d.doc_date>=?'; $params[]=(string)$_GET['from']; }
-    if (!empty($_GET['to'])) { $where[]='d.doc_date<=?'; $params[]=(string)$_GET['to']; }
-    $st = $pdo->prepare('SELECT d.*,s.name supplier_name,b.name branch_name,SUM(CASE WHEN l.qty_pieces<>0 THEN 1 ELSE 0 END) lines_count FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id LEFT JOIN stock_doc_lines l ON l.doc_id=d.id WHERE '.implode(' AND ',$where).' GROUP BY d.id ORDER BY d.doc_date DESC,d.id DESC LIMIT 200');
-    $st->execute($params);
-    $docs = $st->fetchAll(PDO::FETCH_ASSOC);
-    $matches = purchase_match_hq($pdo, array_column($docs,'id'));
-    foreach ($docs as &$doc) {
-        $doc['hq_state'] = $matches[(int)$doc['id']] ?? ['state'=>'missing','hq_match'=>null,'doc_no'=>null];
-        $doc['inv_discount'] = ['type'=>$doc['inv_discount_type'], 'value'=>(float) $doc['inv_discount_value']];
-        $doc['gross_amount'] = (float) ($doc['gross_amount'] ?? $doc['total_amount']);
-    }
-    unset($doc);
-    api_ok(['docs'=>$docs]);
+    api_ok(purchase_view_docs($pdo, $_GET, $userBranch));
 }
 
 api_csrf();
@@ -198,7 +220,10 @@ try {
         purchase_api_branch($branchId);
         $type = (string) ($input['doc_type'] ?? 'purchase');
         $docId = !empty($input['doc_id']) ? (int) $input['doc_id'] : null;
-        if ($docId !== null) purchase_api_doc($pdo, $docId);
+        if ($docId !== null) {
+            $existing = purchase_api_doc($pdo, $docId);
+            if ($existing['doc_type'] !== $type) throw new RuntimeException($existing['doc_type'] === 'purchase_return' ? 'المستند ده مرتجع ومينفعش يتحوّل شراء' : 'المستند ده شراء ومينفعش يتحوّل مرتجع');
+        }
         $removed = is_array($input['removed_lines'] ?? null) ? $input['removed_lines'] : [];
         $lines = is_array($input['lines'] ?? null) ? $input['lines'] : [];
         if (count($removed) > 1000) api_fail('عدد السطور أكبر من المسموح',400,'validation');

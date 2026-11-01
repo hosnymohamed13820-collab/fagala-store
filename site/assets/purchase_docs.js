@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const PURCHASE_CSRF = cfg.csrf || '';
   const PURCHASE_INITIAL_ID = Number(cfg.initialId) || 0;
   const PURCHASE_INITIAL_TYPE = cfg.initialType || 'purchase';
+  const boot = JSON.parse(document.getElementById('pdBoot')?.textContent || '{}');
+  let purchaseDocType = PURCHASE_INITIAL_TYPE;
+  let purchaseNavigating = false;
+  let purchasePendingPage = 1;
   const PURCHASE_OWNER = Boolean(cfg.owner);
   const PURCHASE_CAN_CREATE = Boolean(cfg.canCreate);
   const PURCHASE_CAN_EDIT_DATE = Boolean(cfg.canEditDate);
@@ -56,10 +60,8 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function purchaseApi(url, options = {}) {
-    const response = await fetch(url, options);
-    const data = await response.json().catch(() => ({ ok: false, error: 'رد السيرفر مش مفهوم' }));
-    if (!response.ok || !data.ok) throw new Error(data.error || 'حصل خطأ');
-    return data.data;
+    const response = await window.apiFetch(url, options);
+    return response.data;
   }
 
   function purchaseNumber(value, digits = 3) {
@@ -68,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function purchaseSupplierLabel(supplier) {
-    return String(supplier.name || '') + ' — #' + Number(supplier.id);
+    return String(supplier.name || '') + ' — ' + String(supplier.erp_supplier_code || supplier.id);
   }
 
   function purchaseResolveSupplier() {
@@ -81,13 +83,18 @@ document.addEventListener('DOMContentLoaded', function () {
   function purchaseSetSupplier(id) {
     const supplier = purchaseOptions.suppliers.find(row => Number(row.id) === Number(id));
     pe('purchaseSupplierId').value = supplier ? String(supplier.id) : '';
-    pe('purchaseSupplier').value = supplier ? purchaseSupplierLabel(supplier) : '';
+    const label = supplier ? purchaseSupplierLabel(supplier) : '';
+    pe('purchaseSupplier').fcombo?.setValue(label);
+    pe('purchaseSupplier').value = label;
+    pe('purchaseSupplierCode').value = supplier ? String(supplier.erp_supplier_code || supplier.id) : '';
   }
 
   async function purchaseLoadOptions() {
-    const data = await purchaseApi('purchase_docs_api.php?action=options');
+    const data = boot.options || await purchaseApi('purchase_docs_api.php?action=options');
     purchaseOptions = data;
-    pe('purchaseSupplierList').innerHTML = data.suppliers.map(s => '<option value="' + purchaseEsc(purchaseSupplierLabel(s)) + '"></option>').join('');
+    window.ui.combo(pe('purchaseSupplier'), data.suppliers.map(s => ({ id:s.id, name:purchaseSupplierLabel(s) })), { onPick: supplier => {
+      purchaseSetSupplier(supplier.id); purchaseLoadOrigins(); purchaseQueueSave(true); purchaseUpdatePrintHeader();
+    } });
     pe('purchaseBranch').innerHTML = data.branches.map(b => '<option value="' + Number(b.id) + '">' + purchaseEsc(b.name) + '</option>').join('');
     if (!PURCHASE_OWNER && data.user_branch) pe('purchaseBranch').value = String(data.user_branch);
   }
@@ -101,24 +108,26 @@ document.addEventListener('DOMContentLoaded', function () {
     const id = ++purchaseLineSeq;
     const itemId = Number(row.item_id) || 0;
     const factor = Number(row.unit_factor) || 1;
-    return '<tr class="purchase-line" data-line="' + id + '" data-lookup-code="' + purchaseEsc(itemId ? row.code || '' : '') + '">'
-      + '<td class="line-index"></td>'
-      + '<td class="fcell line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode' + id + '" class="finput finput-cell num line-code" value="' + purchaseEsc(row.code || '') + '" autocomplete="off" inputmode="text"><button class="btn btn-sm btn-outline purchase-no-print line-scan" type="button" aria-label="فتح السكانر"><i class="ti ti-camera"></i></button></div><input class="line-item" type="hidden" value="' + itemId + '"><input class="line-factor" type="hidden" value="' + factor + '"></td>'
+    return '<tr class="purchase-line' + (itemId ? '' : ' frow-blue') + '" data-line="' + id + '" data-lookup-code="' + purchaseEsc(itemId ? row.code || '' : '') + '">'
+      + '<td class="num line-index"></td>'
+      + '<td class="purchase-no-print"><button class="btn btn-sm btn-ghost line-scan" type="button" aria-label="فتح السكانر"' + (itemId ? ' disabled' : '') + '><i class="ti ti-camera"></i></button></td>'
+      + '<td class="fcell line-code-cell"><div class="purchase-code-wrap"><input id="purchaseCode' + id + '" class="finput finput-cell num line-code" value="' + purchaseEsc(row.code || '') + '" autocomplete="off" inputmode="text"></div><input class="line-item" type="hidden" value="' + itemId + '"><input class="line-factor" type="hidden" value="' + factor + '"></td>'
       + '<td class="fcell line-name-cell">' + (itemId ? '<span class="line-name" title="' + purchaseEsc(row.item_name || '') + '">' + purchaseEsc(row.item_name || '') + '</span>' : '<input class="finput finput-cell line-name-input" autocomplete="off" placeholder="اكتب اسم الصنف…">') + '</td>'
       + purchaseLineDetails(row) + '</tr>';
   }
 
   function purchaseLineDetails(row = {}) {
-    if (!Number(row.item_id)) return '<td></td><td class="num line-balance"></td>' + '<td></td>'.repeat(6);
+    if (!Number(row.item_id)) return '<td></td><td class="num line-balance"></td>' + '<td></td>'.repeat(7);
     const factor = Number(row.unit_factor) || 1;
     const qty = row.qty_units === undefined ? 1 : Number(row.qty_units);
     const price = row.unit_price === undefined ? 0 : Number(row.unit_price);
     const discount = Number(row.discount_pct) || 0;
-    return '<td><span class="line-unit">' + purchaseEsc(purchaseUnitText(factor)) + '</span></td>'
+    return '<td><span class="fchip fchip-mute line-unit">' + purchaseEsc(purchaseUnitText(factor)) + '</span></td>'
       + '<td class="num line-balance">—</td>'
       + '<td class="num fcell line-number"><input class="finput finput-cell num line-qty" type="number" min="0.001" step="0.001" value="' + purchaseEsc(qty) + '"></td>'
       + '<td class="num fcell line-number"><input class="finput finput-cell num line-cost" type="number" min="0" step="0.0001" value="' + purchaseEsc(price) + '"></td>'
       + '<td class="num fcell line-number"><input class="finput finput-cell num line-discount" type="number" min="0" max="100" step="0.001" value="' + purchaseEsc(discount) + '"></td>'
+      + '<td class="num fcell line-number"><input class="finput finput-cell num line-discount-amount" type="number" min="0" step="0.0001" value="' + purchaseRound(price * discount / 100, 4) + '"></td>'
       + '<td class="num line-number"><span class="line-net">0.00</span></td>'
       + '<td class="num line-number"><span class="line-total">0.00</span></td>'
       + '<td class="line-remove-cell purchase-no-print"><button class="btn btn-sm btn-danger line-remove" type="button" aria-label="حذف السطر"><i class="ti ti-trash"></i></button></td>';
@@ -148,6 +157,8 @@ document.addEventListener('DOMContentLoaded', function () {
     text.textContent = purchaseCode(line);
     text.title = text.textContent;
     input.closest('.purchase-code-wrap').replaceWith(text);
+    line.querySelector('.line-scan').disabled = true;
+    line.classList.remove('frow-blue');
   }
 
   function purchaseBindLine(line) {
@@ -174,8 +185,14 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isEnterKey(event)) { event.preventDefault(); purchaseLookupName(line); }
       });
     }
-    line.querySelectorAll('.line-qty,.line-cost,.line-discount').forEach(input => {
-      input.addEventListener('input', () => { purchaseCalc(); purchaseQueueSave(); });
+    line.querySelectorAll('.line-qty,.line-cost,.line-discount,.line-discount-amount').forEach(input => {
+      input.addEventListener('input', () => {
+        if (input.matches('.line-discount-amount')) {
+          const price = Number(line.querySelector('.line-cost').value) || 0;
+          line.querySelector('.line-discount').value = String(purchaseRound(price > 0 ? Math.min(100, Math.max(0, Number(input.value) || 0) / price * 100) : 0, 3));
+        }
+        purchaseCalc(); purchaseQueueSave();
+      });
       input.addEventListener('blur', () => purchaseQueueSave(true));
       input.addEventListener('keydown', event => purchaseGridKey(event, input));
     });
@@ -219,6 +236,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   async function purchaseBalances() {
+    if (location.protocol === 'file:') return;
     const request = ++purchaseBalanceRequest, branch = Number(pe('purchaseBranch').value), codes = [...new Set(purchaseBoundLines().map(purchaseCode))];
     if (!branch || !codes.length) return;
     purchaseBoundLines().forEach(line => line.querySelector('.line-balance').textContent = '…');
@@ -281,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function () {
         line.querySelector('.line-item').value = String(Number(data.item.item_id));
         line.querySelector('.line-factor').value = String(Number(data.item.unit_factor) || 1);
         line.querySelector('.line-name-cell').innerHTML = '<span class="line-name" title="' + purchaseEsc(data.item.name || foundCode) + '">' + purchaseEsc(data.item.name || foundCode) + '</span>';
-        while (line.cells.length > 3) line.deleteCell(3);
+        while (line.cells.length > 4) line.deleteCell(4);
         line.insertAdjacentHTML('beforeend', purchaseLineDetails({ item_id: data.item.item_id, unit_factor: data.item.unit_factor }));
         if (Number(line.querySelector('.line-cost').value) === 0 && data.item.last_purchase_price !== null) {
           line.querySelector('.line-cost').value = String(data.item.last_purchase_price);
@@ -443,18 +461,28 @@ document.addEventListener('DOMContentLoaded', function () {
     const enter = isEnterKey(event);
     if (!enter && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     const line = input.closest('.purchase-line');
-    if (enter && input.matches('.line-qty') && purchaseMergeLine(line)) { event.preventDefault(); return; }
-    const rows = [...pe('purchaseLines').querySelectorAll('.purchase-line')];
-    const columns = ['.line-code', '.line-qty', '.line-cost', '.line-discount'];
+    if (enter && input.matches('.line-qty') && purchaseMergeLine(line)) { event.preventDefault(); event.stopPropagation(); return; }
+    event.preventDefault();
+    event.stopPropagation();
+    const rows = [...pe('purchaseLines').querySelectorAll('.purchase-line')].filter(row => !row.hidden && !row.classList.contains('xt-out'));
+    const columns = ['.line-code', '.line-qty', '.line-cost', '.line-discount', '.line-discount-amount'];
     const column = columns.findIndex(selector => input.matches(selector));
     const row = rows.indexOf(line);
     let target = null;
-    if (event.key === 'ArrowUp' && row > 0) target = rows[row - 1].querySelector(columns[column]);
-    else if (event.key === 'ArrowDown' && row < rows.length - 1) target = rows[row + 1].querySelector(columns[column]);
-    else if (event.key === 'ArrowLeft' && column < columns.length - 1) target = line.querySelector(columns[column + 1]);
-    else if (event.key === 'ArrowRight' && column > 0) target = line.querySelector(columns[column - 1]);
-    else if (enter) { target = column < columns.length - 1 ? line.querySelector(columns[column + 1]) : rows[row + 1]?.querySelector('.line-code,.line-qty'); }
-    if (target) { event.preventDefault(); target.focus(); target.select(); }
+    if (enter || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      const step = event.key === 'ArrowUp' ? -1 : 1;
+      for (let i = row + step; i >= 0 && i < rows.length; i += step) {
+        const candidate = rows[i].querySelector(columns[column]);
+        if (candidate && !candidate.disabled) { target = candidate; break; }
+      }
+    } else {
+      const step = event.key === 'ArrowLeft' ? 1 : -1;
+      for (let i = column + step; i >= 0 && i < columns.length; i += step) {
+        const candidate = line.querySelector(columns[i]);
+        if (candidate && !candidate.disabled) { target = candidate; break; }
+      }
+    }
+    if (target) { target.focus(); target.select(); }
   }
 
   function purchaseRows() {
@@ -469,7 +497,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function purchaseHasOrigin() {
-    return pe('purchaseType').value === 'purchase_return' && Number(pe('purchaseOrigin').value) > 0;
+    return purchaseDocType === 'purchase_return' && Number(pe('purchaseOrigin').value) > 0;
   }
 
   function purchaseDiscount() {
@@ -489,7 +517,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function purchaseCalc() {
-    let grand = 0, pieces = 0, gross = 0, largest = 0;
+    let grand = 0, pieces = 0, gross = 0, totalGross = 0, largest = 0;
     const bound = purchaseBoundLines(), locked = purchaseHasOrigin();
     const rows = bound.map((line, index) => {
       const qty = purchaseRound(Number(line.querySelector('.line-qty').value) || 0, 3);
@@ -505,6 +533,10 @@ document.addEventListener('DOMContentLoaded', function () {
       const after = Math.round(purchaseRound(qty * cost * (1 - discount / 100), 2) * 100);
       if (index === 0 || after > bound[largest]._after) largest = index;
       line._after = after;
+      totalGross += purchaseRound(qty * cost, 2);
+      const amountInput = line.querySelector('.line-discount-amount');
+      amountInput.readOnly = locked;
+      if (document.activeElement !== amountInput) amountInput.value = String(purchaseRound(cost * discount / 100, 4));
       gross += after;
       pieces += purchaseRound(qty * Number(line.querySelector('.line-factor').value || 1), 3);
       return { line, qty, after, alloc: 0 };
@@ -535,12 +567,14 @@ document.addEventListener('DOMContentLoaded', function () {
     pe('purchasePieces').textContent = purchaseNumber(pieces);
     pe('purchaseGrand').textContent = grand.toFixed(2);
     pe('purchaseGross').textContent = (gross / 100).toFixed(2);
+    pe('purchaseTotalGross').textContent = totalGross.toFixed(2);
+    pe('purchaseLineDiscount').textContent = (totalGross - gross / 100).toFixed(2);
     purchaseRenumber();
     purchaseUpdatePrintHeader();
   }
 
   function purchaseUpdatePrintHeader() {
-    const isReturn = pe('purchaseType').value === 'purchase_return';
+    const isReturn = purchaseDocType === 'purchase_return';
     const label = isReturn ? 'مرتجع مورد' : 'فاتورة شراء';
     const pTitle = pe('printDocTitle');
     if (pTitle) pTitle.textContent = label;
@@ -580,7 +614,7 @@ document.addEventListener('DOMContentLoaded', function () {
     return {
       action,
       doc_id: Number(pe('purchaseDocId').value) || null,
-      doc_type: pe('purchaseType').value,
+      doc_type: purchaseDocType,
       supplier_id: purchaseResolveSupplier(),
       branch_id: Number(pe('purchaseBranch').value),
       doc_date: pe('purchaseDate').value,
@@ -630,7 +664,7 @@ document.addEventListener('DOMContentLoaded', function () {
       pe('purchaseDocId').value = String(data.doc_id);
       pe('purchaseDocNo').textContent = 'مسودة-' + data.doc_id;
       pe('purchaseType').disabled = true;
-      document.querySelectorAll('#purchaseTypeTabs .ftab').forEach(btn => { btn.disabled = true; });
+      purchaseRefreshPending().catch(error => purchaseMessage(error.message, true));
       history.replaceState(null, '', 'purchase_docs.php?id=' + data.doc_id);
       purchaseSaveState('اتحفظ ✓', 'ok');
       purchaseUpdatePrintHeader();
@@ -648,7 +682,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   async function purchaseLoadOrigins(selected = 0) {
     const wrap = pe('purchaseOriginWrap');
-    const isReturn = pe('purchaseType').value === 'purchase_return';
+    const isReturn = purchaseDocType === 'purchase_return';
     wrap.hidden = !isReturn;
     if (!isReturn) { pe('purchaseOrigin').value = ''; return; }
     const supplierId = purchaseResolveSupplier();
@@ -719,9 +753,6 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-edit],.purchase-line input,.purchase-line button').forEach(control => {
       control.disabled = readonly;
     });
-    document.querySelectorAll('#purchaseTypeTabs .ftab').forEach(btn => {
-      btn.disabled = readonly;
-    });
     if (!PURCHASE_OWNER) pe('purchaseBranch').disabled = true;
     if (!PURCHASE_CAN_EDIT_DATE) pe('purchaseDate').readOnly = true;
     pe('purchasePost')?.toggleAttribute('hidden', readonly);
@@ -736,30 +767,73 @@ document.addEventListener('DOMContentLoaded', function () {
     box.innerHTML = '<strong>سجل المستند</strong>' + events.map(event => '<div>' + purchaseEsc(event.at) + ' — ' + purchaseEsc(event.event) + ' — ' + purchaseEsc(event.user_name || 'النظام') + '</div>').join('');
   }
 
+  async function purchaseBeforeNavigate() {
+    if (purchaseLoading) throw new Error('استنى تحميل المستند الأول');
+    if ([...pe('purchaseLines').querySelectorAll('.line-code,.line-name-input')].some(input => input.value.trim())) {
+      throw new Error('ثبّت الصنف المكتوب بـ Enter الأول علشان شغلك يتحفظ');
+    }
+    if (purchaseSaving || purchaseSaveDirty) await purchaseSaveNow(true);
+    if (purchaseSaveDirty) throw new Error('فيه تغييرات لسه ماتحفظتش');
+  }
+
+  async function purchaseNavigate(url, newTab = false) {
+    if (purchaseNavigating) return;
+    purchaseNavigating = true;
+    // بنحجز التاب وقت الضغطة علشان المتصفح ما يمنعوش بعد انتظار الحفظ.
+    const tab = newTab ? window.open('about:blank', '_blank') : null;
+    if (tab) tab.opener = null;
+    try {
+      if (newTab && !tab) throw new Error('اسمح بفتح تاب جديد علشان نفتح المستند');
+      await purchaseBeforeNavigate();
+      if (tab) tab.location.replace(url); else location.href = url;
+    } catch (error) {
+      tab?.close(); purchaseMessage(error.message, true);
+    } finally { purchaseNavigating = false; }
+  }
+
   function purchaseSetType(type) {
-    if (purchaseReadonly || pe('purchaseType').disabled) return;
-    if (pe('purchaseType').value === type) return;
-    pe('purchaseType').value = type;
-    document.querySelectorAll('#purchaseTypeTabs .ftab').forEach(btn => {
-      btn.classList.toggle('is-active', btn.dataset.type === type);
-    });
-    const label = type === 'purchase_return' ? 'مرتجع مورد جديد' : 'فاتورة شراء جديدة';
-    pe('purchaseTitle').textContent = label;
-    purchaseLoadOrigins();
-    purchaseQueueSave(true);
-    purchaseUpdatePrintHeader();
+    return purchaseNavigate('purchase_docs.php?type=' + type, true);
+  }
+
+  function purchaseClosePending() {
+    pe('purchaseDraftModal').hidden = true;
+    pe('purchaseDraftModal').classList.remove('fg-dlg-bg');
+    document.documentElement.classList.remove('fg-dlg-open');
+    pe('purchasePending').focus();
+  }
+
+  async function purchaseRefreshPending(show = false) {
+    const query = new URLSearchParams({ action:'docs', type:purchaseDocType, status:'draft', branch_id:pe('purchaseBranch').value, page:purchasePendingPage });
+    const data = await purchaseApi('purchase_docs_api.php?' + query);
+    pe('purchasePendingCount').textContent = String(data.total);
+    pe('purchaseDraftPrev').disabled = purchasePendingPage <= 1;
+    pe('purchaseDraftNext').disabled = purchasePendingPage * 200 >= data.total;
+    pe('purchaseDraftRows').innerHTML = data.docs.map(doc => '<tr role="button" tabindex="0" aria-expanded="false" style="cursor:pointer" data-draft="' + Number(doc.id) + '">'
+      + '<td>مسودة-' + Number(doc.id) + '</td><td>' + purchaseEsc(doc.supplier_name) + '</td><td>' + purchaseEsc(doc.doc_date) + '</td>'
+      + '<td class="num">' + Number(doc.lines_count) + '</td><td class="num">' + purchaseNumber(doc.total_amount, 2) + '</td><td>' + purchaseEsc(doc.last_modified) + '</td></tr>').join('');
+    pe('purchaseDraftMessage').textContent = data.docs.length ? 'صفحة ' + purchasePendingPage + ' · الإجمالي ' + data.total + ' مستند، لنفس النوع والفرع المختار' : 'مفيش مستندات معلّقة للنوع والفرع ده';
+    if (show) {
+      pe('purchaseDraftTitle').textContent = purchaseDocType === 'purchase_return' ? 'مرتجعات المورد المعلّقة' : 'فواتير الشراء المعلّقة';
+      pe('purchaseDraftModal').hidden = false;
+      pe('purchaseDraftModal').classList.add('fg-dlg-bg');
+      document.documentElement.classList.add('fg-dlg-open');
+      (pe('purchaseDraftRows').querySelector('tr') || pe('purchaseDraftClose')).focus();
+    }
   }
 
   async function purchaseOpen(id) {
-    const data = await purchaseApi('purchase_docs_api.php?action=doc&id=' + id);
+    const data = boot.document && Number(boot.document.doc.id) === Number(id) ? boot.document : await purchaseApi('purchase_docs_api.php?action=doc&id=' + id);
     const doc = data.doc;
     purchaseDiscountType = doc.inv_discount?.type || null;
     if (purchaseDiscountType) pe(purchaseDiscountType === 'percent' ? 'purchaseDiscountPct' : 'purchaseDiscountAmount').value = String(doc.inv_discount.value);
     pe('purchaseDocId').value = String(doc.id);
+    purchaseDocType = doc.doc_type;
     pe('purchaseType').value = doc.doc_type;
+    const report = pe('purchaseReport');
+    if (report) { report.href = 'reports.php?type=purchase_docs&doc_type=' + purchaseDocType; report.textContent = purchaseDocType === 'purchase' ? 'تقرير المشتريات' : 'تقرير المرتجعات'; }
     document.querySelectorAll('#purchaseTypeTabs .ftab').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.type === doc.doc_type);
-      btn.disabled = true;
+
     });
     purchaseSetSupplier(doc.supplier_id);
     pe('purchaseBranch').value = String(doc.branch_id);
@@ -768,8 +842,14 @@ document.addEventListener('DOMContentLoaded', function () {
     pe('purchaseNotes').value = doc.notes || '';
     pe('purchaseLines').textContent = '';
     data.lines.forEach(line => purchaseAddLine(line));
-    await purchaseLoadOrigins(Number(doc.orig_doc_id) || 0);
-    if (doc.orig_doc_id && doc.status === 'draft') {
+    pe('purchaseOriginWrap').hidden = purchaseDocType !== 'purchase_return';
+    if (doc.orig_doc_id) {
+      pe('purchaseOrigin').insertAdjacentHTML('beforeend', '<option value="' + Number(doc.orig_doc_id) + '">فاتورة الأصل #' + Number(doc.orig_doc_id) + '</option>');
+      pe('purchaseOrigin').value = String(doc.orig_doc_id);
+      purchaseOriginCosts = Object.fromEntries(data.lines.map(line => [Number(line.item_id), Number(line.unit_price) / Number(line.unit_factor || 1)]));
+    }
+    if (location.protocol !== 'file:') await purchaseLoadOrigins(Number(doc.orig_doc_id) || 0);
+    if (location.protocol !== 'file:' && doc.orig_doc_id && doc.status === 'draft') {
       const origin = await purchaseApi('purchase_docs_api.php?action=return_available&orig_doc_id=' + Number(doc.orig_doc_id));
       purchaseOriginCosts = Object.fromEntries(origin.lines.map(line => [Number(line.item_id), Number(line.unit_cost)]));
     }
@@ -786,7 +866,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function purchaseNew() {
-    location.href = 'purchase_docs.php';
+    purchaseNavigate('purchase_docs.php?type=' + purchaseDocType);
   }
 
   async function purchasePostDoc() {
@@ -833,7 +913,7 @@ document.addEventListener('DOMContentLoaded', function () {
           btn.classList.toggle('is-active', btn.dataset.type === PURCHASE_INITIAL_TYPE);
         });
         purchaseStatus('draft');
-        await purchaseLoadOrigins();
+        if (location.protocol !== 'file:') await purchaseLoadOrigins();
         purchaseEnsureBlank();
         purchaseSetReadonly(!PURCHASE_CAN_CREATE, 'draft');
         purchaseFocusBarcode();
@@ -844,13 +924,19 @@ document.addEventListener('DOMContentLoaded', function () {
       purchaseSetReadonly(true, 'draft');
     } finally {
       purchaseLoading = false;
+      if (location.protocol !== 'file:') purchaseRefreshPending().catch(error => purchaseMessage(error.message, true));
     }
   }
 
   // زراير النوع
   document.querySelectorAll('#purchaseTypeTabs .ftab').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', event => {
+      event.preventDefault();
       purchaseSetType(btn.dataset.type);
+    });
+    btn.addEventListener('auxclick', event => {
+      if (event.button !== 1) return;
+      event.preventDefault(); purchaseSetType(btn.dataset.type);
     });
   });
 
@@ -870,12 +956,60 @@ document.addEventListener('DOMContentLoaded', function () {
 
   pe('purchaseSupplier')?.addEventListener('input', () => { purchaseResolveSupplier(); purchaseQueueSave(); purchaseUpdatePrintHeader(); });
   pe('purchaseSupplier')?.addEventListener('change', () => { purchaseResolveSupplier(); purchaseLoadOrigins(); purchaseQueueSave(true); purchaseUpdatePrintHeader(); });
-  pe('purchaseBranch')?.addEventListener('change', () => { purchaseLoadOrigins(); purchaseQueueBalances(); purchaseQueueSave(true); purchaseUpdatePrintHeader(); });
+  pe('purchaseBranch')?.addEventListener('change', () => { purchasePendingPage = 1; purchaseRefreshPending().catch(error => purchaseMessage(error.message, true)); purchaseLoadOrigins(); purchaseQueueBalances(); purchaseQueueSave(true); purchaseUpdatePrintHeader(); });
   pe('purchaseOrigin')?.addEventListener('change', purchaseFillOrigin);
   pe('purchasePost')?.addEventListener('click', purchasePostDoc);
   pe('purchaseCancel')?.addEventListener('click', purchaseCancelDoc);
   pe('purchasePrint')?.addEventListener('click', () => window.print());
   pe('purchaseNew')?.addEventListener('click', purchaseNew);
+
+  pe('purchaseSupplierCode').addEventListener('keydown', event => {
+    if (!isEnterKey(event)) return;
+    event.preventDefault();
+    const supplier = purchaseOptions.suppliers.find(row => String(row.erp_supplier_code || row.id) === event.target.value.trim());
+    if (!supplier) return purchaseMessage('مفيش مورد بالكود ده', true);
+    purchaseSetSupplier(supplier.id); purchaseLoadOrigins(); purchaseQueueSave(true); purchaseFocusBarcode();
+  });
+  pe('purchaseFind').addEventListener('click', () => purchaseOpenSearch(null));
+  pe('purchaseClear').addEventListener('click', async () => {
+    if (purchaseReadonly || !purchaseBoundLines().length) return;
+    if (!await fgConfirm('متأكد إنك عايز تمسح كل أصناف المسودة؟', { title:'مسح الفاتورة', danger:true })) return;
+    purchaseBoundLines().forEach(line => {
+      purchaseRemoved.push({ code:purchaseCode(line), qty_units:Number(line.querySelector('.line-qty').value) }); line.remove();
+    });
+    purchaseEnsureBlank(); purchaseCalc(); purchaseQueueSave(true);
+  });
+  pe('purchasePending').addEventListener('click', async () => {
+    try { await purchaseRefreshPending(true); } catch (error) { purchaseMessage(error.message, true); }
+  });
+  pe('purchaseDraftClose').addEventListener('click', purchaseClosePending);
+  [['purchaseDraftPrev', -1], ['purchaseDraftNext', 1]].forEach(([id, step]) => {
+    pe(id).addEventListener('click', async () => {
+      pe(id).disabled = true;
+      purchasePendingPage += step;
+      try { await purchaseRefreshPending(); } catch (error) { purchasePendingPage -= step; pe(id).disabled = false; purchaseMessage(error.message, true); }
+    });
+  });
+  pe('purchaseDraftModal').addEventListener('click', event => { if (event.target === event.currentTarget) purchaseClosePending(); });
+  pe('purchaseDraftRows').addEventListener('click', event => {
+    const row = event.target.closest('[data-draft]');
+    if (row) purchaseNavigate('purchase_docs.php?id=' + Number(row.dataset.draft));
+  });
+  pe('purchaseDraftModal').addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); purchaseClosePending(); }
+    const row = event.target.closest('[data-draft]');
+    if (row && ['Enter',' '].includes(event.key)) { event.preventDefault(); row.click(); }
+    if (event.key === 'Tab') {
+      const controls = [...event.currentTarget.querySelectorAll('[tabindex="0"],button')].filter(el => el.getClientRects().length);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && event.target === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && event.target === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  window.addEventListener('beforeunload', event => {
+    if (!purchaseSaveDirty && !purchaseSaving) return;
+    event.preventDefault(); event.returnValue = '';
+  });
 
   purchaseInit();
 });

@@ -16,44 +16,45 @@ $initialType = ($_GET['type'] ?? '') === 'purchase_return' ? 'purchase_return' :
 $branchMissing = !$owner && $userBranch <= 0;
 $canEditDate = $owner || (string) setting('purchase_date_editable', '1') !== '0';
 
+if (!defined('PURCHASE_VIEW_ONLY')) define('PURCHASE_VIEW_ONLY', true);
+require_once __DIR__ . '/purchase_docs_api.php';
+$pdBoot = ['options'=>purchase_view_options(db(), $userBranch), 'document'=>null];
+if ($initialId) {
+    $pdBoot['document'] = purchase_view_doc(db(), $initialId);
+    $initialType = $pdBoot['document']['doc']['doc_type'];
+}
+
 $pageTitle = $initialType === 'purchase_return' ? 'مرتجع مورد' : 'فاتورة شراء';
 $active_module = 'purchase_docs';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
-.purchase-shell { display:flex; flex-direction:column; gap:var(--sp-3); min-height:calc(100vh - 130px); }
-.purchase-head { display:flex; justify-content:space-between; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
-.purchase-title { display:flex; align-items:center; gap:var(--sp-2); }
-.purchase-title-meta { display:inline-flex; gap:var(--sp-2); align-items:center; }
-.purchase-actions { display:flex; gap:var(--sp-2); align-items:center; flex-wrap:wrap; }
-.purchase-save-state { min-width:80px; font-size:var(--fs-xs); color:var(--ink-500); }
-.purchase-save-state.is-ok { color:var(--pos); }
-.purchase-save-state.is-bad { color:var(--neg); }
-.purchase-head-fields { display:flex; flex-direction:column; gap:var(--sp-3); margin-top:var(--sp-3); }
-.purchase-head-row-1 { display:grid; grid-template-columns:auto 1.5fr 1fr 1fr; gap:var(--sp-3); align-items:end; }
-.purchase-head-row-2 { display:grid; grid-template-columns:1fr 1fr 2fr; gap:var(--sp-3); align-items:end; }
-.purchase-lines-panel { flex:1; display:flex; flex-direction:column; min-height:360px; }
-.purchase-lines-head { display:flex; justify-content:space-between; align-items:center; gap:var(--sp-3); margin-bottom:var(--sp-2); }
-.purchase-table-wrap { overflow:auto; flex:1; }
-.purchase-table { width:100%; table-layout:fixed; }
+.purchase-shell { display:flex; flex-direction:column; gap:var(--sp-2); max-width:1680px; margin:auto; padding-bottom:calc(var(--sp-4) * 10); }
+.purchase-head, .purchase-title, .purchase-title-meta, .purchase-actions, .purchase-lines-head { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.purchase-head, .purchase-lines-head { justify-content:space-between; }
+.purchase-head-fields { display:flex; align-items:end; gap:var(--sp-2); flex-wrap:wrap; }
+.purchase-head-fields .ffield { flex:0 1 140px; }
+.purchase-head-fields .purchase-supplier-code { flex-basis:175px; }
+.purchase-head-fields .purchase-supplier { flex:2 1 280px; max-width:480px; }
+.purchase-head-fields .purchase-notes { flex:1 1 280px; max-width:480px; }
+.purchase-head-fields .purchase-type-field { flex-basis:auto; }
+.purchase-head-fields .purchase-date { flex-basis:130px; }
+.purchase-table-wrap { overflow:auto; }
+.purchase-table { width:100%; table-layout:fixed; min-width:1300px; }
 .purchase-table th, .purchase-table td { vertical-align:middle; }
-.purchase-table .line-index { text-align:center; color:var(--ink-500); }
-.purchase-code-wrap { display:flex; align-items:center; gap:var(--sp-1); }
-.purchase-code-wrap .finput { min-width:0; width:100%; }
-.purchase-code-wrap .btn { flex:0 0 auto; }
-.purchase-table .finput { width:100%; min-width:0; }
+.purchase-table .finput { width:100%; min-width:0; text-align:center; }
 .purchase-table .line-name, .purchase-table .line-code-text { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.purchase-table .line-total { font-variant-numeric:tabular-nums; font-weight:700; }
-.purchase-shortcuts { display:flex; gap:var(--sp-3); flex-wrap:wrap; padding:var(--sp-2) var(--sp-1); font-size:var(--fs-xs); color:var(--ink-500); }
-.purchase-shortcuts kbd { font:inherit; font-weight:700; }
-.purchase-summary-wrap { margin-top:var(--sp-3); }
+.purchase-head-fields .finput, .purchase-head-fields .fselect { text-align:center; }
+.purchase-summary-wrap { position:sticky; bottom:0; z-index:var(--z-dropdown); margin:0; }
+.purchase-summary-wrap .purchase-totals { display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; }
+.purchase-total { display:flex; flex-direction:column; align-items:center; gap:var(--sp-1); }
+.purchase-total .finput { width:82px; }
+.purchase-shortcuts { display:flex; justify-content:center; gap:var(--sp-3); flex-wrap:wrap; font-size:var(--fs-xs); }
 .purchase-search-results { max-height:50vh; overflow:auto; }
 .purchase-search-results .btn { display:block; width:100%; text-align:right; white-space:normal; }
 .purchase-origin[hidden], .purchase-event-list[hidden] { display:none; }
-.purchase-event-list { font-size:var(--fs-xs); line-height:1.9; color:var(--ink-500); }
-@media (max-width:1100px) { .purchase-table { min-width:1020px; } }
-@media (max-width:900px) { .purchase-head-row-1, .purchase-head-row-2 { grid-template-columns:1fr 1fr; } }
-@media (max-width:600px) { .purchase-head-row-1, .purchase-head-row-2 { grid-template-columns:1fr; } }
+.purchase-event-list { font-size:var(--fs-xs); line-height:1.9; }
+@media (max-width:600px) { .purchase-summary-wrap { position:static; } .purchase-shell { padding-bottom:var(--sp-2); } .purchase-head-fields .ffield { flex:1 1 100%; } }
 </style>
 
 <main class="purchase-shell print-doc">
@@ -61,19 +62,16 @@ require_once __DIR__ . '/includes/header.php';
     <div class="purchase-head purchase-no-print">
       <div class="purchase-title">
         <i class="ti ti-package-import"></i>
-        <h2 id="purchaseTitle"><?= $initialType === 'purchase_return' ? 'مرتجع مورد جديد' : 'فاتورة شراء جديدة' ?></h2>
+        <h2 id="purchaseTitle" class="fpage-title fchip <?= $initialType === 'purchase_return' ? 'fchip-neg' : 'fchip-accent' ?>"><?= $initialType === 'purchase_return' ? 'مرتجع مورد جديد' : 'فاتورة شراء جديدة' ?></h2>
         <div class="purchase-title-meta">
-          <span id="purchaseDocNo" class="fchip fchip-mute">جديدة</span>
           <span id="purchaseStatus" class="fchip fchip-warn">مسودة</span>
+          <span id="purchaseDocNo" class="fchip fchip-mute">جديدة</span>
         </div>
       </div>
       <div class="purchase-actions">
-        <span id="purchaseSaveState" class="purchase-save-state"></span>
-        <?php if (can('purchase_docs:post')): ?><button id="purchasePost" class="btn btn-success" type="button">ترحيل</button><?php endif; ?>
-        <?php if (can('purchase_docs:cancel')): ?><button id="purchaseCancel" class="btn btn-danger" type="button" hidden>إلغاء</button><?php endif; ?>
-        <button id="purchasePrint" class="btn btn-outline" type="button"><i class="ti ti-printer"></i> طباعة</button>
-        <?php if (can('purchase_docs:create')): ?><button id="purchaseNew" class="btn btn-primary" type="button"><i class="ti ti-plus"></i> فاتورة جديدة</button><?php endif; ?>
-        <?php if (can('purchase_docs:reports')): ?><a class="btn btn-outline" href="reports.php?type=purchase_docs">كل الفواتير ← التقارير</a><?php endif; ?>
+        <button id="purchasePending" class="btn btn-outline" type="button">المعلّق (<span id="purchasePendingCount">0</span>)</button>
+        <?php if (can('purchase_docs:reports')): ?><a id="purchaseReport" class="btn btn-outline" href="reports.php?type=purchase_docs&amp;doc_type=<?= $initialType ?>"><?= $initialType === 'purchase_return' ? 'تقرير المرتجعات' : 'تقرير المشتريات' ?></a><?php endif; ?>
+        <a class="btn btn-ghost" href="index.php">رجوع للرئيسية</a>
       </div>
     </div>
 
@@ -103,81 +101,60 @@ require_once __DIR__ . '/includes/header.php';
     <input id="purchaseType" type="hidden" value="<?= htmlspecialchars($initialType, ENT_QUOTES, 'UTF-8') ?>">
 
     <div class="purchase-head-fields">
-      <div class="purchase-head-row-1">
-        <div class="ffield">
-          <label>النوع</label>
-          <div class="ftabs" id="purchaseTypeTabs" role="tablist" aria-label="نوع المستند">
-            <button type="button" class="ftab <?= $initialType === 'purchase' ? 'is-active' : '' ?>" data-type="purchase" data-edit>شراء</button>
-            <button type="button" class="ftab <?= $initialType === 'purchase_return' ? 'is-active' : '' ?>" data-type="purchase_return" data-edit>مرتجع مورد</button>
+        <div class="ffield purchase-type-field">
+          <label>نوع الفاتورة</label>
+          <div class="ftabs" id="purchaseTypeTabs" aria-label="نوع المستند">
+            <a href="purchase_docs.php?type=purchase" target="_blank" rel="noopener" class="ftab <?= $initialType === 'purchase' ? 'is-active' : '' ?>" data-type="purchase">شراء</a>
+            <a href="purchase_docs.php?type=purchase_return" target="_blank" rel="noopener" class="ftab <?= $initialType === 'purchase_return' ? 'is-active' : '' ?>" data-type="purchase_return">مرتجع مورد</a>
           </div>
         </div>
-        <label class="ffield">المورد (بحث)
-          <input class="finput" id="purchaseSupplier" list="purchaseSupplierList" autocomplete="off" placeholder="اكتب اسم المورد" data-edit>
-          <datalist id="purchaseSupplierList"></datalist>
+        <label class="ffield purchase-supplier-code">كود المورد (Enter للتثبيت)
+          <input class="finput finput-sm num" id="purchaseSupplierCode" maxlength="20" autocomplete="off" data-edit>
         </label>
-        <label class="ffield">الفرع
-          <select class="fselect" id="purchaseBranch" data-edit></select>
+        <label class="ffield purchase-supplier">اسم المورد (Ctrl + ↓ للقايمة)
+          <input class="finput finput-sm" id="purchaseSupplier" autocomplete="off" placeholder="اكتب اسم المورد" data-edit>
         </label>
-        <label class="ffield">التاريخ
-          <input class="finput" id="purchaseDate" type="date" value="<?= date('Y-m-d') ?>" <?= $canEditDate ? 'data-edit' : 'readonly' ?>>
-          <?php if (!$canEditDate): ?>
-            <span class="fpage-sub" style="font-size:11px; margin-top:2px;">تغيير التاريخ مقفول من الإعدادات</span>
-          <?php endif; ?>
+        <label class="ffield">فرع الاستلام
+          <select class="fselect finput-sm" id="purchaseBranch" data-edit></select>
         </label>
-      </div>
-
-      <div class="purchase-head-row-2">
+        <label class="ffield purchase-date">تاريخ الفاتورة
+          <input class="finput finput-sm" id="purchaseDate" type="date" value="<?= date('Y-m-d') ?>" <?= $canEditDate ? 'data-edit' : 'readonly' ?>>
+          <?php if (!$canEditDate): ?><span class="fpage-sub">تغيير التاريخ مقفول من الإعدادات</span><?php endif; ?>
+        </label>
         <label class="ffield">رقم فاتورة المورد
-          <input class="finput" id="purchaseRef" maxlength="100" data-edit>
+          <input class="finput finput-sm" id="purchaseRef" maxlength="100" data-edit>
         </label>
-        <label id="purchaseOriginWrap" class="ffield purchase-origin" hidden>مرتجع على فاتورة
+        <label id="purchaseOriginWrap" class="ffield purchase-origin" <?= $initialType === 'purchase' ? 'hidden' : '' ?>>مرتجع على فاتورة
           <select class="fselect" id="purchaseOrigin" data-edit><option value="">مرتجع من غير أصل</option></select>
         </label>
         <label class="ffield purchase-notes">ملاحظات
-          <input class="finput" id="purchaseNotes" maxlength="1000" data-edit>
+          <input class="finput finput-sm" id="purchaseNotes" maxlength="1000" data-edit>
         </label>
-      </div>
     </div>
   </div>
 
   <div class="fcard purchase-lines-panel">
     <div class="purchase-lines-head">
-      <h3 class="fcard-title" style="margin:0;">الأصناف</h3>
+      <button id="purchaseFind" class="btn btn-sm btn-outline purchase-no-print" type="button"><i class="ti ti-search"></i> بحث صنف (F2)</button>
       <span class="purchase-barcode-hint purchase-no-print fpage-sub">اكتب أو امسح الباركود واضغط Enter</span>
+      <button id="purchaseClear" class="btn btn-sm btn-ghost purchase-no-print" type="button" data-edit><i class="ti ti-trash"></i> مسح الفاتورة</button>
     </div>
     <div class="ftable-wrap purchase-table-wrap">
-      <table class="ftable purchase-table">
+      <table class="ftable purchase-table" data-xt-off>
         <colgroup>
-          <col style="width:30px">
-          <col style="width:120px">
-          <col>
-          <col style="width:74px">
-          <col style="width:65px">
-          <col style="width:72px">
-          <col style="width:80px">
-          <col style="width:62px">
-          <col style="width:90px">
-          <col style="width:86px">
-          <col style="width:76px" class="purchase-no-print">
+          <col style="width:38px"><col style="width:44px" class="purchase-no-print"><col style="width:170px"><col>
+          <col style="width:80px"><col style="width:75px"><col style="width:90px"><col style="width:100px">
+          <col style="width:85px"><col style="width:90px"><col style="width:95px"><col style="width:110px"><col style="width:40px" class="purchase-no-print">
         </colgroup>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>الكود</th>
-            <th>الاسم</th>
-            <th>الوحدة</th>
-            <th class="num">الرصيد</th>
-            <th class="num">الكمية</th>
-            <th class="num">التكلفة</th>
-            <th class="num">خصم %</th>
-            <th class="num">صافي سعر التكلفة</th>
-            <th class="num">الإجمالي</th>
-            <th class="purchase-no-print"></th>
-          </tr>
-        </thead>
+        <thead><tr>
+          <th class="num">#</th><th class="purchase-no-print">كاميرا</th><th>الكود</th><th>اسم الصنف</th><th>الوحدة</th>
+          <th class="num">الرصيد</th><th class="num">الكمية</th><th class="num">التكلفة</th><th class="num">خصم %</th>
+          <th class="num">خصم قيمة</th><th class="num">صافي التكلفة</th><th class="num">الإجمالي</th><th class="purchase-no-print"></th>
+        </tr></thead>
         <tbody id="purchaseLines"></tbody>
       </table>
     </div>
+    <div class="purchase-summary-wrap fcard purchase-no-print">
     <div class="purchase-shortcuts purchase-no-print">
       <span><kbd>Alt+1</kbd> شراء</span>
       <span><kbd>Alt+2</kbd> مرتجع</span>
@@ -186,20 +163,22 @@ require_once __DIR__ . '/includes/header.php';
       <span><kbd>F2</kbd> بحث صنف</span>
       <span><kbd>Esc</kbd> قفل البحث</span>
     </div>
-    <div class="purchase-summary-wrap">
-      <div class="fkpis">
-        <div class="fkpi"><span>عدد الأصناف</span><strong id="purchaseItemsCount">0</strong></div>
-        <div class="fkpi"><span>إجمالي القطع</span><strong id="purchasePieces">0</strong></div>
-        <div class="fkpi"><span>قبل الخصم</span><strong id="purchaseGross">0.00</strong></div>
-        <div class="fkpi">
-          <span>خصم الفاتورة %</span>
-          <input id="purchaseDiscountPct" class="finput finput-sm num" type="number" min="0" max="100" step="0.0001" data-edit style="width:100%; margin-top:4px;">
-        </div>
-        <div class="fkpi">
-          <span>خصم الفاتورة قيمة</span>
-          <input id="purchaseDiscountAmount" class="finput finput-sm num" type="number" min="0" step="0.0001" data-edit style="width:100%; margin-top:4px;">
-        </div>
-        <div class="fkpi"><span>الصافي</span><strong id="purchaseGrand">0.00</strong></div>
+      <div class="purchase-totals">
+        <div class="purchase-total"><span>عدد الأصناف / القطع</span><strong><span id="purchaseItemsCount">0</span> أصناف · <span id="purchasePieces">0</span> قطعة</strong></div>
+        <div class="purchase-total"><span>الإجمالي</span><strong id="purchaseTotalGross">0.00</strong></div>
+        <div class="purchase-total"><span>خصم الأصناف</span><strong id="purchaseLineDiscount">0.00</strong></div>
+        <div class="purchase-total"><span>خصم الفاتورة</span><div class="purchase-actions">
+          <label>% <input id="purchaseDiscountPct" class="finput finput-sm num" type="number" min="0" max="100" step="0.0001" data-edit></label>
+          <label>ج.م <input id="purchaseDiscountAmount" class="finput finput-sm num" type="number" min="0" step="0.0001" data-edit></label>
+        </div></div>
+        <div class="purchase-total"><span>الصافي النهائي للمورد</span><strong class="fchip fchip-pos"><span id="purchaseGrand">0.00</span> ج.م</strong><span id="purchaseGross" hidden>0.00</span></div>
+      <div class="purchase-actions">
+        <button id="purchasePrint" class="btn btn-outline" type="button"><i class="ti ti-printer"></i> طباعة</button>
+        <span id="purchaseSaveState" class="purchase-save-state"></span>
+        <?php if (can('purchase_docs:post')): ?><button id="purchasePost" class="btn btn-success" type="button">ترحيل</button><?php endif; ?>
+        <?php if (can('purchase_docs:cancel')): ?><button id="purchaseCancel" class="btn btn-danger" type="button" hidden>إلغاء</button><?php endif; ?>
+        <?php if (can('purchase_docs:create')): ?><button id="purchaseNew" class="btn btn-primary" type="button"><i class="ti ti-plus"></i> فاتورة جديدة</button><?php endif; ?>
+      </div>
       </div>
     </div>
     <div class="print-summary print-only">
@@ -223,6 +202,18 @@ require_once __DIR__ . '/includes/header.php';
   </div>
 </div>
 
+<div id="purchaseDraftModal" class="purchase-no-print" hidden>
+  <div class="fg-dlg" role="dialog" aria-modal="true" aria-labelledby="purchaseDraftTitle" tabindex="-1">
+    <h3 id="purchaseDraftTitle" class="fg-dlg-title">المستندات المعلّقة</h3>
+    <div class="ftable-wrap purchase-search-results"><table class="ftable" id="purchaseDraftTable">
+      <thead><tr><th>الرقم</th><th>المورد</th><th>التاريخ</th><th class="num">عدد الأصناف</th><th class="num">الإجمالي</th><th>آخر تعديل</th></tr></thead>
+      <tbody id="purchaseDraftRows"></tbody>
+    </table></div>
+    <p id="purchaseDraftMessage" class="fpage-sub"></p>
+    <div class="fg-dlg-actions"><button id="purchaseDraftPrev" class="btn btn-outline" type="button">السابق</button><button id="purchaseDraftNext" class="btn btn-outline" type="button">التالي</button><button id="purchaseDraftClose" class="btn btn-secondary" type="button">رجوع</button></div>
+  </div>
+</div>
+<script type="application/json" id="pdBoot"><?= json_encode($pdBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script>
 window.PURCHASE_CONFIG = {
   csrf: <?= json_encode(csrf_token()) ?>,
@@ -234,5 +225,5 @@ window.PURCHASE_CONFIG = {
 };
 </script>
 <script src="assets/barcode_scanner.js?v=9"></script>
-<script src="assets/purchase_docs.js?v=1" defer></script>
+<script src="assets/purchase_docs.js?v=2" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

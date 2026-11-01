@@ -307,6 +307,8 @@ function build_report(PDO $pdo, string $type, string $from, string $to): array
             $supplierId = (int) ($_GET['supplier_id'] ?? 0);
             $where = ["d.doc_type IN ('purchase','purchase_return')", 'd.doc_date BETWEEN ? AND ?'];
             $params = [$from, $to];
+            $docType = (string) ($_GET['doc_type'] ?? '');
+            if (in_array($docType, ['purchase','purchase_return'], true)) { $where[]='d.doc_type=?'; $params[]=$docType; }
             if (!$owner || $branchId > 0) { $where[]='d.branch_id=?'; $params[]=$branchId; }
             if ($supplierId > 0) { $where[]='d.supplier_id=?'; $params[]=$supplierId; }
             $st = $pdo->prepare('SELECT d.id,d.doc_type,d.doc_no,d.doc_year,d.doc_date,d.ref_text,d.total_amount,d.hq_match,d.status,s.name supplier_name,b.name branch_name,SUM(CASE WHEN l.qty_pieces<>0 THEN 1 ELSE 0 END) lines_count FROM stock_docs d JOIN suppliers s ON s.id=d.supplier_id JOIN branches b ON b.id=d.branch_id LEFT JOIN stock_doc_lines l ON l.doc_id=d.id WHERE '.implode(' AND ',$where).' GROUP BY d.id ORDER BY d.doc_date,d.id');

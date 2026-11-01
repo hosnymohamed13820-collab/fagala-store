@@ -193,6 +193,9 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             $lock = $pdo->prepare('SELECT status, doc_type, doc_date FROM stock_docs WHERE id = ? FOR UPDATE');
             $lock->execute([$docId]);
             $current = $lock->fetch(PDO::FETCH_ASSOC);
+            if ($current && $current['doc_type'] !== $type) {
+                throw new RuntimeException($current['doc_type'] === 'purchase_return' ? 'المستند ده مرتجع ومينفعش يتحوّل شراء' : 'المستند ده شراء ومينفعش يتحوّل مرتجع');
+            }
             if (!$current || $current['status'] !== 'draft' || $current['doc_type'] !== $type) {
                 throw new RuntimeException('المستند مش مسودة قابلة للتعديل.');
             }
