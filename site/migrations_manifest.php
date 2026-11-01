@@ -42,4 +42,5 @@ return [
     '20261101_033_password_reset_requests',
     '20261101_034_fifo_cost',
     '20261101_035_mahmoud_rabie_owner',
+    '20261101_036_true_specs',
 ];

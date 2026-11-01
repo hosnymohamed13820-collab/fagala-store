@@ -78,5 +78,5 @@ require_once __DIR__ . '/includes/header.php';
     <div id="imCardStatus" role="status" hidden></div>
 </div>
 </main>
-<script src="assets/item_master.js?v=1" defer></script>
+<script src="assets/item_master.js?v=838" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

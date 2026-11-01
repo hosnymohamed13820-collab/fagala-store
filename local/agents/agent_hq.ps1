@@ -30,7 +30,7 @@ $BeatUrl   = 'https://hosnimanagement.com/sync_beat.php'
 $GuardUrl  = 'https://hosnimanagement.com/sync_guard.php'
 $UpdateUrl = 'https://hosnimanagement.com/agent_update.php'
 $AgentKey  = 'hq'          # must match agent_status.agent_key on the site
-$AgentVer  = '2.9'
+$AgentVer  = '2.10'
 $UpdatePubKey = '__PUBKEY__'
 
 # The replication program has a different name on every machine (Oct 2 2026):
@@ -2310,7 +2310,7 @@ ORDER BY l.STH_ID, l.STL_LINE_NO;
 }
 
 # ---------------------------------------------------------------------
-#  6) ITEM CATEGORIES (first category)
+#  6) ITEM CATEGORIES (all five True specs)
 #
 #  Source: ITEMS.IS1_ID  ->  ITEM_SPEC1.IS1_NAME1
 #  Used by the book reservation screen to show ONLY items whose first
@@ -2324,15 +2324,6 @@ SET NOCOUNT ON;
 SELECT IS1_ID AS is1_id, LTRIM(RTRIM(IS1_NAME1)) AS name
 FROM ITEM_SPEC1
 WHERE IS1_ID > 0 AND IS1_NAME1 IS NOT NULL;
-"@
-
-$itemCatsSql = @"
-SET NOCOUNT ON;
-SELECT ITEM_ID AS item_id,
-       ISNULL(IS1_ID, 0) AS is1_id,
-       LTRIM(RTRIM(ITEM_NAME1)) AS name
-FROM ITEMS
-WHERE ITEM_ID > 0 AND ISNULL(ITEM_DEL_FLAG, 0) = 0;
 "@
 
 $okCats = $true
@@ -2351,7 +2342,50 @@ try {
     $okCats = $false
 }
 
+# Discover optional True specs before constructing any query that uses them.
+$specSchema = $null
+$itemSpecCols = @()
 try {
+    $checks = @()
+    foreach ($n in 2..5) {
+        $checks += "SELECT $n AS spec, CASE WHEN COL_LENGTH('ITEMS','IS${n}_ID') IS NOT NULL THEN 1 ELSE 0 END AS has_item, CASE WHEN OBJECT_ID('ITEM_SPEC$n','U') IS NOT NULL AND COL_LENGTH('ITEM_SPEC$n','IS${n}_ID') IS NOT NULL AND COL_LENGTH('ITEM_SPEC$n','IS${n}_NAME1') IS NOT NULL THEN 1 ELSE 0 END AS has_names"
+    }
+    $specSchema = Invoke-Sql ($checks -join ' UNION ALL ')
+    $specQueries = @()
+    $itemSpecCols = @()
+    foreach ($r in $specSchema.Rows) {
+        $n = [int]$r['spec']
+        if ([int]$r['has_item'] -eq 1) {
+            $itemSpecCols += "ISNULL(IS${n}_ID,0) AS is${n}_id"
+        } else {
+            $itemSpecCols += "0 AS is${n}_id"
+            Write-Log "ITEMS.IS${n}_ID missing - skipped"
+        }
+        if ([int]$r['has_names'] -eq 1) {
+            $specQueries += "SELECT $n AS spec, IS${n}_ID AS spec_id, LTRIM(RTRIM(IS${n}_NAME1)) AS name FROM ITEM_SPEC$n WHERE IS${n}_ID > 0 AND IS${n}_NAME1 IS NOT NULL"
+        } else {
+            Write-Log "ITEM_SPEC$n missing - skipped (table or required columns)"
+        }
+    }
+    if ($specQueries.Count -gt 0) {
+        $specTable = Invoke-Sql ($specQueries -join ' UNION ALL ')
+        $specRows = New-Object System.Collections.ArrayList
+        foreach ($r in $specTable.Rows) {
+            $null = $specRows.Add([ordered]@{ spec = [int]$r['spec']; spec_id = [int]$r['spec_id']; name = [string]$r['name'] })
+        }
+        Write-Log "[spec_names] Read $($specRows.Count) rows."
+        if (-not (Send-Batch 'spec_names' $specRows)) { $okCats = $false }
+    } else {
+        Write-Log "[spec_names] No supported spec tables - skipped."
+    }
+} catch {
+    Write-Log "Spec names query failed: $($_.Exception.Message)"
+    $okCats = $false
+}
+
+try {
+    if ($null -eq $specSchema -or $specSchema.Rows.Count -ne 4) { throw 'Spec schema discovery failed - item_cats skipped.' }
+    $itemCatsSql = "SELECT ITEM_ID AS item_id, ISNULL(IS1_ID,0) AS is1_id, " + ($itemSpecCols -join ', ') + ", LTRIM(RTRIM(ITEM_NAME1)) AS name FROM ITEMS WHERE ITEM_ID > 0 AND ISNULL(ITEM_DEL_FLAG,0)=0;"
     $itemCatsTable = Invoke-Sql $itemCatsSql
     Write-Log "Read $($itemCatsTable.Rows.Count) item category rows."
     $catRows = New-Object System.Collections.ArrayList
@@ -2359,6 +2393,10 @@ try {
         $null = $catRows.Add([ordered]@{
             item_id = [int]$r['item_id']
             is1_id  = [int]$r['is1_id']
+            is2_id  = [int]$r['is2_id']
+            is3_id  = [int]$r['is3_id']
+            is4_id  = [int]$r['is4_id']
+            is5_id  = [int]$r['is5_id']
             name    = [string]$r['name']
         })
     }

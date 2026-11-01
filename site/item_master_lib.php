@@ -201,7 +201,9 @@ function im_detail(string $source, int $id): ?array
         $st = db()->prepare(
             "SELECT c.code,c.name name1,c.code_type,c.unit_factor,c.price,c.cost,
                     ic.item_name,ic.is1_id,cn.name true_category_name,ip.price site_price,
-                    sc.id section_id,sc.name section_name
+                    sc.id section_id,sc.name section_name,
+                    dc.id description_id,dc.name description_name,tc.id type_id,tc.name type_name,
+                    sg.id stage_id,sg.name stage_name,cc.id company_id,cc.name company_name
                FROM hq_codes c
                LEFT JOIN hq_item_cats ic ON ic.item_id=c.item_id
                LEFT JOIN hq_cat_names cn ON cn.is1_id=ic.is1_id
@@ -209,6 +211,10 @@ function im_detail(string $source, int $id): ?array
                     SELECT MIN(x.id) FROM item_classes x
                      WHERE x.kind='section' AND x.true_id=ic.is1_id
                )
+               LEFT JOIN item_classes dc ON dc.id = (SELECT MIN(x.id) FROM item_classes x WHERE x.kind='description' AND x.true_id=ic.is2_id)
+               LEFT JOIN item_classes tc ON tc.id = (SELECT MIN(x.id) FROM item_classes x WHERE x.kind='type' AND x.true_id=ic.is3_id)
+               LEFT JOIN item_classes sg ON sg.id = (SELECT MIN(x.id) FROM item_classes x WHERE x.kind='stage' AND x.true_id=ic.is4_id)
+               LEFT JOIN item_classes cc ON cc.id = (SELECT MIN(x.id) FROM item_classes x WHERE x.kind='company' AND x.true_id=ic.is5_id)
                LEFT JOIN item_prices ip ON ip.code=c.code
               WHERE c.item_id=? ORDER BY c.code_type,c.code"
         );
@@ -239,12 +245,19 @@ function im_detail(string $source, int $id): ?array
                 ? (string) $first['section_name']
                 : (string) ($first['true_category_name'] ?? ''),
             'class_names' => [
+                'description' => (string) ($first['description_name'] ?? ''),
+                'type' => (string) ($first['type_name'] ?? ''),
+                'stage' => (string) ($first['stage_name'] ?? ''),
+                'company' => (string) ($first['company_name'] ?? ''),
                 'section' => (string) ($first['section_name'] ?? '') !== ''
                     ? (string) $first['section_name']
                     : (string) ($first['true_category_name'] ?? ''),
             ],
-            'cat_description_id' => null, 'cat_type_id' => null, 'cat_stage_id' => null,
-            'cat_company_id' => null, 'min_qty' => null, 'max_qty' => null,
+            'cat_description_id' => $first['description_id'] !== null ? (int) $first['description_id'] : null,
+            'cat_type_id' => $first['type_id'] !== null ? (int) $first['type_id'] : null,
+            'cat_stage_id' => $first['stage_id'] !== null ? (int) $first['stage_id'] : null,
+            'cat_company_id' => $first['company_id'] !== null ? (int) $first['company_id'] : null,
+            'min_qty' => null, 'max_qty' => null,
             'max_discount_pct' => null,
         ];
     } else {

@@ -185,3 +185,35 @@ function ic_toggle(int $id, bool $active, int $userId): bool
     $st->execute([$active ? 1 : 0, $userId, $id]);
     return $active;
 }
+
+/** زرع تصنيفات True دفعة واحدة؛ صفوف الموقع تفضل زي ما هي. */
+function ic_sync_true_specs(PDO $pdo, array $rows): array
+{
+    $valid = [];
+    $skipped = 0;
+    foreach ($rows as $r) {
+        if (!is_array($r)) { $skipped++; continue; }
+        $spec = (int) ($r['spec'] ?? 0);
+        $id = (int) ($r['spec_id'] ?? 0);
+        $name = mb_substr(trim((string) ($r['name'] ?? '')), 0, 255);
+        if ($spec < 2 || $spec > 5 || $id <= 0 || $name === '') { $skipped++; continue; }
+        $valid[$spec . ':' . $id] = [$spec, $id, $name];
+    }
+    if (!$valid) return ['stored' => 0, 'skipped' => $skipped];
+    $params = [];
+    foreach ($valid as $row) array_push($params, ...$row);
+    $values = implode(',', array_fill(0, count($valid), '(?,?,?)'));
+    $st = $pdo->prepare("INSERT INTO hq_spec_names (spec,spec_id,name) VALUES $values
+                        ON DUPLICATE KEY UPDATE name=VALUES(name)");
+    $st->execute($params);
+    $source = "SELECT spec_id,name,ELT(spec-1,'description','type','stage','company') AS kind
+                 FROM hq_spec_names WHERE spec BETWEEN 2 AND 5 AND name<>''";
+    // المفتاح kind+true_id عليه index بس؛ التحديث والإدراج مجمّعين، من غير استعلام لكل صف.
+    // تعارض الاسم مع صف موقع ماينفعش يغيّر صف الموقع أو يربطه بـTrue.
+    $pdo->exec("UPDATE IGNORE item_classes c JOIN ($source) s ON c.kind=s.kind AND c.true_id=s.spec_id
+                   SET c.name=s.name, c.is_active=1");
+    $pdo->exec("INSERT IGNORE INTO item_classes (kind,name,true_id,is_active)
+               SELECT s.kind,s.name,s.spec_id,1 FROM ($source) s
+                WHERE NOT EXISTS (SELECT 1 FROM item_classes c WHERE c.kind=s.kind AND c.true_id=s.spec_id)");
+    return ['stored' => count($valid), 'skipped' => $skipped];
+}

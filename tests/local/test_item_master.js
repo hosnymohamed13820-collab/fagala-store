@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-async function scenario(source, canEdit = true) {
+async function scenario(source, canEdit = true, classes = {}) {
     const elements = new Map(), events = {}, requests = [];
     function element(id) {
         if (!elements.has(id)) elements.set(id, {
@@ -18,7 +18,7 @@ async function scenario(source, canEdit = true) {
     }
     element('imApp').dataset.boot = JSON.stringify({canEdit, canPrices: true, canMovement: true});
     const item = {source, readonly: source === 'true', cost_unlocked: false,
-        main: {id: 835, name1: 'صنف اختبار', base_unit: 'قطعة', class_names: {}},
+        main: {id: 835, name1: 'صنف اختبار', base_unit: 'قطعة', class_names: classes},
         codes: [{id: 835, code: '1', name1: 'صنف اختبار', code_type: 0,
             unit_factor: 1, true_price: 4, site_price: null, cost: null}],
         history: [], suppliers: []};
@@ -49,6 +49,10 @@ async function scenario(source, canEdit = true) {
     assert.equal(element('imData').innerHTML.includes('تكلفة/أساسي'), false);
     assert.equal(element('imCompany').innerHTML.includes('data-field'), false);
     assert.equal(element('imData').innerHTML.includes('data-field="name1"'), source === 'site' && canEdit);
+    if (source === 'true') {
+        for (const name of Object.values(classes)) assert.ok(element('imData').innerHTML.includes(name));
+        assert.equal(element('imData').innerHTML.includes('لسه مااتسحبتش من True'), Object.keys(classes).length < 4);
+    }
     if (source === 'site' && canEdit) {
         const field = {type: 'text', value: 'اسم اتعدل', dataset: {field: 'name1', old: 'صنف اختبار'},
             matches: selector => selector === '[data-field]'};
@@ -70,6 +74,7 @@ async function scenario(source, canEdit = true) {
 (async () => {
     await scenario('site');
     await scenario('true');
+    await scenario('true', true, {description: 'وصف True', type: 'نوع True', stage: 'مرحلة True', company: 'شركة True'});
     await scenario('site', false);
     console.log('PASS: DOMContentLoaded + direct link + site edit/save + view only + sensitive lock');
 })().catch(error => { console.error(error); process.exitCode = 1; });

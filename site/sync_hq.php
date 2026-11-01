@@ -520,10 +520,14 @@ try {
         // بيتستخدم في فلترة "الكتب الخارجية" في موديول الحجز.
         // upsert عادي — الكتالوج بيتغير مرة أو مرتين في اليوم.
         $ins = $pdo->prepare(
-            'INSERT INTO hq_item_cats (item_id, is1_id, item_name)
-             VALUES (?, ?, ?)
+            'INSERT INTO hq_item_cats (item_id, is1_id, item_name, is2_id, is3_id, is4_id, is5_id)
+             VALUES (?, ?, ?, COALESCE(?,0), COALESCE(?,0), COALESCE(?,0), COALESCE(?,0))
              ON DUPLICATE KEY UPDATE
-                is1_id = VALUES(is1_id), item_name = VALUES(item_name)'
+                is1_id = VALUES(is1_id), item_name = VALUES(item_name),
+                is2_id = COALESCE(?, is2_id),
+                is3_id = COALESCE(?, is3_id),
+                is4_id = COALESCE(?, is4_id),
+                is5_id = COALESCE(?, is5_id)'
         );
         foreach ($rows as $r) {
             if (!is_array($r)) { $skipped++; continue; }
@@ -533,9 +537,16 @@ try {
                 $iid,
                 (int) ($r['is1_id'] ?? 0),
                 mb_substr(trim((string) ($r['name'] ?? '')), 0, 255) ?: null,
+                array_key_exists('is2_id', $r) ? (int) $r['is2_id'] : null, array_key_exists('is3_id', $r) ? (int) $r['is3_id'] : null, array_key_exists('is4_id', $r) ? (int) $r['is4_id'] : null, array_key_exists('is5_id', $r) ? (int) $r['is5_id'] : null,
+                array_key_exists('is2_id', $r) ? (int) $r['is2_id'] : null, array_key_exists('is3_id', $r) ? (int) $r['is3_id'] : null, array_key_exists('is4_id', $r) ? (int) $r['is4_id'] : null, array_key_exists('is5_id', $r) ? (int) $r['is5_id'] : null,
             ]);
             $stored++;
         }
+    } elseif ($kind === 'spec_names') {
+        require_once __DIR__ . '/item_classes_lib.php';
+        $result = ic_sync_true_specs($pdo, $rows);
+        $stored += $result['stored'];
+        $skipped += $result['skipped'];
     } elseif ($kind === 'cat_names') {
         // أسماء الأقسام (ITEM_SPEC1) — جدول صغير جداً (~22 صف)
         $ins = $pdo->prepare(
