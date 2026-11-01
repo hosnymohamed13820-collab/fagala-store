@@ -70,8 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const decision = await call(action, request.id);
                             message.className = 'falert falert-pos';
-                            if (decision.code) {
-                                const code = document.createElement('h1'); code.dir = 'ltr'; code.textContent = decision.code;
+                            if (decision.reset_otp) {
+                                const code = document.createElement('h1'); code.dir = 'ltr'; code.textContent = decision.reset_otp;
                                 message.append(code);
                             }
                             const text = document.createElement('p'); text.textContent = decision.message; message.append(text);

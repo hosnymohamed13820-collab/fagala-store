@@ -39,7 +39,7 @@ header('Cache-Control: no-store');
                 <div class="ffield"><label>اسم المستخدم
                     <input class="finput" name="username" autocomplete="username" maxlength="60" required></label></div>
                 <div class="ffield"><label>الكود
-                    <input class="finput" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label></div>
+                    <input class="finput" name="reset_otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label></div>
                 <div class="ffield"><label>الباسورد الجديد
                     <input class="finput" type="password" name="new_password" autocomplete="new-password" minlength="8" required></label></div>
                 <div class="ffield"><label>تأكيد الباسورد الجديد

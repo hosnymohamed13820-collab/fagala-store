@@ -14,7 +14,7 @@ try {
         api_ok(pwreset_request(db(), (string) ($input['username'] ?? ''), (string) ($_SERVER['REMOTE_ADDR'] ?? '')));
     }
     if ($action === 'redeem') {
-        $result = pwreset_redeem(db(), (string) ($input['username'] ?? ''), (string) ($input['code'] ?? ''),
+        $result = pwreset_redeem(db(), (string) ($input['username'] ?? ''), (string) ($input['reset_otp'] ?? ''),
             (string) ($input['new_password'] ?? ''), (string) ($input['new_password2'] ?? ''));
         if (!$result['ok']) api_fail($result['error']);
         api_ok($result);

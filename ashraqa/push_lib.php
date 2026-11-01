@@ -495,6 +495,10 @@ function push_send_one(array $sub, array $payload): array
  * والنداء fire-and-forget: مهلة قصيرة والنتيجة بتتجاهل. الكرون شبكة
  * الأمان لو الطلب ده فشل لأي سبب.
  */
+if (!defined('PUSH_KICK_HOSTS')) {
+    define('PUSH_KICK_HOSTS', ['hosnimanagement.com', 'www.hosnimanagement.com', 'localhost']);
+}
+
 function push_kick_worker(): void
 {
     static $armed = false;
@@ -504,8 +508,12 @@ function push_kick_worker(): void
     if (PHP_SAPI === 'cli' || empty($_SERVER['HTTP_HOST'])) return;
     if (!function_exists('curl_init')) return;
 
+    // الهيدر بيتقارن بالقائمة بس؛ الرابط بياخد القيمة الموثوقة منها.
+    $requestHost = strtolower(preg_replace('/:[0-9]+$/D', '', (string) $_SERVER['HTTP_HOST']));
+    $hostIndex = array_search($requestHost, PUSH_KICK_HOSTS, true);
+    if ($hostIndex === false) return;
+    $host = PUSH_KICK_HOSTS[$hostIndex];
     $armed = true;
-    $host  = (string) $_SERVER['HTTP_HOST'];
     $https = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
           || (($_SERVER['SERVER_PORT'] ?? '') == 443)
           || (strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https');

@@ -6,21 +6,18 @@ require_once __DIR__ . '/push_lib.php';
 const PWRESET_REQUEST_MESSAGE = 'لو الاسم صح، الطلب اتبعت. استنى المدير يديك كود';
 const PWRESET_CODE_ERROR = 'الكود غلط أو انتهى';
 
-// صلاحيات الدور والزيادة بيتجمعوا زي الدخول، وhr الكامل يشمل الجزء الجديد.
+// الموافقة محتاجة الصلاحية الجديدة بالاسم، من الدور أو الزيادة.
 function pwreset_user_columns(): string
 {
     return "u.*, r.is_owner,
-        (EXISTS(SELECT 1 FROM user_permissions up WHERE up.user_id=u.id AND up.module_key IN ('hr','hr:password_reset'))
-         OR EXISTS(SELECT 1 FROM role_permissions rp WHERE rp.role_id=u.role_id AND rp.module_key IN ('hr','hr:password_reset'))) AS reset_permission,
+        (EXISTS(SELECT 1 FROM user_permissions up WHERE up.user_id=u.id AND up.module_key='hr:password_reset')
+         OR EXISTS(SELECT 1 FROM role_permissions rp WHERE rp.role_id=u.role_id AND rp.module_key='hr:password_reset')) AS reset_permission,
         (EXISTS(SELECT 1 FROM user_permissions up WHERE up.user_id=u.id AND up.module_key='view_all')
          OR EXISTS(SELECT 1 FROM role_permissions rp WHERE rp.role_id=u.role_id AND rp.module_key='view_all')) AS view_permission";
 }
 
 function pwreset_manager(PDO $pdo): array
 {
-    if (!is_real_owner() && (!can('hr:password_reset') || view_all_borrowed('hr:password_reset'))) {
-        throw new RuntimeException('مالكش صلاحية', 403);
-    }
     $st = $pdo->prepare('SELECT ' . pwreset_user_columns() . ' FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=? AND u.is_active=1');
     $st->execute([(int) (current_user()['id'] ?? 0)]);
     $actor = $st->fetch(PDO::FETCH_ASSOC);
@@ -30,11 +27,38 @@ function pwreset_manager(PDO $pdo): array
     return $actor;
 }
 
-function pwreset_can_decide(array $actor, array $target): bool
+// بنجيب صلاحيات كل الحسابات مرة واحدة، من غير استعلام جوه حلقة.
+function pwreset_permissions(PDO $pdo, array $userIds): array
+{
+    $userIds = array_values(array_unique(array_map('intval', $userIds)));
+    if (!$userIds) return [];
+    $marks = implode(',', array_fill(0, count($userIds), '?'));
+    $st = $pdo->prepare("SELECT up.user_id, up.module_key FROM user_permissions up WHERE up.user_id IN ($marks)
+        UNION
+        SELECT u.id AS user_id, rp.module_key FROM users u JOIN role_permissions rp ON rp.role_id=u.role_id WHERE u.id IN ($marks)");
+    $st->execute(array_merge($userIds, $userIds));
+    $permissions = array_fill_keys($userIds, []);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $permissions[(int) $row['user_id']][$row['module_key']] = true;
+    }
+    return $permissions;
+}
+
+function pwreset_can_decide(array $actor, array $target, array $permissions): bool
 {
     if ((int) $actor['id'] === (int) $target['id']) return false;
-    return !empty($actor['is_owner']) || (!empty($actor['reset_permission'])
-        && empty($target['is_owner']) && empty($target['view_permission']) && empty($target['reset_permission']));
+    if (!empty($actor['is_owner'])) return true;
+    if (empty($actor['reset_permission']) || !empty($target['is_owner'])
+        || !empty($target['view_permission']) || !empty($target['reset_permission'])) return false;
+    $actorKeys = $permissions[(int) $actor['id']] ?? null;
+    $targetKeys = $permissions[(int) $target['id']] ?? null;
+    if ($actorKeys === null || $targetKeys === null) return false;
+    foreach ($targetKeys as $key => $_) {
+        // الموديول الكامل عند الموافق بيغطّي أجزاءه، لكن الجزء مايغطّيش الكامل.
+        $parent = explode(':', $key, 2)[0];
+        if (!isset($actorKeys[$key]) && !isset($actorKeys[$parent])) return false;
+    }
+    return true;
 }
 
 function pwreset_request(PDO $pdo, string $username, string $ip): array
@@ -96,10 +120,12 @@ function pwreset_list(PDO $pdo, int $page = 1): array
         ORDER BY q.id DESC LIMIT 51 OFFSET " . $offset);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     $more = count($rows) > 50;
+    $rows = array_slice($rows, 0, 50);
+    $permissions = pwreset_permissions($pdo, array_merge([(int) $actor['id']], array_column($rows, 'id')));
     $rows = array_map(static fn(array $row): array => [
         'id' => (int) $row['request_id'], 'full_name' => $row['full_name'], 'branch' => $row['branch_name'] ?? 'من غير فرع',
-        'created_at' => $row['requested_at'], 'ip' => $row['request_ip'], 'can_decide' => pwreset_can_decide($actor, $row),
-    ], array_slice($rows, 0, 50));
+        'created_at' => $row['requested_at'], 'ip' => $row['request_ip'], 'can_decide' => pwreset_can_decide($actor, $row, $permissions),
+    ], $rows);
     return ['requests' => $rows, 'more' => $more];
 }
 
@@ -115,7 +141,8 @@ function pwreset_decide(PDO $pdo, int $requestId, bool $approve): array
         $st = $pdo->prepare('SELECT ' . pwreset_user_columns() . ' FROM users u JOIN roles r ON r.id=u.role_id WHERE u.id=? FOR UPDATE');
         $st->execute([$uid]);
         $target = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$target || !pwreset_can_decide($actor, $target)) throw new RuntimeException('مالكش صلاحية توافق على الحساب ده', 403);
+        $permissions = pwreset_permissions($pdo, [(int) $actor['id'], $uid]);
+        if (!$target || !pwreset_can_decide($actor, $target, $permissions)) throw new RuntimeException('مالكش صلاحية توافق على الحساب ده', 403);
         $st = $pdo->prepare("SELECT id FROM password_reset_requests WHERE id=? AND status='pending' AND created_at > NOW() - INTERVAL 24 HOUR FOR UPDATE");
         $st->execute([$requestId]);
         if (!$st->fetchColumn() || !$target['is_active']) throw new RuntimeException('الطلب اتقفل أو انتهى', 409);
@@ -125,12 +152,13 @@ function pwreset_decide(PDO $pdo, int $requestId, bool $approve): array
             $pdo->prepare("UPDATE password_reset_requests SET status='expired', code_hash=NULL WHERE user_id=? AND status='approved'")->execute([$uid]);
             $pdo->prepare("UPDATE password_reset_requests SET status='approved', decided_by=?, decided_at=NOW(), code_hash=?, code_expires_at=DATE_ADD(NOW(), INTERVAL 30 MINUTE), attempts=0 WHERE id=?")
                 ->execute([$actor['id'], password_hash($code, PASSWORD_DEFAULT), $requestId]);
+            notify($pdo, [$uid], 'password_reset', 'فيه موافقة على باسورد جديد لحسابك', 'لو مش انت اللي طلبت، كلّم المالك فوراً', 'login.php');
         } else {
             $pdo->prepare("UPDATE password_reset_requests SET status='rejected', decided_by=?, decided_at=NOW() WHERE id=?")
                 ->execute([$actor['id'], $requestId]);
         }
         $pdo->commit();
-        return $approve ? ['code' => $code, 'message' => 'ادّي الكود ده للموظف بنفسك أو في التليفون'] : ['message' => 'الطلب اترفض'];
+        return $approve ? ['reset_otp' => $code, 'message' => 'ادّي الكود ده للموظف بنفسك أو في التليفون'] : ['message' => 'الطلب اترفض'];
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
