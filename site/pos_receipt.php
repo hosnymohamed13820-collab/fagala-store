@@ -61,7 +61,7 @@ if ($returnUntil !== '') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>try{const t=localStorage.getItem('fagala-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
     <title>إيصال <?= htmlspecialchars($receiptNo, ENT_QUOTES, 'UTF-8') ?></title>
-    <link rel="stylesheet" href="assets/fagala.css">
+    <link rel="stylesheet" href="assets/fagala.css?v=37">
     <style>
         @page {
             size: 80mm auto;
