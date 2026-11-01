@@ -27,7 +27,7 @@ $pinSet = salary_pin_is_set(db(), (int) current_user()['id']);
 </section>
 <section class="fcard">
     <div class="fcard-head"><h3 class="fcard-title">الرقم السري لكشف الحساب</h3></div>
-    <p><?= $pinSet ? 'غيّر الرقم السري بالرقم القديم' : 'اعمل رقم سري من ٤ لـ١٢ حرف غير باسورد الدخول' ?></p>
+    <p><?= $pinSet ? 'غيّر الرقم السري بالرقم القديم' : 'أول مرة: اكتب باسورد الدخول بتاعك، وبعدين اختار رقم سري جديد من ٤ لـ١٢ حرف غيره' ?></p>
     <form method="post" action="account_api.php" class="fgrid" data-account-form data-reload="1">
         <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="set_pin">

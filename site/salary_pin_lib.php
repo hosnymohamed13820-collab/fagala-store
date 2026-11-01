@@ -65,7 +65,7 @@ function salary_pin_check_secret(PDO $pdo, int $uid, array $user, string $secret
         $fails = ($until !== null ? 0 : (int) $user['salary_pin_fails']) + 1;
         $st = $pdo->prepare('UPDATE users SET salary_pin_fails = ?, salary_pin_block_until = CASE WHEN ? >= 5 THEN DATE_ADD(NOW(), INTERVAL 5 MINUTE) ELSE NULL END WHERE id = ?');
         $st->execute([$fails, $fails, $uid]);
-        return ['ok' => false, 'error' => $user['salary_pin_hash'] ? 'الرقم السري غلط' : 'الباسورد الحالي غلط'];
+        return ['ok' => false, 'error' => $user['salary_pin_hash'] ? 'الرقم السري غلط' : 'باسورد الدخول غلط'];
     }
     $pdo->prepare('UPDATE users SET salary_pin_fails = 0, salary_pin_block_until = NULL WHERE id = ?')->execute([$uid]);
     return ['ok' => true];
@@ -170,7 +170,7 @@ function salary_pin_form_script(): void
 function salary_pin_fields(bool $isSet): void
 {
     ?>
-    <div class="ffield"><label>مطلوب <?= $isSet ? 'الرقم القديم' : 'الباسورد الحالي' ?>
+    <div class="ffield"><label><?= $isSet ? 'الرقم السري القديم' : 'باسورد الدخول (اللي بتفتح بيه الموقع)' ?>
         <input class="finput" type="password" name="current_secret" autocomplete="current-password" required></label></div>
     <div class="ffield"><label>الرقم الجديد
         <input class="finput" type="password" name="new_pin" minlength="4" maxlength="12" autocomplete="new-password" required></label></div>
