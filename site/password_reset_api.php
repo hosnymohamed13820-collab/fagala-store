@@ -20,6 +20,18 @@ try {
         api_ok($result);
     }
     require_login();
+    if ($action === 'request_self' || $action === 'redeem_self') {
+        if (is_real_owner()) api_fail('غيّر الباسورد من صفحة المستخدمين', 403, 'forbidden');
+        $username = (string) current_user()['username'];
+        if ($action === 'request_self') {
+            pwreset_request(db(), $username, (string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+            api_ok(['message' => 'الطلب اتبعت. أول ما المالك أو المسؤول يوافق هيديك كود']);
+        }
+        $result = pwreset_redeem(db(), $username, (string) ($input['reset_otp'] ?? ''),
+            (string) ($input['new_password'] ?? ''), (string) ($input['new_password2'] ?? ''), true);
+        if (!$result['ok']) api_fail($result['error']);
+        api_ok($result);
+    }
     pwreset_manager(db());
     switch ($action) {
         case 'list': api_ok(pwreset_list(db(), (int) ($input['page'] ?? 1)));

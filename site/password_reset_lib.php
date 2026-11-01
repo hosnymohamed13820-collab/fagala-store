@@ -165,7 +165,18 @@ function pwreset_decide(PDO $pdo, int $requestId, bool $approve): array
     }
 }
 
-function pwreset_redeem(PDO $pdo, string $username, string $code, string $new, string $confirmation): array
+function pwreset_open_request(PDO $pdo, int $uid): ?string
+{
+    $st = $pdo->prepare("SELECT status FROM password_reset_requests WHERE user_id=?
+        AND created_at > NOW() - INTERVAL 24 HOUR
+        AND (status='pending' OR (status='approved' AND code_expires_at > NOW() AND attempts < 5))
+        ORDER BY id DESC LIMIT 1");
+    $st->execute([$uid]);
+    $status = $st->fetchColumn();
+    return $status === false ? null : (string) $status;
+}
+
+function pwreset_redeem(PDO $pdo, string $username, string $code, string $new, string $confirmation, bool $keepSession = false): array
 {
     $pdo->beginTransaction();
     try {
@@ -197,6 +208,17 @@ function pwreset_redeem(PDO $pdo, string $username, string $code, string $new, s
         $pdo->prepare("UPDATE password_reset_requests SET status='expired', code_hash=NULL WHERE user_id=? AND status IN ('pending','approved')")->execute([$user['id']]);
         notify($pdo, [(int) $user['id']], 'password_reset', 'اتغيّر باسورد حسابك. لو مش انت، كلّم المدير', null, 'login.php');
         $pdo->commit();
+        if ($keepSession) {
+            $userId = (int) $user['id'];
+            $stVer = $pdo->prepare('SELECT pw_version FROM users WHERE id = ?');
+            $stVer->execute([$userId]);
+            $newPwVer = (int) $stVer->fetchColumn();
+            $_SESSION['user']['pw_version'] = $newPwVer;
+            session_regenerate_id(true);
+            $_SESSION['pw_fails'] = 0;
+            unset($_SESSION['pw_block_until']);
+            return ['ok' => true, 'message' => 'اتغيّر الباسورد، وأي جهاز تاني كان داخل بحسابك هيخرج'];
+        }
         $_SESSION['pwreset_success'] = true;
         return ['ok' => true, 'message' => 'اتغيّر، ادخل بالباسورد الجديد', 'redirect' => 'login.php'];
     } catch (Throwable $e) {
