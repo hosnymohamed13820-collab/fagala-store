@@ -172,7 +172,9 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
         $invType = $calc['inv_discount']['type'];
         $invValue = $calc['inv_discount']['value'];
         $gross = $calc['gross_amount'];
+        $canEditDate = (function_exists('is_real_owner') && is_real_owner()) || (string) setting('purchase_date_editable', '1') !== '0';
         if ($docId === null) {
+            $docDate = $canEditDate ? (string) ($head['doc_date'] ?? date('Y-m-d')) : date('Y-m-d');
             $st = $pdo->prepare(
                 'INSERT INTO stock_docs
                  (doc_type, branch_id, supplier_id, orig_doc_id, total_amount, inv_discount_type, inv_discount_value, gross_amount, status, doc_date, ref_text, notes, created_by, created_at)
@@ -180,7 +182,7 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             );
             $st->execute([
                 $type, $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
-                (string) ($head['doc_date'] ?? date('Y-m-d')),
+                $docDate,
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
                 $uid,
@@ -188,17 +190,18 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             $docId = (int) $pdo->lastInsertId();
             $event = 'created';
         } else {
-            $lock = $pdo->prepare('SELECT status, doc_type FROM stock_docs WHERE id = ? FOR UPDATE');
+            $lock = $pdo->prepare('SELECT status, doc_type, doc_date FROM stock_docs WHERE id = ? FOR UPDATE');
             $lock->execute([$docId]);
             $current = $lock->fetch(PDO::FETCH_ASSOC);
             if (!$current || $current['status'] !== 'draft' || $current['doc_type'] !== $type) {
                 throw new RuntimeException('المستند مش مسودة قابلة للتعديل.');
             }
+            $docDate = $canEditDate ? (string) ($head['doc_date'] ?? $current['doc_date']) : (string) $current['doc_date'];
             $pdo->prepare(
                 'UPDATE stock_docs SET branch_id=?, supplier_id=?, orig_doc_id=?, total_amount=?, inv_discount_type=?, inv_discount_value=?, gross_amount=?, doc_date=?, ref_text=?, notes=?, hq_match=NULL WHERE id=?'
             )->execute([
                 $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
-                (string) ($head['doc_date'] ?? date('Y-m-d')),
+                $docDate,
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
                 $docId,

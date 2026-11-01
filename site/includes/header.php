@@ -134,7 +134,7 @@ require_once __DIR__ . '/nav_icons.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=35">
+    <link rel="stylesheet" href="assets/fagala.css?v=36">
 </head>
 <body>
 <script>
@@ -164,7 +164,7 @@ require_once __DIR__ . '/nav_icons.php';
          `APP_ENV` معرّفة في `config.php` وقيمتها 'hosting' على السيرفر،
          فالشريط ده عمره ما هيبان لأي مستخدم. */ ?>
 <?php if (defined('APP_ENV') && APP_ENV === 'local'): ?>
-    <div style="background:var(--warn-fill);color:var(--surface);text-align:center;padding:5px 10px;
+    <div class="local-banner no-print" style="background:var(--warn-fill);color:var(--surface);text-align:center;padding:5px 10px;
                 font-size:13px;font-weight:600;letter-spacing:.2px;">
         نسخة محلية — أرشيف. أي تعديل هنا مابيوصلش للموقع الحقيقي.
     </div>

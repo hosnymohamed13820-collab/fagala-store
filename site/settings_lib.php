@@ -20,6 +20,7 @@ function settings_schema(): array
         'custody_deficit_tolerance' => ['عتبة التسامح لعجز العهدة (بالجنيه)', 'number'],
         'cashier_deficit_carry'     => ['رحّل باقي عجز الكاشير لسلفة مستديمة تلقائياً', 'bool'],
         'supplier_site_docs'        => ['احسب فواتير شراء الموقع غير الموجودة في True بكشوف الموردين', 'bool'],
+        'purchase_date_editable'    => ['تغيير تاريخ فاتورة الشراء', 'bool'],
         'stock_allow_negative'      => ['السماح بالبيع والصرف بالرصيد السالب', 'bool'],
         'business_day_start'        => ['بداية اليوم المحاسبي', 'time'],
         'currency'                  => ['العملة', 'text'],

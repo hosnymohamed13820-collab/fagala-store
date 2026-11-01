@@ -2111,4 +2111,145 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
     .fpage-head, .fcard-head { align-items:stretch; flex-direction:column; }
 }
 
+/* ==========================================================================
+   مكوّن طباعة المستندات .print-doc (بريف ٨٣٦)
+   ========================================================================== */
+.print-only { display: none !important; }
+
+@media print {
+    @page {
+        size: A4;
+        margin: 12mm;
+    }
+
+    /* إخفاء عناصر الموقع العامة: الهيدر والسايدبار والتنبيهات والأزرار */
+    header, aside, .sidebar, .topbar, footer, .overlay,
+    #shrNag, .notif-panel, .theme-toggle, .menu-toggle,
+    .no-print, .purchase-no-print,
+    .falert, .alert,
+    button, .btn,
+    .fpage-actions, .purchase-actions, .purchase-save-state, .purchase-shortcuts,
+    .local-banner, [style*="نسخة محلية"],
+    body > div:has(#shrNag),
+    body > div:has(> a[href="tasks.php"]) {
+        display: none !important;
+    }
+
+    /* إعادة ضبط الهيكل للورقة */
+    html, body, .layout, .main, .content {
+        background: #fff !important;
+        color: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-shadow: none !important;
+        border: none !important;
+    }
+
+    .print-only {
+        display: block !important;
+    }
+
+    .print-doc {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 0 !important;
+    }
+
+    .print-doc .fcard,
+    .print-doc .card {
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 0 var(--sp-3) 0 !important;
+        background: transparent !important;
+    }
+
+    /* الجدول بعرض الورقة كله بدون scroll ولا قص */
+    .print-doc .ftable-wrap,
+    .print-doc .purchase-table-wrap {
+        overflow: visible !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .print-doc .ftable,
+    .print-doc table {
+        width: 100% !important;
+        table-layout: auto !important;
+        min-width: 0 !important;
+        border-collapse: collapse !important;
+        font-size: 11px !important;
+    }
+
+    .print-doc .ftable th,
+    .print-doc .ftable td {
+        padding: 4px 6px !important;
+        border: 1px solid #ccc !important;
+        color: #000 !important;
+        background: transparent !important;
+    }
+
+    /* الخانات تتطبع كنص من غير borders أو خلفية */
+    .print-doc input,
+    .print-doc select,
+    .print-doc textarea,
+    .print-doc .finput,
+    .print-doc .fselect {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        color: #000 !important;
+        font: inherit !important;
+    }
+
+    .print-doc .line-remove-cell,
+    .print-doc .line-scan,
+    .print-doc .purchase-barcode-hint,
+    .print-doc .purchase-head {
+        display: none !important;
+    }
+
+    .print-doc-header {
+        display: block !important;
+        margin-bottom: var(--sp-3) !important;
+    }
+
+    .print-doc-header-row {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        border-bottom: 2px solid #000 !important;
+        padding-bottom: 6px !important;
+        margin-bottom: 8px !important;
+    }
+
+    .print-doc-meta-row {
+        display: flex !important;
+        justify-content: space-between !important;
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+        font-size: 11px !important;
+        margin-bottom: 12px !important;
+    }
+
+    .print-summary {
+        display: flex !important;
+        justify-content: space-between !important;
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+        margin-top: var(--sp-3) !important;
+        border-top: 1.5px solid #000 !important;
+        padding-top: 6px !important;
+        font-size: 12px !important;
+    }
+}
+
+
 

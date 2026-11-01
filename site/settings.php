@@ -403,6 +403,8 @@ $dsUsers = settings_ds_users($pdo);
                             <span class="toggle-status">
                                 <?php if ($key === 'cashier_deficit_carry'): ?>
                                     <?= $isBoolOn ? 'شغّال — الباقي بينزل سلفة' : 'مقفول — الباقي بيتساب' ?>
+                                <?php elseif ($key === 'purchase_date_editable'): ?>
+                                    <?= $isBoolOn ? 'مفتوح — أي مستخدم يقدر يعدّل التاريخ' : 'مقفول — تاريخ النهارده بس (المالك مستثنى)' ?>
                                 <?php else: ?>
                                     <?= $isBoolOn ? 'شغّال' : 'مقفول' ?>
                                 <?php endif; ?>
@@ -428,6 +430,11 @@ $dsUsers = settings_ds_users($pdo);
                 <?php if ($key === 'cashier_deficit_carry'): ?>
                     <div class="fld-hint">
                         مقفول = الباقي من عجز الكاشير مابينزلش سلفة على الموظف، وبيتساب من غير تحصيل. شغّله تاني بعد ما بيانات الورديات تتراجع وتتظبط.
+                    </div>
+                <?php endif; ?>
+                <?php if ($key === 'purchase_date_editable'): ?>
+                    <div class="fld-hint">
+                        المالك الحقيقي يقدر يغيّر دايماً حتى لو الإعداد مقفول. لما يتقفل، تاريخ فاتورة الشراء الجديدة بيبقى تاريخ النهارده، وخانة التاريخ للقراءة بس لغير المالك.
                     </div>
                 <?php endif; ?>
             </div>
