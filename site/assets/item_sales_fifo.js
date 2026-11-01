@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     + (key === 'profit' && row[key] < 0 ? ' style="color:var(--neg)"' : '') + '>'
                     + cell(row, key)
                     + '</td>').join('') + '</tr>'
-                    + (expand ? '<tr id="' + id + '" hidden data-xt-ignore data-xt-nosort><td colspan="' + cols.length + '"></td></tr>' : '');
+                    + (expand ? '<tr id="' + id + '" class="ftable-detail" hidden data-xt-ignore data-xt-nosort><td colspan="' + cols.length + '"></td></tr>' : '');
             }).join('') + '</tbody></table></div>';
     }
     function showDetails(target, html) {
@@ -140,6 +140,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!row) return;
         const target = el(row.dataset.fifoOpen), action = actions.get(row.dataset.fifoOpen);
         target.hidden = !target.hidden; row.setAttribute('aria-expanded', String(!target.hidden));
+        row.classList.toggle('is-open', !target.hidden);
         if (target.hidden || target.dataset.loaded) return;
         if (action.expand === 'invoice') {
             showDetails(target.firstElementChild, table(action.row.lines, lineCols));

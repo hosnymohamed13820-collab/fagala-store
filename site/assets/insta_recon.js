@@ -4,7 +4,9 @@ document.querySelectorAll('[data-insta-summary]').forEach(function (row) {
     function toggle() {
         var detail = row.nextElementSibling;
         if (!detail) return;
+        detail.classList.add('ftable-detail');
         detail.hidden = !detail.hidden;
+        row.classList.toggle('is-open', !detail.hidden);
         row.setAttribute('aria-expanded', detail.hidden ? 'false' : 'true');
     }
     row.addEventListener('click', toggle);

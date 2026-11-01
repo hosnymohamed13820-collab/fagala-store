@@ -1865,6 +1865,29 @@ html.fg-dlg-open {
     color: var(--ink-500);
 }
 
+/* صف بيفتح تفاصيل — قرار محمد ١/١١ */
+.ftable tr.is-open {
+    background: var(--accent-soft);
+}
+.ftable tr.is-open > td {
+    background: var(--accent-soft);
+    border-top: 2px solid var(--accent);
+    border-bottom: 0;
+}
+.ftable tr.is-open > td:first-child,
+.ftable tr.is-open + tr.ftable-detail:not([hidden]) > td:first-child {
+    border-inline-start: 2px solid var(--accent);
+}
+.ftable tr.is-open > td:last-child,
+.ftable tr.is-open + tr.ftable-detail:not([hidden]) > td:last-child {
+    border-inline-end: 2px solid var(--accent);
+}
+.ftable tr.is-open + tr.ftable-detail:not([hidden]) > td {
+    border-top: 0;
+    border-bottom: 2px solid var(--accent);
+    padding: var(--sp-4);
+}
+
 /* شارات الحالة الموحّدة (.fchip) */
 .fchip {
     display: inline-block;

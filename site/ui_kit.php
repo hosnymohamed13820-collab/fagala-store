@@ -90,6 +90,35 @@ function ui_code(string $code): string
     <div class="fg-empty"><?= ui_icon('inbox') ?><span>مفيش بيانات للعرض</span></div>
     <?= ui_code('<table class="ftable">…</table>') ?>
 
+    <h4>صف بيفتح تفاصيل</h4>
+    <div class="ftable-wrap">
+        <table class="ftable">
+            <thead><tr><th>الفاتورة</th><th>الحالة</th><th class="num">الكمية</th></tr></thead>
+            <tbody>
+                <tr data-ftable-demo role="button" tabindex="0" aria-expanded="false" aria-controls="demoClosedDetail" style="cursor:pointer">
+                    <td>فاتورة ١٠١</td><td>مقفولة — دوس على الصف عشان تفتحها</td><td class="num">٥</td>
+                </tr>
+                <tr id="demoClosedDetail" class="ftable-detail" data-xt-ignore data-xt-nosort hidden>
+                    <td colspan="3">تفاصيل الفاتورة ١٠١</td>
+                </tr>
+                <tr class="is-open" data-ftable-demo role="button" tabindex="0" aria-expanded="true" aria-controls="demoOpenDetail" style="cursor:pointer">
+                    <td>فاتورة ١٠٢</td><td>مفتوحة — الإطار حواليها هي وتفاصيلها</td><td class="num">١٢</td>
+                </tr>
+                <tr id="demoOpenDetail" class="ftable-detail" data-xt-ignore data-xt-nosort>
+                    <td colspan="3">
+                        <div class="ftable-wrap">
+                            <table class="ftable">
+                                <thead><tr><th>الكود</th><th>الصنف</th><th class="num">الكمية</th></tr></thead>
+                                <tbody><tr><td>00123</td><td>كشكول سلك</td><td class="num">١٢</td></tr></tbody>
+                            </table>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <?= ui_code('<tr class="is-open" role="button" tabindex="0" aria-expanded="true">…</tr>' . "\n" . '<tr class="ftable-detail" data-xt-ignore data-xt-nosort><td colspan="3">…</td></tr>') ?>
+
     <h4 style="margin:var(--sp-4) 0 var(--sp-2) 0; font-size:var(--fs-base); color:var(--ink-700);">خانات داخل الخلايا (<code>.finput-cell</code> + <code>td.fcell</code>)</h4>
     <div class="ftable-wrap">
         <table class="ftable">
@@ -118,6 +147,21 @@ function ui_code(string $code): string
 </main>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-ftable-demo]').forEach(function (row) {
+        function toggle() {
+            var detail = row.nextElementSibling;
+            detail.hidden = !detail.hidden;
+            row.classList.toggle('is-open', !detail.hidden);
+            row.setAttribute('aria-expanded', String(!detail.hidden));
+        }
+        row.addEventListener('click', toggle);
+        row.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggle();
+            }
+        });
+    });
     document.getElementById('jsUiDemo').innerHTML =
         window.ui.btn('إضافة', {icon:'plus'}) + ' ' +
         window.ui.chip('متاح', 'pos') +

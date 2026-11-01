@@ -1079,6 +1079,7 @@
         '.xt-count{font-size:12px;color:var(--ink-500,#6d7f9a);font-weight:600;}',
         '.xt-flag{font-size:11.5px;font-weight:600;color:var(--warn,#8a6524);background:var(--warn-soft,#f7f0e2);',
             'padding:3px 9px;border-radius:5px;display:inline-flex;align-items:center;gap:4px;}',
+        '.xt-flag[hidden]{display:none}',
         '.xt-btn{border:1px solid var(--line,#e3e7ed);background:var(--surface,#fff);color:var(--ink-700,#3b4e6d);',
             'border-radius:var(--r-sm,8px);padding:6px 11px;font-family:inherit;font-size:12.5px;cursor:pointer;}',
         '.xt-btn:hover{background:var(--accent-soft,#eaf1f8);border-color:var(--accent,#2f5d8a);}',

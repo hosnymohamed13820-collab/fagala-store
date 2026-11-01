@@ -2653,12 +2653,14 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
         if (isOpen) {
             body.hidden = true;
             tr.classList.remove('open');
+            tr.classList.remove('is-open');
             tr.setAttribute('aria-expanded', 'false');
             return;
         }
 
         body.hidden = false;
         tr.classList.add('open');
+        tr.classList.add('is-open');
         tr.setAttribute('aria-expanded', 'true');
         if (tr.dataset.loaded === '1') return;
 
@@ -2765,12 +2767,12 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
                     <?php endif; ?>
                 <?php endforeach; ?></tr>
                 <?php if ($isDist): ?>
-                    <tr class="dist-body" data-xt-ignore data-xt-nosort hidden>
+                    <tr class="dist-body ftable-detail" data-xt-ignore data-xt-nosort hidden>
                         <td colspan="<?= count($report['headers']) ?>"></td>
                     </tr>
                 <?php endif; ?>
                 <?php if ($type === 'insta_recon'): ?>
-                    <tr data-xt-ignore data-xt-nosort hidden>
+                    <tr class="ftable-detail" data-xt-ignore data-xt-nosort hidden>
                         <td colspan="<?= count($report['headers']) ?>">
                             <div class="ftable-wrap">
                             <table class="ftable"><thead><tr><th>الوردية</th><th>حالتها</th><th>الكاشير</th><th>المبلغ</th><th>مرجع الكاشير</th><th>المطابقة</th><th>وقت الرسالة</th><th>رقم الرسالة</th><th>الراسل</th></tr></thead><tbody>
@@ -2876,7 +2878,7 @@ if (in_array($type, ['treasury', 'expenses'], true)) {
 <?php endif; ?>
 
 <?php if ($type === 'insta_recon'): ?>
-<script src="assets/insta_recon.js?v=1" defer></script>
+<script src="assets/insta_recon.js?v=2" defer></script>
 <?php endif; ?>
 
 <script>
