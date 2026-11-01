@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>فاتورة شراء جديدة — نموذج تفاعلي</title>
+<link rel="stylesheet" href="../../site/assets/fagala.css">
+<link rel="stylesheet" href="../../site/assets/tabler-subset.css">
+<!-- مسارات إضافية لبيئة Laragon (localhost) -->
+<link rel="stylesheet" href="/assets/fagala.css">
+<link rel="stylesheet" href="/assets/tabler-subset.css">
+<style>
+body {
+    background: var(--bg);
+    margin: 0;
+    font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    color: var(--ink-800);
+}
+.mk {
+    max-width: 1680px;
+    margin: 0 auto;
+    padding: var(--sp-2) var(--sp-4) 110px;
+}
+.mk-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-2);
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--line-soft);
+}
+.mk-doc-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.mk-doc-title h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink-900);
+}
+.status-badge-draft {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    border-radius: var(--r-full);
+    background: var(--warn-soft);
+    border: 1.5px solid var(--warn);
+    color: var(--warn);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* محاذاة كل التكست بوكس للسنتر تماماً */
+input.finput, select.fselect, input.cell-input-num, input.cell-input-code, input.supp-code-input {
+    text-align: center !important;
+    text-align-last: center !important;
+}
+
+/* رأس الفاتورة: سطر واحد مضغوط */
+.doc-header-compact {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 10px 14px;
+    margin-bottom: var(--sp-2);
+}
+.doc-type-toggle {
+    display: inline-flex;
+    background: var(--line-soft);
+    padding: 2px;
+    border-radius: var(--r-md);
+    border: 1.5px solid var(--line);
+}
+.doc-type-toggle button {
+    border: none;
+    background: transparent;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    border-radius: var(--r-sm);
+    color: var(--ink-600);
+    cursor: pointer;
+    transition: all .15s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.doc-type-toggle button.active-buy {
+    background: var(--accent);
+    color: var(--fill-strong-fg);
+}
+.doc-type-toggle button.active-return {
+    background: var(--neg);
+    color: var(--fill-strong-fg);
+}
+
+.h-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.h-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-500);
+    white-space: nowrap;
+    text-align: center;
+}
+
+/* خانة كود المورد المخصصة (تتسع لـ 20 رقم وسنتر) */
+.supp-code-wrap {
+    width: 175px;
+    min-width: 175px;
+}
+.supp-code-input {
+    width: 100%;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    letter-spacing: 0.5px;
+}
+
+/* خانة اسم المورد المنسدلة الذكية */
+.supp-wrap {
+    position: relative;
+    flex: 2;
+    min-width: 280px;
+}
+.supp-input {
+    width: 100%;
+    font-weight: 600;
+    padding-inline-end: 28px;
+}
+.supp-arrow {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-500);
+    pointer-events: none;
+    font-size: 13px;
+}
+.supp-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    left: 0;
+    background: var(--surface);
+    border: 1.5px solid var(--accent);
+    border-radius: var(--r-md);
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    display: none;
+}
+.supp-dropdown.open {
+    display: block;
+}
+.supp-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid var(--line-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.supp-item:hover, .supp-item.selected {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.supp-item-code {
+    font-size: 11px;
+    color: var(--ink-500);
+    direction: ltr;
+    font-variant-numeric: tabular-nums;
+}
+
+/* شريط أدوات الجدول زي POS */
+.pos-table-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-2);
+}
+
+/* التفاف الجدول ليأخذ الشاشة وتوزيع الأعمدة */
+.table-card {
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+    margin-bottom: var(--sp-2);
+}
+.ftable th {
+    background: var(--surface-subtle);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-700);
+    padding: 9px 8px;
+    white-space: nowrap;
+    text-align: center;
+}
+.ftable td {
+    padding: 6px 8px;
+    vertical-align: middle;
+    font-size: 13px;
+    border-bottom: 1px solid var(--line-soft);
+    text-align: center;
+}
+.ftable tbody tr:hover {
+    background: var(--surface-subtle);
+}
+
+/* خانة الكود بعرض 170px لاستيعاب حتى 20 رقم */
+.cell-code-wrap {
+    width: 170px;
+    min-width: 170px;
+    max-width: 180px;
+}
+.cell-code-text {
+    font-family: inherit;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    letter-spacing: 0.5px;
+    display: inline-block;
+}
+
+.cell-name-text {
+    font-weight: 600;
+    color: var(--ink-900);
+    text-align: right !important;
+}
+
+/* حقول الإدخال داخل خلايا الجدول - مسنترة ونظيفة */
+.cell-input-num {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 4px;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    color: var(--ink-900);
+    transition: border-color .15s ease;
+    text-align: center !important;
+}
+.cell-input-num:focus {
+    border-color: var(--accent);
+    outline: none;
+    background: var(--surface);
+}
+
+.cell-input-code {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    border: 1.5px solid var(--accent);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--ink-900);
+    direction: ltr;
+    letter-spacing: 0.5px;
+    text-align: center !important;
+}
+.cell-input-code:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent-soft);
+}
+
+.cell-calc {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-800);
+}
+.cell-total {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+}
+.cell-stock {
+    font-size: 12px;
+    color: var(--ink-500);
+    font-variant-numeric: tabular-nums;
+}
+.btn-del-row {
+    background: transparent;
+    border: none;
+    color: var(--ink-400);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--r-sm);
+    font-size: 15px;
+    transition: all .15s ease;
+}
+.btn-del-row:hover {
+    color: var(--neg);
+    background: var(--neg-soft);
+}
+
+/* سطر الإدخال المباشر زي نقطة البيع POS */
+.pos-empty-scan-row {
+    background: var(--accent-soft);
+}
+.pos-empty-scan-row td {
+    padding: 6px 8px;
+    border-bottom: 2px solid var(--accent);
+}
+
+/* شريط الإجماليات الثابت تحت - تماماً زي POS */
+.pos-totals-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 1.5px solid var(--line);
+    padding: 8px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    z-index: 90;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.18);
+}
+.pos-tot-sec {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+    border-left: 1px solid var(--line-soft);
+}
+.pos-tot-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-500);
+    margin-bottom: 2px;
+}
+.pos-tot-value {
+    font-size: 16px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-900);
+}
+
+/* حقول خصم الفاتورة (نسبة وقيمة) */
+.pos-tot-inputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.pos-input-affix-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 82px;
+}
+.pos-input-affix-wrap input {
+    width: 100%;
+    padding: 4px 6px;
+    font-size: 13px;
+    font-weight: 700;
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    color: var(--ink-900);
+    text-align: center !important;
+}
+.pos-input-affix-wrap input:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+.pos-affix {
+    position: absolute;
+    left: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink-500);
+    pointer-events: none;
+}
+
+.pos-tot-net {
+    padding: 0 14px;
+    border-left: none;
+}
+.pos-tot-net .pos-tot-title {
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+}
+.pos-tot-net-val {
+    font-size: 24px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--pos, #10b981);
+}
+
+.pos-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* شريط أزرار الاختصارات بالأسفل */
+.shortcut-strip {
+    background: var(--surface-subtle);
+    border-top: 1px solid var(--line-soft);
+    padding: 4px 16px;
+    font-size: 11.5px;
+    color: var(--ink-500);
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    position: fixed;
+    bottom: 64px;
+    left: 0;
+    right: 0;
+    z-index: 89;
+}
+.shortcut-strip kbd {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-weight: 700;
+    color: var(--ink-700);
+}
+
+/* نافذة البحث المودال F2 */
+.search-modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+}
+.search-modal-backdrop.open {
+    display: flex;
+}
+.search-modal {
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: var(--r-xl);
+    width: 650px;
+    max-width: 95vw;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+    overflow: hidden;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line-soft);
+}
+.modal-title {
+    font-size: 16px;
+    font-weight: 700;
+}
+.modal-body {
+    padding: 16px 18px;
+}
+.modal-search-input {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    border: 1.5px solid var(--accent);
+    border-radius: var(--r-md);
+    background: var(--bg);
+    color: var(--ink-900);
+    margin-bottom: 12px;
+}
+.modal-search-list {
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--r-md);
+}
+.modal-item-row {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background .12s ease;
+}
+.modal-item-row:hover, .modal-item-row.active {
+    background: var(--accent-soft);
+}
+</style>
+</head>
+<body>
+
+<div class="mk">
+  <!-- شريط العنوان العلوي -->
+  <div class="mk-top-bar">
+    <div class="mk-doc-title">
+      <h1>فاتورة شراء جديدة</h1>
+      <span class="status-badge-draft"><i class="ti ti-file-text"></i> مسودة</span>
+      <span style="font-size:12px;color:var(--ink-500);">رقم النظام: #PO-2026-1049</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button type="button" class="btn btn-sm btn-outline" onclick="toggleTheme()" title="تبديل المظهر">
+        <i class="ti ti-moon"></i>
+      </button>
+      <a href="/" class="btn btn-sm btn-ghost"><i class="ti ti-arrow-right"></i> رجوع للرئيسية</a>
+    </div>
+  </div>
+
+  <!-- رأس الفاتورة: سطر واحد مضغوط -->
+  <div class="doc-header-compact">
+    <!-- نوع الفاتورة -->
+    <div class="h-field" style="flex:0 0 auto;">
+      <label>نوع الفاتورة</label>
+      <div class="doc-type-toggle">
+        <button type="button" class="active-buy" id="btnBuy" onclick="setDocType('buy')">
+          <i class="ti ti-arrow-down-left"></i> شراء
+        </button>
+        <button type="button" id="btnReturn" onclick="setDocType('return')">
+          <i class="ti ti-arrow-up-right"></i> مرتجع
+        </button>
+      </div>
+    </div>
+
+    <!-- كود المورد المخصص (يسع حتى 20 رقم وسنتر) -->
+    <div class="h-field supp-code-wrap">
+      <label for="suppCodeInput">كود المورد (Enter للتثبيت)</label>
+      <input type="text" id="suppCodeInput" class="finput finput-sm supp-code-input" value="1000142" maxlength="20" placeholder="كود المورد…" onkeydown="onSuppCodeKeyDown(event)">
+    </div>
+
+    <!-- اسم المورد (أكبر خانة مع بحث منسدل ذكي) -->
+    <div class="h-field supp-wrap">
+      <label for="suppInput">اسم المورد <span style="font-size:10px;color:var(--ink-500);">(Ctrl + ↓ للقائمة)</span></label>
+      <div style="position:relative;">
+        <input type="text" id="suppInput" class="finput finput-sm supp-input" value="حامد الرائد ادوات مكتبيه / ورق تصوير" autocomplete="off" oninput="onSuppSearch(this.value)" onkeydown="onSuppKeyDown(event)" onfocus="openSuppDropdown()">
+        <i class="ti ti-chevron-down supp-arrow"></i>
+        <!-- القائمة المنسدلة -->
+        <div class="supp-dropdown" id="suppDropdown"></div>
+      </div>
+    </div>
+
+    <!-- الفرع المستلم -->
+    <div class="h-field" style="flex:1;min-width:140px;">
+      <label>فرع الاستلام</label>
+      <select class="fselect finput-sm" id="branchSelect">
+        <option selected>الإدارة المركزية (مخزن 1)</option>
+        <option>فرع الفجالة</option>
+        <option>فرع بولاق الدكرور</option>
+        <option>فرع الإسكندرية</option>
+      </select>
+    </div>
+
+    <!-- تاريخ الفاتورة -->
+    <div class="h-field" style="width:130px;">
+      <label>تاريخ الفاتورة</label>
+      <input type="date" class="finput finput-sm" id="docDate" value="2026-11-01">
+    </div>
+
+    <!-- رقم فاتورة المورد -->
+    <div class="h-field" style="width:140px;">
+      <label>رقم فاتورة المورد</label>
+      <input type="text" class="finput finput-sm" id="suppInvNum" value="INV-9842" placeholder="رقم الفاتورة…">
+    </div>
+  </div>
+
+  <!-- شريط عمليات الجدول زي POS (بحث صنف F2 - مسح الفاتورة) -->
+  <div class="pos-table-toolbar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button type="button" class="btn btn-sm btn-outline" onclick="openItemSearchModal()" id="btnOpenSearch">
+        <i class="ti ti-search"></i> بحث صنف (F2)
+      </button>
+      <span style="font-size:12px;color:var(--ink-500);">اضرب الكود في السطر الأخير ثم Enter للكمية ثم Enter للتكلفة ثم السطر التالي تلقائياً</span>
+    </div>
+    <div>
+      <button type="button" class="btn btn-sm btn-ghost" onclick="clearCart()" style="color:var(--neg);">
+        <i class="ti ti-trash"></i> مسح الفاتورة
+      </button>
+    </div>
+  </div>
+
+  <!-- جدول الأصناف -->
+  <div class="table-card">
+    <div class="ftable-wrap">
+      <table class="ftable" id="purchaseTable" style="table-layout:fixed;width:100%;">
+        <colgroup>
+          <col style="width: 38px;">
+          <col style="width: 44px;">
+          <col style="width: 170px;">
+          <col style="width: auto;">
+          <col style="width: 80px;">
+          <col style="width: 75px;">
+          <col style="width: 90px;">
+          <col style="width: 100px;">
+          <col style="width: 85px;">
+          <col style="width: 90px;">
+          <col style="width: 95px;">
+          <col style="width: 110px;">
+          <col style="width: 40px;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>كاميرا</th>
+            <th>الكود</th>
+            <th style="text-align:right;">اسم الصنف</th>
+            <th>الوحدة</th>
+            <th class="num">الرصيد</th>
+            <th class="num">الكمية</th>
+            <th class="num">التكلفة</th>
+            <th class="num">خصم %</th>
+            <th class="num">خصم قيمة</th>
+            <th class="num">صافي التكلفة</th>
+            <th class="num">الإجمالي</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="itemsTbody">
+          <!-- صفوف الأصناف المدرجة + السطر التفاعلي بالأسفل -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- شريط الاختصارات المساعد فوق شريط الإجماليات -->
+<div class="shortcut-strip">
+  <span><kbd>Enter</kbd> كود ➔ كمية ➔ تكلفة ➔ سطر جديد</span>
+  <span><kbd>F2</kbd> بحث صنف</span>
+  <span><kbd>F4</kbd> خصم الفاتورة %</span>
+  <span><kbd>F12</kbd> حفظ مسودة</span>
+  <span><kbd>Ctrl+Enter</kbd> ترحيل الفاتورة</span>
+  <span><kbd>Ctrl+P</kbd> طباعة</span>
+</div>
+
+<!-- شريط الإجماليات الثابت تحت - زي نقطة البيع POS -->
+<div class="pos-totals-bar">
+  <!-- عدد الأصناف والقطع -->
+  <div class="pos-tot-sec">
+    <span class="pos-tot-title">عدد الأصناف / القطع</span>
+    <strong class="pos-tot-value" id="statItemsPieces">5 أصناف · 28,100 قطعة</strong>
+  </div>
+
+  <!-- الإجمالي قبل الخصومات -->
+  <div class="pos-tot-sec">
+    <span class="pos-tot-title">الإجمالي</span>
+    <strong class="pos-tot-value" id="statGross">12,820.00</strong>
+  </div>
+
+  <!-- خصم الأصناف -->
+  <div class="pos-tot-sec">
+    <span class="pos-tot-title">خصم الأصناف</span>
+    <strong class="pos-tot-value" id="statLineDisc" style="color:var(--neg);">136.30</strong>
+  </div>
+
+  <!-- خصم الفاتورة (نسبة وقيمة) -->
+  <div class="pos-tot-sec">
+    <span class="pos-tot-title">خصم الفاتورة</span>
+    <div class="pos-tot-inputs">
+      <div class="pos-input-affix-wrap">
+        <input type="number" min="0" max="100" step="any" id="invDiscPct" value="0.00" oninput="onInvDiscPctChange(this.value)">
+        <span class="pos-affix">%</span>
+      </div>
+      <div class="pos-input-affix-wrap">
+        <input type="number" min="0" step="any" id="invDiscAmt" value="0.00" oninput="onInvDiscAmtChange(this.value)">
+        <span class="pos-affix">ج.م</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- الصافي النهائي للمورد -->
+  <div class="pos-tot-sec pos-tot-net">
+    <span class="pos-tot-title">الصافي النهائي للمورد</span>
+    <div class="pos-tot-net-val"><span id="statNet">12,683.70</span> <span style="font-size:15px;font-weight:700;">ج.م</span></div>
+  </div>
+
+  <!-- أزرار الإجراءات -->
+  <div class="pos-actions">
+    <button type="button" class="btn btn-outline" onclick="printDoc()" title="طباعة (Ctrl+P)">
+      <i class="ti ti-printer"></i> طباعة
+    </button>
+    <button type="button" class="btn btn-primary" onclick="saveDraft()" title="حفظ مسودة (F12)">
+      <i class="ti ti-device-floppy"></i> حفظ مسودة (F12)
+    </button>
+    <button type="button" class="btn btn-pos" onclick="postInvoice()" style="background:var(--pos, #10b981);color:#fff;font-weight:700;" title="ترحيل (Ctrl+Enter)">
+      <i class="ti ti-send"></i> ترحيل الفاتورة
+    </button>
+  </div>
+</div>
+
+<!-- مودال البحث السريع عن الأصناف F2 -->
+<div class="search-modal-backdrop" id="searchModal" onclick="closeModalOnBackdrop(event)">
+  <div class="search-modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="ti ti-search"></i> بحث واختيار صنف للفاتورة (F2)</div>
+      <button type="button" class="btn-del-row" onclick="closeItemSearchModal()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="text" id="modalSearchInput" class="modal-search-input" placeholder="اكتب اسم الصنف أو الكود للبحث..." oninput="onModalSearchInput(this.value)" onkeydown="onModalSearchKeyDown(event)">
+      <div class="modal-search-list" id="modalSearchResults"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// كتالوج الأصناف المرجعي
+const CATALOG = [
+  { code: '0056', name: 'روزمة ورق تصوير 70 جرام A4 (استهلاك)', unit: 'روزمة (500ق)', factor: 500, stock: 152, cost: 124.00 },
+  { code: '0042', name: 'ورق تصوير بالورقة 70 جرام A4 (استهلاك)', unit: 'قطعة', factor: 1, stock: 75995, cost: 0.248 },
+  { code: '1010042', name: 'كشكول سلك 80 ورقة A4 مسطر فاخر غلاف بلاستيك', unit: 'كشكول', factor: 1, stock: 305, cost: 28.50 },
+  { code: '1020015', name: 'قلم جاف بريما سوبر 0.7 ملم أزرق أصلي', unit: 'باكتة (12ق)', factor: 12, stock: 48, cost: 54.00 },
+  { code: '1020044', name: 'قلم رصاص فابر كاستل جولد فايبر HB بممحاة', unit: 'باكتة (12ق)', factor: 12, stock: 32, cost: 82.00 },
+  { code: '1030088', name: 'علبة ألوان خشب فيبر كاستل 24 لون كلاسيك', unit: 'علبة', factor: 1, stock: 95, cost: 145.00 },
+  { code: '1040012', name: 'براية سلايد كاستل معدن ألماني أصلية', unit: 'علبة (20ق)', factor: 20, stock: 40, cost: 95.00 },
+  { code: '1050031', name: 'طقم أقلام ماركر فسفوري روترنج 4 ألوان', unit: 'طقم', factor: 1, stock: 60, cost: 68.00 },
+  { code: '2010001', name: 'مسطرة حديد 30 سم ستانلس ستيل غير قابلة للصدأ', unit: 'قطعة', factor: 1, stock: 140, cost: 12.00 },
+  { code: '2020055', name: 'دباسة كانجارو رقم 10 أصلية معدن', unit: 'قطعة', factor: 1, stock: 25, cost: 85.00 }
+];
+
+// قائمة الموردين
+const SUPPLIERS = [
+  { id: '1000142', name: 'حامد الرائد ادوات مكتبيه / ورق تصوير' },
+  { id: '1000210', name: 'شركة الشرق لتجارة الأدوات المكتبية والورقيات' },
+  { id: '1000305', name: 'مكتبة ومطبعة الأهرام التجارية الفجالة' },
+  { id: '1000412', name: 'مؤسسة بريما للأقلام ومستلزمات الكتابة' },
+  { id: '1000550', name: 'شركة فابر كاستل مصر للاستيراد والتوزيع' },
+  { id: '1000620', name: 'مكتب مصر لتوزيع الكشاكيل والكشاكيل السلك' },
+  { id: '1000780', name: 'الرواد للمستلزمات الهندسية والمكتبية' }
+];
+
+// الأصناف المدرجة حالياً في الفاتورة
+let items = [
+  { code: '0056', name: 'روزمة ورق تصوير 70 جرام A4 (استهلاك)', unit: 'روزمة (500ق)', factor: 500, stock: 152, qty: 50, cost: 124.00, discPct: 0, discVal: 0 },
+  { code: '0042', name: 'ورق تصوير بالورقة 70 جرام A4 (استهلاك)', unit: 'قطعة', factor: 1, stock: 75995, qty: 2500, cost: 0.248, discPct: 5.0, discVal: 0.0124 },
+  { code: '1010042', name: 'كشكول سلك 80 ورقة A4 مسطر فاخر غلاف بلاستيك', unit: 'كشكول', factor: 1, stock: 305, qty: 120, cost: 28.50, discPct: 2.0, discVal: 0.57 },
+  { code: '1020015', name: 'قلم جاف بريما سوبر 0.7 ملم أزرق أصلي', unit: 'باكتة (12ق)', factor: 12, stock: 48, qty: 25, cost: 54.00, discPct: 0, discVal: 0 },
+  { code: '1020044', name: 'قلم رصاص فابر كاستل جولد فايبر HB بممحاة', unit: 'باكتة (12ق)', factor: 12, stock: 32, qty: 15, cost: 82.00, discPct: 3.0, discVal: 2.46 }
+];
+
+let docType = 'buy';
+let invDiscType = 'amount';
+let invDiscVal = 0;
+let filteredSuppliers = [...SUPPLIERS];
+let selectedSuppIdx = -1;
+
+// ==========================================
+// رسم الجدول والتنقل بـ Enter زي نقطة البيع
+// ==========================================
+
+function renderTable(focusOptions) {
+    const tbody = document.getElementById('itemsTbody');
+    const rowsHtml = items.map((it, idx) => {
+        const netCost = it.cost - (it.discVal || 0);
+        const total = it.qty * netCost;
+        return `
+            <tr data-idx="${idx}">
+                <td style="color:var(--ink-500);font-weight:600;">${idx + 1}</td>
+                <td><button type="button" class="btn btn-sm btn-ghost" disabled title="صنف مدرج"><i class="ti ti-camera"></i></button></td>
+                <td class="cell-code-wrap">
+                    <span class="cell-code-text" title="${escapeHtml(it.code)}">${escapeHtml(it.code)}</span>
+                </td>
+                <td class="cell-name-text">${escapeHtml(it.name)}</td>
+                <td><span class="fchip fchip-mute" style="font-size:11px;">${escapeHtml(it.unit)}</span></td>
+                <td class="num cell-stock">${it.stock.toLocaleString('en-US')}</td>
+                <td>
+                    <input type="number" step="any" min="0.001" class="cell-input-num row-qty" value="${it.qty}" oninput="onRowQtyChange(${idx}, this.value)" onfocus="this.select()" onkeydown="onQtyKeyDown(event, ${idx})">
+                </td>
+                <td>
+                    <input type="number" step="0.01" min="0" class="cell-input-num row-cost" value="${it.cost.toFixed(2)}" oninput="onRowCostChange(${idx}, this.value)" onfocus="this.select()" onkeydown="onCostKeyDown(event, ${idx})">
+                </td>
+                <td>
+                    <input type="number" step="0.1" min="0" max="100" class="cell-input-num row-disc-pct" value="${(it.discPct || 0).toFixed(1)}" oninput="onRowDiscPctChange(${idx}, this.value)" onfocus="this.select()" onkeydown="onDiscPctKeyDown(event, ${idx})">
+                </td>
+                <td>
+                    <input type="number" step="0.01" min="0" class="cell-input-num row-disc-val" value="${(it.discVal || 0).toFixed(2)}" oninput="onRowDiscValChange(${idx}, this.value)" onfocus="this.select()" onkeydown="onDiscValKeyDown(event, ${idx})">
+                </td>
+                <td class="cell-calc num">${netCost < 1 ? netCost.toFixed(4) : netCost.toFixed(2)}</td>
+                <td class="cell-total num">${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td>
+                    <button type="button" class="btn-del-row" onclick="removeRow(${idx})" title="حذف السطر"><i class="ti ti-trash"></i></button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    // السطر التفاعلي الأخير لإدخال وضرب الكود (زي نقطة البيع تماماً)
+    const emptyIdx = items.length;
+    const emptyRowHtml = `
+        <tr class="pos-empty-scan-row" data-empty-row="1">
+            <td style="color:var(--accent);font-weight:700;">${emptyIdx + 1}</td>
+            <td><button type="button" class="btn btn-sm btn-ghost" title="مسح بالكاميرا"><i class="ti ti-camera"></i></button></td>
+            <td class="cell-code-wrap">
+                <input type="text" id="newCodeInput" class="cell-input-code" maxlength="20" placeholder="...الكود" autocomplete="off" onkeydown="onScanRowKeyDown(event)">
+            </td>
+            <td>
+                <input type="text" id="newNameInput" class="finput finput-sm" style="width:100%;text-align:right!important;" placeholder="اكتب اسم الصنف أو F2 للبحث…" autocomplete="off" onkeydown="onNameScanKeyDown(event)">
+            </td>
+            <td></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td></td>
+        </tr>
+    `;
+
+    tbody.innerHTML = rowsHtml + emptyRowHtml;
+    recalcTotals();
+
+    if (focusOptions) {
+        if (focusOptions.field === 'code') {
+            focusScanInput();
+        } else if (focusOptions.idx !== undefined) {
+            const row = tbody.querySelector(`tr[data-idx="${focusOptions.idx}"]`);
+            if (row) {
+                const targetInput = row.querySelector(`.row-${focusOptions.field}`);
+                if (targetInput) {
+                    targetInput.focus();
+                    if (targetInput.select) targetInput.select();
+                }
+            }
+        }
+    }
+}
+
+// 🔴 تسلسل الـ Enter السريع لنقطة البيع:
+// 1. Enter في الكود ➔ يضرب الصنف وينقل للكمية فوراً
+function onScanRowKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const code = e.target.value.trim();
+    if (!code) return;
+    addItemByCode(code);
+}
+
+// Enter في اسم الصنف بالسطر الفارغ
+function onNameScanKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) return;
+    const match = CATALOG.find(c => c.name.toLowerCase().includes(q) || c.code === q);
+    if (match) {
+        addItemByCode(match.code);
+    } else {
+        openItemSearchModal(q);
+    }
+}
+
+// إضافة أو تحديث صنف والتركيز فوراً على حقل الكمية
+function addItemByCode(code) {
+    let targetIdx = items.findIndex(it => it.code === code);
+    if (targetIdx !== -1) {
+        items[targetIdx].qty += 1;
+    } else {
+        const catalogItem = CATALOG.find(c => c.code === code);
+        if (catalogItem) {
+            items.push({
+                code: catalogItem.code,
+                name: catalogItem.name,
+                unit: catalogItem.unit,
+                factor: catalogItem.factor,
+                stock: catalogItem.stock,
+                qty: 1,
+                cost: catalogItem.cost,
+                discPct: 0,
+                discVal: 0
+            });
+        } else {
+            // صنف جديد غير مسجل في الكتالوج
+            items.push({
+                code: code,
+                name: 'صنف جديد كود (' + code + ')',
+                unit: 'قطعة',
+                factor: 1,
+                stock: 0,
+                qty: 1,
+                cost: 10.00,
+                discPct: 0,
+                discVal: 0
+            });
+        }
+        targetIdx = items.length - 1;
+    }
+
+    // رسم الجدول مع التركيز فوراً على خانة الكمية وتحديد النص بالكامل
+    renderTable({ idx: targetIdx, field: 'qty' });
+
+    // تمييز السطر بصرياً بلون خفيف لحظي
+    const row = document.querySelector(`tr[data-idx="${targetIdx}"]`);
+    if (row) {
+        row.style.background = 'var(--accent-soft)';
+        setTimeout(() => { row.style.background = ''; }, 500);
+        row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+// 2. Enter في الكمية ➔ ينقل فوراً للتكلفة مع التحديد
+function onQtyKeyDown(e, idx) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const row = document.querySelector(`tr[data-idx="${idx}"]`);
+        if (row) {
+            const costInput = row.querySelector('.row-cost');
+            if (costInput) {
+                costInput.focus();
+                costInput.select();
+            }
+        }
+    }
+}
+
+// 3. Enter في التكلفة ➔ ينزل فوراً على خانة الكود في السطر الجديد بالأسفل
+function onCostKeyDown(e, idx) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        focusScanInput();
+    }
+}
+
+// Enter في خصم % (إذا انتقل إليه بالـ Tab) ➔ ينقل لخصم القيمة
+function onDiscPctKeyDown(e, idx) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const row = document.querySelector(`tr[data-idx="${idx}"]`);
+        if (row) {
+            const discValInput = row.querySelector('.row-disc-val');
+            if (discValInput) {
+                discValInput.focus();
+                discValInput.select();
+            }
+        }
+    }
+}
+
+// Enter في خصم القيمة ➔ ينزل لخانة الكود بالسطر الجديد
+function onDiscValKeyDown(e, idx) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        focusScanInput();
+    }
+}
+
+function focusScanInput() {
+    const inp = document.getElementById('newCodeInput');
+    if (inp) {
+        inp.focus();
+        inp.select();
+    }
+}
+
+// ==========================================
+// تعديل القيم والحسابات
+// ==========================================
+
+function onRowQtyChange(idx, val) {
+    if (!items[idx]) return;
+    items[idx].qty = Math.max(0.001, parseFloat(val) || 0);
+    updateRowCalculations(idx);
+    recalcTotals();
+}
+
+function onRowCostChange(idx, val) {
+    if (!items[idx]) return;
+    const cost = Math.max(0, parseFloat(val) || 0);
+    items[idx].cost = cost;
+    if (items[idx].discPct > 0) {
+        items[idx].discVal = (cost * items[idx].discPct) / 100;
+    }
+    updateRowCalculations(idx);
+    recalcTotals();
+}
+
+function onRowDiscPctChange(idx, val) {
+    if (!items[idx]) return;
+    const pct = Math.max(0, Math.min(100, parseFloat(val) || 0));
+    items[idx].discPct = pct;
+    items[idx].discVal = (items[idx].cost * pct) / 100;
+    const row = document.querySelector(`tr[data-idx="${idx}"]`);
+    if (row) {
+        const valInp = row.querySelector('.row-disc-val');
+        if (valInp && document.activeElement !== valInp) {
+            valInp.value = items[idx].discVal.toFixed(2);
+        }
+    }
+    updateRowCalculations(idx);
+    recalcTotals();
+}
+
+function onRowDiscValChange(idx, val) {
+    if (!items[idx]) return;
+    const dVal = Math.max(0, parseFloat(val) || 0);
+    items[idx].discVal = dVal;
+    if (items[idx].cost > 0) {
+        items[idx].discPct = Math.min(100, (dVal / items[idx].cost) * 100);
+    } else {
+        items[idx].discPct = 0;
+    }
+    const row = document.querySelector(`tr[data-idx="${idx}"]`);
+    if (row) {
+        const pctInp = row.querySelector('.row-disc-pct');
+        if (pctInp && document.activeElement !== pctInp) {
+            pctInp.value = items[idx].discPct.toFixed(1);
+        }
+    }
+    updateRowCalculations(idx);
+    recalcTotals();
+}
+
+function updateRowCalculations(idx) {
+    const row = document.querySelector(`tr[data-idx="${idx}"]`);
+    if (!row || !items[idx]) return;
+    const it = items[idx];
+    const netCost = it.cost - (it.discVal || 0);
+    const total = it.qty * netCost;
+
+    const netCell = row.querySelector('.cell-calc');
+    const totCell = row.querySelector('.cell-total');
+    if (netCell) netCell.textContent = netCost < 1 ? netCost.toFixed(4) : netCost.toFixed(2);
+    if (totCell) totCell.textContent = total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function removeRow(idx) {
+    if (confirm('هل تريد حذف هذا السطر؟')) {
+        items.splice(idx, 1);
+        renderTable({ field: 'code' });
+    }
+}
+
+function clearCart() {
+    if (!items.length) return;
+    if (confirm('هل تريد مسح جميع أصناف الفاتورة؟')) {
+        items = [];
+        renderTable({ field: 'code' });
+    }
+}
+
+// ==========================================
+// حساب الإجماليات وشريط الإجماليات
+// ==========================================
+
+function recalcTotals() {
+    const itemsCount = items.length;
+    let piecesCount = 0;
+    let grossTotal = 0;
+    let lineDiscTotal = 0;
+
+    items.forEach(it => {
+        piecesCount += (it.qty * (it.factor || 1));
+        const lineGross = it.qty * it.cost;
+        const lineNet = it.qty * (it.cost - (it.discVal || 0));
+        grossTotal += lineGross;
+        lineDiscTotal += (lineGross - lineNet);
+    });
+
+    const netAfterLineDisc = grossTotal - lineDiscTotal;
+    let finalInvDisc = 0;
+    if (invDiscType === 'percent') {
+        finalInvDisc = (netAfterLineDisc * invDiscVal) / 100;
+    } else {
+        finalInvDisc = Math.min(netAfterLineDisc, invDiscVal);
+    }
+
+    const finalNet = Math.max(0, netAfterLineDisc - finalInvDisc);
+
+    // تحديث الشاشات
+    document.getElementById('statItemsPieces').textContent = `${itemsCount} أصناف · ${piecesCount.toLocaleString('en-US')} قطعة`;
+    document.getElementById('statGross').textContent = grossTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('statLineDisc').textContent = lineDiscTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('statNet').textContent = finalNet.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function onInvDiscPctChange(val) {
+    const pct = Math.max(0, Math.min(100, parseFloat(val) || 0));
+    invDiscType = 'percent';
+    invDiscVal = pct;
+    const gross = items.reduce((sum, it) => sum + (it.qty * (it.cost - (it.discVal || 0))), 0);
+    const amt = (gross * pct) / 100;
+    document.getElementById('invDiscAmt').value = amt.toFixed(2);
+    recalcTotals();
+}
+
+function onInvDiscAmtChange(val) {
+    const amt = Math.max(0, parseFloat(val) || 0);
+    invDiscType = 'amount';
+    invDiscVal = amt;
+    const gross = items.reduce((sum, it) => sum + (it.qty * (it.cost - (it.discVal || 0))), 0);
+    const pct = gross > 0 ? Math.min(100, (amt / gross) * 100) : 0;
+    document.getElementById('invDiscPct').value = pct.toFixed(2);
+    recalcTotals();
+}
+
+// ==========================================
+// كود المورد واسم المورد الذكي
+// ==========================================
+
+function onSuppCodeKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const code = e.target.value.trim();
+    const supp = SUPPLIERS.find(s => s.id === code);
+    if (supp) {
+        document.getElementById('suppInput').value = supp.name;
+        document.getElementById('suppDropdown').classList.remove('open');
+        focusScanInput();
+    } else {
+        alert('مفيش مورد مسجل بالكود: ' + code);
+    }
+}
+
+function onSuppSearch(query) {
+    const q = query.trim().toLowerCase();
+    const dropdown = document.getElementById('suppDropdown');
+
+    if (!q) {
+        filteredSuppliers = [...SUPPLIERS];
+    } else {
+        const startsWith = SUPPLIERS.filter(s => s.name.toLowerCase().startsWith(q));
+        const contains = SUPPLIERS.filter(s => !s.name.toLowerCase().startsWith(q) && s.name.toLowerCase().includes(q));
+        filteredSuppliers = [...startsWith, ...contains];
+    }
+
+    renderSuppDropdown();
+    dropdown.classList.add('open');
+    selectedSuppIdx = -1;
+}
+
+function renderSuppDropdown() {
+    const dropdown = document.getElementById('suppDropdown');
+    if (!filteredSuppliers.length) {
+        dropdown.innerHTML = '<div style="padding:10px;text-align:center;color:var(--ink-500);font-size:12px;">لا يوجد موردين مطابقين</div>';
+        return;
+    }
+    dropdown.innerHTML = filteredSuppliers.map((s, idx) => `
+        <div class="supp-item" data-idx="${idx}" onclick="selectSupplier(${idx})">
+            <span style="font-weight:600;">${escapeHtml(s.name)}</span>
+            <span class="supp-item-code">#${s.id}</span>
+        </div>
+    `).join('');
+}
+
+function highlightSuppItem(idx) {
+    const items = document.querySelectorAll('.supp-item');
+    items.forEach((el, i) => {
+        el.classList.toggle('selected', i === idx);
+        if (i === idx) el.scrollIntoView({ block: 'nearest' });
+    });
+}
+
+function openSuppDropdown() {
+    onSuppSearch(document.getElementById('suppInput').value);
+}
+
+function selectSupplier(idx) {
+    const supp = filteredSuppliers[idx];
+    if (supp) {
+        document.getElementById('suppInput').value = supp.name;
+        document.getElementById('suppCodeInput').value = supp.id;
+        document.getElementById('suppDropdown').classList.remove('open');
+        focusScanInput();
+    }
+}
+
+function onSuppKeyDown(e) {
+    const dropdown = document.getElementById('suppDropdown');
+    const isOpen = dropdown.classList.contains('open');
+
+    if ((e.ctrlKey && e.key === 'ArrowDown') || (e.altKey && e.key === 'ArrowDown')) {
+        e.preventDefault();
+        openSuppDropdown();
+        return;
+    }
+
+    if (isOpen) {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedSuppIdx = Math.min(filteredSuppliers.length - 1, selectedSuppIdx + 1);
+            highlightSuppItem(selectedSuppIdx);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedSuppIdx = Math.max(0, selectedSuppIdx - 1);
+            highlightSuppItem(selectedSuppIdx);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (selectedSuppIdx >= 0 && selectedSuppIdx < filteredSuppliers.length) {
+                selectSupplier(selectedSuppIdx);
+            } else if (filteredSuppliers.length > 0) {
+                selectSupplier(0);
+            }
+        } else if (e.key === 'Escape') {
+            dropdown.classList.remove('open');
+        }
+    } else if (e.key === 'Enter') {
+        openSuppDropdown();
+    }
+}
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.supp-wrap')) {
+        const dd = document.getElementById('suppDropdown');
+        if (dd) dd.classList.remove('open');
+    }
+});
+
+// ==========================================
+// مودال البحث السريع F2
+// ==========================================
+
+let modalFiltered = [...CATALOG];
+let modalSelectedIdx = 0;
+
+function openItemSearchModal(initialQuery = '') {
+    const modal = document.getElementById('searchModal');
+    const inp = document.getElementById('modalSearchInput');
+    modal.classList.add('open');
+    inp.value = initialQuery;
+    onModalSearchInput(initialQuery);
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
+}
+
+function closeItemSearchModal() {
+    document.getElementById('searchModal').classList.remove('open');
+    focusScanInput();
+}
+
+function closeModalOnBackdrop(e) {
+    if (e.target.id === 'searchModal') closeItemSearchModal();
+}
+
+function onModalSearchInput(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+        modalFiltered = [...CATALOG];
+    } else {
+        modalFiltered = CATALOG.filter(c => c.name.toLowerCase().includes(q) || c.code.includes(q));
+    }
+    modalSelectedIdx = 0;
+    renderModalSearchResults();
+}
+
+function renderModalSearchResults() {
+    const list = document.getElementById('modalSearchResults');
+    if (!modalFiltered.length) {
+        list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--ink-500);">لا توجد نتائج مطابقة</div>';
+        return;
+    }
+    list.innerHTML = modalFiltered.map((it, idx) => `
+        <div class="modal-item-row ${idx === modalSelectedIdx ? 'active' : ''}" onclick="selectItemFromModal(${idx})">
+            <div>
+                <div style="font-weight:700;">${escapeHtml(it.name)}</div>
+                <div style="font-size:11.5px;color:var(--ink-500);display:flex;gap:12px;margin-top:2px;">
+                    <span>كود: <strong>${it.code}</strong></span>
+                    <span>الوحدة: ${it.unit}</span>
+                    <span>الرصيد: ${it.stock.toLocaleString('en-US')}</span>
+                </div>
+            </div>
+            <div style="text-align:left;">
+                <span style="font-size:15px;font-weight:800;color:var(--accent);">${it.cost.toFixed(2)} ج.م</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function selectItemFromModal(idx) {
+    const it = modalFiltered[idx];
+    if (it) {
+        closeItemSearchModal();
+        addItemByCode(it.code);
+    }
+}
+
+function onModalSearchKeyDown(e) {
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        modalSelectedIdx = Math.min(modalFiltered.length - 1, modalSelectedIdx + 1);
+        renderModalSearchResults();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        modalSelectedIdx = Math.max(0, modalSelectedIdx - 1);
+        renderModalSearchResults();
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (modalFiltered.length > 0) {
+            selectItemFromModal(modalSelectedIdx);
+        }
+    } else if (e.key === 'Escape') {
+        closeItemSearchModal();
+    }
+}
+
+// ==========================================
+// أزرار الرأس وإجراءات الفاتورة
+// ==========================================
+
+function setDocType(type) {
+    docType = type;
+    const btnBuy = document.getElementById('btnBuy');
+    const btnReturn = document.getElementById('btnReturn');
+    if (type === 'buy') {
+        btnBuy.className = 'active-buy';
+        btnReturn.className = '';
+    } else {
+        btnBuy.className = '';
+        btnReturn.className = 'active-return';
+    }
+}
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    html.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+}
+
+function printDoc() {
+    window.print();
+}
+
+function saveDraft() {
+    alert('تم حفظ المسودة بنجاح (F12)');
+}
+
+function postInvoice() {
+    if (!items.length) {
+        alert('لا يمكن ترحيل فاتورة فارغة بدون أصناف!');
+        return;
+    }
+    const supp = document.getElementById('suppInput').value;
+    const net = document.getElementById('statNet').textContent;
+    alert(`تم ترحيل الفاتورة بنجاح!\nالمورد: ${supp}\nالصافي: ${net} ج.م`);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+// اختصارات لوحة المفاتيح العامة (F2, F4, F12, Ctrl+P, Ctrl+Enter)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'F2') {
+        e.preventDefault();
+        openItemSearchModal();
+    } else if (e.key === 'F4') {
+        e.preventDefault();
+        const inp = document.getElementById('invDiscPct');
+        if (inp) { inp.focus(); inp.select(); }
+    } else if (e.key === 'F12' || (e.ctrlKey && e.key === 's')) {
+        e.preventDefault();
+        saveDraft();
+    } else if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        postInvoice();
+    }
+});
+
+// بدء التشغيل
+document.addEventListener('DOMContentLoaded', () => {
+    renderTable();
+    focusScanInput();
+});
+</script>
+
+</body>
+</html>
