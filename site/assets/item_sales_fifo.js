@@ -76,9 +76,10 @@ document.addEventListener('DOMContentLoaded', function () {
             + '</tr></thead><tbody>' + rows.map(row => {
                 let id;
                 if (expand) { id = 'fifoDetail' + (++serial); actions.set(id, {row, expand}); }
-                return '<tr>' + cols.map(([key], i) => '<td' + (textKeys.includes(key) ? '' : ' class="num"')
+                return '<tr' + (expand ? ' data-fifo-open="' + id + '" role="button" tabindex="0" aria-expanded="false" aria-controls="' + id + '" style="cursor:pointer"' : '') + '>'
+                    + cols.map(([key]) => '<td' + (textKeys.includes(key) ? '' : ' class="num"')
                     + (key === 'profit' && row[key] < 0 ? ' style="color:var(--neg)"' : '') + '>'
-                    + (i === 0 && expand ? '<button type="button" class="btn btn-ghost btn-sm" data-fifo-open="' + id + '" aria-expanded="false" aria-controls="' + id + '"><i class="ti ti-chevron-down"></i> ' + cell(row, key) + '</button>' : cell(row, key))
+                    + cell(row, key)
                     + '</td>').join('') + '</tr>'
                     + (expand ? '<tr id="' + id + '" hidden><td colspan="' + cols.length + '"></td></tr>' : '');
             }).join('') + '</tbody></table></div>';
@@ -123,10 +124,10 @@ document.addEventListener('DOMContentLoaded', function () {
             data = null; el('fifoResults').replaceChildren(); el('fifoTotals').replaceChildren(); el('fifoNotes').textContent = ''; visible(el('fifoPages'), false);
             await load(); return;
         }
-        const button = event.target.closest('[data-fifo-open]');
-        if (!button) return;
-        const target = el(button.dataset.fifoOpen), action = actions.get(button.dataset.fifoOpen);
-        target.hidden = !target.hidden; button.setAttribute('aria-expanded', String(!target.hidden));
+        const row = event.target.closest('[data-fifo-open]');
+        if (!row) return;
+        const target = el(row.dataset.fifoOpen), action = actions.get(row.dataset.fifoOpen);
+        target.hidden = !target.hidden; row.setAttribute('aria-expanded', String(!target.hidden));
         if (target.hidden || target.dataset.loaded) return;
         if (action.expand === 'invoice') {
             target.firstElementChild.innerHTML = table(action.row.lines, lineCols);
@@ -139,6 +140,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const invoices = await request(q);
             target.firstElementChild.innerHTML = table(invoices.rows,invoiceCols,'invoice'); target.dataset.loaded = '1';
         } catch (err) { target.firstElementChild.textContent = err.message; }
+    });
+    root.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const row = event.target.closest('[data-fifo-open]');
+        if (!row) return;
+        event.preventDefault();
+        row.click();
     });
     form.addEventListener('submit', function (event) { event.preventDefault(); load(); });
     el('fifoPrev').addEventListener('click', () => { --page; show(); });
