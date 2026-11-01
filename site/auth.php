@@ -186,6 +186,7 @@ function module_parts(): array
             'salaries'   => 'الرواتب',
             'attendance' => 'الحضور والانصراف',
             'requests'   => 'طلبات التصحيح',
+            'password_reset' => 'موافقة إعادة الباسورد',
         ],
         'reports' => [
             'sales'      => 'المبيعات',

@@ -39,4 +39,5 @@ return [
     '20261030_030_journal_entry_marks',
     '20261030_031_purchase_invoice_discount',
     '20261101_032_user_salary_pin',
+    '20261101_033_password_reset_requests',
 ];

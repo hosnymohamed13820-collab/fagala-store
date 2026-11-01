@@ -164,6 +164,9 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
         <?php if ($error): ?>
             <div class="falert falert-neg"><?= e($error) ?></div>
         <?php endif; ?>
+        <?php if (!empty($_SESSION['pwreset_success'])): unset($_SESSION['pwreset_success']); ?>
+            <div class="falert falert-pos">اتغيّر، ادخل بالباسورد الجديد</div>
+        <?php endif; ?>
 
         <form method="post" autocomplete="off">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -177,6 +180,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
                 <input type="password" class="finput" id="password" name="password" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn btn-primary login-submit">دخول</button>
+            <a class="btn btn-ghost" href="password_reset.php">نسيت الباسورد؟</a>
         </form>
 
         <!-- زر تثبيت التطبيق (يظهر لما المتصفح يسمح) -->

@@ -2,6 +2,15 @@
 // بريف ٨٣٢: تغيير باسورد الحساب من مكان واحد للإعدادات وحسابي.
 require_once __DIR__ . '/sensitive_lib.php';
 
+// نفس شروط الباسورد لحسابي واسترجاع الحساب.
+function my_account_password_error(string $new, string $new2, bool $sameAsOld): ?string
+{
+    if (mb_strlen($new) < 8) return 'الباسورد الجديد لازم ٨ حروف على الأقل';
+    if ($new !== $new2) return 'التأكيد مش زي الباسورد الجديد';
+    if ($sameAsOld) return 'الباسورد الجديد زي القديم';
+    return null;
+}
+
 function my_account_change_password(PDO $pdo, int $userId, string $cur, string $new, string $new2): array
 {
     $now = time();
@@ -22,15 +31,8 @@ function my_account_change_password(PDO $pdo, int $userId, string $cur, string $
             }
             return ['ok' => false, 'error' => 'الباسورد الحالي غلط'];
         }
-        if (mb_strlen($new) < 8) {
-            return ['ok' => false, 'error' => 'الباسورد الجديد لازم ٨ حروف على الأقل'];
-        }
-        if ($new !== $new2) {
-            return ['ok' => false, 'error' => 'التأكيد مش زي الباسورد الجديد'];
-        }
-        if ($new === $cur) {
-            return ['ok' => false, 'error' => 'الباسورد الجديد زي القديم'];
-        }
+        $passwordError = my_account_password_error($new, $new2, $new === $cur);
+        if ($passwordError !== null) return ['ok' => false, 'error' => $passwordError];
         $newHash = password_hash($new, PASSWORD_DEFAULT);
         $updSt = $pdo->prepare('UPDATE users SET password_hash = ?, pw_version = pw_version + 1 WHERE id = ?');
         $updSt->execute([$newHash, $userId]);
