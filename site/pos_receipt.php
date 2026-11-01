@@ -9,11 +9,6 @@ require_login();
 
 $receiptType = (string) ($_GET['type'] ?? 'sale');
 if ($receiptType === 'drawer') {
-    if (!can('pos:drawer') && !can('pos:sell') && !is_real_owner()) {
-        http_response_code(403);
-        exit('مالكش صلاحية فتح الدرج.');
-    }
-
     $eventId = (int) ($_GET['id'] ?? 0);
     if ($eventId <= 0) {
         http_response_code(400);
@@ -42,9 +37,24 @@ if ($receiptType === 'drawer') {
 
     $currentUser = current_user();
     $isOwner = !empty($currentUser['is_owner']) || is_real_owner();
-    if (!$isOwner && !empty($currentUser['branch_id']) && (int) $event['branch_id'] !== (int) $currentUser['branch_id']) {
+    $isDrawerUser = !empty($currentUser['id']) && (int) ($event['user_id'] ?? 0) === (int) $currentUser['id'];
+    if (!can('pos:drawer') && !$isOwner && !$isDrawerUser) {
         http_response_code(403);
-        exit('فتح الدرج تابع لفرع تاني.');
+        exit('مالكش صلاحية على الإيصال ده.');
+    }
+
+    require_once __DIR__ . '/sale_lib.php';
+
+    $user = $currentUser;
+    if ($isOwner) {
+        $user['is_owner'] = 1;
+    }
+
+    try {
+        sale_require_branch($pdo, (int) $event['branch_id'], $user);
+    } catch (SaleApiException $e) {
+        http_response_code($e->getCode() ?: 403);
+        exit('مالكش صلاحية على الإيصال ده.');
     }
 
     $isDrawer = true;
