@@ -37,6 +37,60 @@ function im_escape_like(string $q): string
     return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q);
 }
 
+/** الخانة اللي فوق للكود المطابق بس، مش بحث بالاسم. */
+function im_lookup(string $code): ?array
+{
+    $code = trim($code);
+    if ($code === '') return null;
+    $st = db()->prepare("SELECT 'true' source,item_id id,0 rank_no FROM hq_codes WHERE code=?
+        UNION ALL SELECT 'true',item_id,1 FROM hq_codes WHERE item_id=?
+        UNION ALL SELECT 'site',m.id,2 FROM item_master m WHERE m.sys_code=?
+        OR EXISTS (SELECT 1 FROM item_master_codes c WHERE c.item_master_id=m.id AND c.code=?)
+        ORDER BY rank_no LIMIT 1");
+    $st->execute([$code,$code,$code,$code]);
+    return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+/** نفس مخازن FIFO، وتحويل القطع قبل التجميع، من غير تكرار الأكواد. */
+function im_sidebar(?int $trueId, array $codes, array $suppliers, bool $unlocked): array
+{
+    $id = $trueId ?? -1;
+    $parts = [];
+    foreach (REORDER_AGENT_TO_STO as $agent => $sto) $parts[] = "(agent_key='$agent' AND sto_id=$sto)";
+    $where = implode(' OR ', $parts);
+    $st = db()->prepare("SELECT branch,SUM(balance) balance FROM (
+        SELECT agent_key branch,balance FROM hq_branch_balances WHERE item_id=? AND ($where)
+        UNION ALL SELECT 'hq',balance FROM hq_balances WHERE item_id=? AND sto_id=1
+        ) b GROUP BY branch");
+    $st->execute([$id,$id]);
+    $balances = $st->fetchAll(PDO::FETCH_ASSOC);
+    // نفس أولوية item_line_pieces: معامل السطر الموجب، بعده معامل الكود، بعده واحد.
+    $st = db()->prepare("SELECT l.agent_key branch,
+        SUM(ROUND(l.quantity * COALESCE(NULLIF(GREATEST(COALESCE(l.unit_factor,0),0),0),
+        NULLIF(GREATEST(COALESCE(c.unit_factor,0),0),0),1),3) * CASE WHEN h.doc_type=4 THEN 1 ELSE -1 END) pieces
+        FROM br_invoice_lines l JOIN br_invoices h
+        ON h.agent_key=l.agent_key AND h.sth_id=l.sth_id AND h.suffix=l.suffix
+        LEFT JOIN hq_codes c ON c.code=l.item_code
+        WHERE l.item_id=? AND h.doc_type IN (4,7,17)
+        AND h.agent_key IN ('zahraa','bonjour','degla','abc')
+        AND h.invoice_date>=CURRENT_DATE - INTERVAL 29 DAY AND h.invoice_date<CURRENT_DATE + INTERVAL 1 DAY
+        GROUP BY l.agent_key");
+    $st->execute([$id]);
+    $sales = $st->fetchAll(PDO::FETCH_ASSOC);
+    $total = array_sum(array_column($balances,'balance'));
+    $sold = array_sum(array_column($sales,'pieces'));
+    $largest = $codes[0] ?? [];
+    foreach ($codes as $code) if (($code['unit_factor'] ?? 1) > ($largest['unit_factor'] ?? 1)) $largest=$code;
+    $purchase = $suppliers[0] ?? null;
+    $pieceCost = $unlocked && $purchase && $purchase['unit_price'] !== null
+        ? (float)$purchase['unit_price'] / max(0.0001,(float)$purchase['unit_factor']) : null;
+    $price = $largest['site_price'] ?? $largest['true_price'] ?? null;
+    return ['balances'=>$balances,'balance'=>$total,'sales'=>$sales,'sold'=>$sold,
+        'days'=>$sold>0 ? $total/($sold/30) : null,'largest'=>$largest,'purchase'=>$purchase,
+        'piece_cost'=>$pieceCost,'margin'=>$unlocked && $pieceCost!==null && $price>0
+            ? ($price-$pieceCost*($largest['unit_factor'] ?? 1))/$price*100 : null];
+}
+
 /** @return array{rows:array<int,array<string,mixed>>,page:int,pages:int,total:int} */
 function im_search(string $q, int $page): array
 {
@@ -149,31 +203,37 @@ function im_suppliers(string $source, int $id): array
     $trueId = $source === 'true' ? $id : -1;
     $excluded = implode(',', array_diff(PURCHASE_INTERNAL_ERP_SUPPLIERS, ASHRAQA_ERP_IDS));
     $ashraqa = implode(',', ASHRAQA_ERP_IDS);
-    $sql = "SELECT supplier_code,supplier_name,supplier_type,unit_price,unit_factor,unit_name,quantity,purchase_date,source
+    $sql = "SELECT item_code,supplier_code,supplier_name,supplier_type,unit_price,unit_factor,unit_name,quantity,purchase_date,source
               FROM (
-                    SELECT h.supplier_code,
+                SELECT p.*,ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(NULLIF(supplier_code,''),supplier_name)
+                    ORDER BY purchase_date DESC,purchase_doc DESC,purchase_line DESC
+                ) supplier_rank FROM (
+                    SELECT hl.item_code,h.supplier_code,
                            COALESCE(h.supplier_name,h.supplier_code,'مورد غير معروف') supplier_name,
                            CASE WHEN h.supplier_id IN ($ashraqa) THEN 'إشراقة'
                                 WHEN h.supplier_id=1000195 THEN 'رصيد افتتاحي' ELSE 'مورد' END supplier_type,
-                           hl.unit_price,hl.unit_factor,NULL unit_name,hl.quantity,
-                           h.invoice_date purchase_date,'true' source
+                           hl.unit_price,COALESCE(NULLIF(hl.unit_factor,0),NULLIF(hc.unit_factor,0),1) unit_factor,NULL unit_name,hl.quantity,
+                           h.invoice_date purchase_date,'true' source,h.sth_id purchase_doc,hl.line_no purchase_line
                       FROM hq_invoice_lines hl
                       JOIN hq_invoices h ON h.sth_id=hl.sth_id AND h.suffix=hl.suffix
+                      LEFT JOIN hq_codes hc ON hc.code=hl.item_code
                      WHERE h.doc_type=2 AND hl.item_id=?
                        AND (h.supplier_id IS NULL OR h.supplier_id NOT IN ($excluded))
                     UNION ALL
-                    SELECT s.erp_supplier_code supplier_code,s.name supplier_name,
+                    SELECT l.code item_code,s.erp_supplier_code supplier_code,s.name supplier_name,
                            CASE WHEN s.erp_supplier_id IN ($ashraqa) THEN 'إشراقة'
                                 WHEN s.erp_supplier_id=1000195 THEN 'رصيد افتتاحي' ELSE 'مورد' END supplier_type,
                            l.unit_price,l.unit_factor,COALESCE(mc.unit_name,'') unit_name,l.qty_units quantity,
-                           CONCAT(d.doc_date,' 00:00:00') purchase_date,'site' source
+                           CONCAT(d.doc_date,' 00:00:00') purchase_date,'site' source,d.id purchase_doc,l.id purchase_line
                       FROM stock_doc_lines l
                       JOIN stock_docs d ON d.id=l.doc_id
                       JOIN suppliers s ON s.id=d.supplier_id
                       LEFT JOIN item_master_codes mc ON mc.code=l.code
                      WHERE d.doc_type='purchase' AND d.status='posted' AND $localCondition
                        AND (s.erp_supplier_id IS NULL OR s.erp_supplier_id NOT IN ($excluded))
-                   ) purchases
+                   ) p
+                ) purchases WHERE supplier_rank=1
              ORDER BY purchase_date DESC,supplier_name";
     $st = db()->prepare($sql);
     $st->execute(array_merge([$trueId], $localParams));
@@ -283,7 +343,7 @@ function im_detail(string $source, int $id): ?array
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         if (!$rows) return null;
         $first = $rows[0];
-        $mainKeys = ['id','true_item_id','name1','sale_price_class','item_type','is_cancelled','base_unit','open_price',
+        $mainKeys = ['sys_code','id','true_item_id','name1','sale_price_class','item_type','is_cancelled','base_unit','open_price',
             'cat_is1_id','cat_description_id','cat_type_id','cat_stage_id','cat_company_id','min_qty','max_qty','max_discount_pct'];
         $main = [];
         foreach ($mainKeys as $key) $main[$key] = $first[$key];
@@ -315,9 +375,12 @@ function im_detail(string $source, int $id): ?array
     }
 
     $codeValues = array_column($codes, 'code');
+    $suppliers = im_suppliers($source, $id);
+    $sidebar = im_sidebar($source === 'true' ? $id : ($main['true_item_id'] !== null ? (int)$main['true_item_id'] : null), $codes, $suppliers, $unlocked);
     return [
+        'sidebar' => $sidebar,
         'source' => $source, 'readonly' => $source === 'true', 'main' => $main, 'codes' => $codes,
-        'history' => im_history($codeValues), 'suppliers' => im_suppliers($source, $id),
+        'history' => im_history($codeValues), 'suppliers' => $suppliers,
         'cost_unlocked' => $unlocked,
     ];
 }
@@ -337,7 +400,7 @@ function im_duplicate_codes(array $codes, ?int $excludeCodeId = null): array
 }
 
 /** @param array<string,mixed> $input */
-function im_create(array $input, int $userId, bool $canPrices): int
+function im_create(array $input, int $userId, bool $canPrices, int $attempt = 0): int
 {
     $name = trim((string) ($input['name1'] ?? ''));
     $codes = is_array($input['codes'] ?? null) ? array_values($input['codes']) : [];
@@ -348,13 +411,15 @@ function im_create(array $input, int $userId, bool $canPrices): int
             }
         }
     }
+    if (!in_array(($input['item_type'] ?? 'stock'), ['stock','service'], true)) throw new InvalidArgumentException('نوع الصنف مش صحيح');
+    if (!$codes) $codes = [['code'=>'','code_type'=>0,'unit_name'=>$input['base_unit'] ?? 'قطعة','unit_factor'=>1,'whole_qty'=>1,'is_purchase_code'=>1,'is_sale_code'=>1]];
     if ($name === '' || !$codes) throw new InvalidArgumentException('اسم الصنف والكود الأساسي مطلوبين');
     $clean = [];
     $hasBase = false;
     foreach ($codes as $row) {
         if (!is_array($row)) continue;
         $code = trim((string) ($row['code'] ?? ''));
-        if ($code === '') continue;
+        if ($code === '' && (int)($row['code_type'] ?? 1) !== 0) continue;
         $type = (int) ($row['code_type'] ?? 1) === 0 ? 0 : 1;
         $hasBase = $hasBase || $type === 0;
         $factor = (float) ($row['unit_factor'] ?? 1);
@@ -400,17 +465,31 @@ function im_create(array $input, int $userId, bool $canPrices): int
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        $prefix = str_pad((string)(int)($input['cat_is1_id'] ?? 0), 2, '0', STR_PAD_LEFT);
+        $st = $pdo->prepare("SELECT MAX(sys_code) FROM item_master WHERE sys_code LIKE ? AND CHAR_LENGTH(sys_code)=? FOR UPDATE");
+        $st->execute([$prefix.'%',strlen($prefix)+5]);
+        $last = $st->fetchColumn();
+        $sequence = $last ? (int)substr((string)$last,strlen($prefix))+1 : 1;
+        if ($sequence>99999) throw new DomainException('مسلسل القسم خلص');
+        $sysCode = $prefix.str_pad((string)$sequence,5,'0',STR_PAD_LEFT);
+        $transactionCodes = $clean;
+        foreach ($transactionCodes as &$codeRow) if ($codeRow['code']==='') $codeRow['code']=$sysCode;
+        unset($codeRow);
+        $generatedCodes = array_column($transactionCodes,'code');
+        if (count(array_unique($generatedCodes))!==count($generatedCodes) || im_duplicate_codes($generatedCodes)) {
+            throw new DomainException('الكود موجود بالفعل');
+        }
         $main = im_main_values($input);
         $st = $pdo->prepare('INSERT INTO item_master
             (name1,sale_price_class,item_type,is_cancelled,base_unit,open_price,cat_is1_id,cat_description_id,
-             cat_type_id,cat_stage_id,cat_company_id,min_qty,max_qty,max_discount_pct,created_by,updated_by)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-        $st->execute(array_merge($main, [$userId, $userId]));
+             cat_type_id,cat_stage_id,cat_company_id,min_qty,max_qty,max_discount_pct,created_by,updated_by,sys_code)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        $st->execute(array_merge($main, [$userId, $userId, $sysCode]));
         $itemId = (int) $pdo->lastInsertId();
 
         $groups = [];
         $params = [];
-        foreach ($clean as $row) {
+        foreach ($transactionCodes as $row) {
             $groups[] = '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
             array_push($params, $itemId, $row['code'], $row['name1'], $row['name2'] ?: null, $row['code_type'],
                 $row['unit_name'], $row['unit_type'], $row['unit_factor'], $row['whole_qty'], $row['open_price'],
@@ -420,7 +499,7 @@ function im_create(array $input, int $userId, bool $canPrices): int
             (item_master_id,code,name1,name2,code_type,unit_name,unit_type,unit_factor,whole_qty,open_price,
              prep_days,display_screen,display_order,is_purchase_code,is_sale_code) VALUES ' . implode(',', $groups))->execute($params);
 
-        $priced = array_values(array_filter($clean, fn($r) => $r['price'] !== null));
+        $priced = array_values(array_filter($transactionCodes, fn($r) => $r['price'] !== null));
         if ($priced) {
             $priceGroups = [];
             $priceParams = [];
@@ -440,6 +519,10 @@ function im_create(array $input, int $userId, bool $canPrices): int
         return $itemId;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
+        // سباق UNIQUE أو deadlock بيتعاد مرة واحدة بنفس العملية كاملة.
+        if ($attempt===0 && $e instanceof PDOException && in_array((int)($e->errorInfo[1] ?? 0),[1062,1213],true)) {
+            return im_create($input,$userId,$canPrices,1);
+        }
         throw $e;
     }
 }

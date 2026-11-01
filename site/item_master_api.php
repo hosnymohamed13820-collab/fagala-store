@@ -15,6 +15,8 @@ $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 if ($method === 'GET') {
     api_require('item_master:view');
     switch ($part) {
+        case 'lookup':
+            api_ok(['match' => im_lookup((string) ($_GET['code'] ?? ''))]);
         case 'search':
             api_ok(im_search((string) ($_GET['q'] ?? ''), (int) ($_GET['page'] ?? 1)));
         case 'detail':

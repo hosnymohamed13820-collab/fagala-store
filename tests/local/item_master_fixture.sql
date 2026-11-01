@@ -5,10 +5,10 @@ CREATE TEMPORARY TABLE hq_invoices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TEMPORARY TABLE hq_invoice_lines (
  sth_id BIGINT, suffix VARCHAR(8), line_no INT, item_id INT, quantity DECIMAL(16,3),
- unit_price DECIMAL(16,3), unit_factor DECIMAL(12,3)
+ unit_price DECIMAL(16,3), unit_factor DECIMAL(12,3), item_code VARCHAR(64)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TEMPORARY TABLE item_master (
- id INT, true_item_id INT, name1 VARCHAR(255), sale_price_class VARCHAR(20), item_type VARCHAR(30),
+ id INT, sys_code VARCHAR(20) NULL, true_item_id INT, name1 VARCHAR(255), sale_price_class VARCHAR(20), item_type VARCHAR(30),
  is_cancelled INT, base_unit VARCHAR(40), open_price INT, cat_is1_id INT, cat_description_id INT,
  cat_type_id INT, cat_stage_id INT, cat_company_id INT, min_qty DECIMAL(12,3), max_qty DECIMAL(12,3),
  max_discount_pct DECIMAL(12,3), created_by INT, updated_by INT, updated_at DATETIME

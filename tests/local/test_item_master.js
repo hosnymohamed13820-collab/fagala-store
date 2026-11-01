@@ -3,25 +3,26 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-async function scenario(source, canEdit = true, classes = {}) {
+async function scenario(source, canEdit = true, classes = {}, boot = false, service = false) {
     const elements = new Map(), events = {}, requests = [];
     function element(id) {
         if (!elements.has(id)) elements.set(id, {
-            dataset: {}, hidden: id === 'imCard' || id === 'imCreate',
+            dataset: {}, hidden: ['imCard','imCreate','imSearchView'].includes(id),
             innerHTML: '', textContent: '', value: '', children: [], handlers: {},
             addEventListener(event, fn) { this.handlers[event] = fn; },
             querySelectorAll() { return []; },
             appendChild(child) { this.children.push(child); },
-            setAttribute() {}, focus() {}
+            setAttribute() {}, focus() {}, reset() {}, contains() { return false; }
         });
         return elements.get(id);
     }
-    element('imApp').dataset.boot = JSON.stringify({canEdit, canPrices: true, canMovement: true});
     const item = {source, readonly: source === 'true', cost_unlocked: false,
-        main: {id: 835, name1: 'صنف اختبار', base_unit: 'قطعة', class_names: classes},
+        main: {id: 835, true_item_id: source === 'true' ? 835 : null, sys_code: '1000001', item_type: service ? 'service' : 'stock', name1: 'صنف اختبار', base_unit: 'قطعة', class_names: classes},
         codes: [{id: 835, code: '1', name1: 'صنف اختبار', code_type: 0,
             unit_factor: 1, true_price: 4, site_price: null, cost: null}],
         history: [], suppliers: []};
+    element('imBoot').textContent = JSON.stringify({canEdit, canPrices: true, canMovement: true, item: boot ? item : null});
+    element('imCreate').elements = {barcode: {value: ''}, name1: {focus() {}}};
     const context = {
         URLSearchParams, setTimeout, clearTimeout, console,
         location: {search: '?source=' + source + '&id=835', pathname: '/item_master.php'},
@@ -31,7 +32,7 @@ async function scenario(source, canEdit = true, classes = {}) {
             addEventListener: (name, fn) => events[name] = fn},
         apiFetch: async (url, options) => {
             requests.push({url, options});
-            if (url.includes('part=categories')) return {data: {options: {}}};
+            if (url.includes('part=categories')) return boot ? new Promise(() => {}) : {data: {options: {}}};
             if (url.includes('part=detail')) return {data: {item}};
             if (url.includes('part=search')) return {data: {rows: [{source, id: 835, code: '1',
                 name1: 'صنف اختبار', sale_price: 4, balance: 191}], pages: 1, page: 1, total: 1}};
@@ -44,9 +45,13 @@ async function scenario(source, canEdit = true, classes = {}) {
     await new Promise(setImmediate);
     assert.equal(element('imCard').hidden, false);
     assert.equal(element('imSearchView').hidden, true);
-    assert.equal(element('imCode').textContent, '1');
+    assert.equal(element('imCode').textContent, source === 'true' ? 835 : '1000001');
     assert.equal(element('imTitle').textContent, 'صنف اختبار');
-    assert.equal(element('imData').innerHTML.includes('تكلفة/أساسي'), false);
+    assert.equal(element('imData').innerHTML.includes('مقفولة'), true);
+    assert.match(element('imData').innerHTML, /dir="auto"/);
+    assert.equal(element('imSidebar').innerHTML.includes('الرصيد الكلي'), !service);
+    assert.equal(element('imSidebar').innerHTML.includes('الرصيد يكفي'), !service);
+    assert.equal(requests.some(r => r.url.includes('part=detail')), !boot);
     assert.equal(element('imCompany').innerHTML.includes('data-field'), false);
     assert.equal(element('imData').innerHTML.includes('data-field="name1"'), source === 'site' && canEdit);
     if (source === 'true') {
@@ -69,6 +74,16 @@ async function scenario(source, canEdit = true, classes = {}) {
     assert.match(element('imResults').innerHTML, /role="button" tabindex="0" aria-expanded="false"/);
     assert.match(element('imResults').innerHTML, /class="ftable"/);
     assert.doesNotMatch(element('imResults').innerHTML, /data-xt-off/);
+    element('imLookup').value = '9999';
+    await element('imLookup').handlers.keydown({key: 'Enter', preventDefault() {}});
+    await new Promise(setImmediate);
+    assert.equal(element('imMissing').hidden, false);
+    assert.match(element('imMissingText').textContent, /9999/);
+    if (canEdit) {
+        element('imDefine').handlers.click();
+        assert.equal(element('imCreate').hidden, false);
+        assert.equal(element('imCreate').elements.barcode.value, '9999');
+    }
 }
 
 (async () => {
@@ -76,5 +91,7 @@ async function scenario(source, canEdit = true, classes = {}) {
     await scenario('true');
     await scenario('true', true, {description: 'وصف True', type: 'نوع True', stage: 'مرحلة True', company: 'شركة True'});
     await scenario('site', false);
+    await scenario('true', true, {}, true);
+    await scenario('site', true, {}, true, true);
     console.log('PASS: DOMContentLoaded + direct link + site edit/save + view only + sensitive lock');
 })().catch(error => { console.error(error); process.exitCode = 1; });
