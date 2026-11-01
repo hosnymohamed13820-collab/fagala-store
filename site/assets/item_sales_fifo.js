@@ -30,8 +30,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return q;
     }
     async function request(q, options) {
-        const result = await apiFetch('fifo_report_api.php?' + q, options);
-        return result.data;
+        try {
+            const result = await apiFetch('fifo_report_api.php?' + q, options);
+            return result.data;
+        } catch (err) {
+            if (err.status === 423) {
+                ++sequence; data = null; loadedQuery = ''; actions.clear();
+                el('fifoResults').replaceChildren(); el('fifoTotals').replaceChildren(); el('fifoNotes').textContent = '';
+                visible(el('fifoPages'), false);
+                message('الأرقام الحساسة مقفولة');
+            }
+            throw err;
+        }
     }
     function message(text) { el('fifoMessage').textContent = text; }
     function status(value) {

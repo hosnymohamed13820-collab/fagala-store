@@ -512,7 +512,13 @@ th.sorted .sort-icon {
             </a>
         <?php endif; ?>
     </nav>
-    <?php if ($tabParam === 'fifo' && $canProfit) require __DIR__ . '/includes/item_sales_fifo_view.php'; ?>
+    <?php if ($tabParam === 'fifo' && $canProfit): ?>
+        <?php if (!sens_unlocked()): ?>
+            <?php sens_lock_screen('ربح الصادر أولاً'); ?>
+        <?php else: ?>
+            <?php require __DIR__ . '/includes/item_sales_fifo_view.php'; ?>
+        <?php endif; ?>
+    <?php endif; ?>
 
     <!-- =================================================================== -->
     <!--  الجزء الأول: حالة الرصيد                                           -->

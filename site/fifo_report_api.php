@@ -3,12 +3,17 @@ declare(strict_types=1);
 define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
+require_once __DIR__ . '/sensitive_lib.php';
 api_begin();
 require_login();
 api_require('item_sales:profit');
+sens_page();
 require_once __DIR__ . '/fifo_lib.php';
 
 $part=(string)($_GET['part'] ?? '');
+if (!in_array($part, ['status', 'suppliers'], true) && !sens_unlocked()) {
+    api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
+}
 if ($part==='rebuild') {
     api_method('POST'); api_csrf();
     session_write_close();
