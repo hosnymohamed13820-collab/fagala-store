@@ -30,6 +30,10 @@ if (empty($allowedTabs)) {
 
 // تحديد التاب النشط: لو طلب تاب مسموح يفتحه، لو مالوش صلاحيته يتحوّل لأول تاب مسموح
 $tab = hr_resolve_active_tab($allowedTabs, $_GET['tab'] ?? null);
+if (($_GET['tab'] ?? '') === 'password_reset' || $tab === 'password_reset') {
+    header('Location: password_resets.php');
+    exit;
+}
 
 // القوائم المنسدلة للمودالات العامة في آخر الصفحة — يتم تحميلها دائماً
 $payTreasuries = hr_get_pay_treasuries($pdo);
@@ -1105,13 +1109,7 @@ $statusBadge = function($st) {
     <div class="falert <?= $flashType === 'success' ? 'falert-pos' : ($flashType === 'warning' ? 'falert-warn' : 'falert-neg') ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-<div class="tabs ftabs" style="margin-bottom:20px;">
-    <?php foreach ($allowedTabs as $tabKey => $tabLabel): ?>
-        <a href="?tab=<?= e($tabKey) ?>" class="tab ftab <?= $tab === $tabKey ? 'is-active' : '' ?>">
-            <?= e($tabLabel) ?><?php if ($tabKey === 'requests' && !empty($pendingReqCount)): ?><span class="count"><?= (int)$pendingReqCount ?></span><?php endif; ?>
-        </a>
-    <?php endforeach; ?>
-</div>
+<?= hr_tabs_html($allowedTabs, $tab, (int)$pendingReqCount) ?>
 
 <?php if ($tab === 'employees'): ?>
     <div class="card fcard">

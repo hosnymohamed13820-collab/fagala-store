@@ -43,6 +43,22 @@ function hr_resolve_active_tab(array $allowedTabs, ?string $requestedTab): strin
     return (string) array_key_first($allowedTabs);
 }
 
+/** شريط الموارد البشرية المشترك؛ موافقة الباسورد ليها صفحتها المستقلة. */
+function hr_tabs_html(array $tabs, string $active, int $pendingReqCount = 0): string
+{
+    $html = '<div class="ftabs" style="margin-bottom:20px;">';
+    foreach ($tabs as $key => $label) {
+        $href = $key === 'password_reset' ? 'password_resets.php' : 'hr.php?tab=' . rawurlencode((string)$key);
+        $html .= '<a href="' . e($href) . '" class="ftab' . ($active === $key ? ' is-active' : '') . '"'
+            . ($active === $key ? ' aria-current="page"' : '') . '>' . e($label);
+        if ($key === 'requests' && $pendingReqCount > 0) {
+            $html .= '<span class="fchip fchip-neg">' . $pendingReqCount . '</span>';
+        }
+        $html .= '</a>';
+    }
+    return $html . '</div>';
+}
+
 /**
  * خزائن الصرف المتاحة
  */

@@ -10,11 +10,15 @@ try {
     exit('مالكش صلاحية');
 }
 header('Cache-Control: no-store');
+require_once __DIR__ . '/hr_lib.php';
+$allowedTabs = hr_get_allowed_tabs(current_user());
+$pendingReqCount = isset($allowedTabs['requests']) ? hr_get_pending_requests_count(db()) : 0;
 $page_title = 'طلبات إعادة الباسورد';
 $active_module = 'hr';
 require_once __DIR__ . '/includes/header.php';
 ?>
 <main class="content-container">
+    <?= hr_tabs_html($allowedTabs, 'password_reset', (int)$pendingReqCount) ?>
     <h1>طلبات إعادة الباسورد</h1>
     <p>طلبات آخر ٢٤ ساعة. اتأكد بنفسك من صاحب الحساب قبل ما توافق.</p>
     <div class="falert falert-pos" id="resetDecision" role="status" hidden></div>
