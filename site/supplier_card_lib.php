@@ -73,7 +73,7 @@ function sc_documents(array $s, string $from, string $to): array {
 
 function sc_lines(string $src,string $id): array {
     if ($src==='hq' && preg_match('/^(\d+):([a-zA-Z0-9_]+)$/D',$id,$m)) {
-        $st=db()->prepare("SELECT c.code,l.item_name name,l.quantity,l.cost_price cost,l.quantity*l.cost_price total
+        $st=db()->prepare("SELECT c.code,l.item_name name,l.quantity,l.cost_price cost,l.quantity * l.cost_price total
             FROM hq_invoice_lines l JOIN hq_invoices h ON h.sth_id=l.sth_id AND h.suffix=l.suffix
             LEFT JOIN (SELECT item_id,MIN(code) code FROM hq_codes WHERE code_type=0 GROUP BY item_id) c ON c.item_id=l.item_id
             WHERE h.sth_id=? AND h.suffix=? AND h.doc_type IN (2,6) ORDER BY l.line_no");
@@ -93,7 +93,7 @@ function sc_lines(string $src,string $id): array {
 function sc_items(array $s): array {
     $site=(string)setting('supplier_site_docs','1')!=='0';
     $sql="SELECT CONCAT('hq:',l.item_id) item_key,l.item_id,c.code,l.item_name name,
-        l.quantity*COALESCE(NULLIF(l.unit_factor,0),NULLIF(hc.unit_factor,0),1) quantity,
+        l.quantity * COALESCE(NULLIF(l.unit_factor,0),NULLIF(hc.unit_factor,0),1) quantity,
         l.cost_price/COALESCE(NULLIF(l.unit_factor,0),NULLIF(hc.unit_factor,0),1) cost,
         h.invoice_date purchase_date,CONCAT('hq:',h.suffix,':',h.sth_id,':',l.line_no) tie
         FROM hq_invoice_lines l JOIN hq_invoices h ON h.sth_id=l.sth_id AND h.suffix=l.suffix
