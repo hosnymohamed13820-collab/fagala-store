@@ -6,6 +6,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/sensitive_lib.php';
 require_once __DIR__ . '/item_classes_lib.php';
+require_once __DIR__ . '/purchase_doc_lib.php';
+require_once __DIR__ . '/branch_recon_lib.php';
+require_once __DIR__ . '/reorder_lib.php';
 
 const IM_PAGE_SIZE = 20;
 
@@ -28,56 +31,81 @@ function im_words(string $q): array
     return array_values(array_slice(preg_split('/\s+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 8));
 }
 
+/** تهريب LIKE بنفس طريقة pdft_esc_like من غير تحميل مكتبة التسعير. */
+function im_escape_like(string $q): string
+{
+    return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q);
+}
+
 /** @return array{rows:array<int,array<string,mixed>>,page:int,pages:int,total:int} */
 function im_search(string $q, int $page): array
 {
     $q = trim($q);
     $page = max(1, $page);
     if ($q === '') return ['rows' => [], 'page' => 1, 'pages' => 0, 'total' => 0];
-
-    $words = im_words($q);
-    $trueParts = [];
-    $siteParts = [];
-    $trueParams = [$q];
-    $siteParams = [$q];
-    foreach ($words as $word) {
-        $trueParts[] = "CONCAT_WS(' ', c.name, ic.item_name) LIKE ?";
-        $siteParts[] = "CONCAT_WS(' ', m.name1, mc.name1, mc.name2) LIKE ?";
-        $like = '%' . $word . '%';
-        $trueParams[] = $like;
-        $siteParams[] = $like;
+    $prefix = im_escape_like($q) . '%';
+    $trueParts = $siteParts = $wordParams = [];
+    foreach (im_words($q) as $word) {
+        $trueParts[] = "CONCAT_WS(' ', c.name, ic.item_name) LIKE ? ESCAPE '!'";
+        $siteParts[] = "CONCAT_WS(' ', m.name1, mc.name1, mc.name2) LIKE ? ESCAPE '!'";
+        $wordParams[] = '%' . im_escape_like($word) . '%';
     }
-    $trueName = $trueParts ? '(' . implode(' AND ', $trueParts) . ')' : '0';
-    $siteName = $siteParts ? '(' . implode(' AND ', $siteParts) . ')' : '0';
-    $union = "
-        SELECT 'true' source, c.item_id item_key, c.item_id id,
-               COALESCE(MAX(ic.item_name), MAX(c.name), '') name1,
-               COALESCE(MAX(CASE WHEN c.code_type=0 THEN c.code END), MIN(c.code)) code,
-               MAX(c.code = ?) exact_code
-          FROM hq_codes c
-          LEFT JOIN hq_item_cats ic ON ic.item_id=c.item_id
-         WHERE c.code = ? OR $trueName
-         GROUP BY c.item_id
-        UNION ALL
-        SELECT 'site' source, m.id item_key, m.id id, m.name1,
-               COALESCE(MAX(CASE WHEN mc.code_type=0 THEN mc.code END), MIN(mc.code)) code,
-               MAX(mc.code = ?) exact_code
-          FROM item_master m
-          JOIN item_master_codes mc ON mc.item_master_id=m.id
-         WHERE mc.code = ? OR $siteName
-         GROUP BY m.id, m.name1";
-
-    $params = array_merge([$q], $trueParams, [$q], $siteParams);
-    $count = db()->prepare("SELECT COUNT(*) FROM ($union) im_results");
+    $trueName = implode(' AND ', $trueParts) ?: '0';
+    $siteName = implode(' AND ', $siteParts) ?: '0';
+    $params = array_merge([$q, $prefix, $prefix], $wordParams, [$q, $prefix, $prefix], $wordParams);
+    // التجميع قبل الصفحة بيمنع تكرار الصنف، والكود الأساسي من كل أكواده.
+    $union = "SELECT 'true' source,c.item_id id,c.item_id true_item_id,
+                COALESCE(MAX(ic.item_name),MAX(c.name),'') name1,
+                COALESCE(MIN(CASE WHEN c.code_type=0 THEN c.code END),MIN(c.code)) code,
+                MIN(CASE WHEN c.code=? THEN 0 WHEN c.code LIKE ? ESCAPE '!' THEN 1
+                    WHEN COALESCE(ic.item_name,c.name,'') LIKE ? ESCAPE '!' THEN 2
+                    WHEN $trueName THEN 3 ELSE 4 END) match_rank
+            FROM hq_codes c LEFT JOIN hq_item_cats ic ON ic.item_id=c.item_id
+            GROUP BY c.item_id HAVING match_rank<4
+            UNION ALL
+            SELECT 'site' source,m.id,m.true_item_id,m.name1,
+                COALESCE(MIN(CASE WHEN mc.code_type=0 THEN mc.code END),MIN(mc.code)) code,
+                MIN(CASE WHEN mc.code=? THEN 0 WHEN mc.code LIKE ? ESCAPE '!' THEN 1
+                    WHEN m.name1 LIKE ? ESCAPE '!' THEN 2
+                    WHEN $siteName THEN 3 ELSE 4 END) match_rank
+            FROM item_master m JOIN item_master_codes mc ON mc.item_master_id=m.id
+            GROUP BY m.id,m.true_item_id,m.name1 HAVING match_rank<4";
+    $count = db()->prepare("SELECT COUNT(*) FROM ($union) results");
     $count->execute($params);
     $total = (int) $count->fetchColumn();
-    $pages = $total > 0 ? (int) ceil($total / IM_PAGE_SIZE) : 0;
-    if ($pages > 0) $page = min($page, $pages);
+    $pages = $total ? (int) ceil($total / IM_PAGE_SIZE) : 0;
+    if ($pages) $page = min($page, $pages);
     $offset = ($page - 1) * IM_PAGE_SIZE;
-
-    $st = db()->prepare("SELECT source,id,name1,code FROM ($union) im_results
-                          ORDER BY exact_code DESC, name1 ASC, source ASC
-                          LIMIT " . IM_PAGE_SIZE . " OFFSET " . $offset);
+    $balanceParts = [];
+    foreach (REORDER_AGENT_TO_STO as $agent => $sto) {
+        $balanceParts[] = "(b.agent_key='$agent' AND b.sto_id=$sto)";
+    }
+    $balanceWhere = implode(' OR ', $balanceParts);
+    // الـjoins على أصناف الصفحة بس، وبنفس مخازن fifo_store_profit.
+    $st = db()->prepare("WITH pg AS (
+            SELECT * FROM ($union) results ORDER BY match_rank,name1,source,id
+            LIMIT " . IM_PAGE_SIZE . " OFFSET $offset
+        ), ids AS (SELECT DISTINCT true_item_id item_id FROM pg WHERE true_item_id IS NOT NULL),
+        balances AS (
+            SELECT item_id,SUM(balance) balance FROM (
+                SELECT b.item_id,b.balance FROM hq_branch_balances b JOIN ids ON ids.item_id=b.item_id
+                WHERE $balanceWhere
+                UNION ALL
+                SELECT b.item_id,b.balance FROM hq_balances b JOIN ids ON ids.item_id=b.item_id WHERE b.sto_id=1
+            ) bb GROUP BY item_id
+        )
+        SELECT pg.source,pg.id,pg.name1,pg.code,
+            CASE WHEN pg.source='true' THEN cn.name ELSE sc.name END category_name,
+            COALESCE(ip.price,hc.price) sale_price,COALESCE(b.balance,0) balance
+        FROM pg
+        LEFT JOIN hq_codes hc ON hc.code=pg.code
+        LEFT JOIN item_prices ip ON ip.code=pg.code
+        LEFT JOIN hq_item_cats ic ON ic.item_id=pg.true_item_id
+        LEFT JOIN hq_cat_names cn ON cn.is1_id=ic.is1_id
+        LEFT JOIN item_master m ON pg.source='site' AND m.id=pg.id
+        LEFT JOIN item_classes sc ON sc.id=m.cat_is1_id AND sc.kind='section'
+        LEFT JOIN balances b ON b.item_id=pg.true_item_id
+        ORDER BY pg.match_rank,pg.name1,pg.source,pg.id");
     $st->execute($params);
     return ['rows' => $st->fetchAll(PDO::FETCH_ASSOC), 'page' => $page, 'pages' => $pages, 'total' => $total];
 }
@@ -119,23 +147,32 @@ function im_suppliers(string $source, int $id): array
         : 'l.item_id = ?';
     $localParams = $source === 'site' ? [$id, $id] : [$id];
     $trueId = $source === 'true' ? $id : -1;
-    $sql = "SELECT supplier_name,unit_price,unit_factor,unit_name,quantity,purchase_date,source
+    $excluded = implode(',', array_diff(PURCHASE_INTERNAL_ERP_SUPPLIERS, ASHRAQA_ERP_IDS));
+    $ashraqa = implode(',', ASHRAQA_ERP_IDS);
+    $sql = "SELECT supplier_code,supplier_name,supplier_type,unit_price,unit_factor,unit_name,quantity,purchase_date,source
               FROM (
-                    SELECT COALESCE(h.supplier_name,h.supplier_code,'مورد غير معروف') supplier_name,
+                    SELECT h.supplier_code,
+                           COALESCE(h.supplier_name,h.supplier_code,'مورد غير معروف') supplier_name,
+                           CASE WHEN h.supplier_id IN ($ashraqa) THEN 'إشراقة'
+                                WHEN h.supplier_id=1000195 THEN 'رصيد افتتاحي' ELSE 'مورد' END supplier_type,
                            hl.unit_price,hl.unit_factor,NULL unit_name,hl.quantity,
                            h.invoice_date purchase_date,'true' source
                       FROM hq_invoice_lines hl
                       JOIN hq_invoices h ON h.sth_id=hl.sth_id AND h.suffix=hl.suffix
                      WHERE h.doc_type=2 AND hl.item_id=?
+                       AND (h.supplier_id IS NULL OR h.supplier_id NOT IN ($excluded))
                     UNION ALL
-                    SELECT s.name supplier_name,l.unit_price,l.unit_factor,
-                           COALESCE(mc.unit_name,'') unit_name,l.qty_units quantity,
+                    SELECT s.erp_supplier_code supplier_code,s.name supplier_name,
+                           CASE WHEN s.erp_supplier_id IN ($ashraqa) THEN 'إشراقة'
+                                WHEN s.erp_supplier_id=1000195 THEN 'رصيد افتتاحي' ELSE 'مورد' END supplier_type,
+                           l.unit_price,l.unit_factor,COALESCE(mc.unit_name,'') unit_name,l.qty_units quantity,
                            CONCAT(d.doc_date,' 00:00:00') purchase_date,'site' source
                       FROM stock_doc_lines l
                       JOIN stock_docs d ON d.id=l.doc_id
                       JOIN suppliers s ON s.id=d.supplier_id
                       LEFT JOIN item_master_codes mc ON mc.code=l.code
                      WHERE d.doc_type='purchase' AND d.status='posted' AND $localCondition
+                       AND (s.erp_supplier_id IS NULL OR s.erp_supplier_id NOT IN ($excluded))
                    ) purchases
              ORDER BY purchase_date DESC,supplier_name";
     $st = db()->prepare($sql);
