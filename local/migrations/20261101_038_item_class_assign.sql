@@ -23,4 +23,4 @@ CREATE TABLE IF NOT EXISTS `item_class_assign_log` (
   created_at DATETIME NOT NULL,
   KEY idx_ical_item (item_id,kind,created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-INSERT IGNORE INTO `schema_migrations` (name) VALUES ('20261101_038_item_class_assign');
+INSERT IGNORE INTO schema_migrations (name) VALUES ('20261101_038_item_class_assign');
