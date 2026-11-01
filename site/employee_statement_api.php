@@ -26,8 +26,12 @@ $uid = (int)($u['id'] ?? 0);
 $isManager = is_owner() || can('hr:advances');
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
-$pinRequired = salary_pin_statement_required(db(), $uid, $isManager, $requestedEmpId);
-if ($pinRequired && !salary_pin_unlocked()) {
+$isOwn = salary_pin_is_own(db(), $uid, $requestedEmpId);
+$pinRequired = $isOwn || !$isManager;
+if (salary_pin_read_only($isOwn)) {
+    api_fail('حسابك مشاهدة بس', 423, 'locked');
+}
+if ($pinRequired && !salary_pin_unlocked($isOwn)) {
     api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
 }
 

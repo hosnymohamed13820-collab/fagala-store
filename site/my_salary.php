@@ -24,8 +24,9 @@ $active_module = ''; // مش موديول في القايمة الجانبية
 require_once __DIR__ . '/salary_pin_lib.php';
 require_once __DIR__ . '/includes/header.php';
 
-if (!salary_pin_unlocked()) {
-    salary_pin_lock_screen('تفاصيل المرتب');
+$isOwn = salary_pin_is_own($pdo, $uid, $requestedEmpId);
+if (!salary_pin_unlocked($isOwn)) {
+    salary_pin_lock_screen('تفاصيل المرتب', $isOwn);
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }

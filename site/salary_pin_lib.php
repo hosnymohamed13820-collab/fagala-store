@@ -10,10 +10,9 @@ function salary_pin_reset(PDO $pdo, int $uid): void
     $pdo->prepare('UPDATE users SET salary_pin_hash=NULL, salary_pin_fails=0, salary_pin_block_until=NULL WHERE id = ?')->execute([$uid]);
 }
 
-function salary_pin_read_only(): bool
+function salary_pin_read_only(bool $isOwn = false): bool
 {
-    return !empty($GLOBALS['VIEW_ALL_PAGE'])
-        || (!is_real_owner() && in_array('view_all', $_SESSION['permissions'] ?? [], true));
+    return !$isOwn && !empty($GLOBALS['VIEW_ALL_PAGE']);
 }
 
 function salary_pin_is_set(PDO $pdo, int $uid): bool
@@ -23,9 +22,9 @@ function salary_pin_is_set(PDO $pdo, int $uid): bool
     return (bool) $st->fetchColumn();
 }
 
-function salary_pin_unlocked(): bool
+function salary_pin_unlocked(bool $isOwn = false): bool
 {
-    if (salary_pin_read_only() || (int) ($_SESSION['salary_pin_until'] ?? 0) <= time()
+    if (salary_pin_read_only($isOwn) || (int) ($_SESSION['salary_pin_until'] ?? 0) <= time()
         || (int) ($_SESSION['salary_pin_uid'] ?? 0) !== (int) (current_user()['id'] ?? 0)) {
         return false;
     }
@@ -41,13 +40,14 @@ function salary_pin_unlocked(): bool
     return true;
 }
 
-// نفس تحديد صاحب الكشف في employee_statement_data، قبل قراية الحركات.
-function salary_pin_statement_required(PDO $pdo, int $uid, bool $isManager, ?int $requestedEmpId): bool
+// نفس تحديد صاحب المرتب والكشف في الصفحات والـAPI، قبل قراية الأرقام.
+function salary_pin_is_own(PDO $pdo, int $uid, ?int $requestedEmpId): bool
 {
+    if ($requestedEmpId === null) return true;
     $st = $pdo->prepare('SELECT id FROM employees WHERE user_id = ?');
     $st->execute([$uid]);
     $ownEmpId = (int) $st->fetchColumn();
-    return $ownEmpId > 0 && (!$isManager || $requestedEmpId === null || $requestedEmpId === $ownEmpId);
+    return $ownEmpId > 0 && $requestedEmpId === $ownEmpId;
 }
 
 // الصف بيتقفل جوه المعاملة عشان المحاولات المتزامنة ماتضيّعش عدّاد الغلط.
@@ -73,7 +73,7 @@ function salary_pin_check_secret(PDO $pdo, int $uid, array $user, string $secret
 
 function salary_pin_verify(PDO $pdo, int $uid, string $pin): array
 {
-    if (salary_pin_read_only()) {
+    if (salary_pin_read_only($uid === (int) (current_user()['id'] ?? 0))) {
         return ['ok' => false, 'error' => 'حسابك مشاهدة بس', 'status' => 403, 'code' => 'forbidden'];
     }
     $pdo->beginTransaction();
@@ -98,7 +98,7 @@ function salary_pin_verify(PDO $pdo, int $uid, string $pin): array
 
 function salary_pin_set(PDO $pdo, int $uid, string $loginPwdOrOldPin, string $new, string $new2): array
 {
-    if (salary_pin_read_only()) {
+    if (salary_pin_read_only($uid === (int) (current_user()['id'] ?? 0))) {
         return ['ok' => false, 'error' => 'حسابك مشاهدة بس', 'status' => 403, 'code' => 'forbidden'];
     }
     $pdo->beginTransaction();
@@ -179,12 +179,12 @@ function salary_pin_fields(bool $isSet): void
     <?php
 }
 
-function salary_pin_lock_screen(string $what): void
+function salary_pin_lock_screen(string $what, bool $isOwn = false): void
 {
     $safeWhat = htmlspecialchars($what, ENT_QUOTES, 'UTF-8');
     echo '<div class="sens-lock-card fcard"><div class="sens-lock-icon"><i class="ti ti-lock"></i></div>';
     echo '<h2 class="sens-lock-title">' . $safeWhat . ' مقفولة</h2>';
-    if (salary_pin_read_only()) {
+    if (salary_pin_read_only($isOwn)) {
         echo '<p class="sens-lock-msg">الأرقام مقفولة — حسابك مشاهدة بس</p></div>';
         return;
     }

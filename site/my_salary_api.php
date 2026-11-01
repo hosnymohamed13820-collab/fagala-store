@@ -24,12 +24,16 @@ $u = current_user();
 $uid = (int)($u['id'] ?? 0);
 
 $isManager = is_owner() || can('hr:salaries');
+$requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
+$isOwn = salary_pin_is_own(db(), $uid, $requestedEmpId);
+if (salary_pin_read_only($isOwn)) {
+    api_fail('حسابك مشاهدة بس', 423, 'locked');
+}
 
 // الأرقام الحساسة: نفس رد مقفول اللي في item_sales_api.php
-if (!salary_pin_unlocked()) {
+if (!salary_pin_unlocked($isOwn)) {
     api_fail('الأرقام الحساسة مقفولة', 423, 'locked');
 }
-$requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
 $data = my_salary_data($uid, $isManager, $requestedEmpId);
 $targetEmpId       = $data['target_emp_id'];

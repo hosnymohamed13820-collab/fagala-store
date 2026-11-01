@@ -1133,6 +1133,8 @@
            والـink-500 اغمّق في ١٤٤ عشان النص العادي على الخلفيات الفاتحة،
            فنسبته على الشريط نزلت لـ٢٫٩٤. الثابت ده ٦٫١٠ / ٧٫٣٨ (بريف ١٤٤). */
         .user-info .role { color: #94a3b8; font-size: 12px; }
+        .sidebar-actions { display:flex; gap:var(--sp-2); }
+        .sidebar-actions > .btn-logout { flex:1; min-width:0; white-space:nowrap; }
         .btn-logout {
             display: flex; align-items: center; justify-content: center;
             gap: 8px;

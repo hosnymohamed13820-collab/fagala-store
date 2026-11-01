@@ -10,9 +10,6 @@ api_begin();
 require_login();
 api_method('POST');
 api_csrf();
-if (salary_pin_read_only()) {
-    api_fail('حسابك مشاهدة بس', 403, 'forbidden');
-}
 $uid = (int) current_user()['id'];
 $input = api_input();
 $action = (string) ($input['action'] ?? '');

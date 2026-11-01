@@ -20,7 +20,8 @@ $uid = (int)($u['id'] ?? 0);
 $isManager = is_owner() || can('hr:advances');
 $requestedEmpId = isset($_GET['emp']) && (int)$_GET['emp'] > 0 ? (int)$_GET['emp'] : null;
 
-$pinRequired = salary_pin_statement_required(db(), $uid, $isManager, $requestedEmpId);
+$isOwn = salary_pin_is_own($pdo, $uid, $requestedEmpId);
+$pinRequired = $isOwn || !$isManager;
 // مسميات أنواع الحركات بالعامية
 $moveTypeLabels = [
     'advance'          => 'سلفة',
@@ -33,8 +34,8 @@ $moveTypeLabels = [
 $page_title = 'كشف حساب الموظف';
 $active_module = ''; // مش موديول في القايمة الجانبية
 require_once __DIR__ . '/includes/header.php';
-if ($pinRequired && !salary_pin_unlocked()) {
-    salary_pin_lock_screen('كشف حساب الموظف');
+if (salary_pin_read_only($isOwn) || ($pinRequired && !salary_pin_unlocked($isOwn))) {
+    salary_pin_lock_screen('كشف حساب الموظف', $isOwn);
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }

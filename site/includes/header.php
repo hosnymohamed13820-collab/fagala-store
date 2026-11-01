@@ -122,7 +122,7 @@ require_once __DIR__ . '/nav_icons.php';
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=74').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=75').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -134,7 +134,7 @@ require_once __DIR__ . '/nav_icons.php';
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/fagala.css?v=32">
+    <link rel="stylesheet" href="assets/fagala.css?v=33">
 </head>
 <body>
 <script>
@@ -202,12 +202,14 @@ require_once __DIR__ . '/nav_icons.php';
                     <div class="role"><?= is_real_owner() ? 'أونر' : e($u['username']) ?></div>
                 </div>
             </div>
+            <div class="sidebar-actions">
             <a href="account.php" class="btn-logout">
                 <i class="ti ti-user-cog"></i> حسابي
             </a>
             <a href="logout.php" class="btn-logout">
-                <i class="ti ti-logout"></i> تسجيل الخروج
+                <i class="ti ti-logout"></i> خروج
             </a>
+            </div>
         </div>
     </aside>
 
