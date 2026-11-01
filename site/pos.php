@@ -430,6 +430,9 @@ require_once __DIR__ . '/includes/header.php';
         <input type="hidden" id="posInvoiceDate">
         <input type="hidden" id="posInvoiceSeller">
         <div id="posCustomerBar" style="display:none;"></div>
+        <?php if (can('pos:reports') || is_real_owner()): ?>
+            <a class="btn btn-sm btn-ghost" href="pos_reports.php" style="margin-inline-start:auto;" title="تقارير نقطة البيع"><i class="ti ti-chart-bar"></i> تقارير</a>
+        <?php endif; ?>
     </div>
 
     <div id="posAlert"></div>
@@ -476,9 +479,6 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn btn-sm btn-primary" id="posBtnCloseSession" style="display:none;">
                 <i class="ti ti-lock"></i> تقفيل الوردية
             </button>
-            <?php if (can('pos:reports') || is_real_owner()): ?>
-                <a class="btn btn-sm btn-outline" href="pos_reports.php"><i class="ti ti-chart-bar"></i> تقارير</a>
-            <?php endif; ?>
         </div>
     </div>
 
@@ -597,6 +597,9 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="text" class="finput" id="posReturnSearchInput"
                        placeholder="اكتب أو امسح رقم الإيصال الأصلي (مثال: 1/B238T/2026/1) أو رقم الفاتورة..."
                        autocomplete="off" style="flex:1;">
+                <button type="button" class="btn btn-outline" id="posBtnReturnCamera" title="امسح بالكاميرا">
+                    <i class="ti ti-camera"></i>
+                </button>
                 <button type="button" class="btn btn-primary" id="posBtnReturnSearch">
                     <i class="ti ti-search"></i> بحث
                 </button>
@@ -3285,9 +3288,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 reason: reason
             }
         })
-        .then(function () {
+        .then(function (res) {
             closeModal(modalDrawer);
             showAlert('pos', 'تم تسجيل فتح الدرج بنجاح.');
+            const data = (res && res.data) || {};
+            if (data.mode === 'browser' && data.url) {
+                try {
+                    printReceiptUrl(data.url);
+                } catch (e) {
+                    showAlert('warn', 'الدرج اتسجّل بس الإيصال ماطّبعش، ومفيش مكان لإعادة طباعته حالياً.');
+                }
+            } else if (data.mode === 'queue') {
+                showAlert('warn', 'الدرج اتسجّل. الجهاز ده بيطبع من طابور، وإيصال فتح الدرج لسه مش بيتبعت للطابور.');
+            }
         })
         .catch(function (err) {
             drawerAlert.innerHTML = ui.alert('neg', err.message || 'تعذر فتح الدرج.');
@@ -3567,6 +3580,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btnReturnSearch) {
         btnReturnSearch.addEventListener('click', function () {
             searchReturnDoc(returnSearchInput.value);
+        });
+    }
+    const btnReturnCamera = document.getElementById('posBtnReturnCamera');
+    if (btnReturnCamera) {
+        btnReturnCamera.addEventListener('click', function () {
+            if (typeof window.openBarcodeScanner === 'function') {
+                window.openBarcodeScanner('posReturnSearchInput');
+            } else {
+                showAlert('warn', 'سكانر الكاميرا مش متاح.');
+            }
         });
     }
     if (returnSearchInput) {

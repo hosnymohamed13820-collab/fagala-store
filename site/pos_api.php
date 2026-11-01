@@ -123,13 +123,31 @@ try {
         case 'approve':
             api_ok(sale_approve($pdo, $in, $user));
         case 'drawer_open':
+            $deviceUuid = (string) ($in['device_uuid'] ?? '');
+            $reason = (string) ($in['reason'] ?? '');
+            $device = sale_device($pdo, $deviceUuid, $user);
             sale_drawer_open(
                 $pdo,
-                (string) ($in['device_uuid'] ?? ''),
-                (string) ($in['reason'] ?? ''),
+                $deviceUuid,
+                $reason,
                 $user
             );
-            api_ok(['opened' => true]);
+            $stEvent = $pdo->prepare(
+                "SELECT id FROM sale_events
+                  WHERE device_id = ? AND user_id = ? AND event_type = 'drawer_open'
+                  ORDER BY id DESC LIMIT 1"
+            );
+            $stEvent->execute([(int) $device['id'], (int) $user['id']]);
+            $eventId = (int) $stEvent->fetchColumn();
+
+            $printMode = (string) ($device['print_mode'] ?? 'browser');
+            $url = 'pos_receipt.php?type=drawer&id=' . $eventId;
+            api_ok([
+                'opened'   => true,
+                'event_id' => $eventId,
+                'mode'     => $printMode,
+                'url'      => $url,
+            ]);
         case 'cart_event':
             sale_cart_event($pdo, $in, $user);
             api_ok(['recorded' => true]);
