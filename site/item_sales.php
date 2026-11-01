@@ -30,7 +30,7 @@ if (!in_array($monthsParam, [3, 6, 12], true)) {
 $tabParam    = trim((string)($_GET['tab'] ?? ''));
 
 // تحديد التبويب الافتراضي بناءً على أول صلاحية متاحة للمستخدم
-if ($tabParam === '' || !in_array($tabParam, ['stock', 'movement', 'profit', 'monthly'], true)) {
+if ($tabParam === '' || !in_array($tabParam, ['stock', 'movement', 'profit', 'monthly', 'fifo'], true)) {
     if ($canStock) {
         $tabParam = 'stock';
     } elseif ($canMovement) {
@@ -506,8 +506,13 @@ th.sorted .sort-icon {
             <a href="?<?= $qsProfit ?>" class="ftab <?= $tabParam === 'profit' ? 'is-active' : '' ?>">
                 <i class="ti ti-lock"></i> الأرباح
             </a>
+            <?php $qsFifo = http_build_query(array_merge($_GET, ['tab' => 'fifo'])); ?>
+            <a href="?<?= $qsFifo ?>" class="ftab <?= $tabParam === 'fifo' ? 'is-active' : '' ?>">
+                <i class="ti ti-calculator"></i> أرباح الموردين
+            </a>
         <?php endif; ?>
     </nav>
+    <?php if ($tabParam === 'fifo' && $canProfit) require __DIR__ . '/includes/item_sales_fifo_view.php'; ?>
 
     <!-- =================================================================== -->
     <!--  الجزء الأول: حالة الرصيد                                           -->
