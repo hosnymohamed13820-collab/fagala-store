@@ -1,6 +1,8 @@
 <?php
-/** كارت المورد: الكود الظاهر دايماً erp_supplier_code، والمرآة للقراية بس. */
 declare(strict_types=1);
+/** كارت المورد: الكود الظاهر دايماً erp_supplier_code، والمرآة للقراية بس. */
+// قرار محمد ٢/١١: لحد ما نستغنى عن ترو، المورد الجديد يتعرّف على ترو بس (علشان الأكواد ماتتخبطش مع المزامنة). الكارت بيعدّل البيانات بس.
+const SC_ALLOW_CREATE = false;
 require_once __DIR__ . '/suppliers_lib.php';
 require_once __DIR__ . '/sensitive_lib.php';
 
@@ -180,6 +182,7 @@ function sc_save(array $in,bool $prices,bool $retry=true): string {
             $set=implode(',',array_map(static fn($k)=>$k.'=?',array_keys($fields)));
             $pdo->prepare("UPDATE suppliers SET $set WHERE erp_supplier_code=?")->execute([...array_values($fields),$code]);
         } else {
+            if (!SC_ALLOW_CREATE) throw new InvalidArgumentException("المورد الجديد يتعرّف على ترو لحد ما نستغنى عنه، والمزامنة هتجيبه هنا");
             $code=(string)((int)$pdo->query('SELECT MAX(CAST(erp_supplier_code AS UNSIGNED)) FROM suppliers FOR UPDATE')->fetchColumn()+1);
             $fields['erp_supplier_code']=$code;
             $pdo->prepare('INSERT INTO suppliers ('.implode(',',array_keys($fields)).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).')')->execute(array_values($fields));
