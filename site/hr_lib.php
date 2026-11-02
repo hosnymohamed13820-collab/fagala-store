@@ -4,6 +4,7 @@
  * نظام الفجالة ستور المالي — موجة ٣ (بريف ١٨٠: أ، ب، ج)
  *
  * قراءة فقط (GET). العمليات وصرف المرتبات والسلف والاعتمادات وتصدير الإكسيل تبقى في الصفحة.
+ * إلغاء الجزاء هنا عشان التحقق والمعاملة يبقوا في مكان واحد، والـPOST وCSRF في الصفحة.
  */
 declare(strict_types=1);
 
@@ -182,6 +183,45 @@ function hr_get_bonuses(PDO $pdo, int $limit = 100): array
     )->fetchAll();
 }
 
+/** إلغاء المعلّق بس؛ الإشعار اختياري وبيتحفظ مع الإلغاء في نفس المعاملة. */
+function hr_cancel_penalty(PDO $pdo, int $penaltyId, string $reason, bool $sendNotification, int $uid): void
+{
+    if (!is_owner() || empty(current_user()['is_owner']) || !can('hr:penalties')) {
+        throw new RuntimeException('مش مسموح لك تلغي جزاءات.');
+    }
+    $reason = trim($reason);
+    if ($penaltyId <= 0 || $reason === '' || mb_strlen($reason) > 255) {
+        throw new RuntimeException('اكتب سبب الإلغاء، بحد أقصى ٢٥٥ حرف، واختار جزاء صحيح.');
+    }
+    $pdo->beginTransaction();
+    try {
+        $chk = $pdo->prepare('SELECT p.status, p.amount, e.user_id FROM employee_penalties p
+            JOIN employees e ON e.id=p.employee_id WHERE p.id=?');
+        $chk->execute([$penaltyId]);
+        $penalty = $chk->fetch(PDO::FETCH_ASSOC);
+        if (!$penalty) throw new RuntimeException('الجزاء ده مش موجود.');
+        if ($penalty['status'] === 'deducted') {
+            throw new RuntimeException('الجزاء ده اتخصم في مرتب. إرجاع المرتب الأول وبعدين الإلغاء');
+        }
+        if ($penalty['status'] !== 'pending') throw new RuntimeException('الجزاء ده اتلغى قبل كده.');
+        $upd = $pdo->prepare("UPDATE employee_penalties SET status='cancelled', cancelled_at=NOW(), cancelled_by=?, cancel_reason=? WHERE id=? AND status='pending'");
+        $upd->execute([$uid, $reason, $penaltyId]);
+        if ($upd->rowCount() !== 1) {
+            throw new RuntimeException('حالة الجزاء اتغيّرت؛ حد تاني لغاه أو اتخصم. حدّث الصفحة وجرّب تاني.');
+        }
+        $employeeUserId = (int)$penalty['user_id'];
+        if ($sendNotification && $employeeUserId > 0) {
+            require_once __DIR__ . '/push_lib.php';
+            $body = 'جزاء بـ' . number_format((float)$penalty['amount'], 2) . ' ج اتلغى';
+            notify($pdo, [$employeeUserId], 'penalty', 'اتلغى جزاء', $body, 'my_salary.php');
+        }
+        $pdo->commit();
+    } catch (Throwable $ex) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $ex;
+    }
+}
+
 /**
  * نفس السجل القديم بحده وترتيبه، ثم فصل العرض فقط حتى يظل مجموع التابين مطابقاً له.
  */
@@ -212,8 +252,9 @@ function hr_get_deductions(PDO $pdo, int $limit = 100): array
                 p.status,
                 NULL AS shift_name,
                 NULL AS shift_id,
-                p.id AS sort_id
+                p.id AS sort_id, p.cancelled_at, p.cancel_reason, cu.full_name AS cancelled_by_name
            FROM employee_penalties p
+           LEFT JOIN users cu ON cu.id = p.cancelled_by
            JOIN employees e ON e.id = p.employee_id
            LEFT JOIN branches b ON b.id = e.branch_id
 
@@ -229,7 +270,7 @@ function hr_get_deductions(PDO $pdo, int $limit = 100): array
                 cd.status,
                 NULL AS shift_name,
                 NULL AS shift_id,
-                cd.id AS sort_id
+                cd.id AS sort_id, NULL AS cancelled_at, NULL AS cancel_reason, NULL AS cancelled_by_name
            FROM custody_deficits cd
            LEFT JOIN employees e ON e.id = cd.employee_id
            LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
@@ -246,7 +287,7 @@ function hr_get_deductions(PDO $pdo, int $limit = 100): array
                 s.status,
                 s.shift_name,
                 s.id AS shift_id,
-                s.id AS sort_id
+                s.id AS sort_id, NULL AS cancelled_at, NULL AS cancel_reason, NULL AS cancelled_by_name
            FROM shifts s
            LEFT JOIN branches b ON b.id = s.branch_id
            LEFT JOIN users u ON u.id = s.user_id
@@ -264,6 +305,10 @@ function hr_get_deductions(PDO $pdo, int $limit = 100): array
     foreach ($penaltiesRaw as $r) {
         if ($r['source_type'] === 'penalty') {
             $penalties[] = [
+                'penalty_id' => (int)$r['sort_id'],
+                'cancelled_at' => $r['cancelled_at'],
+                'cancel_reason' => $r['cancel_reason'],
+                'cancelled_by_name' => $r['cancelled_by_name'],
                 'deduction_date' => (string) $r['deduction_date'],
                 'shift_name'     => '—',
                 'full_name'      => (string) $r['full_name'],

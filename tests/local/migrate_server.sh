@@ -7,7 +7,7 @@
 #
 #  ليه: محمد ١٩/١٠/٢٠٢٦ «اعمل كل حاجة انت اكتبها عندك قاعدة» — كلود بيشغّل
 #  تعديلات القاعدة اللي تخص الموقع بنفسه قبل الرفع، بدل phpMyAdmin.
-#  🔴 قاعدة الفجالة بس. مش إشراقة، ومش قاعدة True في الإدارة.
+#  🔴 قاعدة الفجالة، أو إشراقة بـMIGRATE_SITE=ashraqa. مش قاعدة True في الإدارة أبداً.
 #  🔴 ملفات local/migrations/ بس (اللي آخرها بيسجّل نفسه في schema_migrations).
 #  الملف اللي اتسجّل قبل كده بيتعدّى. أول أمر يفشل ← وقفة (والباقي مايتنفّذش).
 # =====================================================================
@@ -18,6 +18,8 @@ SSH_KEY="${FAGALA_SSH_KEY:-$HOME/.ssh/fagala_hostinger}"
 SSH_HOST="${FAGALA_SSH_HOST:-u834909335@91.108.101.22}"
 SSH_PORT="${FAGALA_SSH_PORT:-65002}"
 DIR="domains/hosnimanagement.com/public_html"
+# إشراقة (محمد ٢/١١: الموقعين مع بعض): MIGRATE_SITE=ashraqa bash tests/local/migrate_server.sh <ملف>
+[ "${MIGRATE_SITE:-}" = "ashraqa" ] && { DIR="$DIR/ashraqa"; echo "◆ قاعدة إشراقة"; }
 
 files=()
 if [ "${1:-}" = "--pending" ]; then
@@ -42,6 +44,8 @@ for f in "${files[@]}"; do
 require 'config.php';
 \$pdo = db();
 \$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+// إشراقة ماكانش فيها الجدول ده لحد ٢/١١ — نفس هيكل الفجالة بالظبط
+\$pdo->exec("CREATE TABLE IF NOT EXISTS schema_migrations (name varchar(120) NOT NULL, applied_at datetime NOT NULL DEFAULT current_timestamp(), PRIMARY KEY (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 \$name = '$name';
 \$st = \$pdo->prepare('SELECT 1 FROM schema_migrations WHERE name = ?');
 \$st->execute([\$name]);

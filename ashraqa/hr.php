@@ -196,6 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $actionMap = [
             'add_bonus'                => 'bonuses',
             'add_penalty'              => 'penalties',
+            'cancel_penalty'           => 'penalties',
             'add_advance'              => 'advances',
             'add_opening_balance'      => 'advances',
             'update_advance_deduction' => 'advances',
@@ -249,6 +250,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     notify($pdo, [$employeeUserId], 'penalty', 'جزاء جديد', $body, 'my_salary.php');
                 }
                 $flash = 'تم تسجيل الجزاء.'; $tab='penalties';
+            }
+            elseif ($action === 'cancel_penalty') {
+                hr_cancel_penalty($pdo, (int)($_POST['penalty_id'] ?? 0),
+                    (string)($_POST['reason'] ?? ''), ($_POST['notify'] ?? '0') === '1', $uid);
+                $flash = 'الجزاء اتلغى.'; $tab='penalties';
             }
             elseif ($action === 'update_advance_deduction') {
                 $advId = (int)($_POST['advance_id'] ?? 0);
@@ -1023,6 +1029,7 @@ $statusBadge = function($st) {
     $m = ['pending'=>['معلّق','var(--warn)','var(--warn-soft)'],'deducted'=>['مخصوم','var(--pos)','var(--pos-soft)'],
           'approved'=>['معتمد','var(--pos)','var(--pos-soft)'],'rejected'=>['مرفوض','var(--neg)','var(--neg-soft)'],
           'paid'=>['مدفوع','var(--pos)','var(--pos-soft)'],'draft'=>['مسودة','var(--ink-500)','var(--line)'],
+          'cancelled'=>['ملغي','var(--ink-500)','var(--line-soft)'],
           'recovered'=>['مسترد','var(--pos)','var(--pos-soft)'],
           'submitted'=>['مستلم','var(--accent)','var(--accent-soft)'],
           'resubmitted'=>['معاد إرسال','var(--warn)','var(--warn-soft)']];
@@ -1377,7 +1384,7 @@ $statusBadge = function($st) {
     <div class="toolbar">
         <span class="hrs-muted14"><?= count($deductionRows) ?> <?= $tab === 'penalties' ? 'جزاء' : 'عجز/زيادة' ?></span>
         <?php if ($tab === 'penalties'): ?>
-        <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
+        <button class="btn" onclick="hrOpenPenalty()"><i class="ti ti-plus"></i> إضافة جزاء</button>
         <?php endif; ?>
     </div>
     <?php if ($tab === 'deficits'): ?>
@@ -1416,7 +1423,14 @@ $statusBadge = function($st) {
                     <td><?= is_numeric($p['tolerance']) ? number_format((float)$p['tolerance'],2) : e((string)$p['tolerance']) ?></td>
                     <td><?= is_numeric($p['exceeded']) ? number_format((float)$p['exceeded'],2) : e((string)$p['exceeded']) ?></td>
                     <td><?= e($p['reason'] ?? '—') ?></td>
-                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td>
+                        <span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;" title="<?= e($p['status'] === 'cancelled' ? 'سبب الإلغاء: ' . ($p['cancel_reason'] ?? '—') . ' · اللي ألغاه: ' . ($p['cancelled_by_name'] ?? '—') . ' · إمتى: ' . ($p['cancelled_at'] ?? '—') : '') ?>"><?=e($b[0])?></span>
+                        <?php if ($p['deduction_type'] === 'جزاء' && $p['status'] === 'pending' && !empty(current_user()['is_owner']) && can('hr:penalties')): ?>
+                        <button type="button" class="btn btn-sm btn-ghost" onclick="hrOpenPenalty(this)"
+                            data-penalty-id="<?= (int)$p['penalty_id'] ?>" data-employee="<?= e($p['full_name']) ?>"
+                            data-amount="<?= e(number_format((float)$p['amount'], 2)) ?>" data-reason="<?= e($p['reason'] ?? '—') ?>">إلغاء</button>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -2158,6 +2172,9 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_penalty">
+            <input type="hidden" name="penalty_id" value="">
+            <input type="hidden" name="notify" value="0">
+            <div id="pnAddFields">
             <div class="form-row"><label for="pnEmp">الموظف</label><select name="employee_id" id="pnEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
@@ -2165,10 +2182,23 @@ $statusBadge = function($st) {
             <div class="form-row"><label for="pnAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="pnAmount" required aria-label="المبلغ"></div>
             <div class="form-row"><label for="pnDate">التاريخ</label><input type="date" name="date" id="pnDate" value="<?= date('Y-m-d') ?>"></div>
             <div class="form-row"><label for="pnReason">السبب</label><input type="text" name="reason" id="pnReason" aria-label="السبب"></div>
-            <div class="modal-actions">
+            </div>
+            <div id="pnCancelFields" hidden>
+                <p>الموظف: <span id="pnCancelEmployee"></span></p>
+                <p>المبلغ: <span id="pnCancelAmount"></span></p>
+                <p>السبب الأصلي: <span id="pnOriginalReason"></span></p>
+                <div class="form-row"><label for="pnCancelReason">سبب الإلغاء</label><input class="finput" type="text" name="reason" id="pnCancelReason" maxlength="255" required disabled></div>
+                <p>تبعت إشعار للموظف إن الجزاء اتلغى؟</p>
+            </div>
+            <div id="pnCancelActions" hidden>
+                <button type="submit" class="btn btn-primary" data-notify="0">إلغاء من غير إشعار</button>
+                <button type="submit" class="btn btn-ghost" data-notify="1">إلغاء وابعت إشعار</button>
+                <button type="button" class="btn btn-cancel" onclick="document.getElementById('penaltyModal').classList.remove('open')">رجوع</button>
+            </div>
+            <div id="pnAddActions"><div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('penaltyModal').classList.remove('open')">إلغاء</button>
-            </div>
+            </div></div>
         </form>
     </div>
 </div>
@@ -2334,6 +2364,39 @@ $statusBadge = function($st) {
 </div>
 
 <script>
+    function hrOpenPenalty(button) {
+        var modal = document.getElementById('penaltyModal');
+        var form = modal.querySelector('form');
+        var cancelling = !!button;
+        form.reset();
+        form.querySelectorAll('button[type="submit"]').forEach(function (b) { b.disabled = false; });
+        form.elements.action.value = cancelling ? 'cancel_penalty' : 'add_penalty';
+        form.elements.penalty_id.value = cancelling ? button.dataset.penaltyId : '';
+        modal.querySelector('h3').textContent = cancelling ? 'إلغاء جزاء' : 'إضافة جزاء';
+        document.getElementById('pnAddFields').hidden = cancelling;
+        document.querySelectorAll('#pnAddFields input, #pnAddFields select').forEach(function (el) { el.disabled = cancelling; });
+        document.getElementById('pnCancelFields').hidden = !cancelling;
+        document.getElementById('pnCancelReason').disabled = !cancelling;
+        document.getElementById('pnAddActions').hidden = cancelling;
+        document.getElementById('pnCancelActions').hidden = !cancelling;
+        document.querySelectorAll('#pnAddActions button[type="submit"]').forEach(function (b) { b.disabled = cancelling; });
+        document.querySelectorAll('#pnCancelActions button[type="submit"]').forEach(function (b) { b.disabled = !cancelling; });
+        if (cancelling) {
+            document.getElementById('pnCancelEmployee').textContent = button.dataset.employee;
+            document.getElementById('pnCancelAmount').textContent = button.dataset.amount + ' ج';
+            document.getElementById('pnOriginalReason').textContent = button.dataset.reason;
+        }
+        modal.classList.add('open');
+        document.getElementById(cancelling ? 'pnCancelReason' : 'pnEmp').focus();
+    }
+
+    document.getElementById('penaltyModal').querySelector('form').addEventListener('submit', function (event) {
+        if (this.elements.action.value !== 'cancel_penalty') return;
+        // القيمة الافتراضية صفر حتى لو الإرسال حصل بـEnter من خانة السبب.
+        this.elements.notify.value = event.submitter && event.submitter.dataset.notify === '1' ? '1' : '0';
+        this.querySelectorAll('button[type="submit"]').forEach(function (b) { b.disabled = true; });
+    });
+
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
     });

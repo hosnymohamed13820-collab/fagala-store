@@ -46,4 +46,5 @@ return [
     '20261101_037_item_sys_code',
     '20261101_038_item_class_assign',
     '20261102_039_supplier_card',
+    '20261102_040_penalty_cancel',
 ];
