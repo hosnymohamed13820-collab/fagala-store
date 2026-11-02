@@ -2,6 +2,19 @@
 // بريف ٨٣٢: رقم كشف الحساب منفصل عن باسورد الدخول وقفل الداشبورد.
 const SALARY_PIN_IDLE_SECONDS = 600;
 
+function salary_pin_normalize(string $s): string
+{
+    $ar = [
+        '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩',
+        '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹',
+    ];
+    $en = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    ];
+    return str_replace($ar, $en, $s);
+}
+
 function salary_pin_reset(PDO $pdo, int $uid): void
 {
     if (!is_real_owner()) {
@@ -61,7 +74,22 @@ function salary_pin_check_secret(PDO $pdo, int $uid, array $user, string $secret
     if (!$hash) {
         return ['ok' => false, 'error' => 'اعمل رقم سري لكشف الحساب الأول'];
     }
-    if (!password_verify($secret, (string) $hash)) {
+    // بنجرّب الشكل المتحوّل لإنجليزي وبعده الأصلي، وأيضاً بالعربي المشرقي لو كان اتعمل قبل التصليح عربي
+    $norm = salary_pin_normalize($secret);
+    $arDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    $enDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    $eastern = str_replace($enDigits, $arDigits, $norm);
+    $variants = array_unique([$norm, $secret, $eastern]);
+
+    $matched = false;
+    foreach ($variants as $candidate) {
+        if (password_verify($candidate, (string) $hash)) {
+            $matched = true;
+            break;
+        }
+    }
+
+    if (!$matched) {
         $fails = ($until !== null ? 0 : (int) $user['salary_pin_fails']) + 1;
         $st = $pdo->prepare('UPDATE users SET salary_pin_fails = ?, salary_pin_block_until = CASE WHEN ? >= 5 THEN DATE_ADD(NOW(), INTERVAL 5 MINUTE) ELSE NULL END WHERE id = ?');
         $st->execute([$fails, $fails, $uid]);
@@ -101,6 +129,9 @@ function salary_pin_set(PDO $pdo, int $uid, string $loginPwdOrOldPin, string $ne
     if (salary_pin_read_only($uid === (int) (current_user()['id'] ?? 0))) {
         return ['ok' => false, 'error' => 'حسابك مشاهدة بس', 'status' => 403, 'code' => 'forbidden'];
     }
+    $loginPwdOrOldPin = salary_pin_normalize($loginPwdOrOldPin);
+    $new = salary_pin_normalize($new);
+    $new2 = salary_pin_normalize($new2);
     $pdo->beginTransaction();
     try {
         $st = $pdo->prepare('SELECT password_hash, salary_pin_hash, salary_pin_fails, salary_pin_block_until FROM users WHERE id = ? AND is_active = 1 FOR UPDATE');
@@ -171,11 +202,11 @@ function salary_pin_fields(bool $isSet): void
 {
     ?>
     <div class="ffield"><label><?= $isSet ? 'الرقم السري القديم' : 'باسورد الدخول (اللي بتفتح بيه الموقع)' ?>
-        <input class="finput" type="password" name="current_secret" autocomplete="current-password" required></label></div>
+        <input class="finput" type="password" name="current_secret" autocomplete="one-time-code" required></label></div>
     <div class="ffield"><label>الرقم الجديد
-        <input class="finput" type="password" name="new_pin" minlength="4" maxlength="12" autocomplete="new-password" required></label></div>
+        <input class="finput" type="password" name="new_pin" minlength="4" maxlength="12" autocomplete="one-time-code" required></label></div>
     <div class="ffield"><label>تأكيد الرقم الجديد
-        <input class="finput" type="password" name="new_pin2" minlength="4" maxlength="12" autocomplete="new-password" required></label></div>
+        <input class="finput" type="password" name="new_pin2" minlength="4" maxlength="12" autocomplete="one-time-code" required></label></div>
     <?php
 }
 
@@ -196,7 +227,7 @@ function salary_pin_lock_screen(string $what, bool $isOwn = false): void
         <input type="hidden" name="action" value="<?= $isSet ? 'unlock_pin' : 'set_pin' ?>">
         <?php if ($isSet): ?>
             <div class="ffield"><label>الرقم السري لكشف الحساب
-                <input class="finput" type="password" name="pin" autocomplete="current-password" required></label></div>
+                <input class="finput" type="password" name="pin" autocomplete="one-time-code" required></label></div>
         <?php else: salary_pin_fields(false); endif; ?>
         <div class="falert" role="status" hidden></div>
         <button class="btn btn-primary" type="submit"><?= $isSet ? 'افتح' : 'اعمل رقم سري' ?></button>
