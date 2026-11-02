@@ -626,6 +626,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
 
                 <form method="post" style="margin-top:14px;"
+                      data-expected="<?= e((string)$cExpected) ?>"
+                      data-responsible="<?= e($allEmployees[(int)($c['responsible_employee_id'] ?? 0)] ?? 'الموظف المسؤول مش متحدد') ?>"
                       onsubmit="return cstConfirm(this);">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="return_tab" value="custody">
@@ -638,7 +640,7 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="rv-sys" style="margin-bottom:0;">
                             <label>اللي استلمته فعلاً</label>
                             <input type="number" step="0.01" min="0" name="acc_counted"
-                                   value="<?= number_format($cCounted,2,'.','') ?>"
+                                   value="" placeholder="الكاشير عدّ <?= number_format($cCounted,2,'.','') ?>"
                                    aria-label="المبلغ اللي استلمته فعلاً">
                         </div>
                         <div class="rv-sys" style="margin-bottom:0;">
@@ -678,6 +680,9 @@ require_once __DIR__ . '/includes/header.php';
                     <span style="font-size:13px;font-weight:600;color:<?= $isDone?'var(--pos)':'var(--neg)' ?>;">
                         <?= $isDone?'معتمدة':'مرفوضة' ?>
                     </span>
+                    <?php if ($isDone): ?>
+                        <a class="btn btn-sm btn-secondary" href="custody_receipt.php?id=<?= (int)$c['id'] ?>" target="_blank" rel="noopener">طباعة محضر العهدة</a>
+                    <?php endif; ?>
                 </div>
                 <div class="sc-stats">
                     <div class="sc-stat"><div class="l">المفروض</div><div class="v"><?= ltr_out(number_format((float)$c['closing_balance'],2)) ?></div></div>
@@ -1785,13 +1790,18 @@ require_once __DIR__ . '/includes/header.php';
             }
             return confirm('رفض عهدة ' + branch + '؟\n\nهترجع للكاشير يظبّطها. مفيش فلوس هتتحرّك.');
         }
-        var amt = form.acc_counted.value;
-        if (amt === '' || isNaN(parseFloat(amt))) {
+        var amt = form.acc_counted.value.trim();
+        var counted = Number(amt);
+        if (amt === '' || !Number.isFinite(counted) || counted < 0) {
             alert('اكتب المبلغ اللي استلمته قبل الاعتماد.');
             form.acc_counted.focus();
             return false;
         }
-        return confirm('اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟\n\n'
+        var expected = Number(form.dataset.expected);
+        var warning = counted < expected
+            ? 'هيتسجّل عجز ' + (expected - counted).toFixed(2) + ' ج على ' + form.dataset.responsible + '\n\n'
+            : '';
+        return confirm(warning + 'اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟\n\n'
             + 'الفلوس هتدخل الخزينة فعلاً والقيود هتتعمل. مفيش تراجع.');
     }
 

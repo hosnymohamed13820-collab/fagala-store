@@ -10,6 +10,69 @@ declare(strict_types=1);
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/reports_lib.php';
 
+/** بيانات المحضر المقفول؛ نفس صلاحيات التابات واختيار الفرع والموظف في صفحة العهد. */
+function custody_get_receipt(PDO $pdo, int $custodyId, array $user): array
+{
+    $st = $pdo->prepare(
+        "SELECT bc.*, b.name AS branch_name, e.full_name AS employee_name,
+                re.full_name AS responsible_name, su.full_name AS submitter_name,
+                ru.full_name AS reviewer_name
+         FROM branch_custody bc
+         LEFT JOIN branches b ON b.id=bc.branch_id
+         LEFT JOIN employees e ON e.id=bc.employee_id
+         LEFT JOIN employees re ON re.id=bc.responsible_employee_id
+         LEFT JOIN users su ON su.id=bc.submitted_by
+         LEFT JOIN users ru ON ru.id=bc.reviewed_by
+         WHERE bc.id=?"
+    );
+    $st->execute([$custodyId]);
+    $custody = $st->fetch();
+    if (!$custody) {
+        throw new RuntimeException('العهدة مش موجودة.', 404);
+    }
+
+    if (!empty($custody['employee_id'])) {
+        if (!is_owner() && !can('custody:employee')) {
+            throw new RuntimeException('مش مسموح لك تعرض عهدة الموظف.', 403);
+        }
+        // زي custody.php: اختيار أي موظف للمالك بس، والباقي عهدة موظف حسابه النشط.
+        $employee = custody_get_user_employee($pdo, (int)$user['id']);
+        $allowedEmpId = custody_resolve_selected_emp_id($user, (int)$custody['employee_id'], (int)($employee['id'] ?? 0), []);
+        if ($allowedEmpId <= 0 || $allowedEmpId !== (int)$custody['employee_id']) {
+            throw new RuntimeException('دي مش عهدتك.', 403);
+        }
+    } else {
+        if (!is_owner() && !can('custody:branch')) {
+            throw new RuntimeException('مش مسموح لك تعرض عهدة الفرع.', 403);
+        }
+        $allowedBranchId = custody_resolve_branch_id($user, (int)$custody['branch_id'], []);
+        if ($allowedBranchId !== (int)$custody['branch_id']) {
+            throw new RuntimeException('مش مسموح لك تعرض عهدة الفرع ده.', 403);
+        }
+    }
+    if ($custody['status'] !== 'closed') {
+        throw new RuntimeException('المحضر بيتطبع بعد اعتماد العهدة بس.', 409);
+    }
+
+    $lines = $pdo->prepare('SELECT expense_date, description, amount FROM custody_lines WHERE custody_id=? ORDER BY expense_date, id');
+    $lines->execute([$custodyId]);
+    return ['custody' => $custody, 'expenses' => $lines->fetchAll()];
+}
+
+/** آخر العهد المعتمدة للتاب والموظف أو الفرع المختار بالفعل في الصفحة. */
+function custody_get_closed_history(PDO $pdo, bool $employeeTab, ?int $branchId, int $employeeId): array
+{
+    $scope = $employeeTab ? 'bc.employee_id=?' : 'bc.branch_id=? AND bc.employee_id IS NULL';
+    $st = $pdo->prepare(
+        "SELECT bc.id, bc.period_start, bc.period_end, bc.accountant_counted,
+                bc.reviewed_at, u.full_name AS reviewer_name
+         FROM branch_custody bc LEFT JOIN users u ON u.id=bc.reviewed_by
+         WHERE bc.status='closed' AND $scope ORDER BY bc.id DESC LIMIT 50"
+    );
+    $st->execute([$employeeTab ? $employeeId : $branchId]);
+    return $st->fetchAll();
+}
+
 /**
  * جلب قائمة الفروع النشطة التي لها إدارة مالية
  */

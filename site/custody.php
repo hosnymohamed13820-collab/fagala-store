@@ -792,6 +792,18 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; // قفل if (!$branchId): ... else ?>
 <?php endif; // قفل if ($activeTab === 'employee'): ... else ?>
 
+<?php $closedCustodies = custody_get_closed_history($pdo, $activeTab === 'employee', $branchId, $selectedEmpId); ?>
+<?php if ($closedCustodies): ?>
+    <h2>آخر العهد المعتمدة</h2>
+    <?php foreach ($closedCustodies as $closedCustody): ?>
+        <div class="fcard">
+            <h3>عهدة <?= (int)$closedCustody['id'] ?> · <?= e($closedCustody['period_start']) ?> — <?= e($closedCustody['period_end'] ?? '—') ?></h3>
+            <p>المحاسب استلم <?= ltr_out(number_format((float)$closedCustody['accountant_counted'], 2)) ?> ج · اعتمدها <?= e($closedCustody['reviewer_name'] ?? '—') ?> · <?= e($closedCustody['reviewed_at'] ?? '—') ?></p>
+            <a class="btn btn-sm btn-secondary" href="custody_receipt.php?id=<?= (int)$closedCustody['id'] ?>" target="_blank" rel="noopener">طباعة محضر العهدة</a>
+        </div>
+    <?php endforeach; ?>
+<?php endif; ?>
+
 <!-- Modal: إصدار إذن صرف لفرع -->
 <?php if ($canIssue && $canBranchCustody): ?>
 <div class="modal-bg" id="orderModal">

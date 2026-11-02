@@ -1748,6 +1748,18 @@ function save_custody_review(
             throw new RuntimeException('ماينفعش تراجع عهدتك');
         }
 
+        // بريف ٨٦٢: المقدّم كمان مايراجعش، حتى لو حسابه مش مربوط بموظف.
+        if ((int) ($custody['submitted_by'] ?? 0) === $reviewerId) {
+            $submitterStmt = $pdo->prepare(
+                'SELECT COALESCE(r.is_owner,0) FROM users u
+                 LEFT JOIN roles r ON r.id=u.role_id WHERE u.id=?'
+            );
+            $submitterStmt->execute([$reviewerId]);
+            if ((int) $submitterStmt->fetchColumn() !== 1) {
+                throw new RuntimeException('ماينفعش تراجع عهدتك');
+            }
+        }
+
         $expected   = (float) $custody['closing_balance'];
         $variance   = $accountantCounted - $expected;
         $tolerance  = custody_tolerance();
