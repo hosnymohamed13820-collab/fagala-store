@@ -252,7 +252,7 @@ require_once __DIR__ . '/includes/header.php';
         const open = document.getElementById('autotransferOpen');
         if (!open) return;
         const esc = window.ui.esc;
-        const names = {1: 'بونجور', 2: 'اي بي سي', 3: 'الفجالة', 4: 'دجلة', 5: 'اشراقة'};
+        const names = {1: 'بونجور', 2: 'اي بي سي', 3: 'الفجالة', 4: 'دجلة', 5: 'اشراقة', 6: 'الادارة'};
         let busy = false;
         function skipped(rows) {
             if (!rows.length) return '';
@@ -271,8 +271,8 @@ require_once __DIR__ . '/includes/header.php';
             const content = document.createElement('div');
             content.className = 'fg-dlg-msg';
             content.id = dialog.querySelector('.fg-dlg-msg').id;
-            content.innerHTML = '<p>الاختيار: كل توزيعات done اللي لسه ليها فرع ماتحوّلش. التحويل من الإدارة.</p>' +
-                data.branches.map(b => '<section><h3>' + esc(names[b.branch_id]) + '</h3><p>عدد الأصناف: ' +
+            content.innerHTML = '<p>الاختيار: كل توزيعات done اللي لسه ليها فرع ماتحوّلش. الراسل حسب مخزن الفاتورة وصلاحيتك.</p>' +
+                data.branches.map(b => '<section><h3>من ' + esc(b.from_branch_name) + ' لـ' + esc(names[b.branch_id]) + '</h3><p>عدد الأصناف: ' +
                     esc(b.items_count) + ' · إجمالي القطع: ' + esc(b.total_pieces) + '</p><p>التوزيعات: ' +
                     b.distributions.map(d => esc(d.distribution_id) + ' (فاتورة ' + esc(d.invoice_no) + ')').join('، ') +
                     '</p><div class="ftable-wrap"><table class="ftable"><thead><tr><th>الكود</th><th>الصنف</th>' +
@@ -287,7 +287,7 @@ require_once __DIR__ . '/includes/header.php';
         }
         async function showResult(data) {
             const message = data.documents.length ? 'اتعملت التحويلات: ' + data.documents.map(d =>
-                d.doc_no + ' (' + names[d.branch_id] + ')').join('، ') : 'مفيش تحويلات جديدة اتعملت';
+                d.doc_no + ' (من ' + names[d.from_branch_id] + ' لـ' + names[d.branch_id] + ')').join('، ') : 'مفيش تحويلات جديدة اتعملت';
             const done = window.fgAlert(message, 'نتيجة التحويل التلقائي');
             await Promise.resolve(); await Promise.resolve();
             const host = document.querySelector('.fg-dlg-bg:last-of-type .fg-dlg-msg');

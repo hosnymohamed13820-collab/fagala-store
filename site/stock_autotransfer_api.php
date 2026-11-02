@@ -9,7 +9,7 @@ require_once __DIR__ . '/stock_autotransfer_lib.php';
 api_begin();
 require_login();
 
-// نفس شروط إنشاء التحويل بالحرف، والمخزن الراسل هنا ثابت: الإدارة ٦.
+// نفس شروط إنشاء التحويل؛ صلاحية فرع الراسل بتتفحص لكل توزيع في المكتبة.
 if (!can('transfers') && !is_owner()) {
     api_fail('غير مصرح لك بالوصول للتحويلات', 403, 'forbidden');
 }
@@ -22,9 +22,6 @@ if (!$isOwner && !$userBranchId) {
 if (!$isOwner) {
     if (!can('transfers:create')) {
         api_fail('ليس لديك صلاحية إنشاء تحويل', 403, 'forbidden');
-    }
-    if (6 !== $userBranchId) {
-        api_fail('لا يمكنك إنشاء تحويل إلا من فرعك', 403, 'forbidden');
     }
 }
 

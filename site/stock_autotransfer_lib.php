@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/stock_transfer_lib.php';
 
-/** نفس صلاحية إنشاء التحويل من الإدارة في transfers_api.php. */
+/** نفس صلاحية إنشاء التحويل في transfers_api.php؛ فرع الراسل بيتفحص لكل توزيع. */
 function autotransfer_can_create(): bool
 {
     if (!can('transfers') && !is_owner()) return false;
@@ -13,7 +13,6 @@ function autotransfer_can_create(): bool
     if (!$isOwner && !$userBranchId) return false;
     if (!$isOwner) {
         if (!can('transfers:create')) return false;
-        if (6 !== $userBranchId) return false;
     }
     return true;
 }
@@ -46,7 +45,14 @@ function autotransfer_preview(PDO $pdo, array $distIds): array
     $out = ['dist_ids' => $ids, 'branches' => [], 'skipped' => []];
     if (!$ids) return $out;
     $marks = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT id, invoice_no, status FROM invoice_distribution WHERE id IN ($marks) ORDER BY id");
+    $st = $pdo->prepare(
+        "SELECT d.id, d.invoice_no, d.status, b.id AS from_branch_id, b.name AS from_branch_name
+         FROM invoice_distribution d
+         LEFT JOIN (SELECT sto_id, MIN(id) AS id, MIN(name) AS name FROM branches
+                    WHERE sto_id IS NOT NULL GROUP BY sto_id HAVING COUNT(*) = 1) b
+           ON b.sto_id = d.company_branch
+         WHERE d.id IN ($marks) ORDER BY d.id"
+    );
     $st->execute($ids);
     $dists = [];
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) $dists[(int) $row['id']] = $row;
@@ -64,25 +70,51 @@ function autotransfer_preview(PDO $pdo, array $distIds): array
     );
     $st->execute($ids);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    $isOwner = is_real_owner() || is_owner();
+    $user = current_user();
+    $userBranchId = (int) ($user['branch_id'] ?? 0);
+    $canCreate = autotransfer_can_create();
+    $excluded = [];
     foreach ($ids as $id) {
+        $reason = null;
         if (!isset($dists[$id]) || $dists[$id]['status'] !== 'done') {
+            $reason = isset($dists[$id]) ? 'التوزيع لسه مش done' : 'التوزيع مش موجود';
+        } elseif (empty($dists[$id]['from_branch_id'])) {
+            $reason = 'مخزن الفاتورة مش معروف';
+        } elseif (!$isOwner && (!$canCreate || (int) $dists[$id]['from_branch_id'] !== $userBranchId)) {
+            $reason = 'مالكش صلاحية تحويل من مخزن الفاتورة ده — مش فرعك';
+        }
+        if ($reason !== null) {
             $out['skipped'][] = ['distribution_id' => $id, 'invoice_no' => $dists[$id]['invoice_no'] ?? '',
-                'reason' => isset($dists[$id]) ? 'التوزيع لسه مش done' : 'التوزيع مش موجود'];
+                'reason' => $reason];
+            $excluded[$id] = true;
+        }
+    }
+    // نفحص الزوج كله الأول؛ صنف ناقص يمنع تسجيل ربط يضيّع فرصته بعد تصحيح الكود.
+    $invalidPairs = [];
+    foreach ($rows as $row) {
+        if ((int) $row['item_id'] <= 0 || (float) $row['unit_factor'] <= 0) {
+            $pair = $row['distribution_id'] . ':' . $row['branch_id'];
+            $code = trim((string) $row['code']);
+            $invalidPairs[$pair][$code !== '' ? $code : 'من غير كود'] = true;
         }
     }
     $seen = [];
     foreach ($rows as $row) {
         $id = (int) $row['distribution_id'];
-        if (!isset($dists[$id]) || $dists[$id]['status'] !== 'done') continue;
+        if (isset($excluded[$id])) continue;
         $branch = (int) $row['branch_id'];
+        $from = (int) $dists[$id]['from_branch_id'];
+        $pair = $id . ':' . $branch;
         $reason = null;
         if ($row['doc_id'] !== null) $reason = 'اتحوّل قبل كده';
-        elseif ($branch === 5) $reason = 'فرع إشراقة مش مدعوم في التحويلات';
+        elseif ($branch === 5 || $from === 5) $reason = 'فرع إشراقة مش مدعوم في التحويلات';
         elseif ($branch < 1 || $branch > 4) $reason = 'الفرع ده مش فرع مستلم للتحويل التلقائي';
+        elseif ($from === $branch) $reason = 'نفس المخزن';
+        elseif (isset($invalidPairs[$pair])) $reason = 'فيه صنف مش متعرّف: ' . implode('، ', array_keys($invalidPairs[$pair]));
         elseif ((float) $row['qty_units'] <= 0) $reason = 'الكمية أقل من أو بتساوي صفر';
-        elseif ((int) $row['item_id'] <= 0 || (float) $row['unit_factor'] <= 0) $reason = 'الصنف مالوش item_id أو معامل وحدة معروف';
         if ($reason !== null) {
-            $key = $id . ':' . $branch . ':' . ($row['doc_id'] !== null ? '' : $row['code']);
+            $key = $pair . ':' . ($row['doc_id'] !== null || isset($invalidPairs[$pair]) || $from === $branch ? '' : $row['code']);
             if (!isset($seen[$key])) $out['skipped'][] = ['distribution_id' => $id,
                 'invoice_no' => $dists[$id]['invoice_no'], 'branch_id' => $branch,
                 'code' => $row['code'], 'reason' => $reason];
@@ -95,9 +127,11 @@ function autotransfer_preview(PDO $pdo, array $distIds): array
                 'branch_id' => $branch, 'code' => $row['code'], 'reason' => 'الكمية بالقطعة اتقرّبت لصفر'];
             continue;
         }
-        if (!isset($out['branches'][$branch])) $out['branches'][$branch] = [
+        $route = $from . ':' . $branch;
+        if (!isset($out['branches'][$route])) $out['branches'][$route] = [
+            'from_branch_id' => $from, 'from_branch_name' => $dists[$id]['from_branch_name'],
             'branch_id' => $branch, 'lines' => [], 'distributions' => [], 'total_pieces' => 0.0];
-        $b = &$out['branches'][$branch];
+        $b = &$out['branches'][$route];
         $item = (int) $row['item_id'];
         if (!isset($b['lines'][$item])) $b['lines'][$item] = ['item_id' => $item,
             'code' => (string) $row['code'], 'name' => (string) $row['name'],
@@ -139,10 +173,11 @@ function autotransfer_run(PDO $pdo, array $distIds, int $uid): array
         $values = [];
         foreach ($preview['branches'] as $branch) {
             $invoiceNos = array_unique(array_column($branch['distributions'], 'invoice_no'));
-            $docId = transfer_create($pdo, 6, $branch['branch_id'], $branch['lines'], $uid,
+            $docId = transfer_create($pdo, $branch['from_branch_id'], $branch['branch_id'], $branch['lines'], $uid,
                 'تحويل تلقائي من توزيع فواتير: ' . implode('، ', $invoiceNos));
             $docNo = transfer_send($pdo, $docId, $uid);
             $documents[] = ['doc_id' => $docId, 'doc_no' => $docNo,
+                'from_branch_id' => $branch['from_branch_id'],
                 'branch_id' => $branch['branch_id'], 'items_count' => $branch['items_count']];
             foreach ($branch['distributions'] as $dist) {
                 $links[] = '(?, ?, ?)';
