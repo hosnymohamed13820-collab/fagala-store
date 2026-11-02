@@ -17,6 +17,7 @@ define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
 require_once __DIR__ . '/labels_lib.php';
+require_once __DIR__ . '/purchase_doc_lib.php';
 
 // ===== تصدير الإكسيل =====
 // ده ملف مش رد JSON، فبيتعالج **قبل** api_begin (اللي بيقفل نوع الرد على JSON).
@@ -78,6 +79,15 @@ switch ($part) {
     case 'search':
         api_method('GET');
         api_ok(['rows' => labels_search((string) ($_GET['term'] ?? ''))]);
+
+    case 'purchase_doc':
+        api_method('GET');
+        $term = (string) ($_GET['term'] ?? ($_GET['doc_no'] ?? ''));
+        $docData = purchase_doc_items_for_labels(db(), $term);
+        if (!$docData) {
+            api_fail('فاتورة الشراء مش موجودة', 404, 'not_found');
+        }
+        api_ok($docData);
 
     case 'settings':
         if ($method === 'POST') {

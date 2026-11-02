@@ -212,8 +212,15 @@ function labels_parse_rows(string $json): array
         $merged[$code] = ($merged[$code] ?? 0) + $copies;
     }
 
+    $settings = labels_settings();
+    $cols = max(1, (int) ($settings['cols'] ?? 1));
+
     foreach ($merged as $code => $copies) {
         $copies = max(1, min(9999, $copies));
+        // تقريب عدد الليبلز لأقرب مضاعف لـ cols لفوق (بريف ٨٦٤)
+        if ($cols > 1) {
+            $copies = (int) (ceil($copies / $cols) * $cols);
+        }
         $merged[$code] = $copies;
         $total += $copies;
     }

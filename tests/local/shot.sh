@@ -47,9 +47,11 @@ for mode in $MODES; do
     # بروفايل مؤقت لوحده: لو Edge مفتوح (عند محمد أو وكيل بيصوّر) الـheadless بيتقفل على نفس البروفايل ومايطلعش صورة
     rm -f "${png:?}"   # صورة قديمة بنفس الاسم كانت بتخلّي اللوب اللي تحت يفتكرها الجديدة
     PROF="$(mktemp -d)"
+    win_png="$(cygpath -w "$png" 2>/dev/null || echo "$png")"
+    win_url="file:///$(cygpath -m "$f" 2>/dev/null || echo "$f")"
     timeout 60 "$BROWSER" --headless=new --disable-gpu --hide-scrollbars --window-size="$W,$H" \
         --user-data-dir="$(cygpath -w "$PROF" 2>/dev/null || echo "$PROF")" \
-        --virtual-time-budget=3000 --screenshot="$png" "file:///${f#/}" >/dev/null 2>&1
+        --virtual-time-budget=3000 --screenshot="$win_png" "$win_url" >/dev/null 2>&1
     # مع بروفايل جديد msedge بيرجع فوراً ويكمّل في الخلفية — استنى الصورة قبل ما تمسح الصفحة
     for _ in $(seq 1 40); do [ -s "$png" ] && break; sleep 0.5; done
     sleep 1

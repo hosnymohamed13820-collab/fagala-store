@@ -167,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function () {
       code.addEventListener('keydown', event => {
         if (isEnterKey(event)) {
           event.preventDefault();
+          event.stopPropagation();
           purchaseLookup(line, undefined, !event.isTrusted || code.dataset.scanFast === '1');
         }
       });
@@ -182,11 +183,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof openBarcodeScanner === 'function') openBarcodeScanner(code.id);
       });
       line.querySelector('.line-name-input').addEventListener('keydown', event => {
-        if (isEnterKey(event)) { event.preventDefault(); purchaseLookupName(line); }
+        if (isEnterKey(event)) { event.preventDefault(); event.stopPropagation(); purchaseLookupName(line); }
       });
     }
     line.querySelectorAll('.line-qty,.line-cost,.line-discount,.line-discount-amount').forEach(input => {
       input.addEventListener('input', () => {
+        input.classList.remove('is-invalid');
         if (input.matches('.line-discount-amount')) {
           const price = Number(line.querySelector('.line-cost').value) || 0;
           line.querySelector('.line-discount').value = String(purchaseRound(price > 0 ? Math.min(100, Math.max(0, Number(input.value) || 0) / price * 100) : 0, 3));
@@ -461,7 +463,62 @@ document.addEventListener('DOMContentLoaded', function () {
     const enter = isEnterKey(event);
     if (!enter && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     const line = input.closest('.purchase-line');
-    if (enter && input.matches('.line-qty') && purchaseMergeLine(line)) { event.preventDefault(); event.stopPropagation(); return; }
+
+    if (enter) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (purchaseReadonly) return;
+
+      // ١) خانة الكمية -> Enter: التحقق من القيمة -> التكلفة
+      if (input.matches('.line-qty')) {
+        const qtyVal = Number(input.value);
+        if (!input.value.trim() || isNaN(qtyVal) || qtyVal <= 0) {
+          input.classList.add('is-invalid');
+          input.focus();
+          input.select();
+          purchaseMessage('الكمية لازم تكون أكبر من صفر', true);
+          return;
+        }
+        input.classList.remove('is-invalid');
+        purchaseMessage('');
+        if (purchaseMergeLine(line)) return;
+        const costInput = line.querySelector('.line-cost');
+        if (costInput && !costInput.disabled) {
+          costInput.focus();
+          costInput.select();
+        }
+        return;
+      }
+
+      // ٢) خانة التكلفة -> Enter: التحقق من القيمة -> سطر جديد والمؤشر على كوده
+      if (input.matches('.line-cost')) {
+        const costVal = Number(input.value);
+        if (!input.value.trim() || isNaN(costVal) || costVal <= 0) {
+          input.classList.add('is-invalid');
+          input.focus();
+          input.select();
+          purchaseMessage('التكلفة لازم تكون أكبر من صفر', true);
+          return;
+        }
+        input.classList.remove('is-invalid');
+        purchaseMessage('');
+        purchaseEnsureBlank();
+        purchaseQueueSave(true);
+        purchaseFocusBarcode();
+        return;
+      }
+
+      // ٣) خانات الخصم إذا ضغط Enter فيها: يفتح سطر جديد
+      if (input.matches('.line-discount, .line-discount-amount')) {
+        purchaseEnsureBlank();
+        purchaseQueueSave(true);
+        purchaseFocusBarcode();
+        return;
+      }
+    }
+
+    // التنقل بالأسهم حسب قواعد RULES.md:
+    // أسهم فوق/تحت في نفس العمود، أسهم يمين/شمال بين خانات نفس السطر
     event.preventDefault();
     event.stopPropagation();
     const rows = [...pe('purchaseLines').querySelectorAll('.purchase-line')].filter(row => !row.hidden && !row.classList.contains('xt-out'));
@@ -469,7 +526,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const column = columns.findIndex(selector => input.matches(selector));
     const row = rows.indexOf(line);
     let target = null;
-    if (enter || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       const step = event.key === 'ArrowUp' ? -1 : 1;
       for (let i = row + step; i >= 0 && i < rows.length; i += step) {
         const candidate = rows[i].querySelector(columns[column]);
@@ -1020,6 +1077,202 @@ document.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('beforeunload', event => {
     if (!purchaseSaveDirty && !purchaseSaving) return;
     event.preventDefault(); event.returnValue = '';
+  });
+
+  /* ===== نافذة طباعة الليبلز للفاتورة (بريف ٨٦٤) ===== */
+  function purchaseOpenLabelsModal() {
+    const lines = purchaseBoundLines();
+    if (!lines.length) {
+      purchaseMessage('مفيش أصناف في الفاتورة للطباعة', true);
+      return;
+    }
+    const modal = pe('purchaseLabelsModal');
+    if (!modal) return;
+    purchaseRenderLabelsRows(lines);
+    modal.classList.add('fg-dlg-bg');
+    document.documentElement.classList.add('fg-dlg-open');
+    modal.hidden = false;
+    if (pe('purchaseLabelsError')) pe('purchaseLabelsError').hidden = true;
+    pe('purchaseLabelsClose')?.focus();
+  }
+
+  function purchaseCloseLabelsModal() {
+    const modal = pe('purchaseLabelsModal');
+    if (!modal) return;
+    modal.hidden = true;
+    modal.classList.remove('fg-dlg-bg');
+    document.documentElement.classList.remove('fg-dlg-open');
+  }
+
+  function purchaseRenderLabelsRows(lines) {
+    const tbody = pe('purchaseLabelsRows');
+    if (!tbody) return;
+    const cols = Math.max(1, parseInt(window.PURCHASE_CONFIG?.labelsCols, 10) || 1);
+
+    tbody.innerHTML = lines.map((line, idx) => {
+      const code = purchaseCode(line);
+      const name = line.querySelector('.line-name')?.textContent || line.querySelector('.line-name-input')?.value || code;
+      const qty = Number(line.querySelector('.line-qty')?.value) || 0;
+      const factor = Number(line.querySelector('.line-factor')?.value) || 1;
+      // عدد الليبلز الافتراضي = كمية السطر بالقطعة (الكمية × معامل الوحدة لو السطر بالباكو)
+      const pieces = Math.max(1, Math.round(qty * factor));
+      const actual = cols > 1 ? Math.ceil(pieces / cols) * cols : pieces;
+      const printHint = cols > 1 ? '<span class="fpage-sub plb-actual-hint" style="font-size:var(--fs-xs); color:var(--ink-500); display:block; margin-top:2px;">هيتطبع ' + actual + '</span>' : '';
+
+      return '<tr data-plb-idx="' + idx + '" data-code="' + purchaseEsc(code) + '">' +
+        '<td><input type="checkbox" class="plb-check" checked aria-label="اختيار ' + purchaseEsc(name) + '"></td>' +
+        '<td class="num">' + purchaseEsc(code) + '</td>' +
+        '<td class="line-name-cell" title="' + purchaseEsc(name) + '">' + purchaseEsc(name) + '</td>' +
+        '<td class="num">' +
+          '<input type="number" class="finput finput-sm num plb-copies" min="1" max="9999" step="1" value="' + pieces + '" aria-label="عدد ليبلز ' + purchaseEsc(name) + '">' +
+          printHint +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    const master = pe('purchaseLabelsMasterCheck');
+    if (master) master.checked = true;
+    purchaseLabelsCalc();
+  }
+
+  function purchaseLabelsCalc() {
+    const tbody = pe('purchaseLabelsRows');
+    if (!tbody) return;
+    const cols = Math.max(1, parseInt(window.PURCHASE_CONFIG?.labelsCols, 10) || 1);
+    const max = parseInt(window.PURCHASE_CONFIG?.labelsMax, 10) || 500;
+    const rows = [...tbody.querySelectorAll('tr')];
+    let selectedCount = 0;
+    let totalCopies = 0;
+    let totalActual = 0;
+
+    rows.forEach(row => {
+      const chk = row.querySelector('.plb-check');
+      const inp = row.querySelector('.plb-copies');
+      const copies = Math.max(1, parseInt(inp.value, 10) || 1);
+      const actual = cols > 1 ? Math.ceil(copies / cols) * cols : copies;
+      const hint = row.querySelector('.plb-actual-hint');
+      if (hint) {
+        hint.textContent = 'هيتطبع ' + actual;
+      }
+      if (chk && chk.checked) {
+        selectedCount++;
+        totalCopies += copies;
+        totalActual += actual;
+      }
+    });
+
+    const master = pe('purchaseLabelsMasterCheck');
+    if (master) {
+      master.checked = rows.length > 0 && selectedCount === rows.length;
+      master.indeterminate = selectedCount > 0 && selectedCount < rows.length;
+    }
+
+    const summary = pe('purchaseLabelsSummary');
+    if (summary) {
+      let actualText = cols > 1 ? ' · <b>' + totalActual + '</b> هيتطبع' : '';
+      summary.innerHTML = '<b>' + selectedCount + '</b> صنف مختار · <b>' + totalCopies + '</b> مطلوب' + actualText;
+    }
+
+    const errBox = pe('purchaseLabelsError');
+    if (errBox) {
+      if (totalActual > max) {
+        errBox.textContent = 'الحد الأقصى ' + max + ' ليبل في الطباعة الواحدة — انت طلبت ' + totalActual + ' ليبل.';
+        errBox.hidden = false;
+      } else {
+        errBox.hidden = true;
+      }
+    }
+  }
+
+  function purchaseDoPrintLabels() {
+    const tbody = pe('purchaseLabelsRows');
+    if (!tbody) return;
+    const cols = Math.max(1, parseInt(window.PURCHASE_CONFIG?.labelsCols, 10) || 1);
+    const max = parseInt(window.PURCHASE_CONFIG?.labelsMax, 10) || 500;
+    const rows = [...tbody.querySelectorAll('tr')].filter(r => r.querySelector('.plb-check')?.checked);
+
+    const errBox = pe('purchaseLabelsError');
+    if (!rows.length) {
+      if (errBox) {
+        errBox.textContent = 'مفيش أصناف مختارة للطباعة.';
+        errBox.hidden = false;
+      }
+      return;
+    }
+
+    const payloadRows = [];
+    let totalActual = 0;
+    rows.forEach(r => {
+      const code = r.dataset.code;
+      const inp = r.querySelector('.plb-copies');
+      const copies = Math.max(1, parseInt(inp.value, 10) || 1);
+      const actual = cols > 1 ? Math.ceil(copies / cols) * cols : copies;
+      totalActual += actual;
+      payloadRows.push({ code: code, copies: copies });
+    });
+
+    if (totalActual > max) {
+      if (errBox) {
+        errBox.textContent = 'الحد الأقصى ' + max + ' ليبل في الطباعة الواحدة — انت طلبت ' + totalActual + ' ليبل.';
+        errBox.hidden = false;
+      }
+      return;
+    }
+
+    if (errBox) errBox.hidden = true;
+
+    // POST لـ labels_print.php بنفس الشكل الذي يقبله بالضبط
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'labels_print.php';
+    form.target = '_blank';
+    form.style.display = 'none';
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'rows';
+    input.value = JSON.stringify(payloadRows);
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => form.remove(), 1000);
+  }
+
+  pe('purchaseLabelsBtn')?.addEventListener('click', purchaseOpenLabelsModal);
+  pe('purchaseLabelsClose')?.addEventListener('click', purchaseCloseLabelsModal);
+  pe('purchaseLabelsModal')?.addEventListener('click', event => {
+    if (event.target === event.currentTarget) purchaseCloseLabelsModal();
+  });
+  pe('purchaseLabelsSelectAll')?.addEventListener('click', () => {
+    pe('purchaseLabelsRows')?.querySelectorAll('.plb-check').forEach(chk => { chk.checked = true; });
+    purchaseLabelsCalc();
+  });
+  pe('purchaseLabelsDeselectAll')?.addEventListener('click', () => {
+    pe('purchaseLabelsRows')?.querySelectorAll('.plb-check').forEach(chk => { chk.checked = false; });
+    purchaseLabelsCalc();
+  });
+  pe('purchaseLabelsMasterCheck')?.addEventListener('change', event => {
+    pe('purchaseLabelsRows')?.querySelectorAll('.plb-check').forEach(chk => { chk.checked = event.target.checked; });
+    purchaseLabelsCalc();
+  });
+  pe('purchaseLabelsRows')?.addEventListener('change', event => {
+    if (event.target.matches('.plb-check') || event.target.matches('.plb-copies')) {
+      purchaseLabelsCalc();
+    }
+  });
+  pe('purchaseLabelsRows')?.addEventListener('input', event => {
+    if (event.target.matches('.plb-copies')) {
+      purchaseLabelsCalc();
+    }
+  });
+  pe('purchaseLabelsPrint')?.addEventListener('click', purchaseDoPrintLabels);
+  pe('purchaseLabelsModal')?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); purchaseCloseLabelsModal(); }
+    if (event.key === 'Tab') {
+      const controls = [...event.currentTarget.querySelectorAll('[tabindex="0"],button,input')].filter(el => el.getClientRects().length && !el.disabled);
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && event.target === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && event.target === last) { event.preventDefault(); first.focus(); }
+    }
   });
 
   purchaseInit();

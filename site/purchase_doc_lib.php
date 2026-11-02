@@ -6,6 +6,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/stock_lib.php';
+require_once __DIR__ . '/barcode_lib.php';
 
 const PURCHASE_INTERNAL_ERP_SUPPLIERS = [4, 1000180, 1000181, 3000091, 1000182, 1000245, 1000252];
 
@@ -406,4 +407,105 @@ function purchase_last_true_price(PDO $pdo, int $supplierId, int $itemId): ?floa
     $st->execute([(int) $supplier['erp_supplier_id'], $itemId]);
     $price = $st->fetchColumn();
     return $price === false ? null : round((float) $price, 4);
+}
+
+/**
+ * جلب أصناف فاتورة الشراء لطباعة الليبلز (بريف ٨٦٤)
+ * الداتا من stock_docs و stock_doc_lines و hq_codes.
+ * بترجّع [doc => [...], items => [...]] أو null لو الفاتورة مش موجودة.
+ */
+function purchase_doc_items_for_labels(PDO $pdo, string $term): ?array
+{
+    $term = trim($term);
+    if ($term === '') {
+        return null;
+    }
+
+    $doc = null;
+
+    // مسودة-123 أو draft-123
+    if (preg_match('/^(?:مسودة|draft)[-_]?(\d+)$/ui', $term, $m)) {
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE id = ? AND doc_type IN ('purchase', 'purchase_return') LIMIT 1");
+        $st->execute([(int) $m[1]]);
+        $doc = $st->fetch(PDO::FETCH_ASSOC);
+    }
+    // 2026/123
+    elseif (preg_match('/^(\d{4})\/(\d+)$/', $term, $m)) {
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE doc_year = ? AND doc_no = ? AND doc_type IN ('purchase', 'purchase_return') LIMIT 1");
+        $st->execute([(int) $m[1], (int) $m[2]]);
+        $doc = $st->fetch(PDO::FETCH_ASSOC);
+    }
+    // رقم خالص (كـ doc_no الأول لو مرحلة، أو كـ id)
+    elseif (ctype_digit($term)) {
+        $num = (int) $term;
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE (doc_no = ? OR id = ?) AND doc_type IN ('purchase', 'purchase_return') ORDER BY (doc_no = ?) DESC, id DESC LIMIT 1");
+        $st->execute([$num, $num, $num]);
+        $doc = $st->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if (!$doc) {
+        return null;
+    }
+
+    $stLines = $pdo->prepare(
+        "SELECT l.code, l.item_id, l.unit_factor, l.qty_units, l.qty_pieces
+           FROM stock_doc_lines l
+          WHERE l.doc_id = ? AND l.qty_pieces > 0
+          ORDER BY l.line_no ASC"
+    );
+    $stLines->execute([(int) $doc['id']]);
+    $lines = $stLines->fetchAll(PDO::FETCH_ASSOC);
+
+    $docInfo = [
+        'id'       => (int) $doc['id'],
+        'doc_no'   => $doc['doc_no'] ? (int) $doc['doc_no'] : null,
+        'doc_year' => $doc['doc_year'] ? (int) $doc['doc_year'] : null,
+        'doc_type' => $doc['doc_type'],
+        'status'   => $doc['status'],
+    ];
+
+    if (!$lines) {
+        return ['doc' => $docInfo, 'items' => []];
+    }
+
+    // قراءة من hq_codes باستعلام مجمّع واحد (قاعدة مفيش استعلام في حلقة)
+    $codes = array_values(array_unique(array_filter(array_column($lines, 'code'))));
+    $hqMap = [];
+    if ($codes) {
+        $in = implode(',', array_fill(0, count($codes), '?'));
+        $stHq = $pdo->prepare(
+            "SELECT code, name, price, code_type, unit_factor FROM hq_codes WHERE code IN ($in)"
+        );
+        $stHq->execute($codes);
+        foreach ($stHq->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $hqMap[(string) $r['code']] = $r;
+        }
+    }
+
+    $items = [];
+    foreach ($lines as $line) {
+        $code = (string) $line['code'];
+        $hq = $hqMap[$code] ?? null;
+        $name = (string) ($hq['name'] ?? $code);
+        $price = round((float) ($hq['price'] ?? 0), 2);
+        $codeType = (int) ($hq['code_type'] ?? 0);
+        $factor = round((float) ($line['unit_factor'] ?? ($hq['unit_factor'] ?? 1)), 3);
+        // عدد الليبلز بالقطعة = الكمية × معامل الوحدة
+        $copies = max(1, (int) round((float) $line['qty_pieces']));
+
+        $items[] = [
+            'code'      => $code,
+            'name'      => $name,
+            'price'     => $price,
+            'code_type' => $codeType,
+            'factor'    => $factor,
+            'copies'    => $copies,
+            'printable' => function_exists('barcode_printable') ? barcode_printable($code) : true,
+        ];
+    }
+
+    return [
+        'doc'   => $docInfo,
+        'items' => $items,
+    ];
 }

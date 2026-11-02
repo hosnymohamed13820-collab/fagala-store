@@ -123,6 +123,20 @@ require_once __DIR__ . '/includes/header.php';
         <div class="lbx-hint">مقاسات الليبل واسم المحل بيتظبطوا من حساب المالك — الطباعة شغالة بالمقاسات المحفوظة.</div>
     <?php endif; ?>
 
+    <!-- ===== استيراد من فاتورة شراء ===== -->
+    <div class="lbx-bar" style="margin-bottom: 10px;">
+        <input type="text" class="finput" id="purchaseDocInput" autocomplete="off"
+               placeholder="رقم فاتورة الشراء (مثلاً 12 أو 2026/12 أو مسودة-12)…"
+               enterkeyhint="search"
+               onkeydown="if(isEnterKey(event)){event.preventDefault();lbxFetchPurchaseDoc();}">
+        <button type="button" class="btn btn-ghost" onclick="openBarcodeScanner('purchaseDocInput')" title="مسح باركود الفاتورة">
+            <i class="ti ti-camera"></i>
+        </button>
+        <button type="button" class="btn btn-outline" onclick="lbxFetchPurchaseDoc()">
+            <i class="ti ti-package-import"></i> جلب أصناف الفاتورة
+        </button>
+    </div>
+
     <!-- ===== البحث والسكانر ===== -->
     <div class="lbx-bar">
         <input type="text" class="finput" id="q" autocomplete="off"
@@ -261,6 +275,49 @@ function lbxPickSug(i) {
     document.getElementById('q').focus();
 }
 
+function lbxFetchPurchaseDoc() {
+    const inp = document.getElementById('purchaseDocInput');
+    const term = inp.value.trim();
+    if (!term) return;
+    lbxStatus('جاري جلب أصناف الفاتورة…', '');
+    apiFetch('labels_api.php?part=purchase_doc&term=' + encodeURIComponent(term))
+        .then(j => {
+            const data = j.data || {};
+            const items = data.items || [];
+            if (!items.length) {
+                lbxStatus('الفاتورة مفيهاش أصناف للطباعة', 'warn');
+                return;
+            }
+            let addedCount = 0;
+            items.forEach(it => {
+                const i = rows.findIndex(r => r.code === it.code);
+                if (i > -1) {
+                    rows[i].copies = Math.min(LBX.max, rows[i].copies + it.copies);
+                } else {
+                    rows.push({
+                        code: it.code,
+                        name: it.name,
+                        price: +it.price || 0,
+                        code_type: +it.code_type || 0,
+                        factor: +it.factor || 1,
+                        kind: it.kind || '',
+                        printable: it.printable !== false,
+                        copies: Math.min(LBX.max, it.copies || 1)
+                    });
+                }
+                addedCount++;
+            });
+            lbxSave();
+            lbxRender();
+            inp.value = '';
+            lbxStatus('✓ اتضافت أصناف فاتورة الشراء (' + addedCount + ' صنف)', 'ok');
+            if (navigator.vibrate) navigator.vibrate(40);
+        })
+        .catch(err => {
+            lbxErr(err);
+        });
+}
+
 function lbxAddByCode() {
     const inp = document.getElementById('q');
     const code = inp.value.trim();
@@ -304,6 +361,7 @@ function lbxPush(row) {
 /* ===== العرض ===== */
 function lbxRender() {
     const body = document.getElementById('body');
+    const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
     if (!rows.length) {
         body.innerHTML = '<tr><td colspan="6" class="fg-empty">' +
             'امسح باركود، أو اكتب اسم صنف واختاره من القايمة — وكل صنف بتحدد له كام ليبل.' +
@@ -316,6 +374,8 @@ function lbxRender() {
             } else if (r.code_type === 1 && r.factor > 1) {
                 chip = '<span class="fchip fchip-mute">باكو ×' + lbxNum(r.factor) + '</span> ';
             }
+            const actual = cols > 1 ? Math.ceil(r.copies / cols) * cols : r.copies;
+            const printHint = cols > 1 ? '<span class="fpage-sub lbx-hint-actual" style="font-size:var(--fs-xs); color:var(--ink-500); display:block; margin-top:2px;">هيتطبع ' + actual + '</span>' : '';
             return '<tr>' +
                 '<td class="num">' + (i + 1) + '</td>' +
                 '<td class="lbx-code">' + lbxEsc(r.code) + '</td>' +
@@ -323,7 +383,7 @@ function lbxRender() {
                 '<td class="num">' + lbxMoney(r.price) + '</td>' +
                 '<td class="num"><input type="number" class="finput finput-sm num lbx-copies" data-copy="' + i + '"' +
                     ' min="1" max="' + LBX.max + '" step="1" value="' + r.copies + '"' +
-                    ' aria-label="عدد ليبلز ' + lbxEsc(r.name) + '"></td>' +
+                    ' aria-label="عدد ليبلز ' + lbxEsc(r.name) + '">' + printHint + '</td>' +
                 '<td><button type="button" class="lbx-del" data-del="' + i + '" title="شيل" aria-label="شيل">' +
                     '<i class="ti ti-x"></i></button></td>' +
             '</tr>';
@@ -335,11 +395,14 @@ function lbxRender() {
 
 /* العدد اللي تحت الجدول — بيتحدّث مع أي تعديل (مش رقم ثابت من السيرفر) */
 function lbxTotal() {
+    const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
     const total = rows.reduce((s, r) => s + r.copies, 0);
+    const actualTotal = rows.reduce((s, r) => s + (cols > 1 ? Math.ceil(r.copies / cols) * cols : r.copies), 0);
     const bad = rows.filter(r => !r.printable).length;
+    let actualText = (cols > 1 && rows.length > 0) ? ' · <b>' + actualTotal + '</b> هيتطبع' : '';
     document.getElementById('total').innerHTML =
-        '<b>' + rows.length + '</b> صنف · <b>' + total + '</b> ليبل' +
-        (total > LBX.max ? ' — <span style="color:var(--neg)">الحد الأقصى ' + LBX.max + ' ليبل في الطباعة الواحدة</span>' : '') +
+        '<b>' + rows.length + '</b> صنف · <b>' + total + '</b> ليبل' + actualText +
+        (actualTotal > LBX.max ? ' — <span style="color:var(--neg)">الحد الأقصى ' + LBX.max + ' ليبل في الطباعة الواحدة</span>' : '') +
         (bad ? ' — <span style="color:var(--warn)">' + bad + ' كود مش هيتطبع كباركود</span>' : '');
 }
 
@@ -352,6 +415,13 @@ document.getElementById('body').addEventListener('input', function (e) {
     let n = parseInt(inp.value, 10);
     if (isNaN(n)) return;
     rows[i].copies = Math.max(1, Math.min(LBX.max, n));
+    const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
+    if (cols > 1) {
+        const hintEl = inp.parentElement.querySelector('.lbx-hint-actual');
+        if (hintEl) {
+            hintEl.textContent = 'هيتطبع ' + (Math.ceil(rows[i].copies / cols) * cols);
+        }
+    }
     lbxSave();
     lbxTotal();
 });

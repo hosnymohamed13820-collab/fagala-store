@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/labels_lib.php';
 
 require_login();
 require_module_access('purchase_docs');
@@ -70,6 +71,7 @@ require_once __DIR__ . '/includes/header.php';
       </div>
       <div class="purchase-actions">
         <button id="purchasePending" class="btn btn-outline" type="button">المعلّق (<span id="purchasePendingCount">0</span>)</button>
+        <?php if (can('labels')): ?><button id="purchaseLabelsBtn" class="btn btn-outline" type="button"><i class="ti ti-printer"></i> طباعة ليبل</button><?php endif; ?>
         <?php if (can('purchase_docs:reports')): ?><a id="purchaseReport" class="btn btn-outline" href="reports.php?type=purchase_docs&amp;doc_type=<?= $initialType ?>"><?= $initialType === 'purchase_return' ? 'تقرير المرتجعات' : 'تقرير المشتريات' ?></a><?php endif; ?>
         <a class="btn btn-ghost" href="index.php">رجوع للرئيسية</a>
       </div>
@@ -216,6 +218,40 @@ require_once __DIR__ . '/includes/header.php';
     <div class="fg-dlg-actions"><button id="purchaseDraftPrev" class="btn btn-outline" type="button">السابق</button><button id="purchaseDraftNext" class="btn btn-outline" type="button">التالي</button><button id="purchaseDraftClose" class="btn btn-secondary" type="button">رجوع</button></div>
   </div>
 </div>
+
+<?php if (can('labels')): ?>
+<div id="purchaseLabelsModal" class="purchase-no-print" hidden>
+  <div class="fg-dlg" role="dialog" aria-modal="true" aria-labelledby="purchaseLabelsTitle" tabindex="-1" style="width:min(94vw, 680px);">
+    <h3 id="purchaseLabelsTitle" class="fg-dlg-title"><i class="ti ti-printer"></i> طباعة ليبلز الفاتورة</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--sp-2); gap:var(--sp-2); flex-wrap:wrap;">
+      <div style="display:flex; gap:var(--sp-2);">
+        <button type="button" class="btn btn-sm btn-outline" id="purchaseLabelsSelectAll">اختيار الكل</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="purchaseLabelsDeselectAll">شيل الكل</button>
+      </div>
+      <span id="purchaseLabelsSummary" class="fpage-sub"></span>
+    </div>
+    <div class="ftable-wrap" style="max-height:55vh; overflow-y:auto;">
+      <table class="ftable" id="purchaseLabelsTable">
+        <thead>
+          <tr>
+            <th style="width:44px;"><input type="checkbox" id="purchaseLabelsMasterCheck" aria-label="اختيار الكل"></th>
+            <th style="width:140px;">الكود</th>
+            <th>اسم الصنف</th>
+            <th class="num" style="width:140px;">عدد الليبلز</th>
+          </tr>
+        </thead>
+        <tbody id="purchaseLabelsRows"></tbody>
+      </table>
+    </div>
+    <div id="purchaseLabelsError" class="falert falert-neg" style="margin-top:var(--sp-2);" hidden></div>
+    <div class="fg-dlg-actions" style="margin-top:var(--sp-3);">
+      <button id="purchaseLabelsPrint" class="btn btn-primary" type="button"><i class="ti ti-printer"></i> اطبع</button>
+      <button id="purchaseLabelsClose" class="btn btn-secondary" type="button">رجوع</button>
+    </div>
+  </div>
+</div>
+<?php endif; ?>
+
 <script type="application/json" id="pdBoot"><?= json_encode($pdBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script>
 window.PURCHASE_CONFIG = {
@@ -224,9 +260,12 @@ window.PURCHASE_CONFIG = {
   initialType: <?= json_encode($initialType) ?>,
   owner: <?= $owner ? 'true' : 'false' ?>,
   canCreate: <?= can('purchase_docs:create') ? 'true' : 'false' ?>,
-  canEditDate: <?= $canEditDate ? 'true' : 'false' ?>
+  canEditDate: <?= $canEditDate ? 'true' : 'false' ?>,
+  canLabels: <?= can('labels') ? 'true' : 'false' ?>,
+  labelsCols: <?= (int) (labels_settings()['cols'] ?? 1) ?>,
+  labelsMax: <?= (int) LABELS_MAX ?>
 };
 </script>
 <script src="assets/barcode_scanner.js?v=9"></script>
-<script src="assets/purchase_docs.js?v=3" defer></script>
+<script src="assets/purchase_docs.js?v=4" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
