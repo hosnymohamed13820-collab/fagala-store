@@ -351,6 +351,7 @@ $allReviewShiftIds = [];
 foreach ($pending as $ps) $allReviewShiftIds[] = (int)$ps['id'];
 foreach ($history as $hs) $allReviewShiftIds[] = (int)$hs['id'];
 $shiftEditBadges = review_get_shift_edit_badges($pdo, $allReviewShiftIds);
+$shiftExpensesMap = (site_profile()['shift_expenses_mode'] === 'ashraqa') ? shift_expenses_for_shifts($allReviewShiftIds, $pdo) : [];
 
 // عهد الفروع والموظفين المقدّمة للمراجعة
 $pendingCustody = review_get_pending_custody($pdo);
@@ -553,7 +554,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php if (empty($pending)): ?>
         <div class="card" style="text-align:center;color:var(--ink-500);padding:30px;">مفيش ورديات في انتظار المراجعة.</div>
     <?php else: ?>
-        <?php foreach ($pending as $s): $amt = shift_cashier_amounts($s); $diff = ($amt['cash']+$amt['visa']+$amt['instapay']) - $amt['system']; ?>
+        <?php foreach ($pending as $s): $amt = shift_cashier_amounts($s); $diff = ($amt['cash']+$amt['visa']+$amt['instapay']) - $amt['system']; if (site_profile()['shift_expenses_mode'] === 'ashraqa') $diff += array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount')); ?>
             <div class="fcard shift-card rv-pending-shift" data-branch="<?= (int)$s['branch_id'] ?>">
                 <div class="sc-head">
                     <div>
@@ -574,6 +575,7 @@ require_once __DIR__ . '/includes/header.php';
                             "date"=>$s["business_date"],
                             "cash"=>$amt["cash"], "visa"=>$amt["visa"], "instapay"=>$amt["instapay"],
                             "system"=>$amt["system"],
+                            ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ["expenses"=>array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount'))] : []),
                             "empCash"  => $empCash[(int)$s["id"]]  ?? (object)[],
                             "empLines" => $empLines[(int)$s["id"]] ?? (object)[],
                         ], JSON_UNESCAPED_UNICODE|JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'><i class="ti ti-eye"></i> مراجعة</button>
@@ -939,7 +941,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="sc-stat"><div class="l">السيستم</div><div class="v"><?= ltr_out(number_format($amt['system'],2)) ?></div></div>
                     <div class="sc-stat"><div class="l">كاش</div><div class="v"><?= ltr_out(number_format($amt['cash'],2)) ?></div></div>
                     <div class="sc-stat"><div class="l">فيزا+إنستا</div><div class="v"><?= ltr_out(number_format($amt['visa']+$amt['instapay'],2)) ?></div></div>
-                    <div class="sc-stat"><div class="l">الفرق</div><div class="v"><?= ltr_out(number_format(($amt['cash']+$amt['visa']+$amt['instapay'])-$amt['system'],2)) ?></div></div>
+                    <div class="sc-stat"><div class="l">الفرق</div><div class="v"><?= ltr_out(number_format(($amt['cash']+$amt['visa']+$amt['instapay'])-$amt['system'] + ((site_profile()['shift_expenses_mode'] === 'ashraqa') ? array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount')) : 0),2)) ?></div></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -1423,6 +1425,11 @@ require_once __DIR__ . '/includes/header.php';
         ];
         var empTotal = (rvEmp.cash||0)+(rvEmp.visa||0)+(rvEmp.instapay||0);
         var accTotal = cash+visa+insta;
+        <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+        var drawerExpenses = parseFloat(rvEmp.expenses) || 0;
+        rows.push(['مصروفات الدرج', drawerExpenses, drawerExpenses]);
+        empTotal += drawerExpenses; accTotal += drawerExpenses;
+        <?php endif; ?>
         rows.push(['الإجمالي', empTotal, accTotal]);
 
         // ★ بند الفرق: (الإجمالي − السيستم) لكل طرف.

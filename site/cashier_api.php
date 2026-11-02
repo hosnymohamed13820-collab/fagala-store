@@ -78,6 +78,7 @@ try {
                 'branch_tabs'      => $branchTabs,
                 'today_shifts'     => $todayShifts,
                 'totals'           => $todayTotals,
+                ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => shift_expenses_for_shifts($shiftIds ?? $allShiftIds, $pdo)] : []),
                 'edit_badges'      => $badges,
             ]);
 
@@ -91,6 +92,7 @@ try {
                 'filter_branch'  => $filterBranch,
                 'archive_shifts' => $archiveShifts,
                 'count'          => count($archiveShifts),
+                ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => shift_expenses_for_shifts($shiftIds ?? $allShiftIds, $pdo)] : []),
                 'edit_badges'    => $badges,
             ]);
 
@@ -102,6 +104,7 @@ try {
             api_ok([
                 'rejected_shifts' => $myRejected,
                 'count'           => count($myRejected),
+                ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => shift_expenses_for_shifts($shiftIds ?? $allShiftIds, $pdo)] : []),
                 'edit_badges'     => $badges,
             ]);
 
@@ -135,6 +138,7 @@ try {
                 'archive_shifts'   => $archiveShifts,
                 'rejected_shifts'  => $myRejected,
                 'seq_issues'       => $mySeqIssues,
+                ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => shift_expenses_for_shifts($shiftIds ?? $allShiftIds, $pdo)] : []),
                 'edit_badges'      => $badges,
             ]);
     }

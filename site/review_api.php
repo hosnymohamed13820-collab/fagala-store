@@ -53,6 +53,7 @@ if ($part === 'shifts' || $part === 'all') {
         'details'     => $shiftDetails,
         'history'     => $historyShifts,
         'edit_badges' => $editBadges,
+        ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => shift_expenses_for_shifts($allReviewShiftIds, $pdo)] : []),
     ];
     if ($part === 'shifts') {
         $response['data'] = $shiftsData;

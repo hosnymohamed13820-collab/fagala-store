@@ -840,6 +840,22 @@ $today = date('Y-m-d');
                للرئيسية وبس. متشالة من القايمة هنا، و`treasury_movement()`
                في finance.php بترفضها كمان كطبقة تانية لو جه طلب متزوّر.
                الافتراضي = الرئيسية، لأنها اللي بيطلع منها معظم الصرف. */
+            if (site_id() === 'ashraqa' && site_profile()['allow_cash_disbursement']) {
+            $disbTreasuries = array_values(array_filter(
+                $centralForTransfer,
+                static fn(array $t): bool => (int)($t['show_in_receipts'] ?? 1) === 1
+            ));
+            $defaultDisb = null;
+            // الخزينة اللي كشفها مفتوح تغلب لو متاحة في القائمة
+            foreach ($disbTreasuries as $t) {
+                if ($selectedTreasuryId === (int) $t['id']) { $defaultDisb = $selectedTreasuryId; break; }
+            }
+            if ($defaultDisb === null) {
+                foreach ($disbTreasuries as $t) {
+                    if ($t['type'] === 'main' || $t['type'] === 'cash') { $defaultDisb = (int) $t['id']; break; }
+                }
+            }
+            } else {
             $disbTreasuries = array_values(array_filter(
                 $centralForTransfer,
                 static fn(array $t): bool => $t['type'] !== 'cash' && (int)($t['show_in_receipts'] ?? 1) === 1
@@ -852,6 +868,7 @@ $today = date('Y-m-d');
             // (خزينة الكاش مش فيها، فبترجع للرئيسية)
             foreach ($disbTreasuries as $t) {
                 if ($selectedTreasuryId === (int) $t['id']) { $defaultDisb = $selectedTreasuryId; break; }
+            }
             }
             ?>
             <div id="disbFormBody">

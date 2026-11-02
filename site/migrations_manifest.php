@@ -47,4 +47,6 @@ return [
     '20261101_038_item_class_assign',
     '20261102_039_supplier_card',
     '20261102_040_penalty_cancel',
+    '20261102_041_ashraqa_compat',
+    '20261102_042_ashraqa_classify_null_entries',
 ];

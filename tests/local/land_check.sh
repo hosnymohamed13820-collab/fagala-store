@@ -84,15 +84,14 @@ done
 
 echo; echo "═══ ٣) أرقام الكاش ═══"
 vs="$(grep -oE "const VERSION = 'v[0-9]+'" site/sw.js | grep -oE '[0-9]+')"
-va="$(grep -oE "const VERSION = 'v[0-9]+'" ashraqa/sw.js | grep -oE '[0-9]+')"
-[ "$vs" = "$va" ] && echo "  ✅ VERSION v$vs في الموقعين" || { echo "  ❌ VERSION: site=v$vs ashraqa=v$va"; FAIL=1; }
-sw="$(grep -rhoE --include=*.php 'sw\.js\?v=[0-9]+' site ashraqa | sort -u | tr '\n' ' ')"
-[ "$sw" = "sw.js?v=$vs " ] && echo "  ✅ sw.js?v=$vs في كل مكان" || { echo "  ❌ sw.js?v= : $sw(المفروض $vs)"; FAIL=1; }
+[ -f site/includes/site_profile.php ] || { echo "site profile missing"; FAIL=1; }
+sw="$(grep -rhoE --include=*.php 'sw\.js\?v=[0-9]+' site | sort -u | tr '\n' ' ')"
+[ "$sw" = "sw.js?v=$vs " ] || { echo "sw.js version mismatch: $sw"; FAIL=1; }
 while read -r a; do
-    vals="$(grep -rhoE --include=*.php "$(printf '%s' "$a" | sed 's/[.]/\\./g')\?v=[0-9]+" site ashraqa | sort -u | tr '\n' ' ')"
+    vals="$(grep -rhoE --include=*.php "$(printf '%s' "$a" | sed 's/[.]/\\./g')\?v=[0-9]+" site | sort -u | tr '\n' ' ')"
     [ "$(echo "$vals" | wc -w)" -gt 1 ] && echo "  ⚠️ $a مش موحّد: $vals"
-done < <(grep -rhoE --include=*.php 'assets/[A-Za-z0-9_./-]+\.(css|js)\?v=' site ashraqa | sed 's/?v=$//' | sort -u)
-changed_assets="$(git status --porcelain | awk '{print $2}' | grep -E '^(site|ashraqa)/assets/.*\.(css|js)$' || true)"
+done < <(grep -rhoE --include=*.php 'assets/[A-Za-z0-9_./-]+\.(css|js)\?v=' site | sed 's/?v=$//' | sort -u)
+changed_assets="$(git status --porcelain | awk '{print $2}' | grep -E '^site/assets/.*\.(css|js)$' || true)"
 if [ -n "$changed_assets" ] && git diff --quiet -- site/sw.js; then
     echo "  ❌ فيه CSS/JS اتغيّر و sw.js مااتلمسش ← bash tests/local/bump_cache.sh \"وصف\" <الملفات>"
     FAIL=1

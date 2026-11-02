@@ -105,7 +105,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // الفرق المجمع = (كاش + وسائل) − السيستم
+                if (site_profile()['shift_expenses_mode'] === 'ashraqa') {
+                // حساب المصروفات النثرية من الدرج
+                $rawExpAmounts  = $_POST['exp_amount'] ?? [];
+                $rawExpAccounts = $_POST['exp_account_id'] ?? [];
+                $rawExpNotes    = $_POST['exp_note'] ?? [];
+                $expenses = [];
+                // الحساب لازم يكون من شجرة المصروفات اللي القايمة بتعرضها — مش أي رقم يتبعت في الـPOST
+                $allowedExpAccounts = array_column(entry_codes_tree(true), 'id');
+                if (is_array($rawExpAmounts)) {
+                    foreach ($rawExpAmounts as $k => $rawAmt) {
+                        $amt = (float) $rawAmt;
+                        if ($amt <= 0) continue;
+                        $accId = !empty($rawExpAccounts[$k]) ? (int) $rawExpAccounts[$k] : null;
+                        if ($accId !== null && !in_array($accId, $allowedExpAccounts, true)) {
+                            throw new RuntimeException('حساب المصروف مش من الحسابات المسموحة. اختاره من القايمة.');
+                        }
+                        $note  = isset($rawExpNotes[$k]) ? trim((string)$rawExpNotes[$k]) : '';
+                        if (mb_strlen($note) > 255) {
+                            $note = mb_substr($note, 0, 255);
+                        }
+                        $expenses[] = [
+                            'account_id' => $accId,
+                            'amount'     => $amt,
+                            'note'       => $note !== '' ? $note : null,
+                        ];
+                    }
+                }
+
+                // حساب إجمالي المصروفات النثرية من الدرج
+                $expTotal = array_sum(array_column($expenses, 'amount'));
+
+                // الفرق المجمع = (كاش في الدرج + مصروفات الدرج + وسائل الدفع) − السيستم
+                $collected  = $cashTotal + $expTotal + $methodTotals['visa'] + $methodTotals['instapay'];
+                } else {
                 $collected = $cashTotal + $methodTotals['visa'] + $methodTotals['instapay'];
+                }
                 $difference = $collected - $systemTotal;
 
                 $pdo->beginTransaction();
@@ -131,11 +166,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $oldLinesSt->execute([$shiftId]);
                         $oldLines = $oldLinesSt->fetchAll();
 
+                        if (site_profile()['shift_expenses_mode'] === 'ashraqa') {
+                        $oldExp = cashier_shift_expenses_raw($pdo, $shiftId);
+                        }
                         $before = [
                             'shift' => $oldShift,
                             'cash'  => $oldCash,
                             'lines' => $oldLines,
                         ];
+
+                        if (site_profile()['shift_expenses_mode'] === 'ashraqa') $before['expenses'] = $oldExp;
 
                         $pdo->prepare(
                             'UPDATE shifts SET branch_id=?, business_date=?, shift_name=?, cash_total=?, visa_total=?,
@@ -147,6 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // مسح الفئات والسطور القديمة
                         $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                        if (site_profile()['shift_expenses_mode'] === 'ashraqa') cashier_clear_shift_expenses($pdo, $shiftId);
                     } elseif ($action === 'resubmit_shift') {
                         // تعديل وردية مرفوضة موجودة
                         $shiftId = (int) ($_POST['shift_id'] ?? 0);
@@ -169,6 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // امسح التفاصيل القديمة
                         $pdo->prepare('DELETE FROM shift_cash WHERE shift_id=?')->execute([$shiftId]);
                         $pdo->prepare('DELETE FROM shift_payment_lines WHERE shift_id=?')->execute([$shiftId]);
+                        if (site_profile()['shift_expenses_mode'] === 'ashraqa') cashier_clear_shift_expenses($pdo, $shiftId);
                     } else {
                         // وردية جديدة
                         // 🔴 نفس الفرع + نفس اليوم + نفس رقم الوردية = تقفيل اتبعت قبل كده.
@@ -209,6 +251,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $insL->execute([$shiftId, $ln[0], $ln[1], $ln[2] ?: null, $ln[3]]);
                     }
 
+                    if (site_profile()['shift_expenses_mode'] === 'ashraqa') {
+                    // حفظ بنود المصروفات
+                    cashier_save_shift_expenses($pdo, $shiftId, $expenses);
+
+                    }
+
                     if ($action === 'owner_edit_shift') {
                         $afterShift = $oldShift;
                         $afterShift['branch_id']      = $branchId;
@@ -234,6 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'shift' => $afterShift,
                             'cash'  => $newCash,
                             'lines' => $newLines,
+                            ...((site_profile()['shift_expenses_mode'] === 'ashraqa') ? ['expenses' => $expenses] : []),
                         ];
 
                         shift_edit_log($pdo, $shiftId, $uid, 'edit', $before, $after);
@@ -372,6 +421,7 @@ foreach ($todayShifts as $ts) $allCashierShiftIds[] = (int)$ts['id'];
 foreach ($archiveShifts as $as) $allCashierShiftIds[] = (int)$as['id'];
 foreach ($myRejected as $mr) $allCashierShiftIds[] = (int)$mr['id'];
 $shiftEditBadges = cashier_get_shift_edit_badges($pdo, $allCashierShiftIds);
+$shiftExpensesMap = (site_profile()['shift_expenses_mode'] === 'ashraqa') ? shift_expenses_for_shifts($allCashierShiftIds, $pdo) : [];
 
 // إجماليات اليوم (لبطاقات الملخص فوق + صف الإجماليات في الجدول)
 $todayTotals = cashier_calc_today_totals($todayShifts);
@@ -634,6 +684,22 @@ require_once __DIR__ . '/includes/header.php';
         <div id="ownerEditNotice" style="display:none;font-size:12px;color:var(--ink-500);margin-top:6px;margin-bottom:12px;background:var(--line-soft);padding:6px 12px;border-radius:6px;">بتعدّل وردية <span id="ownerEditCashierName" style="font-weight:600;color:var(--ink-800);"></span> — اسم الكاشير مش هيتغيّر، والتعديل هيتسجّل باسمك.</div>
 
         <!-- تبويبات التقفيل -->
+
+        <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+        <div class="fcard">
+            <h3>مصروفات من الدرج</h3>
+            <div id="drawerExpenses"></div>
+            <button class="btn btn-ghost" type="button" onclick="drawerAddExpense()">إضافة مصروف</button>
+            <template id="drawerExpenseTemplate">
+                <div class="form-row">
+                    <?= acctree_field('exp_account_id[]', null, '— اختر الحساب —', 'custody') ?>
+                    <input class="finput" type="number" step="0.01" min="0" name="exp_amount[]" aria-label="المبلغ" oninput="calc()">
+                    <input class="finput" name="exp_note[]" maxlength="255" aria-label="بيان المصروف">
+                    <button type="button" class="btn btn-ghost" onclick="this.parentElement.remove();calc()">مسح</button>
+                </div>
+            </template>
+        </div>
+        <?php endif; ?>
         <div class="ct-tabs ftabs">
             <button type="button" class="ct-tab ftab active" data-pane="pane_cash" onclick="ctTab(this)">كاش</button>
             <button type="button" class="ct-tab ftab" data-pane="pane_visa" onclick="ctTab(this)">فيزا</button>
@@ -791,6 +857,7 @@ require_once __DIR__ . '/includes/header.php';
         <?php foreach ($myRejected as $s): ?>
             <?php
                 $collected = (float)$s['cash_total']+(float)$s['visa_total']+(float)$s['instapay_total'];
+                if (site_profile()['shift_expenses_mode'] === 'ashraqa') $collected += array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount'));
                 $isExpired = !empty($s['is_return_expired'])
                     || !empty($s['return_expired_at'])
                     || (isset($s['hours_left']) && (int)$s['hours_left'] < 0);
@@ -844,7 +911,7 @@ require_once __DIR__ . '/includes/header.php';
             foreach ($todayShifts as $s):
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; $diff=(float)$s['difference'];
+                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; if (site_profile()['shift_expenses_mode'] === 'ashraqa') $collected += array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount')); $diff=(float)$s['difference'];
                 $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
         ?>
             <tr data-v-system="<?= (float)$sys ?>" data-v-cash="<?= (float)$cash ?>" data-v-visa="<?= (float)$visa ?>" data-v-insta="<?= (float)$insta ?>" data-v-vi="<?= (float)$visa + (float)$insta ?>" data-v-diff="<?= (float)$diff ?>">
@@ -921,7 +988,7 @@ require_once __DIR__ . '/includes/header.php';
             <?php
                 $cash=(float)$s['cash_total']; $visa=(float)$s['visa_total'];
                 $insta=(float)$s['instapay_total'];
-                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta;
+                $sys=(float)$s['system_total']; $collected=$cash+$visa+$insta; if (site_profile()['shift_expenses_mode'] === 'ashraqa') $collected += array_sum(array_column($shiftExpensesMap[(int)$s['id']] ?? [], 'amount'));
                 $sl = $statusLabels[$s['status']] ?? ['—','var(--ink-500)','var(--line)'];
             ?>
             <tr>
@@ -970,6 +1037,10 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
+<?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+<?= acctree_data(true) ?>
+<script src="assets/acctree.js?v=186"></script>
+<?php endif; ?>
 <script>
     const denoms = <?= json_encode($denominations) ?>;
     const methods = ['visa','instapay'];
@@ -982,6 +1053,19 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById(btn.dataset.pane).classList.add('active');
     }
 
+    <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+    function drawerAddExpense(expense = {}) {
+        const host = document.getElementById('drawerExpenses');
+        const clone = document.getElementById('drawerExpenseTemplate').content.cloneNode(true);
+        const row = clone.querySelector('.form-row');
+        row.querySelector('[name="exp_amount[]"]').value = expense.amount || '';
+        row.querySelector('[name="exp_note[]"]').value = expense.note || '';
+        host.append(clone);
+        if (window.acctreeScan) window.acctreeScan();
+        if (window.acctreeSet) window.acctreeSet(row.querySelector('[data-acctree]'), expense.account_id || null);
+    }
+    document.addEventListener('DOMContentLoaded', () => drawerAddExpense());
+    <?php endif; ?>
     function calc() {
         let cash = 0;
         const breakParts = [];
@@ -1004,7 +1088,12 @@ require_once __DIR__ . '/includes/header.php';
         const cb = document.getElementById('cashBreak');
         if (cb) cb.innerHTML = breakParts.join('<br>');
 
-        const collected = cash + mt.visa + mt.instapay;
+        <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>let<?php else: ?>const<?php endif; ?> collected = cash + mt.visa + mt.instapay;
+        <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+        // مصروفات الدرج جزء من التحصيل في إشراقة.
+        const expenseTotal = Array.from(document.querySelectorAll('[name="exp_amount[]"]')).reduce((n, el) => n + (parseFloat(el.value) || 0), 0);
+        collected += expenseTotal;
+        <?php endif; ?>
         const sys = parseFloat(document.getElementById('systemTotal').value) || 0;
         const diff = collected - sys;
 
@@ -1120,6 +1209,11 @@ require_once __DIR__ . '/includes/header.php';
                     if(amt) amt.value = ln.amount;
                     if(ref) ref.value = ln.reference || '';
                 });
+                <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+                document.getElementById('drawerExpenses').replaceChildren();
+                (data.expenses || []).forEach(ex => drawerAddExpense(ex));
+                if (!(data.expenses || []).length) drawerAddExpense();
+                <?php endif; ?>
                 document.getElementById('cancelEdit').style.display = 'inline-flex';
                 calc();
                 openShiftModal();
@@ -1133,6 +1227,9 @@ require_once __DIR__ . '/includes/header.php';
 
     function resetForm() {
         document.getElementById('shiftForm').reset();
+        <?php if (site_profile()['shift_expenses_mode'] === 'ashraqa'): ?>
+        document.getElementById('drawerExpenses').replaceChildren(); drawerAddExpense();
+        <?php endif; ?>
         document.getElementById('formAction').value = 'submit_shift';
         document.getElementById('shiftId').value = '';
         document.getElementById('cancelEdit').style.display = 'none';

@@ -16,6 +16,7 @@
  */
 declare(strict_types=1);
 require_once __DIR__ . '/includes/site_profile.php';
+require_once __DIR__ . '/sync_tokens.php';
 if (!site_profile()['redux_sync']) { http_response_code(404); exit; }
 
 
@@ -60,7 +61,7 @@ if (!is_array($payload)) {
 if ($token === '' && isset($payload['token'])) {
     $token = (string) $payload['token'];
 }
-if (!hash_equals(ASHRAQA_SYNC_TOKEN, (string) $token)) {
+if (!(site_id() === 'ashraqa' ? synctok_ok('hq', (string) $token, ['hq']) : hash_equals(ASHRAQA_SYNC_TOKEN, (string) $token))) {
     sync_die('Unauthorized.', 401);
 }
 

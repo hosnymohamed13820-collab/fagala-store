@@ -62,7 +62,7 @@ if (!is_array($payload)) {
     ap_die('Invalid JSON.');
 }
 $token = (string) ($_SERVER['HTTP_X_SYNC_TOKEN'] ?? ($payload['token'] ?? ''));
-if (!hash_equals(SYNC_AGENT_TOKENS['ashraqa'], $token)) {
+if (!(site_id() === 'ashraqa' ? synctok_ok('hq', $token, ['hq']) : hash_equals(SYNC_AGENT_TOKENS['ashraqa'], $token))) {
     ap_die('Unauthorized.', 401);
 }
 

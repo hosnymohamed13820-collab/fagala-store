@@ -36,7 +36,7 @@ def main():
 
     # ١) السطور المضافة في الملفات المتتبّعة
     cur = None
-    for line in git('diff', '-U0', 'HEAD', '--', 'site/', 'ashraqa/').splitlines():
+    for line in git('diff', '-U0', 'HEAD', '--', 'site/').splitlines():
         if line.startswith('+++ '):
             cur = line[6:] if line.startswith('+++ b/') else None
         elif line.startswith('+') and cur and not line.startswith('+++'):
@@ -47,7 +47,7 @@ def main():
                 bad.append((cur, 'CSV — استخدم SimpleXlsx: ' + text.strip()))
 
     # ٢) الملفات الجديدة كلها
-    for f in git('ls-files', '--others', '--exclude-standard', 'site/', 'ashraqa/').splitlines():
+    for f in git('ls-files', '--others', '--exclude-standard', 'site/').splitlines():
         if not f.endswith(('.php', '.js', '.css', '.html')) or f.endswith('config.php'):
             continue
         with open(f, encoding='utf-8', errors='ignore') as fh:

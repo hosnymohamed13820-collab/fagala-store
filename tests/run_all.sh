@@ -100,9 +100,9 @@ echo "== ملفات تعديلات القاعدة =="
 bash tests/check_migrations.sh || FAIL=1
 
 echo
-echo "== بنية PHP — إشراقة =="
-if command -v node > /dev/null 2>&1; then
-    node tests/check_php.mjs ashraqa/*.php ashraqa/includes/*.php || FAIL=1
+echo "== هوية الموقعين من المصدر المشترك =="
+if [ -x "$PHP_BIN" ]; then
+    "$PHP_BIN" tests/local/test_site_profile.php || FAIL=1
 else
     echo "  (node مش متاح — اتخطى)"
 fi
@@ -159,7 +159,7 @@ echo "== الجافاسكربت اللي جوّه صفحات PHP =="
 #    والزراير مابتعملش حاجة من غير ولا رسالة خطأ.
 if command -v node > /dev/null 2>&1; then
     node tests/check_inline_js.mjs site/*.php site/includes/*.php \
-                                   ashraqa/*.php ashraqa/includes/*.php || FAIL=1
+                                   site/includes/site_profile.php || FAIL=1
 else
     echo "  (node مش متاح — اتخطى)"
 fi

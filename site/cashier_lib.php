@@ -249,6 +249,10 @@ function cashier_calc_today_totals(array $todayShifts): array {
     $sumInsta  = (float) array_sum(array_column($todayShifts, 'instapay_total'));
     $sumSys    = (float) array_sum(array_column($todayShifts, 'system_total'));
     $sumColl   = $sumCash + $sumVisa + $sumInsta;
+    if (site_profile()['shift_expenses_mode'] === 'ashraqa') {
+        $expenses = shift_expenses_for_shifts(array_column($todayShifts, 'id'));
+        foreach ($expenses as $lines) $sumColl += array_sum(array_column($lines, 'amount'));
+    }
     $sumVI     = $sumVisa + $sumInsta;
     $sumDiff   = $sumColl - $sumSys;
 
@@ -263,3 +267,21 @@ function cashier_calc_today_totals(array $todayShifts): array {
     ];
 }
 
+
+/** نفس تفاصيل المصروفات القديمة في سجل تعديل الوردية. */
+function cashier_shift_expenses_raw(PDO $pdo, int $shiftId): array {
+    $st = $pdo->prepare('SELECT account_id, amount, note FROM shift_expenses WHERE shift_id=?');
+    $st->execute([$shiftId]);
+    return $st->fetchAll();
+}
+function cashier_clear_shift_expenses(PDO $pdo, int $shiftId): void {
+    $pdo->prepare('DELETE FROM shift_expenses WHERE shift_id=?')->execute([$shiftId]);
+}
+/** حفظ بنود المصروفات بنفس ترتيبها، جوه transaction التقفيل. */
+function cashier_save_shift_expenses(PDO $pdo, int $shiftId, array $expenses): void {
+    if (empty($expenses)) return;
+    $insE = $pdo->prepare('INSERT INTO shift_expenses (shift_id, account_id, amount, note) VALUES (?, ?, ?, ?)');
+    foreach ($expenses as $exp) {
+        $insE->execute([$shiftId, $exp['account_id'], $exp['amount'], $exp['note']]);
+    }
+}

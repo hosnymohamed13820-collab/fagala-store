@@ -4,7 +4,7 @@
 #
 #  بيرفع **الموقعين**:
 #    site/     →  /domains/hosnimanagement.com/public_html
-#    ashraqa/  →  /domains/hosnimanagement.com/public_html/ashraqa
+#    site/     →  /domains/hosnimanagement.com/public_html/ashraqa
 #
 #  ليه مش WinSCP زي الأول:
 #    ١٩ سبتمبر ٢٠٢٦ الرفع وقف على شهادة TLS مش معروفة (*.hstgr.io) —
@@ -108,7 +108,7 @@ list_candidates() {           # $1 = فولدر المصدر (site | ashraqa)
     while IFS= read -r f; do
         rel="${f#"$src"/}"
         case "$rel" in
-            config.php|config.php.*)            continue ;;   # 🔴 عمره ما يترفع
+            config.php*)            continue ;;   # 🔴 عمره ما يترفع
             uploads/*|data/*|downloads/*|logs/*) continue ;;   # بتاعة السيرفر
         esac
         printf '%s\n' "$rel"
@@ -128,7 +128,11 @@ diff_vs_server() {            # $1 = المصدر · $2 = المسار على ا
     # بصمات السيرفر: الملف اللي مش موجود بيطلع بصمة فاضية وبيتحسب «جديد»
     # shellcheck disable=SC2016
     "${SSH[@]}" "$SSH_HOST" "cd '$remote' 2>/dev/null && xargs -d '\n' -r md5sum -- 2>/dev/null" \
-        < "$cand" > "$remote_sums" 2>/dev/null
+        < "$cand" > "$remote_sums" 2>/dev/null || {
+        echo "فشل قراءة بصمات السيرفر: $remote" >&2
+        rm -f "$remote_sums" "$local_sums"
+        exit 1
+    }
 
     (cd "$src" && xargs -d '\n' -r md5sum -- < "$cand" 2>/dev/null) > "$local_sums"
 
@@ -139,7 +143,7 @@ diff_vs_server() {            # $1 = المصدر · $2 = المسار على ا
     awk '
         function fname(l,   p, f) { p = index(l, " "); f = substr(l, p+1); sub(/^[ *]+/, "", f); return f }
         function fhash(l,   p)    { p = index(l, " "); return substr(l, 1, p-1) }
-        NR==FNR { sum[fname($0)] = fhash($0); next }
+        FILENAME==ARGV[1] { sum[fname($0)] = fhash($0); next }
         { f = fname($0); if (sum[f] != fhash($0)) print f }
     ' "$remote_sums" "$local_sums" | sort > "$out"
 
@@ -185,6 +189,18 @@ report_errors() {             # $1 = من امتى (فاضي = كل السجل)
 #  ٣) حزام الأمان — config.php عمره ما يعدّي
 # ---------------------------------------------------------------------
 guard_config() {              # $1 = ملف القايمة
+    local rel src="${2:-site}"
+    while IFS= read -r rel; do
+        case "$rel" in
+            ""|/*|*\\*|[A-Za-z]:*|.|..|../*|*/../*|*/..|./*|*/./*|*/.) echo "مسار رفع مرفوض: $rel" >&2; exit 1 ;;
+            config.php*|uploads|uploads/*|data|data/*|downloads|downloads/*|logs|logs/*) echo "ملف محمي في قائمة الرفع: $rel" >&2; exit 1 ;;
+        esac
+        local path="$src/$rel"
+        while [ "$path" != "$src" ]; do
+            [ ! -L "$path" ] || { echo "رابط رمزي في مسار الرفع: $rel" >&2; exit 1; }
+            path="$(dirname "$path")"
+        done
+    done < "$1"
     if grep -qE '(^|/)config\.php' "$1"; then
         echo "❌🔴 config.php في القايمة — وقفت. ده مايحصلش أبداً، شوف السكربت."
         exit 1
@@ -200,7 +216,7 @@ SITES=()
 [ "$ONLY" = "fagala" ]  || SITES+=("ashraqa")
 
 SRC_OF[fagala]="site";      REMOTE_OF[fagala]="$BASE"
-SRC_OF[ashraqa]="ashraqa";  REMOTE_OF[ashraqa]="$BASE/ashraqa"
+SRC_OF[ashraqa]="site";  REMOTE_OF[ashraqa]="$BASE/ashraqa"
 
 # `--errors` لوحدها: اقرا السجل وامشي — من غير أي مقارنة ولا رفع
 if [ "$ERRORS_ONLY" -eq 1 ]; then
@@ -258,6 +274,7 @@ for s in "${SITES[@]}"; do
     lst="${LIST_OF[$s]}"
     n=$(wc -l < "$lst" | tr -d ' ')
     [ "$n" -gt 0 ] || continue
+    guard_config "$lst" "${SRC_OF[$s]}"
     if ! tar -czf - -C "${SRC_OF[$s]}" -T "$lst" \
          | "${SSH[@]}" "$SSH_HOST" "mkdir -p '${REMOTE_OF[$s]}' && tar -xzf - -C '${REMOTE_OF[$s]}'"; then
         echo "❌ الرفع وقف في $s — 🔴 شوف وصل إيه قبل ما تعيد."; exit 1

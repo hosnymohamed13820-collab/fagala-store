@@ -197,7 +197,7 @@ require_once __DIR__ . '/nav_icons.php';
                         <?= nav_icon('ti-package') ?><span>تقسيم الأصناف</span>
                     </a>
                 <?php endif; ?>
-                <?php if ($key === 'dashboard' && is_owner()): ?>
+                <?php if ($key === 'dashboard' && is_owner() && !(site_id() === 'ashraqa')): ?>
                     <a href="activity.php"
                        class="nav-item <?= $active === 'activity' ? 'active' : '' ?>">
                         <?= nav_icon('ti-list-details') ?>

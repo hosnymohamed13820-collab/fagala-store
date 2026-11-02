@@ -13,6 +13,11 @@
  * =====================================================================
  */
 declare(strict_types=1);
+require_once __DIR__ . '/includes/site_profile.php';
+if (site_id() === 'ashraqa') {
+    require __DIR__ . '/sync_tokens_ashraqa.php';
+    return;
+}
 
 // الملف ده بيتعمله require بس — مالوش لازمة يتفتح من المتصفح
 if (realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
@@ -57,6 +62,7 @@ const SYNC_LEGACY_TOKEN = 'hq_7Kp9mXq2Rv5Nw8Lt3Bz6Yd4Hs1Fj0Gc';
  * التوكن ده مسموح له يبعت باسم الوكيل ده على النقطة دي؟
  * $allowed = الوكلاء المسموحين على الملف اللي بينده (مش كل الخريطة).
  */
+if (!(site_id() === 'ashraqa')) {
 function synctok_ok(string $agent, string $token, array $allowed): bool
 {
     if ($token === '' || !in_array($agent, $allowed, true)) return false;
@@ -137,3 +143,5 @@ function synctok_log_legacy(string $agent): void
     }
 }
 
+
+}
