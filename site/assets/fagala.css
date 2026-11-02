@@ -1817,6 +1817,20 @@ html.fg-dlg-open {
     border-radius: var(--r-lg);
     overflow-x: auto;
     margin-bottom: var(--sp-6);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+}
+.ftable-wrap::-webkit-scrollbar {
+    height: 6px;
+}
+.ftable-wrap::-webkit-scrollbar-track {
+    background: var(--bg);
+    border-radius: var(--r-pill);
+}
+.ftable-wrap::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: var(--r-pill);
 }
 
 .ftable {
@@ -2109,6 +2123,119 @@ label.ffield { color:var(--ink-700); font-size:var(--fs-base); font-weight:500; 
 @media (max-width:640px) {
     .fgrid-2, .fgrid-3, .fgrid-4 { grid-template-columns:1fr; }
     .fpage-head, .fcard-head { align-items:stretch; flex-direction:column; }
+
+    /* مكوّنات المكتبة على الموبايل (بريف ٨٦٣) */
+    /* ١. الفلاتر تلف وتاخد العرض الكامل */
+    .ffilters {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--sp-2);
+        padding: var(--sp-3);
+    }
+    .ffilters > .ffield,
+    .ffilters > :is(.finput, .fselect, .ftextarea) {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+    }
+    .ffilters > .btn {
+        width: 100%;
+        min-height: 40px;
+        justify-content: center;
+    }
+
+    /* ٢. كروت الإجماليات عمودين متساويين */
+    .fkpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--sp-2);
+    }
+    .fkpi {
+        padding: var(--sp-2) var(--sp-3);
+    }
+    .fkpi > strong {
+        font-size: var(--fs-lg);
+    }
+
+    /* ٣. التابات تسكرول أفقي بنعومة من غير ما تلف أسطر */
+    .ftabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: var(--sp-1);
+        max-width: 100%;
+    }
+    .ftabs::-webkit-scrollbar {
+        display: none;
+    }
+    .ftab {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        min-height: 40px;
+    }
+
+    /* ٤. الجداول تحتفظ بحدها الأدنى وتتمرر بسكرول أفقي داخل الغلاف */
+    .ftable-wrap > .ftable {
+        min-width: max-content;
+    }
+
+    /* ٥. المودال يملا الشاشة تحت 600px */
+    .fg-dlg-bg,
+    .modal-bg,
+    .modal-overlay {
+        padding: 0 !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+    }
+    .fg-dlg,
+    .modal,
+    .modal-overlay > .fcard {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100% !important;
+        min-height: 100vh !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: var(--sp-4) var(--sp-3) !important;
+        box-sizing: border-box !important;
+        overflow-y: auto !important;
+    }
+    .fg-dlg-actions,
+    .modal-actions {
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sp-2);
+    }
+    .fg-dlg-actions .btn,
+    .modal-actions .btn {
+        min-height: 40px;
+        flex: 1 1 auto;
+    }
+
+    /* ٦. أهداف اللمس 40px على الأقل للزراير الأساسية */
+    .btn {
+        min-height: 40px;
+    }
+    .fpage-actions .btn,
+    .fcard-actions .btn,
+    .fauth-actions .btn {
+        min-height: 40px;
+    }
+    .fcard {
+        padding: var(--sp-4) var(--sp-3);
+    }
+    .fpage-actions,
+    .fcard-actions {
+        width: 100%;
+    }
+    .fpage-actions > .btn,
+    .fcard-actions > .btn {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
 }
 
 /* ==========================================================================

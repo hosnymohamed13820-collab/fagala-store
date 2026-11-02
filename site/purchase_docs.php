@@ -55,7 +55,7 @@ require_once __DIR__ . '/includes/header.php';
 .purchase-search-results .btn { display:block; width:100%; text-align:right; white-space:normal; }
 .purchase-origin[hidden], .purchase-event-list[hidden] { display:none; }
 .purchase-event-list { font-size:var(--fs-xs); line-height:1.9; }
-@media (max-width:600px) { .purchase-summary-wrap { position:static; } .purchase-shell { padding-bottom:var(--sp-2); } .purchase-head-fields .ffield { flex:1 1 100%; } }
+@media (max-width:600px) { .purchase-summary-wrap { position:static; } .purchase-shell { padding-bottom:var(--sp-2); } .purchase-head-fields .ffield { flex:1 1 100%; } .purchase-shortcuts { display:none; } .purchase-actions .btn { min-height:40px; } }
 </style>
 
 <main class="purchase-shell print-doc">

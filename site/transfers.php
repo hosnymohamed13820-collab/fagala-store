@@ -73,7 +73,7 @@ if (($_GET['action'] ?? '') === 'print') {
     <head>
         <meta charset="utf-8">
         <title>إذن تحويل بضاعة <?= e($docNoLabel) ?></title>
-        <link rel="stylesheet" href="assets/fagala.css?v=39">
+        <link rel="stylesheet" href="assets/fagala.css?v=40">
         <style>
             @page { size: A4 portrait; margin: 15mm; }
             body {
@@ -303,7 +303,7 @@ require_once __DIR__ . '/includes/header.php';
 }
 @media (max-width: 600px) {
     .meta-grid { grid-template-columns: 1fr; }
-    .transfers-container .btn { width: 100%; justify-content: center; margin-bottom: 6px; }
+    .transfers-container > .fpage-head .btn, .transfers-container .fpage-actions .btn { width: 100%; justify-content: center; margin-bottom: 6px; }
 }
 </style>
 

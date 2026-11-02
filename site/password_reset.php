@@ -18,7 +18,7 @@ $username = trim((string) ($_GET['username'] ?? ''));
     <script>
         try { document.documentElement.dataset.theme = localStorage.getItem('fagala-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch (e) {}
     </script>
-    <link rel="stylesheet" href="assets/fagala.css?v=39">
+    <link rel="stylesheet" href="assets/fagala.css?v=40">
 </head>
 <body>
 <main class="content">

@@ -197,6 +197,13 @@ require_once __DIR__ . '/includes/header.php';
     </div>
 </div>
 
+<style>
+@media (max-width: 640px) {
+    #adjForm { flex-direction: column; align-items: stretch; }
+    #adjForm > div { width: 100%; }
+    #adjForm .finput, #adjForm .fselect { width: 100% !important; box-sizing: border-box; }
+}
+</style>
 <!-- فورم تسوية مخزنية بسيط للاختبار -->
 <div class="fcard" style="margin-bottom:16px;">
     <h3 style="margin:0 0 12px 0;"><i class="ti ti-adjustments"></i> تسوية مخزنية سريعة (للاختبار)</h3>

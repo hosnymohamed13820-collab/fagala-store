@@ -152,7 +152,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script>try{const t=localStorage.getItem('fagala-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
     <title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?></title>
-    <link rel="stylesheet" href="assets/fagala.css?v=39">
+    <link rel="stylesheet" href="assets/fagala.css?v=40">
     <style>
         @page {
             size: 80mm auto;

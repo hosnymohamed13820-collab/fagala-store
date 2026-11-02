@@ -75,7 +75,7 @@ $storeName = (site_id() === 'fagala' ? setting('store_name', site_profile()['sto
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/login_fx.css?v=10">
     <link rel="stylesheet" href="assets/tabler-subset.css?v=2">
-    <link rel="stylesheet" href="assets/fagala.css?v=39">
+    <link rel="stylesheet" href="assets/fagala.css?v=40">
     <?php if (site_profile()['theme_css'] !== null): ?>
     <link rel="stylesheet" href="<?= e(site_profile()['theme_css']) ?>">
     <?php endif; ?>
@@ -204,7 +204,7 @@ $storeName = (site_id() === 'fagala' ? setting('store_name', site_profile()['sto
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=91<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=92<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {});
             });
         }
 
