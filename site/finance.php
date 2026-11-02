@@ -1734,6 +1734,20 @@ function save_custody_review(
             throw new RuntimeException('العهدة دي مش مقدّمة للمراجعة.');
         }
 
+        // بريف ٨٦١: الجلسة هي هوية المراجع؛ وفي التشغيل المحلي بناخد المستخدم الممرّر.
+        $reviewer = function_exists('current_user') ? current_user() : null;
+        $reviewerId = isset($reviewer['id']) ? (int) $reviewer['id'] : $userId;
+        // الاستثناء لدور المالك الحقيقي من القاعدة، مش صلاحية مشاهدة الكل.
+        $selfStmt = $pdo->prepare(
+            'SELECT e.id FROM employees e JOIN users u ON u.id=e.user_id
+             LEFT JOIN roles r ON r.id=u.role_id
+             WHERE e.user_id=? AND e.id IN (?, ?) AND COALESCE(r.is_owner,0)=0 LIMIT 1'
+        );
+        $selfStmt->execute([$reviewerId, $custody['employee_id'], $custody['responsible_employee_id']]);
+        if ($selfStmt->fetchColumn() !== false) {
+            throw new RuntimeException('ماينفعش تراجع عهدتك');
+        }
+
         $expected   = (float) $custody['closing_balance'];
         $variance   = $accountantCounted - $expected;
         $tolerance  = custody_tolerance();

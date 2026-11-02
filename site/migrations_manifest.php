@@ -54,4 +54,5 @@ return [
     '20261102_045_transfer_diffs_approval',
     '20261102_046_reopen_bonjour_custody_21',
     '20261102_047_supplier_extra_fields',
+    '20261102_048_fix_huda_custody15_deficit',
 ];
