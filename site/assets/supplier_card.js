@@ -23,8 +23,9 @@
     function missing(code) {
         show('missing'); $('scMissingText').textContent = 'كود المورد ' + code + ' مش متسجّل عندنا';
     }
-    function read(label, value, dir = 'auto', wide = false) {
-        return '<div class="ffield ' + (wide ? 'sc-wide' : '') + '"><label>' + esc(label) + '</label><div class="sc-read" dir="' + dir + '">' + esc(value === '' || value == null ? '—' : value) + '</div></div>';
+    function read(label, value, dir = 'auto', wide = false, classes = '', html = false) {
+        const text = value === '' || value == null ? '—' : value;
+        return '<div class="ffield ' + (wide ? 'sc-wide' : '') + '"><label>' + esc(label) + '</label><div class="sc-val ' + classes + '" dir="' + dir + '">' + (html ? text : esc(text)) + '</div></div>';
     }
     function field(label, key, value, type = 'text', wide = false) {
         const attrs = ' name="' + key + '" dir="' + (['phone','phone2','tax_no'].includes(key) ? 'ltr' : 'auto') + '"';
@@ -55,36 +56,57 @@
             $('scInfo').innerHTML = '<form id="scEdit">' + fields(s) + '<div class="fcard-actions"><button class="btn btn-primary" type="submit">حفظ</button><button class="btn btn-ghost" type="button" id="scCancelEdit">إلغاء</button></div></form>';
             return;
         }
-        $('scInfo').innerHTML = (boot.canEdit ? '<button class="btn btn-outline" id="scEditBtn">تعديل</button>' : '') + '<div class="sc-fields">' +
-            read('كود المورد', s.erp_supplier_code, 'ltr') + read('الحالة التجارية', Number(s.is_active) ? 'نشط ومتاح للتوريد' : 'متوقف') +
-            read('اسم المورد التجاري', s.name, 'auto', true) + read('التليفون الأساسي', s.phone, 'ltr') + read('تليفون إضافي / واتساب', s.phone2, 'ltr') +
-            read('طريقة التعامل', payment(s)) + read('فترة السماح (أيام)', s.credit_days) +
-            (boot.canPrices ? read('حد الائتمان', s.credit_limit == null ? null : money(s.credit_limit)) : '') + read('الرقم الضريبي', s.tax_no, 'ltr') +
-            read('العنوان ومقر التوزيع', s.address, 'auto', true) + read('ملاحظات التعامل التجاري', s.notes, 'auto', true) + '</div>';
+        const active = Number(s.is_active);
+        const days = s.credit_days == null ? '—' : num(s.credit_days) + ' يوم';
+        const credit = boot.canPrices && s.credit_limit != null ? money(s.credit_limit) + ' ج.م' : '—';
+        $('scInfo').innerHTML = (boot.canEdit ? '<button class="btn btn-outline sc-edit-action" id="scEditBtn">تعديل</button>' : '') +
+            '<div class="sc-fields sc-fields-top">' + read('كود المورد', s.erp_supplier_code, 'ltr') +
+            read('الحالة التجارية', '<span class="fchip ' + (active ? 'fchip-pos' : 'fchip-mute') + '">' + (active ? 'نشط ومتاح للتوريد' : 'متوقف') + '</span>', 'auto', false, '', true) + '</div>' +
+            read('اسم المورد التجاري', s.name, 'auto', true, 'sc-name-val') +
+            '<div class="sc-fields sc-fields-contact">' + read('التليفون الأساسي', s.phone, 'ltr') + read('تليفون إضافي / واتساب', s.phone2, 'ltr') +
+            read('طريقة الدفع المعتمدة', s.payment_type ? payment(s) : '—') + read('فترة السماح والائتمان', days + ' · ' + credit) + '</div>' +
+            '<div class="sc-sec">بيانات الموقع والتسليم</div><div class="sc-fields sc-fields-location">' + read('العنوان ومقر التوزيع', s.address) + read('مكان استلام البضاعة', null) + '</div>' +
+            '<div class="sc-sec">ملاحظات التعامل التجاري</div><div class="sc-val sc-notes">' + esc(s.notes || '—') + '</div>';
     }
     function payment(s) {return s.payment_type === 'credit' ? 'آجل' : s.payment_type === 'cash' ? 'كاش' : 'من غير تحديد';}
-    function sideCard(title, value, details = '') {
-        return '<div class="fcard"><h3 class="fcard-title">' + title + '</h3><div class="sc-big">' + esc(value) + '</div>' + details + '</div>';
+    function sideRows(rows) {
+        return '<div class="sc-rows">' + rows.map(([label, value]) => '<div><span>' + esc(label) + '</span><span>' + esc(value == null || value === '' ? '—' : value) + '</span></div>').join('') + '</div>';
+    }
+    function sideCard(title, value, details = '', tone = '') {
+        return '<div class="fcard"><h3 class="sc-side-title">' + esc(title) + '</h3><div class="sc-big ' + tone + '">' + value + '</div>' + details + '</div>';
     }
     function renderCard() {
-        const c = state.card, s = c.supplier;
+        const c = state.card, s = c.supplier, latest = c.latest;
+        const amount = value => boot.canPrices && value != null ? money(value) + ' ج.م' : '—';
+        const bigAmount = value => boot.canPrices && value != null ? money(value) + ' <small>ج.م</small>' : '—';
         $('scCodeInput').value = s.erp_supplier_code; $('scCode').textContent = s.erp_supplier_code; $('scName').textContent = s.name;
-        $('scActive').textContent = Number(s.is_active) ? 'نشط' : 'متوقف';
+        $('scActive').textContent = Number(s.is_active) ? 'نشط ✓' : 'متوقف';
         $('scActive').className = 'fchip ' + (Number(s.is_active) ? 'fchip-pos' : 'fchip-mute');
-        $('scPayment').textContent = payment(s); $('scItemCount').textContent = num(c.counts.items) + ' صنف مورّد';
+        $('scPayment').textContent = s.payment_type ? payment(s) + (s.payment_type === 'credit' && s.credit_days != null ? ' (' + num(s.credit_days) + ' يوم)' : '') : '—';
+        $('scItemCount').textContent = num(c.counts.items) + ' صنف مورّد';
         $('scPrint').href = c.statement_url; $('scPrint').hidden = !boot.canPrices;
         document.querySelectorAll('#scTabs [data-tab]').forEach(b => {b.textContent = b.dataset.label + (c.counts[b.dataset.tab] == null ? '' : ' (' + num(c.counts[b.dataset.tab]) + ')');});
         renderInfo();
         document.querySelectorAll('[data-period]').forEach(f => f.reset());
-        let side = '';
-        if (boot.canPrices) {
-            const bal = c.statement.period.final_balance, latest = c.latest;
-            side += sideCard('الرصيد الحالي', money(Math.abs(bal)) + ' ج.م ' + (bal > 0 ? '(له)' : bal < 0 ? '(عليه)' : ''), '<p class="fpage-sub">من بداية كشف الحساب ' + esc(c.statement.from) + ' لحد ' + esc(c.statement.to) + '</p>');
-            side += sideCard('آخر فاتورة شراء', latest ? money(latest.net_amount) + ' ج.م' : 'مفيش فواتير', latest ? '<p>' + esc(latest.doc_no) + ' · ' + esc(latest.doc_date) + '</p><p>' + esc(latest.branch) + ' · ' + num(latest.item_count) + ' أصناف</p>' : '');
-            side += sideCard('مشتريات آخر ٩٠ يوم', money(c.recent.net) + ' ج.م', '<p>' + num(c.recent.count) + ' فاتورة شراء</p>');
-        } else side += '<div class="falert falert-warn">' + lockedMessage() + '</div>';
-        side += sideCard('الأصناف المورّدة', num(c.counts.items) + ' صنف'); $('scSidebar').innerHTML = side;
-        show('card'); switchTab('info');
+        const bal = boot.canPrices ? c.statement.period.final_balance : null;
+        const badge = bal == null ? '—' : bal > 0 ? 'مستحق للمورد' : bal < 0 ? 'مستحق على المورد' : 'الحساب متعادل';
+        const balanceDetails = '<div class="sc-badges"><span class="fchip ' + (bal > 0 ? 'fchip-warn' : 'fchip-mute') + '">' + badge + '</span><span>حد الائتمان ' + esc(amount(s.credit_limit)) + '</span></div>';
+        const invoices = c.last_purchases || [];
+        const balanceRows = [0, 1].map(i => [invoices[i] ? 'فاتورة ' + invoices[i].doc_date : (i ? 'الفاتورة اللي قبلها' : 'آخر فاتورة'), amount(invoices[i]?.net_amount)]);
+        // مفيش تخصيص للسداد على الفواتير، فمانعرضش ميعاد سداد تقديري كأنه مؤكد.
+        balanceRows.push(['فترة السداد', c.payment_days_left == null ? '—' : 'متبقي ' + num(c.payment_days_left) + ' يوم']);
+        let side = sideCard('الرصيد الحالي', bigAmount(bal == null ? null : Math.abs(bal)), balanceDetails + sideRows(balanceRows), bal > 0 ? 'sc-due' : '');
+        side += sideCard('آخر فاتورة شراء', bigAmount(latest?.net_amount), sideRows([
+            ['رقم الفاتورة', latest?.doc_no], ['فاتورة المورد', latest?.supplier_invoice], ['تاريخ الشراء', latest?.doc_date],
+            ['فرع الاستلام', latest?.branch], ['عدد الأصناف', latest ? num(latest.item_count) + ' أصناف' : '—']
+        ]), 'sc-accent');
+        side += sideCard('مشتريات آخر 90 يوم', bigAmount(c.recent?.net), sideRows([
+            ['عدد الفواتير', c.recent ? num(c.recent.count) + ' فاتورة شراء' : '—'], ['إجمالي المرتجعات', amount(c.recent?.returns)],
+            ['إجمالي المسدد', amount(c.recent?.paid)], ['المتبقي غير مسدد', amount(c.recent?.unpaid)]
+        ]));
+        side += sideCard('الأصناف المورّدة', num(c.counts.items) + ' <small>صنف</small>', sideRows((c.sections || []).length ? c.sections.map(r => [r.name, num(r.item_count) + ' أصناف']) : [['القسم', '—']]));
+        $('scSidebar').innerHTML = side;
+        show('card'); switchTab(boot.print && boot.canPrices ? 'statement' : 'info');
     }
     function lockedMessage() {return boot.hasPrices ? 'الأرقام الحساسة مقفولة — افتحها من الهيدر' : 'مالكش صلاحية التكاليف وكشف الحساب';}
     async function openCard(code) {
@@ -151,15 +173,17 @@
                 form.elements.from.value = d.from; form.elements.to.value = d.to;
                 // الرصيد التراكمي من دالة كشف الحساب الأصلية، مابيتحسبش تاني هنا.
                 const rows = d.moves.map(r => ({...r, doc: r.doc_no || '—', name: r.description || (Number(r.credit) > 0 ? 'فاتورة شراء' : 'مرتجع شراء')}));
-                host.innerHTML = '<p class="fpage-sub">رصيد قبل الفترة: ' + money(d.prior.balance) + ' · رصيد آخر الفترة: ' + money(d.period.final_balance) + '</p>' +
+                host.innerHTML = (boot.print ? '<h2>' + esc(state.card.supplier.name) + ' · ' + esc(state.card.supplier.erp_supplier_code) + '</h2>' : '') + '<p class="fpage-sub">رصيد قبل الفترة: ' + money(d.prior.balance) + ' · رصيد آخر الفترة: ' + money(d.period.final_balance) + '</p>' +
                     kpis(id, rows, [['debit','مدين'],['credit','دائن']]) + table(id, [['tx_date','التاريخ'],['doc','المستند'],['name','البيان'],['debit','مدين','money'],['credit','دائن','money'],['balance','الرصيد التراكمي','money']], rows);
             } else if (tab === 'items') {
-                host.innerHTML = '<p class="fpage-sub">الكمية وآخر تكلفة بالقطعة الأساسية</p>' + kpis(id, d.rows, [['quantity','إجمالي الكمية']]) + table(id, [['code','كود الصنف'],['name','اسم الصنف'],['quantity','إجمالي الكمية','number'],['cost','آخر تكلفة','money'],['purchase_date','آخر تاريخ شراء']], d.rows);
+                host.innerHTML = '<p class="fpage-sub">الكمية وآخر تكلفة بالقطعة الأساسية</p>' + kpis(id, d.rows, [['quantity','إجمالي الكمية']]) + table(id, [['code','كود الصنف'],['name','اسم الصنف'],['quantity','إجمالي الكمية','number'],['cost','آخر تكلفة','money'],['min_cost','أقل تكلفة','money'],['max_cost','أعلى تكلفة','money'],['purchase_date','آخر تاريخ شراء'],['item_balance','رصيد الصنف','number']], d.rows);
             } else {
                 const rows = d.rows.map(r => ({...r, source: r.src === 'hq' ? 'ترو' : 'الموقع'}));
-                host.innerHTML = kpis(id, rows, [['net','الصافي']]) + table(id, [['doc_no','الرقم'],['doc_date','التاريخ'],['branch','الفرع'],['item_count','عدد الأصناف','number'],['total_amount','الإجمالي','money'],['net_amount','الصافي','money'],['source','المصدر']], rows,
+                const extra = tab === 'purchases' ? [['supplier_invoice','فاتورة المورد'],['payment_status','حالة السداد']] : [['return_reason','سبب المرتجع']];
+                host.innerHTML = kpis(id, rows, [['net','الصافي']]) + table(id, [['doc_no','الرقم'],['doc_date','التاريخ'],['branch','الفرع'],['item_count','عدد الأصناف','number'],['total_amount','الإجمالي','money'],['net_amount','الصافي','money'],...extra,['source','المصدر']], rows,
                     r => ' class="sc-lines-row" role="button" tabindex="0" aria-expanded="false" data-src="' + r.src + '" data-doc="' + esc(r.id) + '"', true);
             }
+            if (boot.print && tab === 'statement') window.print();
         } catch (e) {if (generation === state.generation && request === state.requests[tab]) {host.textContent = e.message; host.classList.add('falert', 'falert-warn');}}
     }
     async function toggleRow(row) {

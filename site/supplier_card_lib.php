@@ -5,6 +5,7 @@ declare(strict_types=1);
 const SC_ALLOW_CREATE = false;
 require_once __DIR__ . '/suppliers_lib.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/item_classes_lib.php';
 
 function sc_find(string $code): ?array {
     if (trim($code)==='') return null;
@@ -53,7 +54,7 @@ function sc_documents(array $s, string $from, string $to): array {
     foreach (SUPP_BRANCHES as $b) $branch.=' WHEN '.(int)$b['cb'].' THEN '.db()->quote($b['label']);
     $branch.=" ELSE CONCAT('فرع ',h.company_branch) END";
     $st=db()->prepare("SELECT CONCAT(h.sth_id,':',h.suffix) id,'hq' src,h.doc_type,
-        h.doc_no,DATE(h.invoice_date) doc_date,$branch branch,
+        h.doc_no,NULL supplier_invoice,DATE(h.invoice_date) doc_date,$branch branch,
         COUNT(DISTINCT l.item_id) item_count,h.total_amount,h.net_amount
         FROM hq_invoices h LEFT JOIN hq_invoice_lines l ON l.sth_id=h.sth_id AND l.suffix=h.suffix
         WHERE h.supplier_id=? AND h.doc_type IN (2,6) AND h.invoice_date>=? AND h.invoice_date<DATE_ADD(?,INTERVAL 1 DAY)
@@ -61,12 +62,12 @@ function sc_documents(array $s, string $from, string $to): array {
     $st->execute([$s['erp_supplier_id'],$from,$to]); $rows=$st->fetchAll(PDO::FETCH_ASSOC);
     if ((string)setting('supplier_site_docs','1')!=='0') {
         $st=db()->prepare("SELECT CAST(d.id AS CHAR) id,'site' src,CASE WHEN d.doc_type='purchase' THEN 2 ELSE 6 END doc_type,
-            d.doc_no,d.doc_date,b.name branch,COUNT(DISTINCT l.item_id) item_count,
+            d.doc_no,d.ref_text supplier_invoice,d.doc_date,b.name branch,COUNT(DISTINCT l.item_id) item_count,
             COALESCE(d.gross_amount,d.total_amount) total_amount,d.total_amount net_amount
             FROM stock_docs d LEFT JOIN stock_doc_lines l ON l.doc_id=d.id AND l.qty_pieces>0
             LEFT JOIN branches b ON b.id=d.branch_id
             WHERE d.supplier_id=? AND d.status='posted' AND d.doc_type IN ('purchase','purchase_return') AND d.doc_date>=? AND d.doc_date<=?
-            GROUP BY d.id,d.doc_type,d.doc_no,d.doc_date,b.name,d.gross_amount,d.total_amount");
+            GROUP BY d.id,d.doc_type,d.doc_no,d.ref_text,d.doc_date,b.name,d.gross_amount,d.total_amount");
         $st->execute([$s['id'],$from,$to]); $rows=array_merge($rows,$st->fetchAll(PDO::FETCH_ASSOC));
     }
     usort($rows,static fn($a,$b)=>strcmp($b['doc_date'],$a['doc_date']) ?: strcmp($b['id'],$a['id']));
@@ -112,7 +113,7 @@ function sc_items(array $s): array {
             WHERE d.supplier_id=? AND d.doc_type='purchase' AND d.status='posted' AND l.qty_pieces>0";
         $params[]=$s['id'];
     }
-    $st=db()->prepare("SELECT MAX(code) code,MAX(CASE WHEN rn=1 THEN name END) name,SUM(quantity) quantity,
+    $st=db()->prepare("SELECT MAX(item_id) item_id,MAX(code) code,MAX(CASE WHEN rn=1 THEN name END) name,SUM(quantity) quantity,
         MAX(CASE WHEN rn=1 THEN cost END) cost,MAX(purchase_date) purchase_date
         FROM (SELECT u.*,ROW_NUMBER() OVER(PARTITION BY item_key ORDER BY purchase_date DESC,tie DESC) rn FROM ($sql) u) ranked
         GROUP BY item_key ORDER BY name");
@@ -131,18 +132,42 @@ function sc_next_code(): string {
     return (string)((int)db()->query('SELECT MAX(CAST(erp_supplier_code AS UNSIGNED)) FROM suppliers')->fetchColumn()+1);
 }
 
+/** كل صنف بيتحسب مرة واحدة، والقسم الفعلي من نفس مصدر كارت الصنف. */
+function sc_sections(array $items): array {
+    $ids=array_values(array_unique(array_column($items,'item_id')));
+    if (!$ids) return [];
+    $effective=ic_effective_sql('section');
+    $selected=implode(' UNION ALL ',array_fill(0,count($ids),'SELECT ? item_id'));
+    $st=db()->prepare("SELECT COALESCE(c.name,'من غير قسم') name,COUNT(*) item_count
+        FROM ($selected) i
+        LEFT JOIN ($effective) e ON e.item_id=i.item_id
+        LEFT JOIN item_classes c ON c.id=e.class_id AND c.kind='section'
+        GROUP BY COALESCE(c.name,'من غير قسم') ORDER BY item_count DESC,name");
+    $st->execute($ids);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+}
+
 function sc_card(string $code,bool $prices): ?array {
     $s=sc_find($code); if (!$s) return null;
     $docs=sc_documents($s,'1000-01-01','9999-12-30'); $items=sc_items($s);
     $purchases=array_values(array_filter($docs,static fn($r)=>(int)$r['doc_type']===2));
     $data=['supplier'=>sc_public($s,$prices),'counts'=>['purchases'=>count($purchases),'returns'=>count($docs)-count($purchases),'items'=>count($items)],
-        'purchase_url'=>'purchase_docs.php?type=purchase','statement_url'=>'suppliers.php?supplier='.(int)$s['id']];
+        'sections'=>sc_sections($items),
+        'latest'=>isset($purchases[0]) ? array_intersect_key($purchases[0],array_flip(['doc_no','supplier_invoice','doc_date','branch','item_count'])) : null,
+        'recent'=>['count'=>count(array_filter($purchases,static fn($r)=>$r['doc_date']>=date('Y-m-d',strtotime('-89 days')) && $r['doc_date']<=date('Y-m-d')))],
+        'purchase_url'=>'purchase_docs.php?type=purchase','statement_url'=>'supplier_card.php?code='.rawurlencode($code).'&print=1'];
     if ($prices) {
         $data['statement']=sc_statement($s,[]);
         $data['latest']=$purchases[0] ?? null;
+        $data['last_purchases']=array_map(static fn($r)=>array_intersect_key($r,array_flip(['doc_no','doc_date','net_amount'])),array_slice($purchases,0,2));
         $since=date('Y-m-d',strtotime('-89 days'));
         $recent=array_filter($purchases,static fn($r)=>$r['doc_date']>=$since && $r['doc_date']<=date('Y-m-d'));
-        $data['recent']=['count'=>count($recent),'net'=>array_sum(array_column($recent,'net_amount'))];
+        $period=sc_statement($s,['from'=>max($since,suppliers_get_start_date(db()))]);
+        $data['recent']=['count'=>count($recent),'net'=>array_sum(array_column($recent,'net_amount')),
+            'returns'=>$period['period']['returns'],'paid'=>$period['period']['paid'],
+            // مفيش ربط تسديد بالفاتورة؛ ماننسبش صافي كشف الحساب لفواتير آخر ٩٠ يوم.
+            'unpaid'=>null];
+        $data['payment_days_left']=null;
     }
     return $data;
 }
