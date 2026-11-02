@@ -222,7 +222,7 @@ $workedMin = ($actIn && $actOut) ? work_minutes($todayAtt['check_in'], $todayAtt
     .act-col { text-align:center; }
     .act-col .l { color:var(--ink-700); font-size:13px; margin-bottom:4px; }
     .act-col .v { color:var(--ink-900); font-size:26px; font-weight:700; }
-    .act-col .v.empty { color:var(--accent); }
+    .act-col .v.empty { color:var(--accent-text); }
     .worked { text-align:center; margin-bottom:22px; }
     .worked .l { color:var(--ink-500); font-size:14px; letter-spacing:1px; }
     .worked .v { color:var(--pos); font-size:32px; font-weight:800; }

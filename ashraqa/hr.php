@@ -11,25 +11,13 @@ require_once __DIR__ . '/auth.php';
 require_module_access('hr');
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/sensitive_lib.php';
+require_once __DIR__ . '/hr_lib.php';
 
 $pdo = db();
 $uid = (int) current_user()['id'];
 $flash = ''; $flashType = 'success';
 
-// قراءة التابات المسموحة للمستخدم بناءً على أجزاء مديول الموارد البشرية
-$hrParts = module_parts()['hr'] ?? [];
-// أجزاء صلاحيات مش تابات — دي مفاتيح لصفحات منفصلة بتتفتح بزرار من جوّه التاب.
-// فاضية دلوقتي بعد ما اتشالت صفحة رفع شيت الحضور. سيبها موجودة:
-// أي مفتاح جديد مش تاب لازم ينزل هنا وإلا هيطلع تاب فاضي بيرندر الحضور بالغلط.
-const HR_NON_TAB_PARTS = [];
-
-$allowedTabs = [];
-foreach ($hrParts as $tabKey => $tabLabel) {
-    if (in_array($tabKey, HR_NON_TAB_PARTS, true)) continue;
-    if (can('hr:' . $tabKey)) {
-        $allowedTabs[$tabKey] = $tabLabel;
-    }
-}
+$allowedTabs = hr_get_allowed_tabs(current_user());
 
 // لو المستخدم مالوش أي تاب مسموح (حزام أمان إضافي)
 if (empty($allowedTabs)) {
@@ -41,19 +29,11 @@ if (empty($allowedTabs)) {
 }
 
 // تحديد التاب النشط: لو طلب تاب مسموح يفتحه، لو مالوش صلاحيته يتحوّل لأول تاب مسموح
-$requestedTab = (string)($_GET['tab'] ?? '');
-if (isset($allowedTabs[$requestedTab])) {
-    $tab = $requestedTab;
-} else {
-    $tab = (string) array_key_first($allowedTabs);
-}
+$tab = hr_resolve_active_tab($allowedTabs, $_GET['tab'] ?? null);
 
 // القوائم المنسدلة للمودالات العامة في آخر الصفحة — يتم تحميلها دائماً
-$payTreasuries = $pdo->query(
-    "SELECT id, name FROM treasuries WHERE branch_id IS NULL AND is_active=1
-     ORDER BY FIELD(type,'cash','main','visa','instapay','card')"
-)->fetchAll();
-$employees = $pdo->query('SELECT id, full_name FROM employees WHERE is_active=1 ORDER BY full_name')->fetchAll();
+$payTreasuries = hr_get_pay_treasuries($pdo);
+$employees = hr_get_simple_employees($pdo);
 
 /**
  * تطبيق تعديلات المكافآت على الموظفين من شاشة الرواتب.
@@ -260,6 +240,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($empId<=0 || $amount<=0) throw new RuntimeException('بيانات غير مكتملة.');
                 $pdo->prepare('INSERT INTO employee_penalties (employee_id, amount, penalty_date, reason, status) VALUES (?,?,?,?,"pending")')
                     ->execute([$empId,$amount,$date,$reason ?: null]);
+                $userStmt = $pdo->prepare('SELECT user_id FROM employees WHERE id = ?');
+                $userStmt->execute([$empId]);
+                $employeeUserId = (int) $userStmt->fetchColumn();
+                if ($employeeUserId > 0) {
+                    require_once __DIR__ . '/push_lib.php';
+                    $body = 'افتح التفاصيل من صفحة المرتب';
+                    notify($pdo, [$employeeUserId], 'penalty', 'جزاء جديد', $body, 'my_salary.php');
+                }
                 $flash = 'تم تسجيل الجزاء.'; $tab='penalties';
             }
             elseif ($action === 'update_advance_deduction') {
@@ -789,170 +777,29 @@ if (isset($_SESSION['flash'])) {
 // بيانات التبويبات المشروطة بالتاب النشط
 $empList = [];
 if ($tab === 'employees' || $tab === 'salaries') {
-    $empList = $pdo->query(
-        "SELECT e.*, b.name AS branch_name,
-                COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
-         FROM employees e
-         LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
-    )->fetchAll();
+    $empList = hr_get_employees_list($pdo);
 }
 
 $advances = [];
 $owedToEmps = [];
 if ($tab === 'advances') {
-    $advances = $pdo->query(
-        "SELECT a.*, e.full_name FROM employee_advances a JOIN employees e ON e.id=a.employee_id ORDER BY a.id DESC LIMIT 100"
-    )->fetchAll();
-
-    // الموظفين اللي **الشركة مدينة لهم** — عكس السلفة بالظبط.
-    // ده مش بيتقري من `employee_advances` خالص، ده رصيد دائن في
-    // `employee_ledger` (زي أ/حسني اللي قبض جمعية وحطها في الشغل).
-    // كان بيبان في تاب الرواتب بس، فالأونر يفتح السلف ويلاقي ٨ صفوف
-    // ومايعرفش إن فيه حد ليه فلوس عند الشركة.
-    // 🔴 قسم منفصل بقصد — لو اندمج في جداول السلف كان هيتقري غلط
-    //    على إنه سلفة، والسلفة عكسه تماماً.
-    $advEmps = $pdo->query('SELECT id, full_name FROM employees WHERE is_active = 1')->fetchAll();
-    $advBals = emp_ledger_balances(array_column($advEmps, 'id'), $pdo);   // استعلام واحد مجمّع
-    foreach ($advEmps as $ae) {
-        $bal = (float) ($advBals[(int) $ae['id']] ?? 0);
-        if ($bal < -0.005) {                       // سالب = دائن = الشركة مدينة له
-            $owedToEmps[] = ['id' => (int) $ae['id'], 'full_name' => $ae['full_name'], 'owed' => abs($bal)];
-        }
-    }
-    usort($owedToEmps, fn($a, $b) => $b['owed'] <=> $a['owed']);
+    $advData = hr_get_advances_data($pdo, 100);
+    $advances = $advData['advances'];
+    $owedToEmps = $advData['owed_to_emps'];
 }
 
 $bonuses = [];
 if ($tab === 'bonuses') {
-    $bonuses = $pdo->query(
-        "SELECT b.*, e.full_name FROM employee_bonuses b JOIN employees e ON e.id=b.employee_id ORDER BY b.id DESC LIMIT 100"
-    )->fetchAll();
+    $bonuses = hr_get_bonuses($pdo, 100);
 }
 
 $penalties = [];
 if ($tab === 'penalties') {
-    // قراءة عتبة التسامح لاستخدامها في فلترة SQL المسبقة وفي نداء shift_variance_status()
-    $tolerance = custody_tolerance();
-
-    // فلترة صفوف الورديات في الـ SQL قبل LIMIT 100 بنفس شرط العتبة بالضبط:
-    // ABS(s.difference) - ? > 0.0001
-    // ⚠️ الشرط ده مطابق رياضياً لـ shift_variance_status() — والاتنين بياخدوا العتبة من custody_tolerance().
-    // أي تعديل في معادلة الدالة لازم يتعمل في السطر ده كمان.
-    $penStmt = $pdo->prepare(
-        "SELECT p.penalty_date AS deduction_date,
-                e.full_name,
-                'penalty' AS source_type,
-                b.name AS branch_name,
-                p.amount,
-                0.0 AS difference,
-                p.reason,
-                p.status,
-                NULL AS shift_name,
-                NULL AS shift_id,
-                p.id AS sort_id
-           FROM employee_penalties p
-           JOIN employees e ON e.id = p.employee_id
-           LEFT JOIN branches b ON b.id = e.branch_id
-
-          UNION ALL
-
-         SELECT DATE(cd.created_at) AS deduction_date,
-                e.full_name,
-                'custody_deficit' AS source_type,
-                b.name AS branch_name,
-                cd.amount,
-                0.0 AS difference,
-                COALESCE(cd.notes, 'عجز تسوية عهدة') AS reason,
-                cd.status,
-                NULL AS shift_name,
-                NULL AS shift_id,
-                cd.id AS sort_id
-           FROM custody_deficits cd
-           LEFT JOIN employees e ON e.id = cd.employee_id
-           LEFT JOIN branches b ON b.id = COALESCE(cd.branch_id, e.branch_id)
-
-          UNION ALL
-
-         SELECT s.business_date AS deduction_date,
-                COALESCE(e.full_name, u.full_name, '—') AS full_name,
-                'shift' AS source_type,
-                b.name AS branch_name,
-                ABS(s.difference) AS amount,
-                s.difference AS difference,
-                NULL AS reason,
-                s.status,
-                s.shift_name,
-                s.id AS shift_id,
-                s.id AS sort_id
-           FROM shifts s
-           LEFT JOIN branches b ON b.id = s.branch_id
-           LEFT JOIN users u ON u.id = s.user_id
-           LEFT JOIN employees e ON e.user_id = u.id
-          WHERE s.difference <> 0
-            AND ABS(s.difference) - ? > 0.0001
-
-          ORDER BY deduction_date DESC, sort_id DESC
-          LIMIT 100"
-    );
-    $penStmt->execute([$tolerance]);
-    $penaltiesRaw = $penStmt->fetchAll();
-
-    foreach ($penaltiesRaw as $r) {
-        if ($r['source_type'] === 'penalty') {
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => 'جزاء',
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => (float) $r['amount'],
-                'tolerance'      => '—',
-                'exceeded'       => '—',
-                'reason'         => $r['reason'] ?? '—',
-                'status'         => (string) $r['status'],
-            ];
-        } elseif ($r['source_type'] === 'custody_deficit') {
-            // عجز العهدة اتسجل وقت إقفال العهدة بالعتبة اللي كانت موجودة ساعتها
-            // فبنعرض العتبة '—' عشان منعرضش عتبة النهاردة مع سجل قديم، والمتجاوز = المبلغ نفسه
-            $amount = (float) $r['amount'];
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => 'عجز عهدة',
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => $amount,
-                'tolerance'      => '—',
-                'exceeded'       => number_format($amount, 2),
-                'reason'         => $r['reason'] ?? 'عجز تسوية عهدة',
-                'status'         => (string) $r['status'],
-            ];
-        } elseif ($r['source_type'] === 'shift') {
-            // فحص فرق الوردية بالعتبة الموحدة
-            $diff = (float) $r['difference'];
-            $vs = shift_variance_status($diff, $tolerance);
-
-            // اللي داخل العتبة مايظهرش في تاب الجزاءات خالص
-            if (!$vs['over_limit']) {
-                continue;
-            }
-
-            $dedType = $vs['kind'] === 'shortage' ? 'عجز وردية' : 'زيادة وردية';
-            $shiftDisplay = ($r['shift_name'] !== null && $r['shift_name'] !== '') ? 'وردية ' . $r['shift_name'] : 'وردية #' . $r['shift_id'];
-            $branchDisplay = $r['branch_name'] ?: 'بدون فرع';
-            $reason = "{$branchDisplay} · {$r['deduction_date']} · {$shiftDisplay} (إجمالي " . ($vs['kind'] === 'shortage' ? 'عجز' : 'زيادة') . ' ' . number_format($vs['amount'], 2) . ' ج)';
-
-            $penalties[] = [
-                'deduction_date' => (string) $r['deduction_date'],
-                'full_name'      => (string) $r['full_name'],
-                'deduction_type' => $dedType,
-                'branch_name'    => $r['branch_name'] ?? '—',
-                'amount'         => $vs['amount'],
-                'tolerance'      => number_format($vs['tolerance'], 2),
-                'exceeded'       => number_format($vs['exceeded'], 2),
-                'reason'         => $reason,
-                'status'         => (string) $r['status'],
-            ];
-        }
-    }
+    $penalties = hr_get_penalties($pdo, 100);
+}
+$deficits = [];
+if ($tab === 'deficits') {
+    $deficits = hr_get_deficits($pdo, 100);
 }
 $salaries = [];
 $confirmRevSalary = null;
@@ -1031,349 +878,139 @@ $requests = [];
 $pendingReqCount = 0;
 $reqStatus = 'pending';
 if ($tab === 'requests') {
-    // الافتراضي «المعلّق» — ده اللي المستخدم جاي عشانه، وهو اللي الشارة بتعدّه.
     $reqStatus = $_GET['rstatus'] ?? 'pending';
-    if (!in_array($reqStatus, ['pending', 'approved', 'rejected', 'all'], true)) {
-        $reqStatus = 'pending';
-    }
-
-    $reqSql = "SELECT r.*, e.full_name FROM attendance_requests r
-               JOIN employees e ON e.id=r.employee_id";
-    $reqArgs = [];
-    if ($reqStatus !== 'all') { $reqSql .= " WHERE r.status = ?"; $reqArgs[] = $reqStatus; }
-    $reqSql .= " ORDER BY r.status='pending' DESC, r.id DESC LIMIT 100";
-    $st = $pdo->prepare($reqSql); $st->execute($reqArgs); $requests = $st->fetchAll();
-
-    $pendingReqCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM attendance_requests WHERE status='pending'"
-    )->fetchColumn();
+    $requests = hr_get_attendance_requests($pdo, $reqStatus, 100);
+    $pendingReqCount = hr_get_pending_requests_count($pdo);
 } elseif (isset($allowedTabs['requests'])) {
-    // لو المستخدم معاه صلاحية طلبات التصحيح وهو في تاب تاني، نحسب العدّاد للشريط
-    $pendingReqCount = (int) $pdo->query("SELECT COUNT(*) FROM attendance_requests WHERE status='pending'")->fetchColumn();
+    $pendingReqCount = hr_get_pending_requests_count($pdo);
 }
 
 // بيانات الحضور للشهر المختار (تبويب الحضور)
 $attMonth = $_GET['month'] ?? date('Y-m');
 $attRows = [];
 if ($tab === 'attendance') {
-    $st = $pdo->prepare(
-        "SELECT a.*, e.full_name, e.expected_in, e.expected_out
-         FROM attendance a JOIN employees e ON e.id=a.employee_id
-         WHERE DATE_FORMAT(a.att_date,'%Y-%m') = ?
-         ORDER BY a.att_date DESC, e.full_name"
-    );
-    $st->execute([$attMonth]);
-    $attRows = $st->fetchAll();
+    $attRows = hr_get_attendance_rows($pdo, $attMonth);
 }
 
 // بيانات الرواتب وحساب المستحقات للفترة (تبويب الرواتب)
-// الفترة الافتراضية: من ٢٦ الشهر السابق إلى ٢٥ الشهر الحالي.
-//
-// 🔴 وفيها مهلة ٥ أيام: أول ٥ أيام في الشهر بنفضل على الفترة اللي **خلصت**
-// مش اللي لسه بادية. السبب إن الصرف بيتعمل في الأيام دي بالظبط — لو قلبنا
-// على الفترة الجديدة يوم ١، الأونر يفتح الشاشة يلاقي ساعات ٥ أيام بس
-// وأرقام مرتبات ناقصة قدامه ويفتكرها بق.
-//
-//   ٣١ أغسطس ← ٢٦ يوليو … ٢٥ أغسطس
-//   ١ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (لسه في المهلة)
-//   ٥ سبتمبر  ← ٢٦ يوليو … ٢٥ أغسطس   (آخر يوم في المهلة)
-//   ٦ سبتمبر  ← ٢٦ أغسطس … ٢٥ سبتمبر  (قلبت)
-//
-// ⚠️ صفحة تسجيل الحضور بتقلب يوم ١ من غير مهلة — ده مقصود، الموظف عايز
-//    يشوف فترته الجارية. شوف التعليق في attendance.php.
-const PAYROLL_GRACE_DAYS = 5;
-$salAnchor = (int) date('j') <= PAYROLL_GRACE_DAYS
-    ? strtotime('first day of last month')
-    : strtotime('first day of this month');
-$defaultSalTo   = date('Y-m-25', $salAnchor);
-$defaultSalFrom = date('Y-m-26', strtotime('-1 month', $salAnchor));
-$salFrom = $_GET['from'] ?? $defaultSalFrom;
-$salTo   = $_GET['to']   ?? $defaultSalTo;
-if (!strtotime($salFrom)) $salFrom = $defaultSalFrom;
-if (!strtotime($salTo))   $salTo   = $defaultSalTo;
-$salMonth = $_GET['month'] ?? date('Y-m', strtotime($salTo));
-if (!preg_match('/^\d{4}-\d{2}$/', $salMonth)) $salMonth = date('Y-m');
+$payrollDates = hr_get_payroll_dates($_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['month'] ?? null);
+$salFrom  = $payrollDates['from'];
+$salTo    = $payrollDates['to'];
+$salMonth = $payrollDates['month'];
 
 $payrollData = [];
 if ($tab === 'salaries') {
-    // 1) ساعات العمل المجمّعة لكل موظف في الفترة المحددة (استعلام واحد)
-    $stAtt = $pdo->prepare(
-        "SELECT employee_id, COALESCE(SUM(work_hours), 0) AS total_hours
-         FROM attendance
-         WHERE att_date BETWEEN ? AND ?
-         GROUP BY employee_id"
-    );
-    $stAtt->execute([$salFrom, $salTo]);
-    $empHours = $stAtt->fetchAll(PDO::FETCH_KEY_PAIR);
+    $payrollData = hr_calc_payroll_data($pdo, $empList, $salFrom, $salTo, $salMonth);
+}
 
-    // 2) المكافآت المعلّقة مجمّعة لكل موظف مع العدد والـ id الفردي (استعلام واحد)
-    $bonPendingStmt = $pdo->query(
-        "SELECT employee_id,
-                COUNT(*) AS cnt,
-                MIN(id) AS single_id,
-                COALESCE(SUM(amount), 0) AS total_amount
-         FROM employee_bonuses
-         WHERE status = 'pending'
-         GROUP BY employee_id"
-    );
-    $bonPendingMap = [];
-    foreach ($bonPendingStmt->fetchAll(PDO::FETCH_ASSOC) as $bRow) {
-        $bonPendingMap[(int)$bRow['employee_id']] = [
-            'cnt'          => (int)$bRow['cnt'],
-            'single_id'    => $bRow['single_id'] !== null ? (int)$bRow['single_id'] : null,
-            'total_amount' => (float)$bRow['total_amount'],
-        ];
+// تصدير إكسيل لجدول الرواتب بآخر حالة (بريف ٩٠)
+if ($tab === 'salaries' && ($_GET['export'] ?? '') === 'xlsx') {
+    if (!can('hr:salaries') || !sens_unlocked()) {
+        http_response_code(403);
+        die('غير مصرّح — البيانات الحساسة مقفولة أو لا تملك الصلاحية.');
+    }
+    require_once __DIR__ . '/xlsx_lib.php';
+    $x = new SimpleXlsx('الرواتب');
+    $x->addRow(['رواتب الفترة من ' . $salFrom . ' إلى ' . $salTo . ' — تاريخ التصدير: ' . date('Y-m-d H:i')]);
+    $x->addBlank();
+
+    $headers = [
+        'الموظف',
+        'الفرع',
+        'ساعات العمل',
+        'أيام العمل',
+        'أيام الإجازة',
+        'أيام الاستحقاق',
+        'الأساسي',
+        'قيمة اليوم',
+        'الاستحقاق قبل الخصم',
+        'المكافآت',
+        'سلف الشهر',
+        'المخصوم من سلف الشهر',
+        'سلف مستديمة',
+        'المخصوم من المستديمة',
+        'عجز الكاشير',
+        'المخصوم من العجز',
+        'الخصومات',
+        'الصافي',
+        'هيتصرف',
+        'هيفضل عليه',
+        'الحالة',
+    ];
+    $x->addRow($headers, true);
+
+    $totGross = 0.0;
+    $totBonuses = 0.0;
+    $totDeductions = 0.0;
+    $totToPay = 0.0;
+    $totRemaining = 0.0;
+
+    foreach ($payrollData as $p) {
+        $grossVal = ($p['no_expected'] && !$p['is_fixed']) ? 0.0 : (float)$p['gross_salary'];
+        $bonVal   = (float)$p['total_bonuses'];
+        $dedVal   = (float)$p['total_deductions'];
+        $dispNet  = (float)($p['display_net'] ?? $p['net_salary']);
+        $netVal   = (float)$p['net_salary'];
+        $remVal   = $dispNet < 0 ? abs($dispNet) : 0.0;
+        $statusTxt = $p['is_paid'] ? 'اتصرف' : 'مااتصرفش';
+
+        $totGross += $grossVal;
+        $totBonuses += $bonVal;
+        $totDeductions += $dedVal;
+        $totToPay += $netVal;
+        $totRemaining += $remVal;
+
+        $x->addRow([
+            $p['full_name'],
+            $p['branch_name'] ?: '—',
+            $p['is_fixed'] ? 0.0 : round((float)$p['work_hours'], 2),
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['work_days'], 2),
+            (int)$p['leave_days'],
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['due_days_calc'], 2),
+            round((float)$p['base_salary'], 2),
+            ($p['is_fixed'] || $p['no_expected']) ? 0.0 : round((float)$p['day_rate'], 2),
+            round($grossVal, 2),
+            round($bonVal, 2),
+            round((float)$p['monthly_adv_owed'], 2),
+            round((float)$p['monthly_adv_take'], 2),
+            round((float)$p['standing_adv_owed'], 2),
+            round((float)$p['standing_adv_take'], 2),
+            round((float)$p['cashier_deficit_calc'], 2),
+            round((float)$p['cashier_deficit'], 2),
+            round($dedVal, 2),
+            round($dispNet, 2),
+            round($netVal, 2),
+            round($remVal, 2),
+            $statusTxt,
+        ]);
     }
 
-    // 3) السلف المعلّقة مجمّعة لكل موظف مع تفاصيل الأقساط الشهرية وسقف رصيد السجل الموجب (استعلام واحد مجمّع)
-    // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-    $advStmt = $pdo->query(
-        "SELECT employee_id, id, amount, remaining, monthly_deduction, adv_type
-           FROM employee_advances
-          WHERE status = 'pending'
-          ORDER BY employee_id ASC, id ASC"
-    );
-    $advRowsByEmp = [];
-    foreach ($advStmt->fetchAll(PDO::FETCH_ASSOC) as $advR) {
-        $advRowsByEmp[(int)$advR['employee_id']][] = $advR;
-    }
+    $x->addRow([
+        'الإجمالي',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        round($totGross, 2),
+        round($totBonuses, 2),
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        round($totDeductions, 2),
+        '',
+        round($totToPay, 2),
+        round($totRemaining, 2),
+        '',
+    ], true);
 
-    $allEmpIds = !empty($empList) ? array_column($empList, 'id') : [];
-    $ledgerBalancesMap = emp_ledger_balances($allEmpIds, $pdo);
-
-    // 4) الجزاءات المعلّقة مجمّعة لكل موظف (استعلام واحد)
-    $penMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
-         FROM employee_penalties WHERE status='pending'
-         GROUP BY employee_id"
-    )->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 5) عجز العهدة المعلّق مجمّع لكل موظف (استعلام واحد)
-    $defMap = $pdo->query(
-        "SELECT employee_id, COALESCE(SUM(amount), 0)
-         FROM custody_deficits WHERE status='pending'
-         GROUP BY employee_id"
-    )->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 6) عجز الكاشير المتجاوز للعتبة في الفترة المحددة لكل موظف (استعلام واحد مجمّع)
-    $tolerance = custody_tolerance();
-    $cashierDefStmt = $pdo->prepare(
-        "SELECT e.id AS employee_id,
-                COALESCE(SUM(ABS(s.difference)), 0) AS exceeded_total,
-                COUNT(*) AS shift_cnt
-           FROM shifts s
-           JOIN users     u ON u.id = s.user_id
-           JOIN employees e ON e.user_id = u.id
-           LEFT JOIN salary_shift_deficits d ON d.shift_id = s.id
-          WHERE s.business_date BETWEEN ? AND ?
-            AND s.difference < 0
-            AND ABS(s.difference) - ? > 0.0001
-            AND d.id IS NULL
-          GROUP BY e.id"
-    );
-    $cashierDefStmt->execute([$salFrom, $salTo, $tolerance]);
-    $cashierDeficitMap = [];
-    foreach ($cashierDefStmt->fetchAll(PDO::FETCH_ASSOC) as $cRow) {
-        $cashierDeficitMap[(int)$cRow['employee_id']] = [
-            'exceeded_total' => (float)$cRow['exceeded_total'],
-            'shift_cnt'      => (int)$cRow['shift_cnt'],
-        ];
-    }
-
-    // 7) المرتبات المصروفة للشهر المختار (استعلام واحد لمعرفة حالة الصرف)
-    $stPaid = $pdo->prepare("SELECT employee_id, id FROM salaries WHERE salary_month = ? AND reversed_at IS NULL");
-    $stPaid->execute([$salMonth]);
-    $paidMonthMap = $stPaid->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // 8) تعديلات الرواتب المحفوظة (المسوّدة) للشهر المختار (استعلام واحد مجمّع)
-    $stAdj = $pdo->prepare(
-        "SELECT employee_id, leave_days, due_days, monthly_take, standing_take, cashier_take
-           FROM payroll_adjustments
-          WHERE month = ?"
-    );
-    $stAdj->execute([$salMonth]);
-    $adjustmentsMap = [];
-    foreach ($stAdj->fetchAll(PDO::FETCH_ASSOC) as $adjRow) {
-        $adjustmentsMap[(int)$adjRow['employee_id']] = $adjRow;
-    }
-
-    // الحسابات في PHP بدون أي استعلام داخل الحلقة
-    foreach ($empList as $e) {
-        $empId           = (int) $e['id'];
-        $salaryMode      = $e['salary_mode'] ?? 'hours';
-        $isFixed         = ($salaryMode === 'fixed');
-        $base            = (float) $e['base_salary'];
-        $expectedHours   = isset($e['expected_monthly_hours']) && $e['expected_monthly_hours'] !== null && $e['expected_monthly_hours'] !== '' ? (float) $e['expected_monthly_hours'] : null;
-        $empLedgerBal    = $ledgerBalancesMap[$empId] ?? 0.0;
-        $isPaid          = isset($paidMonthMap[$empId]);
-        $adj             = (!$isPaid && isset($adjustmentsMap[$empId])) ? $adjustmentsMap[$empId] : null;
-
-        if ($isFixed) {
-            $hours          = 0.0;
-            $noExpected     = false;
-            $workDays       = 0.0;
-            $leaveDaysCalc  = 0;
-            $leaveDays      = 0;
-            $dueDaysRawCalc = 0.0;
-            $dueDaysCalc    = 0.0;
-            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross          = $base;
-        } else {
-            $hours          = (float) ($empHours[$empId] ?? 0);
-            $salDays        = salary_days_from_hours($hours, $expectedHours);
-            $noExpected     = !empty($salDays['no_expected']);
-            $workDays       = $salDays['work_days'];
-            $leaveDaysCalc  = $salDays['leave_days'];
-            $leaveDays      = $leaveDaysCalc;
-            $dueDaysRawCalc = $salDays['due_days'];
-            $dueDaysCalc    = $dueDaysRawCalc;
-
-            if ($adj !== null && !$noExpected) {
-                if ($adj['leave_days'] !== null && is_numeric($adj['leave_days']) && (int)$adj['leave_days'] >= 0) {
-                    $leaveDays = (int)$adj['leave_days'];
-                    $dueDaysCalc = round($workDays + $leaveDays, 2);
-                }
-                if ($adj['due_days'] !== null && is_numeric($adj['due_days'])) {
-                    $dueOverride = (float)$adj['due_days'];
-                    if (abs($dueOverride - $dueDaysCalc) > 0.005) {
-                        $dueDaysCalc = round($dueOverride, 2);
-                    }
-                }
-            }
-
-            $dayRate        = $base > 0 ? ($base / 30.0) : 0.0;
-            $gross          = $noExpected ? 0.0 : ($dayRate * $dueDaysCalc);
-        }
-
-        $bonInfo         = $bonPendingMap[$empId] ?? ['cnt' => 0, 'single_id' => null, 'total_amount' => 0.0];
-        $bon             = (float) $bonInfo['total_amount'];
-        $bonCnt          = (int) $bonInfo['cnt'];
-
-        // حساب السلف بالترتيب (id تصاعدي) وسقف رصيد السجل والوعاء
-        // ⚠️ المعادلة مكررة بين هنا و finance.php (compute_salary و pay_salary) — لو غيّرت هنا، غيّر في التلاتة.
-        $pot             = ($noExpected && !$isFixed) ? 0.0 : ($gross + $bon);
-
-        $empAdvRows          = $advRowsByEmp[$empId] ?? [];
-        $maxLedgerCap        = $empLedgerBal > 0 ? $empLedgerBal : 0.0;
-        $remCap              = min($maxLedgerCap, $pot);
-        $monthlyAdvOwed      = 0.0;
-        $monthlyAdvTakeCalc  = 0.0;
-        $standingAdvOwed     = 0.0;
-        $standingAdvTakeCalc = 0.0;
-
-        foreach ($empAdvRows as $advR) {
-            $advOutstanding = $advR['remaining'] !== null ? (float) $advR['remaining'] : (float) $advR['amount'];
-            $advMonthlyDed  = (float) $advR['monthly_deduction'];
-            $advTake        = ($advMonthlyDed > 0) ? min($advMonthlyDed, $advOutstanding) : $advOutstanding;
-            $advTake        = min($advTake, $remCap);
-            $remCap        -= $advTake;
-
-            if (($advR['adv_type'] ?? 'monthly') === 'standing') {
-                $standingAdvTakeCalc += $advTake;
-                $standingAdvOwed     += $advOutstanding;
-            } else {
-                $monthlyAdvTakeCalc  += $advTake;
-                $monthlyAdvOwed      += $advOutstanding;
-            }
-        }
-
-        $monthlyAdvTake = $monthlyAdvTakeCalc;
-        if ($adj !== null && $adj['monthly_take'] !== null && is_numeric($adj['monthly_take'])) {
-            $monthlyAdvTake = max(0.0, (float)$adj['monthly_take']);
-        }
-
-        $standingAdvTake = $standingAdvTakeCalc;
-        if ($adj !== null && $adj['standing_take'] !== null && is_numeric($adj['standing_take'])) {
-            $standingAdvTake = max(0.0, (float)$adj['standing_take']);
-        }
-
-        $totalAdvances   = $monthlyAdvTake + $standingAdvTake;
-        $totalAdvances   = min($totalAdvances, $maxLedgerCap);
-        $advApplied      = min($totalAdvances, $pot);
-        $advApplied      = max(0.0, round($advApplied, 2));
-        $pot            -= $advApplied;
-
-        $penFull         = (float) ($penMap[$empId] ?? 0);
-        $penApplied      = min($penFull, $pot);
-        $penApplied      = max(0.0, round($penApplied, 2));
-        $pot            -= $penApplied;
-
-        $defFull         = (float) ($defMap[$empId] ?? 0);
-        $defApplied      = min($defFull, $pot);
-        $defApplied      = max(0.0, round($defApplied, 2));
-        $pot            -= $defApplied;
-
-        $cDefInfo        = $cashierDeficitMap[$empId] ?? ['exceeded_total' => 0.0, 'shift_cnt' => 0];
-        $cashierDefCalc  = (float) $cDefInfo['exceeded_total'];
-        $cashierShiftCnt = (int) $cDefInfo['shift_cnt'];
-
-        $cashierTake = $cashierDefCalc;
-        if ($adj !== null && $adj['cashier_take'] !== null && is_numeric($adj['cashier_take'])) {
-            $cashierTake = min(max(0.0, (float)$adj['cashier_take']), $cashierDefCalc);
-        }
-
-        $cashierApplied  = min($cashierTake, $pot);
-        $cashierApplied  = max(0.0, round($cashierApplied, 2));
-        $pot            -= $cashierApplied;
-
-        $totalDeductions = round($advApplied + $penApplied + $defApplied + $cashierApplied, 2);
-        $net             = ($noExpected && !$isFixed) ? 0.0 : max(0.0, round($pot, 2));
-
-        // 🔴 حد عجز الكاشير بس هو اللي بيتحكم فيه المفتاح.
-        //    الجزاءات وعجز العهدة **بيترحّلوا زي ما هما** — محمد طلب
-        //    عجز الكاشير بالتحديد، وده اللي بيانات الورديات مشكوك فيها.
-        $cashierCarry = cashier_deficit_carry_enabled()
-            ? max(0.0, $cashierDefCalc - $cashierApplied)
-            : 0.0;
-
-        $carryToAdvance  = round(($penFull - $penApplied)
-                               + ($defFull - $defApplied)
-                               + $cashierCarry, 2);
-        $carryToAdvance  = max(0.0, $carryToAdvance);
-
-        $payrollData[] = [
-            'id'                        => $empId,
-            'full_name'                 => $e['full_name'],
-            'salary_mode'               => $salaryMode,
-            'is_fixed'                  => $isFixed,
-            'branch_name'               => $e['branch_name'] ?? '',
-            'base_salary'               => $base,
-            'expected_monthly_hours'    => $expectedHours,
-            'no_expected'               => $noExpected,
-            'day_hours'                 => $salDays['day_hours'] ?? 0.0,
-            'work_hours'                => $hours,
-            'work_days'                 => $workDays,
-            'leave_days'                => $leaveDays,
-            'leave_days_calc'           => $leaveDaysCalc,
-            'due_days_calc'             => $dueDaysCalc,
-            'due_days_raw_calc'         => $dueDaysRawCalc,
-            'day_rate'                  => $dayRate,
-            'gross_salary'              => $gross,
-            'bonuses'                   => $bon,
-            'bonus_cnt'                 => $bonCnt,
-            'total_bonuses'             => $bon,
-            'advances'                  => $advApplied,
-            'ledger_balance'            => $empLedgerBal,
-            'monthly_adv_owed'          => $monthlyAdvOwed,
-            'monthly_adv_take'          => $monthlyAdvTake,
-            'monthly_adv_take_calc'     => $monthlyAdvTakeCalc,
-            'standing_adv_owed'         => $standingAdvOwed,
-            'standing_adv_take'         => $standingAdvTake,
-            'standing_adv_take_calc'    => $standingAdvTakeCalc,
-            'cashier_deficit'           => $cashierApplied,
-            'cashier_deficit_calc'      => $cashierDefCalc,
-            'cashier_deficit_take_calc' => $cashierDefCalc,
-            'cashier_shift_cnt'         => $cashierShiftCnt,
-            'penalties'                 => $penApplied,
-            'penalties_full'            => $penFull,
-            'deficits'                  => $defApplied,
-            'deficits_full'             => $defFull,
-            'carry_to_advance'          => $carryToAdvance,
-            'total_deductions'          => $totalDeductions,
-            'net_salary'                => $net,
-            'is_paid'                   => $isPaid,
-        ];
-    }
+    $x->download('payroll_' . $salFrom . '_' . $salTo . '.xlsx');
+    exit;
 }
 
 $page_title    = 'الموارد البشرية';
@@ -1403,9 +1040,9 @@ $statusBadge = function($st) {
     .tabs { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
     .tab { padding:9px 16px; border-radius:10px; text-decoration:none; color:var(--accent-text); background:var(--surface);
         font-size:14px; font-weight:500; position:relative; }
-    .tab.active { background:var(--accent); color:#fff; }
+    .tab.active { background:var(--accent); color:var(--fill-strong-fg); }
     .tab:not(.active):hover { background:var(--bg); }
-    .tab .count { background:var(--neg-fill); color:#fff; border-radius:20px; padding:1px 7px; font-size:11px; margin-right:4px; }
+    .tab .count { background:var(--neg-fill); color:var(--fill-strong-fg); border-radius:20px; padding:1px 7px; font-size:11px; margin-right:4px; }
     .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
     table { width:100%; border-collapse:collapse; }
     th, td { padding:11px 13px; text-align:right; font-size:14px; border-bottom:1px solid var(--line); }
@@ -1482,28 +1119,23 @@ $statusBadge = function($st) {
     .hrs-neg5 { color:var(--neg);font-weight:500; }
     .hrs-neg-badge { color:var(--neg);background:var(--neg-soft); }
     .hrs-muted { color:var(--ink-500); }
-    .hrs-faint { color:var(--ink-300); }
+    .hrs-faint { color:var(--ink-400); }
 </style>
 
 <?php if ($flash): ?>
     <div class="flash <?= e($flashType) ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
-<div class="tabs">
-    <?php foreach ($allowedTabs as $tabKey => $tabLabel): ?>
-        <a href="?tab=<?= e($tabKey) ?>" class="tab <?= $tab === $tabKey ? 'active' : '' ?>">
-            <?= e($tabLabel) ?><?php if ($tabKey === 'requests' && !empty($pendingReqCount)): ?><span class="count"><?= (int)$pendingReqCount ?></span><?php endif; ?>
-        </a>
-    <?php endforeach; ?>
-</div>
+<?= hr_tabs_html($allowedTabs, $tab, (int)$pendingReqCount) ?>
 
 <?php if ($tab === 'employees'): ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">الموظفون (<?= count($empList) ?>) — التعديل من التعريفات</div>
         <?php if (empty($empList)): ?>
             <div class="empty">لا يوجد موظفون. أضفهم من التعريفات.</div>
         <?php else: ?>
-        <table>
+        <div class="ftable-wrap">
+        <table class="ftable">
             <thead><tr><th>الاسم</th><th>الفرع</th><th>الوظيفة</th><th>الراتب</th><th>السلفة المعلّقة</th><th>الحضور المتوقع</th><th>الانصراف</th></tr></thead>
             <tbody>
             <?php foreach ($empList as $e2): ?>
@@ -1521,6 +1153,7 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
@@ -1547,14 +1180,14 @@ $statusBadge = function($st) {
     </div>
 
     <!-- جدول سلف الشهر -->
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">سلف الشهر (<?= count($monthlyAdvances) ?>)</div>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">سلف الشهر الحالي تُصرف من موديول الخزينة وتُخصم تلقائياً مع أول راتب.</p>
         <?php if (empty($monthlyAdvances)): ?>
             <div class="empty">لا توجد سلف شهرية.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
-        <table>
+        <div class="ftable-wrap hrs-scroll-x">
+        <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($monthlyAdvances as $a):
@@ -1576,7 +1209,7 @@ $statusBadge = function($st) {
                             <span class="hrs-muted">بالكامل</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
                         <a href="employee_statement.php?emp=<?= (int)$a['employee_id'] ?>" class="btn btn-sm btn-ghost" title="كشف حساب الموظف"><i class="ti ti-file-invoice"></i> كشف الحساب</a>
@@ -1612,14 +1245,14 @@ $statusBadge = function($st) {
     </div>
 
     <!-- جدول السلف المستديمة -->
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">السلف المستديمة (<?= count($standingAdvances) ?>)</div>
         <p style="color:var(--ink-500);font-size:13px;margin-bottom:14px;">السلف المستديمة والمديونيات المرحلة من شهور سابقة، ويمكن تحديد قسط شهري لخصمها تدريجياً أو استيرادها من شيت الإكسيل.</p>
         <?php if (empty($standingAdvances)): ?>
             <div class="empty">لا توجد سلف مستديمة.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
-        <table>
+        <div class="ftable-wrap hrs-scroll-x">
+        <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>أصل السلفة</th><th>المتبقي</th><th>القسط الشهري</th><th>الحالة</th><th>ملاحظات</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($standingAdvances as $a):
@@ -1641,7 +1274,7 @@ $statusBadge = function($st) {
                             <span class="hrs-muted">بالكامل</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td style="font-size:13px;color:var(--ink-500);white-space:pre-line;"><?= e($a['notes'] ?? '—') ?></td>
                     <td>
                         <a href="employee_statement.php?emp=<?= (int)$a['employee_id'] ?>" class="btn btn-sm btn-ghost" title="كشف حساب الموظف"><i class="ti ti-file-invoice"></i> كشف الحساب</a>
@@ -1677,7 +1310,7 @@ $statusBadge = function($st) {
     </div>
 
     <?php if (!empty($owedToEmps)): ?>
-    <div class="card" style="border-right:4px solid var(--pos);">
+    <div class="card fcard" style="border-right:4px solid var(--pos);">
         <div class="section-title" style="color:var(--pos);">
             <i class="ti ti-arrow-down-left"></i> الشركة مدينة لهم (<?= count($owedToEmps) ?>)
         </div>
@@ -1685,8 +1318,8 @@ $statusBadge = function($st) {
             <i class="ti ti-alert-circle"></i> دول <b>مش سلف</b> — دي عكس السلفة بالظبط: الموظف إدى فلوس للشركة
             (رصيد دائن في سجل حسابه). مابتتخصمش من المرتب، وبتتصرفله لما ترجّعهاله.
         </p>
-        <div class="hrs-scroll-x">
-        <table>
+        <div class="ftable-wrap hrs-scroll-x">
+        <table class="ftable">
             <thead><tr><th>الموظف</th><th>الشركة مدينة له</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($owedToEmps as $o): ?>
@@ -1716,11 +1349,12 @@ $statusBadge = function($st) {
         <span class="hrs-muted14"><?= count($bonuses) ?> مكافأة</span>
         <button class="btn" onclick="document.getElementById('bonusModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة مكافأة</button>
     </div>
-    <div class="card">
+    <div class="card fcard">
         <?php if (empty($bonuses)): ?>
             <div class="empty">لا توجد مكافآت.</div>
         <?php else: ?>
-        <table>
+        <div class="ftable-wrap">
+        <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>المبلغ</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
             <?php foreach ($bonuses as $bn): $b=$statusBadge($bn['status']); ?>
@@ -1729,32 +1363,38 @@ $statusBadge = function($st) {
                     <td class="hrs-fw5"><?= e($bn['full_name']) ?></td>
                     <td><?= number_format((float)$bn['amount'],2) ?></td>
                     <td><?= e($bn['reason'] ?? '—') ?></td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
-<?php elseif ($tab === 'penalties'): ?>
+<?php elseif ($tab === 'penalties' || $tab === 'deficits'): ?>
+    <?php $tolerance = custody_tolerance(); $deductionRows = $tab === 'penalties' ? $penalties : $deficits; ?>
     <div class="toolbar">
-        <span class="hrs-muted14"><?= count($penalties) ?> استقطاع/جزاء</span>
+        <span class="hrs-muted14"><?= count($deductionRows) ?> <?= $tab === 'penalties' ? 'جزاء' : 'عجز/زيادة' ?></span>
+        <?php if ($tab === 'penalties'): ?>
         <button class="btn" onclick="document.getElementById('penaltyModal').classList.add('open')"><i class="ti ti-plus"></i> إضافة جزاء</button>
+        <?php endif; ?>
     </div>
+    <?php if ($tab === 'deficits'): ?>
     <div style="color:var(--ink-500);font-size:13px;margin-bottom:12px;">
         العتبة الحالية <strong><?= number_format($tolerance, 2) ?> ج</strong> — أي عجز أو زيادة أقل من كده مش بيظهر هنا.
         <a href="settings.php" style="color:var(--accent-text);">غيّرها من الإعدادات</a>
     </div>
-    <div class="card">
-        <?php if (empty($penalties)): ?>
-            <div class="empty">لا توجد استقطاعات أو جزاءات.</div>
+    <?php endif; ?>
+    <div class="card fcard">
+        <?php if (empty($deductionRows)): ?>
+            <div class="empty"><?= $tab === 'penalties' ? 'لا توجد جزاءات.' : 'لا يوجد عجز أو زيادة.' ?></div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
-        <table>
-            <thead><tr><th>التاريخ</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
+        <div class="ftable-wrap hrs-scroll-x">
+        <table class="ftable">
+            <thead><tr><th>التاريخ</th><th>رقم الوردية</th><th>الموظف</th><th>النوع</th><th>الفرع</th><th>المبلغ</th><th>العتبة</th><th>اللي بيتخصم</th><th>السبب</th><th>الحالة</th></tr></thead>
             <tbody>
-            <?php foreach ($penalties as $p): $b=$statusBadge($p['status']); ?>
+            <?php foreach ($deductionRows as $p): $b=$statusBadge($p['status']); ?>
                 <?php
                 $typeColor = 'var(--ink-800)';
                 $typeBg    = 'var(--line-soft)';
@@ -1768,14 +1408,15 @@ $statusBadge = function($st) {
                 ?>
                 <tr>
                     <td><?= e($p['deduction_date']) ?></td>
+                    <td><?= e($p['shift_name']) ?></td>
                     <td class="hrs-fw5"><?= e($p['full_name']) ?></td>
-                    <td><span class="badge" style="background:<?= $typeBg ?>;color:<?= $typeColor ?>;"><?= e($p['deduction_type']) ?></span></td>
+                    <td><span class="badge fchip" style="background:<?= $typeBg ?>;color:<?= $typeColor ?>;"><?= e($p['deduction_type']) ?></span></td>
                     <td><?= e($p['branch_name'] ?? '—') ?></td>
                     <td style="font-weight:600;<?= ($p['deduction_type']==='زيادة وردية') ? 'color:var(--pos);' : 'color:var(--neg);' ?>"><?= number_format((float)$p['amount'],2) ?></td>
                     <td><?= is_numeric($p['tolerance']) ? number_format((float)$p['tolerance'],2) : e((string)$p['tolerance']) ?></td>
                     <td><?= is_numeric($p['exceeded']) ? number_format((float)$p['exceeded'],2) : e((string)$p['exceeded']) ?></td>
                     <td><?= e($p['reason'] ?? '—') ?></td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -1787,10 +1428,11 @@ $statusBadge = function($st) {
 <?php elseif ($tab === 'salaries'): ?>
     <?php if (!sens_unlocked()): sens_lock_screen('الرواتب'); else: ?>
     <!-- فلترة فترة الحضور -->
-    <div class="card" style="margin-bottom:18px;">
+    <div class="card fcard" style="margin-bottom:18px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
             <div class="section-title" style="margin-bottom:0;">حساب واستحقاق الرواتب للفترة</div>
             <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-ghost" id="btnExportSalaries" title="تصدير جدول الرواتب بآخر حالة"><i class="ti ti-file-spreadsheet"></i> تصدير إكسيل</button>
                 <button type="button" class="btn btn-ghost" onclick="document.getElementById('salaryModal').classList.add('open')"><i class="ti ti-cash"></i> صرف فردي</button>
             </div>
         </div>
@@ -1799,22 +1441,22 @@ $statusBadge = function($st) {
             <input type="hidden" name="tab" value="salaries">
             <div class="hrs-flt-item">
                 <label for="salFltFrom" class="hrs-flt-label">من تاريخ:</label>
-                <input type="date" name="from" id="salFltFrom" class="hrs-flt-input" value="<?= e($salFrom) ?>" onchange="formSubmit(this.form)">
+                <input type="date" name="from" id="salFltFrom" class="hrs-flt-input finput finput-sm" value="<?= e($salFrom) ?>" onchange="formSubmit(this.form)">
             </div>
             <div class="hrs-flt-item">
                 <label for="salFltTo" class="hrs-flt-label">إلى تاريخ:</label>
-                <input type="date" name="to" id="salFltTo" class="hrs-flt-input" value="<?= e($salTo) ?>" onchange="formSubmit(this.form)">
+                <input type="date" name="to" id="salFltTo" class="hrs-flt-input finput finput-sm" value="<?= e($salTo) ?>" onchange="formSubmit(this.form)">
             </div>
             <div class="hrs-flt-item">
                 <label for="salFltMonth" class="hrs-flt-label">شهر المرتب:</label>
-                <input type="month" name="month" id="salFltMonth" class="hrs-flt-input" value="<?= e($salMonth) ?>" onchange="formSubmit(this.form)">
+                <input type="month" name="month" id="salFltMonth" class="hrs-flt-input finput finput-sm" value="<?= e($salMonth) ?>" onchange="formSubmit(this.form)">
             </div>
             <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-refresh"></i> تحديث</button>
         </form>
     </div>
 
     <!-- جدول حساب المستحقات للموظفين للفترة المحددة -->
-    <div class="card">
+    <div class="card fcard">
         <?php if (date('d', strtotime($salFrom)) !== '26' || date('d', strtotime($salTo)) !== '25'): ?>
             <div class="flash warning" style="margin-bottom:14px;display:flex;align-items:center;gap:8px;">
                 <i class="ti ti-alert-triangle"></i>
@@ -1834,14 +1476,13 @@ $statusBadge = function($st) {
                     <button type="button" class="btn btn-sm btn-ghost hrs-btn-xs" id="btnSalDeselectAll">إلغاء التحديد</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                    <select name="treasury_id" required style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+                    <select class="fselect finput-sm" name="treasury_id" required>
                         <option value="">— اختر خزينة الصرف —</option>
                         <?php foreach ($payTreasuries as $t): ?>
                             <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <input type="date" name="date" value="<?= date('Y-m-d') ?>" required
-                           style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;font-size:13px;">
+                    <input class="finput finput-sm" type="date" name="date" value="<?= date('Y-m-d') ?>" required>
                     <button type="submit" name="action" value="pay_salary_batch" class="btn btn-sm" onclick="return confirm('تأكيد صرف الرواتب للموظفين المحددين؟')">
                         <i class="ti ti-check"></i> صرف المحددين
                     </button>
@@ -1856,21 +1497,30 @@ $statusBadge = function($st) {
                 // 🔴 مفيش استعلام جديد: لو حسبناه باستعلام تاني هيبقى فيه
                 //    احتمال يختلف عن اللي الجدول تحته بيعرضه.
                 $salTotalNet = 0.0; $salTotalCount = 0;
+                $salNegTotal = 0.0; $salNegCount = 0;
                 foreach ($payrollData as $p) {
                     if ($p['no_expected'] && !$p['is_fixed']) continue;   // مايتحسبش ومايتصرفش
                     $salTotalNet += (float) $p['net_salary'];
                     $salTotalCount++;
+                    if ((float)($p['display_net'] ?? $p['net_salary']) < 0) {
+                        $salNegTotal += abs((float)$p['display_net']);
+                        $salNegCount++;
+                    }
                 }
+                $salSkipped = count($payrollData) - $salTotalCount;
             ?>
-            <div class="sum-cards" id="salSumCards">
-                <div class="sum-card">
+            <div class="fkpis" id="salSumCards">
+                <div class="fkpi">
                     <div class="sc-label">إجمالي الصافي</div>
                     <div class="sc-value" id="salTotalNet"><?= number_format($salTotalNet, 2) ?> <span class="sc-cur">ج.م</span></div>
                     <div class="sc-sub"><span id="salTotalCount"><?= $salTotalCount ?></span> موظف</div>
+                    <div class="sc-sub" id="salNegNotice" style="color:var(--neg);<?= $salNegCount > 0 ? '' : 'display:none;' ?>">
+                        + عليهم <span id="salNegTotalVal"><?= number_format($salNegTotal, 2) ?></span> ج.م (<span id="salNegCountVal"><?= $salNegCount ?></span> موظف)
+                    </div>
                 </div>
             </div>
-            <div class="hrs-scroll-x">
-            <table class="sal-tbl" data-cashier-deficit-carry="<?= cashier_deficit_carry_enabled() ? '1' : '0' ?>">
+            <div class="ftable-wrap hrs-scroll-x">
+            <table class="sal-tbl ftable" data-cashier-deficit-carry="<?= cashier_deficit_carry_enabled() ? '1' : '0' ?>">
                 <thead>
                     <tr>
                         <th class="c-pick" style="width:30px;"><input type="checkbox" id="salMasterCb" title="تحديد/إلغاء الكل"></th>
@@ -1899,6 +1549,7 @@ $statusBadge = function($st) {
                 <?php foreach ($payrollData as $p): ?>
                     <tr data-emp-id="<?= $p['id'] ?>"
                         data-salary-mode="<?= e($p['salary_mode']) ?>"
+                        data-no-expected="<?= $p['no_expected'] ? '1' : '0' ?>"
                         data-base-salary="<?= $p['base_salary'] ?>"
                         data-work-days="<?= $p['work_days'] ?>"
                         data-leave-days="<?= $p['leave_days'] ?>"
@@ -1920,10 +1571,10 @@ $statusBadge = function($st) {
                         <td class="c-emp hrs-fw5">
                             <?= e($p['full_name']) ?>
                             <?php if ($p['ledger_balance'] < -0.005): ?>
-                                <span class="badge" style="font-size:11px;color:var(--pos);background:var(--pos-soft);margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
+                                <span class="badge fchip fchip-pos" style="font-size:11px;margin-right:4px;" title="رصيد دائن في سجل حساب الموظف">الشركة مدينة له <?= number_format(abs($p['ledger_balance']), 2) ?></span>
                             <?php endif; ?>
                             <?php if ($p['is_fixed']): ?>
-                                <span class="badge" style="font-size:11px;color:var(--accent-text);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
+                                <span class="badge fchip" style="font-size:11px;color:var(--accent-text);background:var(--accent-soft);margin-right:4px;">مرتب ثابت</span>
                             <?php elseif ($p['no_expected']): ?>
                                 <div style="font-size:11px;color:var(--warn);font-weight:600;margin-top:2px;">
                                     <i class="ti ti-alert-triangle"></i> الساعات المنتظرة مش محددة — المرتب مش هيتحسب
@@ -2091,19 +1742,25 @@ $statusBadge = function($st) {
                             </span>
                         </td>
                         <?php
+                        $displayNet = (float)($p['display_net'] ?? $p['net_salary']);
                         $netTitle = '';
-                        if (!$p['no_expected'] && $p['carry_to_advance'] > 0.005) {
-                            $netTitle = 'المرتب مشالش ' . number_format($p['carry_to_advance'], 2) . ' — هينزلوا سلفة مستديمة على الموظف';
+                        if (!$p['no_expected']) {
+                            if ($displayNet < 0) {
+                                $netTitle = 'المرتب مايكفيش — هيتصرف 0 و' . number_format(abs($displayNet), 2) . ' هيفضل على الموظف (سلف باقية + مرحّل)';
+                            } elseif ($p['carry_to_advance'] > 0.005) {
+                                $netTitle = 'المرتب مشالش ' . number_format($p['carry_to_advance'], 2) . ' — هينزلوا سلفة مستديمة على الموظف';
+                            }
                         }
                         ?>
-                        <td class="cell-net" title="<?= e($netTitle) ?>" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($p['net_salary'] >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
-                            <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($p['net_salary'], 2) ?>
+                        <td style="font-weight:700;">
+                            <span class="cell-net" title="<?= e($netTitle) ?>" style="<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($displayNet >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>"><?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($displayNet, 2) ?></span>
+                            <span class="fchip fchip-warn payroll-carry" title="<?= e(implode(' / ', array_keys(array_filter(['عجز كاشير' => cashier_deficit_carry_enabled() && $p['cashier_deficit_calc'] - $p['cashier_deficit'] > 0.005, 'جزاءات' => $p['penalties_full'] - $p['penalties'] > 0.005, 'عجز عهدة' => $p['deficits_full'] - $p['deficits'] > 0.005])))) ?>" style="<?= $p['carry_to_advance'] > 0.005 && !$p['no_expected'] && !$p['is_paid'] ? '' : 'display:none;' ?>">هيترحّل سلفة: <?= number_format($p['carry_to_advance'], 2) ?></span>
                         </td>
                         <td>
                             <?php if ($p['is_paid']): ?>
-                                <span class="badge" style="color:var(--pos);background:var(--pos-soft);">تم الصرف</span>
+                                <span class="badge fchip fchip-pos">تم الصرف</span>
                             <?php elseif (!$p['is_fixed'] && $p['no_expected']): ?>
-                                <span class="badge" style="color:var(--warn);background:var(--warn-soft);" title="حدد الساعات المنتظرة في التعريفات أولاً">غير محدد</span>
+                                <span class="badge fchip fchip-warn" title="حدد الساعات المنتظرة في التعريفات أولاً">غير محدد</span>
                             <?php else: ?>
                                 <button type="button" class="btn btn-sm btn-ghost btn-single-pay"
                                         data-emp-id="<?= $p['id'] ?>"
@@ -2122,7 +1779,7 @@ $statusBadge = function($st) {
 
     <!-- سجل الرواتب المصروفة سابقاً -->
     <?php if ($confirmRevSalary): ?>
-    <div class="card" style="border:2px solid var(--neg);background:var(--surface);margin-bottom:20px;">
+    <div class="card fcard" style="border:2px solid var(--neg);margin-bottom:20px;">
         <div class="section-title" style="color:var(--neg);display:flex;align-items:center;gap:8px;">
             <i class="ti ti-alert-triangle"></i>
             تأكيد إرجاع صرف مرتب: <?= e($confirmRevSalary['full_name']) ?> (شهر <?= e($confirmRevSalary['salary_month']) ?>)
@@ -2199,13 +1856,13 @@ $statusBadge = function($st) {
     </div>
     <?php endif; ?>
 
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">سجل الرواتب المصروفة (<?= count($salaries) ?>)</div>
         <?php if (empty($salaries)): ?>
             <div class="empty">لا توجد رواتب مصروفة.</div>
         <?php else: ?>
-        <div class="hrs-scroll-x">
-        <table>
+        <div class="ftable-wrap hrs-scroll-x">
+        <table class="ftable">
             <thead>
                 <tr>
                     <th>الشهر</th>
@@ -2257,14 +1914,14 @@ $statusBadge = function($st) {
                             <span class="badge hrs-neg-badge" title="<?= e('سبب الإرجاع: ' . ($s['reverse_reason'] ?? '—')) ?>">مرجّع</span>
                             <div style="font-size:11px;color:var(--ink-500);margin-top:2px;" title="<?= e($s['reverse_reason'] ?? '') ?>"><?= e($s['reverse_reason'] ?? '—') ?></div>
                         <?php else: ?>
-                            <span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span>
+                            <span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span>
                         <?php endif; ?>
                     </td>
                     <td>
                         <?php if ($s['reversed_at'] === null && is_owner()): ?>
                             <a href="hr.php?tab=salaries&confirm_reverse=<?= (int)$s['id'] ?>" class="btn btn-sm btn-reject" title="إرجاع صرف المرتب"><i class="ti ti-rotate"></i> إرجاع</a>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:12px;">—</span>
+                            <span style="color:var(--ink-400);font-size:12px;">—</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -2277,7 +1934,7 @@ $statusBadge = function($st) {
     <?php endif; ?>
 
 <?php elseif ($tab === 'requests'): ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">طلبات تصحيح الحضور</div>
         <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
             <a href="?tab=requests&rstatus=pending" class="btn btn-sm <?= $reqStatus === 'pending' ? '' : 'btn-cancel' ?>">معلّق</a>
@@ -2288,7 +1945,8 @@ $statusBadge = function($st) {
         <?php if (empty($requests)): ?>
             <div class="empty">لا توجد طلبات.</div>
         <?php else: ?>
-        <table>
+        <div class="ftable-wrap">
+        <table class="ftable">
             <thead><tr><th>الموظف</th><th>اليوم</th><th>دخول مطلوب</th><th>خروج مطلوب</th><th>السبب</th><th>الحالة</th><th>إجراء</th></tr></thead>
             <tbody>
             <?php foreach ($requests as $r): $b=$statusBadge($r['status']); ?>
@@ -2298,7 +1956,7 @@ $statusBadge = function($st) {
                     <td><?= e($r['requested_in'] ? substr($r['requested_in'],0,5) : '—') ?></td>
                     <td><?= e($r['requested_out'] ? substr($r['requested_out'],0,5) : '—') ?></td>
                     <td style="font-size:13px;"><?= e($r['reason'] ?? '—') ?></td>
-                    <td><span class="badge" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$b[1]?>;background:<?=$b[2]?>;"><?=e($b[0])?></span></td>
                     <td>
                         <?php if ($r['status']==='pending'): ?>
                             <?php if (can_edit_attendance_time()): ?>
@@ -2332,11 +1990,12 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 
 <?php else: // attendance ?>
-    <div class="card">
+    <div class="card fcard">
         <div class="section-title">سجل الحضور والانصراف</div>
         <div class="toolbar" style="margin-bottom:14px;">
             <span class="hrs-muted14">الحضور بيتسجّل بالبصمة، والتصحيح بيبقى من تاب «طلبات التصحيح».</span>
@@ -2344,13 +2003,13 @@ $statusBadge = function($st) {
         <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
             <input type="hidden" name="tab" value="attendance">
             <label for="attFltMonth" style="font-size:13px;color:var(--ink-500);">الشهر:</label>
-            <input type="month" name="month" id="attFltMonth" value="<?= e($attMonth) ?>" onchange="formSubmit(this.form)"
-                   style="padding:8px 11px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;">
+            <input class="finput finput-sm" type="month" name="month" id="attFltMonth" value="<?= e($attMonth) ?>" onchange="formSubmit(this.form)">
         </form>
         <?php if (empty($attRows)): ?>
             <div class="empty">لا يوجد سجل حضور لهذا الشهر.</div>
         <?php else: ?>
-        <table>
+        <div class="ftable-wrap">
+        <table class="ftable">
             <thead><tr><th>التاريخ</th><th>الموظف</th><th>الحضور</th><th>الانصراف</th><th>ساعات العمل</th><th>مكان البصمة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
             <?php
@@ -2391,10 +2050,10 @@ $statusBadge = function($st) {
                         <?php if ($inLoc || $outLoc): ?>
                             <div style="display:flex;flex-direction:column;gap:2px;"><?= $inLoc ?><?= $outLoc ?></div>
                         <?php else: ?>
-                            <span style="color:var(--ink-300);font-size:12px;">—</span>
+                            <span style="color:var(--ink-400);font-size:12px;">—</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span></td>
+                    <td><span class="badge fchip" style="color:<?=$sb[1]?>;background:<?=$sb[2]?>;"><?=e($sb[0])?></span></td>
                     <td>
                         <form method="post" class="hrs-inline-form"
                               data-confirm="تأكيد مسح سجل حضور <?= e($a['full_name']) ?> يوم <?= e($a['att_date']) ?>؟ هيقدر يسجّل من جديد." data-confirm-danger>
@@ -2408,29 +2067,30 @@ $statusBadge = function($st) {
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
         <?php endif; ?>
     </div>
 <?php endif; ?>
 
 <!-- Modals -->
 <div class="modal-bg" id="advanceModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تسجيل سلفة قديمة / مستديمة</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_advance">
-            <div class="form-row"><label for="advEmp">الموظف</label><select name="employee_id" id="advEmp" required>
+            <div class="form-row ffield"><label for="advEmp">الموظف</label><select class="fselect" name="employee_id" id="advEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label for="advAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="advAmount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label for="advTypeSel">نوع السلفة</label><select name="adv_type" id="advTypeSel">
+            <div class="form-row ffield"><label for="advAmount">المبلغ</label><input class="finput num" type="number" step="0.01" min="0.01" name="amount" id="advAmount" required aria-label="المبلغ"></div>
+            <div class="form-row ffield"><label for="advTypeSel">نوع السلفة</label><select class="fselect" name="adv_type" id="advTypeSel">
                 <option value="standing" selected>مستديمة (رصيد قديم)</option>
                 <option value="monthly">سلفة الشهر</option>
             </select></div>
-            <div class="form-row"><label for="advDeduction">القسط الشهري (0 = خصم بالكامل مع الراتب)</label><input type="number" step="0.01" min="0" name="monthly_deduction" id="advDeduction" value="0" aria-label="القسط الشهري"></div>
-            <div class="form-row"><label for="advDate">التاريخ</label><input type="date" name="advance_date" id="advDate" value="<?= date('Y-m-d') ?>"></div>
-            <div class="form-row"><label for="advNotes">ملاحظات</label><input type="text" name="notes" id="advNotes" placeholder="مثال: رصيد سلفة قديم قبل النظام" aria-label="ملاحظات"></div>
+            <div class="form-row ffield"><label for="advDeduction">القسط الشهري (0 = خصم بالكامل مع الراتب)</label><input class="finput num" type="number" step="0.01" min="0" name="monthly_deduction" id="advDeduction" value="0" aria-label="القسط الشهري"></div>
+            <div class="form-row ffield"><label for="advDate">التاريخ</label><input class="finput" type="date" name="advance_date" id="advDate" value="<?= date('Y-m-d') ?>"></div>
+            <div class="form-row ffield"><label for="advNotes">ملاحظات</label><input class="finput" type="text" name="notes" id="advNotes" placeholder="مثال: رصيد سلفة قديم قبل النظام" aria-label="ملاحظات"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('advanceModal').classList.remove('open')">إلغاء</button>
@@ -2441,7 +2101,7 @@ $statusBadge = function($st) {
 
 <?php if (is_owner()): ?>
 <div class="modal-bg" id="openingBalanceModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تسجيل رصيد افتتاحي</h3>
         <p style="font-size:12.5px;color:var(--ink-500);margin-bottom:14px;line-height:1.7;">
             الحركة دي <b>مابتلمسش الخزينة خالص</b> — هي بتسجّل رصيد قديم بين الشركة
@@ -2451,17 +2111,17 @@ $statusBadge = function($st) {
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="add_opening_balance">
-            <div class="form-row"><label for="obEmp">الموظف</label><select name="employee_id" id="obEmp" required>
+            <div class="form-row ffield"><label for="obEmp">الموظف</label><select class="fselect" name="employee_id" id="obEmp" required>
                 <option value="">— اختر —</option>
                 <?php foreach ($employees as $emp): ?><option value="<?= (int)$emp['id'] ?>"><?= e($emp['full_name']) ?></option><?php endforeach; ?>
             </select></div>
-            <div class="form-row"><label for="obDirection">الاتجاه</label><select name="direction" id="obDirection" required>
+            <div class="form-row ffield"><label for="obDirection">الاتجاه</label><select class="fselect" name="direction" id="obDirection" required>
                 <option value="debit">عليه — الموظف مدين للشركة</option>
                 <option value="credit">له — الشركة مدينة للموظف</option>
             </select></div>
-            <div class="form-row"><label for="obAmount">المبلغ</label><input type="number" step="0.01" min="0.01" name="amount" id="obAmount" required aria-label="المبلغ"></div>
-            <div class="form-row"><label for="obDate">التاريخ</label><input type="date" name="date" id="obDate" value="<?= date('Y-m-d') ?>" required></div>
-            <div class="form-row"><label for="obDesc">البيان (مطلوب)</label><input type="text" name="description" id="obDesc" required aria-label="البيان"></div>
+            <div class="form-row ffield"><label for="obAmount">المبلغ</label><input class="finput num" type="number" step="0.01" min="0.01" name="amount" id="obAmount" required aria-label="المبلغ"></div>
+            <div class="form-row ffield"><label for="obDate">التاريخ</label><input class="finput" type="date" name="date" id="obDate" value="<?= date('Y-m-d') ?>" required></div>
+            <div class="form-row ffield"><label for="obDesc">البيان (مطلوب)</label><input class="finput" type="text" name="description" id="obDesc" required aria-label="البيان"></div>
             <div class="modal-actions">
                 <button type="submit" class="btn">حفظ</button>
                 <button type="button" class="btn btn-cancel" onclick="document.getElementById('openingBalanceModal').classList.remove('open')">إلغاء</button>
@@ -2472,7 +2132,7 @@ $statusBadge = function($st) {
 <?php endif; ?>
 
 <div class="modal-bg" id="bonusModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>إضافة مكافأة</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -2493,7 +2153,7 @@ $statusBadge = function($st) {
 </div>
 
 <div class="modal-bg" id="penaltyModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>إضافة جزاء</h3>
         <form method="post">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -2515,7 +2175,7 @@ $statusBadge = function($st) {
 
 <?php if (sens_unlocked()): ?>
 <div class="modal-bg" id="salaryModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>صرف مرتب فردي</h3>
         <form method="post" data-busy="جاري صرف المرتب...">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -2623,7 +2283,7 @@ $statusBadge = function($st) {
 
 <?php if (can_edit_attendance_time()): ?>
 <div class="modal-bg" id="editRequestModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تعديل وقت طلب التصحيح</h3>
         <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
             الموظف: <strong id="editReqEmpName" class="hrs-strong"></strong> · التاريخ: <strong id="editReqDate" class="hrs-strong"></strong>
@@ -2651,7 +2311,7 @@ $statusBadge = function($st) {
 <?php endif; ?>
 
 <div class="modal-bg" id="editAdvanceModal">
-    <div class="modal">
+    <div class="modal fcard">
         <h3>تعديل القسط الشهري للسلفة</h3>
         <p style="font-size:13px;color:var(--ink-500);margin-bottom:14px;">
             الموظف: <strong id="editAdvEmpName" class="hrs-strong"></strong> · أصل السلفة: <strong id="editAdvAmount" class="hrs-strong"></strong> · المتبقي: <strong id="editAdvRemaining" class="hrs-strong"></strong>
@@ -2902,6 +2562,12 @@ $statusBadge = function($st) {
 
         var totalDeductions = advApplied + penaltiesApplied + deficitsApplied + cashierApplied;
 
+        // حساب صافي العرض (بريف ٩٠): يعرض بالسالب لو المطلوب خصمه > الوعاء
+        var potInitial = (tr.dataset.noExpected === '1' && !isFixed) ? 0 : (gross + bonuses);
+        var cashierReq = cashierCarryEnabled ? cashierTake : cashierApplied;
+        var reqDeductions = advTaken + penalties + deficits + cashierReq;
+        var displayNet = (tr.dataset.noExpected === '1' && !isFixed) ? 0 : (potInitial - reqDeductions);
+
         var grossCell = tr.querySelector('.cell-gross');
         if (grossCell) {
             grossCell.textContent = gross.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -2915,12 +2581,28 @@ $statusBadge = function($st) {
 
         var netCell = tr.querySelector('.cell-net');
         if (netCell) {
-            netCell.textContent = net.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-            netCell.style.color = net >= 0 ? 'var(--pos)' : 'var(--neg)';
-            // المرحّل الإجمالي اللي المرتب مشالوش — هينزل سلفة مستديمة على الموظف
-            netCell.title = carryToAdvance > 0.005
-                ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
-                : '';
+            if (tr.dataset.noExpected === '1' && !isFixed) {
+                netCell.textContent = 'غير محدد';
+                netCell.style.color = 'var(--warn)';
+                netCell.title = '';
+            } else {
+                netCell.textContent = displayNet.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+                netCell.style.color = displayNet >= 0 ? 'var(--pos)' : 'var(--neg)';
+                if (displayNet < 0) {
+                    netCell.title = 'المرتب مايكفيش — هيتصرف 0 و' + Math.abs(displayNet).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' هيفضل على الموظف (سلف باقية + مرحّل)';
+                } else {
+                    netCell.title = carryToAdvance > 0.005
+                        ? ('المرتب مشالش ' + carryToAdvance.toFixed(2) + ' — هينزلوا سلفة مستديمة على الموظف')
+                        : '';
+                }
+            }
+        }
+
+        var carryChip = tr.querySelector('.payroll-carry');
+        if (carryChip) {
+            carryChip.style.display = carryToAdvance > 0.005 && (tr.dataset.noExpected !== '1' || isFixed) && tr.querySelector('.cashier-take-input') ? '' : 'none';
+            carryChip.textContent = 'هيترحّل سلفة: ' + carryToAdvance.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+            carryChip.title = [cashierCarry > 0.005 ? 'عجز كاشير' : '', penalties - penaltiesApplied > 0.005 ? 'جزاءات' : '', deficits - deficitsApplied > 0.005 ? 'عجز عهدة' : ''].filter(Boolean).join(' / ');
         }
 
         // 🔴 الكارت فوق لازم يتحدّث مع أي تعديل — من غير كده محمد يعدّل
@@ -2958,22 +2640,49 @@ $statusBadge = function($st) {
         }
 
         window.salRefreshTotal = function () {
-            var total = 0, count = 0;
+            var total = 0, count = 0, skipped = 0, negTotal = 0, negCount = 0;
             var trs = table.tBodies[0] ? table.tBodies[0].rows : [];
             for (var r = 0; r < trs.length; r++) {
                 var tr = trs[r];
                 // xtable بيخفي الصفوف بكلاس مش بحذفها
                 if (tr.classList.contains('xt-out')) continue;
-                var cell = tr.cells[netIdx];
+                var cell = tr.cells[netIdx] && tr.cells[netIdx].querySelector('.cell-net');
                 if (!cell) continue;
                 // «غير محدد» = موظف من غير ساعات منتظرة، مايتحسبش ومايتصرفش
-                if (cell.textContent.indexOf('غير محدد') !== -1) continue;
-                total += num(cell.textContent);
+                if (cell.textContent.indexOf('غير محدد') !== -1) {
+                    skipped++;
+                    continue;
+                }
+                var val = num(cell.textContent);
+                if (val < 0) {
+                    negTotal += Math.abs(val);
+                    negCount++;
+                } else {
+                    total += val;
+                }
                 count++;
             }
             valEl.firstChild.nodeValue =
                 total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ';
             cntEl.textContent = count;
+            var uncalcEl = document.getElementById('salUncalcNotice');
+            if (uncalcEl) {
+                if (skipped > 0) {
+                    uncalcEl.style.display = '';
+                    uncalcEl.textContent = skipped + ' من غير ساعات متوقّعة — بيبانوا في الجدول ومش داخلين في الإجمالي';
+                } else {
+                    uncalcEl.style.display = 'none';
+                }
+            }
+            var negNoticeEl = document.getElementById('salNegNotice');
+            if (negNoticeEl) {
+                if (negCount > 0) {
+                    negNoticeEl.style.display = '';
+                    negNoticeEl.innerHTML = '+ عليهم <span id="salNegTotalVal">' + negTotal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</span> ج.م (<span id="salNegCountVal">' + negCount + '</span> موظف)';
+                } else {
+                    negNoticeEl.style.display = 'none';
+                }
+            }
         };
 
         // 🔴 شرط الجدول الصح — الحدث بيطلع لفوق، و`hr.php` فيه ١٠ جداول.
@@ -3062,7 +2771,7 @@ $statusBadge = function($st) {
             value: val
         });
 
-        fetch('hr.php', {
+        var p = fetch('hr.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: body.toString(),
@@ -3095,6 +2804,52 @@ $statusBadge = function($st) {
             input.value = saved;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             setInd(input, '✗ اتصال', 'var(--neg)');
+        });
+
+        window._salLastSavePromise = p;
+        return p;
+    }
+
+    var btnExport = document.getElementById('btnExportSalaries');
+    if (btnExport) {
+        btnExport.addEventListener('click', function() {
+            var exportUrl = '?tab=salaries&export=xlsx'
+                + '&from=' + encodeURIComponent('<?= e($salFrom) ?>')
+                + '&to=' + encodeURIComponent('<?= e($salTo) ?>')
+                + '&month=' + encodeURIComponent('<?= e($salMonth) ?>');
+
+            var active = document.activeElement;
+            var needWait = false;
+            if (active && active.matches && active.matches('.leave-days-input, .due-days-input, .bonus-input, .monthly-take-input, .standing-take-input, .cashier-take-input')) {
+                needWait = true;
+                active.blur();
+            }
+
+            if (needWait && window._salLastSavePromise) {
+                btnExport.disabled = true;
+                btnExport.innerHTML = '<i class="ti ti-loader"></i> جاري الحفظ...';
+                Promise.resolve(window._salLastSavePromise).catch(function(){}).then(function() {
+                    setTimeout(function() {
+                        window.location.href = exportUrl;
+                        setTimeout(function() {
+                            btnExport.disabled = false;
+                            btnExport.innerHTML = '<i class="ti ti-file-spreadsheet"></i> تصدير إكسيل';
+                        }, 2000);
+                    }, 100);
+                });
+            } else if (needWait) {
+                btnExport.disabled = true;
+                btnExport.innerHTML = '<i class="ti ti-loader"></i> جاري الحفظ...';
+                setTimeout(function() {
+                    window.location.href = exportUrl;
+                    setTimeout(function() {
+                        btnExport.disabled = false;
+                        btnExport.innerHTML = '<i class="ti ti-file-spreadsheet"></i> تصدير إكسيل';
+                    }, 2000);
+                }, 600);
+            } else {
+                window.location.href = exportUrl;
+            }
         });
     }
 

@@ -1740,8 +1740,9 @@ $statusBadge = function($st) {
                             }
                         }
                         ?>
-                        <td class="cell-net" title="<?= e($netTitle) ?>" style="font-weight:700;<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($displayNet >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>">
-                            <?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($displayNet, 2) ?>
+                        <td style="font-weight:700;">
+                            <span class="cell-net" title="<?= e($netTitle) ?>" style="<?= ($p['no_expected'] && !$p['is_fixed']) ? 'color:var(--warn);' : ($displayNet >= 0 ? 'color:var(--pos);' : 'color:var(--neg);') ?>"><?= ($p['no_expected'] && !$p['is_fixed']) ? 'غير محدد' : number_format($displayNet, 2) ?></span>
+                            <span class="fchip fchip-warn payroll-carry" title="<?= e(implode(' / ', array_keys(array_filter(['عجز كاشير' => cashier_deficit_carry_enabled() && $p['cashier_deficit_calc'] - $p['cashier_deficit'] > 0.005, 'جزاءات' => $p['penalties_full'] - $p['penalties'] > 0.005, 'عجز عهدة' => $p['deficits_full'] - $p['deficits'] > 0.005])))) ?>" style="<?= $p['carry_to_advance'] > 0.005 && !$p['no_expected'] && !$p['is_paid'] ? '' : 'display:none;' ?>">هيترحّل سلفة: <?= number_format($p['carry_to_advance'], 2) ?></span>
                         </td>
                         <td>
                             <?php if ($p['is_paid']): ?>
@@ -2585,6 +2586,13 @@ $statusBadge = function($st) {
             }
         }
 
+        var carryChip = tr.querySelector('.payroll-carry');
+        if (carryChip) {
+            carryChip.style.display = carryToAdvance > 0.005 && (tr.dataset.noExpected !== '1' || isFixed) && tr.querySelector('.cashier-take-input') ? '' : 'none';
+            carryChip.textContent = 'هيترحّل سلفة: ' + carryToAdvance.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+            carryChip.title = [cashierCarry > 0.005 ? 'عجز كاشير' : '', penalties - penaltiesApplied > 0.005 ? 'جزاءات' : '', deficits - deficitsApplied > 0.005 ? 'عجز عهدة' : ''].filter(Boolean).join(' / ');
+        }
+
         // 🔴 الكارت فوق لازم يتحدّث مع أي تعديل — من غير كده محمد يعدّل
         //    خصم ويبص على الكارت يلاقيه ما اتغيّرش، ويصرف رقم غلط.
         //    والحارس مهم: الدالة مابتتعرّفش لو الجدول مش موجود (تاب تاني)،
@@ -2626,7 +2634,7 @@ $statusBadge = function($st) {
                 var tr = trs[r];
                 // xtable بيخفي الصفوف بكلاس مش بحذفها
                 if (tr.classList.contains('xt-out')) continue;
-                var cell = tr.cells[netIdx];
+                var cell = tr.cells[netIdx] && tr.cells[netIdx].querySelector('.cell-net');
                 if (!cell) continue;
                 // «غير محدد» = موظف من غير ساعات منتظرة، مايتحسبش ومايتصرفش
                 if (cell.textContent.indexOf('غير محدد') !== -1) {
