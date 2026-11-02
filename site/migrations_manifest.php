@@ -51,4 +51,6 @@ return [
     '20261102_042_ashraqa_classify_null_entries',
     '20261102_043_salary_entries_account',
     '20261102_044_stock_doc_dists',
+    '20261102_045_transfer_diffs_approval',
+    '20261102_046_reopen_bonjour_custody_21',
 ];
