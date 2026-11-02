@@ -83,7 +83,8 @@ switch ($part) {
     case 'purchase_doc':
         api_method('GET');
         $term = (string) ($_GET['term'] ?? ($_GET['doc_no'] ?? ''));
-        $docData = purchase_doc_items_for_labels(db(), $term);
+        $branchId = is_real_owner() ? null : (int) ($_SESSION['user']['branch_id'] ?? 0);
+        $docData = purchase_doc_items_for_labels(db(), $term, $branchId);
         if (!$docData) {
             api_fail('فاتورة الشراء مش موجودة', 404, 'not_found');
         }

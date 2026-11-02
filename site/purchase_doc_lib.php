@@ -414,32 +414,39 @@ function purchase_last_true_price(PDO $pdo, int $supplierId, int $itemId): ?floa
  * الداتا من stock_docs و stock_doc_lines و hq_codes.
  * بترجّع [doc => [...], items => [...]] أو null لو الفاتورة مش موجودة.
  */
-function purchase_doc_items_for_labels(PDO $pdo, string $term): ?array
+function purchase_doc_items_for_labels(PDO $pdo, string $term, ?int $branchId): ?array
 {
     $term = trim($term);
-    if ($term === '') {
+    if ($term === '' || ($branchId !== null && $branchId <= 0)) {
         return null;
     }
 
     $doc = null;
+    // المالك بس يشوف كل الفروع والمسودات، والباقي فواتير فرعه المرحّلة بس.
+    $scopeSql = " AND doc_type = 'purchase'";
+    $scopeParams = [];
+    if ($branchId !== null) {
+        $scopeSql .= " AND branch_id = ? AND status = 'posted'";
+        $scopeParams[] = $branchId;
+    }
 
     // مسودة-123 أو draft-123
     if (preg_match('/^(?:مسودة|draft)[-_]?(\d+)$/ui', $term, $m)) {
-        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE id = ? AND doc_type IN ('purchase', 'purchase_return') LIMIT 1");
-        $st->execute([(int) $m[1]]);
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE id = ?" . $scopeSql . " LIMIT 1");
+        $st->execute(array_merge([(int) $m[1]], $scopeParams));
         $doc = $st->fetch(PDO::FETCH_ASSOC);
     }
     // 2026/123
     elseif (preg_match('/^(\d{4})\/(\d+)$/', $term, $m)) {
-        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE doc_year = ? AND doc_no = ? AND doc_type IN ('purchase', 'purchase_return') LIMIT 1");
-        $st->execute([(int) $m[1], (int) $m[2]]);
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE doc_year = ? AND doc_no = ?" . $scopeSql . " LIMIT 1");
+        $st->execute(array_merge([(int) $m[1], (int) $m[2]], $scopeParams));
         $doc = $st->fetch(PDO::FETCH_ASSOC);
     }
     // رقم خالص (كـ doc_no الأول لو مرحلة، أو كـ id)
     elseif (ctype_digit($term)) {
         $num = (int) $term;
-        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE (doc_no = ? OR id = ?) AND doc_type IN ('purchase', 'purchase_return') ORDER BY (doc_no = ?) DESC, id DESC LIMIT 1");
-        $st->execute([$num, $num, $num]);
+        $st = $pdo->prepare("SELECT * FROM stock_docs WHERE (doc_no = ? OR id = ?)" . $scopeSql . " ORDER BY (doc_no = ?) DESC, id DESC LIMIT 1");
+        $st->execute(array_merge([$num, $num], $scopeParams, [$num]));
         $doc = $st->fetch(PDO::FETCH_ASSOC);
     }
 
