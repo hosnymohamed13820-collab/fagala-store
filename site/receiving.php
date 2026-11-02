@@ -14,6 +14,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_permission('receiving');
 require_once __DIR__ . '/receiving_flow_lib.php';
+require_once __DIR__ . '/stock_autotransfer_lib.php';
 
 $pdo  = db();
 $user = current_user();
@@ -237,11 +238,86 @@ require_once __DIR__ . '/includes/header.php';
             <h1 class="fpage-title"><i class="ti ti-package"></i> استلام الفواتير في الفروع</h1>
         </div>
         <div class="fpage-actions">
+        <?php if (stock_enabled() && site_permission_enabled('transfers') && autotransfer_can_create()): ?>
+            <?= ui_btn('تحويل تلقائي', ['id' => 'autotransferOpen', 'icon' => 'transfer']) ?>
+        <?php endif; ?>
         <?php if ($isOwner || $isSupervisor || can('receiving:diffs') || $userBranchId !== null): ?>
             <a href="receiving_diffs.php" class="btn btn-outline"><i class="ti ti-chart-bar"></i> صفحة الفروقات الشاملة</a>
         <?php endif; ?>
         </div>
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const open = document.getElementById('autotransferOpen');
+        if (!open) return;
+        const esc = window.ui.esc;
+        const names = {1: 'بونجور', 2: 'اي بي سي', 3: 'الفجالة', 4: 'دجلة', 5: 'اشراقة'};
+        let busy = false;
+        function skipped(rows) {
+            if (!rows.length) return '';
+            return '<h3>اللي اتخطّى</h3><ul>' + rows.map(r => '<li>توزيع ' + esc(r.distribution_id) +
+                ' · فاتورة ' + esc(r.invoice_no || '—') + (r.branch_id ? ' · ' + esc(names[r.branch_id] || r.branch_id) : '') +
+                (r.code ? ' · ' + esc(r.code) : '') + ': ' + esc(r.reason) + '</li>').join('') + '</ul>';
+        }
+        // بنستخدم الحوار الموحّد بنفس سلوك القفل والكيبورد، ونبدّل محتوى الرسالة بجدول المعاينة.
+        async function showPreview(data) {
+            const done = window.fgConfirm('معاينة التحويلات', {
+                title: 'تحويل تلقائي', okText: 'اعمل التحويلات', cancelText: 'رجوع'
+            });
+            await Promise.resolve(); await Promise.resolve();
+            const dialog = document.querySelector('.fg-dlg-bg:last-of-type .fg-dlg');
+            if (!dialog) return false;
+            const content = document.createElement('div');
+            content.className = 'fg-dlg-msg';
+            content.id = dialog.querySelector('.fg-dlg-msg').id;
+            content.innerHTML = '<p>الاختيار: كل توزيعات done اللي لسه ليها فرع ماتحوّلش. التحويل من الإدارة.</p>' +
+                data.branches.map(b => '<section><h3>' + esc(names[b.branch_id]) + '</h3><p>عدد الأصناف: ' +
+                    esc(b.items_count) + ' · إجمالي القطع: ' + esc(b.total_pieces) + '</p><p>التوزيعات: ' +
+                    b.distributions.map(d => esc(d.distribution_id) + ' (فاتورة ' + esc(d.invoice_no) + ')').join('، ') +
+                    '</p><div class="ftable-wrap"><table class="ftable"><thead><tr><th>الكود</th><th>الصنف</th>' +
+                    '<th class="num">القطع</th></tr></thead><tbody>' + b.lines.map(l => '<tr><td>' + esc(l.code) +
+                        '</td><td>' + esc(l.name) + '</td><td class="num">' + esc(l.qty_pieces) + '</td></tr>').join('') +
+                    '</tbody></table></div></section>').join('') + skipped(data.skipped) +
+                (!data.branches.length ? window.ui.empty('مفيش كميات ينفع تتحوّل') : '');
+            dialog.querySelector('.fg-dlg-msg').replaceWith(content);
+            dialog.querySelector('.fg-dlg-ok').disabled = !data.branches.length;
+            if (!data.branches.length) dialog.querySelector('.fg-dlg-cancel').focus();
+            return await done && data.branches.length > 0;
+        }
+        async function showResult(data) {
+            const message = data.documents.length ? 'اتعملت التحويلات: ' + data.documents.map(d =>
+                d.doc_no + ' (' + names[d.branch_id] + ')').join('، ') : 'مفيش تحويلات جديدة اتعملت';
+            const done = window.fgAlert(message, 'نتيجة التحويل التلقائي');
+            await Promise.resolve(); await Promise.resolve();
+            const host = document.querySelector('.fg-dlg-bg:last-of-type .fg-dlg-msg');
+            if (host) {
+                const extra = document.createElement('div');
+                extra.innerHTML = skipped(data.skipped) + window.ui.btn('افتح التحويلات', {href: 'transfers.php', variant: 'outline'});
+                host.after(extra);
+            }
+            await done;
+        }
+        open.addEventListener('click', async function () {
+            if (busy) return;
+            busy = true;
+            open.disabled = true;
+            try {
+                const preview = (await apiFetch('stock_autotransfer_api.php?action=autotransfer_preview')).data;
+                if (await showPreview(preview)) {
+                    const result = await apiFetch('stock_autotransfer_api.php', {method: 'POST',
+                        body: {action: 'autotransfer_run', dist_ids: preview.dist_ids}});
+                    await showResult(result.data);
+                }
+            } catch (e) {
+                await window.fgAlert(e.message, 'التحويل ماكملش');
+            } finally {
+                busy = false;
+                open.disabled = false;
+            }
+        });
+    });
+    </script>
 
     <?php
     // جلب كل سجلات الاستلام المتاحة + تجميع الكروت

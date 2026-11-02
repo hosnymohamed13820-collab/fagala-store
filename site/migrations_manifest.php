@@ -50,4 +50,5 @@ return [
     '20261102_041_ashraqa_compat',
     '20261102_042_ashraqa_classify_null_entries',
     '20261102_043_salary_entries_account',
+    '20261102_044_stock_doc_dists',
 ];
