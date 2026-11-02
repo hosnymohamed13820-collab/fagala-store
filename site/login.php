@@ -204,7 +204,7 @@ $storeName = (site_id() === 'fagala' ? setting('store_name', site_profile()['sto
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=86<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=87<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {});
             });
         }
 

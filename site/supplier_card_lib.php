@@ -54,7 +54,7 @@ function sc_documents(array $s, string $from, string $to): array {
     foreach (SUPP_BRANCHES as $b) $branch.=' WHEN '.(int)$b['cb'].' THEN '.db()->quote($b['label']);
     $branch.=" ELSE CONCAT('فرع ',h.company_branch) END";
     $st=db()->prepare("SELECT CONCAT(h.sth_id,':',h.suffix) id,'hq' src,h.doc_type,
-        h.doc_no,NULL supplier_invoice,DATE(h.invoice_date) doc_date,$branch branch,
+        h.doc_no,NULL supplier_invoice,NULL return_reason,DATE(h.invoice_date) doc_date,$branch branch,
         COUNT(DISTINCT l.item_id) item_count,h.total_amount,h.net_amount
         FROM hq_invoices h LEFT JOIN hq_invoice_lines l ON l.sth_id=h.sth_id AND l.suffix=h.suffix
         WHERE h.supplier_id=? AND h.doc_type IN (2,6) AND h.invoice_date>=? AND h.invoice_date<DATE_ADD(?,INTERVAL 1 DAY)
@@ -62,12 +62,12 @@ function sc_documents(array $s, string $from, string $to): array {
     $st->execute([$s['erp_supplier_id'],$from,$to]); $rows=$st->fetchAll(PDO::FETCH_ASSOC);
     if ((string)setting('supplier_site_docs','1')!=='0') {
         $st=db()->prepare("SELECT CAST(d.id AS CHAR) id,'site' src,CASE WHEN d.doc_type='purchase' THEN 2 ELSE 6 END doc_type,
-            d.doc_no,d.ref_text supplier_invoice,d.doc_date,b.name branch,COUNT(DISTINCT l.item_id) item_count,
+            d.doc_no,d.ref_text supplier_invoice,d.return_reason,d.doc_date,b.name branch,COUNT(DISTINCT l.item_id) item_count,
             COALESCE(d.gross_amount,d.total_amount) total_amount,d.total_amount net_amount
             FROM stock_docs d LEFT JOIN stock_doc_lines l ON l.doc_id=d.id AND l.qty_pieces>0
             LEFT JOIN branches b ON b.id=d.branch_id
             WHERE d.supplier_id=? AND d.status='posted' AND d.doc_type IN ('purchase','purchase_return') AND d.doc_date>=? AND d.doc_date<=?
-            GROUP BY d.id,d.doc_type,d.doc_no,d.ref_text,d.doc_date,b.name,d.gross_amount,d.total_amount");
+            GROUP BY d.id,d.doc_type,d.doc_no,d.ref_text,d.return_reason,d.doc_date,b.name,d.gross_amount,d.total_amount");
         $st->execute([$s['id'],$from,$to]); $rows=array_merge($rows,$st->fetchAll(PDO::FETCH_ASSOC));
     }
     usort($rows,static fn($a,$b)=>strcmp($b['doc_date'],$a['doc_date']) ?: strcmp($b['id'],$a['id']));
@@ -173,11 +173,14 @@ function sc_card(string $code,bool $prices): ?array {
 }
 
 /** الحقول مسموحة بالاسم؛ الرصيد وربط ترو والكود القديم مستحيل يتكتبوا من المدخلات. */
-function sc_save(array $in,bool $prices,bool $retry=true): string {
-    $name=trim((string)($in['name'] ?? ''));
-    if ($name==='' || mb_strlen($name)>120) throw new InvalidArgumentException('اكتب اسم المورد، بحد أقصى ١٢٠ حرف');
-    $fields=['name'=>$name];
-    foreach (['phone'=>30,'phone2'=>30,'tax_no'=>40,'address'=>255,'notes'=>16000] as $key=>$max) {
+function sc_fields(array $in,bool $prices): array {
+    $fields=[];
+    if (array_key_exists('name',$in)) {
+        $name=trim((string)$in['name']);
+        if ($name==='' || mb_strlen($name)>120) throw new InvalidArgumentException('اكتب اسم المورد، بحد أقصى ١٢٠ حرف');
+        $fields['name']=$name;
+    }
+    foreach (['phone'=>30,'phone2'=>30,'tax_no'=>40,'address'=>255,'notes'=>16000,'receiving_location'=>150,'trade_specialty'=>100] as $key=>$max) {
         if (!array_key_exists($key,$in)) continue;
         $value=trim((string)$in[$key]);
         if (mb_strlen($value)>$max) throw new InvalidArgumentException('بيانات المورد أطول من المسموح');
@@ -199,6 +202,32 @@ function sc_save(array $in,bool $prices,bool $retry=true): string {
         if (!in_array((string)$in['is_active'],['0','1'],true)) throw new InvalidArgumentException('اختار حالة صحيحة');
         $fields['is_active']=(int)$in['is_active'];
     }
+    return $fields;
+}
+
+/** خانة واحدة بالكود الظاهر بس؛ اسم العمود لازم يعدّي القائمة قبل تكوين SQL. */
+function sc_save_field(string $code,string $field,mixed $value,bool $prices): mixed {
+    if (!in_array($field,['name','phone','phone2','tax_no','address','notes','payment_type','credit_days','credit_limit','is_active','receiving_location','trade_specialty'],true)) {
+        throw new InvalidArgumentException('الخانة دي مش مسموح تعديلها');
+    }
+    if (!is_scalar($value) && $value!==null) throw new InvalidArgumentException('اكتب قيمة صحيحة');
+    if ($field==='credit_limit' && !$prices) throw new InvalidArgumentException('حد الائتمان محتاج صلاحية الأرقام');
+    $fields=sc_fields([$field=>$value],$prices);
+    $s=sc_find($code);
+    if (!$s) throw new InvalidArgumentException('المورد مش متسجّل');
+    $saved=$fields[$field];
+    if ((string)($s[$field] ?? '')===(string)($saved ?? '')) return $saved;
+    try {
+        db()->prepare("UPDATE suppliers SET $field=? WHERE erp_supplier_code=?")->execute([$saved,trim($code)]);
+    } catch (PDOException $e) {
+        if ((int)($e->errorInfo[1] ?? 0)===1062) throw new DomainException('اسم المورد متسجّل قبل كده، اختار اسم تاني');
+        throw $e;
+    }
+    return $saved;
+}
+
+function sc_save(array $in,bool $prices,bool $retry=true): string {
+    $fields=sc_fields($in+['name'=>''],$prices); $name=$fields['name'];
     $code=trim((string)($in['code'] ?? '')); $pdo=db(); $pdo->beginTransaction();
     try {
         if ($code!=='') {

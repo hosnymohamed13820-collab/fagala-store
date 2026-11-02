@@ -130,6 +130,9 @@ require_once __DIR__ . '/includes/header.php';
         <label class="ffield purchase-notes">ملاحظات
           <input class="finput finput-sm" id="purchaseNotes" maxlength="1000" data-edit>
         </label>
+        <label id="purchaseReturnReasonWrap" class="ffield purchase-notes" <?= $initialType === 'purchase' ? 'hidden' : '' ?>>سبب المرتجع
+          <input class="finput finput-sm" id="purchaseReturnReason" maxlength="255" data-edit>
+        </label>
     </div>
   </div>
 
@@ -225,5 +228,5 @@ window.PURCHASE_CONFIG = {
 };
 </script>
 <script src="assets/barcode_scanner.js?v=9"></script>
-<script src="assets/purchase_docs.js?v=2" defer></script>
+<script src="assets/purchase_docs.js?v=3" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

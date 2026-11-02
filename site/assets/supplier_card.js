@@ -5,7 +5,7 @@
     const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     const num = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 3});
     const money = v => v == null ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 3});
-    const state = {card: boot.card, tab: 'info', dialog: null, generation: 0, search: 0, requests: {}};
+    const state = {card: boot.card, tab: 'info', dialog: null, generation: 0, search: 0, requests: {}, pending: new Set()};
     function status(msg, bad = false, id = 'scStatus') {
         const el = $(id); el.textContent = msg; el.hidden = !msg;
         el.className = 'falert ' + (bad ? 'falert-neg' : 'falert-info');
@@ -28,14 +28,14 @@
         return '<div class="ffield ' + (wide ? 'sc-wide' : '') + '"><label>' + esc(label) + '</label><div class="sc-val ' + classes + '" dir="' + dir + '">' + (html ? text : esc(text)) + '</div></div>';
     }
     function field(label, key, value, type = 'text', wide = false) {
-        const attrs = ' name="' + key + '" dir="' + (['phone','phone2','tax_no'].includes(key) ? 'ltr' : 'auto') + '"';
+        const attrs = ' name="' + key + '" data-field="' + key + '" data-old="' + esc(value ?? '') + '" dir="' + (['phone','phone2','tax_no'].includes(key) ? 'ltr' : 'auto') + '"';
         let input;
         if (key === 'notes') input = '<textarea class="finput"' + attrs + ' rows="3">' + esc(value) + '</textarea>';
         else if (key === 'payment_type' || key === 'is_active') {
             const opts = key === 'is_active' ? [['1','نشط'],['0','متوقف']] : [['','من غير تحديد'],['cash','كاش'],['credit','آجل']];
             input = '<select class="fselect"' + attrs + '>' + opts.map(([v,t]) => '<option value="' + v + '" ' + (String(value ?? '') === v ? 'selected' : '') + '>' + t + '</option>').join('') + '</select>';
         } else input = '<input class="finput"' + attrs + ' type="' + type + '" value="' + esc(value) + '"' + (key === 'name' ? ' required maxlength="120"' : '') + (type === 'number' ? ' min="0" step="' + (key === 'credit_limit' ? '0.01' : '1') + '"' : '') + '>';
-        return '<div class="ffield ' + (wide ? 'sc-wide' : '') + '"><label>' + esc(label) + '</label>' + input + '</div>';
+        return '<div class="ffield ' + (wide ? 'sc-wide' : '') + '"><label>' + esc(label) + '</label>' + input + '<small class="falert falert-info" data-save-status role="status" hidden></small></div>';
     }
     function fields(s) {
         return '<div class="sc-fields">' + read('كود المورد — تلقائي (تقديري قبل الحفظ)', s.erp_supplier_code || boot.nextCode, 'ltr') +
@@ -43,7 +43,7 @@
             field('التليفون الأساسي', 'phone', s.phone) + field('تليفون إضافي / واتساب', 'phone2', s.phone2) +
             field('طريقة التعامل', 'payment_type', s.payment_type) + field('فترة السماح (أيام)', 'credit_days', s.credit_days, 'number') +
             (boot.canPrices ? field('حد الائتمان', 'credit_limit', s.credit_limit, 'number') : '') + field('الحالة', 'is_active', s.is_active ?? 1) +
-            field('العنوان بالتفصيل', 'address', s.address, 'text', true) + field('ملاحظات التعامل', 'notes', s.notes, 'text', true) + '</div>';
+            field('العنوان بالتفصيل', 'address', s.address, 'text', true) + field('مكان الاستلام', 'receiving_location', s.receiving_location) + field('التخصص التجاري', 'trade_specialty', s.trade_specialty) + field('ملاحظات التعامل', 'notes', s.notes, 'text', true) + '</div>';
     }
     function newSupplier() {
         if (!boot.canEdit) return;
@@ -53,7 +53,7 @@
     function renderInfo(edit = false) {
         const s = state.card.supplier;
         if (edit) {
-            $('scInfo').innerHTML = '<form id="scEdit">' + fields(s) + '<div class="fcard-actions"><button class="btn btn-primary" type="submit">حفظ</button><button class="btn btn-ghost" type="button" id="scCancelEdit">إلغاء</button></div></form>';
+            $('scInfo').innerHTML = '<form id="scEdit">' + fields(s) + '<div class="fcard-actions"><button class="btn btn-ghost" type="button" id="scCancelEdit">قفل التعديل</button></div></form>';
             return;
         }
         const active = Number(s.is_active);
@@ -65,7 +65,7 @@
             read('اسم المورد التجاري', s.name, 'auto', true, 'sc-name-val') +
             '<div class="sc-fields sc-fields-contact">' + read('التليفون الأساسي', s.phone, 'ltr') + read('تليفون إضافي / واتساب', s.phone2, 'ltr') +
             read('طريقة الدفع المعتمدة', s.payment_type ? payment(s) : '—') + read('فترة السماح والائتمان', days + ' · ' + credit) + '</div>' +
-            '<div class="sc-sec">بيانات الموقع والتسليم</div><div class="sc-fields sc-fields-location">' + read('العنوان ومقر التوزيع', s.address) + read('مكان استلام البضاعة', null) + '</div>' +
+            '<div class="sc-sec">بيانات الموقع والتسليم</div><div class="sc-fields sc-fields-location">' + read('العنوان ومقر التوزيع', s.address) + read('مكان استلام البضاعة', s.receiving_location) + read('التخصص التجاري', s.trade_specialty) + '</div>' +
             '<div class="sc-sec">ملاحظات التعامل التجاري</div><div class="sc-val sc-notes">' + esc(s.notes || '—') + '</div>';
     }
     function payment(s) {return s.payment_type === 'credit' ? 'آجل' : s.payment_type === 'cash' ? 'كاش' : 'من غير تحديد';}
@@ -75,15 +75,21 @@
     function sideCard(title, value, details = '', tone = '') {
         return '<div class="fcard"><h3 class="sc-side-title">' + esc(title) + '</h3><div class="sc-big ' + tone + '">' + value + '</div>' + details + '</div>';
     }
-    function renderCard() {
-        const c = state.card, s = c.supplier, latest = c.latest;
-        const amount = value => boot.canPrices && value != null ? money(value) + ' ج.م' : '—';
-        const bigAmount = value => boot.canPrices && value != null ? money(value) + ' <small>ج.م</small>' : '—';
+    function renderHeader() {
+        const c = state.card, s = c.supplier;
         $('scCodeInput').value = s.erp_supplier_code; $('scCode').textContent = s.erp_supplier_code; $('scName').textContent = s.name;
         $('scActive').textContent = Number(s.is_active) ? 'نشط ✓' : 'متوقف';
         $('scActive').className = 'fchip ' + (Number(s.is_active) ? 'fchip-pos' : 'fchip-mute');
         $('scPayment').textContent = s.payment_type ? payment(s) + (s.payment_type === 'credit' && s.credit_days != null ? ' (' + num(s.credit_days) + ' يوم)' : '') : '—';
         $('scItemCount').textContent = num(c.counts.items) + ' صنف مورّد';
+        $('scClassification').textContent = s.trade_specialty || '';
+        $('scClassification').hidden = !s.trade_specialty;
+    }
+    function renderCard() {
+        const c = state.card, s = c.supplier, latest = c.latest;
+        const amount = value => boot.canPrices && value != null ? money(value) + ' ج.م' : '—';
+        const bigAmount = value => boot.canPrices && value != null ? money(value) + ' <small>ج.م</small>' : '—';
+        renderHeader();
         $('scPrint').href = c.statement_url; $('scPrint').hidden = !boot.canPrices;
         document.querySelectorAll('#scTabs [data-tab]').forEach(b => {b.textContent = b.dataset.label + (c.counts[b.dataset.tab] == null ? '' : ' (' + num(c.counts[b.dataset.tab]) + ')');});
         renderInfo();
@@ -199,6 +205,34 @@
         } catch (e) {detail.firstElementChild.textContent = e.message;}
         finally {delete detail.dataset.loading;}
     }
+    async function saveField(el) {
+        if (!boot.canEdit || !state.card || el.dataset.saving) return;
+        const value = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+        if (String(value) === el.dataset.old) return;
+        const supplier = state.card.supplier, old = el.dataset.old;
+        const mark = el.parentElement.querySelector('[data-save-status]');
+        const feedback = (message, tone) => {mark.textContent = message; mark.hidden = false; mark.className = 'falert falert-' + tone;};
+        feedback('جاري الحفظ…', 'info'); el.dataset.saving = '1'; el.disabled = true;
+        const request = api('save_field', {}, {code: supplier.erp_supplier_code, field: el.dataset.field, value});
+        state.pending.add(request);
+        try {
+            const data = await request;
+            const saved = String(data.value ?? '');
+            el.dataset.old = saved;
+            if (el.type === 'checkbox') el.checked = saved === '1'; else el.value = saved;
+            supplier[el.dataset.field] = data.value;
+            if (state.card.supplier === supplier) renderHeader();
+            feedback('✓', 'pos');
+        } catch (e) {
+            if (el.type === 'checkbox') el.checked = old === '1'; else el.value = old;
+            feedback(e.message, 'neg');
+        } finally {el.disabled = false; delete el.dataset.saving; state.pending.delete(request);}
+    }
+    async function closeEdit() {
+        const card = state.card;
+        await Promise.allSettled(Array.from(state.pending));
+        if (state.card === card) renderCard();
+    }
     async function save(form, create) {
         if (!form.reportValidity()) return;
         const body = Object.fromEntries(new FormData(form)); if (!create) body.code = state.card.supplier.erp_supplier_code;
@@ -218,7 +252,7 @@
             const row = e.target.closest('tr[data-doc]'); if (row && !e.target.closest('a,button,input')) {toggleRow(row); return;}
             const tab = e.target.closest('#scTabs [data-tab]'); if (tab) switchTab(tab.dataset.tab);
             if (e.target.closest('#scEditBtn')) renderInfo(true);
-            if (e.target.closest('#scCancelEdit')) renderInfo();
+            if (e.target.closest('#scCancelEdit')) closeEdit();
             if (e.target.closest('[data-cancel]')) {show(state.card ? 'card' : 'empty'); status('');}
         });
         document.addEventListener('keydown', e => {
@@ -231,9 +265,12 @@
             if (row) {e.preventDefault(); e.stopImmediatePropagation(); row.click();}
             else if (e.target === $('scSearchInput') && e.key === 'Enter') {e.preventDefault(); e.stopImmediatePropagation(); search();}
         }, true);
+        $('scInfo').addEventListener('blur', e => {if (e.target.matches('[data-field]') && e.target.tagName !== 'SELECT' && e.target.type !== 'checkbox') saveField(e.target);}, true);
+        $('scInfo').addEventListener('change', e => {if (e.target.matches('select[data-field],input[type=checkbox][data-field]')) saveField(e.target);});
         document.addEventListener('submit', e => {
             const form = e.target;
-            if (form.id === 'scCreate' || form.id === 'scEdit') {e.preventDefault(); save(form, form.id === 'scCreate');}
+            if (form.id === 'scEdit') {e.preventDefault(); document.activeElement.blur();}
+            else if (form.id === 'scCreate') {e.preventDefault(); save(form, true);}
             else if (form.dataset.period) {e.preventDefault(); loadTab(form.dataset.period);}
         });
         if (state.card) renderCard(); else if (boot.code) missing(boot.code);

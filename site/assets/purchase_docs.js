@@ -621,6 +621,7 @@ document.addEventListener('DOMContentLoaded', function () {
       ref_text: pe('purchaseRef').value.trim(),
       orig_doc_id: Number(pe('purchaseOrigin').value) || null,
       notes: pe('purchaseNotes').value.trim(),
+      return_reason: purchaseDocType === 'purchase_return' ? pe('purchaseReturnReason').value.trim() : null,
       inv_discount: purchaseDiscount(),
       lines: purchaseRows(),
       removed_lines: purchaseRemoved.slice()
@@ -662,6 +663,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = await purchaseSaving;
       purchaseRemoved.splice(0, payload.removed_lines.length);
       pe('purchaseDocId').value = String(data.doc_id);
+      pe('purchaseReturnReason').dataset.old = payload.return_reason ?? '';
       pe('purchaseDocNo').textContent = 'مسودة-' + data.doc_id;
       pe('purchaseType').disabled = true;
       purchaseRefreshPending().catch(error => purchaseMessage(error.message, true));
@@ -684,6 +686,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const wrap = pe('purchaseOriginWrap');
     const isReturn = purchaseDocType === 'purchase_return';
     wrap.hidden = !isReturn;
+    pe('purchaseReturnReasonWrap').hidden = !isReturn;
     if (!isReturn) { pe('purchaseOrigin').value = ''; return; }
     const supplierId = purchaseResolveSupplier();
     const branchId = Number(pe('purchaseBranch').value);
@@ -840,6 +843,9 @@ document.addEventListener('DOMContentLoaded', function () {
     pe('purchaseDate').value = doc.doc_date;
     pe('purchaseRef').value = doc.ref_text || '';
     pe('purchaseNotes').value = doc.notes || '';
+    pe('purchaseReturnReason').value = doc.return_reason || '';
+    pe('purchaseReturnReason').dataset.old = doc.return_reason || '';
+    pe('purchaseReturnReasonWrap').hidden = purchaseDocType !== 'purchase_return';
     pe('purchaseLines').textContent = '';
     data.lines.forEach(line => purchaseAddLine(line));
     pe('purchaseOriginWrap').hidden = purchaseDocType !== 'purchase_return';
@@ -945,6 +951,11 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!el) return;
     el.addEventListener('input', () => { purchaseQueueSave(); purchaseUpdatePrintHeader(); });
     el.addEventListener('blur', () => { purchaseQueueSave(true); purchaseUpdatePrintHeader(); });
+  });
+
+  pe('purchaseReturnReason').addEventListener('blur', () => {
+    const el = pe('purchaseReturnReason');
+    if (el.value.trim() !== (el.dataset.old ?? '')) purchaseQueueSave(true);
   });
 
   [['purchaseDiscountPct', 'percent'], ['purchaseDiscountAmount', 'amount']].forEach(([id, type]) => {

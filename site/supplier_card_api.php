@@ -11,6 +11,16 @@ sens_page();
 $part=(string)($_GET['part'] ?? '');
 $prices=can('supplier_card:prices') && sens_unlocked();
 try {
+    if (($_GET['action'] ?? '')==='save_field' || $part==='save_field') {
+        api_method('POST');api_require('supplier_card:edit');api_csrf();
+        $input=api_input();
+        if (($input['field'] ?? '')==='credit_limit') {
+            api_require('supplier_card:prices');
+            if (!$prices) api_fail('الأرقام الحساسة مقفولة',423,'locked');
+        }
+        if (!array_key_exists('value',$input)) api_fail('قيمة الخانة مطلوبة',400,'bad_request');
+        api_ok(['value'=>sc_save_field((string)($input['code'] ?? ''),(string)($input['field'] ?? ''),$input['value'],$prices)]);
+    }
     if ($part==='save') {
         api_method('POST');api_require('supplier_card:edit');api_csrf();api_idempotent();
         $input=api_input();

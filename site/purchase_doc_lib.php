@@ -145,6 +145,8 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
     }
     $branchId = (int) ($head['branch_id'] ?? 0);
     $supplierId = (int) ($head['supplier_id'] ?? 0);
+    $returnReason = $type === 'purchase_return' ? trim((string) ($head['return_reason'] ?? '')) : '';
+    if (mb_strlen($returnReason)>255) throw new RuntimeException('سبب المرتجع بحد أقصى ٢٥٥ حرف.');
     if ($branchId <= 0 || $branchId === 5 || !stock_get_branch_info($branchId)) {
         throw new RuntimeException('المخزن غير صالح.');
     }
@@ -177,14 +179,15 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             $docDate = $canEditDate ? (string) ($head['doc_date'] ?? date('Y-m-d')) : date('Y-m-d');
             $st = $pdo->prepare(
                 'INSERT INTO stock_docs
-                 (doc_type, branch_id, supplier_id, orig_doc_id, total_amount, inv_discount_type, inv_discount_value, gross_amount, status, doc_date, ref_text, notes, created_by, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'draft\', ?, ?, ?, ?, NOW())'
+                 (doc_type, branch_id, supplier_id, orig_doc_id, total_amount, inv_discount_type, inv_discount_value, gross_amount, status, doc_date, ref_text, notes, return_reason, created_by, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'draft\', ?, ?, ?, ?, ?, NOW())'
             );
             $st->execute([
                 $type, $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
                 $docDate,
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
+                $returnReason ?: null,
                 $uid,
             ]);
             $docId = (int) $pdo->lastInsertId();
@@ -201,12 +204,13 @@ function purchase_save_draft(PDO $pdo, string $type, array $head, array $lines, 
             }
             $docDate = $canEditDate ? (string) ($head['doc_date'] ?? $current['doc_date']) : (string) $current['doc_date'];
             $pdo->prepare(
-                'UPDATE stock_docs SET branch_id=?, supplier_id=?, orig_doc_id=?, total_amount=?, inv_discount_type=?, inv_discount_value=?, gross_amount=?, doc_date=?, ref_text=?, notes=?, hq_match=NULL WHERE id=?'
+                'UPDATE stock_docs SET branch_id=?, supplier_id=?, orig_doc_id=?, total_amount=?, inv_discount_type=?, inv_discount_value=?, gross_amount=?, doc_date=?, ref_text=?, notes=?, return_reason=?, hq_match=NULL WHERE id=?'
             )->execute([
                 $branchId, $supplierId, $origDocId, $total, $invType, $invValue, $gross,
                 $docDate,
                 trim((string) ($head['ref_text'] ?? '')) ?: null,
                 trim((string) ($head['notes'] ?? '')) ?: null,
+                $returnReason ?: null,
                 $docId,
             ]);
             // المسودات بتتعدل من غير حذف تاريخي: بنصفّر القديم، والسطور الحالية
