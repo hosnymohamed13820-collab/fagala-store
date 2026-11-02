@@ -118,9 +118,11 @@
         await Promise.resolve(); await Promise.resolve();
         const dialog = document.querySelector('.fg-dlg-bg:last-of-type .fg-dlg'); if (!dialog) return;
         state.dialog = dialog; dialog.classList.add('sc-search-dialog');
-        const host = dialog.querySelector('.fg-dlg-msg'); host.textContent = ''; host.appendChild($('scSearchView'));
-        $('scSearchView').hidden = false; $('scSearchInput').focus();
-        await done; $('scSearchView').hidden = true; $('scSearchHome').appendChild($('scSearchView')); state.dialog = null;
+        // المرجع محفوظ: المودال لما يتقفل بيتشال من الصفحة ومعاه الـview، فـ$('scSearchView') بيرجع null
+        const view = $('scSearchView');
+        const host = dialog.querySelector('.fg-dlg-msg'); host.textContent = ''; host.appendChild(view);
+        view.hidden = false; $('scSearchInput').focus();
+        await done; view.hidden = true; $('scSearchHome').appendChild(view); state.dialog = null;
     }
     function table(id, cols, rows, attributes = () => '', detail = false) {
         return '<div class="ftable-wrap"><table class="ftable" id="' + id + '"><thead><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : '') + '>' + c[1] + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr' + attributes(r) + ' data-v-total="' + esc(r.total ?? 0) + '" data-v-net="' + esc(r.net_amount ?? 0) + '" data-v-debit="' + esc(r.debit ?? 0) + '" data-v-credit="' + esc(r.credit ?? 0) + '" data-v-quantity="' + esc(r.quantity ?? 0) + '">' + cols.map(([k,,n]) => '<td' + (n ? ' class="num"' : '') + (k === 'name' ? ' dir="auto" class="name" title="' + esc(r[k]) + '"' : k === 'phone' ? ' dir="ltr"' : '') + '>' + (n ? (n === 'money' ? money(r[k]) : num(r[k])) : esc(r[k] ?? '—')) + '</td>').join('') + '</tr>' + (detail ? '<tr class="ftable-detail" data-xt-ignore data-xt-nosort hidden><td colspan="' + cols.length + '"></td></tr>' : '')).join('') + '</tbody></table></div>';
