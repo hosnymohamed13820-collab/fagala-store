@@ -1068,7 +1068,7 @@ require_once __DIR__ . '/includes/header.php';
         document.getElementById('r_id').value = data ? data.id : '';
         document.getElementById('r_name').value = data ? data.name_ar : '';
         const perms = data && Array.isArray(data.perms) ? data.perms : [];
-        rm.querySelectorAll('.perm-check').forEach(cb => {
+        rm.querySelectorAll('.perms-box .perm-check').forEach(cb => {
             cb.disabled = false;
             cb.checked = perms.includes(cb.value);
         });
@@ -1139,7 +1139,7 @@ require_once __DIR__ . '/includes/header.php';
         // تعليم الصلاحيات
         clearPerms();
         currentUserPerms = Array.isArray(data.perms) ? data.perms : [];
-        modal.querySelectorAll('.perm-check').forEach(cb => {
+        modal.querySelectorAll('.perms-box .perm-check').forEach(cb => {
             cb.checked = currentUserPerms.includes(cb.value);
         });
         // لو «كامل» متعلم للمديول، نقفل أجزاءه — وبعدين صلاحيات الدور
@@ -1165,7 +1165,7 @@ require_once __DIR__ . '/includes/header.php';
 
     function clearPerms() {
         if (!modal) return;
-        modal.querySelectorAll('.perm-check').forEach(cb => {
+        modal.querySelectorAll('.perms-box .perm-check').forEach(cb => {
             cb.checked = false;
             cb.disabled = false;
             cb.removeAttribute('data-role-lock');
