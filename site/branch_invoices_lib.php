@@ -79,6 +79,7 @@ function br_inv_user_scope()
  */
 function br_inv_can_view(int $branchId): bool
 {
+    if (!site_permission_enabled('branch_invoices')) return false;
     if (is_owner()) return true;
     $scope = br_inv_user_scope();
     return $scope === 'all' || $scope === $branchId;

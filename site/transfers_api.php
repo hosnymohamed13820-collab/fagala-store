@@ -26,6 +26,7 @@ declare(strict_types=1);
 define('API_MODE', true);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/api_lib.php';
+site_require_enabled('transfers');
 require_once __DIR__ . '/stock_transfer_lib.php';
 
 api_begin();

@@ -8,6 +8,7 @@
  * - تصدير إكسل (.xlsx) لأي تقرير — الجرد له تصدير CSV خاص بيه.
  */
 require_once __DIR__ . '/auth.php';
+if (isset($_GET['type'])) site_require_enabled('reports:' . (string) $_GET['type']);
 $requestedPurchaseReport = in_array((string)($_GET['type'] ?? ''), ['purchase_docs','purchase_by_item'], true)
     && can('purchase_docs:reports');
 $requestedItemMovement = ((string)($_GET['type'] ?? '') === 'item_movement')

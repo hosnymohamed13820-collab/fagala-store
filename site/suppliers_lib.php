@@ -13,8 +13,11 @@
  */
 declare(strict_types=1);
 
-require_once __DIR__ . '/recon_lib.php';
-require_once __DIR__ . '/purchase_doc_lib.php';
+require_once __DIR__ . '/includes/site_profile.php';
+if (site_profile()['true_integration']) {
+    require_once __DIR__ . '/recon_lib.php';
+    require_once __DIR__ . '/purchase_doc_lib.php';
+}
 
 if (!defined('SUPP_INTERNAL_IDS')) {
     define('SUPP_INTERNAL_IDS', [2, 3, 4, 7, 10, 21, 24]);

@@ -15,8 +15,8 @@ require_once __DIR__ . '/auth.php';
  */
 function sanitize_user_permissions(array $rawPerms): array
 {
-    $allMods   = all_modules();
-    $modParts  = module_parts();
+    $allMods   = site_enabled_modules();
+    $modParts  = site_enabled_parts();
 
     $selectedFull  = []; // المديولات الكاملة
     $selectedParts = []; // الأجزاء المحددة: [mod => [partKey => true]]

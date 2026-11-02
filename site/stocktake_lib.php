@@ -15,6 +15,7 @@
 // بادئة الجداول في SQL Server (اسم القاعدة + schema) — بتتعرّف في config.php.
 // *** لتغيير الفرع: غيّر SQLSRV_DB في config.php مرة واحدة، وكل النظام يتظبط ***
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/site_profile.php';
 const STK_PREFIX      = SQLSRV_PREFIX;   // من config.php (اسم قاعدة الفرع)
 const STK_CODES_TABLE = STK_PREFIX . 'ITEM_CODES';
 const STK_IC_CODE     = 'IC_CODE';        // الباركود
@@ -87,6 +88,8 @@ function stk_lookup_code(string $code): ?array
     } catch (Throwable $ex) {
         // نكمّل على الجسر
     }
+
+    if (!site_profile()['true_integration']) return null;
 
     // ٢) الجسر (لو النسخة المحلية فاضية)
     $sql = "SELECT TOP 1 c." . STK_ITEM_ID . " AS item_id, c." . STK_IC_CODE . " AS code,
@@ -195,6 +198,8 @@ function stk_linked_codes(string $code): ?array
     } catch (Throwable $ex) {
         // نكمّل على الجسر
     }
+
+    if (!site_profile()['true_integration']) return null;
 
     // ٢) الجسر (لو النسخة المحلية فاضية)
     $r = sqlsrv_query(
@@ -767,6 +772,7 @@ function stk_cost_for_code(string $code): ?float
     $code = trim($code);
     if ($code === '') return null;
     if (array_key_exists($code, $cache)) return $cache[$code];
+    if (!site_profile()['true_integration']) return $cache[$code] = null;
     try {
         $rows = sqlsrv_query(
             "SELECT TOP 1 ci." . STK_COST_COL . " AS cost
@@ -912,6 +918,8 @@ function stk_search_by_name(string $term, int $limit = 50): array
     } catch (Throwable $ex) {
         error_log('stk_search_by_name local: ' . $ex->getMessage());
     }
+
+    if (!site_profile()['true_integration']) return [];
 
     // ٢) الجسر fallback لو المحلي مرجّعش نتائج.
     $bridgeWhere = implode(

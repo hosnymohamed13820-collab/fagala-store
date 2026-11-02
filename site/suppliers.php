@@ -7,6 +7,28 @@
  */
 require_once __DIR__ . '/auth.php';
 require_permission('suppliers');
+// إشراقة بتعرض الموردين المحليين؛ كشف ترو مش مصدر حساباتها.
+if (!site_profile()['true_integration']) {
+    if (isset($_GET['supplier']) || isset($_GET['export'])) site_require_enabled('suppliers:statement');
+    require_once __DIR__ . '/suppliers_lib.php';
+    $localSuppliers = suppliers_get_active_list(db());
+    $page_title = 'الموردون';
+    $active_module = 'suppliers';
+    require __DIR__ . '/includes/header.php';
+    ?>
+    <div class="fcard">
+        <h2>الموردون</h2>
+        <div class="ftable-wrap"><table class="ftable">
+            <thead><tr><th>الاسم</th></tr></thead>
+            <tbody><?php foreach ($localSuppliers as $supplier): ?>
+                <tr><td><?= e($supplier['name']) ?></td></tr>
+            <?php endforeach; ?></tbody>
+        </table></div>
+    </div>
+    <?php
+    require __DIR__ . '/includes/footer.php';
+    exit;
+}
 require_once __DIR__ . '/finance.php';
 
 $pdo  = db();

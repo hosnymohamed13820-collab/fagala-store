@@ -1,5 +1,8 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/includes/site_profile.php';
+if (!site_profile()['true_integration']) { http_response_code(404); exit; }
+
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/fifo_lib.php';

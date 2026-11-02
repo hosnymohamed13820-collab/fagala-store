@@ -21,7 +21,9 @@ check() {
 
 # ١. السيشن باسم خاص
 check_session_name() {
-    grep -q "session_name('FGSESS')" site/auth.php && \
+    # من بريف ٨٤٧ الاسم بييجي من site_profile() (كود واحد للموقعين)
+    grep -qF "session_name(site_profile()['session_name'])" site/auth.php && \
+    grep -qF "'ASHSESS' : 'FGSESS'" site/includes/site_profile.php && \
     grep -q "session_name('ASHSESS')" ashraqa/auth.php
 }
 check "السيشن باسم خاص (FGSESS للفجالة · ASHSESS لإشراقة)" check_session_name

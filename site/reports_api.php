@@ -33,6 +33,7 @@ api_method('GET');
 
 $repParts = module_parts()['reports'] ?? [];
 $type = (string) ($_GET['type'] ?? '');
+if (!site_permission_enabled('reports:' . $type)) api_fail('مالكش صلاحية', 403, 'forbidden');
 
 if (!array_key_exists($type, $repParts)) {
     api_fail('نوع التقرير غير صحيح', 400, 'bad_request');

@@ -382,7 +382,7 @@ function sms_calc_totals(array $allMessages): array
 function sms_get_webhook_info(bool $isOwner): array
 {
     return [
-        'hook_url'   => 'https://hosnimanagement.com/sms_hook.php',
+        'hook_url'   => site_profile()['public_base_url'] . '/sms_hook.php',
         'hook_token' => $isOwner ? (string) (SYNC_AGENT_TOKENS['sms_phone'] ?? '') : '',
     ];
 }

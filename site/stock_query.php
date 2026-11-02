@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/includes/site_profile.php';
+if (!site_profile()['true_integration']) { http_response_code(404); exit; }
+
 /**
  * stock_query.php — استعلام أرصدة الأصناف في الإدارة والفروع
  * نظام الفجالة ستور المالي

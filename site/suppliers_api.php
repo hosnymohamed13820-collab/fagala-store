@@ -20,6 +20,17 @@ require_login();
 // نفس حماية الصفحة بالحرف
 api_require('suppliers');
 
+// في إشراقة القايمة المحلية بس؛ كشف ترو يتقفل قبل مكتباته واستعلاماته.
+if (!site_profile()['true_integration']) {
+    $localPart = (string) ($_GET['part'] ?? (isset($_GET['supplier']) ? 'statement' : 'summary'));
+    api_require('suppliers:' . $localPart);
+    if ($localPart !== 'list') api_fail('الجزء المطلوب غير معروف', 400, 'bad_request');
+    api_method('GET');
+    require_once __DIR__ . '/suppliers_lib.php';
+    $activeList = suppliers_get_active_list(db());
+    api_ok(['suppliers' => $activeList, 'count' => count($activeList)]);
+}
+
 require_once __DIR__ . '/suppliers_lib.php';
 
 // الموردون في المرحلة الحالية قراءة فقط

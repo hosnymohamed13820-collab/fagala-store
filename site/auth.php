@@ -37,6 +37,8 @@ function auth_bearer(): ?string
 }
 
 // ===== بدء الجلسة بإعدادات آمنة أو تخطيها لطلبات التوكن =====
+require_once __DIR__ . '/includes/site_profile.php';
+
 if (defined('API_MODE') && auth_bearer() !== null) {
     $_SESSION = [];
     define('API_BEARER', true);
@@ -72,7 +74,7 @@ if (defined('API_MODE') && auth_bearer() !== null) {
     // 🔴 اسم جلسة خاص بالفجالة — إشراقة متركّبة جوّه public_html ومفتوحة على
     //    hosnimanagement.com/ashraqa/ بنفس الكوكي ونفس مكان التخزين، فالجلسة كانت
     //    بتعدّي بين الموقعين (مراجعة ٢٢ سبتمبر ٢٠٢٦). اسم مختلف = كوكي مختلف.
-    session_name('FGSESS');
+    session_name(site_profile()['session_name']);
     session_start();
 
     // تجديد متدحرج: كل طلب من مستخدم داخل بيمدّد الكوكي من جديد، فاللي
@@ -112,7 +114,7 @@ if (!headers_sent()) {
  */
 function all_modules(): array
 {
-    return [
+    $modules = [
         'dashboard'     => ['label' => 'الرئيسية',          'icon' => 'ti-layout-dashboard', 'url' => 'dashboard.php'],
         'price_inquiry' => ['label' => 'استعلام الأسعار',   'icon' => 'ti-scan',          'url' => 'price_inquiry.php'],
         'remote_scan'   => ['label' => 'سكانر الكمبيوتر',   'icon' => 'ti-device-mobile', 'url' => 'remote_scan.php'],
@@ -153,6 +155,10 @@ function all_modules(): array
         'transfers'     => ['label' => 'التحويلات',        'icon' => 'ti-transfer',         'url' => 'transfers.php'],
         'view_all'      => ['label' => 'مشاهدة كل الموقع', 'icon' => 'ti-eye',              'url' => ''],
     ];
+    if (site_id() === 'ashraqa') {
+        $modules['ashraqa_purchases'] = ['label' => 'مشتريات إشراقة', 'icon' => 'ti-file-invoice', 'url' => 'ashraqa_purchases.php'];
+    }
+    return $modules;
 }
 
 /**
@@ -406,7 +412,7 @@ function auth_fill_session(array $user, int $permsVer, int $pwVer): void
         'perms_version' => $permsVer,
         'pw_version'    => $pwVer,
     ];
-    $_SESSION['app'] = 'fagala';
+    $_SESSION['app'] = site_profile()['app'];
 
     // تحميل صلاحيات المستخدم في الجلسة (مرة واحدة)
     load_permissions((int) $user['id']);
@@ -458,7 +464,7 @@ function auth_token_login(): void
 
         $permsVer = (int) ($row['perms_version'] ?? 1);
         auth_fill_session($row, $permsVer, $userPwVer);
-        $_SESSION['app'] = 'fagala';
+        $_SESSION['app'] = site_profile()['app'];
 
         // تحديث آخر استخدام لو أقدم من 5 دقايق
         $lastUsed = !empty($row['last_used_at']) ? strtotime((string) $row['last_used_at']) : 0;
@@ -604,6 +610,7 @@ function is_owner(): bool
  */
 function can(string $moduleKey): bool
 {
+    if (!site_permission_enabled($moduleKey)) return false;
     if (!is_logged_in()) {
         return false;
     }
@@ -640,6 +647,7 @@ function can(string $moduleKey): bool
  */
 function can_module(string $moduleKey): bool
 {
+    if (!site_permission_enabled($moduleKey)) return false;
     if (!is_logged_in()) {
         return false;
     }
@@ -757,7 +765,7 @@ function require_login(): void
         auth_bounce();
     }
 
-    if (($_SESSION['app'] ?? '') !== 'fagala') {
+    if (($_SESSION['app'] ?? '') !== site_profile()['app']) {
         logout();
         auth_bounce();
     }
@@ -842,6 +850,7 @@ function require_login(): void
  */
 function require_permission(string $moduleKey): void
 {
+    site_require_enabled($moduleKey);
     require_login();
 
     // بريف ١١٨: لو الدخول للصفحة نفسها عدى بسبب view_all بس
@@ -903,6 +912,7 @@ function require_permission(string $moduleKey): void
  */
 function require_module_access(string $moduleKey): void
 {
+    site_require_enabled($moduleKey);
     require_login();
 
     // بريف ١١٨: لو الدخول للصفحة نفسها عدى بسبب view_all بس

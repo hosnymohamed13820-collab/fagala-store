@@ -10,6 +10,7 @@ declare(strict_types=1);
 // سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
 require_once __DIR__ . '/errlog_lib.php';
 errlog_install();
+require_once __DIR__ . '/includes/site_profile.php';
 require_once __DIR__ . '/push_lib.php';   // فيه PUSH_WORKER_TOKEN
 
 header('Content-Type: application/json; charset=utf-8');
@@ -49,10 +50,10 @@ try {
     }
 
     // الملخص اليومي للإدارة (بريف ١١١) — مرة في اليوم، وقبل سحب الطابور عشان يشتغل والطابور فاضي
-    try { require_once __DIR__ . '/daily_summary_lib.php'; ds_maybe_send($pdo); } catch (Throwable $ex) { /* صامت */ }
+    if (site_profile()['true_integration']) try { require_once __DIR__ . '/daily_summary_lib.php'; ds_maybe_send($pdo); } catch (Throwable $ex) { /* صامت */ }
 
     // مزامنة مشاكل الفواتير دورياً كل ١٠ دقائق (بريف ١٩٩)
-    try { require_once __DIR__ . '/invoice_problems_lib.php'; ip_maybe_recalc_auto($pdo, 10); } catch (Throwable $ex) { /* صامت */ }
+    if (site_profile()['true_integration']) try { require_once __DIR__ . '/invoice_problems_lib.php'; ip_maybe_recalc_auto($pdo, 10); } catch (Throwable $ex) { /* صامت */ }
 
     // ١) سحب ٥٠ صف من الطابور بترتيب المعرّف
     $st = $pdo->prepare(
@@ -150,7 +151,7 @@ try {
 
     // استيراد حركات المخزن من المرآة تلقائياً كل ١٠ دقائق (بريف ٢١٨ · اتنقل هنا في ٢١٨ر)
     // 🔴 بعد ما الطابور خلص: أول استيراد (١٠٠٠ فاتورة ≈ ١٠ ث) كان بيأخّر إرسال الإشعارات.
-    try { require_once __DIR__ . '/stock_import_lib.php'; stock_import_maybe_run($pdo, 0, 10); } catch (Throwable $ex) { /* صامت */ }
+    if (site_profile()['true_integration']) try { require_once __DIR__ . '/stock_import_lib.php'; stock_import_maybe_run($pdo, 0, 10); } catch (Throwable $ex) { /* صامت */ }
 
     echo json_encode([
         'ok'     => true,

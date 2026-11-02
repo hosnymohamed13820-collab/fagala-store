@@ -5,7 +5,8 @@
  */
 declare(strict_types=1);
 
-require_once __DIR__ . '/agent_lib.php';
+require_once __DIR__ . '/includes/site_profile.php';
+if (site_permission_enabled('settings:agents')) require_once __DIR__ . '/agent_lib.php';
 
 /**
  * مصفوفة الإعدادات القابلة للتعديل من الواجهة:
@@ -13,7 +14,7 @@ require_once __DIR__ . '/agent_lib.php';
  */
 function settings_schema(): array
 {
-    return [
+    $schema = [
         'store_name'                => ['اسم المحل', 'text'],
         'print_header'              => ['عنوان الطباعة (أعلى التقارير)', 'text'],
         'print_footer'              => ['تذييل الطباعة', 'text'],
@@ -41,6 +42,11 @@ function settings_schema(): array
         'vapid_public_key'          => ['المفتاح العام لإشعارات الموبايل (VAPID)', 'text'],
         'vapid_subject'             => ['بريد التواصل لإشعارات الموبايل (mailto:...)', 'text'],
     ];
+    if (!site_permission_enabled('settings:integration')) {
+        $schema = array_filter($schema, static fn($key) => !str_starts_with($key, 'agent_')
+            && !in_array($key, ['supplier_site_docs', 'shortage_supervisor_id', 'purchase_supervisor_id', 'purchase_supervisor_2_id', 'purchase_date_editable', 'stock_allow_negative'], true), ARRAY_FILTER_USE_KEY);
+    }
+    return $schema;
 }
 
 /**

@@ -20,6 +20,7 @@ $editable = settings_schema();
 $settingsUsers = settings_users($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    site_require_enabled('settings:' . (string) ($_POST['action'] ?? ''));
     if (($_POST['action'] ?? '') === 'invoice_guard') {
         header('Content-Type: application/json; charset=utf-8');
         if (!is_owner()) {
@@ -267,6 +268,7 @@ require_once __DIR__ . '/includes/header.php';
     </form>
 </div>
 
+<?php if (site_permission_enabled('settings:daily_summary_save')): ?>
 <?php
 // ── كارت الملخص اليومي (بريف ١١١) ──
 $dsOn    = (string) setting('daily_summary_on', '0') === '1';
@@ -369,6 +371,7 @@ $dsUsers = settings_ds_users($pdo);
     });
 })();
 </script>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="fcard">
@@ -537,6 +540,7 @@ $dsUsers = settings_ds_users($pdo);
      الجسر اتشال: النظام بقى بيقرا من نسخة محلية بيغذّيها الوكلاء،
      فالسؤال المهم بقى "الوكلاء شغالين؟" مش "الجسر رادّ؟".
      ===================================================================== -->
+<?php if (site_permission_enabled('settings:agents')): ?>
 <?php
 require_once __DIR__ . '/agent_lib.php';
 $agents   = agent_list();
@@ -696,7 +700,9 @@ $aMin     = agent_cfg_int('agent_alert_min', 60);
     <?php endif; ?>
 </div>
 
-<?php if (is_owner()): ?>
+<?php endif; ?>
+
+<?php if (is_owner() && site_permission_enabled('settings:invoice_guard')): ?>
     <?php
         $guardInvoices = settings_guard_invoices($pdo);
     ?>

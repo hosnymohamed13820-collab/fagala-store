@@ -14,6 +14,9 @@
  * =====================================================================
  */
 declare(strict_types=1);
+require_once __DIR__ . '/includes/site_profile.php';
+if (!site_profile()['true_integration'] && !site_profile()['redux_sync']) { http_response_code(404); exit; }
+
 
 // سجل الأخطاء — الملف ده مابيعملش require لـauth.php ولا agent_lib.php
 require_once __DIR__ . '/errlog_lib.php';
@@ -34,10 +37,11 @@ function hq_die(string $msg, int $code = 400): void {
 
 // طلب watermarks (GET) — الوكيل بيسأل: آخر تعديل نقلته لكل شهر كان إيه؟
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'GET' && isset($_GET['watermarks'])) {
+    if (!site_profile()['true_integration']) { http_response_code(404); exit; }
     // التوكن من الهيدر بس. كان بييجي في الـURL (?token=) وده بيتسجّل
     // في لوجات السيرفر بالنص الصريح.
     $token = (string) ($_SERVER['HTTP_X_SYNC_TOKEN'] ?? '');
-    if (!synctok_ok('hq', (string) $token, ['hq'])) hq_die('Unauthorized.', 401);
+    if (!(site_profile()['true_integration'] ? synctok_ok('hq', (string) $token, ['hq']) : (defined('HQ_SYNC_TOKEN') && HQ_SYNC_TOKEN !== '' && hash_equals(HQ_SYNC_TOKEN, (string) $token)))) hq_die('Unauthorized.', 401);
     require_once __DIR__ . '/config.php';
     try {
         $pdo = db();
@@ -65,11 +69,14 @@ $token = $_SERVER['HTTP_X_SYNC_TOKEN'] ?? '';
 $payload = json_decode($raw, true);
 if (!is_array($payload)) hq_die('Invalid JSON.');
 if ($token === '' && isset($payload['token'])) $token = (string) $payload['token'];
-if (!synctok_ok('hq', (string) $token, ['hq'])) hq_die('Unauthorized.', 401);
+if (!(site_profile()['true_integration'] ? synctok_ok('hq', (string) $token, ['hq']) : (defined('HQ_SYNC_TOKEN') && HQ_SYNC_TOKEN !== '' && hash_equals(HQ_SYNC_TOKEN, (string) $token)))) hq_die('Unauthorized.', 401);
 
 // 3) نوع الدفعة (items / stores) — كل نوع ليه معالجة
 $kind = (string) ($payload['kind'] ?? '');
 $rows = $payload['rows'] ?? null;
+if (!site_profile()['true_integration'] && !in_array($kind, ['items', 'codes', 'stores', 'balances', 'balances_reset', 'balances_commit'], true)) {
+    http_response_code(404); exit;
+}
 if (!is_array($rows)) hq_die('Missing rows.');
 if (count($rows) > HQ_MAX_ROWS) hq_die('Too many rows.');
 

@@ -19,10 +19,10 @@ if (!is_logged_in()) {
 }
 
 $u           = current_user();
-$storeName   = setting('store_name', 'مكتبات الفجالة ستور');
+$storeName   = (site_id() === 'fagala' ? setting('store_name', site_profile()['store_name_default']) : site_profile()['display_name']);
 $pageTitle   = $page_title   ?? 'النظام المالي';
 $active      = $active_module ?? '';
-$modules     = all_modules();
+$modules     = site_enabled_modules();
 unset($modules['view_all']); // صلاحية مشاهدة فقط — لا تظهر في القائمة الجانبية (بريف ١١٨)
 $vapidPublicKey = (string) setting('vapid_public_key', '');
 require_once __DIR__ . '/nav_icons.php';
@@ -78,7 +78,7 @@ require_once __DIR__ . '/nav_icons.php';
     <?php endif; ?>
     <title><?= e($pageTitle) ?> — <?= e($storeName) ?></title>
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json?v=4">
+    <link rel="manifest" href="<?= e(site_profile()['manifest']) ?>">
     <meta name="theme-color" content="#16233d">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
@@ -96,6 +96,8 @@ require_once __DIR__ . '/nav_icons.php';
             // شريط المتصفح في الموبايل لازم يقلب هو كمان
             var m = document.querySelector('meta[name="theme-color"]');
             if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            var siteColors = <?= json_encode(site_profile()['theme_colors'], JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+            if (m && siteColors) m.setAttribute('content', siteColors[t]);
         })();
 
         // تبديل الوضع الليلي. بيتخزّن في localStorage فبيفضل مع اليوزر
@@ -107,14 +109,16 @@ require_once __DIR__ . '/nav_icons.php';
             try { localStorage.setItem('fagala-theme', t); } catch (e) {}
             var m = document.querySelector('meta[name="theme-color"]');
             if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            var siteColors = <?= json_encode(site_profile()['theme_colors'], JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+            if (m && siteColors) m.setAttribute('content', siteColors[t]);
         }
     </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="الفجالة">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
-    <link rel="icon" href="favicon.ico?v=4" sizes="any">
+    <meta name="apple-mobile-web-app-title" content="<?= e(site_profile()['short_name']) ?>">
+    <link rel="apple-touch-icon" href="<?= e(site_profile()['icons']['apple-touch-icon']) ?>">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= e(site_profile()['icons']['favicon-32']) ?>">
+    <link rel="icon" href="<?= e(site_profile()['icons']['favicon']) ?>" sizes="any">
     <script>
         // 🔴 الـ?v= مش زيادة — كاش الاستضافة (LiteSpeed) كان بيمسك `sw.js`
         // من غير كويري ويرجّع نسخة قديمة، فالمتصفح يفضل يسجّل service worker
@@ -122,7 +126,7 @@ require_once __DIR__ . '/nav_icons.php';
         // FCM تقبلها وترد ٢٠١، ومحدش يعرضها — من غير أي خطأ في أي مكان.
         // 🔴 لما تزوّد VERSION في sw.js، زوّد الرقم ده معاه هنا وفي login.php.
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=81').catch(() => {}));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=82<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {}));
         }
     </script>
     <!-- الأيقونات: subset محلي (77 أيقونة / 15KB) بدل خط Tabler الكامل
@@ -135,6 +139,9 @@ require_once __DIR__ . '/nav_icons.php';
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/fagala.css?v=38">
+    <?php if (site_profile()['theme_css'] !== null): ?>
+    <link rel="stylesheet" href="<?= e(site_profile()['theme_css']) ?>">
+    <?php endif; ?>
 </head>
 <body>
 <script>
@@ -173,7 +180,7 @@ require_once __DIR__ . '/nav_icons.php';
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <span class="dot"><img src="icon-192.png?v=4" alt=""></span>
+            <span class="dot"><img src="<?= e(site_profile()['icons']['icon-192']) ?>" alt=""></span>
             <span><?= e($storeName) ?></span>
         </div>
         <nav class="sidebar-nav">
@@ -493,7 +500,7 @@ require_once __DIR__ . '/nav_icons.php';
 // لو المستخدم عنده طلب نواقص مفتوح مستنيه: بانر ثابت فوق كل صفحة
 // + فحص دوري كل دقيقتين بيهزّ الموبايل ويرجّع يفكّره — لحد ما يقفلها.
 $shortagePending = 0;
-try {
+if (site_permission_enabled('shortage')) try {
     if (function_exists('shortage_pending_count')) {
         $shortagePending = shortage_pending_count((int) $u['id']);
     } else {
@@ -511,7 +518,7 @@ try {
 // ===== بانر حالة وكلاء المزامنة (للأونر والمراقب المحدد) =====
 // بيظهر مخفي ويتملّى من nag_check.php كل دورة — نفس آلية بانر النواقص.
 $agtShow = false;
-try {
+if (site_permission_enabled('dashboard:agents')) try {
     require_once __DIR__ . '/../agent_lib.php';
     $agtUser = current_user();
     $agtShow = $agtUser && agent_is_watcher($agtUser);
@@ -621,6 +628,7 @@ try {
 <script>
 (function () {
     var last = <?= $shortagePending ?>;
+    if (!<?= json_encode(site_profile()['true_integration']) ?>) return;
     function check() {
         fetch('nag_check.php', {cache: 'no-store'})
             .then(function (r) { return r.json(); })

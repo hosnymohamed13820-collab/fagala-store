@@ -118,6 +118,7 @@ function api_fail(string $msg, int $http = 400, string $code = 'bad_request'): n
  */
 function api_require(string $perm): void
 {
+    if (!site_permission_enabled($perm)) api_fail('مالكش صلاحية', 403, 'forbidden');
     if (!can($perm)) {
         api_fail('مالكش صلاحية', 403, 'forbidden');
     }

@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/includes/site_profile.php';
+if (!site_profile()['true_integration']) { http_response_code(404); exit; }
+
 /**
  * pc_scan.php — صفحة الاقتران: بتظهر QR يمسحه الموبايل فيبقى سكانر للكمبيوتر
  * نظام الفجالة ستور المالي

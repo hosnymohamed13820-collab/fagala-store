@@ -28,6 +28,8 @@ require_once __DIR__ . '/settings_lib.php';
 
 $part = (string) ($_GET['part'] ?? ($_POST['part'] ?? ''));
 
+api_require('settings:' . $part);
+
 $allowedParts = [
     'values',
     'users',

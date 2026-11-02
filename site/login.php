@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$storeName = setting('store_name', 'مكتبات الفجالة ستور');
+$storeName = (site_id() === 'fagala' ? setting('store_name', site_profile()['store_name_default']) : site_profile()['display_name']);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -43,7 +43,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل الدخول — <?= e($storeName) ?></title>
     <!-- PWA -->
-    <link rel="manifest" href="manifest.json?v=4">
+    <link rel="manifest" href="<?= e(site_profile()['manifest']) ?>">
     <meta name="theme-color" content="#16233d">
     <script>
         // 🔴 لازم يفضل هنا — فوق كل الاستايلات وتحت ميتا theme-color.
@@ -59,21 +59,26 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             document.documentElement.setAttribute('data-theme', t);
             var m = document.querySelector('meta[name="theme-color"]');
             if (m) m.setAttribute('content', t === 'dark' ? '#0a111c' : '#16233d');
+            var siteColors = <?= json_encode(site_profile()['theme_colors'], JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+            if (m && siteColors) m.setAttribute('content', siteColors[t]);
         })();
     </script>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="الفجالة">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=4">
-    <link rel="icon" href="favicon.ico?v=4" sizes="any">
+    <meta name="apple-mobile-web-app-title" content="<?= e(site_profile()['short_name']) ?>">
+    <link rel="apple-touch-icon" href="<?= e(site_profile()['icons']['apple-touch-icon']) ?>">
+    <link rel="icon" type="image/png" sizes="32x32" href="<?= e(site_profile()['icons']['favicon-32']) ?>">
+    <link rel="icon" href="<?= e(site_profile()['icons']['favicon']) ?>" sizes="any">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/login_fx.css?v=10">
     <link rel="stylesheet" href="assets/tabler-subset.css?v=2">
     <link rel="stylesheet" href="assets/fagala.css?v=38">
+    <?php if (site_profile()['theme_css'] !== null): ?>
+    <link rel="stylesheet" href="<?= e(site_profile()['theme_css']) ?>">
+    <?php endif; ?>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -156,7 +161,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
     <div class="lfx" aria-hidden="true"></div>
     <div class="fcard" id="loginCard">
         <div class="brand">
-            <div class="logo"><img src="icon-192.png?v=4" alt="" width="58" height="58"></div>
+            <div class="logo"><img src="<?= e(site_profile()['icons']['icon-192']) ?>" alt="" width="58" height="58"></div>
             <h1><?= e($storeName) ?></h1>
             <p>النظام المالي المتكامل</p>
         </div>
@@ -199,7 +204,7 @@ $storeName = setting('store_name', 'مكتبات الفجالة ستور');
             window.addEventListener('load', () => {
                 // الرقم ده لازم يبقى نفس اللي في includes/header.php وفي VERSION
                 // بتاعة sw.js — شوف التعليق هناك، الكاش كان بيرجّع نسخة قديمة.
-                navigator.serviceWorker.register('sw.js?v=81').catch(() => {});
+                navigator.serviceWorker.register('sw.js?v=82<?= site_id() === 'ashraqa' ? '&site=ashraqa' : '' ?>').catch(() => {});
             });
         }
 

@@ -96,6 +96,17 @@ function hr_get_employees_list(PDO $pdo): array
     )->fetchAll();
 }
 
+/** الأعمدة اللي تاب الموظفين بيعرضها بس، وباقي الحقول للحسابات الداخلية. */
+function hr_get_employees_tab(PDO $pdo): array
+{
+    return $pdo->query(
+        "SELECT e.full_name, e.job_title, e.base_salary, e.expected_in, e.expected_out, b.name AS branch_name,
+                COALESCE((SELECT SUM(COALESCE(remaining, amount)) FROM employee_advances WHERE employee_id=e.id AND status='pending'),0) AS pending_advance
+         FROM employees e
+         LEFT JOIN branches b ON b.id=e.branch_id WHERE e.is_active=1 ORDER BY e.full_name"
+    )->fetchAll();
+}
+
 /**
  * سجلات الحضور والانصراف لشهر محدد
  */

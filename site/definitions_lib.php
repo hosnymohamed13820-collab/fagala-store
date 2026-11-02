@@ -18,6 +18,7 @@ function def_branches_list(): array
  */
 function def_store_list(): array
 {
+    if (!site_permission_enabled('definitions:stores')) return [];
     try {
         require_once __DIR__ . '/receiving_lib.php';
         return sqlsrv_store_names();
@@ -128,6 +129,11 @@ function def_suppliers_list(string $filter = 'all'): array
                 ORDER BY CAST(COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') AS UNSIGNED) ASC,
                          COALESCE(NULLIF(s.erp_supplier_code, ''), MAX(h.supplier_code), '—') ASC,
                          s.name ASC";
+    if (!site_permission_enabled('definitions:true_suppliers')) {
+        $suppSql = "SELECT s.id, s.name, s.payment_type, s.erp_supplier_code,
+            COALESCE(NULLIF(s.erp_supplier_code, ''), '—') AS display_code
+            FROM suppliers s ORDER BY CAST(s.erp_supplier_code AS UNSIGNED), s.erp_supplier_code, s.name";
+    }
     $rows = db()->query($suppSql)->fetchAll();
 
     if ($filter === 'all' || $filter === '') {

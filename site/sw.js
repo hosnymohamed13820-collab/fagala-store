@@ -27,18 +27,21 @@
 //       على كل جهاز أول ما يفتح النظام. مفيش تنضيف يدوي.
 // =====================================================================
 
-const VERSION = 'v81'; // v81: كارت المورد | v79: ٨٣٥–٨٣٨ كارت الصنف · فاتورة الشراء والطباعة · نسيت الباسورد | v78: ٨٣٤g كروت مع الفلتر | v77: ٨٣٤e إطار الصف المفتوح | v76: brief 834 FIFO | v75: بريف ٨٣٢b زرارين الشريط | v74: ٨٣٠b alert hidden | v73: ٨٢٧ finput-cell | v72: ٨٢٨ .main | v71: تلوين صفوف الجدول بريف 825 | v70: ٨٢٤ xtable+tabs | v69: ٨١٩ form-inline | v68: رجوع window.ui في app.js | v67: ٨١١ موبايل | v66: ui.esc | v65: تظبيط فلاتر وكود مكتبة الواجهة | v64: مكتبة الواجهة الموحّدة | v63: فلاتر مترابطة زي إكسيل | v57: ترتيب أنواع الأذونات | v56: وضوح الألوان ٢ | v55: وضوح الألوان | v54: توكن apiFetch | v53: بحث الموردين | v52: جدول موحد ftable | v51: apiFetch | v50: إيموجي ← أيقونات | v49: إشراقة: قفل الأرقام + invoices.js | v48: علامات الأصناف في الفواتير رجعت | v47: شخصيات الدخول: امسك وارمي | v46: شخصيات الدخول: المطاردة والمربع | v45: شخصيات الدخول: محرّك حركة ومشاهد | v44: بريف ٦٠ | v43: بريف ٥٧ | v42: رقم كارت الخزنة بيصغر مع الشاشة | v41: أيقونة شمس/قمر بتلف في سلايدر الوضع الليلي | v40: رجوع ألوان الوضع الفاتح الأصلية | v39: خلفية وكروت الوضع الفاتح أغمق | v38: توست موحّد وحوارات مودال وحالات الانتظار | v37: خلفية الوضع الفاتح أهدى | v36: الزرار الموحّد + z-index بالتوكنات | v35: توكنات نظام التصميم | v34: حكايات أيقونات الموقع + سهم الترتيب | v33: حكايات أيقونات السايدبار | v32: أيقونة F بخط إشراقة + لوجو شريط الإشعارات شفاف | v31: منع أخطاء السكانر وزرار القايمة الجانبية | v30: منع انقلاب إشارة الأرقام السالبة | v29: فاصلة الآلاف في خانات فلوس الخزينة | v28: إصلاح دعم الوضع الليلي في acctree.js | v27: فلتر التاريخ شجرة سنة/شهر/يوم | v26: منع قفل لوحة فلتر xtable على الموبايل عند الفوكس والـ resize | v25: app.js فيه formSubmit والمتصفحات كانت ماسكة القديم | v24: fagala.css اتحدّث والمتصفحات كانت لسه ماسكة القديم | v23: الأصل اللي مش في الكاش بيروح للشبكة صح | v22: الوضع الليلي | v21: الضغط على الإشعار بيعلّمه مقروء | v20: بترد على GET_VERSION
+const VERSION = 'v82'; // v81: كارت المورد | v79: ٨٣٥–٨٣٨ كارت الصنف · فاتورة الشراء والطباعة · نسيت الباسورد | v78: ٨٣٤g كروت مع الفلتر | v77: ٨٣٤e إطار الصف المفتوح | v76: brief 834 FIFO | v75: بريف ٨٣٢b زرارين الشريط | v74: ٨٣٠b alert hidden | v73: ٨٢٧ finput-cell | v72: ٨٢٨ .main | v71: تلوين صفوف الجدول بريف 825 | v70: ٨٢٤ xtable+tabs | v69: ٨١٩ form-inline | v68: رجوع window.ui في app.js | v67: ٨١١ موبايل | v66: ui.esc | v65: تظبيط فلاتر وكود مكتبة الواجهة | v64: مكتبة الواجهة الموحّدة | v63: فلاتر مترابطة زي إكسيل | v57: ترتيب أنواع الأذونات | v56: وضوح الألوان ٢ | v55: وضوح الألوان | v54: توكن apiFetch | v53: بحث الموردين | v52: جدول موحد ftable | v51: apiFetch | v50: إيموجي ← أيقونات | v49: إشراقة: قفل الأرقام + invoices.js | v48: علامات الأصناف في الفواتير رجعت | v47: شخصيات الدخول: امسك وارمي | v46: شخصيات الدخول: المطاردة والمربع | v45: شخصيات الدخول: محرّك حركة ومشاهد | v44: بريف ٦٠ | v43: بريف ٥٧ | v42: رقم كارت الخزنة بيصغر مع الشاشة | v41: أيقونة شمس/قمر بتلف في سلايدر الوضع الليلي | v40: رجوع ألوان الوضع الفاتح الأصلية | v39: خلفية وكروت الوضع الفاتح أغمق | v38: توست موحّد وحوارات مودال وحالات الانتظار | v37: خلفية الوضع الفاتح أهدى | v36: الزرار الموحّد + z-index بالتوكنات | v35: توكنات نظام التصميم | v34: حكايات أيقونات الموقع + سهم الترتيب | v33: حكايات أيقونات السايدبار | v32: أيقونة F بخط إشراقة + لوجو شريط الإشعارات شفاف | v31: منع أخطاء السكانر وزرار القايمة الجانبية | v30: منع انقلاب إشارة الأرقام السالبة | v29: فاصلة الآلاف في خانات فلوس الخزينة | v28: إصلاح دعم الوضع الليلي في acctree.js | v27: فلتر التاريخ شجرة سنة/شهر/يوم | v26: منع قفل لوحة فلتر xtable على الموبايل عند الفوكس والـ resize | v25: app.js فيه formSubmit والمتصفحات كانت ماسكة القديم | v24: fagala.css اتحدّث والمتصفحات كانت لسه ماسكة القديم | v23: الأصل اللي مش في الكاش بيروح للشبكة صح | v22: الوضع الليلي | v21: الضغط على الإشعار بيعلّمه مقروء | v20: بترد على GET_VERSION
 // v80: ٨٤٠ تقسيم الأصناف + ui.combo
-const CACHE = 'fagala-' + VERSION;
+// كل نطاق بينضف كاشه بس، حتى لو الموقعين على نفس الدومين.
+const CACHE_PREFIX = 'site-' + encodeURIComponent(self.registration.scope) + '-';
+const CACHE = CACHE_PREFIX + VERSION;
 
+const BRANDING = new URL(self.location.href).searchParams.get('site') === 'ashraqa' ? './assets/branding/ashraqa/' : './';
 const ASSETS = [
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable.png',
-  './apple-touch-icon.png',
-  './favicon-32.png',
-  './badge-96.png',
+  BRANDING + 'manifest.json',
+  BRANDING + 'icon-192.png',
+  BRANDING + 'icon-512.png',
+  BRANDING + 'icon-maskable.png',
+  BRANDING + 'apple-touch-icon.png',
+  BRANDING + 'favicon-32.png',
+  BRANDING + 'badge-96.png',
   './assets/app.js',
   './assets/xtable.js',
   './assets/insta_recon.js',
@@ -84,7 +87,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
@@ -105,14 +108,14 @@ self.addEventListener('fetch', (e) => {
         fetch(req).then((res) => {
           putIfGood(req, res);
           return res;
-        }).catch(() => caches.match(req))
+        }).catch(() => caches.open(CACHE).then((c) => c.match(req)))
       );
       return;
     }
 
     // باقي الأصول: من الكاش الأول (أسرع)، وبيتحدّث في الخلفية
     e.respondWith(
-      caches.match(req).then((hit) => {
+      caches.open(CACHE).then((c) => c.match(req)).then((hit) => {
         if (hit) {
           // موجود في الكاش؟ ردّ بيه فوراً وحدّثه في الخلفية،
           // فأي ملف اترفع صح بيوصل في الفتحة اللي بعدها.
@@ -159,8 +162,8 @@ self.addEventListener('push', (e) => {
   const title = (data && data.title) ? data.title : 'إشعار جديد';
   const options = {
     body: (data && data.body) ? data.body : '',
-    icon: './icon-192.png',
-    badge: './badge-96.png',
+    icon: BRANDING + 'icon-192.png',
+    badge: BRANDING + 'badge-96.png',
     data: {
       link: (data && data.link) ? data.link : './'
     }

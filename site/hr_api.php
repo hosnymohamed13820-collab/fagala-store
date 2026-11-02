@@ -75,7 +75,7 @@ if ($part === 'employees') {
         exit;
     }
     $response['data'] = [
-        'employees' => hr_api_mask_employee_salary(hr_get_employees_list($pdo)),
+        'employees' => hr_api_mask_employee_salary(hr_get_employees_tab($pdo)),
     ];
 }
 
@@ -224,8 +224,7 @@ elseif ($part === 'all') {
         'pending_requests' => hr_get_pending_requests_count($pdo),
     ];
     if (can('hr:employees')) {
-        $empListFull = hr_get_employees_list($pdo);
-        $data['employees'] = hr_api_mask_employee_salary($empListFull);
+        $data['employees'] = hr_api_mask_employee_salary(hr_get_employees_tab($pdo));
     }
     if (can('hr:attendance')) {
         $attMonth = date('Y-m');

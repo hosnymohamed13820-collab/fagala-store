@@ -24,8 +24,8 @@ require_once __DIR__ . '/users_lib.php';
 require_once __DIR__ . '/salary_pin_lib.php';
 
 $pdo         = db();
-$modules     = all_modules();
-$moduleParts = module_parts();
+$modules     = site_enabled_modules();
+$moduleParts = site_enabled_parts();
 $flash       = '';
 $flashType   = 'success';
 
@@ -111,8 +111,8 @@ function format_user_perm_chips(array $uperms, array $modules, array $modulePart
  */
 function perm_picker_html(string $idPrefix): string
 {
-    $modules     = all_modules();
-    $moduleParts = module_parts();
+    $modules     = site_enabled_modules();
+    $moduleParts = site_enabled_parts();
 
     ob_start();
     ?>

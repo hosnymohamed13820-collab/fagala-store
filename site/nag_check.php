@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/includes/site_profile.php';
+if (!site_profile()['true_integration']) { http_response_code(404); exit; }
+
 /**
  * nag_check.php — فحص دوري خفيف من الهيدر (كل دقيقتين)
  * نظام الفجالة ستور المالي
