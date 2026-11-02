@@ -207,7 +207,7 @@ function hr_cancel_penalty(PDO $pdo, int $penaltyId, string $reason, bool $sendN
     $pdo->beginTransaction();
     try {
         $chk = $pdo->prepare('SELECT p.status, p.amount, e.user_id FROM employee_penalties p
-            JOIN employees e ON e.id=p.employee_id WHERE p.id=?');
+            JOIN employees e ON e.id=p.employee_id WHERE p.id=? FOR UPDATE');
         $chk->execute([$penaltyId]);
         $penalty = $chk->fetch(PDO::FETCH_ASSOC);
         if (!$penalty) throw new RuntimeException('الجزاء ده مش موجود.');

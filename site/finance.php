@@ -2550,6 +2550,7 @@ function emp_ledger_balances(array $employeeIds, ?PDO $pdo = null): array
 }
 
 const ADVANCE_ACCOUNT_ID = 10;
+const SALARY_ACCOUNT_ID = 33;
 
 /**
  * صرف سلفة لموظف عبر إذن صرف.
@@ -3256,6 +3257,17 @@ function pay_salary(
             throw new RuntimeException('مرتب هذا الشهر مسجّل بالفعل.');
         }
 
+        // نقفل المعلّق قبل الحساب، ونقفل صرف نفس الصفوف بس بعده.
+        $penaltyLock = $pdo->prepare("SELECT id FROM employee_penalties WHERE employee_id = ? AND status = 'pending' FOR UPDATE");
+        $penaltyLock->execute([$employeeId]);
+        $penaltyIds = $penaltyLock->fetchAll(PDO::FETCH_COLUMN);
+        $bonusLock = $pdo->prepare("SELECT id FROM employee_bonuses WHERE employee_id = ? AND status = 'pending' FOR UPDATE");
+        $bonusLock->execute([$employeeId]);
+        $bonusIds = $bonusLock->fetchAll(PDO::FETCH_COLUMN);
+        $deficitLock = $pdo->prepare("SELECT id FROM custody_deficits WHERE employee_id = ? AND status = 'pending' FOR UPDATE");
+        $deficitLock->execute([$employeeId]);
+        $deficitIds = $deficitLock->fetchAll(PDO::FETCH_COLUMN);
+
         $calc = compute_salary($employeeId, $month, $from, $to, $leaveDaysOverride, $dueDaysOverride, $monthlyTakeOverride, $standingTakeOverride, $cashierTakeOverride);
         $name = $calc['employee_name'] ?? ('الموظف #' . $employeeId);
         $isFixed = ($calc['salary_mode'] ?? 'hours') === 'fixed';
@@ -3491,19 +3503,40 @@ function pay_salary(
 
         // صرف الصافي من الخزينة (لو موجب)
         if ($netSalary > 0) {
+            $salaryAccountId = null;
+            try {
+                $accountCheck = $pdo->prepare('SELECT id FROM accounts WHERE id = ? AND is_active = 1');
+                $accountCheck->execute([SALARY_ACCOUNT_ID]);
+                if ($accountCheck->fetchColumn() !== false) {
+                    $salaryAccountId = SALARY_ACCOUNT_ID;
+                } else {
+                    error_log('حساب المرتبات مش موجود أو مش نشط؛ المرتب هيتسجل من غير قيد حساب.');
+                }
+            } catch (Throwable $ex) {
+                error_log('فحص حساب المرتبات ماكملش؛ المرتب هيتسجل من غير قيد حساب: ' . $ex->getMessage());
+            }
             post_journal($treasuryId, $netSalary, 0,
                 'صرف مرتب: ' . $name . ' (' . $month . ')', $date,
-                'salary', $salaryId, $userId, $pdo);
+                'salary', $salaryId, $userId, $pdo, $salaryAccountId);
         }
 
         // إقفال المستحقات والخصومات المعلّقة مع تسجيل ربط المرتب
-        $pdo->prepare('UPDATE employee_bonuses SET status="paid", paid_in_salary_id=? WHERE employee_id=? AND status="pending"')
-            ->execute([$salaryId, $employeeId]);
+        if (!empty($bonusIds)) {
+            $bonusPlaceholders = implode(',', array_fill(0, count($bonusIds), '?'));
+            $pdo->prepare('UPDATE employee_bonuses SET status="paid", paid_in_salary_id=? WHERE id IN (' . $bonusPlaceholders . ') AND status="pending"')
+                ->execute(array_merge([$salaryId], $bonusIds));
+        }
 
-        $pdo->prepare('UPDATE employee_penalties SET status="deducted", deducted_in_salary_id=? WHERE employee_id=? AND status="pending"')
-            ->execute([$salaryId, $employeeId]);
-        $pdo->prepare('UPDATE custody_deficits SET status="recovered", recovered_in_salary_id=? WHERE employee_id=? AND status="pending"')
-            ->execute([$salaryId, $employeeId]);
+        if (!empty($penaltyIds)) {
+            $penaltyPlaceholders = implode(',', array_fill(0, count($penaltyIds), '?'));
+            $pdo->prepare('UPDATE employee_penalties SET status="deducted", deducted_in_salary_id=? WHERE id IN (' . $penaltyPlaceholders . ') AND status="pending"')
+                ->execute(array_merge([$salaryId], $penaltyIds));
+        }
+        if (!empty($deficitIds)) {
+            $deficitPlaceholders = implode(',', array_fill(0, count($deficitIds), '?'));
+            $pdo->prepare('UPDATE custody_deficits SET status="recovered", recovered_in_salary_id=? WHERE id IN (' . $deficitPlaceholders . ') AND status="pending"')
+                ->execute(array_merge([$salaryId], $deficitIds));
+        }
 
         // (٢-أ) إقفال الورديات التي تم فحص عجزها في الفترة (جملة INSERT واحدة بقيم متعددة)
         if (!empty($calc['cashier_shift_details'])) {
@@ -3617,7 +3650,7 @@ function reverse_salary(
 
         // ٢. القيد العكسي في اليومية (استلام = دائن بنفس المبلغ وعلى نفس الخزينة)
         $jeStmt = $pdo->prepare(
-            'SELECT treasury_id, debit, credit
+            'SELECT treasury_id, debit, credit, account_id
              FROM journal_entries
              WHERE ref_type = "salary" AND ref_id = ?
              ORDER BY id ASC'
@@ -3628,6 +3661,20 @@ function reverse_salary(
         if ($jeRow && (float)$jeRow['debit'] > 0.00001) {
             $treasuryId = (int) $jeRow['treasury_id'];
             $amount     = (float) $jeRow['debit'];
+            $salaryAccountId = $jeRow['account_id'] !== null ? (int) $jeRow['account_id'] : null;
+            if ($salaryAccountId === null) {
+                try {
+                    $accountCheck = $pdo->prepare('SELECT id FROM accounts WHERE id = ? AND is_active = 1');
+                    $accountCheck->execute([SALARY_ACCOUNT_ID]);
+                    if ($accountCheck->fetchColumn() !== false) {
+                        $salaryAccountId = SALARY_ACCOUNT_ID;
+                    } else {
+                        error_log('حساب المرتبات مش موجود أو مش نشط؛ إرجاع المرتب هيتسجل من غير قيد حساب.');
+                    }
+                } catch (Throwable $ex) {
+                    error_log('فحص حساب المرتبات ماكملش؛ إرجاع المرتب هيتسجل من غير قيد حساب: ' . $ex->getMessage());
+                }
+            }
             post_journal(
                 $treasuryId,
                 0,
@@ -3637,7 +3684,8 @@ function reverse_salary(
                 'salary_reverse',
                 $salaryId,
                 $userId,
-                $pdo
+                $pdo,
+                $salaryAccountId
             );
         }
 
