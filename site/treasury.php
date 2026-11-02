@@ -448,6 +448,22 @@ function je_notes_cell(array $row, bool $canEditEntry, bool $canEditNotes, bool 
     <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
+<script>
+    function openModal(id){
+        if (id === 'disburseModal' && typeof resetDisburseModal === 'function') resetDisburseModal();
+        const el = document.getElementById(id);
+        if (el) el.classList.add('open');
+        const type = id === 'receiptModal' ? document.getElementById('receiptType')
+                   : id === 'disburseModal' ? document.getElementById('disburseType') : null;
+        if (type) type.focus();
+    }
+    function closeModal(id){
+        if (id === 'disburseModal' && typeof resetDisburseModal === 'function') resetDisburseModal();
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('open');
+    }
+</script>
+
 <div class="summary-bar">
     <div>
         <div class="label">إجمالي الأرصدة (شامل عهد الفروع)</div>
@@ -1056,21 +1072,10 @@ $today = date('Y-m-d');
 <?= acctree_data() ?>
 <script src="assets/acctree.js?v=186"></script>
 <script>
-    function openModal(id){
-        if (id === 'disburseModal') resetDisburseModal();
-        document.getElementById(id).classList.add('open');
-        const type = id === 'receiptModal' ? document.getElementById('receiptType')
-                   : id === 'disburseModal' ? document.getElementById('disburseType') : null;
-        if (type) type.focus();
-    }
-    function closeModal(id){
-        if (id === 'disburseModal') resetDisburseModal();
-        document.getElementById(id).classList.remove('open');
-    }
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => {
             if (e.target === m) {
-                if (m.id === 'disburseModal') resetDisburseModal();
+                if (m.id === 'disburseModal' && typeof resetDisburseModal === 'function') resetDisburseModal();
                 m.classList.remove('open');
             }
         });
