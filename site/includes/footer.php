@@ -143,5 +143,9 @@
 <script src="assets/xtable.js?v=14"></script>
 <script src="assets/anicons.js?v=1"></script>
 <script>document.querySelectorAll('.sens-lock-card').forEach(function (card) { card.classList.add('fcard'); });</script>
+<?php if (is_real_owner() && ($_GET['ui_edit'] ?? '') === '1'): require_once dirname(__DIR__) . '/ui_edits_lib.php'; ?>
+<script>window.FAGALA_UI_EDITOR = <?= json_encode(['variants' => ui_edits_variants()], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+<script src="assets/ui_editor.js?v=2"></script>
+<?php endif; ?>
 </body>
 </html>

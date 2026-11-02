@@ -15,6 +15,14 @@ function ui_code(string $code): string
 }
 ?>
 <main class="content-container">
+    <div class="fcard-actions">
+        <?= ui_btn('طلبات تعديل الشكل', ['variant' => 'ghost', 'href' => 'ui_edits.php']) ?>
+        <?= ui_btn('نموذج للتجربة', ['variant' => 'ghost', 'href' => 'mockups/example.php?ui_edit=1']) ?>
+    </div>
+    <?= ui_card_open('الإضاءة (.fhl)') ?>
+    <div class="fcard fhl">الإضاءة بتتضاف لأي مكوّن بكلاس fhl، وبتشتغل في الفاتح والليلي.</div>
+    <?= ui_code('<div class="fcard fhl">مكوّن عليه إضاءة</div>') ?>
+    <?= ui_card_close() ?>
     <?= ui_page_head('مكتبة الواجهة الموحّدة', 'المرجع الحي للخانات والزراير والكروت والجداول. غيّر الوضع من السويتش العادي عشان تراجع الفاتح والليلي.') ?>
 
     <?= ui_card_open('الخانات') ?>
