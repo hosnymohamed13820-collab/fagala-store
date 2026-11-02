@@ -413,6 +413,23 @@ function im_duplicate_codes(array $codes, ?int $excludeCodeId = null): array
     return array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
+/**
+ * حساب كود الصنف التالي للقسم المحدد.
+ */
+function im_next_sys_code(PDO $pdo, int $sectionId, bool $lock): string
+{
+    $prefix = str_pad((string) $sectionId, 2, '0', STR_PAD_LEFT);
+    $sql = 'SELECT MAX(sys_code) FROM item_master WHERE sys_code LIKE ? AND CHAR_LENGTH(sys_code)=?' . ($lock ? ' FOR UPDATE' : '');
+    $st = $pdo->prepare($sql);
+    $st->execute([$prefix . '%', strlen($prefix) + 5]);
+    $last = $st->fetchColumn();
+    $sequence = $last ? (int) substr((string) $last, strlen($prefix)) + 1 : 1;
+    if ($sequence > 99999) {
+        throw new DomainException('مسلسل القسم خلص');
+    }
+    return $prefix . str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+}
+
 /** @param array<string,mixed> $input */
 function im_create(array $input, int $userId, bool $canPrices, int $attempt = 0): int
 {
@@ -479,13 +496,8 @@ function im_create(array $input, int $userId, bool $canPrices, int $attempt = 0)
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $prefix = str_pad((string)(int)($input['cat_is1_id'] ?? 0), 2, '0', STR_PAD_LEFT);
-        $st = $pdo->prepare("SELECT MAX(sys_code) FROM item_master WHERE sys_code LIKE ? AND CHAR_LENGTH(sys_code)=? FOR UPDATE");
-        $st->execute([$prefix.'%',strlen($prefix)+5]);
-        $last = $st->fetchColumn();
-        $sequence = $last ? (int)substr((string)$last,strlen($prefix))+1 : 1;
-        if ($sequence>99999) throw new DomainException('مسلسل القسم خلص');
-        $sysCode = $prefix.str_pad((string)$sequence,5,'0',STR_PAD_LEFT);
+        $sectionId = (int) ($input['cat_is1_id'] ?? 0);
+        $sysCode = im_next_sys_code($pdo, $sectionId, true);
         $transactionCodes = $clean;
         foreach ($transactionCodes as &$codeRow) if ($codeRow['code']==='') $codeRow['code']=$sysCode;
         unset($codeRow);

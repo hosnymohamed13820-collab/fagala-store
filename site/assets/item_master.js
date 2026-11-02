@@ -1,13 +1,13 @@
 (function(){
     'use strict';
     const IM_BOOT=JSON.parse(document.getElementById('imBoot').textContent);
-    const state={q:'',page:1,item:null,options:{},missing:'',dialog:null};
+    const state={q:'',page:1,item:null,options:{},missing:'',dialog:null,expectedCode:''};
     const $=id=>document.getElementById(id);
     const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     const val=v=>(v===null||v===undefined||v==='')?'—':esc(v);
     const money=v=>(v===null||v===undefined)?'—':Number(v).toFixed(2);
     const checked=v=>Number(v)===1?'checked':'';
-    function status(id,msg,type=''){const el=$(id);if(!el)return;el.textContent=msg;el.hidden=!msg;el.className='falert falert-'+(type==='err'?'neg':type==='ok'?'pos':'info');}
+    function status(id,msg,type=''){const el=$(id);if(!el)return;el.textContent=msg;el.hidden=!msg;el.className='falert falert-'+(type==='err'?'neg':type==='ok'?'pos':type==='warn'?'warn':'info');}
     function debounce(fn,ms){let t;return function(){clearTimeout(t);const a=arguments;t=setTimeout(()=>fn.apply(null,a),ms);};}
     async function loadCategories(){const r=await apiFetch('item_master_api.php?part=categories');state.options=r.data.options||{};fillCats();}
     function kindOptions(kind,selected,selectedName){const rows=state.options[kind]||[];const empty=kind==='section'?'من غير قسم':'من غير تحديد';const has=rows.some(c=>String(c.id)===String(selected));let html='<option value="">'+empty+'</option>'+rows.map(c=>'<option value="'+Number(c.id)+'" '+(String(c.id)===String(selected)?'selected':'')+'>'+esc(c.name)+'</option>').join('');if(selected!==null&&selected!==undefined&&selected!==''&&!has)html+='<option value="'+Number(selected)+'" selected>'+esc(selectedName||('#'+selected))+' — موقوف</option>';return html;}
@@ -21,7 +21,41 @@
     }
     function showView(view){$('imCard').hidden=view!=='card';if($('imCreate'))$('imCreate').hidden=view!=='create';if(view==='card')$('imMissing').hidden=true;}
     function backToSearch(){showView(state.item?'card':'search');$('imMissing').hidden=true;$('imLookup').focus();}
-    function newItem(barcode=''){showView('create');$('imMissing').hidden=true;$('imCreate').reset();status('imCreateStatus','');fillCats();$('imCreate').elements.barcode.value=barcode;$('imCreate').elements.name1.focus();}
+    function newItem(barcode=''){
+        showView('create');
+        $('imMissing').hidden=true;
+        $('imCreate').reset();
+        status('imCreateStatus','');
+        fillCats();
+        if($('imCreateCode'))$('imCreateCode').value='اختار القسم الأول';
+        state.expectedCode='';
+        $('imCreate').elements.barcode.value=barcode;
+        $('imCreate').elements.name1.focus();
+    }
+    async function updateNextCode(){
+        const codeEl=$('imCreateCode');
+        if(!codeEl)return;
+        const catEl=$('imCreateCat');
+        const sectionId=catEl?catEl.value.trim():'';
+        if(!sectionId){
+            codeEl.value='اختار القسم الأول';
+            state.expectedCode='';
+            return;
+        }
+        codeEl.value='…';
+        try{
+            const r=await apiFetch('item_master_api.php?action=next_code&section='+encodeURIComponent(sectionId));
+            if(catEl&&catEl.value.trim()===sectionId){
+                codeEl.value=r.data.code;
+                state.expectedCode=r.data.code;
+            }
+        }catch(e){
+            if(catEl&&catEl.value.trim()===sectionId){
+                codeEl.value='تعذّر جلب الكود';
+                state.expectedCode='';
+            }
+        }
+    }
     function closeSearch(){if(state.dialog)state.dialog.querySelector('.fg-dlg-ok').click();}
     async function nameSearch(){
         if(state.dialog)return;
@@ -81,11 +115,25 @@
     async function saveCode(el){const now=el.type==='checkbox'?(el.checked?1:0):el.value;if(String(now)===String(el.dataset.old))return;const tr=el.closest('tr');status('imCardStatus','جاري حفظ الكود…');try{const r=await apiFetch('item_master_api.php?part=code_save',{method:'POST',body:rowPayload(tr)});tr.dataset.codeId=r.data.id;el.dataset.old=String(now);status('imCardStatus','اتحفظ','ok');}catch(e){status('imCardStatus',e.message,'err');}}
     async function savePrice(el){const code=el.dataset.priceCode,reason=document.querySelector('[data-price-reason="'+CSS.escape(code)+'"]');status('imCardStatus','جاري حفظ السعر…');try{await apiFetch('item_master_api.php?part=price',{method:'POST',body:{code:code,price:el.value,reason:reason?reason.value:''}});status('imCardStatus','السعر اتحفظ في الموقع واتضاف للسجل','ok');await openItem(state.item.source,state.item.main.id);}catch(e){status('imCardStatus',e.message,'err');}}
     async function createItem(ev){ev.preventDefault();const f=ev.currentTarget;if(!f.reportValidity())return;const body={sale_price_class:'code'};
-        ['name1','cat_is1_id','cat_description_id','cat_type_id','cat_stage_id','cat_company_id','item_type','base_unit'].forEach(k=>body[k]=f.elements[k].value);
+        ['name1','cat_is1_id','cat_description_id','cat_type_id','cat_stage_id','cat_company_id','item_type','base_unit'].forEach(k=>body[k]=f.elements[k]?f.elements[k].value:'');
         const base={code:f.elements.barcode.value.trim(),name1:body.name1,code_type:0,unit_name:body.base_unit,unit_factor:1,whole_qty:1,is_purchase_code:1,is_sale_code:1};
-        if(IM_BOOT.canPrices&&f.elements.price.value!=='')base.price=f.elements.price.value;
+        if(IM_BOOT.canPrices&&f.elements.price&&f.elements.price.value!=='')base.price=f.elements.price.value;
         body.codes=[base];status('imCreateStatus','جاري إنشاء الصنف…');const submit=f.querySelector('[type="submit"]');submit.disabled=true;
-        try{const r=await apiFetch('item_master_api.php?part=create',{method:'POST',body});status('imCreateStatus','الصنف اتعمل','ok');await openItem('site',r.data.id);}catch(e){status('imCreateStatus',e.message,'err');}finally{submit.disabled=false;}
+        const expectedCode=state.expectedCode||($('imCreateCode')?$('imCreateCode').value.trim():'');
+        try{
+            const r=await apiFetch('item_master_api.php?part=create',{method:'POST',body});
+            const savedCode=r.data.code||'';
+            const isDiff=Boolean(expectedCode && savedCode && savedCode!==expectedCode && expectedCode!=='اختار القسم الأول');
+            const msg=isDiff
+                ? ('اتسجّل بكود '+savedCode+' بدل '+expectedCode+' — حد سجّل صنف في نفس القسم قبلك')
+                : ('الصنف اتعمل بكود '+savedCode);
+            const toastType=isDiff?'warn':'ok';
+            const toast=(window.ui&&window.ui.toast)||window.fgToast;
+            if(typeof toast==='function')toast(msg,toastType,isDiff?8000:3500);
+            status('imCreateStatus',msg,isDiff?'warn':'ok');
+            await openItem('site',r.data.id);
+            status('imCardStatus',msg,isDiff?'warn':'ok');
+        }catch(e){status('imCreateStatus',e.message,'err');}finally{submit.disabled=false;}
     }
     $('imLookup').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();lookup();}});
     $('imNameSearch').addEventListener('click',nameSearch);
@@ -108,7 +156,11 @@
     document.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',backToSearch));
     $('imCard').addEventListener('blur',e=>{if(e.target.matches('[data-field]'))saveMain(e.target);else if(e.target.matches('[data-code-key]'))saveCode(e.target);else if(e.target.matches('[data-price-code]'))savePrice(e.target);},true);$('imCard').addEventListener('change',e=>{if(e.target.type==='checkbox'&&e.target.matches('[data-field]'))saveMain(e.target);});
     $('imCard').addEventListener('click',e=>{if(e.target.closest('#imAddCode')){state.item.codes.push({id:0,code:'',name1:state.item.main.name1,name2:'',code_type:1,unit_name:state.item.main.base_unit||'قطعة',unit_type:'sub',unit_factor:1,whole_qty:1,open_price:0,prep_days:0,display_screen:'',display_order:0,is_purchase_code:1,is_sale_code:1});renderCodes();}});
-    if(IM_BOOT.canEdit){$('imNewBtn').addEventListener('click',()=>newItem());$('imCreate').addEventListener('submit',createItem);}
+    if(IM_BOOT.canEdit){
+        $('imNewBtn').addEventListener('click',()=>newItem());
+        $('imCreate').addEventListener('submit',createItem);
+        if($('imCreateCat'))$('imCreateCat').addEventListener('change',updateNextCode);
+    }
     // 🔴 النداء هنا مايتنفذش وقت قراية السكربت: `apiFetch` في assets/app.js
     //    اللي بيتحمّل في الفوتر؛ نستنى اكتمال التحميل قبل أي نداء.
     document.addEventListener('DOMContentLoaded', async () => {

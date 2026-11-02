@@ -27,8 +27,8 @@ require_once __DIR__ . '/includes/header.php';
 ?>
 <style>
 /* تخطيط النموذج بس؛ شكل الخانات والكروت والألوان من المكتبة الموحّدة. */
-.im-bar,.im-head,.im-badges{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}.im-bar{margin-bottom:var(--sp-4)}.im-bar .finput{flex:1;min-width:140px}.im-head{justify-content:space-between;align-items:start}.im-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:var(--sp-4);margin-top:var(--sp-4)}.im-layout>div{min-width:0}.im-side .fcard{margin-bottom:var(--sp-3)}.im-fields{display:grid;gap:var(--sp-3);margin-top:var(--sp-3)}.im-code-fields{grid-template-columns:140px 260px;justify-content:start;text-align:center}.im-name{max-width:860px;margin-top:var(--sp-3)}.im-name-value{font-size:var(--fs-xl);font-weight:700}.im-small{grid-template-columns:repeat(4,140px);max-width:860px;justify-content:space-between;text-align:center}.im-small .finput,.im-small .fselect,.im-code-fields .finput{text-align:center;text-align-last:center}.im-cats{grid-template-columns:repeat(5,minmax(0,1fr))}.im-rows>div{display:flex;justify-content:space-between;gap:var(--sp-2);margin-top:var(--sp-2)}.im-big{font-size:var(--fs-2xl);font-weight:700;font-variant-numeric:tabular-nums}.im-panel{margin-top:var(--sp-4)}.im-search-dialog{width:min(92vw,900px)}
-@media(max-width:1100px){.im-layout{grid-template-columns:minmax(0,1fr)}.im-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}}@media(max-width:650px){.im-small,.im-cats{grid-template-columns:repeat(2,minmax(0,1fr))}.im-code-fields{grid-template-columns:140px minmax(0,260px)}.im-side{display:block}}
+.im-bar,.im-head,.im-badges{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}.im-bar{margin-bottom:var(--sp-4)}.im-bar .finput{flex:1;min-width:140px}.im-head{justify-content:space-between;align-items:start}.im-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:var(--sp-4);margin-top:var(--sp-4)}.im-layout>div{min-width:0}.im-side .fcard{margin-bottom:var(--sp-3)}.im-fields{display:grid;gap:var(--sp-3);margin-top:var(--sp-3)}.im-code-fields{grid-template-columns:220px 260px;justify-content:start;text-align:center}.im-code-value{font-size:var(--fs-lg);font-weight:700;font-variant-numeric:tabular-nums}.im-name{max-width:860px;margin-top:var(--sp-3)}.im-name-value{font-size:var(--fs-xl);font-weight:700}.im-small{grid-template-columns:repeat(4,140px);max-width:860px;justify-content:space-between;text-align:center}.im-small .finput,.im-small .fselect,.im-code-fields .finput{text-align:center;text-align-last:center}.im-cats{grid-template-columns:repeat(5,minmax(0,1fr))}.im-rows>div{display:flex;justify-content:space-between;gap:var(--sp-2);margin-top:var(--sp-2)}.im-big{font-size:var(--fs-2xl);font-weight:700;font-variant-numeric:tabular-nums}.im-panel{margin-top:var(--sp-4)}.im-search-dialog{width:min(92vw,900px)}
+@media(max-width:1100px){.im-layout{grid-template-columns:minmax(0,1fr)}.im-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}}@media(max-width:650px){.im-small,.im-cats{grid-template-columns:repeat(2,minmax(0,1fr))}.im-code-fields{grid-template-columns:minmax(180px,220px) minmax(0,260px)}.im-side{display:block}}
 .im-value{padding:9px 12px;border:1px solid var(--line-soft);border-radius:var(--r-md);background:var(--bg);color:var(--ink-900);min-height:40px;box-sizing:border-box}.im-note{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}.im-badges>[hidden]{display:none}
 </style>
 <script type="application/json" id="imBoot"><?= json_encode($imBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
@@ -58,9 +58,10 @@ require_once __DIR__ . '/includes/header.php';
     <form id="imCreate" class="fcard" novalidate hidden>
         <div class="fpage-head"><h2 class="fcard-title">تعريف صنف جديد</h2><button type="button" class="btn btn-ghost" data-back>إلغاء</button></div>
         <div class="im-fields im-code-fields">
-            <div class="ffield"><label>كود الصنف <span class="fchip fchip-mute">تلقائي</span></label><input class="finput" readonly value="هيتولّد لوحده بعد الحفظ"></div>
+            <div class="ffield"><label>كود الصنف <span class="fchip fchip-mute">تلقائي</span></label><input class="finput im-code-value" id="imCreateCode" readonly value="اختار القسم الأول" dir="auto"></div>
             <div class="ffield"><label>الباركود (اختياري)</label><input class="finput" name="barcode" dir="ltr"></div>
         </div>
+        <p class="fpage-sub im-note">لو سبت الباركود فاضي، الباركود هيبقى نفس الكود</p>
         <div class="ffield im-name"><label>اسم الصنف</label><input class="finput im-name-value" name="name1" dir="auto" required></div>
         <div class="im-fields im-small">
             <div class="ffield"><label>التكلفة</label><input class="finput" readonly value="—" title="التكلفة بتظهر من آخر شراء"></div>
@@ -102,5 +103,5 @@ require_once __DIR__ . '/includes/header.php';
     <div id="imCardStatus" role="status" hidden></div>
 </div>
 </main>
-<script src="assets/item_master.js?v=840" defer></script>
+<script src="assets/item_master.js?v=841" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
