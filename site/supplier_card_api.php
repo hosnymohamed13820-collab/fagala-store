@@ -38,11 +38,16 @@ try {
     }
     if ($part==='card') api_ok(sc_card((string)($_GET['code'] ?? ''),$prices));
     if (!in_array($part,['purchases','returns','lines','items','statement'],true)) api_fail('جزء مش معروف',400,'bad_request');
+    if (in_array($part,['purchases','items'],true)) {
+        $s=sc_find((string)($_GET['code'] ?? ''));if (!$s) api_ok(null);
+        if ($part==='items') api_ok(['rows'=>sc_item_rows($s,$prices)]);
+        [$from,$to]=sc_dates($_GET);
+        api_ok(['rows'=>sc_purchase_rows($s,$from,$to,$prices)]);
+    }
     api_require('supplier_card:prices');
     if (!$prices) api_fail('الأرقام الحساسة مقفولة',423,'locked');
     if ($part==='lines') api_ok(['rows'=>sc_lines((string)($_GET['src'] ?? ''),(string)($_GET['id'] ?? ''))]);
     $s=sc_find((string)($_GET['code'] ?? ''));if (!$s) api_ok(null);
-    if ($part==='items') api_ok(['rows'=>sc_items($s)]);
     if ($part==='statement') api_ok(sc_statement($s,$_GET));
     [$from,$to]=sc_dates($_GET);$type=$part==='purchases'?2:6;
     api_ok(['rows'=>array_values(array_filter(sc_documents($s,$from,$to),static fn($r)=>(int)$r['doc_type']===$type))]);

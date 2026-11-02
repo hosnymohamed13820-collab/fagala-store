@@ -6,6 +6,17 @@
     const num = v => v == null ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 3});
     const money = v => v == null ? '—' : Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 3});
     const state = {card: boot.card, tab: 'info', dialog: null, generation: 0, search: 0, requests: {}, pending: new Set()};
+    const dueText = days => days == null ? '—' : (days < 0 ? 'متأخر ' : 'متبقي ') + num(Math.abs(days)) + ' يوم';
+    function cell(key, value, row) {
+        if (key === 'status') {
+            const states = {paid: ['pos','مسددة'], partial: ['warn','جزئي'], open: ['neg','مفتوحة']};
+            const state = states[value];
+            return state ? '<span class="fchip fchip-' + state[0] + '">' + state[1] + '</span>' : '—';
+        }
+        if (key === 'due_date') return esc(value ? value + ' · ' + dueText(row.days_left) : '—');
+        if (key === 'item_balance') return '<span title="' + esc('من أرصدة True — آخر تحديث ' + (row.balance_updated_at || 'مش متاح')) + '">' + num(value) + '</span>';
+        return null;
+    }
     function status(msg, bad = false, id = 'scStatus') {
         const el = $(id); el.textContent = msg; el.hidden = !msg;
         el.className = 'falert ' + (bad ? 'falert-neg' : 'falert-info');
@@ -100,7 +111,8 @@
         const invoices = c.last_purchases || [];
         const balanceRows = [0, 1].map(i => [invoices[i] ? 'فاتورة ' + invoices[i].doc_date : (i ? 'الفاتورة اللي قبلها' : 'آخر فاتورة'), amount(invoices[i]?.net_amount)]);
         // مفيش تخصيص للسداد على الفواتير، فمانعرضش ميعاد سداد تقديري كأنه مؤكد.
-        balanceRows.push(['فترة السداد', c.payment_days_left == null ? '—' : 'متبقي ' + num(c.payment_days_left) + ' يوم']);
+        // التوزيع دلوقتي FIFO محسوب للعرض من نفس كشف الحساب.
+        balanceRows.push(['فترة السداد', dueText(c.payment_days_left)]);
         let side = sideCard('الرصيد الحالي', bigAmount(bal == null ? null : Math.abs(bal)), balanceDetails + sideRows(balanceRows), bal > 0 ? 'sc-due' : '');
         side += sideCard('آخر فاتورة شراء', bigAmount(latest?.net_amount), sideRows([
             ['رقم الفاتورة', latest?.doc_no], ['فاتورة المورد', latest?.supplier_invoice], ['تاريخ الشراء', latest?.doc_date],
@@ -153,7 +165,7 @@
         await done; view.hidden = true; $('scSearchHome').appendChild(view); state.dialog = null;
     }
     function table(id, cols, rows, attributes = () => '', detail = false) {
-        return '<div class="ftable-wrap"><table class="ftable" id="' + id + '"><thead><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : '') + '>' + c[1] + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr' + attributes(r) + ' data-v-total="' + esc(r.total ?? 0) + '" data-v-net="' + esc(r.net_amount ?? 0) + '" data-v-debit="' + esc(r.debit ?? 0) + '" data-v-credit="' + esc(r.credit ?? 0) + '" data-v-quantity="' + esc(r.quantity ?? 0) + '">' + cols.map(([k,,n]) => '<td' + (n ? ' class="num"' : '') + (k === 'name' ? ' dir="auto" class="name" title="' + esc(r[k]) + '"' : k === 'phone' ? ' dir="ltr"' : '') + '>' + (n ? (n === 'money' ? money(r[k]) : num(r[k])) : esc(r[k] ?? '—')) + '</td>').join('') + '</tr>' + (detail ? '<tr class="ftable-detail" data-xt-ignore data-xt-nosort hidden><td colspan="' + cols.length + '"></td></tr>' : '')).join('') + '</tbody></table></div>';
+        return '<div class="ftable-wrap"><table class="ftable" id="' + id + '"><thead><tr>' + cols.map(c => '<th' + (c[2] ? ' class="num"' : '') + '>' + c[1] + '</th>').join('') + '</tr></thead><tbody>' + rows.map(r => '<tr' + attributes(r) + ' data-v-total="' + esc(r.total ?? 0) + '" data-v-net="' + esc(r.net_amount ?? 0) + '" data-v-debit="' + esc(r.debit ?? 0) + '" data-v-credit="' + esc(r.credit ?? 0) + '" data-v-quantity="' + esc(r.quantity ?? 0) + '">' + cols.map(([k,,n]) => '<td' + (n ? ' class="num"' : '') + (k === 'name' ? ' dir="auto" class="name" title="' + esc(r[k]) + '"' : k === 'phone' ? ' dir="ltr"' : '') + '>' + (cell(k, r[k], r) ?? (n ? (n === 'money' ? money(r[k]) : num(r[k])) : esc(r[k] ?? '—'))) + '</td>').join('') + '</tr>' + (detail ? '<tr class="ftable-detail" data-xt-ignore data-xt-nosort hidden><td colspan="' + cols.length + '"></td></tr>' : '')).join('') + '</tbody></table></div>';
     }
     function kpis(id, rows, sums) {
         return '<div class="fkpis" data-xt-kpis="#' + id + '"><div class="fkpi"><span>العدد</span><strong data-xt-count>' + num(rows.length) + '</strong></div>' + sums.map(([key,label]) => '<div class="fkpi"><span>' + label + '</span><strong data-xt-sum="' + key + '">' + money(rows.reduce((a,r) => a + Number(r[key === 'net' ? 'net_amount' : key] || 0), 0)) + '</strong></div>').join('') + '</div>';
@@ -166,7 +178,7 @@
     }
     async function loadTab(tab) {
         const host = $('scData-' + tab);
-        if (!boot.canPrices) {host.innerHTML = '<div class="falert falert-warn">' + lockedMessage() + '</div>'; return;}
+        if (!boot.canPrices && !['purchases','items'].includes(tab)) {host.innerHTML = '<div class="falert falert-warn">' + lockedMessage() + '</div>'; return;}
         const generation = state.generation, code = state.card.supplier.erp_supplier_code;
         const request = (state.requests[tab] || 0) + 1; state.requests[tab] = request;
         const params = {code}, form = document.querySelector('[data-period="' + tab + '"]');
@@ -182,12 +194,12 @@
                 host.innerHTML = (boot.print ? '<h2>' + esc(state.card.supplier.name) + ' · ' + esc(state.card.supplier.erp_supplier_code) + '</h2>' : '') + '<p class="fpage-sub">رصيد قبل الفترة: ' + money(d.prior.balance) + ' · رصيد آخر الفترة: ' + money(d.period.final_balance) + '</p>' +
                     kpis(id, rows, [['debit','مدين'],['credit','دائن']]) + table(id, [['tx_date','التاريخ'],['doc','المستند'],['name','البيان'],['debit','مدين','money'],['credit','دائن','money'],['balance','الرصيد التراكمي','money']], rows);
             } else if (tab === 'items') {
-                host.innerHTML = '<p class="fpage-sub">الكمية وآخر تكلفة بالقطعة الأساسية</p>' + kpis(id, d.rows, [['quantity','إجمالي الكمية']]) + table(id, [['code','كود الصنف'],['name','اسم الصنف'],['quantity','إجمالي الكمية','number'],['cost','آخر تكلفة','money'],['min_cost','أقل تكلفة','money'],['max_cost','أعلى تكلفة','money'],['purchase_date','آخر تاريخ شراء'],['item_balance','رصيد الصنف','number']], d.rows);
+                host.innerHTML = '<p class="fpage-sub">الكمية والرصيد والتكاليف بالقطعة الأساسية · أقل وأعلى تكلفة في آخر ١٢ شهر</p>' + kpis(id, d.rows, [['quantity','إجمالي الكمية']]) + table(id, [['code','كود الصنف'],['name','اسم الصنف'],['quantity','إجمالي الكمية','number'],...(boot.canPrices ? [['cost','آخر تكلفة','money'],['min_cost','أقل تكلفة','money'],['max_cost','أعلى تكلفة','money']] : []),['purchase_date','آخر تاريخ شراء'],['item_balance','رصيد الصنف','number']], d.rows);
             } else {
                 const rows = d.rows.map(r => ({...r, source: r.src === 'hq' ? 'ترو' : 'الموقع'}));
-                const extra = tab === 'purchases' ? [['supplier_invoice','فاتورة المورد'],['payment_status','حالة السداد']] : [['return_reason','سبب المرتجع']];
-                host.innerHTML = kpis(id, rows, [['net','الصافي']]) + table(id, [['doc_no','الرقم'],['doc_date','التاريخ'],['branch','الفرع'],['item_count','عدد الأصناف','number'],['total_amount','الإجمالي','money'],['net_amount','الصافي','money'],...extra,['source','المصدر']], rows,
-                    r => ' class="sc-lines-row" role="button" tabindex="0" aria-expanded="false" data-src="' + r.src + '" data-doc="' + esc(r.id) + '"', true);
+                const extra = tab === 'purchases' ? [['supplier_invoice','فاتورة المورد'],['status','السداد'],...(boot.canPrices ? [['remaining','المتبقي','money']] : []),['due_date','الاستحقاق']] : [['return_reason','سبب المرتجع']];
+                host.innerHTML = kpis(id, rows, boot.canPrices ? [['net','الصافي']] : []) + table(id, [['doc_no','الرقم'],['doc_date','التاريخ'],['branch','الفرع'],['item_count','عدد الأصناف','number'],...(boot.canPrices ? [['total_amount','الإجمالي','money'],['net_amount','الصافي','money']] : []),...extra,['source','المصدر']], rows,
+                    r => boot.canPrices ? ' class="sc-lines-row" role="button" tabindex="0" aria-expanded="false" data-src="' + r.src + '" data-doc="' + esc(r.id) + '"' : '', boot.canPrices);
             }
             if (boot.print && tab === 'statement') window.print();
         } catch (e) {if (generation === state.generation && request === state.requests[tab]) {host.textContent = e.message; host.classList.add('falert', 'falert-warn');}}

@@ -38,5 +38,5 @@ require_once __DIR__.'/includes/header.php';
 <?php foreach(['purchases','returns','items','statement'] as $key): ?><section class="sc-panel" data-panel="<?= $key ?>" hidden><?php if($key!=='items'): ?><form class="ffilters" data-period="<?= $key ?>"><div class="ffield"><label>من</label><input class="finput" type="date" name="from"></div><div class="ffield"><label>لحد</label><input class="finput" type="date" name="to"></div><button class="btn btn-outline" type="submit">عرض</button></form><?php endif; ?><div id="scData-<?= $key ?>"></div></section><?php endforeach; ?>
 </div><aside class="sc-side" id="scSidebar"></aside></div></div>
 </main>
-<script src="assets/supplier_card.js?v=5" defer></script>
+<script src="assets/supplier_card.js?v=6" defer></script>
 <?php require_once __DIR__.'/includes/footer.php'; ?>
