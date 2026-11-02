@@ -282,6 +282,22 @@ require_once __DIR__ . '/includes/header.php';
     <div class="falert <?= $flashType === 'success' ? 'falert-pos' : 'falert-neg' ?>"><?= e($flash) ?></div>
 <?php endif; ?>
 
+<script>
+    function openModal(id){
+        const el = document.getElementById(id);
+        if (el) el.classList.add('open');
+        if (id === 'expenseModal') {
+            const type = document.querySelector('#expenseModal select#cstLineType');
+            if (type) type.focus();
+        }
+    }
+    function closeModal(id){
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('open');
+        if (id === 'expenseModal' && typeof resetExpenseModal === 'function') resetExpenseModal();
+    }
+</script>
+
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
     <div style="display:flex;gap:8px;">
         <?php if ($canEmployeeCustody): ?>
@@ -940,19 +956,6 @@ if ($activeTab === 'employee' && !empty($canEditThisEmpCustody) && !empty($empCu
 <?= acctree_data(true) ?>
 <script src="assets/acctree.js?v=186"></script>
 <script>
-    function openModal(id){
-        const el = document.getElementById(id);
-        if (el) el.classList.add('open');
-        if (id === 'expenseModal') {
-            const type = document.querySelector('#expenseModal select#cstLineType');
-            if (type) type.focus();
-        }
-    }
-    function closeModal(id){
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('open');
-        if (id === 'expenseModal' && typeof resetExpenseModal === 'function') resetExpenseModal();
-    }
     document.querySelectorAll('.modal-bg').forEach(m => {
         m.addEventListener('click', e => {
             if (e.target === m) {
