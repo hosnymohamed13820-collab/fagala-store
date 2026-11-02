@@ -35,6 +35,9 @@ $canIssue = is_owner() || can('treasury:operate');
 // عهدة الموظف هي الافتراضية، وعهدة الفرع لمن لديه الصلاحية فقط
 $defaultTab = $canEmployeeCustody ? 'employee' : 'branch';
 $activeTab = $_GET['tab'] ?? $defaultTab;
+if (!in_array($activeTab, ['employee', 'branch'], true)) {
+    $activeTab = $defaultTab;
+}
 if ($activeTab === 'branch' && !$canBranchCustody) {
     $activeTab = 'employee';
 }
@@ -792,7 +795,14 @@ require_once __DIR__ . '/includes/header.php';
 <?php endif; // قفل if (!$branchId): ... else ?>
 <?php endif; // قفل if ($activeTab === 'employee'): ... else ?>
 
-<?php $closedCustodies = custody_get_closed_history($pdo, $activeTab === 'employee', $branchId, $selectedEmpId); ?>
+<?php
+$closedCustodies = [];
+if ($activeTab === 'employee' && $canEmployeeCustody) {
+    $closedCustodies = custody_get_closed_history($pdo, true, $branchId, $selectedEmpId);
+} elseif ($activeTab === 'branch' && $canBranchCustody) {
+    $closedCustodies = custody_get_closed_history($pdo, false, $branchId, $selectedEmpId);
+}
+?>
 <?php if ($closedCustodies): ?>
     <h2>آخر العهد المعتمدة</h2>
     <?php foreach ($closedCustodies as $closedCustody): ?>
