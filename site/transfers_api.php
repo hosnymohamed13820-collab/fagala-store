@@ -223,7 +223,10 @@ try {
         case 'count':
             $id     = (int) ($input['id'] ?? 0);
             $lineId = (int) ($input['line_id'] ?? 0);
+            $code   = isset($input['code']) ? trim((string) $input['code']) : (isset($input['barcode']) ? trim((string) $input['barcode']) : null);
+            $units  = isset($input['units']) ? (float) $input['units'] : (isset($input['qty']) ? (float) $input['qty'] : null);
             $pieces = (float) ($input['pieces'] ?? 0.0);
+            $mode   = (string) ($input['mode'] ?? 'set');
 
             $stCheck = $pdo->prepare('SELECT counter_branch_id FROM stock_docs WHERE id = ? AND doc_type = \'transfer\'');
             $stCheck->execute([$id]);
@@ -242,8 +245,8 @@ try {
                 }
             }
 
-            transfer_count($pdo, $id, $lineId, $pieces, $uid);
-            api_ok(['line_id' => $lineId, 'received_pieces' => $pieces]);
+            $rxRes = transfer_count($pdo, $id, $lineId, $pieces, $uid, $code, $units, $mode);
+            api_ok($rxRes);
 
         case 'receive':
             $id = (int) ($input['id'] ?? 0);
@@ -268,12 +271,56 @@ try {
             $res = transfer_receive($pdo, $id, $uid);
             api_ok($res);
 
+        case 'diff_approve':
+            $diffId = (int) ($input['diff_id'] ?? 0);
+            if ($diffId <= 0) {
+                api_fail('معرّف الفرق مطلوب', 400, 'bad_request');
+            }
+
+            // فحص الصلاحية الصارم: مالك حقيقي أو صاحب صلاحية transfers:resolve بالتحديد
+            $isReal = function_exists('is_real_owner') ? is_real_owner() : false;
+            $hasResolve = in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true);
+            if (!$isReal && !$hasResolve) {
+                api_fail('غير مصرح لك باعتماد فروق التحويل — يتطلب صلاحية الاستلامات أو المالك الحقيقي', 403, 'forbidden');
+            }
+
+            $res = transfer_diff_approve($pdo, $diffId, $uid);
+            api_ok($res);
+
+        case 'diff_reject':
+            $diffId = (int) ($input['diff_id'] ?? 0);
+            $reason = trim((string) ($input['reason'] ?? ''));
+            if ($diffId <= 0) {
+                api_fail('معرّف الفرق مطلوب', 400, 'bad_request');
+            }
+            if ($reason === '') {
+                api_fail('سبب الرفض إجباري', 400, 'validation');
+            }
+
+            $isReal = function_exists('is_real_owner') ? is_real_owner() : false;
+            $hasResolve = in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true);
+            if (!$isReal && !$hasResolve) {
+                api_fail('غير مصرح لك برفض فروق التحويل — يتطلب صلاحية الاستلامات أو المالك الحقيقي', 403, 'forbidden');
+            }
+
+            $res = transfer_diff_reject($pdo, $diffId, $uid, $reason);
+            api_ok($res);
+
         case 'resolve_excess':
             $diffId         = (int) ($input['diff_id'] ?? 0);
             $sourceBranchId = (int) ($input['source_branch_id'] ?? 0);
 
-            if (!transfers_can_resolve()) {
-                api_fail('فك فروق الزيادة لصاحب صلاحية transfers:resolve بس', 403, 'forbidden');
+            // القديم: يفضل شغال للمالك بس في الفروق القديمة (open و resolution IS NULL)
+            $isReal = function_exists('is_real_owner') ? is_real_owner() : false;
+            if (!$isReal) {
+                api_fail('فك فروق الزيادة القديمة متاح للمالك بس', 403, 'forbidden');
+            }
+
+            $stD = $pdo->prepare('SELECT status, resolution FROM stock_transfer_diffs WHERE id = ?');
+            $stD->execute([$diffId]);
+            $dRow = $stD->fetch(PDO::FETCH_ASSOC);
+            if (!$dRow || $dRow['status'] !== 'open' || $dRow['resolution'] !== null) {
+                api_fail('الفرق ده ماشي بالاعتماد', 400, 'validation');
             }
 
             $adjId = transfer_resolve_excess($pdo, $diffId, $sourceBranchId, $uid);

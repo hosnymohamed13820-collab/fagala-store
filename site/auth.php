@@ -255,7 +255,7 @@ function module_parts(): array
         'transfers' => [
             'create'  => 'طلب وتجهيز وإرسال',
             'receive' => 'عد واستلام',
-            'resolve' => 'فك فروق الزيادة',
+            'resolve' => 'اعتماد الفروق (الاستلامات)',
             'reports' => 'تقارير التحويلات',
         ],
         'purchase_docs' => [

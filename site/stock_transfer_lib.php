@@ -350,9 +350,18 @@ function transfer_send(PDO $pdo, int $docId, int $uid): int
 
 /**
  * تسجيل عد الصنف عند الاستلام (حفظ على blur بدون حركات مخزنية).
+ * يدعم التمرير عبر lineId مباشرة أو عبر كود الصنف (للأكواد المربوطة).
  */
-function transfer_count(PDO $pdo, int $docId, int $lineId, float $pieces, int $uid): void
-{
+function transfer_count(
+    PDO $pdo,
+    int $docId,
+    int $lineId,
+    float $pieces,
+    int $uid,
+    ?string $code = null,
+    ?float $units = null,
+    string $mode = 'set'
+): array {
     $st = $pdo->prepare('SELECT status, doc_type FROM stock_docs WHERE id = ?');
     $st->execute([$docId]);
     $doc = $st->fetch(PDO::FETCH_ASSOC);
@@ -363,30 +372,86 @@ function transfer_count(PDO $pdo, int $docId, int $lineId, float $pieces, int $u
         throw new RuntimeException("العد متاح فقط للتحويلات المرسلة (في الطريق) — الحالة: {$doc['status']}.");
     }
 
-    $stLine = $pdo->prepare('SELECT id FROM stock_doc_lines WHERE id = ? AND doc_id = ?');
+    // إذا تم تمرير كود بدلاً من السطر أو مع السطر للتحقق (كود مربوط)
+    $resolvedItemId = null;
+    if ($code !== null && trim($code) !== '') {
+        $stCode = $pdo->prepare('SELECT item_id, unit_factor FROM hq_codes WHERE code = ? LIMIT 1');
+        $stCode->execute([trim($code)]);
+        $hqItem = $stCode->fetch(PDO::FETCH_ASSOC);
+        if ($hqItem) {
+            $resolvedItemId = (int) $hqItem['item_id'];
+            $factor = (float) ($hqItem['unit_factor'] ?? 1.0);
+            if ($factor <= 0) $factor = 1.0;
+            if ($units !== null) {
+                $pieces = round($units * $factor, 3);
+            }
+
+            if ($lineId <= 0) {
+                $stLineSearch = $pdo->prepare('SELECT id FROM stock_doc_lines WHERE doc_id = ? AND item_id = ? ORDER BY id ASC LIMIT 1');
+                $stLineSearch->execute([$docId, $resolvedItemId]);
+                $matchedLine = $stLineSearch->fetch(PDO::FETCH_ASSOC);
+                if ($matchedLine) {
+                    $lineId = (int) $matchedLine['id'];
+                } else {
+                    throw new RuntimeException("الصنف المربوط بالكود $code غير موجود في هذا التحويل.");
+                }
+            }
+        }
+    }
+
+    if ($lineId <= 0) {
+        throw new RuntimeException('معرّف السطر غير صالح.');
+    }
+
+    $stLine = $pdo->prepare('SELECT id, item_id FROM stock_doc_lines WHERE id = ? AND doc_id = ?');
     $stLine->execute([$lineId, $docId]);
-    if (!$stLine->fetch()) {
+    $lineRow = $stLine->fetch(PDO::FETCH_ASSOC);
+    if (!$lineRow) {
         throw new RuntimeException("السطر $lineId لا ينتمي للتحويل $docId.");
     }
 
-    $insRx = $pdo->prepare(
-        'INSERT INTO stock_transfer_rx (doc_line_id, received_pieces, counted_by, counted_at)
-         VALUES (?, ?, ?, NOW())
-         ON DUPLICATE KEY UPDATE
-             received_pieces = VALUES(received_pieces),
-             counted_by = VALUES(counted_by),
-             counted_at = VALUES(counted_at)'
-    );
-    $insRx->execute([$lineId, round($pieces, 3), $uid]);
+    $finalPieces = round($pieces, 3);
+    if ($mode === 'add') {
+        $insRx = $pdo->prepare(
+            'INSERT INTO stock_transfer_rx (doc_line_id, received_pieces, counted_by, counted_at)
+             VALUES (?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE
+                 received_pieces = received_pieces + VALUES(received_pieces),
+                 counted_by = VALUES(counted_by),
+                 counted_at = VALUES(counted_at)'
+        );
+        $insRx->execute([$lineId, $finalPieces, $uid]);
+
+        $stCur = $pdo->prepare('SELECT received_pieces FROM stock_transfer_rx WHERE doc_line_id = ?');
+        $stCur->execute([$lineId]);
+        $finalPieces = (float) $stCur->fetchColumn();
+    } else {
+        $insRx = $pdo->prepare(
+            'INSERT INTO stock_transfer_rx (doc_line_id, received_pieces, counted_by, counted_at)
+             VALUES (?, ?, ?, NOW())
+             ON DUPLICATE KEY UPDATE
+                 received_pieces = VALUES(received_pieces),
+                 counted_by = VALUES(counted_by),
+                 counted_at = VALUES(counted_at)'
+        );
+        $insRx->execute([$lineId, $finalPieces, $uid]);
+    }
+
+    return [
+        'line_id'         => $lineId,
+        'received_pieces' => $finalPieces,
+        'item_id'         => (int) ($lineRow['item_id'] ?? $resolvedItemId),
+    ];
 }
 
 /**
  * تأكيد استلام التحويل (sent -> received أو diff_open).
  *
  * 🔴 تحريك الكمية المبعوتة كاملة من في الطريق إلى رصيد المستلم.
- * ثم معالجة الفروق:
- * - الناقص: حالة short resolved وحركة فورية ترجع للراسل وإشعار للفرعين.
- * - الزيادة: حالة excess open تنتظر تحديد المصدر من الإدارة.
+ * ثم معالجة الفروق (بريف ٨٥٣):
+ * - المقارنة بالقطعة على مستوى item_id في المستند كله (الأكواد المربوطة لا تُنشئ فرقاً).
+ * - مفيش أي حركة فروق وقت الاستلام — كل الفرق (ناقص أو زيادة) يتسجل pending في انتظار الاعتماد.
+ * - استدعاء المقاصة الذكية transfer_diffs_match() فور تسجيل الفروق.
  * لما كل الفروق تبقى resolved -> المستند closed.
  */
 function transfer_receive(PDO $pdo, int $docId, int $uid): array
@@ -445,20 +510,14 @@ function transfer_receive(PDO $pdo, int $docId, int $uid): array
              ON DUPLICATE KEY UPDATE received_pieces = VALUES(received_pieces)'
         );
 
-        $insDiff = $pdo->prepare(
-            'INSERT INTO stock_transfer_diffs
-               (doc_id, doc_line_id, item_id, kind, qty, status, source_branch_id, resolve_doc_id, resolved_by, resolved_at, note)
-             VALUES
-               (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
-
         $moves = [];
-        $shortDiffCount = 0;
-        $excessDiffCount = 0;
+        $sentByItem = [];
+        $countedByItem = [];
+        $firstLineByItem = [];
 
         foreach ($lines as $l) {
-            $lineId    = (int) $l['id'];
-            $itemId    = (int) $l['item_id'];
+            $lineId     = (int) $l['id'];
+            $itemId     = (int) $l['item_id'];
             $sentPieces = (float) $l['qty_pieces'];
 
             // 1. حركة المستلم الأساسية: خصم من في الطريق + إضافة للرصيد الفعلي (بالكمية المبعوتة كاملة)
@@ -479,82 +538,69 @@ function transfer_receive(PDO $pdo, int $docId, int $uid): array
                 'doc_line_id' => $lineId,
             ];
 
-            // 2. فحص العد والمقارنة
+            // 2. تجميع المبعوت والمعدود بالقطعة على مستوى item_id (بريف ٨٥٣: الأكواد المربوطة)
+            $sentByItem[$itemId] = ($sentByItem[$itemId] ?? 0.0) + $sentPieces;
+            if (!isset($firstLineByItem[$itemId])) {
+                $firstLineByItem[$itemId] = $lineId;
+            }
+
             if (isset($rxMap[$lineId])) {
                 $countedPieces = round((float) $rxMap[$lineId], 3);
             } else {
-                // سطر ما اتعدش = اتعد صفر (كله ناقص)
                 $countedPieces = 0.000;
                 $insRxMissing->execute([$lineId, $uid]);
             }
+            $countedByItem[$itemId] = ($countedByItem[$itemId] ?? 0.0) + $countedPieces;
+        }
 
-            $diff = round($countedPieces - $sentPieces, 3);
+        // تطبيق حركات المستلم الأساسية
+        stock_apply_moves($pdo, $docId, $moves, $uid);
+
+        // 3. مقارنة الفروق على مستوى item_id وتسجيلها بحالة pending دون حركات فورية
+        $insDiff = $pdo->prepare(
+            'INSERT INTO stock_transfer_diffs
+               (doc_id, doc_line_id, item_id, kind, qty, status, source_branch_id, resolve_doc_id, resolved_by, resolved_at, note)
+             VALUES
+               (?, ?, ?, ?, ?, \'pending\', NULL, NULL, NULL, NULL, ?)'
+        );
+
+        $shortDiffCount = 0;
+        $excessDiffCount = 0;
+
+        foreach ($sentByItem as $itemId => $totSent) {
+            $totCounted = $countedByItem[$itemId] ?? 0.0;
+            $diff = round($totCounted - $totSent, 3);
+            $firstLineId = $firstLineByItem[$itemId];
 
             if ($diff < -0.0001) {
-                // عجز (ناقص): يرجع للراسل تلقائياً وفوراً
                 $shortQty = abs($diff);
                 $shortDiffCount++;
-
-                // تسجيل الفرق بحالة resolved فوراً
                 $insDiff->execute([
                     $docId,
-                    $lineId,
+                    $firstLineId,
                     $itemId,
                     'short',
                     $shortQty,
-                    'resolved',
-                    null,
-                    $docId, // resolve_doc_id = نفس المستند
-                    $uid,
-                    date('Y-m-d H:i:s'),
-                    'عجز استلام تم رده تلقائياً لمخزن الراسل',
+                    'فرق مجمّع للصنف (عجز بانتظار الاعتماد)',
                 ]);
-
-                // حركة فورية: خصم من المستلم ورد للراسل
-                $moves[] = [
-                    'item_id'     => $itemId,
-                    'branch_id'   => $toBranchId,
-                    'is_transit'  => 0,
-                    'qty'         => -$shortQty,
-                    'unit_cost'   => null,
-                    'doc_line_id' => $lineId,
-                ];
-                $moves[] = [
-                    'item_id'     => $itemId,
-                    'branch_id'   => $fromBranchId,
-                    'is_transit'  => 0,
-                    'qty'         => +$shortQty,
-                    'unit_cost'   => null,
-                    'doc_line_id' => $lineId,
-                ];
             } elseif ($diff > 0.0001) {
-                // زيادة: تظل مفتوحة حتى يحدد المدير مصدرها
                 $excessQty = $diff;
                 $excessDiffCount++;
-
                 $insDiff->execute([
                     $docId,
-                    $lineId,
+                    $firstLineId,
                     $itemId,
                     'excess',
                     $excessQty,
-                    'open',
-                    null,
-                    null,
-                    null,
-                    null,
-                    'زيادة استلام معلقة لحين تحديد المخزن المصدر',
+                    'فرق مجمّع للصنف (زيادة بانتظار الاعتماد)',
                 ]);
             }
         }
 
-        // تطبيق كل الحركات المخزنية المجمعة
-        stock_apply_moves($pdo, $docId, $moves, $uid);
-
         // تحديد الحالة النهائية للمستند:
-        // لو فيه فروق مفتوحة (excess) -> diff_open، غير كده -> closed
-        $hasOpenExcess = ($excessDiffCount > 0);
-        $finalStatus = $hasOpenExcess ? 'diff_open' : 'closed';
+        // لو فيه أي فرق مفتوح أو معلق -> diff_open، غير كده -> closed
+        $hasDiffs = ($shortDiffCount + $excessDiffCount > 0);
+        $finalStatus = $hasDiffs ? 'diff_open' : 'closed';
 
         $pdo->prepare('UPDATE stock_docs SET status = ? WHERE id = ?')->execute([$finalStatus, $docId]);
 
@@ -573,35 +619,16 @@ function transfer_receive(PDO $pdo, int $docId, int $uid): array
         if ($finalStatus === 'closed') {
             $evCl = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
                 VALUES ('stock', ?, 'status:closed', ?, NOW(), ?)");
-            $evCl->execute([$docId, $uid, json_encode(['reason' => 'تم الاستلام وإغلاق المستند'], JSON_UNESCAPED_UNICODE)]);
+            $evCl->execute([$docId, $uid, json_encode(['reason' => 'تم الاستلام وإغلاق المستند بدون فروق'], JSON_UNESCAPED_UNICODE)]);
         } elseif ($finalStatus === 'diff_open') {
             $evDiff = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
                 VALUES ('stock', ?, 'status:diff_open', ?, NOW(), ?)");
-            $evDiff->execute([$docId, $uid, json_encode(['open_excess' => $excessDiffCount], JSON_UNESCAPED_UNICODE)]);
+            $evDiff->execute([$docId, $uid, json_encode(['shorts' => $shortDiffCount, 'excesses' => $excessDiffCount], JSON_UNESCAPED_UNICODE)]);
         }
 
-        // إشعار للفرعين لو فيه عجز رجع
-        if ($shortDiffCount > 0) {
-            try {
-                if (is_file(__DIR__ . '/push_lib.php')) {
-                    require_once __DIR__ . '/push_lib.php';
-                    if (function_exists('notify')) {
-                        $stUsers = $pdo->prepare('SELECT id FROM users WHERE branch_id IN (?, ?) AND is_active = 1');
-                        $stUsers->execute([$fromBranchId, $toBranchId]);
-                        $notifUids = array_map(fn($r) => (int) $r['id'], $stUsers->fetchAll(PDO::FETCH_ASSOC));
-                        if (!empty($notifUids)) {
-                            notify(
-                                $pdo,
-                                $notifUids,
-                                'transfer_short',
-                                "عجز في استلام تحويل #{$doc['doc_no']}",
-                                "تم رد كمية العجز ($shortDiffCount أصناف) تلقائياً إلى مخزن الراسل.",
-                                "transfers.php?tab=archive&id=$docId"
-                            );
-                        }
-                    }
-                }
-            } catch (Throwable) {}
+        // تشغيل المقاصة الذكية فور تسجيل الفروق
+        if ($hasDiffs) {
+            transfer_diffs_match($pdo);
         }
 
         if ($ownTx) {
@@ -656,7 +683,7 @@ function transfer_resolve_excess(PDO $pdo, int $diffId, int $sourceBranchId, int
         if ($diff['kind'] !== 'excess') {
             throw new RuntimeException("الفرق ده مش زيادة — نوعه: {$diff['kind']}. فك الزيادة للزيادات بس.");
         }
-        if ($diff['status'] !== 'open') {
+        if ($diff['status'] !== 'open' && $diff['status'] !== 'approved') {
             throw new RuntimeException("الزيادة دي اتحلت قبل كده — حالتها الحالية: {$diff['status']}.");
         }
 
@@ -784,7 +811,7 @@ function transfer_resolve_excess(PDO $pdo, int $diffId, int $sourceBranchId, int
         ]);
 
         // فحص هل ما زال هناك فروق مفتوحة في نفس مستند التحويل
-        $stRemain = $pdo->prepare("SELECT COUNT(*) FROM stock_transfer_diffs WHERE doc_id = ? AND status = 'open'");
+        $stRemain = $pdo->prepare("SELECT COUNT(*) FROM stock_transfer_diffs WHERE doc_id = ? AND status != 'resolved'");
         $stRemain->execute([$parentDocId]);
         $remainingOpen = (int) $stRemain->fetchColumn();
 
@@ -813,6 +840,832 @@ function transfer_resolve_excess(PDO $pdo, int $diffId, int $sourceBranchId, int
         }
 
         return $adjDocId;
+    } catch (Throwable $e) {
+        if ($ownTx && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * تسوية فرق العجز برد الكمية لمخزن الراسل (to_sender).
+ * يخصم من المخزن المستلم ويضيف للمخزن الراسل عبر مستند تسوية مرتبط (بريف ٨٥٣).
+ *
+ * @param PDO $pdo
+ * @param int $diffId معرّف الفرق في stock_transfer_diffs
+ * @param int $uid معرّف المستخدم
+ * @return int معرّف مستند التسوية المُنشأ
+ */
+function transfer_resolve_short(PDO $pdo, int $diffId, int $uid): int
+{
+    stock_require_enabled();
+
+    $ownTx = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $ownTx = true;
+    }
+
+    try {
+        $stDiff = $pdo->prepare('SELECT * FROM stock_transfer_diffs WHERE id = ? FOR UPDATE');
+        $stDiff->execute([$diffId]);
+        $diff = $stDiff->fetch(PDO::FETCH_ASSOC);
+        if (!$diff) {
+            throw new RuntimeException("حالة الفرق غير موجودة (id=$diffId).");
+        }
+        if ($diff['kind'] !== 'short') {
+            throw new RuntimeException("الفرق ده مش عجز — نوعه: {$diff['kind']}.");
+        }
+        if ($diff['status'] !== 'open' && $diff['status'] !== 'approved') {
+            throw new RuntimeException("العجز ده اتحل قبل كده — حالته الحالية: {$diff['status']}.");
+        }
+
+        $parentDocId = (int) $diff['doc_id'];
+        $stDoc = $pdo->prepare('SELECT * FROM stock_docs WHERE id = ? FOR UPDATE');
+        $stDoc->execute([$parentDocId]);
+        $parentDoc = $stDoc->fetch(PDO::FETCH_ASSOC);
+        if (!$parentDoc) {
+            throw new RuntimeException("المستند الأصلي غير موجود (id=$parentDocId).");
+        }
+        if ($parentDoc['doc_type'] !== 'transfer') {
+            throw new RuntimeException("مستند الفرق مش تحويل — نوعه: {$parentDoc['doc_type']}.");
+        }
+
+        $fromBranchId = (int) $parentDoc['branch_id'];        // الراسل (سيسترد العجز)
+        $toBranchId   = (int) $parentDoc['counter_branch_id']; // المستلم (سيخصم منه العجز)
+
+        // شرط live للمخزنين
+        stock_require_live($toBranchId, $fromBranchId);
+
+        // بيانات الصنف من السطر
+        $stLine = $pdo->prepare('SELECT * FROM stock_doc_lines WHERE id = ?');
+        $stLine->execute([(int) $diff['doc_line_id']]);
+        $parentLine = $stLine->fetch(PDO::FETCH_ASSOC);
+
+        $itemId    = (int) $diff['item_id'];
+        $code      = (string) ($parentLine['code'] ?? ('ITEM-' . $itemId));
+        $factor    = isset($parentLine['unit_factor']) && (float) $parentLine['unit_factor'] > 0
+            ? (float) $parentLine['unit_factor'] : 1.0;
+        $qtyPieces = round((float) $diff['qty'], 3);
+        $qtyUnits  = round($qtyPieces / $factor, 3);
+
+        // إنشاء مستند التسوية المرتبط: من المستلم إلى الراسل
+        $adjustLines = [
+            [
+                'item_id'     => $itemId,
+                'code'        => $code,
+                'unit_factor' => $factor,
+                'qty_units'   => $qtyUnits,
+                'qty_pieces'  => $qtyPieces,
+                'unit_cost'   => null,
+                'notes'       => "تسوية عجز تحويل #$parentDocId",
+            ],
+        ];
+
+        $adjDocId = stock_doc_create($pdo, 'adjust', [
+            'branch_id'         => $toBranchId,
+            'counter_branch_id' => $fromBranchId,
+            'doc_date'          => date('Y-m-d'),
+            'ref_text'          => 'transfer:' . $parentDocId,
+            'notes'             => "رد عجز تحويل #$parentDocId — رد لمخزن الراسل $fromBranchId",
+        ], $adjustLines, $uid);
+
+        // ترقيم وترحيل مستند التسوية
+        $adjYear = (int) date('Y');
+        $adjNo   = stock_next_no($pdo, 'adjust', $toBranchId, $adjYear);
+
+        $pdo->prepare("UPDATE stock_docs SET doc_no = ?, doc_year = ?, status = 'posted', posted_by = ?, posted_at = NOW() WHERE id = ?")
+            ->execute([$adjNo, $adjYear, $uid, $adjDocId]);
+
+        // الحركات: خصم من المستلم + إضافة للراسل
+        $adjMoves = [
+            [
+                'item_id'     => $itemId,
+                'branch_id'   => $toBranchId,
+                'is_transit'  => 0,
+                'qty'         => -$qtyPieces,
+                'unit_cost'   => null,
+                'doc_line_id' => null,
+            ],
+            [
+                'item_id'     => $itemId,
+                'branch_id'   => $fromBranchId,
+                'is_transit'  => 0,
+                'qty'         => +$qtyPieces,
+                'unit_cost'   => null,
+                'doc_line_id' => null,
+            ],
+        ];
+
+        stock_apply_moves($pdo, $adjDocId, $adjMoves, $uid);
+
+        // تسجيل حدث الترحيل لمستند التسوية
+        $evAdj = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
+            VALUES ('stock', ?, 'posted', ?, NOW(), ?)");
+        $evAdj->execute([
+            $adjDocId,
+            $uid,
+            json_encode(['doc_no' => $adjNo, 'doc_year' => $adjYear, 'ref_text' => 'transfer:' . $parentDocId], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        // تحديث حالة الفرق في stock_transfer_diffs إلى resolved
+        $upDiff = $pdo->prepare(
+            'UPDATE stock_transfer_diffs
+                SET status = \'resolved\',
+                    source_branch_id = ?,
+                    counter_branch_id = ?,
+                    resolve_doc_id = ?,
+                    resolved_by = ?,
+                    resolved_at = NOW(),
+                    note = ?
+              WHERE id = ?'
+        );
+        $upDiff->execute([
+            $toBranchId,
+            $fromBranchId,
+            $adjDocId,
+            $uid,
+            "تم رد العجز لمخزن الراسل $fromBranchId بمستند تسوية #$adjNo",
+            $diffId,
+        ]);
+
+        // فحص هل ما زال هناك فروق مفتوحة في نفس مستند التحويل
+        $stRemain = $pdo->prepare("SELECT COUNT(*) FROM stock_transfer_diffs WHERE doc_id = ? AND status != 'resolved'");
+        $stRemain->execute([$parentDocId]);
+        $remainingOpen = (int) $stRemain->fetchColumn();
+
+        if ($remainingOpen === 0) {
+            $pdo->prepare("UPDATE stock_docs SET status = 'closed' WHERE id = ?")->execute([$parentDocId]);
+            $evCl = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
+                VALUES ('stock', ?, 'status:closed', ?, NOW(), ?)");
+            $evCl->execute([$parentDocId, $uid, json_encode(['reason' => 'تم رد العجز وإغلاق المستند'], JSON_UNESCAPED_UNICODE)]);
+        }
+
+        if ($ownTx) {
+            $pdo->commit();
+        }
+
+        return $adjDocId;
+    } catch (Throwable $e) {
+        if ($ownTx && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * المستخدمون أصحاب صلاحية اعتماد الفروق أو المالك لإرسال الإشعارات.
+ *
+ * @param PDO $pdo
+ * @return int[]
+ */
+function transfer_resolve_notification_uids(PDO $pdo): array
+{
+    try {
+        $st = $pdo->query(
+            "SELECT DISTINCT u.id
+               FROM users u
+               LEFT JOIN roles r ON r.id = u.role_id
+              WHERE u.is_active = 1
+                AND (
+                    r.is_owner = 1
+                    OR u.id IN (SELECT user_id FROM user_permissions WHERE module_key = 'transfers:resolve')
+                    OR u.role_id IN (SELECT role_id FROM role_permissions WHERE module_key = 'transfers:resolve')
+                )"
+        );
+        return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable) {
+        return [1];
+    }
+}
+
+/**
+ * أسماء المخازن لتنسيق نصوص الإشعارات.
+ *
+ * @param PDO $pdo
+ * @return array<int, string>
+ */
+function transfer_branch_names(PDO $pdo): array
+{
+    try {
+        $st = $pdo->query('SELECT id, name FROM branches');
+        return $st->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+    } catch (Throwable) {
+        return [];
+    }
+}
+
+/**
+ * إرسال إشعار لمستخدمي فرعين بعد اعتماد وتنفيذ الفرق.
+ */
+function transfer_notify_branches(PDO $pdo, int $branchA, int $branchB, string $title, string $body, string $link): void
+{
+    try {
+        if (!is_file(__DIR__ . '/push_lib.php')) return;
+        require_once __DIR__ . '/push_lib.php';
+        if (!function_exists('notify')) return;
+
+        $stUsers = $pdo->prepare('SELECT id FROM users WHERE branch_id IN (?, ?) AND is_active = 1');
+        $stUsers->execute([$branchA, $branchB]);
+        $uids = array_map(fn($r) => (int) $r['id'], $stUsers->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($uids)) {
+            notify($pdo, $uids, 'transfer_diff_approved', $title, $body, $link);
+        }
+    } catch (Throwable) {}
+}
+
+/**
+ * المقاصة الذكية لفروق التحويلات المعلقة (بريف ٨٥٣).
+ *
+ * تبحث عن تطابق عجز في فرع مع زيادة في فرع آخر لنفس الصنف وبنفس الكمية.
+ * الأولوية: نفس مستند التحويل التلقائي (نفس distribution_id في stock_doc_dists)، ثم الأقدم.
+ * الفروق الفردية التي لا تجد مقابلاً:
+ * - الناقص: to_sender (يرجع للراسل).
+ * - الزيادة: from_sender (تتخصم من الراسل).
+ * 🔴 مفيش مقاصة جزئية. الفروق التي اعتُمدت من أحد الطرفين لا يتغير اقتراحها.
+ * استعلام واحد يجيب كل الفروق المفتوحة، والمطابقة في الذاكرة، وUPDATE مجمّع.
+ *
+ * @param PDO $pdo
+ * @return array تفاصيل المطابقة والإحصائيات
+ */
+function transfer_diffs_match(PDO $pdo): array
+{
+    $ownTx = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $ownTx = true;
+    }
+
+    try {
+        // استعلام واحد لجلب كل الفروق المؤهلة للمطابقة
+        $sql = "SELECT df.id, df.doc_id, df.doc_line_id, df.item_id, df.kind, df.qty,
+                       df.status, df.resolution, df.pair_diff_id, df.counter_branch_id,
+                       df.recv_approved_at, df.owner_approved_at,
+                       d.branch_id AS sender_branch_id, d.counter_branch_id AS receiver_branch_id,
+                       d.created_at AS doc_created_at,
+                       c.name AS item_name,
+                       (SELECT sdd.distribution_id FROM stock_doc_dists sdd WHERE sdd.doc_id = df.doc_id LIMIT 1) AS dist_id
+                  FROM stock_transfer_diffs df
+                  JOIN stock_docs d ON d.id = df.doc_id
+                  LEFT JOIN stock_doc_lines l ON l.id = df.doc_line_id
+                  LEFT JOIN hq_codes c ON c.code = l.code
+                 WHERE df.status = 'pending'
+                   AND df.recv_approved_at IS NULL
+                   AND df.owner_approved_at IS NULL
+                   AND (df.resolution IS NULL OR df.resolution IN ('to_sender', 'from_sender'))
+                 ORDER BY df.id ASC";
+
+        $stCandidates = $pdo->query($sql);
+        $candidates = $stCandidates->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($candidates)) {
+            if ($ownTx) {
+                $pdo->commit();
+            }
+            return [
+                'updated_count' => 0,
+                'pairs_count'   => 0,
+                'partial_count' => 0,
+                'diffs'         => [],
+            ];
+        }
+
+        // تجميع الفروق حسب item_id
+        $byItem = [];
+        foreach ($candidates as $c) {
+            $itemId = (int) $c['item_id'];
+            $byItem[$itemId][] = $c;
+        }
+
+        $proposals = [];      // diff_id => ['resolution' => ..., 'pair_diff_id' => ..., 'counter_branch_id' => ...]
+        $matchedPairs = [];
+        $partialCount = 0;
+
+        foreach ($byItem as $itemId => $rows) {
+            $shorts = [];
+            $excesses = [];
+
+            foreach ($rows as $r) {
+                if ($r['kind'] === 'short') {
+                    $shorts[] = $r;
+                } elseif ($r['kind'] === 'excess') {
+                    $excesses[] = $r;
+                }
+            }
+
+            // مطابقة العجز مع الزيادة
+            foreach ($shorts as $s) {
+                $sId       = (int) $s['id'];
+                $sQty      = (float) $s['qty'];
+                $sBranch   = (int) $s['receiver_branch_id'];
+                $sDistId   = $s['dist_id'] !== null ? (int) $s['dist_id'] : null;
+
+                $bestIdx = null;
+                $bestScore = -1; // 2: نفس التحويل التلقائي، 1: أقدم
+
+                foreach ($excesses as $idx => $ex) {
+                    $exBranch = (int) $ex['receiver_branch_id'];
+                    if ($exBranch === $sBranch) {
+                        continue; // نفس الفرع ما يصحش
+                    }
+
+                    $exQty = (float) $ex['qty'];
+                    if (abs($exQty - $sQty) > 0.0001) {
+                        // كميات مختلفة (حالة جزئية تُسجل للإحصاء فقط ولا تطابق)
+                        $partialCount++;
+                        continue;
+                    }
+
+                    // تطابق تام في الكمية
+                    $exDistId = $ex['dist_id'] !== null ? (int) $ex['dist_id'] : null;
+                    $score = ($sDistId !== null && $sDistId === $exDistId) ? 2 : 1;
+
+                    if ($score > $bestScore) {
+                        $bestScore = $score;
+                        $bestIdx = $idx;
+                    }
+                }
+
+                if ($bestIdx !== null) {
+                    $matchedEx = $excesses[$bestIdx];
+                    unset($excesses[$bestIdx]);
+                    $exId     = (int) $matchedEx['id'];
+                    $exBranch = (int) $matchedEx['receiver_branch_id'];
+
+                    $proposals[$sId] = [
+                        'resolution'        => 'swap',
+                        'pair_diff_id'      => $exId,
+                        'counter_branch_id' => $exBranch,
+                    ];
+                    $proposals[$exId] = [
+                        'resolution'        => 'swap',
+                        'pair_diff_id'      => $sId,
+                        'counter_branch_id' => $sBranch,
+                    ];
+                    $matchedPairs[] = ['short_id' => $sId, 'excess_id' => $exId];
+                } else {
+                    // لم يجد مقابلاً بنفس الكمية
+                    $proposals[$sId] = [
+                        'resolution'        => 'to_sender',
+                        'pair_diff_id'      => null,
+                        'counter_branch_id' => null,
+                    ];
+                }
+            }
+
+            // الزيادات المتبقية التي لم تطابق
+            foreach ($excesses as $remEx) {
+                $remId = (int) $remEx['id'];
+                $proposals[$remId] = [
+                    'resolution'        => 'from_sender',
+                    'pair_diff_id'      => null,
+                    'counter_branch_id' => null,
+                ];
+            }
+        }
+
+        // تحديد الفروق التي تغير اقتراحها فعلياً لتحديثها بـ UPDATE مجمّع
+        $diffsToUpdate = [];
+        foreach ($candidates as $c) {
+            $id = (int) $c['id'];
+            if (!isset($proposals[$id])) {
+                continue;
+            }
+            $p = $proposals[$id];
+            $curRes     = $c['resolution'];
+            $curPair    = $c['pair_diff_id'] !== null ? (int) $c['pair_diff_id'] : null;
+            $curCounter = $c['counter_branch_id'] !== null ? (int) $c['counter_branch_id'] : null;
+
+            $changed = ($curRes !== $p['resolution'])
+                || ($curPair !== $p['pair_diff_id'])
+                || ($curCounter !== $p['counter_branch_id']);
+
+            if ($changed) {
+                $diffsToUpdate[$id] = [
+                    'id'                => $id,
+                    'doc_id'            => (int) $c['doc_id'],
+                    'item_id'           => (int) $c['item_id'],
+                    'item_name'         => $c['item_name'] ?? ('صنف ' . $c['item_id']),
+                    'qty'               => (float) $c['qty'],
+                    'kind'              => $c['kind'],
+                    'from_branch'       => (int) $c['receiver_branch_id'],
+                    'to_branch'         => (int) ($p['counter_branch_id'] ?? $c['sender_branch_id']),
+                    'resolution'        => $p['resolution'],
+                    'pair_diff_id'      => $p['pair_diff_id'],
+                    'counter_branch_id' => $p['counter_branch_id'],
+                ];
+            }
+        }
+
+        // تنفيذ التحديث المجمّع وقفل السطور بـ FOR UPDATE
+        if (!empty($diffsToUpdate)) {
+            $updateIds = array_keys($diffsToUpdate);
+            $in = implode(',', array_fill(0, count($updateIds), '?'));
+
+            // 1. قفل الفروق المتأثرة
+            $stLock = $pdo->prepare("SELECT id FROM stock_transfer_diffs WHERE id IN ($in) FOR UPDATE");
+            $stLock->execute($updateIds);
+
+            // 2. تحديث مجمّع باستعلام واحد
+            $resCases = [];
+            $pairCases = [];
+            $counterCases = [];
+            $resParams = [];
+            $pairParams = [];
+            $counterParams = [];
+
+            foreach ($diffsToUpdate as $id => $u) {
+                $resCases[] = "WHEN ? THEN ?";
+                $resParams[] = $id;
+                $resParams[] = $u['resolution'];
+
+                $pairCases[] = "WHEN ? THEN ?";
+                $pairParams[] = $id;
+                $pairParams[] = $u['pair_diff_id'];
+
+                $counterCases[] = "WHEN ? THEN ?";
+                $counterParams[] = $id;
+                $counterParams[] = $u['counter_branch_id'];
+            }
+
+            $allParams = array_merge($resParams, $pairParams, $counterParams, $updateIds);
+            $sqlUp = "UPDATE stock_transfer_diffs SET
+                resolution = CASE id " . implode(' ', $resCases) . " END,
+                pair_diff_id = CASE id " . implode(' ', $pairCases) . " END,
+                counter_branch_id = CASE id " . implode(' ', $counterCases) . " END
+                WHERE id IN ($in)";
+            $pdo->prepare($sqlUp)->execute($allParams);
+
+            // 3. إرسال إشعار واحد مجمّع لأصحاب الصلاحية
+            try {
+                if (is_file(__DIR__ . '/push_lib.php')) {
+                    require_once __DIR__ . '/push_lib.php';
+                    if (function_exists('notify')) {
+                        $targetUids = transfer_resolve_notification_uids($pdo);
+                        if (!empty($targetUids)) {
+                            $brNames = transfer_branch_names($pdo);
+                            $first = reset($diffsToUpdate);
+                            $fName = $brNames[$first['from_branch']] ?? ('فرع ' . $first['from_branch']);
+                            $tName = $brNames[$first['to_branch']] ?? ('فرع ' . $first['to_branch']);
+                            $qtyFormatted = number_format($first['qty'], 3);
+
+                            if (count($diffsToUpdate) === 1) {
+                                $body = "فرق تحويل محتاج موافقتك — هيأثر على الرصيد: {$first['item_name']} $qtyFormatted من $fName ← $tName";
+                            } else {
+                                $nOthers = count($diffsToUpdate) - 1;
+                                $body = "فرق تحويل محتاج موافقتك — هيأثر على الرصيد: {$first['item_name']} $qtyFormatted من $fName ← $tName (وعدد $nOthers فروق أخرى)";
+                            }
+
+                            notify(
+                                $pdo,
+                                $targetUids,
+                                'transfer_diff',
+                                'فروق تحويل بانتظار الاعتماد',
+                                $body,
+                                'transfers.php?tab=diffs'
+                            );
+                        }
+                    }
+                }
+            } catch (Throwable) {}
+        }
+
+        if ($ownTx) {
+            $pdo->commit();
+        }
+
+        return [
+            'updated_count' => count($diffsToUpdate),
+            'pairs_count'   => count($matchedPairs),
+            'partial_count' => $partialCount,
+            'diffs'         => $diffsToUpdate,
+        ];
+    } catch (Throwable $e) {
+        if ($ownTx && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * اعتماد فرق تحويل (دورة اعتماد مزدوجة: استلامات + مالك) وتنفيذ تلقائي (بريف ٨٥٣).
+ *
+ * @param PDO $pdo
+ * @param int $diffId معرّف الفرق
+ * @param int $uid معرّف المستخدم المعتمد
+ * @return array تفاصيل الاعتماد والنتيجة
+ */
+function transfer_diff_approve(PDO $pdo, int $diffId, int $uid): array
+{
+    stock_require_enabled();
+
+    $isRealOwner = is_real_owner();
+    $hasResolvePerm = in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true)
+        || in_array('transfers:resolve', user_effective_permissions($uid), true);
+
+    if (!$isRealOwner && !$hasResolvePerm) {
+        throw new RuntimeException('غير مصرح لك باعتماد هذا الفرق — يتطلب صلاحية الاستلامات أو المالك.');
+    }
+
+    $ownTx = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $ownTx = true;
+    }
+
+    try {
+        $stDiff = $pdo->prepare('SELECT * FROM stock_transfer_diffs WHERE id = ? FOR UPDATE');
+        $stDiff->execute([$diffId]);
+        $diff = $stDiff->fetch(PDO::FETCH_ASSOC);
+        if (!$diff) {
+            throw new RuntimeException("الفرق غير موجود (id=$diffId).");
+        }
+        if ($diff['status'] === 'resolved') {
+            throw new RuntimeException('تم اعتماد وحل هذا الفرق مسبقاً.');
+        }
+        if ($diff['status'] === 'rejected') {
+            throw new RuntimeException('هذا الفرق تم رفضه.');
+        }
+
+        // الفرق المقابل في حالة swap
+        $pairId = !empty($diff['pair_diff_id']) ? (int) $diff['pair_diff_id'] : null;
+        $pairDiff = null;
+        if ($diff['resolution'] === 'swap' && $pairId) {
+            $stPair = $pdo->prepare('SELECT * FROM stock_transfer_diffs WHERE id = ? FOR UPDATE');
+            $stPair->execute([$pairId]);
+            $pairDiff = $stPair->fetch(PDO::FETCH_ASSOC);
+        }
+
+        $targetDiffs = [$diff];
+        if ($pairDiff) {
+            $targetDiffs[] = $pairDiff;
+        }
+        $targetIds = array_map(fn($d) => (int) $d['id'], $targetDiffs);
+
+        $hasExistingRecv  = !empty($diff['recv_approved_at']);
+        $hasExistingOwner = !empty($diff['owner_approved_at']);
+
+        $nowRecv  = $hasResolvePerm || $hasExistingRecv;
+        $nowOwner = $isRealOwner || $hasExistingOwner;
+        $isFullyApproved = $nowRecv && $nowOwner;
+
+        // تجهيز جملة التحديث
+        $setClauses = [];
+        $setParams  = [];
+
+        if ($hasResolvePerm && !$hasExistingRecv) {
+            $setClauses[] = 'recv_approved_by = ?, recv_approved_at = NOW()';
+            $setParams[]  = $uid;
+        }
+        if ($isRealOwner && !$hasExistingOwner) {
+            $setClauses[] = 'owner_approved_by = ?, owner_approved_at = NOW()';
+            $setParams[]  = $uid;
+        }
+
+        if ($isFullyApproved) {
+            $setClauses[] = "status = 'approved'";
+        } else {
+            $setClauses[] = "status = 'pending'";
+        }
+
+        if (!empty($setClauses)) {
+            $in = implode(',', array_fill(0, count($targetIds), '?'));
+            $allParams = array_merge($setParams, $targetIds);
+            $sqlUp = "UPDATE stock_transfer_diffs SET " . implode(', ', $setClauses) . " WHERE id IN ($in)";
+            $pdo->prepare($sqlUp)->execute($allParams);
+        }
+
+        $resolveDocId = null;
+
+        // إذا اكتمل الاعتمادان -> التنفيذ الفوري في نفس المعاملة
+        if ($isFullyApproved) {
+            $resType = $diff['resolution'];
+
+            if ($resType === 'swap') {
+                // مقاصة ذكية بين فرعين: حركة واحدة للزوج
+                $excessDiff = ($diff['kind'] === 'excess') ? $diff : $pairDiff;
+                $shortDiff  = ($diff['kind'] === 'short')  ? $diff : $pairDiff;
+
+                // فرع العجز المستلم الذي سيتم الخصم منه بمستند التسوية
+                $stShortDoc = $pdo->prepare('SELECT counter_branch_id FROM stock_docs WHERE id = ?');
+                $stShortDoc->execute([(int) $shortDiff['doc_id']]);
+                $shortBranchId = (int) $stShortDoc->fetchColumn();
+
+                // فرع الزيادة المستلم
+                $stExcessDoc = $pdo->prepare('SELECT counter_branch_id FROM stock_docs WHERE id = ?');
+                $stExcessDoc->execute([(int) $excessDiff['doc_id']]);
+                $excessBranchId = (int) $stExcessDoc->fetchColumn();
+
+                // تنفيذ تسوية الزيادة بالخصم من فرع العجز والإضافة لفرع الزيادة
+                $resolveDocId = transfer_resolve_excess($pdo, (int) $excessDiff['id'], $shortBranchId, $uid);
+
+                // تحديث فرق العجز المقابل بنفس مستند التسوية
+                $pdo->prepare(
+                    "UPDATE stock_transfer_diffs
+                        SET status = 'resolved',
+                            source_branch_id = ?,
+                            resolve_doc_id = ?,
+                            resolved_by = ?,
+                            resolved_at = NOW(),
+                            note = ?
+                      WHERE id = ?"
+                )->execute([
+                    $shortBranchId,
+                    $resolveDocId,
+                    $uid,
+                    "تمت المقاصة مع مخزن $excessBranchId بمستند تسوية #$resolveDocId",
+                    (int) $shortDiff['id']
+                ]);
+
+                // فحص إغلاق مستند العجز
+                $stRemShort = $pdo->prepare("SELECT COUNT(*) FROM stock_transfer_diffs WHERE doc_id = ? AND status != 'resolved'");
+                $stRemShort->execute([(int) $shortDiff['doc_id']]);
+                if ((int) $stRemShort->fetchColumn() === 0) {
+                    $pdo->prepare("UPDATE stock_docs SET status = 'closed' WHERE id = ?")->execute([(int) $shortDiff['doc_id']]);
+                    $evCl = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
+                        VALUES ('stock', ?, 'status:closed', ?, NOW(), ?)");
+                    $evCl->execute([(int) $shortDiff['doc_id'], $uid, json_encode(['reason' => 'تمت المقاصة وإغلاق المستند'], JSON_UNESCAPED_UNICODE)]);
+                }
+
+                // إشعار بعد التنفيذ للفرعين
+                $brNames = transfer_branch_names($pdo);
+                $sName = $brNames[$shortBranchId] ?? ('فرع ' . $shortBranchId);
+                $eName = $brNames[$excessBranchId] ?? ('فرع ' . $excessBranchId);
+                $stItem = $pdo->prepare('SELECT name FROM hq_codes WHERE item_id = ? LIMIT 1');
+                $stItem->execute([(int) $diff['item_id']]);
+                $itemName = $stItem->fetchColumn() ?: ('صنف ' . $diff['item_id']);
+                $qtyFmt = number_format((float) $diff['qty'], 3);
+
+                transfer_notify_branches(
+                    $pdo,
+                    $shortBranchId,
+                    $excessBranchId,
+                    'اعتماد فرق تحويل (مقاصة)',
+                    "اتعتمد فرق $itemName $qtyFmt — اتحوّل من $sName لـ$eName",
+                    'transfers.php?tab=diffs'
+                );
+
+            } elseif ($resType === 'from_sender') {
+                // الزيادة تُخصم من مخزن الراسل
+                $stDoc = $pdo->prepare('SELECT branch_id, counter_branch_id FROM stock_docs WHERE id = ?');
+                $stDoc->execute([(int) $diff['doc_id']]);
+                $docRow = $stDoc->fetch(PDO::FETCH_ASSOC);
+                $senderBranchId = (int) $docRow['branch_id'];
+                $recvBranchId   = (int) $docRow['counter_branch_id'];
+
+                $resolveDocId = transfer_resolve_excess($pdo, $diffId, $senderBranchId, $uid);
+
+                $brNames = transfer_branch_names($pdo);
+                $sName = $brNames[$senderBranchId] ?? ('فرع ' . $senderBranchId);
+                $rName = $brNames[$recvBranchId] ?? ('فرع ' . $recvBranchId);
+                $stItem = $pdo->prepare('SELECT name FROM hq_codes WHERE item_id = ? LIMIT 1');
+                $stItem->execute([(int) $diff['item_id']]);
+                $itemName = $stItem->fetchColumn() ?: ('صنف ' . $diff['item_id']);
+                $qtyFmt = number_format((float) $diff['qty'], 3);
+
+                transfer_notify_branches(
+                    $pdo,
+                    $senderBranchId,
+                    $recvBranchId,
+                    'اعتماد فرق تحويل (زيادة من الراسل)',
+                    "اتعتمد فرق $itemName $qtyFmt — اتحوّل من $sName لـ$rName",
+                    'transfers.php?tab=diffs'
+                );
+
+            } elseif ($resType === 'to_sender') {
+                // العجز يُرد لمخزن الراسل
+                $stDoc = $pdo->prepare('SELECT branch_id, counter_branch_id FROM stock_docs WHERE id = ?');
+                $stDoc->execute([(int) $diff['doc_id']]);
+                $docRow = $stDoc->fetch(PDO::FETCH_ASSOC);
+                $senderBranchId = (int) $docRow['branch_id'];
+                $recvBranchId   = (int) $docRow['counter_branch_id'];
+
+                $resolveDocId = transfer_resolve_short($pdo, $diffId, $uid);
+
+                $brNames = transfer_branch_names($pdo);
+                $sName = $brNames[$senderBranchId] ?? ('فرع ' . $senderBranchId);
+                $rName = $brNames[$recvBranchId] ?? ('فرع ' . $recvBranchId);
+                $stItem = $pdo->prepare('SELECT name FROM hq_codes WHERE item_id = ? LIMIT 1');
+                $stItem->execute([(int) $diff['item_id']]);
+                $itemName = $stItem->fetchColumn() ?: ('صنف ' . $diff['item_id']);
+                $qtyFmt = number_format((float) $diff['qty'], 3);
+
+                transfer_notify_branches(
+                    $pdo,
+                    $recvBranchId,
+                    $senderBranchId,
+                    'اعتماد فرق تحويل (رد عجز للراسل)',
+                    "اتعتمد فرق $itemName $qtyFmt — اتحوّل من $rName لـ$sName",
+                    'transfers.php?tab=diffs'
+                );
+            }
+        }
+
+        if ($ownTx) {
+            $pdo->commit();
+        }
+
+        return [
+            'diff_id'           => $diffId,
+            'status'            => $isFullyApproved ? 'resolved' : 'pending',
+            'is_fully_approved' => $isFullyApproved,
+            'recv_approved'     => $nowRecv,
+            'owner_approved'    => $nowOwner,
+            'resolve_doc_id'    => $resolveDocId,
+        ];
+    } catch (Throwable $e) {
+        if ($ownTx && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * رفض فرق تحويل (بريف ٨٥٣).
+ *
+ * @param PDO $pdo
+ * @param int $diffId معرّف الفرق
+ * @param int $uid معرّف المستخدم الرافض
+ * @param string $reason سبب الرفض
+ * @return array
+ */
+function transfer_diff_reject(PDO $pdo, int $diffId, int $uid, string $reason): array
+{
+    $reason = trim($reason);
+    if ($reason === '') {
+        throw new RuntimeException('سبب الرفض إجباري.');
+    }
+
+    $isRealOwner = is_real_owner();
+    $hasResolvePerm = in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true)
+        || in_array('transfers:resolve', user_effective_permissions($uid), true);
+
+    if (!$isRealOwner && !$hasResolvePerm) {
+        throw new RuntimeException('غير مصرح لك برفض هذا الفرق — يتطلب صلاحية الاستلامات أو المالك.');
+    }
+
+    $ownTx = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $ownTx = true;
+    }
+
+    try {
+        $stDiff = $pdo->prepare('SELECT * FROM stock_transfer_diffs WHERE id = ? FOR UPDATE');
+        $stDiff->execute([$diffId]);
+        $diff = $stDiff->fetch(PDO::FETCH_ASSOC);
+        if (!$diff) {
+            throw new RuntimeException("الفرق غير موجود (id=$diffId).");
+        }
+        if ($diff['status'] === 'resolved') {
+            throw new RuntimeException('لا يمكن رفض فرق تم اعتماده وتسويته بالفعل.');
+        }
+
+        $idsToReject = [$diffId];
+        if (!empty($diff['pair_diff_id'])) {
+            $pairId = (int) $diff['pair_diff_id'];
+            $stPair = $pdo->prepare('SELECT id, status FROM stock_transfer_diffs WHERE id = ? FOR UPDATE');
+            $stPair->execute([$pairId]);
+            $pairDiff = $stPair->fetch(PDO::FETCH_ASSOC);
+            if ($pairDiff && $pairDiff['status'] !== 'resolved') {
+                $idsToReject[] = $pairId;
+            }
+        }
+
+        $in = implode(',', array_fill(0, count($idsToReject), '?'));
+        $params = array_merge([$uid, $reason], $idsToReject);
+        $stUp = $pdo->prepare(
+            "UPDATE stock_transfer_diffs
+                SET status = 'rejected',
+                    rejected_by = ?,
+                    rejected_at = NOW(),
+                    reject_reason = ?
+              WHERE id IN ($in)"
+        );
+        $stUp->execute($params);
+
+        // تسجيل حدث الرفض في المستندات
+        $evSt = $pdo->prepare("INSERT INTO doc_events (doc_kind, doc_id, event, user_id, at, details)
+            VALUES ('stock', ?, 'diff:rejected', ?, NOW(), ?)");
+        $evSt->execute([
+            (int) $diff['doc_id'],
+            $uid,
+            json_encode(['diff_id' => $diffId, 'reason' => $reason], JSON_UNESCAPED_UNICODE),
+        ]);
+
+        if ($ownTx) {
+            $pdo->commit();
+        }
+
+        return [
+            'rejected_ids' => $idsToReject,
+            'status'       => 'rejected',
+            'reason'       => $reason,
+        ];
     } catch (Throwable $e) {
         if ($ownTx && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -1103,27 +1956,30 @@ function transfer_list(PDO $pdo, array $filters): array
 }
 
 /**
- * جلب حالات الفروق المفتوحة (الزيادات المعلقة).
+ * جلب حالات الفروق المفتوحة والمعلقة (بريف ٨٥٣: تشمل pending, approved, rejected بالإضافة لـ open القديم).
  */
 function transfer_open_diffs(PDO $pdo, ?int $branchId = null): array
 {
-    $where = ["df.status = 'open'"];
+    $where = ["df.status IN ('open', 'pending', 'approved', 'rejected')"];
     $params = [];
     if ($branchId !== null) {
-        $where[] = "(d.branch_id = ? OR d.counter_branch_id = ?)";
+        $where[] = "(d.branch_id = ? OR d.counter_branch_id = ? OR df.counter_branch_id = ?)";
+        $params[] = $branchId;
         $params[] = $branchId;
         $params[] = $branchId;
     }
 
     $sql = 'SELECT df.*, c.name AS item_name, l.code,
                    d.doc_no, d.doc_year, d.branch_id, d.counter_branch_id,
-                   b.name AS from_branch_name, cb.name AS to_branch_name
+                   b.name AS from_branch_name, cb.name AS to_branch_name,
+                   counter_b.name AS counter_branch_name
               FROM stock_transfer_diffs df
               JOIN stock_docs d ON d.id = df.doc_id
               LEFT JOIN stock_doc_lines l ON l.id = df.doc_line_id
               LEFT JOIN hq_codes c ON c.code = l.code
               LEFT JOIN branches b ON b.id = d.branch_id
               LEFT JOIN branches cb ON cb.id = d.counter_branch_id
+              LEFT JOIN branches counter_b ON counter_b.id = df.counter_branch_id
              WHERE ' . implode(' AND ', $where) . '
              ORDER BY df.id DESC';
 
@@ -1150,7 +2006,7 @@ function transfer_supported_branches(PDO $pdo): array
  */
 function transfer_open_diffs_count(PDO $pdo): int
 {
-    return (int) $pdo->query("SELECT COUNT(*) FROM stock_transfer_diffs WHERE status = 'open'")->fetchColumn();
+    return (int) $pdo->query("SELECT COUNT(*) FROM stock_transfer_diffs WHERE status IN ('open', 'pending', 'approved')")->fetchColumn();
 }
 
 /**

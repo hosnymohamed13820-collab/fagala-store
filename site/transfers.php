@@ -31,6 +31,8 @@ $pdo = db();
 $user = current_user();
 $uid = (int) ($user['id'] ?? 1);
 $isOwner = is_real_owner() || is_owner();
+$isRealOwner = is_real_owner();
+$canApproveDiffs = $isRealOwner || in_array('transfers:resolve', $_SESSION['permissions'] ?? [], true);
 $userBranchId = !empty($user['branch_id']) ? (int) $user['branch_id'] : null;
 
 // 🔴 بريف ٢١٥ر: غير المالك من غير فرع — مفيش داتا خالص.
@@ -387,59 +389,137 @@ require_once __DIR__ . '/includes/header.php';
 
     <!-- محتوى التاب -->
     <?php if ($tab === 'diffs'): ?>
-        <!-- جدول الفروقات المفتوحة (الزيادات المعلقة) -->
+        <!-- جدول الفروقات (بريف ٨٥٣: دورة اعتماد مزدوجة ومقاصة ذكية) -->
         <?php if (empty($openDiffsList)): ?>
             <div class="fcard" style="padding:30px;text-align:center;color:var(--ink-500);margin-bottom:16px;">
                 <i class="ti ti-check" style="font-size:32px;color:var(--pos);display:block;margin-bottom:8px;"></i>
-                لا توجد فروق زيادة معلقة حالياً. جميع التحويلات مغلقة أو لا تحتوي على زيادات.
+                لا توجد فروق تحويل معلقة أو مفتوحة حالياً. جميع التحويلات مغلقة أو لا تحتوي على فروق.
             </div>
         <?php else: ?>
             <div class="ftable-wrap">
                 <table class="ftable">
                     <thead>
                         <tr>
-                            <th class="num">رقم التحويل</th>
-                            <th>المخزن الراسل</th>
-                            <th>المخزن المستلم</th>
-                            <th>كود الصنف</th>
-                            <th>اسم الصنف</th>
-                            <th class="num">الكمية الزائدة</th>
-                            <th>تحديد المخزن المصدر</th>
-                            <th style="text-align:center;">إجراء</th>
+                            <th>الصنف</th>
+                            <th>الفرع</th>
+                            <th style="text-align:center;">نوع الفرق</th>
+                            <th class="num">الكمية</th>
+                            <th>الاقتراح</th>
+                            <th style="text-align:center;">الاعتمادات</th>
+                            <th style="text-align:center;">الإجراء</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($openDiffsList as $df):
-                            $docLabel = $df['doc_no'] ? ('#' . $df['doc_no'] . '/' . $df['doc_year']) : ('#' . $df['doc_id']);
+                        <?php
+                        $seenSwaps = [];
+                        foreach ($openDiffsList as $df):
+                            $diffId = (int) $df['id'];
+                            $isSwap = ($df['resolution'] === 'swap' && !empty($df['pair_diff_id']));
+
+                            // دمج زوج المقاصة في صف موحد
+                            if ($isSwap) {
+                                if (isset($seenSwaps[$diffId])) {
+                                    continue;
+                                }
+                                $pairId = (int) $df['pair_diff_id'];
+                                $seenSwaps[$diffId] = true;
+                                $seenSwaps[$pairId] = true;
+
+                                $pairRow = null;
+                                foreach ($openDiffsList as $cand) {
+                                    if ((int) $cand['id'] === $pairId) {
+                                        $pairRow = $cand;
+                                        break;
+                                    }
+                                }
+
+                                $shortSide  = ($df['kind'] === 'short') ? $df : $pairRow;
+                                $excessSide = ($df['kind'] === 'excess') ? $df : $pairRow;
+
+                                $shortBranchName = $shortSide['to_branch_name'] ?? ('مخزن ' . ($shortSide['counter_branch_id'] ?? ''));
+                                $excessBranchName = $excessSide['to_branch_name'] ?? ('مخزن ' . ($excessSide['counter_branch_id'] ?? ''));
+                                $proposalText = "يتحوّل من {$shortBranchName} لـ {$excessBranchName}";
+                                $branchLabel = "{$shortBranchName} (عجز) ↔ {$excessBranchName} (زيادة)";
+                                $kindChip = '<span class="fchip fchip-warn">مقاصة ذكية</span>';
+                                $qtyLabel = number_format((float) $df['qty'], 3);
+                            } else {
+                                $branchLabel = e($df['to_branch_name'] ?? ('مخزن ' . $df['counter_branch_id']));
+                                if ($df['kind'] === 'short') {
+                                    $kindChip = '<span class="fchip fchip-neg">عجز</span>';
+                                } else {
+                                    $kindChip = '<span class="fchip fchip-pos">زيادة</span>';
+                                }
+                                $qtyLabel = number_format((float) $df['qty'], 3);
+
+                                if ($df['status'] === 'rejected') {
+                                    $proposalText = 'مرفوض: ' . ($df['reject_reason'] ?? 'بدون سبب');
+                                } elseif ($df['resolution'] === 'to_sender') {
+                                    $senderName = $df['from_branch_name'] ?? 'الإدارة';
+                                    $proposalText = "يرجع لـ $senderName";
+                                } elseif ($df['resolution'] === 'from_sender') {
+                                    $senderName = $df['from_branch_name'] ?? 'الإدارة';
+                                    $proposalText = "يتخصم من $senderName";
+                                } else {
+                                    $proposalText = 'بانتظار تحديد الاقتراح';
+                                }
+                            }
+
+                            $recvOk = !empty($df['recv_approved_at']);
+                            $ownerOk = !empty($df['owner_approved_at']);
+                            $isRejected = ($df['status'] === 'rejected');
                         ?>
                             <tr>
-                                <td class="num"><a href="javascript:void(0)" onclick="viewTransfer(<?= (int)$df['doc_id'] ?>)" style="font-weight:bold;"><?= e($docLabel) ?></a></td>
-                                <td><?= e($df['from_branch_name'] ?? ('مخزن ' . $df['branch_id'])) ?></td>
-                                <td><?= e($df['to_branch_name'] ?? ('مخزن ' . $df['counter_branch_id'])) ?></td>
-                                <td><?= e($df['code'] ?? '') ?></td>
-                                <td><?= e($df['item_name'] ?? ('صنف ' . $df['item_id'])) ?></td>
-                                <td class="num" style="color:var(--pos);font-weight:700;"><?= number_format((float)$df['qty'], 3) ?></td>
                                 <td>
-                                    <?php if (transfers_can_resolve()): ?>
-                                        <select id="diff_source_<?= (int)$df['id'] ?>" class="fselect" style="min-width:160px;">
-                                            <option value="">-- اختر المخزن المصدر --</option>
-                                            <?php foreach ($supportedBranches as $sb):
-                                                if ($sb['id'] === (int)$df['counter_branch_id']) continue; // المستلم مايبقاش مصدر زيادة نفسه
-                                            ?>
-                                                <option value="<?= $sb['id'] ?>" <?= $sb['id'] === (int)$df['branch_id'] ? 'selected' : '' ?>><?= e($sb['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    <?php else: ?>
-                                        <span style="color:var(--ink-500);">بانتظار تحديد المدير</span>
+                                    <strong><?= e($df['code'] ?? '') ?></strong><br>
+                                    <span style="font-size:12px;color:var(--ink-700);"><?= e($df['item_name'] ?? ('صنف ' . $df['item_id'])) ?></span>
+                                </td>
+                                <td><?= e($branchLabel) ?></td>
+                                <td style="text-align:center;"><?= $kindChip ?></td>
+                                <td class="num" style="font-weight:700;"><?= $qtyLabel ?></td>
+                                <td>
+                                    <span style="font-weight:600;"><?= e($proposalText) ?></span>
+                                    <?php if (!empty($df['note']) && !$isSwap): ?>
+                                        <div style="font-size:11px;color:var(--ink-500);"><?= e($df['note']) ?></div>
                                     <?php endif; ?>
                                 </td>
                                 <td style="text-align:center;">
-                                    <?php if (transfers_can_resolve()): ?>
-                                        <button type="button" class="btn btn-sm btn-primary" onclick="resolveExcess(<?= (int)$df['id'] ?>)">
-                                            تأكيد وفك الزيادة
-                                        </button>
+                                    <span class="fchip <?= $recvOk ? 'fchip-pos' : 'fchip-muted' ?>" style="font-size:11px;margin:2px;">
+                                        الاستلامات <?= $recvOk ? '✓' : '—' ?>
+                                    </span>
+                                    <span class="fchip <?= $ownerOk ? 'fchip-pos' : 'fchip-muted' ?>" style="font-size:11px;margin:2px;">
+                                        المالك <?= $ownerOk ? '✓' : '—' ?>
+                                    </span>
+                                </td>
+                                <td style="text-align:center;">
+                                    <?php if ($isRejected): ?>
+                                        <span class="fchip fchip-neg">مرفوض</span>
+                                    <?php elseif ($df['status'] === 'open' && $df['resolution'] === null): ?>
+                                        <?php if ($isRealOwner): ?>
+                                            <div style="display:flex;gap:4px;align-items:center;justify-content:center;">
+                                                <select id="diff_source_<?= (int)$df['id'] ?>" class="fselect" style="min-width:130px;font-size:12px;">
+                                                    <option value="">-- المخزن المصدر --</option>
+                                                    <?php foreach ($supportedBranches as $sb):
+                                                        if ($sb['id'] === (int)$df['counter_branch_id']) continue;
+                                                    ?>
+                                                        <option value="<?= $sb['id'] ?>" <?= $sb['id'] === (int)$df['branch_id'] ? 'selected' : '' ?>><?= e($sb['name']) ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                                <button type="button" class="btn btn-sm btn-primary" onclick="resolveExcess(<?= (int)$df['id'] ?>)">فك</button>
+                                            </div>
+                                        <?php else: ?>
+                                            <span style="color:var(--ink-500);font-size:12px;">بانتظار المالك</span>
+                                        <?php endif; ?>
+                                    <?php elseif ($canApproveDiffs): ?>
+                                        <div style="display:inline-flex;gap:4px;">
+                                            <button type="button" class="btn btn-sm btn-success" onclick="approveDiff(<?= (int)$df['id'] ?>)">
+                                                <i class="ti ti-check"></i> موافق
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-danger" onclick="openRejectModal(<?= (int)$df['id'] ?>)">
+                                                <i class="ti ti-x"></i> رفض
+                                            </button>
+                                        </div>
                                     <?php else: ?>
-                                        —
+                                        <span style="color:var(--ink-500);font-size:12px;">للمعتمدين فقط</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -664,6 +744,18 @@ require_once __DIR__ . '/includes/header.php';
                 جاري التحميل...
             </div>
 
+            <!-- سكانر الباركود للعد السريع وللأكواد المربوطة -->
+            <div class="scanner-box" style="margin-bottom:12px;">
+                <div style="font-size:12px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                    <i class="ti ti-scan"></i> مسح باركود بالاسكانر:
+                </div>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="rx_scan_code_input" class="finput finput-sm" placeholder="امسح باركود الصنف ثم اضغط Enter..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();scanReceiveBarcode();}">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="scanReceiveBarcode()"><i class="ti ti-plus"></i> عد +1 وحدة</button>
+                </div>
+                <div id="rx_scan_msg" style="font-size:12px;margin-top:4px;display:none;"></div>
+            </div>
+
             <div class="ftable-wrap">
                 <table class="ftable">
                     <thead>
@@ -685,6 +777,32 @@ require_once __DIR__ . '/includes/header.php';
         <div class="modal-footer">
             <button type="button" class="btn btn-ghost" onclick="closeModal('receiveModal')">إلغاء</button>
             <button type="button" class="btn btn-primary" id="btn_confirm_receive" onclick="confirmReceive()">تأكيد الاستلام النهائي</button>
+        </div>
+    </div>
+</div>
+
+<!-- مودال رفض فرق التحويل (بريف ٨٥٣) -->
+<div id="rejectDiffModal" class="modal-overlay">
+    <div class="fcard modal-card" style="max-width:480px;">
+        <div class="modal-header">
+            <h3 style="margin:0;font-size:16px;display:flex;align-items:center;gap:6px;">
+                <i class="ti ti-x"></i> رفض فرق التحويل
+            </h3>
+            <button type="button" onclick="closeModal('rejectDiffModal')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text);">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="reject_diff_id" value="">
+            <div style="margin-bottom:12px;font-size:13px;color:var(--ink-700);">
+                يرجى كتابة سبب رفض هذا الفرق (السبب إجباري وسيتم حفظه في سجل العمليات):
+            </div>
+            <div>
+                <label for="reject_diff_reason" style="display:block;font-size:13px;margin-bottom:6px;font-weight:600;">سبب الرفض:</label>
+                <input type="text" id="reject_diff_reason" class="finput" placeholder="اكتب سبب الرفض هنا..." style="width:100%;box-sizing:border-box;">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-ghost" onclick="closeModal('rejectDiffModal')">إلغاء</button>
+            <button type="button" class="btn btn-danger" id="btn_confirm_reject" onclick="confirmRejectDiff()">تأكيد الرفض</button>
         </div>
     </div>
 </div>
@@ -1183,6 +1301,79 @@ async function resolveExcess(diffId) {
         location.reload();
     } catch (e) {
         alert('فشل فك الزيادة: ' + e.message);
+    }
+}
+
+async function approveDiff(diffId) {
+    if (!confirm('هل أنت متأكد من اعتماد هذا الفرق؟ إذا اكتمل الاعتمادان فسيتم ترحيل مستند التسوية والمخزون تلقائياً.')) {
+        return;
+    }
+    try {
+        const res = await apiCall('diff_approve', { diff_id: diffId });
+        if (res.is_fully_approved) {
+            alert('تم اعتماد الفرق وتنفيذه وترحيل مستند التسوية بنجاح.');
+        } else {
+            alert('تم تسجيل اعتمادك بنجاح. الفرق بانتظار الاعتماد الآخر.');
+        }
+        location.reload();
+    } catch (e) {
+        alert('فشل اعتماد الفرق: ' + e.message);
+    }
+}
+
+function openRejectModal(diffId) {
+    document.getElementById('reject_diff_id').value = diffId;
+    document.getElementById('reject_diff_reason').value = '';
+    openModal('rejectDiffModal');
+}
+
+async function confirmRejectDiff() {
+    const diffId = parseInt(document.getElementById('reject_diff_id').value, 10);
+    const reason = document.getElementById('reject_diff_reason').value.trim();
+    if (!reason) {
+        alert('سبب الرفض إجباري.');
+        return;
+    }
+    const btn = document.getElementById('btn_confirm_reject');
+    btn.disabled = true;
+    try {
+        await apiCall('diff_reject', { diff_id: diffId, reason: reason });
+        alert('تم رفض الفرق بنجاح.');
+        location.reload();
+    } catch (e) {
+        alert('فشل رفض الفرق: ' + e.message);
+        btn.disabled = false;
+    }
+}
+
+async function scanReceiveBarcode() {
+    const input = document.getElementById('rx_scan_code_input');
+    const msgEl = document.getElementById('rx_scan_msg');
+    const code = input.value.trim();
+    if (!code) return;
+
+    msgEl.style.display = 'none';
+    try {
+        const res = await apiCall('count', {
+            id: activeReceiveDocId,
+            code: code,
+            units: 1,
+            mode: 'add'
+        });
+        const lineInput = document.getElementById('rx_input_' + res.line_id);
+        if (lineInput) {
+            lineInput.value = res.received_pieces;
+            calcDiff(res.line_id);
+        }
+        input.value = '';
+        msgEl.style.display = 'block';
+        msgEl.style.color = 'var(--pos)';
+        msgEl.textContent = `تم تسجيل عد للصنف (الإجمالي: ${res.received_pieces} قطعة)`;
+        setTimeout(() => { msgEl.style.display = 'none'; }, 2500);
+    } catch (e) {
+        msgEl.style.display = 'block';
+        msgEl.style.color = 'var(--neg)';
+        msgEl.textContent = e.message;
     }
 }
 </script>
