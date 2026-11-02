@@ -30,6 +30,8 @@ require_once __DIR__ . '/includes/header.php';
 .im-bar,.im-head,.im-badges{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}.im-bar{margin-bottom:var(--sp-4)}.im-bar .finput{flex:1;min-width:140px}.im-head{justify-content:space-between;align-items:start}.im-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:var(--sp-4);margin-top:var(--sp-4)}.im-layout>div{min-width:0}.im-side .fcard{margin-bottom:var(--sp-3)}.im-fields{display:grid;gap:var(--sp-3);margin-top:var(--sp-3)}.im-code-fields{grid-template-columns:220px 260px;justify-content:start;text-align:center}.im-code-value{font-size:var(--fs-lg);font-weight:700;font-variant-numeric:tabular-nums}.im-name{max-width:860px;margin-top:var(--sp-3)}.im-name-value{font-size:var(--fs-xl);font-weight:700}.im-small{grid-template-columns:repeat(4,140px);max-width:860px;justify-content:space-between;text-align:center}.im-small .finput,.im-small .fselect,.im-code-fields .finput{text-align:center;text-align-last:center}.im-cats{grid-template-columns:repeat(5,minmax(0,1fr))}.im-rows>div{display:flex;justify-content:space-between;gap:var(--sp-2);margin-top:var(--sp-2)}.im-big{font-size:var(--fs-2xl);font-weight:700;font-variant-numeric:tabular-nums}.im-panel{margin-top:var(--sp-4)}.im-search-dialog{width:min(92vw,900px)}
 @media(max-width:1100px){.im-layout{grid-template-columns:minmax(0,1fr)}.im-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3)}}@media(max-width:650px){.im-small,.im-cats{grid-template-columns:repeat(2,minmax(0,1fr))}.im-code-fields{grid-template-columns:minmax(180px,220px) minmax(0,260px)}.im-side{display:block}}
 .im-value{padding:9px 12px;border:1px solid var(--line-soft);border-radius:var(--r-md);background:var(--bg);color:var(--ink-900);min-height:40px;box-sizing:border-box}.im-note{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}.im-badges>[hidden]{display:none}
+/* خانة كود التصنيف قبل كل select — عرض صغير، والقسم بيتعرض رقمين (05). */
+.im-cat-pair{display:flex;align-items:center;gap:6px;min-width:0}.im-cat-code-wrap{position:relative;flex:0 0 54px;min-width:0}.im-cat-code{width:100%;padding:9px 4px;text-align:center;font-variant-numeric:tabular-nums}.im-cat-err{position:absolute;top:-6px;left:-4px;font-size:13px;line-height:1;color:var(--neg);background:var(--bg-surface);border-radius:50%}.im-cat-code.im-bad{border-color:var(--neg);box-shadow:0 0 0 1px var(--neg)}.im-cat-code-chip{vertical-align:middle}
 </style>
 <script type="application/json" id="imBoot"><?= json_encode($imBoot, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <main class="content-container" id="imApp">
@@ -103,5 +105,5 @@ require_once __DIR__ . '/includes/header.php';
     <div id="imCardStatus" role="status" hidden></div>
 </div>
 </main>
-<script src="assets/item_master.js?v=841" defer></script>
+<script src="assets/item_master.js?v=842" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

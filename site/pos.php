@@ -791,6 +791,9 @@ require_once __DIR__ . '/includes/header.php';
                             <input type="text" class="finput" id="posExchReceiptInput"
                                    placeholder="رقم إيصال الفاتورة الأصلية...">
                         </div>
+                        <button type="button" class="btn btn-outline" id="posBtnExchCamera" title="امسح بالكاميرا">
+                            <i class="ti ti-camera"></i>
+                        </button>
                         <button type="button" class="btn btn-primary btn-sm" id="posBtnExchSearchDoc">
                             <i class="ti ti-search"></i> بحث
                         </button>
@@ -3867,6 +3870,17 @@ document.addEventListener('DOMContentLoaded', function () {
     if (btnExchSearchDoc) {
         btnExchSearchDoc.addEventListener('click', function () {
             searchExchDoc(exchReceiptInput.value);
+        });
+    }
+    // كاميرا جنب رقم إيصال الاستبدال — نفس طريقة المرتجع بالحرف، وكل زرار مربوط بخانته.
+    const btnExchCamera = document.getElementById('posBtnExchCamera');
+    if (btnExchCamera) {
+        btnExchCamera.addEventListener('click', function () {
+            if (typeof window.openBarcodeScanner === 'function') {
+                window.openBarcodeScanner('posExchReceiptInput');
+            } else {
+                showAlert('warn', 'سكانر الكاميرا مش متاح.');
+            }
         });
     }
     if (exchReceiptInput) {

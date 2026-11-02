@@ -9,9 +9,43 @@
     const checked=v=>Number(v)===1?'checked':'';
     function status(id,msg,type=''){const el=$(id);if(!el)return;el.textContent=msg;el.hidden=!msg;el.className='falert falert-'+(type==='err'?'neg':type==='ok'?'pos':type==='warn'?'warn':'info');}
     function debounce(fn,ms){let t;return function(){clearTimeout(t);const a=arguments;t=setTimeout(()=>fn.apply(null,a),ms);};}
+    // تصنيفات فورم «صنف جديد» — الـid في الصفحة ← نوع التصنيف.
+    const CAT_IDS={imCreateCat:'section',imCreateDesc:'description',imCreateType:'type',imCreateStage:'stage',imCreateCompany:'company'};
+    // كود التصنيف = item_classes.id. القسم بالذات بيتعرض رقمين زي im_next_sys_code (05 مش 5).
+    const catCodeOf=(kind,id)=>{const n=Number(id);if(!Number.isFinite(n)||n<=0)return '';return kind==='section'?String(n).padStart(2,'0'):String(n);};
+    // البحث برقم: 5 و05 و005 كلهم يوصلوا لنفس التصنيف.
+    function catOption(kind,raw){const rows=state.options[kind]||[];const t=String(raw??'').trim();if(!/^\d+$/.test(t))return null;const n=Number(t);return rows.find(c=>Number(c.id)===n)||null;}
+    function catBad(input,on){const wrap=input.closest('.im-cat-code-wrap');const mark=wrap?wrap.querySelector('.im-cat-err'):null;if(mark)mark.hidden=!on;input.classList.toggle('im-bad',on);if(on)input.setAttribute('aria-invalid','true');else input.removeAttribute('aria-invalid');}
     async function loadCategories(){const r=await apiFetch('item_master_api.php?part=categories');state.options=r.data.options||{};fillCats();}
     function kindOptions(kind,selected,selectedName){const rows=state.options[kind]||[];const empty=kind==='section'?'من غير قسم':'من غير تحديد';const has=rows.some(c=>String(c.id)===String(selected));let html='<option value="">'+empty+'</option>'+rows.map(c=>'<option value="'+Number(c.id)+'" '+(String(c.id)===String(selected)?'selected':'')+'>'+esc(c.name)+'</option>').join('');if(selected!==null&&selected!==undefined&&selected!==''&&!has)html+='<option value="'+Number(selected)+'" selected>'+esc(selectedName||('#'+selected))+' — موقوف</option>';return html;}
-    function fillCats(){const map={imCreateCat:'section',imCreateDesc:'description',imCreateType:'type',imCreateStage:'stage',imCreateCompany:'company'};Object.keys(map).forEach(id=>{const el=$(id);if(el)el.innerHTML=kindOptions(map[id],'');});}
+    function fillCats(){Object.keys(CAT_IDS).forEach(id=>{const el=$(id);if(!el)return;const kind=CAT_IDS[id];
+        // خانة الكود بتتحط مرة واحدة قبل الـselect جوه صف واحد، والـreset بيفضّيها بعد كده.
+        let pair=el.closest('.im-cat-pair');
+        if(!pair){
+            const input=document.createElement('input');input.type='text';input.className='finput im-cat-code';input.dir='ltr';input.placeholder='كود';input.autocomplete='off';input.setAttribute('inputmode','numeric');input.setAttribute('aria-label','كود التصنيف');input.dataset.catCode='';input.dataset.catKind=kind;
+            const mark=document.createElement('i');mark.className='ti ti-alert-circle im-cat-err';mark.setAttribute('aria-hidden','true');mark.hidden=true;
+            const wrap=document.createElement('span');wrap.className='im-cat-code-wrap';wrap.appendChild(input);wrap.appendChild(mark);
+            pair=document.createElement('div');pair.className='im-cat-pair';
+            el.parentElement.insertBefore(pair,el);pair.appendChild(wrap);pair.appendChild(el);
+        }
+        const input=pair.querySelector('[data-cat-code]');if(input){input.value='';catBad(input,false);}
+        el.dataset.catKind=kind;el.innerHTML=kindOptions(kind,'');
+    });}
+    // اختيار من الـselect ← خانة الكود تتحدّث بنفس الكود المعروض.
+    function syncCatCode(sel){const kind=sel.dataset.catKind||CAT_IDS[sel.id]||'';const pair=sel.closest('.im-cat-pair');const input=pair?pair.querySelector('[data-cat-code]'):null;if(!input)return;input.value=catCodeOf(kind,sel.value);catBad(input,false);}
+    // كتابة كود + Enter أو blur: نفس اللي بيحصل لما تختار من الـselect بالظبط.
+    // الحفظ بيتنده من الـselect نفسه مرة واحدة — مش من خانة الكود (منع الحفظ مرتين).
+    function commitCatCode(input){const kind=input.dataset.catKind;const pair=input.closest('.im-cat-pair');const sel=pair?pair.querySelector('select'):null;const raw=(input.value||'').trim();
+        catBad(input,false);
+        if(raw===''){input.value='';return;}
+        const row=catOption(kind,raw);
+        if(!row){catBad(input,true);return;}
+        input.value=catCodeOf(kind,row.id);
+        if(!sel||String(sel.value)===String(row.id))return;
+        sel.value=String(row.id);
+        if(sel.closest('#imCreate'))sel.dispatchEvent(new Event('change',{bubbles:true}));
+        else saveMain(sel);
+    }
     async function search(page=1){const q=$('imSearch').value.trim();state.q=q;state.page=page;if(!q){$('imResults').innerHTML='';$('imPager').innerHTML='';return;}status('imSearchStatus','جاري البحث…');try{const r=await apiFetch('item_master_api.php?part=search&q='+encodeURIComponent(q)+'&page='+page);renderResults(r.data);status('imSearchStatus',r.data.total?'':'مفيش نتايج');}catch(e){status('imSearchStatus',e.message,'err');}}
     function renderResults(d){
         $('imResults').innerHTML=d.rows.length?'<div class="ftable-wrap"><table class="ftable" id="imSearchTable"><thead><tr><th>الكود</th><th>الاسم</th><th>القسم</th><th class="num">سعر البيع</th><th class="num">الرصيد الكلي</th></tr></thead><tbody>'+d.rows.map(r=>'<tr role="button" tabindex="0" aria-expanded="false" data-source="'+esc(r.source)+'" data-id="'+Number(r.id)+'"><td dir="ltr">'+esc(r.code)+'</td><td class="name" title="'+esc(r.name1)+'">'+esc(r.name1)+'</td><td>'+val(r.category_name)+'</td><td class="num">'+money(r.sale_price)+'</td><td class="num">'+Number(r.balance)+'</td></tr>').join('')+'</tbody></table></div>':'';
@@ -77,7 +111,13 @@
     async function openItem(source,id){status('imSearchStatus','جاري تحميل الكارت…');try{const r=await apiFetch('item_master_api.php?part=detail&source='+encodeURIComponent(source)+'&id='+id);if(!r.data.item)throw new Error('الصنف مش موجود');state.item=r.data.item;renderCard();showView('card');closeSearch();history.replaceState(null,'','?source='+encodeURIComponent(source)+'&id='+Number(id));$('imResults').querySelectorAll('[data-source]').forEach(row=>row.setAttribute('aria-expanded',row.dataset.source===source&&Number(row.dataset.id)===Number(id)?'true':'false'));status('imSearchStatus','');status('imCardStatus','');}catch(e){status($('imCard').hidden?'imSearchStatus':'imCardStatus',e.message,'err');}}
     function readField(label,value){return '<div class="ffield"><label>'+esc(label)+'</label><div class="im-value" dir="auto">'+esc(value===null||value===undefined||value===''?'—':value)+'</div></div>';}
     function field(label,key,value,type='text',opts=''){if(state.item.readonly||!IM_BOOT.canEdit)return readField(label,type==='check'?(value==null?'—':Number(value)?'آه':'لأ'):value);if(type==='select')return '<div class="ffield"><label>'+esc(label)+'</label><select class="fselect" data-field="'+esc(key)+'" data-old="'+esc(value??'')+'">'+opts+'</select></div>';if(type==='check')return '<div class="ffield"><label>'+esc(label)+'</label><input type="checkbox" data-field="'+esc(key)+'" data-old="'+Number(value||0)+'" '+checked(value)+'></div>';return '<div class="ffield"><label>'+esc(label)+'</label><input class="finput" dir="auto" type="'+type+'" data-field="'+esc(key)+'" data-old="'+esc(value??'')+'" value="'+esc(value??'')+'"></div>';}
-    function catField(label,kind,key){const x=state.item,m=x.main,id=m[key],name=(m.class_names||{})[kind]||'';if(x.readonly||!IM_BOOT.canEdit)return readField(label,x.readonly&&kind!=='section'&&!name?'لسه مااتسحبتش من True':name||(id?'#'+id:'—'));return '<div class="ffield"><label>'+esc(label)+'</label><select class="fselect" data-field="'+esc(key)+'" data-old="'+esc(id??'')+'">'+kindOptions(kind,id,name)+'</select></div>';}
+    function catField(label,kind,key){const x=state.item,m=x.main,id=m[key],name=(m.class_names||{})[kind]||'',code=catCodeOf(kind,id);
+        // عرض بس: الكود يظهر جنب اسم التصنيف.
+        if(x.readonly||!IM_BOOT.canEdit){const txt=x.readonly&&kind!=='section'&&!name?'لسه مااتسحبتش من True':(name||(id?'#'+id:'—'));return '<div class="ffield"><label>'+esc(label)+'</label><div class="im-value" dir="auto">'+(code?'<span class="fchip fchip-mute im-cat-code-chip" dir="ltr">'+esc(code)+'</span> ':'')+esc(txt)+'</div></div>';}
+        return '<div class="ffield"><label>'+esc(label)+'</label><div class="im-cat-pair">'
+            +'<span class="im-cat-code-wrap"><input class="finput im-cat-code" type="text" dir="ltr" inputmode="numeric" autocomplete="off" placeholder="كود" aria-label="كود '+esc(label)+'" data-cat-code="'+esc(key)+'" data-cat-kind="'+kind+'" value="'+esc(code)+'"><i class="ti ti-alert-circle im-cat-err" aria-hidden="true" hidden></i></span>'
+            +'<select class="fselect" data-field="'+esc(key)+'" data-old="'+esc(id??'')+'" data-cat-kind="'+kind+'">'+kindOptions(kind,id,name)+'</select>'
+            +'</div></div>';}
     function renderCard(){const x=state.item,m=x.main,base=x.codes.find(c=>Number(c.code_type)===0)||{},code=x.source==='true'?m.true_item_id:m.sys_code;
         $('imSource').textContent=x.source==='true'?'True':'الموقع';$('imSource').className='fchip '+(x.source==='true'?'fchip-mute':'fchip-pos');$('imTitle').textContent=m.name1;$('imCode').textContent=code||'—';
         $('imCategory').textContent=(m.class_names?.section||m.category_name||'').trim();if(m.true_category_name&&m.true_category_name!==m.category_name)$('imCategory').textContent+=' | True: '+m.true_category_name;$('imCategory').hidden=!$('imCategory').textContent;$('imDescription').textContent=(m.class_names?.description||'').trim();$('imDescription').hidden=!$('imDescription').textContent;$('imCodeCount').textContent=x.codes.length+' كود';
@@ -154,18 +194,26 @@
     $('imResults').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const row=e.target.closest('tr[data-source]');if(row){e.preventDefault();openItem(row.dataset.source,Number(row.dataset.id));}});$('imPager').addEventListener('click',e=>{const b=e.target.closest('[data-page]');if(b)search(Number(b.dataset.page));});
     $('imTabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');if(!b)return;document.querySelectorAll('#imTabs .ftab').forEach(x=>{const on=x===b;x.classList.toggle('is-active',on);x.setAttribute('aria-selected',String(on));});document.querySelectorAll('[data-panel]').forEach(x=>x.hidden=x.dataset.panel!==b.dataset.tab);});
     document.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',backToSearch));
-    $('imCard').addEventListener('blur',e=>{if(e.target.matches('[data-field]'))saveMain(e.target);else if(e.target.matches('[data-code-key]'))saveCode(e.target);else if(e.target.matches('[data-price-code]'))savePrice(e.target);},true);$('imCard').addEventListener('change',e=>{if(e.target.type==='checkbox'&&e.target.matches('[data-field]'))saveMain(e.target);});
+    $('imCard').addEventListener('blur',e=>{if(e.target.matches('[data-field]'))saveMain(e.target);else if(e.target.matches('[data-code-key]'))saveCode(e.target);else if(e.target.matches('[data-price-code]'))savePrice(e.target);else if(e.target.matches('[data-cat-code]'))commitCatCode(e.target);},true);
+    $('imCard').addEventListener('change',e=>{if(e.target.matches('select[data-field]'))syncCatCode(e.target);else if(e.target.type==='checkbox'&&e.target.matches('[data-field]'))saveMain(e.target);});
+    $('imCard').addEventListener('keydown',e=>{const cat=e.target.closest('[data-cat-code]');if(cat&&e.key==='Enter'){e.preventDefault();commitCatCode(cat);}});
     $('imCard').addEventListener('click',e=>{if(e.target.closest('#imAddCode')){state.item.codes.push({id:0,code:'',name1:state.item.main.name1,name2:'',code_type:1,unit_name:state.item.main.base_unit||'قطعة',unit_type:'sub',unit_factor:1,whole_qty:1,open_price:0,prep_days:0,display_screen:'',display_order:0,is_purchase_code:1,is_sale_code:1});renderCodes();}});
     if(IM_BOOT.canEdit){
         $('imNewBtn').addEventListener('click',()=>newItem());
         $('imCreate').addEventListener('submit',createItem);
         if($('imCreateCat'))$('imCreateCat').addEventListener('change',updateNextCode);
+        // خانة كود التصنيف في «صنف جديد»: Enter أو blur، والاختيار من الـselect بيحدّثها.
+        $('imCreate').addEventListener('keydown',e=>{const cat=e.target.closest('[data-cat-code]');if(cat&&e.key==='Enter'){e.preventDefault();commitCatCode(cat);}});
+        $('imCreate').addEventListener('blur',e=>{if(e.target.matches('[data-cat-code]'))commitCatCode(e.target);},true);
+        $('imCreate').addEventListener('change',e=>{if(e.target.matches('select[data-cat-kind]'))syncCatCode(e.target);});
     }
     // 🔴 النداء هنا مايتنفذش وقت قراية السكربت: `apiFetch` في assets/app.js
     //    اللي بيتحمّل في الفوتر؛ نستنى اكتمال التحميل قبل أي نداء.
     document.addEventListener('DOMContentLoaded', async () => {
+        // التصنيفات الأول: الـselect بيرسم من state.options، فلو رندرنا الكارت
+        // قبل ما توصل يبقى فيه القيمة الحالية بس والكود مايغيّرش حاجة.
+        try{await loadCategories();}catch(e){status('imSearchStatus',e.message,'err');}
         if(IM_BOOT.item){state.item=IM_BOOT.item;renderCard();showView('card');}
-        loadCategories().catch(e=>status('imSearchStatus',e.message,'err'));
         const params=new URLSearchParams(location.search),source=params.get('source'),id=Number(params.get('id'));
         if(!IM_BOOT.item&&(source==='true'||source==='site')&&id>0)openItem(source,id);
     });

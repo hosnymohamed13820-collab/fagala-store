@@ -265,31 +265,89 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             margin: 4px 0;
         }
 
-        .receipt-item-row {
-            margin-bottom: 6px;
+        /* جدول الأصناف بعرض ٨٠ مم: ٥ أعمدة ثابتة والاسم بيلف جوّه خانته. */
+        .receipt-items-table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
+            background: transparent;
+            font-size: inherit;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .receipt-items-table tr:hover {
+            background: transparent;
+        }
+
+        .receipt-items-table th,
+        .receipt-items-table td {
+            padding: 3px 2px;
+            vertical-align: top;
+            text-align: center;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            border-bottom: 1px dashed var(--line-soft);
+        }
+
+        .receipt-items-table thead th {
+            background: transparent;
+            font-size: 9px !important;
+            font-weight: 700 !important;
+            line-height: 1.25 !important;
+            white-space: normal;
+            overflow-wrap: normal;
+            word-break: normal;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .receipt-items-table thead th.name {
+            text-align: right;
+        }
+
+        .receipt-items-table .c-code {
+            width: 62px;
+        }
+
+        .receipt-items-table .c-qty {
+            width: 34px;
+        }
+
+        .receipt-items-table .c-price {
+            width: 42px;
+        }
+
+        .receipt-items-table .c-total {
+            width: 48px;
+        }
+
+        .receipt-item-code {
+            direction: ltr;
+            font-size: 8px;
         }
 
         .receipt-item-name {
             font-weight: 600;
-            font-size: var(--fs-sm);
+            font-size: 11px;
+            text-align: right;
             word-break: break-word;
         }
 
-        .receipt-item-details {
-            display: flex;
-            justify-content: space-between;
-            font-size: var(--fs-xs);
-            color: var(--text);
-            margin-top: 1px;
-        }
-
-        .receipt-item-calc {
+        .receipt-item-unit {
+            display: block;
+            font-size: 9px;
+            font-weight: 400;
             color: var(--muted);
         }
 
         .receipt-item-net {
             font-weight: 700;
-            font-variant-numeric: tabular-nums;
+        }
+
+        .receipt-item-disc td {
+            text-align: right;
+            font-size: 10px;
+            color: var(--muted);
+            padding-top: 0;
         }
 
         .receipt-totals {
@@ -423,6 +481,20 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                 max-width: 100% !important;
             }
 
+            .receipt-items-table th,
+            .receipt-items-table td {
+                border-bottom-color: black !important;
+            }
+
+            .receipt-items-table thead th {
+                color: black !important;
+            }
+
+            .receipt-item-unit,
+            .receipt-item-disc td {
+                color: black !important;
+            }
+
             .receipt-drawer-reason-box {
                 background: white !important;
                 border: 1px dashed black !important;
@@ -517,22 +589,43 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             <div class="receipt-divider-solid"></div>
 
             <div class="receipt-items">
-                <?php foreach ($lines as $line): ?>
-                    <div class="receipt-item-row">
-                        <div class="receipt-item-name"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></div>
-                        <div class="receipt-item-details">
-                            <span class="receipt-item-calc">
+                <table class="ftable receipt-items-table">
+                    <colgroup>
+                        <col class="c-code">
+                        <col>
+                        <col class="c-qty">
+                        <col class="c-price">
+                        <col class="c-total">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>كود الصنف</th>
+                            <th class="name">اسم الصنف</th>
+                            <th class="num">الكمية</th>
+                            <th class="num">السعر</th>
+                            <th class="num">الإجمالي</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($lines as $line): ?>
+                        <tr>
+                            <td class="receipt-item-code"><?= htmlspecialchars((string) ($line['code'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                            <td class="receipt-item-name"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
+                            <td class="num">
                                 <?= rtrim(rtrim(number_format((float) ($line['qty'] ?? 0), 2, '.', ''), '0'), '.') ?>
-                                <?= htmlspecialchars($line['unit'] ?? '', ENT_QUOTES, 'UTF-8') ?>
-                                × <?= number_format((float) ($line['price'] ?? 0), 2) ?>
-                                <?php if (!empty($line['discount']) && (float) $line['discount'] > 0): ?>
-                                    (خصم <?= number_format((float) $line['discount'], 2) ?>)
-                                <?php endif; ?>
-                            </span>
-                            <span class="receipt-item-net"><?= number_format((float) ($line['net'] ?? 0), 2) ?></span>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+                                <?php if (!empty($line['unit'])): ?><span class="receipt-item-unit"><?= htmlspecialchars((string) $line['unit'], ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?>
+                            </td>
+                            <td class="num"><?= number_format((float) ($line['price'] ?? 0), 2) ?></td>
+                            <td class="num receipt-item-net"><?= number_format((float) ($line['net'] ?? 0), 2) ?></td>
+                        </tr>
+                        <?php if (!empty($line['discount']) && (float) $line['discount'] > 0): ?>
+                            <tr class="receipt-item-disc">
+                                <td colspan="5"><span class="receipt-item-calc">خصم السطر:</span> <?= number_format((float) $line['discount'], 2) ?></td>
+                            </tr>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
 
             <div class="receipt-divider-double"></div>
