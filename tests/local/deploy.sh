@@ -127,7 +127,9 @@ diff_vs_server() {            # $1 = المصدر · $2 = المسار على ا
 
     # بصمات السيرفر: الملف اللي مش موجود بيطلع بصمة فاضية وبيتحسب «جديد»
     # shellcheck disable=SC2016
-    "${SSH[@]}" "$SSH_HOST" "cd '$remote' 2>/dev/null && xargs -d '\n' -r md5sum -- 2>/dev/null" \
+    # md5sum بيرجع 1 لو فيه ملف جديد مش على السيرفر — ده طبيعي مش فشل؛
+    # الفشل الحقيقي = SSH وقع (255) أو الفولدر مش موجود (cd)
+    "${SSH[@]}" "$SSH_HOST" "cd '$remote' 2>/dev/null && { xargs -d '\n' -r md5sum -- 2>/dev/null; true; }" \
         < "$cand" > "$remote_sums" 2>/dev/null || {
         echo "فشل قراءة بصمات السيرفر: $remote" >&2
         rm -f "$remote_sums" "$local_sums"
