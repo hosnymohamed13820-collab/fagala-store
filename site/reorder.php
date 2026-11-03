@@ -125,23 +125,6 @@ require_once __DIR__ . '/includes/header.php';
     margin: 0 auto;
     padding: 12px 16px 40px;
 }
-.reorder-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-.reorder-title {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
 .reorder-toolbar {
     display: flex;
     justify-content: space-between;
@@ -262,30 +245,25 @@ require_once __DIR__ . '/includes/header.php';
 </style>
 
 <div class="reorder-container">
-    <div class="reorder-header">
-        <div>
-            <h1 class="reorder-title">
-                <i class="ti-package"></i>
-                حد إعادة الطلب واقتراحات النواقص
-            </h1>
-            <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">
-                آخر حساب تلقائي: <?= e((string) $lastCalcAt) ?>
-            </div>
-        </div>
-
-        <div style="display: flex; gap: 8px; align-items: center;">
-            <?php if ($isOwner): ?>
-            <button type="button" class="btn btn-outline btn-sm" id="btnRecalc" onclick="triggerRecalc()">
-                <i class="ti-refresh"></i>
-                احسب دلوقتي
-            </button>
-            <?php endif; ?>
-            <a href="reorder.php?export=xlsx&branch=<?= $selectedBranchId ?>&cat=<?= (int)$catFilter ?>&q=<?= urlencode($searchQuery) ?>" class="btn btn-ghost btn-sm">
-                <i class="ti-file-spreadsheet"></i>
-                تصدير إكسيل
-            </a>
-        </div>
-    </div>
+    <?php
+    $headActions = '';
+    if ($isOwner) {
+        $headActions .= ui_btn('احسب دلوقتي', [
+            'variant' => 'secondary',
+            'class'   => 'btn-sm',
+            'id'      => 'btnRecalc',
+            'icon'    => 'refresh',
+            'attrs'   => ['onclick' => 'triggerRecalc()'],
+        ]);
+    }
+    $headActions .= ui_btn('تصدير إكسيل', [
+        'variant' => 'secondary',
+        'class'   => 'btn-sm',
+        'icon'    => 'file-spreadsheet',
+        'href'    => 'reorder.php?export=xlsx&branch=' . $selectedBranchId . '&cat=' . (int) $catFilter . '&q=' . urlencode($searchQuery),
+    ]);
+    ?>
+    <?= ui_page_head('حد إعادة الطلب واقتراحات النواقص', 'آخر حساب تلقائي: ' . (string) $lastCalcAt, $headActions) ?>
 
     <!-- تابات الفروع -->
     <?php if ($isOwner || count($visibleBranches) > 1): ?>
@@ -417,7 +395,7 @@ require_once __DIR__ . '/includes/header.php';
                                 style="display: <?= $it['is_manual'] ? 'inline-block' : 'none' ?>;"
                                 onclick="resetRowManual(<?= $iid ?>)"
                                 title="استعادة الحساب التلقائي">
-                            <i class="ti-rotate"></i>
+                            <i class="ti ti-rotate"></i>
                             تلقائي
                         </button>
                     </td>
@@ -439,7 +417,7 @@ function showToast(msg, isSuccess, linkUrl, linkText) {
     var b = document.getElementById('toastBox');
     if (!b) return;
     b.className = 'toast-msg ' + (isSuccess ? 'toast-success' : 'toast-error');
-    var html = (isSuccess ? '<i class="ti-check"></i> ' : '<i class="ti-alert-triangle"></i> ') + msg;
+    var html = (isSuccess ? '<i class="ti ti-check"></i> ' : '<i class="ti ti-alert-triangle"></i> ') + msg;
     if (linkUrl) {
         html += ' <a href="' + linkUrl + '" style="color:inherit;text-decoration:underline;margin-right:8px;font-weight:700;">' + (linkText || 'عرض') + ' ⇦</a>';
     }
@@ -501,7 +479,7 @@ function sendShortageRequest() {
 
     var btn = document.getElementById('btnSendShortage');
     btn.disabled = true;
-    btn.innerHTML = '<i class="ti-rotate" style="animation:spin 1s linear infinite;"></i> جاري الإرسال...';
+    btn.innerHTML = '<i class="ti ti-rotate" style="animation:spin 1s linear infinite;"></i> جاري الإرسال...';
 
     window.apiFetch('reorder_api.php?action=create_shortage', {
         method: 'POST',
@@ -511,7 +489,7 @@ function sendShortageRequest() {
         }
     }).then(function(res) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="ti-send"></i> ابعت طلب نواقص للإدارة';
+        btn.innerHTML = '<i class="ti ti-send"></i> ابعت طلب نواقص للإدارة';
 
         if (res && res.ok && res.data) {
             showToast('تم إنشاء طلب النواقص بنجاح (' + res.data.lines_count + ' صنف)', true, res.data.task_url, 'فتح المهمة');
@@ -523,7 +501,7 @@ function sendShortageRequest() {
         }
     }).catch(function(err) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="ti-send"></i> ابعت طلب نواقص للإدارة';
+        btn.innerHTML = '<i class="ti ti-send"></i> ابعت طلب نواقص للإدارة';
         showToast('تعذر الاتصال بالسيرفر', false);
     });
 }
@@ -624,13 +602,13 @@ function triggerRecalc() {
     var btn = document.getElementById('btnRecalc');
     if (!btn) return;
     btn.disabled = true;
-    btn.innerHTML = '<i class="ti-rotate" style="animation:spin 1s linear infinite;"></i> جاري الحساب...';
+    btn.innerHTML = '<i class="ti ti-rotate" style="animation:spin 1s linear infinite;"></i> جاري الحساب...';
 
     window.apiFetch('reorder_api.php?action=recalc', {
         method: 'POST'
     }).then(function(res) {
         btn.disabled = false;
-        btn.innerHTML = '<i class="ti-refresh"></i> احسب دلوقتي';
+        btn.innerHTML = '<i class="ti ti-refresh"></i> احسب دلوقتي';
         if (res && res.ok && res.data) {
             showToast('تم الحساب بنجاح (' + res.data.items + ' صنف في ' + res.data.ms + 'ms)', true);
             setTimeout(function() {
@@ -641,7 +619,7 @@ function triggerRecalc() {
         }
     }).catch(function() {
         btn.disabled = false;
-        btn.innerHTML = '<i class="ti-refresh"></i> احسب دلوقتي';
+        btn.innerHTML = '<i class="ti ti-refresh"></i> احسب دلوقتي';
         showToast('تعذر الاتصال بالسيرفر', false);
     });
 }

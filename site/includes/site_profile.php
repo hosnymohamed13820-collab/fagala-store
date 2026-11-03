@@ -44,10 +44,10 @@ function site_profile(): array
         'enabled_modules' => $ashraqa ? [
             'dashboard', 'cashier', 'review', 'treasury', 'custody', 'hr', 'attendance',
             'tasks', 'tasks_issue', 'suppliers', 'stocktake', 'reports', 'definitions',
-            'settings', 'errors', 'sms_inbox', 'view_all', 'ashraqa_purchases',
+            'settings', 'errors', 'sms_inbox', 'view_all', 'ashraqa_purchases', 'price_inquiry',
         ] : null,
         // القفل الأساسي بالـallowlist؛ القايمة دي للتوثيق بس.
-        'disabled_modules' => $ashraqa ? ['price_inquiry', 'remote_scan', 'machines', 'branch_recon', 'invoices', 'receiving', 'branch_invoices', 'labels', 'shortage', 'reorder', 'analysis', 'item_sales', 'ops', 'calls', 'stock_ledger', 'purchase_docs', 'item_master', 'supplier_card', 'sale_prices', 'customers', 'pos', 'transfers'] : [],
+        'disabled_modules' => $ashraqa ? ['remote_scan', 'machines', 'branch_recon', 'invoices', 'receiving', 'branch_invoices', 'labels', 'shortage', 'reorder', 'analysis', 'item_sales', 'ops', 'calls', 'stock_ledger', 'purchase_docs', 'item_master', 'supplier_card', 'sale_prices', 'customers', 'pos', 'transfers'] : [],
         'disabled_parts' => $ashraqa ? [
             'settings:agents', 'settings:integration', 'settings:invoice_guard',
             'settings:guard_invoices', 'settings:guard_list', 'settings:daily_summary_save',
