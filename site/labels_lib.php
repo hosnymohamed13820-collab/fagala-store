@@ -14,6 +14,46 @@ require_once __DIR__ . '/barcode_lib.php';
 
 /** أقصى عدد ليبلز في الطباعة الواحدة (قرار البريف). */
 const LABELS_MAX = 500;
+/** سُمك البار الثابت لليبل؛ الكود الطويل بس بيتصغّر عشان يدخل. */
+const LABELS_BARCODE_MODULE_MM = 0.25;
+
+/** نفس عرض الباركود للمتصفح والوكيل، شامل المساحة الهادية. */
+function labels_barcode_module(string $code, float $avail): float
+{
+    $module = barcode_fit_module($code, $avail, LABELS_BARCODE_MODULE_MM, 0.125);
+    if ($module < LABELS_BARCODE_MODULE_MM) {
+        $modules = strlen(barcode_bits($code)) + 2 * BARCODE_QUIET_MODULES;
+        $module = floor($avail / $modules / 0.125) * 0.125;
+    }
+    if ($module < 0.125) {
+        throw new InvalidArgumentException('الباركود أطول من عرض الليبل');
+    }
+    return $module;
+}
+
+/** مقاسات المحتوى بالمم؛ البارات هي اللي بتقصر لما المساحة تضيق. */
+function labels_layout(array $lb): array
+{
+    $h = (float) $lb['h_mm'];
+    $short = $h < 16;
+    $pad = round($short ? max(0.4, $h * 0.03) : max(0.8, $h * 0.04), 2);
+    $fsShop = round(max(1.7, $h * 0.088), 2);
+    $fsName = round($short ? max(1.5, $h * 0.13) : max(1.9, $h * 0.1), 2);
+    $fsPrice = round($short ? max(1.8, $h * 0.16) : max(2.6, $h * 0.184), 2);
+    $fsCode = round($short ? max(1.3, $h * 0.11) : max(1.7, $h * 0.088), 2);
+    $line = 1.22;
+    $shopH = $short ? 0.0 : round($fsShop * $line, 3);
+    $nameH = round($fsName * $line * ($short ? 1 : 2), 3);
+    $priceH = $lb['show_price'] ? round($fsPrice * $line, 3) : 0.0;
+    $codeH = round($fsCode * $line, 3);
+    $gap = 0.3;
+    $room = $h - 2 * $pad - $shopH - $nameH - $priceH - $codeH - $gap;
+    $barH = round(min(9.0, $room), 3);
+    if ($barH < 4.0) {
+        throw new InvalidArgumentException('ارتفاع الليبل مش كفاية للنص والباركود');
+    }
+    return compact('pad', 'fsShop', 'fsName', 'fsPrice', 'fsCode', 'shopH', 'nameH', 'priceH', 'codeH', 'gap', 'barH');
+}
 
 /** إعدادات الليبل الافتراضية — بتتخزّن في settings بمفاتيح labels_*. */
 function labels_defaults(): array
@@ -309,11 +349,15 @@ function labels_build_print_payload(array $parsedRows): array
         throw new InvalidArgumentException($data['error']);
     }
     $lb = $data['lb'];
+    $layout = labels_layout($lb);
+    $avail = round((float) $lb['w_mm'] - 2 * $layout['pad'], 2);
     return ['kind' => 'labels'] + $lb + [
         'show_shop' => $lb['h_mm'] >= 16,
+        'layout' => $layout,
         'labels' => array_map(static fn(array $it): array => [
             'name' => $it['name'], 'price' => labels_price((float) $it['price']),
             'code' => $it['code'], 'bits' => barcode_bits($it['code']),
+            'module_mm' => labels_barcode_module($it['code'], $avail),
         ], $data['labels']),
     ];
 }
@@ -326,37 +370,20 @@ function labels_label_html(array $it, array $lb): string
 {
     $w = (float) $lb['w_mm'];
     $h = (float) $lb['h_mm'];
-    $pad = round(max(0.8, $h * 0.04), 2);
+    $m = labels_layout($lb);
+    $avail = round($w - 2 * $m['pad'], 2);
+    $mod = labels_barcode_module($it['code'], $avail);
+    $svg = barcode_svg($it['code'], $m['barH'], $mod);
 
-    $fsShop  = round(max(1.7, $h * 0.088), 2);
-    $fsName  = round(max(1.9, $h * 0.100), 2);
-    $fsPrice = round(max(2.6, $h * 0.184), 2);
-    $fsCode  = round(max(1.7, $h * 0.088), 2);
-    $barH    = round(min(9.0, max(4.5, $h * 0.24)), 2);
-
-    // الليبل القصير محتاج سطر اسم واحد ومن غير اسم المحل، ونسيب مكان لكل المحتوى.
-    if ($h < 16) {
-        $pad = round(max(0.4, $h * 0.03), 2);
-        $fsName = round(max(1.5, $h * 0.13), 2);
-        $fsCode = round(max(1.3, $h * 0.11), 2);
-        $fsPrice = round(max(1.8, $h * 0.16), 2);
-        $barH = round($h - 2 * $pad - $fsName * 1.12 - $fsCode * 1.05
-            - ($lb['show_price'] ? $fsPrice : 0) - 0.3, 2);
-    }
-
-    $avail = round($w - 2 * $pad, 2);
-    $mod   = barcode_fit_module($it['code'], $avail);
-    $svg   = barcode_svg($it['code'], $barH, $mod);
-
-    $html  = '<div class="lbl" style="width:' . $w . 'mm;height:' . $h . 'mm;padding:' . $pad . 'mm;">';
+    $html  = '<div class="lbl" style="width:' . $w . 'mm;height:' . $h . 'mm;padding:' . $m['pad'] . 'mm;">';
     if ($h >= 16) {
-        $html .= '<div class="shop" style="font-size:' . $fsShop . 'mm;">' . e($lb['shop_name']) . '</div>';
+        $html .= '<div class="shop" style="font-size:' . $m['fsShop'] . 'mm;height:' . $m['shopH'] . 'mm;">' . e($lb['shop_name']) . '</div>';
     }
-    $html .= '<div class="nm" style="font-size:' . $fsName . 'mm;">' . e($it['name']) . '</div>';
+    $html .= '<div class="nm" style="font-size:' . $m['fsName'] . 'mm;height:' . $m['nameH'] . 'mm;">' . e($it['name']) . '</div>';
     if ($lb['show_price']) {
-        $html .= '<div class="pr" style="font-size:' . $fsPrice . 'mm;">' . labels_price((float) $it['price']) . '</div>';
+        $html .= '<div class="pr" style="font-size:' . $m['fsPrice'] . 'mm;height:' . $m['priceH'] . 'mm;">' . labels_price((float) $it['price']) . '</div>';
     }
-    $html .= '<div class="bc">' . $svg . '</div>';
-    $html .= '<div class="cd" style="font-size:' . $fsCode . 'mm;">' . e($it['code']) . '</div>';
+    $html .= '<div class="bc" style="height:' . $m['barH'] . 'mm;margin-top:' . $m['gap'] . 'mm;">' . $svg . '</div>';
+    $html .= '<div class="cd" style="font-size:' . $m['fsCode'] . 'mm;height:' . $m['codeH'] . 'mm;">' . e($it['code']) . '</div>';
     return $html . '</div>';
 }

@@ -757,53 +757,51 @@ function Print-Labels($payload, [string]$printer) {
 function Draw-Label($g, $item, $layout, [double]$x, [double]$y) {
     $w = [double]$layout.w_mm
     $h = [double]$layout.h_mm
-    $pad = [Math]::Round([Math]::Max(0.8, $h * 0.04), 2)
-    $fsShop = [Math]::Round([Math]::Max(1.7, $h * 0.088), 2)
-    $fsName = [Math]::Round([Math]::Max(1.9, $h * 0.100), 2)
-    $fsPrice = [Math]::Round([Math]::Max(2.6, $h * 0.184), 2)
-    $fsCode = [Math]::Round([Math]::Max(1.7, $h * 0.088), 2)
-    $barH = [Math]::Round([Math]::Min(9.0, [Math]::Max(4.5, $h * 0.24)), 2)
-    if ($h -lt 16) {
-        $pad = [Math]::Round([Math]::Max(0.4, $h * 0.03), 2)
-        $fsName = [Math]::Round([Math]::Max(1.5, $h * 0.13), 2)
-        $fsCode = [Math]::Round([Math]::Max(1.3, $h * 0.11), 2)
-        $fsPrice = [Math]::Round([Math]::Max(1.8, $h * 0.16), 2)
-        $priceH = 0
-        if ($layout.show_price) { $priceH = $fsPrice }
-        $barH = [Math]::Round($h - 2 * $pad - $fsName * 1.12 - $fsCode * 1.05 - $priceH - 0.3, 2)
-    }
+    $m = $layout.layout
+    $pad = [double]$m.pad
     $avail = [Math]::Round($w - 2 * $pad, 2)
     $bits = [string]$item.bits
-    if ($bits -notmatch '^[01]+$' -or $barH -le 0) { throw 'باركود الليبل أو ارتفاعه مش مظبوط' }
-    # نقطة طابعة 203dpi تقريبًا 0.125مم، ومعاها مساحة هادية 10 نقط ترميز يمين وشمال.
-    $module = [Math]::Floor(($avail / ($bits.Length + 20)) / 0.125) * 0.125
-    if ($module -le 0) { throw 'الباركود أعرض من الليبل على دقة ٢٠٣ نقطة' }
-    $parts = @()
-    if ($layout.show_shop) { $parts += @{ Text = [string]$layout.shop_name; Size = $fsShop; Height = $fsShop * 1.05; Rtl = $true } }
-    $nameH = $fsName * 1.12
-    if ($h -ge 16) { $nameH *= 2 }
-    $parts += @{ Text = [string]$item.name; Size = $fsName; Height = $nameH; Rtl = $true }
-    if ($layout.show_price) { $parts += @{ Text = [string]$item.price; Size = $fsPrice; Height = $fsPrice; Rtl = $false } }
-    $parts += @{ Barcode = $true; Height = $barH }
-    $parts += @{ Text = [string]$item.code; Size = $fsCode; Height = $fsCode * 1.05; Rtl = $false }
-    $used = 0.0
-    foreach ($part in $parts) { $used += $part.Height }
-    # زي space-between في صفحة المتصفح، مع قص أي زيادة عند حدود الليبل.
-    $space = [Math]::Max(0, ($h - 2 * $pad - $used) / ($parts.Count - 1))
+    $module = [double]$item.module_mm
+    $barcodeW = ($bits.Length + 20) * $module
+    if ($bits -notmatch '^[01]+$' -or $module -le 0 -or $barcodeW -gt ($avail + 0.001)) {
+        throw 'باركود الليبل أو عرضه مش مظبوط'
+    }
+    $fonts = @{}
     $saved = $g.Save()
     try {
+        foreach ($key in @('Shop', 'Name', 'Price', 'Code')) {
+            $size = [single]$m.("fs$key")
+            $fonts[$key] = [System.Drawing.Font]::new('Tahoma', $size, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Millimeter)
+        }
+        # ارتفاع الخط الفعلي ممكن يزيد عن الرقم الاسمي؛ نحجزله مساحة قبل البارات.
+        $shopH = 0.0
+        if ($layout.show_shop) { $shopH = [Math]::Max([double]$m.shopH, $fonts.Shop.GetHeight($g)) }
+        $nameLines = 1
+        if ($h -ge 16) { $nameLines = 2 }
+        $nameH = [Math]::Max([double]$m.nameH, $fonts.Name.GetHeight($g) * $nameLines)
+        $priceH = 0.0
+        if ($layout.show_price) { $priceH = [Math]::Max([double]$m.priceH, $fonts.Price.GetHeight($g)) }
+        $codeH = [Math]::Max([double]$m.codeH, $fonts.Code.GetHeight($g))
+        $barH = [Math]::Min([double]$m.barH, $h - 2 * $pad - $shopH - $nameH - $priceH - $codeH - [double]$m.gap)
+        if ($barH -lt 4.0) { throw 'ارتفاع الليبل مش كفاية للنص والباركود' }
+        $parts = @()
+        if ($layout.show_shop) { $parts += @{ Text = [string]$layout.shop_name; Font = $fonts.Shop; Height = $shopH; Rtl = $true } }
+        $parts += @{ Text = [string]$item.name; Font = $fonts.Name; Height = $nameH; Rtl = $true }
+        if ($layout.show_price) { $parts += @{ Text = [string]$item.price; Font = $fonts.Price; Height = $priceH; Rtl = $false } }
+        $parts += @{ Barcode = $true; Height = $barH }
+        $parts += @{ Text = [string]$item.code; Font = $fonts.Code; Height = $codeH; Rtl = $false }
         $g.SetClip([System.Drawing.RectangleF]::new($x, $y, $w, $h))
         $top = $y + $pad
         foreach ($part in $parts) {
             if ($part.Barcode) {
-                $left = $x + ($w - $bits.Length * $module) / 2
+                $top += [double]$m.gap
+                $left = $x + ($w - $barcodeW) / 2 + 10 * $module
                 for ($b = 0; $b -lt $bits.Length; $b++) {
                     if ($bits[$b] -eq '1') {
                         $g.FillRectangle([System.Drawing.Brushes]::Black, [single]($left + $b * $module), [single]$top, [single]$module, [single]$barH)
                     }
                 }
             } else {
-                $font = [System.Drawing.Font]::new('Tahoma', [single]$part.Size, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Millimeter)
                 $format = [System.Drawing.StringFormat]::new()
                 try {
                     $format.Alignment = [System.Drawing.StringAlignment]::Center
@@ -814,12 +812,15 @@ function Draw-Label($g, $item, $layout, [double]$x, [double]$y) {
                         $format.FormatFlags = $format.FormatFlags -bor [System.Drawing.StringFormatFlags]::NoWrap
                     }
                     $rect = [System.Drawing.RectangleF]::new(($x + $pad), $top, $avail, $part.Height)
-                    $g.DrawString($part.Text, $font, [System.Drawing.Brushes]::Black, $rect, $format)
-                } finally { $font.Dispose(); $format.Dispose() }
+                    $g.DrawString($part.Text, $part.Font, [System.Drawing.Brushes]::Black, $rect, $format)
+                } finally { $format.Dispose() }
             }
-            $top += $part.Height + $space
+            $top += $part.Height
         }
-    } finally { $g.Restore($saved) }
+    } finally {
+        foreach ($font in $fonts.Values) { $font.Dispose() }
+        $g.Restore($saved)
+    }
 }
 
 # =====================================================================

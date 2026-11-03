@@ -86,26 +86,26 @@ $chunks = array_chunk($labels, $cols);
     .row { display: flex; justify-content: center; gap: <?= $gap ?>mm; margin: 0 auto 4mm; }
 
     .lbl {
-        display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+        display: flex; flex-direction: column; align-items: center;
         overflow: hidden; background: var(--surface); color: var(--text); text-align: center;
-        font-weight: 700; line-height: 1.05;
+        font-family: Tahoma, Arial, sans-serif; font-weight: 700; line-height: 1.22;
     }
+    .lbl > div { flex-shrink: 0; }
     .lbl .shop { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-                 max-width: 100%; font-weight: 600; }
+                 max-width: 100%; font-weight: 700; line-height: 1.22; }
     .lbl .nm {
         max-width: 100%; overflow: hidden; font-weight: 700;
         display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-        line-clamp: 2; word-break: break-word; line-height: 1.12;
+        line-clamp: 2; word-break: break-word; line-height: 1.22;
     }
     .lbl .pr { direction: ltr; unicode-bidi: embed; font-variant-numeric: tabular-nums;
-               font-weight: 800; line-height: 1.0; }
+               font-weight: 700; line-height: 1.22; }
     .lbl .bc { max-width: 100%; line-height: 0; }
-    .lbl .bc svg { max-width: 100%; height: auto; }
+    .lbl .bc svg { display: block; max-width: 100%; height: 100%; }
     .lbl .cd { direction: ltr; unicode-bidi: embed; font-variant-numeric: tabular-nums;
-               font-weight: 600; max-width: 100%; overflow: hidden; white-space: nowrap; }
+               font-weight: 700; max-width: 100%; overflow: hidden; white-space: nowrap; line-height: 1.22; }
 
 <?php if ($h < 16): ?>
-    .lbl > div { flex-shrink: 0; }
     .lbl .nm { display: block; white-space: nowrap; text-overflow: ellipsis; word-break: normal; }
 <?php endif; ?>
 <?php if ($rows > 1): ?>
