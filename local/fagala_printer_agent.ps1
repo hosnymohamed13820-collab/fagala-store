@@ -375,6 +375,12 @@ function Render-SaleReceipt($g, $p, [bool]$isDraw) {
     $sfCellCenter.Alignment = [System.Drawing.StringAlignment]::Center
     $sfCellLtr = [System.Drawing.StringFormat]::GenericTypographic.Clone()
     $sfCellLtr.Alignment = [System.Drawing.StringAlignment]::Center
+    $sfCellName = $sfCellRtl.Clone()
+    $sfCellName.Trimming = [System.Drawing.StringTrimming]::EllipsisWord
+    $sfCellName.FormatFlags = [System.Drawing.StringFormatFlags]([int]$sfCellName.FormatFlags -bor [int][System.Drawing.StringFormatFlags]::LineLimit)
+    $sfCellCode = [System.Drawing.StringFormat]::GenericTypographic.Clone()
+    $sfCellCode.Alignment = [System.Drawing.StringAlignment]::Far
+    $sfCellCode.FormatFlags = [System.Drawing.StringFormatFlags]::NoWrap
     $fCode = New-Object System.Drawing.Font("Tahoma", 7.5, [System.Drawing.FontStyle]::Bold)
     $fHeader = New-Object System.Drawing.Font("Tahoma", 7, [System.Drawing.FontStyle]::Bold)
     $fNum = New-Object System.Drawing.Font("Tahoma", 8.25, [System.Drawing.FontStyle]::Bold)
@@ -485,29 +491,46 @@ function Render-SaleReceipt($g, $p, [bool]$isDraw) {
 
         # ترويسة الأصناف
         # نسب الصفحة من ٢٧٢ بكسل جوه عرض الطباعة الآمن، عشان حافة الطابعة ماتقصّش الكلام.
-        $widths = @((46.0 / 272 * $script:PrintWidth), (84.0 / 272 * $script:PrintWidth), (32.0 / 272 * $script:PrintWidth), (54.0 / 272 * $script:PrintWidth), (56.0 / 272 * $script:PrintWidth))
-        $headers = @("كود الصنف", "اسم الصنف", "الكمية", "السعر", "الإجمالي")
+        $widths = @((132.0 / 272 * $script:PrintWidth), (32.0 / 272 * $script:PrintWidth), (50.0 / 272 * $script:PrintWidth), (58.0 / 272 * $script:PrintWidth))
+        $headers = @("الصنف", "الكمية", "السعر", "الإجمالي")
         $script:tmpY = $y
         $DrawCells = {
-            param($texts, [bool]$isHeader)
+            param($texts, [bool]$isHeader, [string]$code = "")
             $cells = @()
             $rowH = 0.0
+            $nameH = 0.0
+            $codeH = 0.0
             $right = [float]$script:PrintableRight
-            for ($i = 0; $i -lt 5; $i++) {
+            for ($i = 0; $i -lt 4; $i++) {
                 $right -= $widths[$i]
-                $font = if ($isHeader) { $fHeader } elseif ($i -eq 0) { $fCode } elseif ($i -eq 1) { $fBold } else { $fNum }
-                $format = if ($i -eq 1) { $sfCellRtl } elseif ($isHeader) { $sfCellCenter } else { $sfCellLtr }
-                # القياس والرسم بنفس عرض الخانة عشان الاسم والكود الطويل مايدخلوش على اللي جنبهم.
+                $font = if ($isHeader) { $fHeader } elseif ($i -eq 0) { $fBold } else { $fNum }
+                $format = if ($i -eq 0) { $sfCellRtl } elseif ($isHeader) { $sfCellCenter } else { $sfCellLtr }
+                # القياس والرسم بنفس عرض الخانة عشان الاسم والأرقام مايدخلوش على اللي جنبهم.
                 $cellWidth = [float]($widths[$i] - 2)
                 $szCell = $g.MeasureString([string]$texts[$i], $font, (New-Object System.Drawing.SizeF($cellWidth, 10000)), $format)
-                $rowH = [Math]::Max($rowH, $szCell.Height)
+                if (-not $isHeader -and $i -eq 0) {
+                    # سطرين للاسم بالكتير، والسطر اللي بعدهم للكود كامل.
+                    $lineH = $fBold.GetHeight($g) + 2
+                    $nameH = [Math]::Min(($szCell.Height + 2), (2 * $lineH))
+                    $codeH = $fCode.GetHeight($g) + 1
+                    $rowH = [Math]::Max($rowH, $nameH + $codeH)
+                } else {
+                    $rowH = [Math]::Max($rowH, $szCell.Height)
+                }
                 $cells += @{ X = $right + 1; Width = $cellWidth; Font = $font; Format = $format }
             }
             if ($isDraw) {
-                for ($i = 0; $i -lt 5; $i++) {
+                for ($i = 0; $i -lt 4; $i++) {
                     $cell = $cells[$i]
-                    $rect = New-Object System.Drawing.RectangleF($cell.X, $script:tmpY, $cell.Width, $rowH)
-                    $g.DrawString([string]$texts[$i], $cell.Font, $brush, $rect, $cell.Format)
+                    if (-not $isHeader -and $i -eq 0) {
+                        $nameRect = New-Object System.Drawing.RectangleF($cell.X, $script:tmpY, $cell.Width, $nameH)
+                        $codeRect = New-Object System.Drawing.RectangleF($cell.X, ($script:tmpY + $nameH + 1), $cell.Width, ($codeH - 1))
+                        $g.DrawString([string]$texts[$i], $fBold, $brush, $nameRect, $sfCellName)
+                        $g.DrawString($code, $fCode, $brush, $codeRect, $sfCellCode)
+                    } else {
+                        $rect = New-Object System.Drawing.RectangleF($cell.X, $script:tmpY, $cell.Width, $rowH)
+                        $g.DrawString([string]$texts[$i], $cell.Font, $brush, $rect, $cell.Format)
+                    }
                 }
             }
             $script:tmpY += $rowH + 3
@@ -521,8 +544,8 @@ function Render-SaleReceipt($g, $p, [bool]$isDraw) {
         # السطور
         foreach ($line in $p.lines) {
             $script:tmpY = $y
-            $texts = @([string]$line.code, [string]$line.name, ([double]$line.qty).ToString("0.##", [Globalization.CultureInfo]::InvariantCulture), ([double]$line.price).ToString("N2", [Globalization.CultureInfo]::InvariantCulture), ([double]$line.net).ToString("N2", [Globalization.CultureInfo]::InvariantCulture))
-            & $DrawCells $texts $false
+            $texts = @([string]$line.name, ([double]$line.qty).ToString("0.##", [Globalization.CultureInfo]::InvariantCulture), ([double]$line.price).ToString("N2", [Globalization.CultureInfo]::InvariantCulture), ([double]$line.net).ToString("N2", [Globalization.CultureInfo]::InvariantCulture))
+            & $DrawCells $texts $false ([string]$line.code)
             $y = $script:tmpY
             if ([double]$line.discount -gt 0) {
                 $discountText = "خصم السطر: " + ([double]$line.discount).ToString("N2", [Globalization.CultureInfo]::InvariantCulture)
@@ -649,7 +672,7 @@ function Render-SaleReceipt($g, $p, [bool]$isDraw) {
     } finally {
         $fH1.Dispose(); $fH2.Dispose(); $fBig.Dispose(); $fBold.Dispose(); $fNorm.Dispose(); $fNote.Dispose(); $fStamp.Dispose()
         $penSolid.Dispose(); $penDash.Dispose()
-        $sfCenterRtl.Dispose(); $sfRightRtl.Dispose(); $sfLeftLtr.Dispose(); $sfLeftRtl.Dispose(); $sfCenterLtr.Dispose(); $fCode.Dispose(); $fNum.Dispose(); $fHeader.Dispose(); $sfCellRtl.Dispose(); $sfCellCenter.Dispose(); $sfCellLtr.Dispose()
+        $sfCenterRtl.Dispose(); $sfRightRtl.Dispose(); $sfLeftLtr.Dispose(); $sfLeftRtl.Dispose(); $sfCenterLtr.Dispose(); $fCode.Dispose(); $fNum.Dispose(); $fHeader.Dispose(); $sfCellRtl.Dispose(); $sfCellCenter.Dispose(); $sfCellLtr.Dispose(); $sfCellName.Dispose(); $sfCellCode.Dispose()
     }
 }
 

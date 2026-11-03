@@ -265,7 +265,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             margin: 2px 0;
         }
 
-        /* جدول الأصناف بعرض ٨٠ مم: ٥ أعمدة ثابتة والاسم بيلف جوّه خانته. */
+        /* جدول الأصناف بعرض ٨٠ مم: ٤ أعمدة والاسم سطرين والكود تحته. */
         .receipt-items-table {
             width: 100%;
             table-layout: fixed;
@@ -304,26 +304,26 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             text-align: right;
         }
 
-        .receipt-items-table .c-code {
-            width: 46px;
-        }
-
         .receipt-items-table .c-qty {
             width: 32px;
         }
 
         .receipt-items-table .c-price {
-            width: 54px;
+            width: 50px;
         }
 
         .receipt-items-table .c-total {
-            width: 56px;
+            width: 58px;
         }
 
         .receipt-item-code {
+            display: block;
             direction: ltr;
+            text-align: right;
             font-size: 10px;
             font-weight: 700;
+            white-space: nowrap;
+            margin-top: 1px;
         }
 
         .receipt-item-name {
@@ -331,6 +331,14 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             font-size: 12px;
             text-align: right;
             word-break: break-word;
+        }
+
+        .receipt-item-name-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .receipt-items-table td.num {
@@ -602,7 +610,6 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             <div class="receipt-items">
                 <table class="ftable receipt-items-table">
                     <colgroup>
-                        <col class="c-code">
                         <col>
                         <col class="c-qty">
                         <col class="c-price">
@@ -610,8 +617,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                     </colgroup>
                     <thead>
                         <tr>
-                            <th>كود الصنف</th>
-                            <th class="name">اسم الصنف</th>
+                            <th class="name">الصنف</th>
                             <th class="num">الكمية</th>
                             <th class="num">السعر</th>
                             <th class="num">الإجمالي</th>
@@ -620,8 +626,10 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                     <tbody>
                     <?php foreach ($lines as $line): ?>
                         <tr>
-                            <td class="receipt-item-code"><?= htmlspecialchars((string) ($line['code'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
-                            <td class="receipt-item-name"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
+                            <td class="receipt-item-name">
+                                <span class="receipt-item-name-text"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="receipt-item-code"><?= htmlspecialchars((string) ($line['code'] ?? ''), ENT_QUOTES, 'UTF-8') ?></span>
+                            </td>
                             <td class="num">
                                 <?= rtrim(rtrim(number_format((float) ($line['qty'] ?? 0), 2, '.', ''), '0'), '.') ?>
                             </td>
@@ -630,7 +638,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                         </tr>
                         <?php if (!empty($line['discount']) && (float) $line['discount'] > 0): ?>
                             <tr class="receipt-item-disc">
-                                <td colspan="5"><span class="receipt-item-calc">خصم السطر:</span> <?= number_format((float) $line['discount'], 2) ?></td>
+                                <td colspan="4"><span class="receipt-item-calc">خصم السطر:</span> <?= number_format((float) $line['discount'], 2) ?></td>
                             </tr>
                         <?php endif; ?>
                     <?php endforeach; ?>
