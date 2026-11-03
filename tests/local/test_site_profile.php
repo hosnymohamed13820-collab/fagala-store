@@ -87,7 +87,7 @@ if (($argv[2] ?? '') === 'require') {
 }
 // قايمة ثابتة من all_modules قبل التعديل؛ أي اختفاء في الفجالة يفشّل الاختبار.
 $baseline = explode(' ', 'dashboard price_inquiry remote_scan cashier machines custody review treasury hr attendance tasks tasks_issue suppliers branch_recon invoices receiving branch_invoices stocktake labels shortage reorder analysis item_sales reports definitions settings errors ops sms_inbox calls stock_ledger purchase_docs item_master supplier_card sale_prices customers pos transfers view_all');
-$allow = explode(' ', 'dashboard cashier review treasury custody hr attendance tasks tasks_issue suppliers stocktake reports definitions settings errors sms_inbox view_all ashraqa_purchases');
+$allow = explode(' ', 'dashboard cashier review treasury custody hr attendance tasks tasks_issue suppliers stocktake reports definitions settings errors sms_inbox view_all ashraqa_purchases price_inquiry');
 $modules = array_keys(all_modules());
 if ($mode === 'ashraqa') {
     $enabled = array_keys(site_enabled_modules()); sort($enabled); $expected = $allow; sort($expected);
