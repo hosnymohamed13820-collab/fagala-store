@@ -166,7 +166,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             color: var(--text);
             font-family: Tahoma, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: var(--fs-sm);
-            line-height: 1.4;
+            line-height: 1.25;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -179,25 +179,25 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             background: var(--bg-surface);
             border: 1px solid var(--line);
             border-radius: 8px;
-            padding: 10px 1.5mm;
+            padding: 5px 1.5mm;
             margin: 0 auto;
         }
 
         .receipt-header {
             text-align: center;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
 
         .receipt-branch {
             font-size: var(--fs-lg);
             font-weight: 700;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .receipt-phone {
             font-size: var(--fs-xs);
             color: var(--muted);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
             direction: ltr;
         }
 
@@ -209,47 +209,47 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             font-size: var(--fs-md);
             padding: 1px 10px;
             border-radius: 4px;
-            margin: 4px 0;
+            margin: 2px 0;
             letter-spacing: 2px;
         }
 
         .receipt-title {
             font-size: var(--fs-md);
             font-weight: 700;
-            margin: 4px 0 2px;
+            margin: 2px 0 1px;
         }
 
         .receipt-ref-no {
             font-size: var(--fs-xs);
             color: var(--muted);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .receipt-divider-double {
             border-top: 3px double var(--line);
-            margin: 8px 0;
+            margin: 4px 0;
         }
 
         .receipt-divider-solid {
             border-top: 1px solid var(--line);
-            margin: 6px 0;
+            margin: 3px 0;
         }
 
         .receipt-divider-dash {
             border-top: 1px dashed var(--line);
-            margin: 6px 0;
+            margin: 3px 0;
         }
 
         .receipt-meta {
             width: 100%;
             font-size: var(--fs-xs);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .receipt-meta-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .receipt-meta-label {
@@ -262,7 +262,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
 
         .receipt-items {
             width: 100%;
-            margin: 4px 0;
+            margin: 2px 0;
         }
 
         /* جدول الأصناف بعرض ٨٠ مم: ٥ أعمدة ثابتة والاسم بيلف جوّه خانته. */
@@ -281,7 +281,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
 
         .receipt-items-table th,
         .receipt-items-table td {
-            padding: 3px 2px;
+            padding: 1.5px 2px;
             vertical-align: top;
             text-align: center;
             overflow-wrap: anywhere;
@@ -339,16 +339,6 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             white-space: nowrap;
         }
 
-        .receipt-item-unit {
-            display: block;
-            font-size: 9px;
-            font-weight: 400;
-            color: var(--muted);
-            white-space: normal;
-            word-break: break-word;
-            line-height: 1.2;
-        }
-
         .receipt-item-net {
             font-weight: 700;
         }
@@ -362,33 +352,33 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
 
         .receipt-totals {
             width: 100%;
-            margin: 4px 0;
+            margin: 2px 0;
         }
 
         .receipt-total-row {
             display: flex;
             justify-content: space-between;
             font-size: var(--fs-sm);
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .receipt-total-row.is-net {
             font-size: var(--fs-lg);
             font-weight: 700;
-            margin-top: 4px;
-            padding-top: 4px;
+            margin-top: 2px;
+            padding-top: 2px;
             border-top: 1px solid var(--line);
         }
 
         .receipt-payments {
             width: 100%;
             font-size: var(--fs-xs);
-            margin: 4px 0;
+            margin: 2px 0;
         }
 
         .receipt-barcode {
             text-align: center;
-            margin: 6px 0;
+            margin: 3px 0;
         }
 
         .receipt-barcode svg {
@@ -401,14 +391,14 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
         .receipt-barcode-text {
             font-size: var(--fs-xs);
             font-weight: 700;
-            margin-top: 2px;
+            margin-top: 1px;
             letter-spacing: 1px;
             text-align: center;
         }
 
         .receipt-drawer-reason-box {
-            margin: 8px 0;
-            padding: 8px;
+            margin: 4px 0;
+            padding: 4px 8px;
             background: var(--bg);
             border-radius: 4px;
         }
@@ -416,7 +406,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
         .receipt-drawer-reason-label {
             font-size: var(--fs-xs);
             color: var(--muted);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .receipt-drawer-reason-text {
@@ -426,7 +416,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
         }
 
         .receipt-drawer-sign {
-            margin: 16px 0 8px;
+            margin: 6px 0 2px;
             font-size: var(--fs-sm);
             font-weight: 600;
             text-align: center;
@@ -436,20 +426,20 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             text-align: center;
             font-size: var(--fs-xs);
             color: var(--muted);
-            margin-top: 10px;
+            margin-top: 5px;
         }
 
         .receipt-return-policy {
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .receipt-return-until {
             font-weight: 700;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .receipt-actions {
-            margin: 12px auto 0;
+            margin: 6px auto 0;
             display: flex;
             justify-content: center;
             gap: var(--sp-2);
@@ -467,10 +457,11 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             .receipt-sheet {
                 width: 72mm !important;
                 max-width: 72mm !important;
+                margin: 0 auto !important;
                 border: none !important;
                 border-radius: 0 !important;
                 box-shadow: none !important;
-                padding: 2mm 1.5mm !important;
+                padding: 0 1.5mm !important;
                 background: white !important;
                 color: black !important;
             }
@@ -511,7 +502,6 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                 color: black !important;
             }
 
-            .receipt-item-unit,
             .receipt-item-disc td {
                 color: black !important;
             }
@@ -519,7 +509,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
             .receipt-drawer-reason-box {
                 background: white !important;
                 border: 1px dashed black !important;
-                padding: 4px !important;
+                padding: 2px 4px !important;
             }
 
             .receipt-badge-reprint {
@@ -570,7 +560,7 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
         <div class="receipt-divider-double"></div>
 
         <div class="receipt-meta">
-            <?php if (!$isDrawer && $receiptNo !== ''): ?>
+            <?php if (!$isDrawer && $receiptNo !== '' && $barcodeSvg === ''): ?>
                 <div class="receipt-meta-row">
                     <span class="receipt-meta-label">رقم الإيصال:</span>
                     <span class="receipt-meta-val" dir="ltr"><?= htmlspecialchars($receiptNo, ENT_QUOTES, 'UTF-8') ?></span>
@@ -634,7 +624,6 @@ if (!$isDrawer && $receiptNo !== '' && barcode_printable($receiptNo)) {
                             <td class="receipt-item-name"><?= htmlspecialchars($line['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></td>
                             <td class="num">
                                 <?= rtrim(rtrim(number_format((float) ($line['qty'] ?? 0), 2, '.', ''), '0'), '.') ?>
-                                <?php if (!empty($line['unit'])): ?><span class="receipt-item-unit"><?= htmlspecialchars((string) $line['unit'], ENT_QUOTES, 'UTF-8') ?></span><?php endif; ?>
                             </td>
                             <td class="num"><?= number_format((float) ($line['price'] ?? 0), 2) ?></td>
                             <td class="num receipt-item-net"><?= number_format((float) ($line['net'] ?? 0), 2) ?></td>
