@@ -55,7 +55,7 @@ require_once __DIR__ . '/includes/header.php';
         gap: 10px; border-bottom: 1px solid var(--line-soft); font-size: var(--fs-sm);
     }
     .lbx-sug-item:last-child { border-bottom: none; }
-    .lbx-sug-item:hover { background: var(--accent-soft); }
+    .lbx-sug-item:hover, .lbx-sug-item.is-active { background: var(--accent-soft); }
     .lbx-sug-item .c { color: var(--ink-500); font-size: var(--fs-xs); direction: ltr;
                        unicode-bidi: embed; font-variant-numeric: tabular-nums; }
     .lbx-sug-item .p { color: var(--pos); font-weight: 700; white-space: nowrap;
@@ -147,7 +147,7 @@ require_once __DIR__ . '/includes/header.php';
                placeholder="امسح باركود، أو اكتب كود/اسم الصنف…"
                enterkeyhint="search"
                oninput="lbxType()"
-               onkeydown="if(isEnterKey(event)){event.preventDefault();lbxAddByCode();}">
+               onkeydown="lbxSearchKey(event)">
         <button type="button" class="btn btn-ghost" onclick="openBarcodeScanner('q')" title="مسح بالكاميرا">
             <i class="ti ti-camera"></i>
         </button>
@@ -210,6 +210,8 @@ const LBX_LS = 'fagala_labels_v1';
 
 let rows = [];          // [{code,name,price,code_type,factor,kind,printable,copies}]
 let sugTimer = null;
+let sugActive = -1;
+let sugRequest = 0;
 let setTimer = null;
 let setSaving = null;
 
@@ -241,15 +243,17 @@ function lbxLoad() {
 /* ===== الإضافة ===== */
 function lbxType() {
     const v = document.getElementById('q').value.trim();
-    clearTimeout(sugTimer);
-    if (v.length < 2) { lbxHideSug(); return; }
-    if (/^\d+$/.test(v)) { lbxHideSug(); return; }   // أرقام = باركود، Enter هيضيفه
+    lbxHideSug();
+    if (v.length < 2) return;
+    if (/^\d+$/.test(v)) return;   // أرقام = باركود، Enter هيضيفه
     sugTimer = setTimeout(() => lbxFetchSug(v), 350);
 }
 
 function lbxFetchSug(term) {
+    const request = ++sugRequest;
     apiFetch('labels_api.php?part=search&term=' + encodeURIComponent(term))
         .then(j => {
+            if (request !== sugRequest) return;
             const list = j.data.rows || [];
             if (!list.length) { lbxHideSug(); return; }
             const box = document.getElementById('sug');
@@ -261,14 +265,46 @@ function lbxFetchSug(term) {
             box.dataset.rows = JSON.stringify(list);
             box.classList.add('show');
         })
-        .catch(() => lbxHideSug());
+        .catch(() => { if (request === sugRequest) lbxHideSug(); });
 }
 
 function lbxHideSug() {
+    clearTimeout(sugTimer);
+    sugRequest++;
+    sugActive = -1;
     const box = document.getElementById('sug');
     box.classList.remove('show');
     box.innerHTML = '';
     delete box.dataset.rows;
+}
+
+function lbxSearchKey(e) {
+    const items = document.getElementById('sug').querySelectorAll('.lbx-sug-item');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!items.length) return;
+        sugActive = sugActive < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) :
+            (sugActive + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items.forEach((it, i) => it.classList.toggle('is-active', i === sugActive));
+        items[sugActive].scrollIntoView({ block: 'nearest' });
+    } else if (isEnterKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (sugActive >= 0 && items[sugActive]) lbxPickSug(+items[sugActive].dataset.sug);
+        else lbxAddByCode();
+    } else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        lbxHideSug();
+    }
+}
+
+function lbxFocusCopies(code) {
+    // بندوّر بعد الرندر عشان الخانة القديمة بتتشال من الصفحة.
+    const inp = Array.from(document.querySelectorAll('#body .lbx-copies'))
+        .find(el => el.dataset.code === String(code));
+    if (inp) { inp.focus(); inp.select(); }
 }
 
 function lbxPickSug(i) {
@@ -280,7 +316,7 @@ function lbxPickSug(i) {
     if (!r) return;
     document.getElementById('q').value = '';
     lbxPush(r);
-    document.getElementById('q').focus();
+    lbxFocusCopies(r.code);
 }
 
 function lbxFetchPurchaseDoc() {
@@ -337,13 +373,14 @@ function lbxAddByCode() {
             if (j.data.row) {
                 inp.value = '';
                 lbxPush(j.data.row);
+                lbxFocusCopies(j.data.row.code);
                 if (navigator.vibrate) navigator.vibrate(40);
             } else {
                 lbxStatus('✗ الكود ده مش موجود — جرّب تكتب اسم الصنف', 'err');
+                inp.focus();
             }
         })
-        .catch(lbxErr)
-        .finally(() => inp.focus());
+        .catch(err => { lbxErr(err); inp.focus(); });
 }
 
 function lbxPush(row) {
@@ -391,6 +428,7 @@ function lbxRender() {
                 '<td class="name" title="' + lbxEsc(r.name) + '">' + chip + lbxEsc(r.name) + '</td>' +
                 '<td class="num">' + lbxMoney(r.price) + '</td>' +
                 '<td class="num"><input type="number" class="finput finput-sm num lbx-copies" data-copy="' + i + '"' +
+                    ' data-code="' + lbxEsc(r.code) + '"' +
                     ' min="1" max="' + LBX.max + '" step="1" value="' + r.copies + '"' +
                     ' aria-label="عدد ليبلز ' + lbxEsc(r.name) + '">' + printHint + '</td>' +
                 '<td><button type="button" class="lbx-del" data-del="' + i + '" title="شيل" aria-label="شيل">' +
@@ -420,6 +458,15 @@ function lbxTotal() {
 document.getElementById('body').addEventListener('input', function (e) {
     const inp = e.target.closest('.lbx-copies');
     if (!inp) return;
+    if (lbxIsScannedCode(inp.value)) return;
+    lbxUpdateCopies(inp);
+});
+
+function lbxIsScannedCode(value) {
+    return (value.match(/\d/g) || []).length > 4 || Number(value) > LBX.max;
+}
+
+function lbxUpdateCopies(inp) {
     const i = +inp.dataset.copy;
     if (!rows[i]) return;
     let n = parseInt(inp.value, 10);
@@ -435,6 +482,31 @@ document.getElementById('body').addEventListener('input', function (e) {
     }
     lbxSave();
     lbxTotal();
+}
+
+document.getElementById('body').addEventListener('focusin', function (e) {
+    const inp = e.target.closest('.lbx-copies');
+    if (inp && rows[+inp.dataset.copy]) inp.dataset.beforeCopies = rows[+inp.dataset.copy].copies;
+});
+
+document.getElementById('body').addEventListener('keydown', function (e) {
+    const inp = e.target.closest('.lbx-copies');
+    if (!inp || (!isEnterKey(e) && e.key !== 'Escape')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const i = +inp.dataset.copy;
+    if (!rows[i]) return;
+    const value = inp.value.trim();
+    const scanned = isEnterKey(e) && lbxIsScannedCode(value);
+    // السكانر ممكن يكتب في خانة العدد: أكتر من ٤ أرقام أو الحد الأقصى = باركود، فنرجّع العدد اللي قبل الكتابة.
+    if (scanned || e.key === 'Escape') inp.value = inp.dataset.beforeCopies || rows[i].copies;
+    lbxUpdateCopies(inp);
+    inp.value = rows[i].copies;
+    const q = document.getElementById('q');
+    q.value = scanned ? value : '';
+    lbxHideSug();
+    q.focus();
+    if (scanned) lbxAddByCode();
 });
 
 document.getElementById('body').addEventListener('change', function (e) {
