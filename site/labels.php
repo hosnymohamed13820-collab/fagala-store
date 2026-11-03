@@ -106,6 +106,10 @@ require_once __DIR__ . '/includes/header.php';
             <input class="finput finput-sm num" type="number" id="setCols" min="1" max="5" step="1" value="<?= (int) $lb['cols'] ?>" <?= $isOwner ? '' : 'disabled' ?>>
         </div>
         <div class="ffield">
+            <label for="setRows">صفوف في الورقة</label>
+            <input class="finput finput-sm num" type="number" id="setRows" min="1" max="4" step="1" value="<?= (int) $lb['rows'] ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
+        <div class="ffield">
             <label for="setGap">المسافة بين الليبلز (مم)</label>
             <input class="finput finput-sm num" type="number" id="setGap" min="0" max="10" step="0.5" value="<?= e((string) $lb['gap_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
         </div>
@@ -362,6 +366,7 @@ function lbxPush(row) {
 function lbxRender() {
     const body = document.getElementById('body');
     const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
+    const perPage = cols * Math.max(1, parseInt(LBX.settings?.rows, 10) || 1);
     if (!rows.length) {
         body.innerHTML = '<tr><td colspan="6" class="fg-empty">' +
             'امسح باركود، أو اكتب اسم صنف واختاره من القايمة — وكل صنف بتحدد له كام ليبل.' +
@@ -374,8 +379,8 @@ function lbxRender() {
             } else if (r.code_type === 1 && r.factor > 1) {
                 chip = '<span class="fchip fchip-mute">باكو ×' + lbxNum(r.factor) + '</span> ';
             }
-            const actual = cols > 1 ? Math.ceil(r.copies / cols) * cols : r.copies;
-            const printHint = cols > 1 ? '<span class="fpage-sub lbx-hint-actual" style="font-size:var(--fs-xs); color:var(--ink-500); display:block; margin-top:2px;">هيتطبع ' + actual + '</span>' : '';
+            const actual = perPage > 1 ? Math.ceil(r.copies / perPage) * perPage : r.copies;
+            const printHint = perPage > 1 ? '<span class="fpage-sub lbx-hint-actual" style="font-size:var(--fs-xs); color:var(--ink-500); display:block; margin-top:2px;">هيتطبع ' + actual + '</span>' : '';
             return '<tr>' +
                 '<td class="num">' + (i + 1) + '</td>' +
                 '<td class="lbx-code">' + lbxEsc(r.code) + '</td>' +
@@ -396,10 +401,11 @@ function lbxRender() {
 /* العدد اللي تحت الجدول — بيتحدّث مع أي تعديل (مش رقم ثابت من السيرفر) */
 function lbxTotal() {
     const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
+    const perPage = cols * Math.max(1, parseInt(LBX.settings?.rows, 10) || 1);
     const total = rows.reduce((s, r) => s + r.copies, 0);
-    const actualTotal = rows.reduce((s, r) => s + (cols > 1 ? Math.ceil(r.copies / cols) * cols : r.copies), 0);
+    const actualTotal = rows.reduce((s, r) => s + (perPage > 1 ? Math.ceil(r.copies / perPage) * perPage : r.copies), 0);
     const bad = rows.filter(r => !r.printable).length;
-    let actualText = (cols > 1 && rows.length > 0) ? ' · <b>' + actualTotal + '</b> هيتطبع' : '';
+    let actualText = (perPage > 1 && rows.length > 0) ? ' · <b>' + actualTotal + '</b> هيتطبع' : '';
     document.getElementById('total').innerHTML =
         '<b>' + rows.length + '</b> صنف · <b>' + total + '</b> ليبل' + actualText +
         (actualTotal > LBX.max ? ' — <span style="color:var(--neg)">الحد الأقصى ' + LBX.max + ' ليبل في الطباعة الواحدة</span>' : '') +
@@ -416,10 +422,11 @@ document.getElementById('body').addEventListener('input', function (e) {
     if (isNaN(n)) return;
     rows[i].copies = Math.max(1, Math.min(LBX.max, n));
     const cols = Math.max(1, parseInt(LBX.settings?.cols, 10) || 1);
-    if (cols > 1) {
+    const perPage = cols * Math.max(1, parseInt(LBX.settings?.rows, 10) || 1);
+    if (perPage > 1) {
         const hintEl = inp.parentElement.querySelector('.lbx-hint-actual');
         if (hintEl) {
-            hintEl.textContent = 'هيتطبع ' + (Math.ceil(rows[i].copies / cols) * cols);
+            hintEl.textContent = 'هيتطبع ' + (Math.ceil(rows[i].copies / perPage) * perPage);
         }
     }
     lbxSave();
@@ -466,6 +473,7 @@ function lbxSetBody() {
         w_mm: +document.getElementById('setW').value,
         h_mm: +document.getElementById('setH').value,
         cols: +document.getElementById('setCols').value,
+        rows: +document.getElementById('setRows').value,
         gap_mm: +document.getElementById('setGap').value,
         show_price: document.getElementById('setPrice').checked ? 1 : 0,
         shop_name: document.getElementById('setShop').value
@@ -486,6 +494,7 @@ function lbxSaveSettings() {
     const done = apiFetch('labels_api.php?part=settings', { method: 'POST', body: lbxSetBody() })
         .then(j => {
             LBX.settings = j.data.settings || LBX.settings;
+            lbxRender();
             const s = document.getElementById('setStatus');
             s.textContent = '✓ اتحفظ';
             s.style.color = 'var(--pos)';
@@ -504,7 +513,7 @@ function lbxSaveSettings() {
     return done;
 }
 
-['setW', 'setH', 'setCols', 'setGap', 'setShop'].forEach(id => {
+['setW', 'setH', 'setCols', 'setRows', 'setGap', 'setShop'].forEach(id => {
     const el = document.getElementById(id);
     if (el && LBX.owner) el.addEventListener('change', lbxQueueSave);
 });

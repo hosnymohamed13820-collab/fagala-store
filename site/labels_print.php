@@ -57,8 +57,10 @@ if ($error === '' && !$labels) {
 $w     = $lb['w_mm'];
 $h     = $lb['h_mm'];
 $cols  = $lb['cols'];
+$rows  = $lb['rows'];
 $gap   = $lb['gap_mm'];
 $sheetW = round($w * $cols + $gap * ($cols - 1), 2);
+$sheetH = $h * $rows;
 
 /**
  * ليبل واحد. كل المقاسات بالمليمتر وبتتحسب من ارتفاع الليبل عشان لو
@@ -76,12 +78,24 @@ function labels_label_html(array $it, array $lb): string
     $fsCode  = round(max(1.7, $h * 0.088), 2);
     $barH    = round(min(9.0, max(4.5, $h * 0.24)), 2);
 
+    // الليبل القصير محتاج سطر اسم واحد ومن غير اسم المحل، ونسيب مكان لكل المحتوى.
+    if ($h < 16) {
+        $pad = round(max(0.4, $h * 0.03), 2);
+        $fsName = round(max(1.5, $h * 0.13), 2);
+        $fsCode = round(max(1.3, $h * 0.11), 2);
+        $fsPrice = round(max(1.8, $h * 0.16), 2);
+        $barH = round($h - 2 * $pad - $fsName * 1.12 - $fsCode * 1.05
+            - ($lb['show_price'] ? $fsPrice : 0) - 0.3, 2);
+    }
+
     $avail = round($w - 2 * $pad, 2);
     $mod   = barcode_fit_module($it['code'], $avail);
     $svg   = barcode_svg($it['code'], $barH, $mod);
 
     $html  = '<div class="lbl" style="width:' . $w . 'mm;height:' . $h . 'mm;padding:' . $pad . 'mm;">';
-    $html .= '<div class="shop" style="font-size:' . $fsShop . 'mm;">' . e($lb['shop_name']) . '</div>';
+    if ($h >= 16) {
+        $html .= '<div class="shop" style="font-size:' . $fsShop . 'mm;">' . e($lb['shop_name']) . '</div>';
+    }
     $html .= '<div class="nm" style="font-size:' . $fsName . 'mm;">' . e($it['name']) . '</div>';
     if ($lb['show_price']) {
         $html .= '<div class="pr" style="font-size:' . $fsPrice . 'mm;">' . labels_price((float) $it['price']) . '</div>';
@@ -118,7 +132,7 @@ $chunks = array_chunk($labels, $cols);
 <link rel="stylesheet" href="assets/fagala.css?v=40">
 <style>
     /* 🔴 المقاس بالمليمتر: ده اللي بيخلي الطابعة الحرارية تطبع بمقاسها الحقيقي */
-    @page { size: <?= $sheetW ?>mm <?= $h ?>mm; margin: 0; }
+    @page { size: <?= $sheetW ?>mm <?= $sheetH ?>mm; margin: 0; }
 
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--surface); color: var(--text); }
@@ -162,17 +176,33 @@ $chunks = array_chunk($labels, $cols);
     .lbl .cd { direction: ltr; unicode-bidi: embed; font-variant-numeric: tabular-nums;
                font-weight: 600; max-width: 100%; overflow: hidden; white-space: nowrap; }
 
+<?php if ($h < 16): ?>
+    .lbl > div { flex-shrink: 0; }
+    .lbl .nm { display: block; white-space: nowrap; text-overflow: ellipsis; word-break: normal; }
+<?php endif; ?>
+<?php if ($rows > 1): ?>
+    .label-page { width: <?= $sheetW ?>mm; height: <?= $sheetH ?>mm; margin: 0 auto 4mm; }
+    .label-page .row { margin: 0; }
+<?php endif; ?>
     @media screen {
         body { background: var(--surface); }
         .lbl { outline: 1px dashed var(--line); }
         .sheet { max-width: 100%; overflow-x: auto; }
+<?php if ($rows > 1): ?>
+        .label-page { outline: 1px solid var(--line); }
+<?php endif; ?>
     }
 
     @media print {
         .bar { display: none; }
         .sheet { padding: 0; }
+<?php if ($rows > 1): ?>
+        .label-page { margin: 0; break-after: page; page-break-after: always; outline: none; }
+        .label-page:last-child { break-after: auto; page-break-after: auto; }
+<?php else: ?>
         .row { margin: 0; break-after: page; page-break-after: always; }
         .row:last-child { break-after: auto; page-break-after: auto; }
+<?php endif; ?>
         .lbl { outline: none; }
     }
 </style>
@@ -197,13 +227,13 @@ $chunks = array_chunk($labels, $cols);
 </div>
 
 <div class="sheet">
-    <?php foreach ($chunks as $chunk): ?>
+    <?php foreach ($chunks as $rowIndex => $chunk): ?><?php if ($rows > 1 && $rowIndex % $rows === 0) echo '<div class="label-page">'; ?>
         <div class="row">
             <?php foreach ($chunk as $it): ?>
                 <?= labels_label_html($it, $lb) ?>
             <?php endforeach; ?>
         </div>
-    <?php endforeach; ?>
+    <?php if ($rows > 1 && (($rowIndex + 1) % $rows === 0 || $rowIndex === count($chunks) - 1)) echo '</div>'; ?><?php endforeach; ?>
 </div>
 
 </body>
