@@ -23,6 +23,8 @@ function labels_defaults(): array
         'h_mm'       => 25.0,
         'cols'       => 1,
         'rows'       => 1,
+        'offset_x_mm' => 0.0,
+        'offset_y_mm' => 0.0,
         'gap_mm'     => 2.0,
         'show_price' => true,
         'shop_name'  => 'مكتبة الفجالة',
@@ -41,6 +43,8 @@ function labels_settings(): array
     $h    = (float) setting('labels_h_mm', (string) $d['h_mm']);
     $cols = (int) setting('labels_cols', (string) $d['cols']);
     $rows = (int) setting('labels_rows', (string) $d['rows']);
+    $offsetX = (float) setting('labels_offset_x_mm', (string) $d['offset_x_mm']);
+    $offsetY = (float) setting('labels_offset_y_mm', (string) $d['offset_y_mm']);
     $gap  = (float) setting('labels_gap_mm', (string) $d['gap_mm']);
     $show = (string) setting('labels_show_price', '1') === '1';
     $shop = trim((string) setting('labels_shop_name', $d['shop_name']));
@@ -50,6 +54,8 @@ function labels_settings(): array
         'h_mm'       => $h >= 10 && $h <= 80 ? $h : $d['h_mm'],
         'cols'       => $cols >= 1 && $cols <= 5 ? $cols : $d['cols'],
         'rows'       => $rows >= 1 && $rows <= 4 ? $rows : $d['rows'],
+        'offset_x_mm' => $offsetX >= -5 && $offsetX <= 5 && fmod($offsetX, 0.5) == 0.0 ? $offsetX : $d['offset_x_mm'],
+        'offset_y_mm' => $offsetY >= -5 && $offsetY <= 5 && fmod($offsetY, 0.5) == 0.0 ? $offsetY : $d['offset_y_mm'],
         'gap_mm'     => $gap >= 0 && $gap <= 10 ? $gap : $d['gap_mm'],
         'show_price' => $show,
         'shop_name'  => $shop !== '' ? mb_substr($shop, 0, 40) : $d['shop_name'],
@@ -58,6 +64,7 @@ function labels_settings(): array
 
 /**
  * حفظ إعدادات الليبل (استعلام واحد بـ٧ صفوف — مفيش استعلام في حلقة).
+ * ومع إعدادات الإزاحة بقوا ٩ صفوف في نفس الاستعلام.
  * الصلاحية (المالك) بيتأكد منها اللي بينادي.
  */
 function labels_save_settings(array $in): array
@@ -68,6 +75,8 @@ function labels_save_settings(array $in): array
     $h    = (float) ($in['h_mm'] ?? $d['h_mm']);
     $cols = (int) ($in['cols'] ?? $d['cols']);
     $rows = (int) ($in['rows'] ?? $d['rows']);
+    $offsetX = (float) ($in['offset_x_mm'] ?? $d['offset_x_mm']);
+    $offsetY = (float) ($in['offset_y_mm'] ?? $d['offset_y_mm']);
     $gap  = (float) ($in['gap_mm'] ?? $d['gap_mm']);
     $show = !empty($in['show_price']) ? '1' : '0';
     $shop = trim((string) ($in['shop_name'] ?? ''));
@@ -80,11 +89,19 @@ function labels_save_settings(array $in): array
     }
     $shop = mb_substr($shop, 0, 40);
 
+    if (!is_finite($offsetX) || !is_finite($offsetY)
+        || $offsetX < -5 || $offsetX > 5 || $offsetY < -5 || $offsetY > 5
+        || fmod($offsetX, 0.5) != 0.0 || fmod($offsetY, 0.5) != 0.0) {
+        throw new InvalidArgumentException('الإزاحة من -5 لـ+5 مم، بخطوة نص مم');
+    }
+
     $pairs = [
         'labels_w_mm'       => labels_num($w),
         'labels_h_mm'       => labels_num($h),
         'labels_cols'       => (string) $cols,
         'labels_rows'       => (string) $rows,
+        'labels_offset_x_mm' => labels_num($offsetX),
+        'labels_offset_y_mm' => labels_num($offsetY),
         'labels_gap_mm'     => labels_num($gap),
         'labels_show_price' => $show,
         'labels_shop_name'  => $shop,

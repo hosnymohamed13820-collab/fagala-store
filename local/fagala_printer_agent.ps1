@@ -653,6 +653,7 @@ function Print-Labels($payload, [string]$printer) {
                 $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::SingleBitPerPixelGridFit
                 # GDI بيبدأ عند المساحة القابلة للطباعة؛ نشيل إزاحتها عشان إحداثياتنا تبقى من أول الورقة.
                 $g.TranslateTransform(-$ev.PageSettings.HardMarginX * 25.4 / 100, -$ev.PageSettings.HardMarginY * 25.4 / 100)
+                $g.TranslateTransform([single]$payload.offset_x_mm, [single]$payload.offset_y_mm)
                 for ($slot = 0; $slot -lt ($rows * $cols) -and $state.Index -lt $items.Count; $slot++) {
                     $col = $slot % $cols
                     # المتصفح RTL: أول ليبل في الصف ناحية اليمين.

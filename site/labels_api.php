@@ -97,6 +97,7 @@ switch ($part) {
     case 'agent_status':
         api_method('GET');
         $branchId = (int) ($_SESSION['user']['branch_id'] ?? 0);
+        // وكيل ليبلز من غير فرع بيخدم كل الفروع؛ الشغّال لفرع المستخدم هو وكيل فرعه أو NULL في آخر دقيقتين.
         $st = db()->prepare(
             "SELECT printer FROM print_agents WHERE session_code LIKE ?
              AND last_seen >= NOW() - INTERVAL 2 MINUTE

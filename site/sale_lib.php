@@ -91,7 +91,7 @@ function sale_device(PDO $pdo, string $uuid, array $user, bool $lock = false): a
     if (trim($uuid) === '') {
         throw new SaleApiException('معرّف الجهاز مطلوب.');
     }
-    $sql = 'SELECT d.id, d.branch_id, d.name, d.device_uuid, d.code, d.is_active,
+    $sql = 'SELECT d.id, d.branch_id, d.name, d.device_uuid, d.code, d.is_active, d.print_mode,
                    b.name branch_name, b.sto_id
               FROM sale_devices d
               JOIN branches b ON b.id = d.branch_id

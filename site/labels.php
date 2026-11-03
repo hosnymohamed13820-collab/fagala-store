@@ -117,6 +117,15 @@ require_once __DIR__ . '/includes/header.php';
             <label for="setShop">اسم المحل في الليبل</label>
             <input class="finput finput-sm" type="text" id="setShop" maxlength="40" value="<?= e($lb['shop_name']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
         </div>
+        <div class="ffield">
+            <label for="setOffsetX">إزاحة يمين/شمال (مم)</label>
+            <input class="finput finput-sm num" type="number" id="setOffsetX" min="-5" max="5" step="0.5" value="<?= e((string) $lb['offset_x_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+            <small class="lbx-hint">موجب = يمين/تحت</small>
+        </div>
+        <div class="ffield">
+            <label for="setOffsetY">إزاحة فوق/تحت (مم)</label>
+            <input class="finput finput-sm num" type="number" id="setOffsetY" min="-5" max="5" step="0.5" value="<?= e((string) $lb['offset_y_mm']) ?>" <?= $isOwner ? '' : 'disabled' ?>>
+        </div>
         <label class="lbx-chk">
             <input class="lbx-chk-box" type="checkbox" id="setPrice" <?= $lb['show_price'] ? 'checked' : '' ?> <?= $isOwner ? '' : 'disabled' ?>>
             اطبع السعر
@@ -550,6 +559,8 @@ function lbxSetBody() {
         h_mm: +document.getElementById('setH').value,
         cols: +document.getElementById('setCols').value,
         rows: +document.getElementById('setRows').value,
+        offset_x_mm: +document.getElementById('setOffsetX').value,
+        offset_y_mm: +document.getElementById('setOffsetY').value,
         gap_mm: +document.getElementById('setGap').value,
         show_price: document.getElementById('setPrice').checked ? 1 : 0,
         shop_name: document.getElementById('setShop').value
@@ -589,7 +600,7 @@ function lbxSaveSettings() {
     return done;
 }
 
-['setW', 'setH', 'setCols', 'setRows', 'setGap', 'setShop'].forEach(id => {
+['setW', 'setH', 'setCols', 'setRows', 'setGap', 'setShop', 'setOffsetX', 'setOffsetY'].forEach(id => {
     const el = document.getElementById(id);
     if (el && LBX.owner) el.addEventListener('change', lbxQueueSave);
 });

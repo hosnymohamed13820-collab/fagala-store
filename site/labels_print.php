@@ -124,6 +124,10 @@ $chunks = array_chunk($labels, $cols);
     @media print {
         .bar { display: none; }
         .sheet { padding: 0; }
+<?php if ($lb['offset_x_mm'] != 0 || $lb['offset_y_mm'] != 0): ?>
+        /* الإزاحة مرة لمحتوى الصفحة: صف واحد أو مجموعة صفوف، والموجب يمين/تحت. */
+        <?= $rows > 1 ? '.label-page' : '.row' ?> { transform: translate(<?= labels_num($lb['offset_x_mm']) ?>mm, <?= labels_num($lb['offset_y_mm']) ?>mm); }
+<?php endif; ?>
 <?php if ($rows > 1): ?>
         .label-page { margin: 0; break-after: page; page-break-after: always; outline: none; }
         .label-page:last-child { break-after: auto; page-break-after: auto; }

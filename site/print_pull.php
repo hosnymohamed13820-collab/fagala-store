@@ -101,13 +101,17 @@ try {
 
     // (د) السحب في معاملة
     $pdo->beginTransaction();
+    // وكيل ليبلز من غير فرع بيخدم كل الفروع؛ لو له فرع بياخد فرعه وNULL. الإيصالات زي ما هي.
+    $branchFilter = $labelAgent && $branch <= 0 ? '' : ' AND (branch_id = ? OR branch_id IS NULL)';
+    $pullParams = $branchFilter === '' ? [] : [$branch > 0 ? $branch : null];
+    array_push($pullParams, (int) $labelAgent, 'labels', (int) $labelAgent, 'labels');
     $st = $pdo->prepare(
         "SELECT id, kind, ref_id, payload FROM print_queue
-          WHERE status = 'queued' AND (branch_id = ? OR branch_id IS NULL)
+          WHERE status = 'queued'" . $branchFilter . "
             AND ((? = 1 AND kind = ?) OR (? = 0 AND kind <> ?))
           ORDER BY id ASC LIMIT 3 FOR UPDATE"
     );
-    $st->execute([$branch > 0 ? $branch : null, (int) $labelAgent, 'labels', (int) $labelAgent, 'labels']);
+    $st->execute($pullParams);
     $rows = $st->fetchAll();
     $claimedIds = [];
     $jobs = [];
