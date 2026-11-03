@@ -1,7 +1,10 @@
 <?php
 /** محضر العهدة المعتمدة — ورق أبيض من غير هيدر الموقع أو الثيم الليلي. */
 require_once __DIR__ . '/auth.php';
-require_module_access('custody');
+require_login();
+if (!can('review')) {
+    require_module_access('custody');
+}
 require_once __DIR__ . '/custody_lib.php';
 
 try {

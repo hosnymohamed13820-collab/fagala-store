@@ -676,6 +676,106 @@ function Render-SaleReceipt($g, $p, [bool]$isDraw) {
     }
 }
 
+function Render-DrawerReceipt($g, $p, [bool]$isDraw) {
+    $g.PageUnit = [System.Drawing.GraphicsUnit]::Display
+    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::SingleBitPerPixelGridFit
+    $heading = New-Object System.Drawing.Font('Tahoma', 13, [System.Drawing.FontStyle]::Bold)
+    $bold = New-Object System.Drawing.Font('Tahoma', 10.5, [System.Drawing.FontStyle]::Bold)
+    $normal = New-Object System.Drawing.Font('Tahoma', 8.25, [System.Drawing.FontStyle]::Bold)
+    $center = New-Object System.Drawing.StringFormat
+    $center.Alignment = [System.Drawing.StringAlignment]::Center
+    $center.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft
+    $right = $center.Clone()
+    $right.Alignment = [System.Drawing.StringAlignment]::Near
+    $pen = New-Object System.Drawing.Pen([System.Drawing.Color]::Black, 1)
+    [float]$y = 2.5
+    try {
+        foreach ($row in @(
+            @{ Text = [string]$p.branch_name; Font = $heading; Format = $center },
+            @{ Text = [string]$p.branch_phone; Font = $normal; Format = $center },
+            @{ Text = 'فتح درج'; Font = $bold; Format = $center }
+        )) {
+            if ([string]::IsNullOrWhiteSpace($row.Text)) { continue }
+            $size = $g.MeasureString($row.Text, $row.Font, [int]$script:PrintWidth, $row.Format)
+            $rect = [System.Drawing.RectangleF]::new($script:PrintableLeft, $y, $script:PrintWidth, $size.Height)
+            if ($isDraw) { $g.DrawString($row.Text, $row.Font, [System.Drawing.Brushes]::Black, $rect, $row.Format) }
+            $y += $size.Height + 1
+        }
+        if ($isDraw) {
+            $g.DrawLine($pen, $script:PrintableLeft, $y, $script:PrintableRight, $y)
+            $g.DrawLine($pen, $script:PrintableLeft, ($y + 3), $script:PrintableRight, ($y + 3))
+        }
+        $y += 6
+        foreach ($text in @(
+            ('التاريخ والوقت: ' + [string]$p.date + ' ' + [string]$p.time),
+            ('الجهاز: ' + [string]$p.device_name),
+            ('الكاشير: ' + [string]$p.cashier_name)
+        )) {
+            $size = $g.MeasureString($text, $normal, [int]$script:PrintWidth, $right)
+            $rect = [System.Drawing.RectangleF]::new($script:PrintableLeft, $y, $script:PrintWidth, $size.Height)
+            if ($isDraw) { $g.DrawString($text, $normal, [System.Drawing.Brushes]::Black, $rect, $right) }
+            $y += $size.Height + 2
+        }
+        if ($isDraw) { $g.DrawLine($pen, $script:PrintableLeft, $y, $script:PrintableRight, $y) }
+        $y += 5
+        $boxTop = $y
+        $y += 4
+        $textWidth = [int]($script:PrintWidth - 12)
+        foreach ($row in @(
+            @{ Text = 'سبب فتح الدرج:'; Font = $normal },
+            @{ Text = [string]$p.reason; Font = $bold }
+        )) {
+            $size = $g.MeasureString($row.Text, $row.Font, $textWidth, $right)
+            $rect = [System.Drawing.RectangleF]::new(($script:PrintableLeft + 6), $y, $textWidth, $size.Height)
+            if ($isDraw) { $g.DrawString($row.Text, $row.Font, [System.Drawing.Brushes]::Black, $rect, $right) }
+            $y += $size.Height + 2
+        }
+        $y += 4
+        if ($isDraw) { $g.DrawRectangle($pen, [float]$script:PrintableLeft, $boxTop, [float]$script:PrintWidth, [float]($y - $boxTop)) }
+        $y += 6
+        $pen.DashStyle = [System.Drawing.Drawing2D.DashStyle]::Dash
+        if ($isDraw) { $g.DrawLine($pen, $script:PrintableLeft, $y, $script:PrintableRight, $y) }
+        $y += 6
+        $signature = [string]$p.signature_label
+        if ([string]::IsNullOrWhiteSpace($signature)) { $signature = 'توقيع المسؤول' }
+        $signature += ': ___________________'
+        $size = $g.MeasureString($signature, $normal, [int]$script:PrintWidth, $center)
+        $rect = [System.Drawing.RectangleF]::new($script:PrintableLeft, $y, $script:PrintWidth, $size.Height)
+        if ($isDraw) { $g.DrawString($signature, $normal, [System.Drawing.Brushes]::Black, $rect, $center) }
+        $y += $size.Height + 2
+        return $y + $script:ReceiptBottomFeed
+    } finally {
+        $heading.Dispose(); $bold.Dispose(); $normal.Dispose()
+        $center.Dispose(); $right.Dispose(); $pen.Dispose()
+    }
+}
+
+function Print-DrawerReceipt($payload, [string]$targetPrinter, [string]$pdfFile) {
+    if ($Kinds -eq 'labels') { throw 'وكيل الليبلز ماينفعش يطبع إيصالات' }
+    if (-not $payload) { throw 'بيانات الإيصال مش صالحة' }
+    $doc = New-Object System.Drawing.Printing.PrintDocument
+    $doc.PrinterSettings.PrinterName = $targetPrinter
+    try {
+        $isPdf = ($targetPrinter -like '*PDF*' -or $pdfFile -ne '')
+        if (-not $isPdf -and -not $doc.PrinterSettings.IsValid) { throw "الطابعة '$targetPrinter' مش موجودة" }
+        $measG = $doc.PrinterSettings.CreateMeasurementGraphics()
+        try { $h = Render-DrawerReceipt $measG $payload $false } finally { $measG.Dispose() }
+        $paperHeight = [int][Math]::Ceiling($h)
+        $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Receipt', $script:PaperWidth, $paperHeight)
+        if ($pdfFile -ne '') {
+            $doc.PrinterSettings.PrintToFile = $true
+            $doc.PrinterSettings.PrintFileName = $pdfFile
+        }
+        $script:currentDrawerPayload = $payload
+        $doc.add_PrintPage({
+            param($sender, $e)
+            Render-DrawerReceipt $e.Graphics $script:currentDrawerPayload $true | Out-Null
+            $e.HasMorePages = $false
+        })
+        $doc.Print()
+    } finally { $doc.Dispose() }
+}
+
 function Print-SaleReceipt($payload, [string]$targetPrinter, [string]$pdfFile) {
     if (-not $payload) {
         throw "بيانات الإيصال غير صالحة"
@@ -881,6 +981,8 @@ if ($TestFile -ne "") {
     try {
         if ($payloadData.kind -eq 'labels') {
             Print-Labels $payloadData $actualPrinter
+        } elseif ($payloadData.kind -eq 'drawer_receipt') {
+            Print-DrawerReceipt $payloadData $actualPrinter $pdfTarget
         } elseif ($payloadData.kind -eq 'sale_receipt' -or $payloadData.receipt_no) {
             Print-SaleReceipt $payloadData $actualPrinter $pdfTarget
         } else {
@@ -976,6 +1078,8 @@ while ($true) {
                         Print-Labels $job.payload $PrinterName
                     } elseif ($Kinds -eq 'labels') {
                         throw 'وكيل الليبلز ماينفعش يطبع إيصالات'
+                    } elseif ($job.kind -eq 'drawer_receipt') {
+                        Print-DrawerReceipt $job.payload $PrinterName ""
                     } elseif ($job.kind -eq 'sale_receipt') {
                         Print-SaleReceipt $job.payload $PrinterName ""
                     } else {

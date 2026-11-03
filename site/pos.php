@@ -3302,7 +3302,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     showAlert('warn', 'الدرج اتسجّل بس الإيصال ماطّبعش، ومفيش مكان لإعادة طباعته حالياً.');
                 }
             } else if (data.mode === 'queue') {
-                showAlert('warn', 'الدرج اتسجّل. الجهاز ده بيطبع من طابور، وإيصال فتح الدرج لسه مش بيتبعت للطابور.');
+                showAlert('pos', 'تم إرسال إيصال فتح الدرج للطابعة');
             }
         })
         .catch(function (err) {

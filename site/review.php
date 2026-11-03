@@ -354,6 +354,7 @@ $shiftEditBadges = review_get_shift_edit_badges($pdo, $allReviewShiftIds);
 $shiftExpensesMap = (site_profile()['shift_expenses_mode'] === 'ashraqa') ? shift_expenses_for_shifts($allReviewShiftIds, $pdo) : [];
 
 // عهد الفروع والموظفين المقدّمة للمراجعة
+$custodyTolerance = custody_tolerance();
 $pendingCustody = review_get_pending_custody($pdo);
 $custodyHistory = review_get_history_custody($pdo, 50);
 
@@ -627,6 +628,7 @@ require_once __DIR__ . '/includes/header.php';
 
                 <form method="post" style="margin-top:14px;"
                       data-expected="<?= e((string)$cExpected) ?>"
+                      data-tolerance="<?= e((string)$custodyTolerance) ?>"
                       data-responsible="<?= e($allEmployees[(int)($c['responsible_employee_id'] ?? 0)] ?? 'الموظف المسؤول مش متحدد') ?>"
                       onsubmit="return cstConfirm(this);">
                     <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -1798,9 +1800,11 @@ require_once __DIR__ . '/includes/header.php';
             return false;
         }
         var expected = Number(form.dataset.expected);
-        var warning = counted < expected
-            ? 'هيتسجّل عجز ' + (expected - counted).toFixed(2) + ' ج على ' + form.dataset.responsible + '\n\n'
-            : '';
+        var tolerance = Number(form.dataset.tolerance);
+        var deficit = expected - counted;
+        var warning = deficit > tolerance
+            ? 'هيتسجّل عجز ' + deficit.toFixed(2) + ' ج على ' + form.dataset.responsible + '\n\n'
+            : (deficit > 0 ? 'فيه فرق ' + deficit.toFixed(2) + ' ج في حدود المسموح، مش هيتسجّل على حد\n\n' : '');
         return confirm(warning + 'اعتماد عهدة ' + branch + ' بمبلغ ' + amt + ' جنيه؟\n\n'
             + 'الفلوس هتدخل الخزينة فعلاً والقيود هتتعمل. مفيش تراجع.');
     }

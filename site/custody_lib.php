@@ -32,16 +32,19 @@ function custody_get_receipt(PDO $pdo, int $custodyId, array $user): array
     }
 
     if (!empty($custody['employee_id'])) {
-        if (!is_owner() && !can('custody:employee')) {
+        $canReview = can('review');
+        if (!is_owner() && !can('custody:employee') && !$canReview) {
             throw new RuntimeException('مش مسموح لك تعرض عهدة الموظف.', 403);
         }
-        // زي custody.php: اختيار أي موظف للمالك بس، والباقي عهدة موظف حسابه النشط.
-        $employee = custody_get_user_employee($pdo, (int)$user['id']);
-        $allowedEmpId = custody_resolve_selected_emp_id($user, (int)$custody['employee_id'], (int)($employee['id'] ?? 0), []);
-        if ($allowedEmpId <= 0 || $allowedEmpId !== (int)$custody['employee_id']) {
-            throw new RuntimeException('دي مش عهدتك.', 403);
+        if (!$canReview) {
+            // زي custody.php: اختيار أي موظف للمالك بس، والباقي عهدة موظف حسابه النشط.
+            $employee = custody_get_user_employee($pdo, (int)$user['id']);
+            $allowedEmpId = custody_resolve_selected_emp_id($user, (int)$custody['employee_id'], (int)($employee['id'] ?? 0), []);
+            if ($allowedEmpId <= 0 || $allowedEmpId !== (int)$custody['employee_id']) {
+                throw new RuntimeException('دي مش عهدتك.', 403);
+            }
         }
-    } else {
+    } elseif (!can('review')) {
         if (!is_owner() && !can('custody:branch')) {
             throw new RuntimeException('مش مسموح لك تعرض عهدة الفرع.', 403);
         }

@@ -136,14 +136,49 @@ try {
                 $user
             );
             $stEvent = $pdo->prepare(
-                "SELECT id FROM sale_events
-                  WHERE device_id = ? AND user_id = ? AND event_type = 'drawer_open'
-                  ORDER BY id DESC LIMIT 1"
+                "SELECT e.id, e.payload, e.created_at, b.name AS branch_name, b.phone AS branch_phone,
+                        d.name AS device_name, u.full_name AS cashier_name
+                   FROM sale_events e
+                   LEFT JOIN branches b ON b.id = e.branch_id
+                   LEFT JOIN sale_devices d ON d.id = e.device_id
+                   LEFT JOIN users u ON u.id = e.user_id
+                  WHERE e.device_id = ? AND e.user_id = ? AND e.event_type = 'drawer_open'
+                  ORDER BY e.id DESC LIMIT 1"
             );
             $stEvent->execute([(int) $device['id'], (int) $user['id']]);
-            $eventId = (int) $stEvent->fetchColumn();
+            $event = $stEvent->fetch(PDO::FETCH_ASSOC);
+            $eventId = (int) ($event['id'] ?? 0);
 
             $printMode = (string) ($device['print_mode'] ?? 'browser');
+            if ($printMode === 'queue') {
+                if (!$event) {
+                    throw new RuntimeException('سجل فتح الدرج مش موجود.');
+                }
+                $eventPayload = json_decode((string) ($event['payload'] ?? '{}'), true) ?: [];
+                $dt = strtotime((string) $event['created_at']);
+                $payload = [
+                    'kind' => 'drawer_receipt',
+                    'branch_name' => (string) ($event['branch_name'] ?? ''),
+                    'branch_phone' => (string) ($event['branch_phone'] ?? ''),
+                    'date' => $dt ? date('d/m/Y', $dt) : '',
+                    'time' => $dt ? date('h:i A', $dt) : '',
+                    'device_name' => (string) ($event['device_name'] ?? ''),
+                    'cashier_name' => (string) ($event['cashier_name'] ?? ''),
+                    'reason' => trim((string) ($eventPayload['reason'] ?? '')),
+                    'signature_label' => 'توقيع المسؤول',
+                ];
+                $st = $pdo->prepare(
+                    'INSERT INTO print_queue (branch_id, kind, ref_id, payload, created_by)
+                     VALUES (?, ?, ?, ?, ?)'
+                );
+                $st->execute([
+                    (int) $device['branch_id'],
+                    'drawer_receipt',
+                    $eventId,
+                    json_encode($payload, JSON_UNESCAPED_UNICODE),
+                    (int) $user['id'],
+                ]);
+            }
             $url = 'pos_receipt.php?type=drawer&id=' . $eventId;
             api_ok([
                 'opened'   => true,
