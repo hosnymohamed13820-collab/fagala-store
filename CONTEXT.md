@@ -1254,4 +1254,14 @@ if (isset($opts[1]) && $opts[1]['score'] >= $min - 0.05) { سيبه }
 - تقارير POS صفحة API-first منفصلة: `pos_reports_lib.php` + `pos_reports_api.php` + `pos_reports.php` بصلاحية `pos:reports`، وتشمل حذف السطور، فتح الدرج، الخصومات، المرتجعات، المعلق الملغي، وفروق التقفيل لكل طريقة، مع إكسيل `SimpleXlsx`.
 - Migration: `20261027_025_pos_close_security.sql` يضيف `sale_approval_tokens.ref_doc_id` و`sale_sessions.close_client_uuid` مع الفهارس.
 
+---
+
+## ٤٤) الطباعة الحرارية: إيصال البيع والليبلز من الوكيل (بريفات ٨٦٩–٨٨٠ — ٣ نوفمبر ٢٠٢٦)
+
+- **إيصال البيع (`pos_receipt.php`):** ٧٢مم في نص ورق ٨٠مم · الطباعة سودا وتقيلة · مسافات نص القديم · ٤ أعمدة (الصنف: اسم سطرين بالكتير + الكود تحته) · من غير رقم الإيصال فوق ولا الوحدة. نفس الشكل في الوكيل (`Render-SaleReceipt`) ومعاه باركود رقم الإيصال (`receipt_barcode_bits` في `sale_receipt_payload()`). الفراغ تحت قبل القص `$script:ReceiptBottomFeed` = 15.24مم، بيتظبط بالتجربة لكل طابعة.
+- **باغ اتصلّح (٨٧٥):** `sale_device()` ماكانتش بتجيب `print_mode`، فالطباعة من الطابور عمرها ما اشتغلت. دلوقتي `queue` = الإيصال يتحط في `print_queue` (`sale_receipt`)، وفتح الدرج كمان (`drawer_receipt`، ٨٨٠).
+- **الليبلز:** إعداد `rows` (ليبلز فوق بعض في القطعة — رول ترو 38.1×25.4 فيه ليبلين 12.7) · إزاحة `offset_x_mm/offset_y_mm` · باركود module ثابت 0.25مم · الإدخال بالكيبورد زي فاتورة الشراء (كود ← Enter ← العدد ← Enter؛ أكتر من ٤ أرقام في العدد = باركود من السكانر) · زرار «اطبع على طابعة الليبل» بيبعت `kind=labels` للطابور (`labels_api` parts: `queue` · `agent_status` · `job_status`). الإعدادات للمالك الحقيقي بس.
+- **الوكيل (`local/fagala_printer_agent.ps1`):** `$Kinds = "receipts"|"labels"` · `Print-Labels` بيبعت `PaperSize` للدرايفر مع كل مهمة (زي BarTender) · وكيل ليبلز من غير فرع بيخدم كل الفروع · المركّب بيسجّل `FagalaLabelAgent` منفصل عن `FagalaPrinterAgent`. `print_pull.php`: الوكيل من غير `kinds` مابياخدش ليبلز أبداً.
+- **على جهاز محمد:** وكيل ليبلز `LBL-MOHAMED` (Xprinter XP-235B، الموقع الحقيقي) ووكيل إيصالات `PRN-LARAGON` على `http://localhost` بمفتاح محلي. الأطقم في `local/printer_kits/LABELS` و`LARAGON_POS`.
+- **تانيين في نفس اليوم:** ٨٧٠ زراير «حد إعادة الطلب» + استعلام الأسعار على إشراقة (migration 050) · ٨٨٠ تحذير العجز في مراجعة العهدة بيحترم `custody_tolerance()` + اللي معاه `review` يطبع محضر العهدة · ٨٧٩ migrations 045/047 بفحص الجدول، واتشغّلوا مع 049 على إشراقة · `app.js?v=15` (إشراقة كان ليها v14 قديم من غير `apiFetch` بنفس العنوان).
 
