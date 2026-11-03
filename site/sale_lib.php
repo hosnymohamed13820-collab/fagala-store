@@ -3373,6 +3373,11 @@ function sale_receipt_payload(int $docId, bool $forceReprint = false, ?array $us
         'is_return'        => $doc['doc_kind'] === 'return',
         'status'           => (string) $doc['status'],
         'receipt_no'       => (string) ($doc['receipt_no'] ?? ''),
+        // نفس مكتبة باركود الصفحة، من غير أي تغيير في الأرقام المحفوظة.
+        'receipt_barcode_bits' => (static function (string $receiptNo): ?string {
+            require_once __DIR__ . '/barcode_lib.php';
+            return barcode_printable($receiptNo) ? barcode_bits($receiptNo) : null;
+        })((string) ($doc['receipt_no'] ?? '')),
         'ref_doc_id'       => !empty($doc['ref_doc_id']) ? (int) $doc['ref_doc_id'] : null,
         'ref_receipt_no'   => $refReceiptNo,
         'branch_id'        => (int) $doc['branch_id'],
