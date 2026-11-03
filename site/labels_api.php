@@ -71,6 +71,51 @@ $part = (string) ($_GET['part'] ?? '');
 $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
 switch ($part) {
+    case 'queue':
+        api_method('POST');
+        api_csrf();
+        api_idempotent();
+        $input = api_input();
+        [$parsed] = labels_parse_rows((string) ($input['rows'] ?? ''));
+        try {
+            $payload = labels_build_print_payload($parsed);
+        } catch (InvalidArgumentException $e) {
+            api_fail($e->getMessage(), 400, 'bad_request');
+        }
+        $branchId = (int) ($_SESSION['user']['branch_id'] ?? 0);
+        if ($branchId <= 0 && !is_real_owner()) {
+            api_fail('حسابك مش مربوط بفرع', 403, 'forbidden');
+        }
+        $st = db()->prepare(
+            'INSERT INTO print_queue (branch_id, kind, ref_id, payload, created_by) VALUES (?, ?, ?, ?, ?)'
+        );
+        $st->execute([$branchId > 0 ? $branchId : null, 'labels', 0,
+            json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            (int) $_SESSION['user']['id']]);
+        api_ok(['id' => (int) db()->lastInsertId(), 'count' => count($payload['labels'])]);
+
+    case 'agent_status':
+        api_method('GET');
+        $branchId = (int) ($_SESSION['user']['branch_id'] ?? 0);
+        $st = db()->prepare(
+            "SELECT printer FROM print_agents WHERE session_code LIKE ?
+             AND last_seen >= NOW() - INTERVAL 2 MINUTE
+             AND (branch_id = ? OR branch_id IS NULL) ORDER BY last_seen DESC LIMIT 1"
+        );
+        $st->execute(['LBL-%', $branchId > 0 ? $branchId : null]);
+        $agent = $st->fetch(PDO::FETCH_ASSOC);
+        api_ok(['online' => (bool) $agent, 'printer' => $agent['printer'] ?? null]);
+
+    case 'job_status':
+        api_method('GET');
+        $st = db()->prepare("SELECT status, last_error FROM print_queue WHERE id = ? AND kind = ? AND created_by = ?");
+        $st->execute([(int) ($_GET['id'] ?? 0), 'labels', (int) $_SESSION['user']['id']]);
+        $job = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$job) {
+            api_fail('مهمة الطباعة مش موجودة', 404, 'not_found');
+        }
+        api_ok($job);
+
     case 'code':
         api_method('GET');
         // «مش موجود» نتيجة عادية مش خطأ ← row = null

@@ -23,36 +23,7 @@ $raw = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
     : (string) ($_GET['ids'] ?? '');
 [$req, $total] = labels_parse_rows($raw);
 
-$error = '';
-if (!$req) {
-    $error = 'مفيش أصناف مختارة للطباعة.';
-} elseif ($total > LABELS_MAX) {
-    $error = 'الحد الأقصى ' . LABELS_MAX . ' ليبل في الطباعة الواحدة — انت طلبت ' . $total . ' ليبل.';
-}
-
-$map     = ($req && $error === '') ? labels_codes_map(array_column($req, 'code')) : [];
-$missing = $map ? array_values(array_diff(array_column($req, 'code'), array_keys($map))) : [];
-
-// الليبلز الفعلية: نسخة لكل ليبل، والأكواد اللي مالهاش ترميز ASCII بتتخطى
-$labels = [];
-$skipped = 0;
-// لو فيه خطأ (مفيش أصناف أو أكتر من الحد) مش بنبني ليبلز أصلاً
-foreach ($error === '' ? $req : [] as $r) {
-    $it = $map[$r['code']] ?? null;
-    if (!$it) {
-        continue;
-    }
-    if (!$it['printable']) {
-        $skipped++;
-        continue;
-    }
-    for ($i = 0; $i < $r['copies']; $i++) {
-        $labels[] = $it;
-    }
-}
-if ($error === '' && !$labels) {
-    $error = 'الأصناف اللي في القايمة مش هتتطبع كباركود (أكواد فيها حروف مش ASCII).';
-}
+extract(labels_print_data($req), EXTR_OVERWRITE);
 
 $w     = $lb['w_mm'];
 $h     = $lb['h_mm'];
@@ -61,49 +32,6 @@ $rows  = $lb['rows'];
 $gap   = $lb['gap_mm'];
 $sheetW = round($w * $cols + $gap * ($cols - 1), 2);
 $sheetH = $h * $rows;
-
-/**
- * ليبل واحد. كل المقاسات بالمليمتر وبتتحسب من ارتفاع الليبل عشان لو
- * محمد غيّر المقاس الليبل يفضل مرتّب من غير تعديل كود.
- */
-function labels_label_html(array $it, array $lb): string
-{
-    $w = (float) $lb['w_mm'];
-    $h = (float) $lb['h_mm'];
-    $pad = round(max(0.8, $h * 0.04), 2);
-
-    $fsShop  = round(max(1.7, $h * 0.088), 2);
-    $fsName  = round(max(1.9, $h * 0.100), 2);
-    $fsPrice = round(max(2.6, $h * 0.184), 2);
-    $fsCode  = round(max(1.7, $h * 0.088), 2);
-    $barH    = round(min(9.0, max(4.5, $h * 0.24)), 2);
-
-    // الليبل القصير محتاج سطر اسم واحد ومن غير اسم المحل، ونسيب مكان لكل المحتوى.
-    if ($h < 16) {
-        $pad = round(max(0.4, $h * 0.03), 2);
-        $fsName = round(max(1.5, $h * 0.13), 2);
-        $fsCode = round(max(1.3, $h * 0.11), 2);
-        $fsPrice = round(max(1.8, $h * 0.16), 2);
-        $barH = round($h - 2 * $pad - $fsName * 1.12 - $fsCode * 1.05
-            - ($lb['show_price'] ? $fsPrice : 0) - 0.3, 2);
-    }
-
-    $avail = round($w - 2 * $pad, 2);
-    $mod   = barcode_fit_module($it['code'], $avail);
-    $svg   = barcode_svg($it['code'], $barH, $mod);
-
-    $html  = '<div class="lbl" style="width:' . $w . 'mm;height:' . $h . 'mm;padding:' . $pad . 'mm;">';
-    if ($h >= 16) {
-        $html .= '<div class="shop" style="font-size:' . $fsShop . 'mm;">' . e($lb['shop_name']) . '</div>';
-    }
-    $html .= '<div class="nm" style="font-size:' . $fsName . 'mm;">' . e($it['name']) . '</div>';
-    if ($lb['show_price']) {
-        $html .= '<div class="pr" style="font-size:' . $fsPrice . 'mm;">' . labels_price((float) $it['price']) . '</div>';
-    }
-    $html .= '<div class="bc">' . $svg . '</div>';
-    $html .= '<div class="cd" style="font-size:' . $fsCode . 'mm;">' . e($it['code']) . '</div>';
-    return $html . '</div>';
-}
 
 if ($error !== '') {
     http_response_code(400);

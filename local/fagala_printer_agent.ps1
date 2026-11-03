@@ -1,4 +1,8 @@
-﻿# =====================================================================
+﻿# تركيب وكيل الليبلز: انسخ الطقم في فولدر لوحده جنب طقم الإيصالات.
+# ظبط $Kinds = "labels" و$PrinterName باسم طابعة الليبلز في ويندوز.
+# ظبط $Session بكود مختلف و$BranchId للفرع و$Key محليًا وقت التركيب.
+# شغل install_printer_agent.bat؛ هيسجل FagalaLabelAgent لوحده.
+# =====================================================================
 #  fagala_printer_agent.ps1 — وكيل الطباعة الحرارية لإيصالات الحجز
 #  نظام الفجالة ستور المالي
 #
@@ -27,7 +31,12 @@ $BaseUrl     = "https://hosnimanagement.com"   # إشراقة: ".../ashraqa"
 $Key         = ""                              # 🔴 كلود بيحطه وقت التركيب
 $Session     = "PRN-FAGALA"                    # كود الوكيل — مختلف لكل جهاز
 $BranchId    = 0                               # 🔴 كلود بيحطه — رقم الفرع من التعريفات
+$Kinds       = "receipts"                     # لليبلز غيّرها لـ labels
 $PrinterName = "XP-80C"                        # اسم الطابعة زي ما هو في الويندوز
+
+if ($Kinds -eq 'labels' -and -not $Session.StartsWith('LBL-')) {
+    $Session = 'LBL-' + $Session
+}
 
 # الأسامي المؤكدة من محمد للطابعات في الفروع:
 # الفجالة · بونجور: XP-80C
@@ -608,6 +617,134 @@ function Print-SaleReceipt($payload, [string]$targetPrinter, [string]$pdfFile) {
     }
 }
 
+# رسم الليبلز مستقل عن الإيصالات: الورقة بالمية من البوصة والرسم بالمم.
+function Print-Labels($payload, [string]$printer) {
+    $ErrorActionPreference = 'Stop'
+    $doc = New-Object System.Drawing.Printing.PrintDocument
+    $handler = $null
+    try {
+        $doc.PrinterSettings.PrinterName = $printer
+        if (-not $doc.PrinterSettings.IsValid) { throw "طابعة الليبلز مش موجودة: $printer" }
+        $w = [double]$payload.w_mm
+        $h = [double]$payload.h_mm
+        $cols = [int]$payload.cols
+        $rows = [int]$payload.rows
+        $gap = [double]$payload.gap_mm
+        $items = @($payload.labels)
+        if ($w -le 0 -or $h -le 0 -or $cols -lt 1 -or $rows -lt 1 -or $items.Count -eq 0) {
+            throw 'مقاسات الليبل مش مظبوطة أو القايمة فاضية'
+        }
+        $paperW = [int][Math]::Round(($w * $cols + $gap * ($cols - 1)) / 25.4 * 100)
+        $paperH = [int][Math]::Round(($h * $rows) / 25.4 * 100)
+        $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Labels', $paperW, $paperH)
+        $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+        $doc.DefaultPageSettings.Landscape = $false
+        $doc.OriginAtMargins = $false
+        $doc.PrintController = New-Object System.Drawing.Printing.StandardPrintController
+        # كائن حالة عشان تقدم الصفحات يفضل موجود بين نداءات PrintPage.
+        $state = @{ Index = 0; Error = $null }
+        $handler = [System.Drawing.Printing.PrintPageEventHandler] {
+            param($sender, $ev)
+            try {
+                $g = $ev.Graphics
+                $g.PageUnit = [System.Drawing.GraphicsUnit]::Millimeter
+                $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::None
+                $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::Half
+                $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::SingleBitPerPixelGridFit
+                # GDI بيبدأ عند المساحة القابلة للطباعة؛ نشيل إزاحتها عشان إحداثياتنا تبقى من أول الورقة.
+                $g.TranslateTransform(-$ev.PageSettings.HardMarginX * 25.4 / 100, -$ev.PageSettings.HardMarginY * 25.4 / 100)
+                for ($slot = 0; $slot -lt ($rows * $cols) -and $state.Index -lt $items.Count; $slot++) {
+                    $col = $slot % $cols
+                    # المتصفح RTL: أول ليبل في الصف ناحية اليمين.
+                    $x = ($cols - 1 - $col) * ($w + $gap)
+                    $y = [Math]::Floor($slot / $cols) * $h
+                    Draw-Label $g $items[$state.Index] $payload $x $y
+                    $state.Index++
+                }
+                $ev.HasMorePages = $state.Index -lt $items.Count
+            } catch {
+                $state.Error = $_.Exception
+                $ev.Cancel = $true
+                $ev.HasMorePages = $false
+            }
+        }.GetNewClosure()
+        $doc.add_PrintPage($handler)
+        $doc.Print()
+        if ($state.Error) { throw $state.Error }
+    } finally {
+        if ($handler) { $doc.remove_PrintPage($handler) }
+        $doc.Dispose()
+    }
+}
+
+function Draw-Label($g, $item, $layout, [double]$x, [double]$y) {
+    $w = [double]$layout.w_mm
+    $h = [double]$layout.h_mm
+    $pad = [Math]::Round([Math]::Max(0.8, $h * 0.04), 2)
+    $fsShop = [Math]::Round([Math]::Max(1.7, $h * 0.088), 2)
+    $fsName = [Math]::Round([Math]::Max(1.9, $h * 0.100), 2)
+    $fsPrice = [Math]::Round([Math]::Max(2.6, $h * 0.184), 2)
+    $fsCode = [Math]::Round([Math]::Max(1.7, $h * 0.088), 2)
+    $barH = [Math]::Round([Math]::Min(9.0, [Math]::Max(4.5, $h * 0.24)), 2)
+    if ($h -lt 16) {
+        $pad = [Math]::Round([Math]::Max(0.4, $h * 0.03), 2)
+        $fsName = [Math]::Round([Math]::Max(1.5, $h * 0.13), 2)
+        $fsCode = [Math]::Round([Math]::Max(1.3, $h * 0.11), 2)
+        $fsPrice = [Math]::Round([Math]::Max(1.8, $h * 0.16), 2)
+        $priceH = 0
+        if ($layout.show_price) { $priceH = $fsPrice }
+        $barH = [Math]::Round($h - 2 * $pad - $fsName * 1.12 - $fsCode * 1.05 - $priceH - 0.3, 2)
+    }
+    $avail = [Math]::Round($w - 2 * $pad, 2)
+    $bits = [string]$item.bits
+    if ($bits -notmatch '^[01]+$' -or $barH -le 0) { throw 'باركود الليبل أو ارتفاعه مش مظبوط' }
+    # نقطة طابعة 203dpi تقريبًا 0.125مم، ومعاها مساحة هادية 10 نقط ترميز يمين وشمال.
+    $module = [Math]::Floor(($avail / ($bits.Length + 20)) / 0.125) * 0.125
+    if ($module -le 0) { throw 'الباركود أعرض من الليبل على دقة ٢٠٣ نقطة' }
+    $parts = @()
+    if ($layout.show_shop) { $parts += @{ Text = [string]$layout.shop_name; Size = $fsShop; Height = $fsShop * 1.05; Rtl = $true } }
+    $nameH = $fsName * 1.12
+    if ($h -ge 16) { $nameH *= 2 }
+    $parts += @{ Text = [string]$item.name; Size = $fsName; Height = $nameH; Rtl = $true }
+    if ($layout.show_price) { $parts += @{ Text = [string]$item.price; Size = $fsPrice; Height = $fsPrice; Rtl = $false } }
+    $parts += @{ Barcode = $true; Height = $barH }
+    $parts += @{ Text = [string]$item.code; Size = $fsCode; Height = $fsCode * 1.05; Rtl = $false }
+    $used = 0.0
+    foreach ($part in $parts) { $used += $part.Height }
+    # زي space-between في صفحة المتصفح، مع قص أي زيادة عند حدود الليبل.
+    $space = [Math]::Max(0, ($h - 2 * $pad - $used) / ($parts.Count - 1))
+    $saved = $g.Save()
+    try {
+        $g.SetClip([System.Drawing.RectangleF]::new($x, $y, $w, $h))
+        $top = $y + $pad
+        foreach ($part in $parts) {
+            if ($part.Barcode) {
+                $left = $x + ($w - $bits.Length * $module) / 2
+                for ($b = 0; $b -lt $bits.Length; $b++) {
+                    if ($bits[$b] -eq '1') {
+                        $g.FillRectangle([System.Drawing.Brushes]::Black, [single]($left + $b * $module), [single]$top, [single]$module, [single]$barH)
+                    }
+                }
+            } else {
+                $font = [System.Drawing.Font]::new('Tahoma', [single]$part.Size, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Millimeter)
+                $format = [System.Drawing.StringFormat]::new()
+                try {
+                    $format.Alignment = [System.Drawing.StringAlignment]::Center
+                    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
+                    $format.Trimming = [System.Drawing.StringTrimming]::EllipsisCharacter
+                    if ($part.Rtl) { $format.FormatFlags = [System.Drawing.StringFormatFlags]::DirectionRightToLeft }
+                    if ($h -lt 16 -or $part.Text -ne [string]$item.name) {
+                        $format.FormatFlags = $format.FormatFlags -bor [System.Drawing.StringFormatFlags]::NoWrap
+                    }
+                    $rect = [System.Drawing.RectangleF]::new(($x + $pad), $top, $avail, $part.Height)
+                    $g.DrawString($part.Text, $font, [System.Drawing.Brushes]::Black, $rect, $format)
+                } finally { $font.Dispose(); $format.Dispose() }
+            }
+            $top += $part.Height + $space
+        }
+    } finally { $g.Restore($saved) }
+}
+
 # =====================================================================
 #  وضع الاختبار المحلي (-TestFile)
 # =====================================================================
@@ -630,7 +767,7 @@ if ($TestFile -ne "") {
     # لو بنختبر على جهاز تطوير والطابعة مش موجودة، نحوّل لـ PDF تلقائي
     $chkDoc = New-Object System.Drawing.Printing.PrintDocument
     $chkDoc.PrinterSettings.PrinterName = $PrinterName
-    if (-not $chkDoc.PrinterSettings.IsValid) {
+    if (-not $chkDoc.PrinterSettings.IsValid -and $Kinds -ne 'labels' -and $payloadData.kind -ne 'labels') {
         $actualPrinter = "Microsoft Print to PDF"
         if ($pdfTarget -eq "") {
             $pdfTarget = Join-Path $PSScriptRoot "test_receipt.pdf"
@@ -641,7 +778,9 @@ if ($TestFile -ne "") {
     $chkDoc.Dispose()
 
     try {
-        if ($payloadData.kind -eq 'sale_receipt' -or $payloadData.receipt_no) {
+        if ($payloadData.kind -eq 'labels') {
+            Print-Labels $payloadData $actualPrinter
+        } elseif ($payloadData.kind -eq 'sale_receipt' -or $payloadData.receipt_no) {
             Print-SaleReceipt $payloadData $actualPrinter $pdfTarget
         } else {
             Print-Receipt $payloadData $actualPrinter $pdfTarget
@@ -664,11 +803,11 @@ if ($TestFile -ne "") {
 # منع تشغيل نسختين في نفس الوقت
 $me = $PID
 $twin = Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-        Where-Object { $_.ProcessId -ne $me -and $_.CommandLine -like '*fagala_printer_agent*' }
+        Where-Object { $_.ProcessId -ne $me -and ($_.CommandLine -like ('*"' + $PSCommandPath + '"*') -or $_.CommandLine -like ('*-File ' + $PSCommandPath)) }
 if ($twin) { exit }
 
 # فحص المفتاح والفرع (الباب مقفول لو لسه مش مظبوطين)
-if ([string]::IsNullOrWhiteSpace($Key) -or $BranchId -le 0) {
+if ([string]::IsNullOrWhiteSpace($Key) -or ($BranchId -le 0 -and $Kinds -ne 'labels')) {
     Write-Host ""
     Write-Host "  ! تحذير: المفتاح أو رقم الفرع غير مضبوط في السكربت." -ForegroundColor Yellow
     Write-Host "  عدّل `$Key و `$BranchId قبل تشغيل الوكيل على جهاز الفرع." -ForegroundColor Gray
@@ -704,6 +843,7 @@ while ($true) {
             branch  = $BranchId
             host    = $env:COMPUTERNAME
             printer = $PrinterName
+            kinds   = $Kinds
             done    = $doneStr
             failed  = $failStr
             error   = $lastErr
@@ -730,7 +870,12 @@ while ($true) {
                 Log "job #$jobId received ($($job.kind))"
 
                 try {
-                    if ($job.kind -eq 'sale_receipt') {
+                    if ($job.kind -eq 'labels') {
+                        if ($Kinds -ne 'labels') { throw 'وكيل الإيصالات ماينفعش يطبع ليبلز' }
+                        Print-Labels $job.payload $PrinterName
+                    } elseif ($Kinds -eq 'labels') {
+                        throw 'وكيل الليبلز ماينفعش يطبع إيصالات'
+                    } elseif ($job.kind -eq 'sale_receipt') {
                         Print-SaleReceipt $job.payload $PrinterName ""
                     } else {
                         Print-Receipt $job.payload $PrinterName ""

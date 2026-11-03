@@ -29,6 +29,14 @@ $done    = (string) ($_POST['done'] ?? '');    // "12,13"
 $failed  = (string) ($_POST['failed'] ?? '');  // "14"
 $err     = mb_substr(trim((string) ($_POST['error'] ?? '')), 0, 255);
 
+// من غير kinds يبقى وكيل إيصالات قديم: ممنوع يسحب ليبلز.
+$labelAgent = (string) ($_POST['kinds'] ?? 'receipts') === 'labels';
+// مفيش عمود للنوع: البادئة LBL- هي علامة وكيل الليبلز في نبضة الحياة.
+if ($session !== '') {
+    $session = $labelAgent ? 'LBL-' . substr(preg_replace('/^LBL-/', '', $session), 0, 28)
+        : substr(preg_replace('/^LBL-/', 'PRN-', $session), 0, 32);
+}
+
 $expect = (string) setting('print_agent_key', '');
 
 // فشل مقفول: مفتاح فاضي = الباب مقفول، مش مفتوح.
@@ -96,9 +104,10 @@ try {
     $st = $pdo->prepare(
         "SELECT id, kind, ref_id, payload FROM print_queue
           WHERE status = 'queued' AND (branch_id = ? OR branch_id IS NULL)
+            AND ((? = 1 AND kind = ?) OR (? = 0 AND kind <> ?))
           ORDER BY id ASC LIMIT 3 FOR UPDATE"
     );
-    $st->execute([$branch > 0 ? $branch : null]);
+    $st->execute([$branch > 0 ? $branch : null, (int) $labelAgent, 'labels', (int) $labelAgent, 'labels']);
     $rows = $st->fetchAll();
     $claimedIds = [];
     $jobs = [];

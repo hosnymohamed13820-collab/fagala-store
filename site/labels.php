@@ -184,12 +184,16 @@ require_once __DIR__ . '/includes/header.php';
             <button type="button" class="btn btn-danger" onclick="lbxClear()">
                 <i class="ti ti-trash"></i> تفريغ
             </button>
+            <button type="button" class="btn btn-primary" id="labelAgentPrint" disabled>اطبع على طابعة الليبل</button>
+            <span class="fpage-sub" id="labelAgentInfo">بنتأكد من وكيل الليبلز</span>
             <button type="button" class="btn btn-primary" onclick="lbxPrint()">
                 <i class="ti ti-printer"></i> اطبع
             </button>
         </span>
     </div>
 </section>
+
+<div class="falert" id="labelAgentResult" role="status" hidden></div>
 
 <script src="assets/barcode_scanner.js?v=9"></script>
 <script>
@@ -566,6 +570,51 @@ async function lbxPrint() {
     await lbxFlushSettings();
     lbxPost('labels_print.php', { rows: lbxPayload() }, true);
 }
+
+// استدعاء التحميل جوه DOMContentLoaded عشان app.js يبقى اتحمّل.
+document.addEventListener('DOMContentLoaded', () => {
+    const button = document.getElementById('labelAgentPrint');
+    const info = document.getElementById('labelAgentInfo');
+    const result = document.getElementById('labelAgentResult');
+    const show = text => { result.hidden = false; result.textContent = text; };
+    let online = false;
+    apiFetch('labels_api.php?part=agent_status').then(j => {
+        online = !!j.data.online;
+        button.disabled = !online;
+        info.textContent = online ? (j.data.printer || '') : 'وكيل الليبلز مش شغّال على أي جهاز';
+    }).catch(() => { info.textContent = 'مش قادرين نتأكد من وكيل الليبلز؛ حدّث الصفحة'; });
+    button.addEventListener('click', async () => {
+        if (!rows.length) { show('القايمة فاضية'); return; }
+        button.disabled = true;
+        try {
+            await lbxFlushSettings();
+            const j = await apiFetch('labels_api.php?part=queue', { method: 'POST', body: { rows: lbxPayload() } });
+            show('اتبعت للطابعة');
+            const deadline = Date.now() + 30000;
+            let delay = 2000;
+            while (Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, Math.min(delay, deadline - Date.now())));
+                if (document.hidden || Date.now() >= deadline) break;
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), Math.max(1, deadline - Date.now()));
+                    let status;
+                    try {
+                        status = await apiFetch('labels_api.php?part=job_status&id=' + j.data.id, { signal: controller.signal });
+                    } finally { clearTimeout(timeout); }
+                    delay = 2000;
+                    if (status.data.status === 'done') { show('اتطبع ✓'); return; }
+                    if (status.data.status === 'failed') { show('فشل: ' + (status.data.last_error || 'الطابعة ماطبعتش المهمة')); return; }
+                } catch (err) {
+                    delay = Math.min(delay * 2, 8000);
+                }
+            }
+            show('اتبعت للطابعة؛ تأكيد الطباعة لسه ماوصلش. رقم المهمة ' + j.data.id);
+        } catch (err) {
+            show('فشل: ' + (err.error || 'مفيش اتصال بالسيرفر'));
+        } finally { button.disabled = !online; }
+    });
+});
 
 async function lbxExport() {
     if (!rows.length) { fgToast('القايمة فاضية', 'warn'); return; }

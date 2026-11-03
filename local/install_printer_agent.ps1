@@ -27,6 +27,13 @@ $ErrorActionPreference = 'Stop'
 
 $TaskName = 'FagalaPrinterAgent'
 $agent    = Join-Path $PSScriptRoot 'fagala_printer_agent.ps1'
+# بنقرا الإعداد كنص بس، من غير تشغيل الوكيل أو قراءة المفتاح.
+if (Test-Path -LiteralPath $agent) {
+    $agentText = [System.IO.File]::ReadAllText($agent)
+    if ($agentText -match '(?m)^\$Kinds\s*=\s*["'']labels["'']') {
+        $TaskName = 'FagalaLabelAgent'
+    }
+}
 
 Write-Host ''
 Write-Host '  Fagala Receipt Printer - Installer' -ForegroundColor Cyan
@@ -35,7 +42,7 @@ Write-Host ''
 # --- إيقاف أي نسخة شغالة دلوقتي ---------------------------------------
 Write-Host '  [1] Stopping any running agent...'
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like '*fagala_printer_agent*' -and $_.ProcessId -ne $PID } |
+    Where-Object { ($_.CommandLine -like ('*"' + $agent + '"*') -or $_.CommandLine -like ('*-File ' + $agent)) -and $_.ProcessId -ne $PID } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 # --- الإزالة ----------------------------------------------------------
@@ -45,7 +52,7 @@ if ($Uninstall) {
 
     # تنظيف بقايا النسخة القديمة لو موجودة
     $oldVbs = Join-Path ([Environment]::GetFolderPath('Startup')) 'fagala_printer_hidden.vbs'
-    if (Test-Path $oldVbs) { Remove-Item $oldVbs -Force -ErrorAction SilentlyContinue }
+    if ($TaskName -eq 'FagalaPrinterAgent' -and (Test-Path $oldVbs)) { Remove-Item $oldVbs -Force -ErrorAction SilentlyContinue }
 
     Write-Host ''
     Write-Host '  Agent stopped and removed. Bye!' -ForegroundColor Green
@@ -66,8 +73,8 @@ if (-not (Test-Path $agent)) {
 Write-Host '  [2] Cleaning up old version (if any)...'
 $oldVbsLocal = Join-Path $PSScriptRoot 'fagala_printer_hidden.vbs'
 $oldVbsStart = Join-Path ([Environment]::GetFolderPath('Startup')) 'fagala_printer_hidden.vbs'
-if (Test-Path $oldVbsStart) { Remove-Item $oldVbsStart -Force -ErrorAction SilentlyContinue }
-if (Test-Path $oldVbsLocal) { Remove-Item $oldVbsLocal -Force -ErrorAction SilentlyContinue }
+if ($TaskName -eq 'FagalaPrinterAgent' -and (Test-Path $oldVbsStart)) { Remove-Item $oldVbsStart -Force -ErrorAction SilentlyContinue }
+if ($TaskName -eq 'FagalaPrinterAgent' -and (Test-Path $oldVbsLocal)) { Remove-Item $oldVbsLocal -Force -ErrorAction SilentlyContinue }
 
 # --- إنشاء المهمة المجدولة -------------------------------------------
 Write-Host '  [3] Registering scheduled task...'
